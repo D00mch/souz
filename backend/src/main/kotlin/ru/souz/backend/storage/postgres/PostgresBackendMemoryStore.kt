@@ -1,17 +1,24 @@
 package ru.souz.backend.storage.postgres
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Types
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
+import ru.souz.agent.memory.MemoryDocType
+import ru.souz.agent.memory.MemoryEmbeddingDocRecord
 import ru.souz.agent.memory.MemoryEntityRecord
+import ru.souz.agent.memory.MemoryEpisodeRecord
 import ru.souz.agent.memory.MemoryEvidenceRecord
 import ru.souz.agent.memory.MemoryFactRecord
 import ru.souz.agent.memory.MemoryFactStatus
+import ru.souz.agent.memory.MemoryGraphSnapshot
 import ru.souz.agent.memory.MemoryObjectKind
 import ru.souz.agent.memory.MemoryScope
 import ru.souz.agent.memory.MemoryScopeType
+import ru.souz.agent.memory.MemoryTriggerType
 import ru.souz.backend.memory.BackendMemoryStore
 
 class PostgresBackendMemoryStore(
@@ -228,25 +235,65 @@ class PostgresBackendMemoryStore(
         stored
     }
 
-    override suspend fun listActiveFacts(
+    override suspend fun listEntitiesByIds(
         userId: String,
-        scope: MemoryScope,
-    ): List<MemoryFactRecord> = dataSource.read { connection ->
+        entityIds: Set<String>,
+    ): List<MemoryEntityRecord> = dataSource.read { connection ->
+        if (entityIds.isEmpty()) {
+            return@read emptyList()
+        }
+        val placeholders = entityIds.joinToString(",") { "?" }
         connection.prepareStatement(
             """
             select *
-            from memory_fact
+            from memory_entity
             where user_id = ?
-              and scope_type = ?
-              and scope_id = ?
-              and status = ?
-            order by created_at desc
+              and id in ($placeholders)
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, userId)
-            statement.setString(2, scope.type.name)
-            statement.setString(3, scope.id)
-            statement.setString(4, MemoryFactStatus.ACTIVE.name)
+            entityIds.forEachIndexed { index, entityId ->
+                statement.setString(index + 2, entityId)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toEntity())
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun listFacts(
+        userId: String,
+        scope: MemoryScope?,
+        statuses: Set<MemoryFactStatus>,
+    ): List<MemoryFactRecord> = dataSource.read { connection ->
+        val statusValues = statuses.ifEmpty { setOf(MemoryFactStatus.ACTIVE) }.map { it.name }
+        val placeholders = statusValues.joinToString(",") { "?" }
+        val sql = buildString {
+            append(
+                """
+                select *
+                from memory_fact
+                where user_id = ?
+                  and status in ($placeholders)
+                """.trimIndent()
+            )
+            if (scope != null) {
+                append(" and scope_type = ? and scope_id = ?")
+            }
+            append(" order by created_at desc")
+        }
+        connection.prepareStatement(sql).use { statement ->
+            var index = 1
+            statement.setString(index++, userId)
+            statusValues.forEach { status -> statement.setString(index++, status) }
+            if (scope != null) {
+                statement.setString(index++, scope.type.name)
+                statement.setString(index, scope.id)
+            }
             statement.executeQuery().use { resultSet ->
                 buildList {
                     while (resultSet.next()) {
@@ -256,6 +303,344 @@ class PostgresBackendMemoryStore(
             }
         }
     }
+
+    override suspend fun insertEpisode(
+        userId: String,
+        episode: MemoryEpisodeRecord,
+    ): MemoryEpisodeRecord = dataSource.write { connection ->
+        connection.ensureUser(userId)
+        val stored = episode.copy(id = episode.id ?: newId())
+        connection.prepareStatement(
+            """
+            insert into memory_episode(
+                id,
+                user_id,
+                scope_type,
+                scope_id,
+                title,
+                summary,
+                status,
+                started_at,
+                ended_at,
+                last_touched_at,
+                next_action,
+                importance
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, stored.id)
+            statement.setString(2, userId)
+            statement.setString(3, stored.scope.type.name)
+            statement.setString(4, stored.scope.id)
+            statement.setString(5, stored.title)
+            statement.setString(6, stored.summary)
+            statement.setString(7, stored.status)
+            statement.setInstant(8, stored.startedAt)
+            statement.setInstant(9, stored.endedAt)
+            statement.setInstant(10, stored.lastTouchedAt)
+            statement.setNullableString(11, stored.nextAction)
+            val importance = stored.importance
+            if (importance == null) {
+                statement.setNull(12, Types.DOUBLE)
+            } else {
+                statement.setDouble(12, importance)
+            }
+            statement.executeUpdate()
+        }
+        stored
+    }
+
+    override suspend fun listEpisodes(
+        userId: String,
+        scopes: List<MemoryScope>,
+        statuses: Set<String>,
+    ): List<MemoryEpisodeRecord> = dataSource.read { connection ->
+        val statusValues = statuses.ifEmpty { setOf("ACTIVE") }
+        val placeholders = statusValues.joinToString(",") { "?" }
+        val sql = buildString {
+            append(
+                """
+                select *
+                from memory_episode
+                where user_id = ?
+                  and status in ($placeholders)
+                """.trimIndent()
+            )
+            if (scopes.isNotEmpty()) {
+                append(
+                    scopes.joinToString(
+                        prefix = " and (",
+                        postfix = ")",
+                        separator = " or ",
+                    ) { "(scope_type = ? and scope_id = ?)" }
+                )
+            }
+            append(" order by last_touched_at desc")
+        }
+        connection.prepareStatement(sql).use { statement ->
+            var index = 1
+            statement.setString(index++, userId)
+            statusValues.forEach { status -> statement.setString(index++, status) }
+            scopes.forEach { scope ->
+                statement.setString(index++, scope.type.name)
+                statement.setString(index++, scope.id)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toEpisode())
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun replaceEmbeddingDocs(
+        userId: String,
+        docs: List<MemoryEmbeddingDocRecord>,
+    ) = dataSource.write { connection ->
+        connection.ensureUser(userId)
+        connection.prepareStatement("delete from memory_embedding_doc where user_id = ?").use { statement ->
+            statement.setString(1, userId)
+            statement.executeUpdate()
+        }
+        docs.forEach { doc ->
+            val stored = doc.copy(id = doc.id ?: newId())
+            connection.prepareStatement(
+                """
+                insert into memory_embedding_doc(
+                    id,
+                    user_id,
+                    doc_type,
+                    source_record_type,
+                    source_record_id,
+                    scope_type,
+                    scope_id,
+                    text,
+                    status,
+                    embedding_model_fingerprint,
+                    created_at,
+                    updated_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, stored.id)
+                statement.setString(2, userId)
+                statement.setString(3, stored.docType.name)
+                statement.setString(4, stored.sourceRecordType)
+                statement.setString(5, stored.sourceRecordId)
+                statement.setString(6, stored.scope.type.name)
+                statement.setString(7, stored.scope.id)
+                statement.setString(8, stored.text)
+                statement.setString(9, stored.status)
+                statement.setNullableString(10, stored.embeddingModelFingerprint)
+                statement.setInstant(11, stored.createdAt)
+                statement.setInstant(12, stored.updatedAt)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override suspend fun listEmbeddingDocs(
+        userId: String,
+        scopes: List<MemoryScope>,
+        docTypes: Set<MemoryDocType>,
+        fingerprint: String?,
+    ): List<MemoryEmbeddingDocRecord> = dataSource.read { connection ->
+        val sql = buildString {
+            append(
+                """
+                select *
+                from memory_embedding_doc
+                where user_id = ?
+                  and status = 'ACTIVE'
+                """.trimIndent()
+            )
+            if (fingerprint != null) {
+                append(" and embedding_model_fingerprint = ?")
+            }
+            if (docTypes.isNotEmpty()) {
+                append(docTypes.joinToString(prefix = " and doc_type in (", postfix = ")", separator = ",") { "?" })
+            }
+            if (scopes.isNotEmpty()) {
+                append(
+                    scopes.joinToString(
+                        prefix = " and (",
+                        postfix = ")",
+                        separator = " or ",
+                    ) { "(scope_type = ? and scope_id = ?)" }
+                )
+            }
+            append(" order by updated_at desc")
+        }
+        connection.prepareStatement(sql).use { statement ->
+            var index = 1
+            statement.setString(index++, userId)
+            if (fingerprint != null) {
+                statement.setString(index++, fingerprint)
+            }
+            docTypes.forEach { docType -> statement.setString(index++, docType.name) }
+            scopes.forEach { scope ->
+                statement.setString(index++, scope.type.name)
+                statement.setString(index++, scope.id)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toEmbeddingDoc())
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun logWriteAttempt(
+        userId: String,
+        scope: MemoryScope,
+        turnRef: String?,
+        triggerType: MemoryTriggerType,
+        inputExcerpt: String?,
+        candidatesJson: String,
+        acceptedCount: Int,
+        rejectedCount: Int,
+        rejectionReasonsJson: String?,
+        createdAt: Instant,
+    ): String = dataSource.write { connection ->
+        connection.ensureUser(userId)
+        val id = newId()
+        connection.prepareStatement(
+            """
+            insert into memory_write_attempt(
+                id,
+                user_id,
+                scope_type,
+                scope_id,
+                turn_ref,
+                trigger_type,
+                input_excerpt,
+                candidates_json,
+                accepted_count,
+                rejected_count,
+                rejection_reasons_json,
+                created_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?::jsonb, ?)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.setString(2, userId)
+            statement.setString(3, scope.type.name)
+            statement.setString(4, scope.id)
+            statement.setNullableString(5, turnRef)
+            statement.setString(6, triggerType.name)
+            statement.setNullableString(7, inputExcerpt)
+            statement.setString(8, candidatesJson)
+            statement.setInt(9, acceptedCount)
+            statement.setInt(10, rejectedCount)
+            statement.setNullableString(11, rejectionReasonsJson)
+            statement.setInstant(12, createdAt)
+            statement.executeUpdate()
+        }
+        id
+    }
+
+    override suspend fun logInjection(
+        userId: String,
+        scope: MemoryScope,
+        turnRef: String?,
+        queryExcerpt: String?,
+        selectedRecordIds: List<String>,
+        renderedPacket: String,
+        estimatedTokens: Int,
+        createdAt: Instant,
+    ): String = dataSource.write { connection ->
+        connection.ensureUser(userId)
+        val id = newId()
+        connection.prepareStatement(
+            """
+            insert into memory_injection_log(
+                id,
+                user_id,
+                scope_type,
+                scope_id,
+                turn_ref,
+                query_excerpt,
+                selected_record_ids_json,
+                rendered_packet,
+                estimated_tokens,
+                created_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, id)
+            statement.setString(2, userId)
+            statement.setString(3, scope.type.name)
+            statement.setString(4, scope.id)
+            statement.setNullableString(5, turnRef)
+            statement.setNullableString(6, queryExcerpt)
+            statement.setJson(7, jacksonObjectMapper().writeValueAsString(selectedRecordIds))
+            statement.setString(8, renderedPacket)
+            statement.setInt(9, estimatedTokens)
+            statement.setInstant(10, createdAt)
+            statement.executeUpdate()
+        }
+        id
+    }
+
+    override suspend fun graphSnapshot(
+        userId: String,
+        scope: MemoryScope,
+    ): MemoryGraphSnapshot = dataSource.read { connection ->
+        val facts = connection.loadFacts(userId, scope, setOf(MemoryFactStatus.ACTIVE))
+        val entityIds = facts.flatMap { listOfNotNull(it.subjectEntityId, it.objectEntityId) }.toSet()
+        val entities = connection.loadEntities(userId, entityIds)
+        val evidenceIndex = connection.loadEvidenceIndex(userId, facts.mapNotNull { it.id })
+        MemoryGraphSnapshot(
+            entities = entities,
+            facts = facts,
+            edges = facts.mapNotNull { fact ->
+                val objectEntityId = fact.objectEntityId ?: return@mapNotNull null
+                if (fact.objectKind != MemoryObjectKind.ENTITY) return@mapNotNull null
+                MemoryGraphSnapshot.Edge(
+                    factId = fact.id!!,
+                    subjectEntityId = fact.subjectEntityId,
+                    predicate = fact.predicate,
+                    objectEntityId = objectEntityId,
+                )
+            },
+            attributes = facts.mapNotNull { fact ->
+                if (fact.objectKind == MemoryObjectKind.ENTITY) return@mapNotNull null
+                MemoryGraphSnapshot.Attribute(
+                    factId = fact.id!!,
+                    subjectEntityId = fact.subjectEntityId,
+                    predicate = fact.predicate,
+                    value = fact.objectValueText ?: fact.objectValueJson.orEmpty(),
+                )
+            },
+            timelineEvents = connection.loadTimeline(userId, scope),
+            evidenceIndex = evidenceIndex,
+            diagnostics = MemoryGraphSnapshot.Diagnostics(
+                writeAttemptCount = connection.countByScope(userId, "memory_write_attempt", scope),
+                injectionLogCount = connection.countByScope(userId, "memory_injection_log", scope),
+            ),
+            generatedAt = Instant.now(),
+        )
+    }
+
+    override suspend fun forgetFact(
+        userId: String,
+        factId: String,
+        at: Instant,
+    ): Boolean = updateFactStatus(userId, factId, MemoryFactStatus.FORGOTTEN, at)
+
+    override suspend fun invalidateFact(
+        userId: String,
+        factId: String,
+        at: Instant,
+    ): Boolean = updateFactStatus(userId, factId, MemoryFactStatus.INVALIDATED, at)
 
     private fun Connection.ensureUser(userId: String) {
         prepareStatement(
@@ -343,12 +728,249 @@ class PostgresBackendMemoryStore(
             writerVersion = getString("writer_version"),
         )
 
+    private fun ResultSet.toEvidence(): MemoryEvidenceRecord =
+        MemoryEvidenceRecord(
+            id = getString("id"),
+            scope = MemoryScope(
+                type = MemoryScopeType.valueOf(getString("scope_type")),
+                id = getString("scope_id"),
+            ),
+            evidenceType = ru.souz.agent.memory.MemoryEvidenceType.valueOf(getString("evidence_type")),
+            sourceRef = getString("source_ref"),
+            sourceHash = getString("source_hash"),
+            contentExcerpt = getString("content_excerpt"),
+            contentJson = getString("content_json"),
+            createdAt = instant("created_at"),
+        )
+
+    private fun Connection.loadFacts(
+        userId: String,
+        scope: MemoryScope?,
+        statuses: Set<MemoryFactStatus>,
+    ): List<MemoryFactRecord> {
+        val statusValues = statuses.ifEmpty { setOf(MemoryFactStatus.ACTIVE) }.map { it.name }
+        val placeholders = statusValues.joinToString(",") { "?" }
+        val sql = buildString {
+            append(
+                """
+                select *
+                from memory_fact
+                where user_id = ?
+                  and status in ($placeholders)
+                """.trimIndent()
+            )
+            if (scope != null) {
+                append(" and scope_type = ? and scope_id = ?")
+            }
+            append(" order by created_at desc")
+        }
+        return prepareStatement(sql).use { statement ->
+            var index = 1
+            statement.setString(index++, userId)
+            statusValues.forEach { status -> statement.setString(index++, status) }
+            if (scope != null) {
+                statement.setString(index++, scope.type.name)
+                statement.setString(index, scope.id)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toFact())
+                    }
+                }
+            }
+        }
+    }
+
+    private fun Connection.loadEntities(
+        userId: String,
+        entityIds: Set<String>,
+    ): List<MemoryEntityRecord> {
+        if (entityIds.isEmpty()) {
+            return emptyList()
+        }
+        val placeholders = entityIds.joinToString(",") { "?" }
+        return prepareStatement(
+            """
+            select *
+            from memory_entity
+            where user_id = ?
+              and id in ($placeholders)
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, userId)
+            entityIds.forEachIndexed { index, entityId ->
+                statement.setString(index + 2, entityId)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toEntity())
+                    }
+                }
+            }
+        }
+    }
+
+    private fun ResultSet.toEpisode(): MemoryEpisodeRecord =
+        MemoryEpisodeRecord(
+            id = getString("id"),
+            scope = MemoryScope(
+                type = MemoryScopeType.valueOf(getString("scope_type")),
+                id = getString("scope_id"),
+            ),
+            title = getString("title"),
+            summary = getString("summary"),
+            status = getString("status"),
+            startedAt = instant("started_at"),
+            endedAt = getObject("ended_at", java.time.OffsetDateTime::class.java)?.toInstant(),
+            lastTouchedAt = instant("last_touched_at"),
+            nextAction = getString("next_action"),
+            importance = getObject("importance")?.let { getDouble("importance") },
+        )
+
+    private fun ResultSet.toEmbeddingDoc(): MemoryEmbeddingDocRecord =
+        MemoryEmbeddingDocRecord(
+            id = getString("id"),
+            docType = MemoryDocType.valueOf(getString("doc_type")),
+            sourceRecordType = getString("source_record_type"),
+            sourceRecordId = getString("source_record_id"),
+            scope = MemoryScope(
+                type = MemoryScopeType.valueOf(getString("scope_type")),
+                id = getString("scope_id"),
+            ),
+            text = getString("text"),
+            status = getString("status"),
+            embeddingModelFingerprint = getString("embedding_model_fingerprint"),
+            createdAt = instant("created_at"),
+            updatedAt = instant("updated_at"),
+        )
+
     private fun java.sql.PreparedStatement.setNullableString(index: Int, value: String?) {
         if (value == null) {
             setNull(index, Types.VARCHAR)
         } else {
             setString(index, value)
         }
+    }
+
+    private fun Connection.loadEvidenceIndex(
+        userId: String,
+        factIds: List<String>,
+    ): Map<String, List<MemoryEvidenceRecord>> {
+        if (factIds.isEmpty()) {
+            return emptyMap()
+        }
+        val placeholders = factIds.joinToString(",") { "?" }
+        return prepareStatement(
+            """
+            select fe.fact_id as fact_id, e.*
+            from memory_fact_evidence fe
+            join memory_evidence e on e.id = fe.evidence_id
+            where fe.user_id = ?
+              and fe.fact_id in ($placeholders)
+            order by e.created_at asc
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, userId)
+            factIds.forEachIndexed { index, factId ->
+                statement.setString(index + 2, factId)
+            }
+            statement.executeQuery().use { resultSet ->
+                val evidenceByFact = linkedMapOf<String, MutableList<MemoryEvidenceRecord>>()
+                while (resultSet.next()) {
+                    val factId = resultSet.getString("fact_id")
+                    evidenceByFact.getOrPut(factId) { mutableListOf() }.add(resultSet.toEvidence())
+                }
+                evidenceByFact
+            }
+        }
+    }
+
+    private fun Connection.loadTimeline(
+        userId: String,
+        scope: MemoryScope,
+    ): List<MemoryGraphSnapshot.TimelineEvent> =
+        prepareStatement(
+            """
+            select id, invalidated_at, invalidated_by_fact_id
+            from memory_fact
+            where user_id = ?
+              and scope_type = ?
+              and scope_id = ?
+              and invalidated_by_fact_id is not null
+            order by invalidated_at desc
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setString(2, scope.type.name)
+            statement.setString(3, scope.id)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        val happenedAt = resultSet.getObject("invalidated_at", java.time.OffsetDateTime::class.java)?.toInstant()
+                            ?: continue
+                        add(
+                            MemoryGraphSnapshot.TimelineEvent(
+                                type = "SUPERSEDED",
+                                factId = resultSet.getString("id"),
+                                relatedFactId = resultSet.getString("invalidated_by_fact_id"),
+                                happenedAt = happenedAt,
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun Connection.countByScope(
+        userId: String,
+        tableName: String,
+        scope: MemoryScope,
+    ): Int =
+        prepareStatement(
+            "select count(*) from $tableName where user_id = ? and scope_type = ? and scope_id = ?"
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setString(2, scope.type.name)
+            statement.setString(3, scope.id)
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt(1)
+            }
+        }
+
+    private fun Connection.updateFactStatus(
+        userId: String,
+        factId: String,
+        status: MemoryFactStatus,
+        at: Instant,
+    ): Boolean =
+        prepareStatement(
+            """
+            update memory_fact
+            set status = ?,
+                invalidated_at = ?
+            where user_id = ?
+              and id = ?
+              and status = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, status.name)
+            statement.setInstant(2, at)
+            statement.setString(3, userId)
+            statement.setString(4, factId)
+            statement.setString(5, MemoryFactStatus.ACTIVE.name)
+            statement.executeUpdate() > 0
+        }
+
+    private suspend fun updateFactStatus(
+        userId: String,
+        factId: String,
+        status: MemoryFactStatus,
+        at: Instant,
+    ): Boolean = dataSource.write { connection ->
+        connection.updateFactStatus(userId, factId, status, at)
     }
 
     private fun newId(): String = UUID.randomUUID().toString()

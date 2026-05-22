@@ -111,6 +111,7 @@ private suspend fun cancellationTestContext(): CancellationTestContext {
         chatRepository = chatRepository,
         executionRepository = executionRepository,
         turnRunner = CancellingTurnRunner(),
+        memoryRuntimeFactory = testMemoryRuntimeFactory(settingsProvider),
     )
     val service = AgentExecutionService(
         chatRepository = chatRepository,

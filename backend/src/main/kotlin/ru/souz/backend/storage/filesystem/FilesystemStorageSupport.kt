@@ -99,6 +99,18 @@ class FilesystemStorageLayout(
     fun memoryFactEvidenceFile(userId: String): Path =
         memoryDir(userId).resolve("fact-evidence.json")
 
+    fun memoryEpisodesFile(userId: String): Path =
+        memoryDir(userId).resolve("episodes.json")
+
+    fun memoryEmbeddingDocsFile(userId: String): Path =
+        memoryDir(userId).resolve("embedding-docs.json")
+
+    fun memoryWriteAttemptsFile(userId: String): Path =
+        memoryDir(userId).resolve("write-attempts.json")
+
+    fun memoryInjectionLogsFile(userId: String): Path =
+        memoryDir(userId).resolve("injection-logs.json")
+
     fun chatDirectories(userId: String): List<Path> {
         val chatsRoot = chatsDir(userId)
         if (!Files.isDirectory(chatsRoot)) {

@@ -1,6 +1,7 @@
 package ru.souz.backend.http
 
 import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.jackson.jackson
@@ -27,6 +28,7 @@ import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.routes.v1Routes
 import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.memory.BackendMemoryService
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.security.RequestIdentityPlugin
@@ -56,6 +58,7 @@ class BackendHttpServer(
     executionService: AgentExecutionService? = null,
     optionService: OptionService? = null,
     eventService: AgentEventService? = null,
+    memoryService: BackendMemoryService? = null,
     telegramBotBindingService: TelegramBotBindingService? = null,
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
@@ -74,6 +77,7 @@ class BackendHttpServer(
         executionService = executionService,
         optionService = optionService,
         eventService = eventService,
+        memoryService = memoryService,
         telegramBotBindingService = telegramBotBindingService,
         featureFlags = featureFlags,
         selectedModel = selectedModel,
@@ -119,6 +123,7 @@ fun Application.backendApplication(
     executionService: AgentExecutionService? = null,
     optionService: OptionService? = null,
     eventService: AgentEventService? = null,
+    memoryService: BackendMemoryService? = null,
     telegramBotBindingService: TelegramBotBindingService? = null,
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     selectedModel: () -> String,
@@ -136,6 +141,7 @@ fun Application.backendApplication(
             executionService = executionService,
             optionService = optionService,
             eventService = eventService,
+            memoryService = memoryService,
             telegramBotBindingService = telegramBotBindingService,
             featureFlags = featureFlags,
             selectedModel = selectedModel,
@@ -150,8 +156,10 @@ internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDep
 
     install(ContentNegotiation) {
         jackson {
+            findAndRegisterModules()
             registerKotlinModule()
             disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
         }
     }
     install(WebSockets)
@@ -220,6 +228,11 @@ private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
         add("GET ${BackendHttpRoutes.PROVIDER_KEYS}")
         add("PUT ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}")
         add("DELETE ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}")
+        add("GET ${BackendHttpRoutes.MEMORY_OVERVIEW}")
+        add("GET ${BackendHttpRoutes.MEMORY_GRAPH}")
+        add("GET ${BackendHttpRoutes.MEMORY_FACTS}")
+        add("POST ${BackendHttpRoutes.MEMORY_FORGET_PATTERN}")
+        add("POST ${BackendHttpRoutes.MEMORY_INVALIDATE_PATTERN}")
         add("GET ${BackendHttpRoutes.CHATS}")
         add("POST ${BackendHttpRoutes.CHATS}")
         add("PATCH ${BackendHttpRoutes.CHAT_TITLE_PATTERN}")

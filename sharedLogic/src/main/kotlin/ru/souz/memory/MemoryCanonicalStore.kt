@@ -1,4 +1,4 @@
-package ru.souz.backend.memory
+package ru.souz.memory
 
 import java.time.Instant
 import ru.souz.agent.memory.MemoryDocType
@@ -8,69 +8,46 @@ import ru.souz.agent.memory.MemoryEpisodeRecord
 import ru.souz.agent.memory.MemoryEvidenceRecord
 import ru.souz.agent.memory.MemoryFactRecord
 import ru.souz.agent.memory.MemoryFactStatus
-import ru.souz.agent.memory.MemoryGraphSnapshot
+import ru.souz.agent.memory.MemoryGraphQueryService
 import ru.souz.agent.memory.MemoryScope
 import ru.souz.agent.memory.MemoryTriggerType
 
-interface BackendMemoryStore {
+interface MemoryCanonicalStore : MemoryGraphQueryService {
     suspend fun resolveOrUpsertEntity(
-        userId: String,
         entity: MemoryEntityRecord,
         aliases: List<String> = emptyList(),
     ): MemoryEntityRecord
 
-    suspend fun listEntitiesByIds(
-        userId: String,
-        entityIds: Set<String>,
-    ): List<MemoryEntityRecord>
+    suspend fun listEntitiesByIds(entityIds: Set<String>): List<MemoryEntityRecord>
 
-    suspend fun insertEvidence(
-        userId: String,
-        evidence: MemoryEvidenceRecord,
-    ): MemoryEvidenceRecord
+    suspend fun insertEvidence(evidence: MemoryEvidenceRecord): MemoryEvidenceRecord
 
     suspend fun insertFact(
-        userId: String,
         fact: MemoryFactRecord,
         evidenceIds: List<String>,
     ): MemoryFactRecord
 
     suspend fun listFacts(
-        userId: String,
         scope: MemoryScope? = null,
         statuses: Set<MemoryFactStatus> = setOf(MemoryFactStatus.ACTIVE),
     ): List<MemoryFactRecord>
 
-    suspend fun listActiveFacts(
-        userId: String,
-        scope: MemoryScope,
-    ): List<MemoryFactRecord> = listFacts(userId = userId, scope = scope, statuses = setOf(MemoryFactStatus.ACTIVE))
-
-    suspend fun insertEpisode(
-        userId: String,
-        episode: MemoryEpisodeRecord,
-    ): MemoryEpisodeRecord
+    suspend fun insertEpisode(episode: MemoryEpisodeRecord): MemoryEpisodeRecord
 
     suspend fun listEpisodes(
-        userId: String,
         scopes: List<MemoryScope> = emptyList(),
         statuses: Set<String> = setOf("ACTIVE"),
     ): List<MemoryEpisodeRecord>
 
-    suspend fun replaceEmbeddingDocs(
-        userId: String,
-        docs: List<MemoryEmbeddingDocRecord>,
-    )
+    suspend fun replaceEmbeddingDocs(docs: List<MemoryEmbeddingDocRecord>)
 
     suspend fun listEmbeddingDocs(
-        userId: String,
         scopes: List<MemoryScope> = emptyList(),
         docTypes: Set<MemoryDocType> = emptySet(),
         fingerprint: String? = null,
     ): List<MemoryEmbeddingDocRecord>
 
     suspend fun logWriteAttempt(
-        userId: String,
         scope: MemoryScope,
         turnRef: String?,
         triggerType: MemoryTriggerType,
@@ -79,34 +56,20 @@ interface BackendMemoryStore {
         acceptedCount: Int,
         rejectedCount: Int,
         rejectionReasonsJson: String?,
-        createdAt: Instant = Instant.now(),
+        createdAt: Instant,
     ): String
 
     suspend fun logInjection(
-        userId: String,
         scope: MemoryScope,
         turnRef: String?,
         queryExcerpt: String?,
         selectedRecordIds: List<String>,
         renderedPacket: String,
         estimatedTokens: Int,
-        createdAt: Instant = Instant.now(),
+        createdAt: Instant,
     ): String
 
-    suspend fun graphSnapshot(
-        userId: String,
-        scope: MemoryScope,
-    ): MemoryGraphSnapshot
+    suspend fun forgetFact(factId: String, at: Instant): Boolean
 
-    suspend fun forgetFact(
-        userId: String,
-        factId: String,
-        at: Instant = Instant.now(),
-    ): Boolean
-
-    suspend fun invalidateFact(
-        userId: String,
-        factId: String,
-        at: Instant = Instant.now(),
-    ): Boolean
+    suspend fun invalidateFact(factId: String, at: Instant): Boolean
 }

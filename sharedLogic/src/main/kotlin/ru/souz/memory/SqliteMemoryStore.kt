@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.souz.agent.memory.MemoryEntityRecord
+import ru.souz.agent.memory.MemoryEmbeddingDocRecord
 import ru.souz.agent.memory.MemoryEpisodeRecord
 import ru.souz.agent.memory.MemoryEvidenceRecord
 import ru.souz.agent.memory.MemoryFactRecord
@@ -21,6 +22,7 @@ import ru.souz.agent.memory.MemoryFactStatus
 import ru.souz.agent.memory.MemoryGraphQueryService
 import ru.souz.agent.memory.MemoryGraphSnapshot
 import ru.souz.agent.memory.MemoryMaintenanceService
+import ru.souz.agent.memory.MemoryDocType
 import ru.souz.agent.memory.MemoryObjectKind
 import ru.souz.agent.memory.MemoryScope
 import ru.souz.agent.memory.MemoryTriggerType
@@ -29,7 +31,7 @@ import ru.souz.paths.SouzPaths
 
 class SqliteMemoryStore(
     private val paths: SouzPaths = DefaultSouzPaths(),
-) : MemoryGraphQueryService, MemoryMaintenanceService {
+) : MemoryCanonicalStore, MemoryGraphQueryService, MemoryMaintenanceService {
     val databasePath: Path = paths.stateRoot.resolve("memory.db")
 
     private val mutex = Mutex()
@@ -39,9 +41,12 @@ class SqliteMemoryStore(
         migrate()
     }
 
-    suspend fun resolveOrUpsertEntity(
+    suspend fun resolveOrUpsertEntity(entity: MemoryEntityRecord): MemoryEntityRecord =
+        resolveOrUpsertEntity(entity, emptyList())
+
+    override suspend fun resolveOrUpsertEntity(
         entity: MemoryEntityRecord,
-        aliases: List<String> = emptyList(),
+        aliases: List<String>,
     ): MemoryEntityRecord = write { connection ->
         val entityId = findEntityId(connection, entity.normalizedKey) ?: entity.id ?: newId()
         connection.prepareStatement(
@@ -113,7 +118,11 @@ class SqliteMemoryStore(
         stored
     }
 
-    suspend fun insertEvidence(evidence: MemoryEvidenceRecord): MemoryEvidenceRecord = write { connection ->
+    override suspend fun listEntitiesByIds(entityIds: Set<String>): List<MemoryEntityRecord> = read { connection ->
+        connection.loadEntities(entityIds)
+    }
+
+    override suspend fun insertEvidence(evidence: MemoryEvidenceRecord): MemoryEvidenceRecord = write { connection ->
         val stored = evidence.copy(id = evidence.id ?: newId())
         connection.prepareStatement(
             """
@@ -145,7 +154,7 @@ class SqliteMemoryStore(
         stored
     }
 
-    suspend fun insertFact(
+    override suspend fun insertFact(
         fact: MemoryFactRecord,
         evidenceIds: List<String>,
     ): MemoryFactRecord = write { connection ->
@@ -282,7 +291,48 @@ class SqliteMemoryStore(
         }
     }
 
-    suspend fun insertEpisode(episode: MemoryEpisodeRecord): MemoryEpisodeRecord = write { connection ->
+    override suspend fun listFacts(
+        scope: MemoryScope?,
+        statuses: Set<MemoryFactStatus>,
+    ): List<MemoryFactRecord> = read { connection ->
+        val statusValues = statuses.ifEmpty { setOf(MemoryFactStatus.ACTIVE) }.map { it.name }
+        val placeholders = statusValues.joinToString(",") { "?" }
+        val sql = buildString {
+            append(
+                """
+                select *
+                from memory_fact
+                where status in ($placeholders)
+                """.trimIndent()
+            )
+            if (scope != null) {
+                append(" and scope_type = ? and scope_id = ?")
+            }
+            append(" order by created_at desc")
+        }
+        connection.prepareStatement(sql).use { statement ->
+            var index = 1
+            statusValues.forEach { status ->
+                statement.setString(index++, status)
+            }
+            if (scope != null) {
+                statement.setString(index++, scope.type.name)
+                statement.setString(index, scope.id)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toFact())
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun listFacts(scope: MemoryScope? = null): List<MemoryFactRecord> =
+        listFacts(scope = scope, statuses = setOf(MemoryFactStatus.ACTIVE))
+
+    override suspend fun insertEpisode(episode: MemoryEpisodeRecord): MemoryEpisodeRecord = write { connection ->
         val stored = episode.copy(id = episode.id ?: newId())
         connection.prepareStatement(
             """
@@ -323,7 +373,143 @@ class SqliteMemoryStore(
         stored
     }
 
-    suspend fun logWriteAttempt(
+    override suspend fun listEpisodes(
+        scopes: List<MemoryScope>,
+        statuses: Set<String>,
+    ): List<MemoryEpisodeRecord> = read { connection ->
+        val statusValues = statuses.ifEmpty { setOf("ACTIVE") }
+        val statusPlaceholders = statusValues.joinToString(",") { "?" }
+        val sql = buildString {
+            append(
+                """
+                select *
+                from memory_episode
+                where status in ($statusPlaceholders)
+                """.trimIndent()
+            )
+            if (scopes.isNotEmpty()) {
+                append(
+                    scopes.joinToString(
+                        prefix = " and (",
+                        postfix = ")",
+                        separator = " or ",
+                    ) { "(scope_type = ? and scope_id = ?)" }
+                )
+            }
+            append(" order by last_touched_at desc")
+        }
+        connection.prepareStatement(sql).use { statement ->
+            var index = 1
+            statusValues.forEach { status ->
+                statement.setString(index++, status)
+            }
+            scopes.forEach { scope ->
+                statement.setString(index++, scope.type.name)
+                statement.setString(index++, scope.id)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toEpisode())
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun replaceEmbeddingDocs(docs: List<MemoryEmbeddingDocRecord>) = write { connection ->
+        connection.createStatement().use { statement ->
+            statement.executeUpdate("delete from memory_embedding_doc")
+        }
+        docs.forEach { doc ->
+            val stored = doc.copy(id = doc.id ?: newId())
+            connection.prepareStatement(
+                """
+                insert into memory_embedding_doc(
+                    id,
+                    doc_type,
+                    source_record_type,
+                    source_record_id,
+                    scope_type,
+                    scope_id,
+                    text,
+                    status,
+                    embedding_model_fingerprint,
+                    created_at,
+                    updated_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, stored.id)
+                statement.setString(2, stored.docType.name)
+                statement.setString(3, stored.sourceRecordType)
+                statement.setString(4, stored.sourceRecordId)
+                statement.setString(5, stored.scope.type.name)
+                statement.setString(6, stored.scope.id)
+                statement.setString(7, stored.text)
+                statement.setString(8, stored.status)
+                statement.setNullableString(9, stored.embeddingModelFingerprint)
+                statement.setInstantText(10, stored.createdAt)
+                statement.setInstantText(11, stored.updatedAt)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    override suspend fun listEmbeddingDocs(
+        scopes: List<MemoryScope>,
+        docTypes: Set<MemoryDocType>,
+        fingerprint: String?,
+    ): List<MemoryEmbeddingDocRecord> = read { connection ->
+        val sql = buildString {
+            append(
+                """
+                select *
+                from memory_embedding_doc
+                where status = 'ACTIVE'
+                """.trimIndent()
+            )
+            if (fingerprint != null) {
+                append(" and embedding_model_fingerprint = ?")
+            }
+            if (docTypes.isNotEmpty()) {
+                append(docTypes.joinToString(prefix = " and doc_type in (", postfix = ")", separator = ",") { "?" })
+            }
+            if (scopes.isNotEmpty()) {
+                append(
+                    scopes.joinToString(
+                        prefix = " and (",
+                        postfix = ")",
+                        separator = " or ",
+                    ) { "(scope_type = ? and scope_id = ?)" }
+                )
+            }
+            append(" order by updated_at desc")
+        }
+        connection.prepareStatement(sql).use { statement ->
+            var index = 1
+            if (fingerprint != null) {
+                statement.setString(index++, fingerprint)
+            }
+            docTypes.forEach { docType ->
+                statement.setString(index++, docType.name)
+            }
+            scopes.forEach { scope ->
+                statement.setString(index++, scope.type.name)
+                statement.setString(index++, scope.id)
+            }
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toEmbeddingDoc())
+                    }
+                }
+            }
+        }
+    }
+
+    override suspend fun logWriteAttempt(
         scope: MemoryScope,
         turnRef: String?,
         triggerType: MemoryTriggerType,
@@ -332,7 +518,7 @@ class SqliteMemoryStore(
         acceptedCount: Int,
         rejectedCount: Int,
         rejectionReasonsJson: String?,
-        createdAt: Instant = Instant.now(),
+        createdAt: Instant,
     ): String = write { connection ->
         val id = newId()
         connection.prepareStatement(
@@ -369,14 +555,35 @@ class SqliteMemoryStore(
         id
     }
 
-    suspend fun logInjection(
+    suspend fun logWriteAttempt(
+        scope: MemoryScope,
+        turnRef: String?,
+        triggerType: MemoryTriggerType,
+        inputExcerpt: String?,
+        candidatesJson: String,
+        acceptedCount: Int,
+        rejectedCount: Int,
+        rejectionReasonsJson: String?,
+    ): String = logWriteAttempt(
+        scope = scope,
+        turnRef = turnRef,
+        triggerType = triggerType,
+        inputExcerpt = inputExcerpt,
+        candidatesJson = candidatesJson,
+        acceptedCount = acceptedCount,
+        rejectedCount = rejectedCount,
+        rejectionReasonsJson = rejectionReasonsJson,
+        createdAt = Instant.now(),
+    )
+
+    override suspend fun logInjection(
         scope: MemoryScope,
         turnRef: String?,
         queryExcerpt: String?,
         selectedRecordIds: List<String>,
         renderedPacket: String,
         estimatedTokens: Int,
-        createdAt: Instant = Instant.now(),
+        createdAt: Instant,
     ): String = write { connection ->
         val id = newId()
         connection.prepareStatement(
@@ -408,6 +615,23 @@ class SqliteMemoryStore(
         }
         id
     }
+
+    suspend fun logInjection(
+        scope: MemoryScope,
+        turnRef: String?,
+        queryExcerpt: String?,
+        selectedRecordIds: List<String>,
+        renderedPacket: String,
+        estimatedTokens: Int,
+    ): String = logInjection(
+        scope = scope,
+        turnRef = turnRef,
+        queryExcerpt = queryExcerpt,
+        selectedRecordIds = selectedRecordIds,
+        renderedPacket = renderedPacket,
+        estimatedTokens = estimatedTokens,
+        createdAt = Instant.now(),
+    )
 
     override suspend fun graphSnapshot(scope: MemoryScope): MemoryGraphSnapshot = read { connection ->
         val facts = connection.loadFacts(scope)
@@ -460,6 +684,8 @@ class SqliteMemoryStore(
 
     override suspend fun invalidateFact(factId: String, at: Instant): Boolean =
         updateFactStatus(factId = factId, status = MemoryFactStatus.INVALIDATED, at = at)
+
+    override suspend fun rebuildProjection() = Unit
 
     private suspend fun updateFactStatus(
         factId: String,
@@ -773,6 +999,40 @@ class SqliteMemoryStore(
             contentExcerpt = getString("content_excerpt"),
             contentJson = getString("content_json"),
             createdAt = instant("created_at"),
+        )
+
+    private fun ResultSet.toEpisode(): MemoryEpisodeRecord =
+        MemoryEpisodeRecord(
+            id = getString("id"),
+            scope = MemoryScope(
+                type = ru.souz.agent.memory.MemoryScopeType.valueOf(getString("scope_type")),
+                id = getString("scope_id"),
+            ),
+            title = getString("title"),
+            summary = getString("summary"),
+            status = getString("status"),
+            startedAt = instant("started_at"),
+            endedAt = instantOrNull("ended_at"),
+            lastTouchedAt = instant("last_touched_at"),
+            nextAction = getString("next_action"),
+            importance = getObject("importance")?.let { getDouble("importance") },
+        )
+
+    private fun ResultSet.toEmbeddingDoc(): MemoryEmbeddingDocRecord =
+        MemoryEmbeddingDocRecord(
+            id = getString("id"),
+            docType = MemoryDocType.valueOf(getString("doc_type")),
+            sourceRecordType = getString("source_record_type"),
+            sourceRecordId = getString("source_record_id"),
+            scope = MemoryScope(
+                type = ru.souz.agent.memory.MemoryScopeType.valueOf(getString("scope_type")),
+                id = getString("scope_id"),
+            ),
+            text = getString("text"),
+            status = getString("status"),
+            embeddingModelFingerprint = getString("embedding_model_fingerprint"),
+            createdAt = instant("created_at"),
+            updatedAt = instant("updated_at"),
         )
 
     private fun ResultSet.instant(column: String): Instant =

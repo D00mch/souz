@@ -9,10 +9,17 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import org.slf4j.LoggerFactory
+import ru.souz.agent.memory.MemoryScope
+import ru.souz.agent.memory.MemoryScopeType
+import ru.souz.agent.memory.MemoryTriggerType
+import ru.souz.agent.memory.MemoryWriteInput
+import ru.souz.agent.memory.MemoryWriteService
+import ru.souz.agent.memory.NoOpMemoryRuntimeServices
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.session.GraphSessionService
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -22,6 +29,7 @@ class AgentFacade internal constructor(
     private val executor: AgentExecutor,
     private val sessionService: GraphSessionService,
     private val agentToolExecutor: AgentToolExecutor,
+    private val memoryWriteService: MemoryWriteService = NoOpMemoryRuntimeServices,
 ) {
     private val l = LoggerFactory.getLogger(AgentFacade::class.java)
 
@@ -103,18 +111,66 @@ class AgentFacade internal constructor(
         cancelActiveJob()
         sessionService.startTask(input)
         return try {
+            val executionContext = currentContextWithSessionConversationId(_currentContext.value)
             val result = executor.executeWithTrace(
                 agentId = _activeAgentId.value,
-                context = _currentContext.value,
+                context = executionContext,
                 input = input,
             ) { step, node, from, to ->
                 sessionService.onStep(step, node, from, to)
             }
-            _currentContext.emit(result.context)
+            val completedContext = result.context.withConversationIdIfMissing(
+                executionContext.toolInvocationMeta.conversationId,
+            )
+            _currentContext.emit(completedContext)
+            runCatching {
+                memoryWriteService.write(
+                    MemoryWriteInput(
+                        userMessage = input,
+                        assistantMessage = result.output,
+                        toolOutputs = completedContext.history
+                            .drop(executionContext.history.size)
+                            .filter { it.role == LLMMessageRole.function }
+                            .map(ru.souz.llms.LLMRequest.Message::content)
+                            .filter(String::isNotBlank),
+                        scope = memoryScopeFor(completedContext),
+                        turnRef = completedContext.toolInvocationMeta.conversationId,
+                        triggerType = MemoryTriggerType.TASK_STATE_CHANGE,
+                    )
+                )
+            }.onFailure { error ->
+                l.warn("Memory write degraded to no-op after agent execution", error)
+            }
             result.output
         } finally {
             runCatching { sessionService.finishTask() }
                 .onFailure { e -> l.warn("sessionService fail", e) }
         }
     }
+
+    private fun currentContextWithSessionConversationId(context: AgentContext<String>): AgentContext<String> {
+        val sessionId = sessionService.currentSessionId() ?: return context
+        if (!context.toolInvocationMeta.conversationId.isNullOrBlank()) {
+            return context
+        }
+        return context.withConversationIdIfMissing(sessionId)
+    }
+
+    private fun memoryScopeFor(context: AgentContext<String>): MemoryScope {
+        val conversationId = context.toolInvocationMeta.conversationId?.trim().takeIf { !it.isNullOrEmpty() }
+        return if (conversationId != null) {
+            MemoryScope(MemoryScopeType.THREAD, conversationId)
+        } else {
+            MemoryScope(MemoryScopeType.USER, context.toolInvocationMeta.userId)
+        }
+    }
+}
+
+private fun AgentContext<String>.withConversationIdIfMissing(conversationId: String?): AgentContext<String> {
+    if (conversationId.isNullOrBlank() || !toolInvocationMeta.conversationId.isNullOrBlank()) {
+        return this
+    }
+    return copy(
+        toolInvocationMeta = toolInvocationMeta.copy(conversationId = conversationId),
+    )
 }

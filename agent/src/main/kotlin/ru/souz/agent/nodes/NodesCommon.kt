@@ -2,6 +2,11 @@ package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
+import ru.souz.agent.memory.MemoryInjectionRequest
+import ru.souz.agent.memory.MemoryRetrievalService
+import ru.souz.agent.memory.MemoryScope
+import ru.souz.agent.memory.MemoryScopeType
+import ru.souz.agent.memory.NoOpMemoryRuntimeServices
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -32,6 +37,8 @@ internal class NodesCommon(
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
+    private val memoryRetrievalService: MemoryRetrievalService = NoOpMemoryRuntimeServices,
+    private val conversationScopeType: MemoryScopeType = MemoryScopeType.THREAD,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -96,6 +103,8 @@ internal class NodesCommon(
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
         val additionalMessage: LLMRequest.Message? = appendActualInformation(
             userText = ctx.input,
+            scope = memoryScopeFor(ctx),
+            turnRef = ctx.toolInvocationMeta.conversationId,
         )
 
         val newHistory = ArrayList<LLMRequest.Message>()
@@ -121,10 +130,23 @@ internal class NodesCommon(
 
     private suspend fun appendActualInformation(
         userText: String,
+        scope: MemoryScope,
+        turnRef: String?,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
         val additionalData = ArrayList<StorredData>()
+        val memoryBlock = runCatching {
+            memoryRetrievalService.inject(
+                MemoryInjectionRequest(
+                    queryText = userText,
+                    scope = scope,
+                    turnRef = turnRef,
+                )
+            ).renderedBlock
+        }.onFailure { error ->
+            l.warn("Memory retrieval failed; continuing without memory context", error)
+        }.getOrNull()
 
         try {
             additionalData.addAll(desktopInfoRepository.search(userText))
@@ -150,12 +172,17 @@ internal class NodesCommon(
         )
         additionalData.add(StorredData("Текущие дата и время: $currentDateTime", StorredType.GENERAL_FACT))
 
-        if (additionalData.isEmpty()) return null
+        if (additionalData.isEmpty() && memoryBlock.isNullOrBlank()) return null
 
         val content = buildString {
             append("<context>\n")
             append("Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n")
             append("---\n")
+            if (!memoryBlock.isNullOrBlank()) {
+                append("<memory>\n")
+                append(memoryBlock.trim())
+                append("\n</memory>\n")
+            }
 
             additionalData.forEach { data ->
                 val typeReadable = data.type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
@@ -168,6 +195,15 @@ internal class NodesCommon(
             role = LLMMessageRole.user,
             content = content
         )
+    }
+
+    private fun memoryScopeFor(ctx: AgentContext<*>): MemoryScope {
+        val conversationId = ctx.toolInvocationMeta.conversationId?.trim().takeIf { !it.isNullOrEmpty() }
+        return if (conversationId != null) {
+            MemoryScope(conversationScopeType, conversationId)
+        } else {
+            MemoryScope(MemoryScopeType.USER, ctx.toolInvocationMeta.userId)
+        }
     }
 
     private fun buildUserGeoLocationFact(): String? = try {

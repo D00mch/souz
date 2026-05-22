@@ -11,11 +11,16 @@ internal object BackendHttpRoutes {
     const val PROVIDER_KEYS = "$V1/me/provider-keys"
     const val CHATS = "$V1/chats"
     const val OPTIONS = "$V1/options"
+    const val MEMORY = "$V1/memory"
+    const val MEMORY_OVERVIEW = "$MEMORY/overview"
+    const val MEMORY_GRAPH = "$MEMORY/graph"
+    const val MEMORY_FACTS = "$MEMORY/facts"
 
     private const val PROVIDER_PARAMETER = "{provider}"
     private const val CHAT_ID_PARAMETER = "{chatId}"
     private const val EXECUTION_ID_PARAMETER = "{executionId}"
     private const val OPTION_ID_PARAMETER = "{optionId}"
+    private const val FACT_ID_PARAMETER = "{factId}"
 
     const val PROVIDER_KEY_PATTERN = "$PROVIDER_KEYS/$PROVIDER_PARAMETER"
     const val CHAT_TITLE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/title"
@@ -29,6 +34,8 @@ internal object BackendHttpRoutes {
     const val CHAT_EXECUTION_CANCEL_PATTERN =
         "$CHATS/$CHAT_ID_PARAMETER/executions/$EXECUTION_ID_PARAMETER/cancel"
     const val OPTION_ANSWER_PATTERN = "$OPTIONS/$OPTION_ID_PARAMETER/answer"
+    const val MEMORY_FORGET_PATTERN = "$MEMORY/facts/$FACT_ID_PARAMETER/forget"
+    const val MEMORY_INVALIDATE_PATTERN = "$MEMORY/facts/$FACT_ID_PARAMETER/invalidate"
 
     fun providerKey(provider: String): String = "$PROVIDER_KEYS/$provider"
 
@@ -52,6 +59,10 @@ internal object BackendHttpRoutes {
         "$CHATS/$chatId/executions/$executionId/cancel"
 
     fun optionAnswer(optionId: Any): String = "$OPTIONS/$optionId/answer"
+
+    fun memoryForget(factId: Any): String = "$MEMORY/facts/$factId/forget"
+
+    fun memoryInvalidate(factId: Any): String = "$MEMORY/facts/$factId/invalidate"
 
     fun isV1Path(path: String): Boolean = path == V1 || path.startsWith("$V1/")
 }

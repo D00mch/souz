@@ -37,6 +37,8 @@ internal class GraphSessionService(
         steps.clear()
     }
 
+    fun currentSessionId(): String? = currentSessionId.get()
+
     fun onStep(step: StepInfo, node: Node<*, *>, from: AgentContext<*>, to: AgentContext<*>) {
         if (currentSessionId.get() == null) return
         if (step.isSubgraph) return

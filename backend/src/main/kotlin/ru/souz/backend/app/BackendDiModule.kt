@@ -42,6 +42,9 @@ import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.RuntimeProviderChatApiBuilder
 import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
+import ru.souz.backend.memory.BackendMemoryService
+import ru.souz.backend.memory.BackendMemoryStore
+import ru.souz.backend.memory.BackendUserMemoryRuntimeFactory
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
@@ -50,6 +53,7 @@ import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
+import ru.souz.backend.storage.memory.InMemoryBackendMemoryStore
 import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
@@ -60,6 +64,7 @@ import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
 import ru.souz.backend.storage.filesystem.FilesystemAgentEventRepository
 import ru.souz.backend.storage.filesystem.FilesystemAgentExecutionRepository
 import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
+import ru.souz.backend.storage.filesystem.FilesystemBackendMemoryStore
 import ru.souz.backend.storage.filesystem.FilesystemChatRepository
 import ru.souz.backend.storage.filesystem.FilesystemOptionRepository
 import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
@@ -71,6 +76,7 @@ import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
+import ru.souz.backend.storage.postgres.PostgresBackendMemoryStore
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
@@ -95,6 +101,7 @@ import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.skills.registry.FileSystemSkillRegistryConfig
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.runtimeToolsDiModule
+import ru.souz.backend.storage.filesystem.FilesystemPathSegmentCodec
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -142,6 +149,7 @@ fun backendDiModule(
             bindSingleton<UserSettingsRepository> { MemoryUserSettingsRepository() }
             bindSingleton<UserProviderKeyRepository> { MemoryUserProviderKeyRepository() }
             bindSingleton<TelegramBotBindingRepository> { MemoryTelegramBotBindingRepository() }
+            bindSingleton<BackendMemoryStore> { InMemoryBackendMemoryStore() }
         }
         StorageMode.FILESYSTEM -> {
             bindSingleton<UserRepository> { FilesystemUserRepository(appConfig.dataDir) }
@@ -159,6 +167,7 @@ fun backendDiModule(
             bindSingleton<TelegramBotBindingRepository> {
                 FilesystemTelegramBotBindingRepository(dataDir = appConfig.dataDir)
             }
+            bindSingleton<BackendMemoryStore> { FilesystemBackendMemoryStore(appConfig.dataDir) }
         }
         StorageMode.POSTGRES -> {
             bindSingleton<HikariDataSource> {
@@ -183,6 +192,7 @@ fun backendDiModule(
             bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
             bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
             bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
+            bindSingleton<BackendMemoryStore> { PostgresBackendMemoryStore(instance()) }
         }
     }
     bindSingleton {
@@ -230,6 +240,33 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        BackendUserMemoryRuntimeFactory(
+            store = instance(),
+            settingsProvider = instance(),
+            llmApiFactory = { userId, requestId ->
+                instance<LlmClientFactory>().create(
+                    ru.souz.backend.llm.BackendLlmExecutionContext(
+                        userId = userId,
+                        executionId = requestId,
+                        settingsProvider = instance(),
+                    )
+                )
+            },
+            indexDirResolver = { userId ->
+                appConfig.dataDir
+                    .resolve("memory-vector-index")
+                    .resolve(FilesystemPathSegmentCodec.encode(userId))
+            },
+        )
+    }
+    bindSingleton {
+        BackendMemoryService(
+            store = instance(),
+            runtimeFactory = instance(),
+            embeddingsFingerprint = { instance<ru.souz.db.SettingsProvider>().embeddingsModel.name },
+        )
+    }
+    bindSingleton {
         EffectiveSettingsResolver(
             baseSettingsProvider = instance(),
             userSettingsRepository = instance(),
@@ -272,6 +309,7 @@ fun backendDiModule(
             toolsFilter = instance(),
             skillCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             skillRegistryRepository = instance(),
+            memoryRuntimeFactory = instance(),
         )
     }
     bindSingleton {
@@ -286,6 +324,7 @@ fun backendDiModule(
             chatRepository = instance(),
             executionRepository = instance(),
             turnRunner = BackendConversationRuntimeTurnRunner(instance()),
+            memoryRuntimeFactory = instance(),
         )
     }
     bindSingleton {

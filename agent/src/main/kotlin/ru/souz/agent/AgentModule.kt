@@ -40,7 +40,16 @@ fun agentDiModule(
     }
     bindSingleton { AgentToolExecutor(instance<AgentTelemetry>()) }
     bindSingleton { NodesErrorHandling(instance()) }
-    bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        NodesCommon(
+            desktopInfoRepository = instance(),
+            settingsProvider = instance(),
+            agentToolExecutor = instance(),
+            defaultBrowserProvider = instance(),
+            runtimeEnvironment = instance(),
+            memoryRetrievalService = instance(),
+        )
+    }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { JsonUtils(restJsonMapper) }
@@ -89,5 +98,14 @@ fun agentDiModule(
             agentProvider = { instance<GraphBasedAgent>() }
         )
     }
-    bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        AgentFacade(
+            settingsProvider = instance(),
+            contextFactory = instance(),
+            executor = instance(),
+            sessionService = instance(),
+            agentToolExecutor = instance(),
+            memoryWriteService = instance(),
+        )
+    }
 }

@@ -128,6 +128,7 @@ class AgentExecutionServiceStateConflictTest {
             chatRepository = chatRepository,
             executionRepository = executionRepository,
             turnRunner = turnRunner,
+            memoryRuntimeFactory = testMemoryRuntimeFactory(settingsProvider),
         )
         val service = AgentExecutionService(
             chatRepository = chatRepository,

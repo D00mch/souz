@@ -6,6 +6,11 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+import ru.souz.agent.memory.MemoryScope
+import ru.souz.agent.memory.MemoryScopeType
+import ru.souz.agent.memory.MemoryTriggerType
+import ru.souz.agent.memory.MemoryWriteInput
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -18,6 +23,7 @@ import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.memory.BackendUserMemoryRuntimeFactory
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.AgentExecutionUsage
@@ -35,7 +41,9 @@ internal class AgentExecutionFinalizer(
     private val chatRepository: ChatRepository,
     private val executionRepository: AgentExecutionRepository,
     private val turnRunner: BackendConversationTurnRunner,
+    private val memoryRuntimeFactory: BackendUserMemoryRuntimeFactory,
 ) {
+    private val logger = LoggerFactory.getLogger(AgentExecutionFinalizer::class.java)
     private val sessionRepository = AgentStateBackedSessionRepository(agentStateRepository)
 
     suspend fun runExecution(
@@ -65,6 +73,7 @@ internal class AgentExecutionFinalizer(
                     execution = execution,
                     executionOutcome = executionOutcome,
                     conversationKey = conversationKey,
+                    turnRequest = turnRequest,
                     eventSink = eventSink,
                 )
 
@@ -295,6 +304,7 @@ internal class AgentExecutionFinalizer(
         execution: AgentExecution,
         executionOutcome: BackendConversationTurnOutcome.Completed,
         conversationKey: AgentConversationKey,
+        turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ): PersistedExecutionResult {
         val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
@@ -317,6 +327,22 @@ internal class AgentExecutionFinalizer(
             )
         )
         eventSink.emitExecutionFinished(finalExecution)
+        runCatching {
+            memoryRuntimeFactory.create(
+                userId = execution.userId,
+                requestId = execution.id.toString(),
+            ).write(
+                MemoryWriteInput(
+                    userMessage = turnRequest.prompt,
+                    assistantMessage = executionOutcome.output,
+                    scope = MemoryScope(MemoryScopeType.CHAT, conversationKey.conversationId),
+                    turnRef = conversationKey.conversationId,
+                    triggerType = MemoryTriggerType.TASK_STATE_CHANGE,
+                )
+            )
+        }.onFailure { error ->
+            logger.warn("Backend memory write degraded to no-op after execution {}", execution.id, error)
+        }
 
         return PersistedExecutionResult(
             assistantMessage = assistantMessage,

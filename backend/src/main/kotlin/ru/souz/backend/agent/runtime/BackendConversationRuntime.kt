@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.memory.MemoryScopeType
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
@@ -18,6 +19,7 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.memory.BackendUserMemoryRuntimeFactory
 import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -127,6 +129,7 @@ class BackendConversationRuntimeFactory(
     private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCommandTool: LLMToolSetup? = null,
+    private val memoryRuntimeFactory: BackendUserMemoryRuntimeFactory? = null,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -156,6 +159,10 @@ class BackendConversationRuntimeFactory(
             delegate = delegateApi,
             initialUsage = initialUsage,
         )
+        val memoryRuntime = memoryRuntimeFactory?.create(
+            userId = key.userId,
+            requestId = request.executionId ?: key.conversationId,
+        )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
@@ -168,6 +175,8 @@ class BackendConversationRuntimeFactory(
                 timeZone = request.timeZone,
             ),
             mcpToolProvider = BackendNoopMcpToolProvider,
+            memoryRetrievalService = memoryRuntime ?: ru.souz.agent.memory.NoOpMemoryRuntimeServices,
+            conversationScopeType = MemoryScopeType.CHAT,
             skillCommandTool = skillCommandTool,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,

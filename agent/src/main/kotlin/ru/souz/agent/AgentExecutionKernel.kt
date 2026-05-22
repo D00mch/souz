@@ -11,6 +11,9 @@ import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.SkillActivationPipeline
+import ru.souz.agent.memory.MemoryRetrievalService
+import ru.souz.agent.memory.MemoryScopeType
+import ru.souz.agent.memory.NoOpMemoryRuntimeServices
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
@@ -41,6 +44,8 @@ class AgentExecutionKernelFactory(
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
+    private val memoryRetrievalService: MemoryRetrievalService = NoOpMemoryRuntimeServices,
+    private val conversationScopeType: MemoryScopeType = MemoryScopeType.THREAD,
     private val skillCommandTool: LLMToolSetup? = null,
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
@@ -58,6 +63,8 @@ class AgentExecutionKernelFactory(
             agentToolExecutor = agentToolExecutor,
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
+            memoryRetrievalService = memoryRetrievalService,
+            conversationScopeType = conversationScopeType,
         )
         val nodesClassification = NodesClassification(
             settingsProvider = settingsProvider,

@@ -116,6 +116,19 @@ data class MemoryEpisodeRecord(
     val importance: Double? = null,
 )
 
+data class MemoryEmbeddingDocRecord(
+    val id: String? = null,
+    val docType: MemoryDocType,
+    val sourceRecordType: String,
+    val sourceRecordId: String,
+    val scope: MemoryScope,
+    val text: String,
+    val status: String = "ACTIVE",
+    val embeddingModelFingerprint: String? = null,
+    val createdAt: Instant = Instant.now(),
+    val updatedAt: Instant = createdAt,
+)
+
 data class MemoryCandidate(
     val subjectEntityType: String,
     val subjectCanonicalName: String,
@@ -226,4 +239,26 @@ interface MemoryGraphQueryService {
 interface MemoryMaintenanceService {
     suspend fun forgetFact(factId: String, at: Instant = Instant.now()): Boolean
     suspend fun invalidateFact(factId: String, at: Instant = Instant.now()): Boolean
+    suspend fun rebuildProjection()
+}
+
+interface MemoryRuntimeServicesContract :
+    MemoryWriteService,
+    MemoryRetrievalService,
+    MemoryGraphQueryService,
+    MemoryMaintenanceService
+
+object NoOpMemoryRuntimeServices :
+    MemoryRuntimeServicesContract {
+    override suspend fun write(input: MemoryWriteInput): MemoryWriteResult = MemoryWriteResult()
+
+    override suspend fun inject(request: MemoryInjectionRequest): MemoryInjectionResult = MemoryInjectionResult()
+
+    override suspend fun graphSnapshot(scope: MemoryScope): MemoryGraphSnapshot = MemoryGraphSnapshot()
+
+    override suspend fun forgetFact(factId: String, at: Instant): Boolean = false
+
+    override suspend fun invalidateFact(factId: String, at: Instant): Boolean = false
+
+    override suspend fun rebuildProjection() = Unit
 }

@@ -20,6 +20,7 @@ internal fun Route.v1Routes(deps: BackendHttpDependencies) {
     messageRoutes(deps)
     eventRoutes(deps)
     choiceRoutes(deps)
+    memoryRoutes(deps)
 }
 
 internal fun Route.bootstrapRoutes(deps: BackendHttpDependencies) {

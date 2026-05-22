@@ -7,6 +7,11 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.agentDiModule
+import ru.souz.agent.memory.MemoryGraphQueryService
+import ru.souz.agent.memory.MemoryMaintenanceService
+import ru.souz.agent.memory.MemoryRetrievalService
+import ru.souz.agent.memory.MemoryRuntimeServicesContract
+import ru.souz.agent.memory.MemoryWriteService
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
@@ -126,6 +131,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<DesktopIndexRepository> { instance<DesktopInfoRepository>() }
+    bindSingleton { DesktopMemoryRuntimeFactory(settingsProvider = instance(), embeddingsApi = instance()) }
+    bindSingleton<MemoryRuntimeServicesContract> { instance<DesktopMemoryRuntimeFactory>().create() }
+    bindSingleton<MemoryWriteService> { instance<MemoryRuntimeServicesContract>() }
+    bindSingleton<MemoryRetrievalService> { instance<MemoryRuntimeServicesContract>() }
+    bindSingleton<MemoryGraphQueryService> { instance<MemoryRuntimeServicesContract>() }
+    bindSingleton<MemoryMaintenanceService> { instance<MemoryRuntimeServicesContract>() }
     bindSingleton<ToolAvailabilityPolicy> { DesktopToolAvailabilityPolicy(instance()) }
     bindSingleton { ToolsSettings(instance(), instance(), instance()) }
     bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }

@@ -12,6 +12,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import java.io.File
+import java.nio.file.Files
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -44,6 +45,8 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.memory.BackendMemoryService
+import ru.souz.backend.memory.BackendUserMemoryRuntimeFactory
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
@@ -67,6 +70,7 @@ import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
 import ru.souz.backend.storage.memory.MemoryAgentEventRepository
 import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.backend.storage.memory.MemoryChatRepository
+import ru.souz.backend.storage.memory.InMemoryBackendMemoryStore
 import ru.souz.backend.storage.memory.MemoryOptionRepository
 import ru.souz.backend.storage.memory.MemoryMessageRepository
 import ru.souz.backend.storage.memory.MemoryToolCallRepository
@@ -1158,6 +1162,8 @@ internal data class RouteTestContext(
     val toolCallRepository: MemoryToolCallRepository,
     val eventService: AgentEventService,
     val stateRepository: MemoryAgentStateRepository,
+    val memoryStore: InMemoryBackendMemoryStore,
+    val memoryService: BackendMemoryService,
     val bootstrapService: BackendBootstrapService,
     val onboardingService: BackendOnboardingService,
     val userSettingsService: UserSettingsService,
@@ -1187,6 +1193,7 @@ internal fun routeTestContext(
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
     toolCallRepository: MemoryToolCallRepository = MemoryToolCallRepository(),
     stateRepository: MemoryAgentStateRepository = MemoryAgentStateRepository(),
+    memoryStore: InMemoryBackendMemoryStore = InMemoryBackendMemoryStore(),
     toolCatalog: AgentToolCatalog = toolCatalog(
         ToolCategory.FILES to fakeTool("ListFiles"),
         ToolCategory.BROWSER to fakeTool("OpenBrowser"),
@@ -1218,6 +1225,14 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
         skillRegistryRepository = TestSkillRegistryRepository,
+        memoryRuntimeFactory = BackendUserMemoryRuntimeFactory(
+            store = memoryStore,
+            settingsProvider = settingsProvider,
+            llmApiFactory = { _, _ -> llmApi },
+            indexDirResolver = { userId ->
+                Files.createTempDirectory("backend-memory-index-").resolve(userId)
+            },
+        ),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)
     val requestFactory = AgentExecutionRequestFactory(
@@ -1229,6 +1244,22 @@ internal fun routeTestContext(
         chatRepository = chatRepository,
         executionRepository = executionRepository,
         turnRunner = conversationTurnRunner,
+        memoryRuntimeFactory = BackendUserMemoryRuntimeFactory(
+            store = memoryStore,
+            settingsProvider = settingsProvider,
+            llmApiFactory = { _, _ -> llmApi },
+            indexDirResolver = { userId ->
+                Files.createTempDirectory("backend-memory-index-").resolve(userId)
+            },
+        ),
+    )
+    val memoryRuntimeFactory = BackendUserMemoryRuntimeFactory(
+        store = memoryStore,
+        settingsProvider = settingsProvider,
+        llmApiFactory = { _, _ -> llmApi },
+        indexDirResolver = { userId ->
+            Files.createTempDirectory("backend-memory-index-").resolve(userId)
+        },
     )
     val executionService = AgentExecutionService(
         chatRepository = chatRepository,
@@ -1275,6 +1306,11 @@ internal fun routeTestContext(
         messageRepository = messageRepository,
         executionService = executionService,
     )
+    val memoryService = BackendMemoryService(
+        store = memoryStore,
+        runtimeFactory = memoryRuntimeFactory,
+        embeddingsFingerprint = { settingsProvider.embeddingsModel.name },
+    )
     val onboardingService = BackendOnboardingService(
         bootstrapService = bootstrapService,
         userSettingsRepository = userSettingsRepository,
@@ -1294,6 +1330,8 @@ internal fun routeTestContext(
         toolCallRepository = toolCallRepository,
         eventService = eventService,
         stateRepository = stateRepository,
+        memoryStore = memoryStore,
+        memoryService = memoryService,
         bootstrapService = bootstrapService,
         onboardingService = onboardingService,
         userSettingsService = userSettingsService,
