@@ -4,6 +4,8 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentErrorMessages
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.ui.approval.TelegramChatSelectionApprovalSource
 import ru.souz.ui.approval.TelegramContactSelectionApprovalSource
@@ -16,6 +18,7 @@ fun sharedUiDiModule(): DI.Module = DI.Module("sharedUi") {
     bindSingleton<AgentErrorMessages> { ComposeAgentErrorMessages() }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { FinderPathExtractor(instance()) }
+    bindSingleton<ConversationMemoryRuntime> { NoopConversationMemoryRuntime }
 
     bindSingleton { TelegramContactSelectionApprovalSource(instance()) }
     bindSingleton { TelegramChatSelectionApprovalSource(instance()) }
@@ -40,6 +43,7 @@ fun sharedUiDiModule(): DI.Module = DI.Module("sharedUi") {
             tokenLogging = instance(),
             log = instance(),
             desktopPermissionService = instance(),
+            memoryRuntime = instance(),
         )
     }
 }

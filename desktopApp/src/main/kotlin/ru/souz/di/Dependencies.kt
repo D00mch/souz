@@ -84,6 +84,16 @@ import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.DesktopConversationMemoryRuntime
+import ru.souz.memory.EmbeddingClient
+import ru.souz.memory.LlmEmbeddingClient
+import ru.souz.memory.LlmMemoryWriter
+import ru.souz.memory.MemoryCaptureService
+import ru.souz.memory.MemoryRepository
+import ru.souz.memory.MemoryService
+import ru.souz.memory.MemoryWriter
+import ru.souz.memory.SqliteMemoryRepository
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.DesktopIndexRepository
 import ru.souz.ui.host.DesktopPermissionService
@@ -124,6 +134,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { VectorDB }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
+    bindSingleton<MemoryRepository> { SqliteMemoryRepository(instance<ru.souz.paths.SouzPaths>().stateRoot.resolve("memory.db")) }
+    bindSingleton<EmbeddingClient> { LlmEmbeddingClient(instance(), instance()) }
+    bindSingleton<MemoryWriter> { LlmMemoryWriter(instance(), instance()) }
+    bindSingleton { MemoryService(instance(), instance()) }
+    bindSingleton { MemoryCaptureService(instance(), instance()) }
+    bindSingleton<ConversationMemoryRuntime>(overrides = true) { DesktopConversationMemoryRuntime(instance(), instance()) }
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<DesktopIndexRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<ToolAvailabilityPolicy> { DesktopToolAvailabilityPolicy(instance()) }

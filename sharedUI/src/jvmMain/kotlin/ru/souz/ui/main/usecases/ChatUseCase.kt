@@ -20,6 +20,8 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.plus
+import ru.souz.memory.CompletedTurnMemoryInput
+import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.ChatConversationCloseReason
 import ru.souz.service.observability.ChatRequestLogContext
@@ -45,6 +47,7 @@ class ChatUseCase internal constructor(
     private val observabilityTracker: ChatObservabilityTracker,
     private val log: DesktopStructuredLogger,
     private val tokenLogging: TokenLogging,
+    private val memoryRuntime: ConversationMemoryRuntime,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
@@ -342,7 +345,19 @@ class ChatUseCase internal constructor(
             session.requestContext.asCoroutineContext() +
             tokenLogging.requestContextElement(session.requestContext.requestId)
     ) {
-        agentFacade.execute(userText)
+        val baseSystemPrompt = agentFacade.currentContext.value.systemPrompt
+        val effectiveSystemPrompt = runCatching {
+            memoryRuntime.buildSystemPrompt(
+                baseSystemPrompt = baseSystemPrompt,
+                userMessage = userText,
+                conversationId = session.requestContext.conversationId,
+            )
+        }.onFailure { l.warn("Memory retrieval failed: {}", it.message) }
+            .getOrDefault(baseSystemPrompt)
+        agentFacade.executeWithSystemPrompt(
+            input = userText,
+            systemPromptOverride = effectiveSystemPrompt,
+        )
     }
 
     /**
@@ -444,6 +459,19 @@ class ChatUseCase internal constructor(
         }
         session.responseLengthChars = response.botMessage.text.length
         onResult?.invoke(Result.success(response.botMessage.text))
+        scope.launch(ioDispatcher) {
+            runCatching {
+                memoryRuntime.captureCompletedTurn(
+                    CompletedTurnMemoryInput(
+                        conversationId = session.requestContext.conversationId,
+                        userMessageId = session.userMessage.id,
+                        assistantMessageId = response.botMessage.id,
+                        userMessage = session.userMessage.text,
+                        assistantMessage = response.botMessage.text,
+                    )
+                )
+            }.onFailure { l.warn("Memory capture failed: {}", it.message) }
+        }
     }
 
     /**

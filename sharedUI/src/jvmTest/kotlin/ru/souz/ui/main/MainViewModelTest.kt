@@ -49,6 +49,7 @@ import ru.souz.llms.TokenLogging
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMResponse.FunctionCall
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
@@ -1019,7 +1020,7 @@ class MainViewModelTest {
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
-        coEvery { agentFacade.execute(any()) } coAnswers {
+        coEvery { agentFacade.executeWithSystemPrompt(any(), any()) } coAnswers {
             executeBehavior.invoke(firstArg())
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
@@ -1133,6 +1134,7 @@ class MainViewModelTest {
                     instance(),
                     instance(),
                     instance(),
+                    NoopConversationMemoryRuntime,
                 )
             }
         }

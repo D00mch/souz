@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import ru.souz.agent.AgentFacade
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.TokenLogging
+import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.speech.SpeechRecognitionProvider
@@ -36,6 +37,7 @@ class MainUseCasesFactory(
     private val tokenLogging: TokenLogging,
     private val log: DesktopStructuredLogger,
     private val desktopPermissionService: DesktopPermissionService,
+    private val memoryRuntime: ConversationMemoryRuntime,
 ) {
 
     fun create(ioDispatcher: CoroutineDispatcher): MainUseCases {
@@ -54,6 +56,7 @@ class MainUseCasesFactory(
             observabilityTracker = ChatObservabilityTracker(log = log),
             log = log,
             tokenLogging = tokenLogging,
+            memoryRuntime = memoryRuntime,
             ioDispatcher = ioDispatcher,
         )
         val permissionsUseCase = PermissionsUseCase(

@@ -9,15 +9,21 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.service.observability.ChatConversationCloseReason
 import ru.souz.service.observability.ChatConversationMetrics
 import ru.souz.service.observability.ChatObservabilityTracker
@@ -35,10 +41,23 @@ class ChatUseCaseTest {
         val finished = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
+        every { agentFacade.currentContext } returns MutableStateFlow(
+            AgentContext(
+                input = "",
+                settings = AgentSettings(
+                    model = "model",
+                    temperature = 0f,
+                    toolsByCategory = emptyMap(),
+                ),
+                history = listOf(LLMRequest.Message(LLMMessageRole.system, "Base system prompt")),
+                activeTools = emptyList(),
+                systemPrompt = "Base system prompt",
+            )
+        )
         every { agentFacade.cancelActiveJob() } answers {
             executeResult.completeExceptionally(CancellationException("view model cleared"))
         }
-        coEvery { agentFacade.execute("hello") } coAnswers {
+        coEvery { agentFacade.executeWithSystemPrompt("hello", any()) } coAnswers {
             executeStarted.complete(Unit)
             executeResult.await()
         }
@@ -64,6 +83,7 @@ class ChatUseCaseTest {
             observabilityTracker = tracker,
             log = DesktopStructuredLogger(),
             tokenLogging = tokenLogging,
+            memoryRuntime = NoopConversationMemoryRuntime,
             ioDispatcher = UnconfinedTestDispatcher(testScheduler),
         )
 
