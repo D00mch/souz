@@ -35,6 +35,7 @@ data class UserSettings(
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
+    val memoryEnabled: Boolean? = null,
     val toolPermissions: Map<String, ToolPermission> = emptyMap(),
     val mcp: Map<String, UserMcpServer> = emptyMap(),
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,

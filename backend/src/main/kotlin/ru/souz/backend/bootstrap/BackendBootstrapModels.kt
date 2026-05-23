@@ -48,4 +48,5 @@ data class BootstrapSettings(
     val interfaceLanguage: String,
     val requestTimeoutMillis: Long,
     val useFewShotExamples: Boolean,
+    val memoryEnabled: Boolean,
 )

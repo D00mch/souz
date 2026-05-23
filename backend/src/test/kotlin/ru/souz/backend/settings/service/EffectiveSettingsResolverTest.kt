@@ -30,6 +30,7 @@ class EffectiveSettingsResolverTest {
             useStreaming = true
             contextSize = 24_000
             temperature = 0.6f
+            memoryEnabled = true
         }
         val repository = MemoryUserSettingsRepository()
         repository.save(
@@ -47,6 +48,7 @@ class EffectiveSettingsResolverTest {
                     interfaceLanguage = "en",
                     requestTimeoutMillis = 45_000L,
                     useFewShotExamples = false,
+                    memoryEnabled = false,
                     toolPermissions = emptyMap(),
                     mcp = emptyMap(),
                 )
@@ -73,6 +75,7 @@ class EffectiveSettingsResolverTest {
         assertEquals("en", effective.interfaceLanguage)
         assertEquals(45_000L, effective.requestTimeoutMillis)
         assertFalse(effective.useFewShotExamples)
+        assertFalse(effective.memoryEnabled)
     }
 
     @Test

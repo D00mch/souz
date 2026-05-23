@@ -34,6 +34,7 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     override var useStreaming: Boolean
     var notificationSoundEnabled: Boolean
     var voiceInputReviewEnabled: Boolean
+    var memoryEnabled: Boolean
     var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var onboardingCompleted: Boolean
@@ -72,6 +73,10 @@ class SettingsProviderImpl(
     private var _voiceInputReviewEnabledDelegate: String? by keyDelegate(
         configKey = VOICE_INPUT_REVIEW_ENABLED,
         envKey = VOICE_INPUT_REVIEW_ENABLED
+    )
+    private var _memoryEnabledDelegate: String? by keyDelegate(
+        configKey = MEMORY_ENABLED,
+        envKey = MEMORY_ENABLED
     )
     private var _safeModeDelegate: String? by keyDelegate(configKey = SAFE_MODE_ENABLED, envKey = SAFE_MODE_ENABLED)
     private var _requestTimeoutDelegate: String? by keyDelegate(
@@ -200,6 +205,12 @@ class SettingsProviderImpl(
         get() = _voiceInputReviewEnabledDelegate?.toBooleanStrictOrNull() ?: false
         set(value) {
             _voiceInputReviewEnabledDelegate = value.toString()
+        }
+
+    override var memoryEnabled: Boolean
+        get() = _memoryEnabledDelegate?.toBooleanStrictOrNull() ?: true
+        set(value) {
+            _memoryEnabledDelegate = value.toString()
         }
 
     override var safeModeEnabled: Boolean
@@ -367,6 +378,7 @@ class SettingsProviderImpl(
         private const val USE_STREAMING = "USE_STREAMING"
         private const val NOTIFICATION_SOUND_ENABLED = "NOTIFICATION_SOUND_ENABLED"
         private const val VOICE_INPUT_REVIEW_ENABLED = "VOICE_INPUT_REVIEW_ENABLED"
+        private const val MEMORY_ENABLED = "MEMORY_ENABLED"
         private const val SAFE_MODE_ENABLED = "SAFE_MODE_ENABLED"
         private const val USE_GRPC_LEGACY = "USE_GRPC"
         private const val SUPPORT_EMAIL = "SUPPORT_EMAIL"

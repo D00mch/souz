@@ -27,6 +27,11 @@ enum class MemoryFactStatus {
     INVALIDATED,
 }
 
+enum class MemoryConflictPolicy {
+    ALLOW_MULTIPLE_ACTIVE,
+    SINGLE_ACTIVE_PER_SLOT,
+}
+
 enum class MemoryEvidenceType {
     USER_MESSAGE,
     ASSISTANT_MESSAGE,
@@ -148,6 +153,7 @@ data class MemoryCandidate(
     val reasonToStore: String,
     val evidenceRefs: List<String>,
     val suggestedStatus: MemoryFactStatus = MemoryFactStatus.ACTIVE,
+    val conflictPolicy: MemoryConflictPolicy = MemoryConflictPolicy.ALLOW_MULTIPLE_ACTIVE,
 )
 
 data class MemoryWriteInput(

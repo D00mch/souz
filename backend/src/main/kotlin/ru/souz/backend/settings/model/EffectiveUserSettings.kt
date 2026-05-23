@@ -18,6 +18,7 @@ data class EffectiveUserSettings(
     val interfaceLanguage: String,
     val requestTimeoutMillis: Long,
     val useFewShotExamples: Boolean,
+    val memoryEnabled: Boolean,
     val toolPermissions: Map<String, ToolPermission>,
     val mcp: Map<String, UserMcpServer>,
 )

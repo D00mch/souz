@@ -102,7 +102,8 @@ fun SettingsScreen(
                         SettingsSubScreen.VISUALIZATION -> viewModel.send(SettingsEvent.BackToSessions)
                         SettingsSubScreen.SESSIONS,
                         SettingsSubScreen.FOLDERS,
-                        SettingsSubScreen.TELEGRAM -> viewModel.send(SettingsEvent.BackToSettings)
+                        SettingsSubScreen.TELEGRAM,
+                        SettingsSubScreen.MEMORY -> viewModel.send(SettingsEvent.BackToSettings)
                     }
                     true
                 } else {
@@ -157,6 +158,12 @@ fun SettingsScreen(
                     onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
                     onConfirmDisconnectControlBot = { viewModel.send(SettingsEvent.ConfirmDisconnectTelegramBot) },
                     onCancelDisconnectControlBot = { viewModel.send(SettingsEvent.CancelDisconnectTelegramBot) },
+                )
+            }
+            SettingsSubScreen.MEMORY -> {
+                MemoryInspectorScreen(
+                    onClose = { viewModel.send(SettingsEvent.BackToSettings) },
+                    onShowSnack = onShowSnack,
                 )
             }
         }
@@ -230,6 +237,7 @@ fun SettingsScreenMain(
                             onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
                             onNotificationSoundEnabledChange = { viewModel.send(SettingsEvent.InputNotificationSoundEnabled(it)) },
                             onVoiceInputReviewEnabledChange = { viewModel.send(SettingsEvent.InputVoiceInputReviewEnabled(it)) },
+                            onMemoryEnabledChange = { viewModel.send(SettingsEvent.InputMemoryEnabled(it)) },
                             onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
                             onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                             onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
@@ -270,6 +278,7 @@ fun SettingsScreenMain(
                             onOpenPrivacyPolicy = { viewModel.send(SettingsEvent.OpenPrivacyPolicy) },
                             clipboardManager = clipboardManager,
                             onShowSnack = onShowSnack,
+                            onOpenMemoryInspector = { viewModel.send(SettingsEvent.OpenMemoryInspector) },
                             onOpenGraphSessions = { viewModel.send(SettingsEvent.OpenGraphSessions) },
                             onClose = onClose
                         )

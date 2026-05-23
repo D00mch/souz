@@ -35,6 +35,32 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
+    fun `buildChatRequest can force a specific tool choice`() {
+        val api = createApi()
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Mini.name,
+                maxTokens = 256,
+                messages = listOf(
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Extract memory candidates"),
+                ),
+                functionCall = "propose_memory_candidates",
+                functions = listOf(function("propose_memory_candidates")),
+            ),
+            stream = false,
+        )
+
+        assertEquals(
+            mapOf(
+                "type" to "function",
+                "function" to mapOf("name" to "propose_memory_candidates"),
+            ),
+            request["tool_choice"],
+        )
+    }
+
+    @Test
     fun `buildChatRequest maps tool response to role tool with call id`() {
         val api = createApi()
         val request = invokeBuildChatRequest(

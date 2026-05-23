@@ -251,6 +251,75 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `memory toggle updates provider and state`() = runTest(dispatcher) {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.regionProfile } returns REGION_RU
+        every { settingsProvider.regionProfile = any() } just runs
+        every { settingsProvider.gigaChatKey } returns "giga-key"
+        every { settingsProvider.qwenChatKey } returns ""
+        every { settingsProvider.aiTunnelKey } returns ""
+        every { settingsProvider.anthropicKey } returns ""
+        every { settingsProvider.openaiKey } returns ""
+        every { settingsProvider.saluteSpeechKey } returns ""
+        every { settingsProvider.gigaModel } returns LLMModel.Max
+        every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
+        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
+        every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
+        every { settingsProvider.supportEmail } returns null
+        every { settingsProvider.mcpServersJson } returns null
+        every { settingsProvider.defaultCalendar } returns null
+        every { settingsProvider.useFewShotExamples } returns false
+        every { settingsProvider.useStreaming } returns false
+        every { settingsProvider.notificationSoundEnabled } returns true
+        every { settingsProvider.voiceInputReviewEnabled } returns false
+        every { settingsProvider.safeModeEnabled } returns true
+        every { settingsProvider.requestTimeoutMillis } returns 40_000L
+        every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
+        every { settingsProvider.temperature } returns 0.7f
+        every { settingsProvider.memoryEnabled } returns true
+        every { settingsProvider.memoryEnabled = any() } just runs
+
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
+        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
+        val chatApi = mockk<LLMChatAPI>(relaxed = true)
+        val telegramService = mockk<TelegramUiService>(relaxed = true)
+        every { telegramService.isSupported() } returns true
+        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
+        val localModelStore = mockk<LocalModelStore>(relaxed = true)
+        val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
+        val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
+        coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
+
+        val di = DI {
+            bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<DesktopIndexRepository> { desktopInfoRepository }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton { localModelStore }
+            bindSingleton { localLlamaRuntime }
+            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
+            bindSingleton<LLMChatAPI> { chatApi }
+            bindSingleton<AgentFacade> { agentFacade }
+            bindSingleton<TelegramUiService> { telegramService }
+            bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
+            bindSingleton<CalendarListProvider> { { emptyList() } }
+            bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
+        }
+
+        val viewModel = SettingsViewModel(di)
+        advanceUntilIdle()
+
+        viewModel.handleEvent(SettingsEvent.InputMemoryEnabled(false))
+        advanceUntilIdle()
+
+        assertEquals(false, viewModel.uiState.value.memoryEnabled)
+        verify(exactly = 1) { settingsProvider.memoryEnabled = false }
+    }
+
+    @Test
     fun `init opens download prompt when persisted local model misses linked embeddings`() = runTest(dispatcher) {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU

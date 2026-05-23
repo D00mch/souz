@@ -37,6 +37,7 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettin
             parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
         },
         useFewShotExamples = useFewShotExamples,
+        memoryEnabled = memoryEnabled,
     )
 
 internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserSettingsOverrides =
@@ -55,6 +56,7 @@ internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserS
             parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
         },
         useFewShotExamples = useFewShotExamples,
+        memoryEnabled = memoryEnabled,
     )
 
 internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSettingsOverrides =

@@ -153,6 +153,10 @@ class SettingsViewModel(
                 keysProvider.voiceInputReviewEnabled = event.enabled
                 setState { copy(voiceInputReviewEnabled = event.enabled) }
             }
+            is InputMemoryEnabled -> {
+                keysProvider.memoryEnabled = event.enabled
+                setState { copy(memoryEnabled = event.enabled) }
+            }
             is InputUseEnglishVersion -> {
                 val newLanguage = if (event.enabled) REGION_EN else REGION_RU
                 if (keysProvider.regionProfile != newLanguage) {
@@ -327,6 +331,7 @@ class SettingsViewModel(
             BackToSessions -> setState { copy(currentScreen = SettingsSubScreen.SESSIONS, selectedSessionId = null) }
             OpenFoldersManagement -> setState { copy(currentScreen = SettingsSubScreen.FOLDERS) }
             OpenTelegramSettings -> setState { copy(currentScreen = SettingsSubScreen.TELEGRAM) }
+            OpenMemoryInspector -> setState { copy(currentScreen = SettingsSubScreen.MEMORY) }
             CreateControlBot -> createTelegramBot()
             DisconnectTelegramBot -> checkBotBeforeDisconnect()
             ConfirmDisconnectTelegramBot -> disconnectBot()
@@ -538,6 +543,7 @@ class SettingsViewModel(
                 useStreaming = keysProvider.useStreaming,
                 notificationSoundEnabled = keysProvider.notificationSoundEnabled,
                 voiceInputReviewEnabled = keysProvider.voiceInputReviewEnabled,
+                memoryEnabled = keysProvider.memoryEnabled,
                 useEnglishVersion = keysProvider.regionProfile == REGION_EN,
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 activeAgentId = activeAgentId,

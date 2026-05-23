@@ -138,6 +138,7 @@ class BackendStage3RouteTest {
                     interfaceLanguage = "en",
                     requestTimeoutMillis = 45_000L,
                     useFewShotExamples = false,
+                    memoryEnabled = false,
                 )
             )
         }
@@ -171,6 +172,7 @@ class BackendStage3RouteTest {
         assertEquals("en", settings["interfaceLanguage"].asText())
         assertEquals(45_000, settings["requestTimeoutMillis"].asLong())
         assertEquals(false, settings["useFewShotExamples"].asBoolean())
+        assertEquals(false, settings["memoryEnabled"].asBoolean())
     }
 
     @Test
@@ -206,7 +208,8 @@ class BackendStage3RouteTest {
                   "streamingMessages": false,
                   "interfaceLanguage": "en",
                   "requestTimeoutMillis": 45000,
-                  "useFewShotExamples": false
+                  "useFewShotExamples": false,
+                  "memoryEnabled": false
                 }
                 """.trimIndent()
             )
@@ -228,11 +231,13 @@ class BackendStage3RouteTest {
         assertEquals("en", settings["interfaceLanguage"].asText())
         assertEquals(45_000L, settings["requestTimeoutMillis"].asLong())
         assertEquals(false, settings["useFewShotExamples"].asBoolean())
+        assertEquals(false, settings["memoryEnabled"].asBoolean())
         assertEquals(LLMModel.QwenMax, storedIntent?.defaultModel)
         assertEquals(setOf("ListFiles", "OpenBrowser"), storedIntent?.enabledTools)
         assertEquals("en", storedIntent?.interfaceLanguage)
         assertEquals(45_000L, storedIntent?.requestTimeoutMillis)
         assertEquals(false, storedIntent?.useFewShotExamples)
+        assertEquals(false, storedIntent?.memoryEnabled)
     }
 
     @Test
@@ -659,6 +664,7 @@ class BackendStage3RouteTest {
         assertEquals("ru", settingsPayload["interfaceLanguage"].asText())
         assertEquals(context.settingsProvider.requestTimeoutMillis, settingsPayload["requestTimeoutMillis"].asLong())
         assertEquals(true, settingsPayload["useFewShotExamples"].asBoolean())
+        assertEquals(true, settingsPayload["memoryEnabled"].asBoolean())
     }
 
     @Test
@@ -1419,6 +1425,9 @@ internal class CapturingChatApi : LLMChatAPI {
         if (body.isClassificationRequest()) {
             return reply(body, "HELP 90")
         }
+        if (body.isMemoryCandidateRequest()) {
+            return reply(body, """{"candidates":[]}""")
+        }
         finalRequests += body
         return reply(body, "assistant reply to ${body.conversationPrompt()}")
     }
@@ -1457,6 +1466,12 @@ internal class CapturingChatApi : LLMChatAPI {
             usage = LLMResponse.Usage(7, 3, 10, 0),
         )
 }
+
+private fun LLMRequest.Chat.isMemoryCandidateRequest(): Boolean =
+    messages.firstOrNull { it.role == LLMMessageRole.system }
+        ?.content
+        ?.startsWith("You extract future-useful long-term memory candidates from evidence.")
+        ?: false
 
 internal class FailingChatApi : LLMChatAPI {
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {

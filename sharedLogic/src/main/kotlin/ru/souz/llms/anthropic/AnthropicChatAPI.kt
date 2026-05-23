@@ -304,11 +304,21 @@ class AnthropicChatAPI(
         val tools = buildTools(body.functions)
         if (tools.isNotEmpty()) {
             request["tools"] = tools.withLastToolCacheControl()
-            request["tool_choice"] = mapOf("type" to "auto")
+            request["tool_choice"] = anthropicToolChoice(body.functionCall)
         }
 
         return request
     }
+
+    private fun anthropicToolChoice(functionCall: String): Map<String, String> =
+        if (functionCall == "auto") {
+            mapOf("type" to "auto")
+        } else {
+            mapOf(
+                "type" to "tool",
+                "name" to functionCall,
+            )
+        }
 
     private fun buildSystemPrompt(messages: List<LLMRequest.Message>): List<Map<String, Any>>? {
         val prompt = messages

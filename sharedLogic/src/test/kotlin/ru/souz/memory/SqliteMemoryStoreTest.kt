@@ -270,6 +270,35 @@ class SqliteMemoryStoreTest {
     }
 
     @Test
+    fun `latest activity scope follows most recent diagnostic row`() = runTest {
+        val store = createStore("sqlite-memory-latest-scope")
+        val userScope = userScope()
+        val threadScope = MemoryScope(MemoryScopeType.THREAD, "thread-42")
+        store.logWriteAttempt(
+            scope = userScope,
+            turnRef = "turn-1",
+            triggerType = MemoryTriggerType.TASK_STATE_CHANGE,
+            inputExcerpt = "Older activity",
+            candidatesJson = "[]",
+            acceptedCount = 0,
+            rejectedCount = 1,
+            rejectionReasonsJson = """["LLM_OUTPUT_INVALID"]""",
+            createdAt = Instant.parse("2026-05-21T10:00:00Z"),
+        )
+        store.logInjection(
+            scope = threadScope,
+            turnRef = "turn-2",
+            queryExcerpt = "Newer activity",
+            selectedRecordIds = emptyList(),
+            renderedPacket = "",
+            estimatedTokens = 0,
+            createdAt = Instant.parse("2026-05-21T11:00:00Z"),
+        )
+
+        assertEquals(threadScope, store.latestActivityScope())
+    }
+
+    @Test
     fun `graph snapshot returns entity edges`() = runTest {
         val store = createStore("sqlite-memory-graph-edges")
         val scope = MemoryScope(MemoryScopeType.PROJECT, "souz")
@@ -352,9 +381,179 @@ class SqliteMemoryStoreTest {
         assertNotNull(snapshot.evidenceIndex.values.flatten().singleOrNull())
     }
 
+    @Test
+    fun `timeline contains supersede transitions`() = runTest {
+        val store = createStore("sqlite-memory-graph-timeline")
+        val scope = userScope()
+        val subject = store.resolveOrUpsertEntity(
+            entity(
+                scope = scope,
+                entityType = "USER",
+                canonicalName = "current_user",
+                normalizedKey = "user/current_user",
+            )
+        )
+        val firstEvidence = store.insertEvidence(evidence(scope = scope, sourceRef = "turn:1:user"))
+        val secondEvidence = store.insertEvidence(evidence(scope = scope, sourceRef = "turn:2:user"))
+        val first = store.insertFact(
+            fact(
+                scope = scope,
+                subjectEntityId = subject.id!!,
+                predicate = "prefers_language",
+                objectKind = MemoryObjectKind.TEXT,
+                objectValueText = "ru",
+                slotKey = "user.profile.language",
+            ),
+            evidenceIds = listOf(firstEvidence.id!!),
+        )
+        val second = store.insertFact(
+            fact(
+                scope = scope,
+                subjectEntityId = subject.id!!,
+                predicate = "prefers_language",
+                objectKind = MemoryObjectKind.TEXT,
+                objectValueText = "en",
+                slotKey = "user.profile.language",
+            ),
+            evidenceIds = listOf(secondEvidence.id!!),
+        )
+
+        val snapshot = store.graphSnapshot(scope)
+
+        assertTrue(
+            snapshot.timelineEvents.any { event ->
+                event.type == "SUPERSEDED" &&
+                    event.factId == first.id &&
+                    event.relatedFactId == second.id
+            }
+        )
+    }
+
+    @Test
+    fun `legacy memory evidence schema is migrated before new writes`() = runTest {
+        val stateRoot = Files.createTempDirectory("sqlite-memory-legacy-evidence")
+        val databasePath = stateRoot.resolve("memory.db")
+        val legacyInstant = Instant.parse("2026-05-21T10:00:00Z")
+        createLegacyEvidenceDatabase(databasePath, legacyInstant)
+
+        val store = SqliteMemoryStore(paths = DefaultSouzPaths(stateRoot = stateRoot))
+        val stored = store.insertEvidence(
+            evidence(
+                scope = userScope(),
+                sourceRef = "turn:2:user",
+                contentExcerpt = "new evidence",
+            )
+        )
+
+        assertEquals(
+            listOf("scope_type", "scope_id", "evidence_type", "content_excerpt", "content_json"),
+            sqliteColumns(databasePath, "memory_evidence").filter {
+                it in setOf("scope_type", "scope_id", "evidence_type", "content_excerpt", "content_json")
+            }
+        )
+        assertEquals(2L, sqliteCount(databasePath, "memory_evidence"))
+        assertEquals(
+            listOf("GLOBAL", "legacy-memory-evidence", "USER_MESSAGE", "legacy excerpt"),
+            sqliteFirstRow(
+                databasePath,
+                """
+                select scope_type, scope_id, evidence_type, content_excerpt
+                from memory_evidence
+                where id = '1'
+                """.trimIndent(),
+            )
+        )
+        assertEquals(
+            listOf(stored.id!!, "USER", "local-user"),
+            sqliteFirstRow(
+                databasePath,
+                """
+                select id, scope_type, scope_id
+                from memory_evidence
+                where source_ref = 'turn:2:user'
+                """.trimIndent(),
+            )
+        )
+        assertEquals(
+            listOf("1", "2"),
+            sqliteSingleColumn(
+                databasePath,
+                """
+                select cast(version as text)
+                from memory_schema_migration
+                order by version
+                """.trimIndent(),
+            )
+        )
+    }
+
     private fun createStore(prefix: String): SqliteMemoryStore {
         val stateRoot = Files.createTempDirectory(prefix)
         return SqliteMemoryStore(paths = DefaultSouzPaths(stateRoot = stateRoot))
+    }
+
+    private fun createLegacyEvidenceDatabase(
+        databasePath: Path,
+        createdAt: Instant,
+    ) {
+        DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    create table memory_schema_migration(
+                        version integer primary key,
+                        name text not null,
+                        applied_at text not null
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    """
+                    insert into memory_schema_migration(version, name, applied_at)
+                    values (1, 'db/memory/sqlite/V1__memory_core.sql', '${createdAt}')
+                    """.trimIndent()
+                )
+                statement.execute(
+                    """
+                    create table memory_evidence (
+                        id integer primary key autoincrement,
+                        fact_id text not null,
+                        source_type text not null,
+                        source_ref text,
+                        excerpt text not null,
+                        confidence real not null,
+                        created_at integer not null,
+                        source_pipeline text,
+                        source_task text,
+                        source_node_set text,
+                        source_agent_id text
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    """
+                    insert into memory_evidence(
+                        fact_id,
+                        source_type,
+                        source_ref,
+                        excerpt,
+                        confidence,
+                        created_at,
+                        source_pipeline
+                    )
+                    values (
+                        'legacy-fact',
+                        'USER_MESSAGE',
+                        'turn:1:user',
+                        'legacy excerpt',
+                        0.9,
+                        ${createdAt.toEpochMilli()},
+                        'legacy'
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
     }
 
     private fun userScope(): MemoryScope =
@@ -444,6 +643,19 @@ class SqliteMemoryStoreTest {
             }
         }
 
+    private fun sqliteColumns(databasePath: Path, tableName: String): List<String> =
+        DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+            connection.prepareStatement("pragma table_info($tableName)").use { statement ->
+                statement.executeQuery().use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) {
+                            add(resultSet.getString("name"))
+                        }
+                    }
+                }
+            }
+        }
+
     private fun sqliteRow(
         databasePath: Path,
         sql: String,
@@ -456,6 +668,37 @@ class SqliteMemoryStoreTest {
                     resultSet.next()
                     List(resultSet.metaData.columnCount) { index ->
                         resultSet.getString(index + 1)
+                    }
+                }
+            }
+        }
+
+    private fun sqliteFirstRow(
+        databasePath: Path,
+        sql: String,
+    ): List<String?> =
+        DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+            connection.prepareStatement(sql).use { statement ->
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    List(resultSet.metaData.columnCount) { index ->
+                        resultSet.getString(index + 1)
+                    }
+                }
+            }
+        }
+
+    private fun sqliteSingleColumn(
+        databasePath: Path,
+        sql: String,
+    ): List<String?> =
+        DriverManager.getConnection("jdbc:sqlite:$databasePath").use { connection ->
+            connection.prepareStatement(sql).use { statement ->
+                statement.executeQuery().use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) {
+                            add(resultSet.getString(1))
+                        }
                     }
                 }
             }

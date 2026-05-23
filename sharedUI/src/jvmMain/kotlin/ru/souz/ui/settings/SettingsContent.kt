@@ -142,7 +142,7 @@ private fun SettingsHoverTooltip(
 }
 
 @Composable
-private fun SettingsGroupDivider(modifier: Modifier = Modifier) {
+internal fun SettingsGroupDivider(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -194,7 +194,7 @@ private fun SettingsCheckbox(
 }
 
 @Composable
-private fun SettingsSectionScreen(
+internal fun SettingsSectionScreen(
     title: String,
     subtitle: String,
     onClose: () -> Unit,
@@ -417,6 +417,7 @@ fun GeneralSettingsContent(
     onUseStreamingChange: (Boolean) -> Unit,
     onNotificationSoundEnabledChange: (Boolean) -> Unit,
     onVoiceInputReviewEnabledChange: (Boolean) -> Unit,
+    onMemoryEnabledChange: (Boolean) -> Unit,
     onUseEnglishVersionChange: (Boolean) -> Unit,
     onChooseVoice: () -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
@@ -473,6 +474,13 @@ fun GeneralSettingsContent(
                 description = stringResource(Res.string.setting_voice_input_review_desc),
                 checked = state.voiceInputReviewEnabled,
                 onCheckedChange = onVoiceInputReviewEnabledChange,
+                modifier = Modifier.fillMaxWidth()
+            )
+            SettingsSwitchCard(
+                title = stringResource(Res.string.setting_memory_enabled_title),
+                description = stringResource(Res.string.setting_memory_enabled_desc),
+                checked = state.memoryEnabled,
+                onCheckedChange = onMemoryEnabledChange,
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -1052,6 +1060,7 @@ fun SupportSettingsContent(
     onOpenPrivacyPolicy: () -> Unit,
     clipboardManager: ClipboardManager,
     onShowSnack: (String) -> Unit,
+    onOpenMemoryInspector: () -> Unit,
     onOpenGraphSessions: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -1095,6 +1104,31 @@ fun SupportSettingsContent(
                         )
                     }
                 }
+            }
+
+            SettingsGroupDivider()
+
+            Button(
+                onClick = onOpenMemoryInspector,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(SettingsControlHeight),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SettingsButtonBackground,
+                    contentColor = SettingsStrongTextColor
+                ),
+                border = BorderStroke(1.dp, SettingsDefaultBorder),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = stringResource(Res.string.button_open_memory_inspector),
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SettingsStrongTextColor,
+                )
             }
 
             SettingsGroupDivider()
@@ -2078,6 +2112,7 @@ private fun GeneralSettingsContentPreview() {
             onUseStreamingChange = {},
             onNotificationSoundEnabledChange = {},
             onVoiceInputReviewEnabledChange = {},
+            onMemoryEnabledChange = {},
             onUseEnglishVersionChange = {},
             onChooseVoice = {},
             onVoiceSpeedInput = {},
@@ -2162,6 +2197,7 @@ private fun SupportSettingsContentPreview() {
             onOpenPrivacyPolicy = {},
             clipboardManager = LocalClipboardManager.current,
             onShowSnack = {},
+            onOpenMemoryInspector = {},
             onOpenGraphSessions = {},
             onClose = {}
         )

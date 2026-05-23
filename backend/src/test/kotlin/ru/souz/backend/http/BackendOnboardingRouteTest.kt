@@ -68,6 +68,7 @@ class BackendOnboardingRouteTest {
         assertEquals("ru", payload["currentSettings"]["interfaceLanguage"].asText())
         assertEquals(context.settingsProvider.requestTimeoutMillis, payload["currentSettings"]["requestTimeoutMillis"].asLong())
         assertEquals(true, payload["currentSettings"]["useFewShotExamples"].asBoolean())
+        assertEquals(true, payload["currentSettings"]["memoryEnabled"].asBoolean())
         assertTrue(payload["recommendedDefaultModel"].isTextual)
     }
 
@@ -235,7 +236,8 @@ class BackendOnboardingRouteTest {
                   "defaultModel": "${context.settingsProvider.gigaModel.alias}",
                   "interfaceLanguage": "en",
                   "requestTimeoutMillis": 45000,
-                  "useFewShotExamples": false
+                  "useFewShotExamples": false,
+                  "memoryEnabled": false
                 }
                 """.trimIndent()
             )
@@ -251,9 +253,11 @@ class BackendOnboardingRouteTest {
         assertEquals("en", statePayload["currentSettings"]["interfaceLanguage"].asText())
         assertEquals(45_000L, statePayload["currentSettings"]["requestTimeoutMillis"].asLong())
         assertEquals(false, statePayload["currentSettings"]["useFewShotExamples"].asBoolean())
+        assertEquals(false, statePayload["currentSettings"]["memoryEnabled"].asBoolean())
         assertEquals("en", storedSettings?.interfaceLanguage)
         assertEquals(45_000L, storedSettings?.requestTimeoutMillis)
         assertEquals(false, storedSettings?.useFewShotExamples)
+        assertEquals(false, storedSettings?.memoryEnabled)
     }
 
     @Test

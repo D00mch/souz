@@ -46,6 +46,7 @@ internal data class BackendV1SettingsPatchRequest(
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
+    val memoryEnabled: Boolean? = null,
 )
 
 internal data class BackendV1OnboardingCompleteRequest(
@@ -58,6 +59,7 @@ internal data class BackendV1OnboardingCompleteRequest(
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
+    val memoryEnabled: Boolean? = null,
 )
 
 internal data class BackendV1SettingsDto(
@@ -73,6 +75,7 @@ internal data class BackendV1SettingsDto(
     val interfaceLanguage: String,
     val requestTimeoutMillis: Long,
     val useFewShotExamples: Boolean,
+    val memoryEnabled: Boolean,
 )
 
 internal data class BackendV1ProviderKeysResponse(
@@ -259,6 +262,7 @@ internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
         interfaceLanguage = interfaceLanguage,
         requestTimeoutMillis = requestTimeoutMillis,
         useFewShotExamples = useFewShotExamples,
+        memoryEnabled = memoryEnabled,
     )
 
 internal fun UserProviderKeyView.toDto(): BackendV1ProviderKeyDto =

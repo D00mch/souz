@@ -257,6 +257,12 @@ fun backendDiModule(
                     .resolve("memory-vector-index")
                     .resolve(FilesystemPathSegmentCodec.encode(userId))
             },
+            memoryEnabledResolver = { userId ->
+                instance<EffectiveSettingsResolver>().resolve(userId).memoryEnabled
+            },
+            chatModelAliasResolver = { userId ->
+                instance<EffectiveSettingsResolver>().resolve(userId).defaultModel.alias
+            },
         )
     }
     bindSingleton {

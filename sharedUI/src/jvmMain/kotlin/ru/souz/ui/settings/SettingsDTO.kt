@@ -21,7 +21,7 @@ import souz.sharedui.generated.resources.*
 
 
 enum class SettingsSubScreen {
-    MAIN, SESSIONS, VISUALIZATION, FOLDERS, TELEGRAM
+    MAIN, SESSIONS, VISUALIZATION, FOLDERS, TELEGRAM, MEMORY
 }
 
 enum class TelegramAuthStepUi {
@@ -61,6 +61,7 @@ data class SettingsState(
     val useStreaming: Boolean = false,
     val notificationSoundEnabled: Boolean = true,
     val voiceInputReviewEnabled: Boolean = false,
+    val memoryEnabled: Boolean = true,
     val useEnglishVersion: Boolean = false,
     val safeModeEnabled: Boolean = false,
     val activeAgentId: AgentId = AgentId.default,
@@ -132,6 +133,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputUseStreaming(val enabled: Boolean): SettingsEvent
     data class InputNotificationSoundEnabled(val enabled: Boolean): SettingsEvent
     data class InputVoiceInputReviewEnabled(val enabled: Boolean): SettingsEvent
+    data class InputMemoryEnabled(val enabled: Boolean): SettingsEvent
     data class InputUseEnglishVersion(val enabled: Boolean): SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectAgent(val agentId: AgentId): SettingsEvent
@@ -170,6 +172,7 @@ sealed interface SettingsEvent : VMEvent {
     object BackToSessions : SettingsEvent
     object OpenFoldersManagement : SettingsEvent
     object OpenTelegramSettings : SettingsEvent
+    object OpenMemoryInspector : SettingsEvent
     object CreateControlBot : SettingsEvent
     object DisconnectTelegramBot : SettingsEvent
     object ConfirmDisconnectTelegramBot : SettingsEvent

@@ -24,6 +24,7 @@ internal class TestSettingsProvider : SettingsProvider {
     override var useStreaming: Boolean = false
     override var notificationSoundEnabled: Boolean = true
     override var voiceInputReviewEnabled: Boolean = false
+    override var memoryEnabled: Boolean = true
     override var safeModeEnabled: Boolean = true
     override var needsOnboarding: Boolean = false
     override var onboardingCompleted: Boolean = false

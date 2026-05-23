@@ -125,6 +125,7 @@ class PostgresRepositoriesTest {
             assertNull(stored.interfaceLanguage)
             assertNull(stored.requestTimeoutMillis)
             assertNull(stored.useFewShotExamples)
+            assertNull(stored.memoryEnabled)
             assertTrue(stored.toolPermissions.isEmpty())
             assertTrue(stored.mcp.isEmpty())
         }
@@ -150,6 +151,7 @@ class PostgresRepositoriesTest {
             interfaceLanguage = "en",
             requestTimeoutMillis = 45_000L,
             useFewShotExamples = false,
+            memoryEnabled = false,
             toolPermissions = mapOf("ListFiles" to ToolPermission(ToolPermissionMode.ALLOW)),
             mcp = mapOf("repo" to UserMcpServer(enabled = true)),
             createdAt = Instant.parse("2026-05-01T09:00:00Z"),

@@ -32,6 +32,7 @@ data class UserSettingsOverrides(
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
+    val memoryEnabled: Boolean? = null,
     val toolPermissions: Map<String, ToolPermission>? = null,
     val mcp: Map<String, UserMcpServer>? = null,
 )
@@ -77,6 +78,9 @@ class EffectiveSettingsResolver(
         val useFewShotExamples = requestOverrides?.useFewShotExamples
             ?: persisted.useFewShotExamples
             ?: DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES
+        val memoryEnabled = requestOverrides?.memoryEnabled
+            ?: persisted.memoryEnabled
+            ?: DEFAULT_BACKEND_MEMORY_ENABLED
 
         return EffectiveUserSettings(
             userId = userId,
@@ -92,6 +96,7 @@ class EffectiveSettingsResolver(
             interfaceLanguage = interfaceLanguage,
             requestTimeoutMillis = requestTimeoutMillis,
             useFewShotExamples = useFewShotExamples,
+            memoryEnabled = memoryEnabled,
             toolPermissions = requestOverrides?.toolPermissions ?: persisted.toolPermissions,
             mcp = requestOverrides?.mcp ?: persisted.mcp,
         )
@@ -114,6 +119,7 @@ class EffectiveSettingsResolver(
             interfaceLanguage = defaultInterfaceLanguage(),
             requestTimeoutMillis = normalizeRequestTimeoutMillis(baseSettingsProvider.requestTimeoutMillis),
             useFewShotExamples = DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES,
+            memoryEnabled = DEFAULT_BACKEND_MEMORY_ENABLED,
             toolPermissions = emptyMap(),
             mcp = emptyMap(),
             createdAt = now,
@@ -215,5 +221,6 @@ class EffectiveSettingsResolver(
         const val REGION_RU = "ru"
         const val MIN_REQUEST_TIMEOUT_MILLIS = 1_000L
         const val DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES = true
+        const val DEFAULT_BACKEND_MEMORY_ENABLED = true
     }
 }

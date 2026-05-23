@@ -56,6 +56,32 @@ class AiTunnelChatAPIRequestTest {
         assertNotNull(slides["items"])
     }
 
+    @Test
+    fun `buildChatRequest can force a specific tool choice`() {
+        val api = createApi()
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = LLMRequest.Chat(
+                model = LLMModel.AiTunnelGpt5Nano.alias,
+                maxTokens = 256,
+                messages = listOf(
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Extract memory candidates"),
+                ),
+                functionCall = "propose_memory_candidates",
+                functions = listOf(function("propose_memory_candidates")),
+            ),
+            stream = false,
+        )
+
+        assertEquals(
+            mapOf(
+                "type" to "function",
+                "function" to mapOf("name" to "propose_memory_candidates"),
+            ),
+            request["tool_choice"],
+        )
+    }
+
     private fun createApi(): AiTunnelChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.aiTunnelKey } returns "test-key"
@@ -65,6 +91,18 @@ class AiTunnelChatAPIRequestTest {
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         return AiTunnelChatAPI(settingsProvider, tokenLogging)
     }
+
+    private fun function(name: String): LLMRequest.Function = LLMRequest.Function(
+        name = name,
+        description = "$name description",
+        parameters = LLMRequest.Parameters(
+            type = "object",
+            properties = mapOf(
+                "query" to LLMRequest.Property(type = "string", description = "Query"),
+            ),
+            required = listOf("query"),
+        ),
+    )
 
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildChatRequest(

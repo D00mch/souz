@@ -33,6 +33,7 @@ class UserSettingsService(
                 interfaceLanguage = overrides.interfaceLanguage ?: existing?.interfaceLanguage,
                 requestTimeoutMillis = overrides.requestTimeoutMillis ?: existing?.requestTimeoutMillis,
                 useFewShotExamples = overrides.useFewShotExamples ?: existing?.useFewShotExamples,
+                memoryEnabled = overrides.memoryEnabled ?: existing?.memoryEnabled,
                 toolPermissions = existing?.toolPermissions ?: emptyMap(),
                 mcp = existing?.mcp ?: emptyMap(),
                 schemaVersion = existing?.schemaVersion ?: UserSettings.CURRENT_SCHEMA_VERSION,

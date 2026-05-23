@@ -29,6 +29,30 @@ import ru.souz.agent.memory.MemoryTriggerType
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
 
+data class MemoryWriteAttemptRecord(
+    val id: String,
+    val scope: MemoryScope,
+    val turnRef: String?,
+    val triggerType: MemoryTriggerType,
+    val inputExcerpt: String?,
+    val candidatesJson: String,
+    val acceptedCount: Int,
+    val rejectedCount: Int,
+    val rejectionReasonsJson: String?,
+    val createdAt: Instant,
+)
+
+data class MemoryInjectionLogRecord(
+    val id: String,
+    val scope: MemoryScope,
+    val turnRef: String?,
+    val queryExcerpt: String?,
+    val selectedRecordIdsJson: String,
+    val renderedPacket: String,
+    val estimatedTokens: Int,
+    val createdAt: Instant,
+)
+
 class SqliteMemoryStore(
     private val paths: SouzPaths = DefaultSouzPaths(),
 ) : MemoryCanonicalStore, MemoryGraphQueryService, MemoryMaintenanceService {
@@ -633,6 +657,24 @@ class SqliteMemoryStore(
         createdAt = Instant.now(),
     )
 
+    suspend fun recentWriteAttempts(
+        scope: MemoryScope,
+        limit: Int = 20,
+    ): List<MemoryWriteAttemptRecord> = read { connection ->
+        connection.loadWriteAttempts(scope = scope, limit = limit)
+    }
+
+    suspend fun recentInjectionLogs(
+        scope: MemoryScope,
+        limit: Int = 20,
+    ): List<MemoryInjectionLogRecord> = read { connection ->
+        connection.loadInjectionLogs(scope = scope, limit = limit)
+    }
+
+    suspend fun latestActivityScope(): MemoryScope? = read { connection ->
+        connection.loadLatestActivityScope()
+    }
+
     override suspend fun graphSnapshot(scope: MemoryScope): MemoryGraphSnapshot = read { connection ->
         val facts = connection.loadFacts(scope)
         val entityIds = facts.flatMap { listOfNotNull(it.subjectEntityId, it.objectEntityId) }.toSet()
@@ -739,7 +781,10 @@ class SqliteMemoryStore(
                 SQLITE_MIGRATIONS
                     .filterNot { applied.contains(it.version) }
                     .forEach { migration ->
-                        executeStatements(connection, loadMigration(migration.resourcePath))
+                        migration.resourcePath?.let { resourcePath ->
+                            executeStatements(connection, loadMigration(resourcePath))
+                        }
+                        applyMigrationCompatibilityFixes(connection, migration.version)
                         connection.prepareStatement(
                             """
                             insert into memory_schema_migration(version, name, applied_at)
@@ -747,7 +792,7 @@ class SqliteMemoryStore(
                             """.trimIndent()
                         ).use { statement ->
                             statement.setInt(1, migration.version)
-                            statement.setString(2, migration.resourcePath)
+                            statement.setString(2, migration.name)
                             statement.setInstantText(3, Instant.now())
                             statement.executeUpdate()
                         }
@@ -759,6 +804,84 @@ class SqliteMemoryStore(
             } finally {
                 connection.autoCommit = true
             }
+        }
+    }
+
+    private fun applyMigrationCompatibilityFixes(
+        connection: Connection,
+        version: Int,
+    ) {
+        if (version == LEGACY_MEMORY_EVIDENCE_COMPAT_VERSION) {
+            migrateLegacyMemoryEvidenceTable(connection)
+        }
+    }
+
+    private fun migrateLegacyMemoryEvidenceTable(connection: Connection) {
+        val columns = connection.tableColumns("memory_evidence")
+        if (columns.isEmpty() || CURRENT_MEMORY_EVIDENCE_COLUMNS.all(columns::contains)) {
+            return
+        }
+        if (!LEGACY_MEMORY_EVIDENCE_COLUMNS.all(columns::contains)) {
+            return
+        }
+
+        connection.createStatement().use { statement ->
+            statement.execute("alter table memory_evidence rename to memory_evidence_legacy_v0")
+            statement.execute(
+                """
+                create table memory_evidence (
+                    id text primary key,
+                    scope_type text not null,
+                    scope_id text not null,
+                    evidence_type text not null,
+                    source_ref text not null,
+                    source_hash text,
+                    content_excerpt text,
+                    content_json text,
+                    created_at text not null
+                )
+                """.trimIndent()
+            )
+            statement.execute(
+                """
+                insert into memory_evidence(
+                    id,
+                    scope_type,
+                    scope_id,
+                    evidence_type,
+                    source_ref,
+                    source_hash,
+                    content_excerpt,
+                    content_json,
+                    created_at
+                )
+                select
+                    cast(id as text),
+                    'GLOBAL',
+                    'legacy-memory-evidence',
+                    case upper(coalesce(source_type, ''))
+                        when 'USER_MESSAGE' then 'USER_MESSAGE'
+                        when 'ASSISTANT_MESSAGE' then 'ASSISTANT_MESSAGE'
+                        when 'TOOL_OUTPUT' then 'TOOL_OUTPUT'
+                        when 'FILE_EXCERPT' then 'FILE_EXCERPT'
+                        when 'WEB_EXCERPT' then 'WEB_EXCERPT'
+                        when 'SYSTEM_METADATA' then 'SYSTEM_METADATA'
+                        when 'EPISODE_SUMMARY' then 'EPISODE_SUMMARY'
+                        else 'SYSTEM_METADATA'
+                    end,
+                    coalesce(source_ref, 'legacy-evidence:' || cast(id as text)),
+                    null,
+                    excerpt,
+                    null,
+                    case
+                        when typeof(created_at) = 'integer'
+                            then strftime('%Y-%m-%dT%H:%M:%fZ', created_at / 1000.0, 'unixepoch')
+                        else cast(created_at as text)
+                    end
+                from memory_evidence_legacy_v0
+                """.trimIndent()
+            )
+            statement.execute("drop table memory_evidence_legacy_v0")
         }
     }
 
@@ -776,6 +899,17 @@ class SqliteMemoryStore(
     private fun loadMigration(resourcePath: String): String =
         SqliteMemoryStore::class.java.classLoader.getResourceAsStream(resourcePath)?.bufferedReader()?.use { it.readText() }
             ?: error("Missing SQLite memory migration resource: $resourcePath")
+
+    private fun Connection.tableColumns(tableName: String): Set<String> =
+        prepareStatement("pragma table_info($tableName)").use { statement ->
+            statement.executeQuery().use { resultSet ->
+                buildSet {
+                    while (resultSet.next()) {
+                        add(resultSet.getString("name"))
+                    }
+                }
+            }
+        }
 
     private fun findEntityId(connection: Connection, normalizedKey: String): String? =
         connection.prepareStatement(
@@ -933,6 +1067,88 @@ class SqliteMemoryStore(
             }
         }
 
+    private fun Connection.loadWriteAttempts(
+        scope: MemoryScope,
+        limit: Int,
+    ): List<MemoryWriteAttemptRecord> =
+        prepareStatement(
+            """
+            select *
+            from memory_write_attempt
+            where scope_type = ?
+              and scope_id = ?
+            order by created_at desc
+            limit ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, scope.type.name)
+            statement.setString(2, scope.id)
+            statement.setInt(3, limit.coerceAtLeast(1))
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toWriteAttempt())
+                    }
+                }
+            }
+        }
+
+    private fun Connection.loadInjectionLogs(
+        scope: MemoryScope,
+        limit: Int,
+    ): List<MemoryInjectionLogRecord> =
+        prepareStatement(
+            """
+            select *
+            from memory_injection_log
+            where scope_type = ?
+              and scope_id = ?
+            order by created_at desc
+            limit ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, scope.type.name)
+            statement.setString(2, scope.id)
+            statement.setInt(3, limit.coerceAtLeast(1))
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toInjectionLog())
+                    }
+                }
+            }
+        }
+
+    private fun Connection.loadLatestActivityScope(): MemoryScope? =
+        prepareStatement(
+            """
+            select scope_type, scope_id
+            from (
+                select scope_type, scope_id, created_at
+                from memory_write_attempt
+                union all
+                select scope_type, scope_id, created_at
+                from memory_injection_log
+                union all
+                select scope_type, scope_id, created_at
+                from memory_fact
+            )
+            order by created_at desc
+            limit 1
+            """.trimIndent()
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                if (!resultSet.next()) {
+                    null
+                } else {
+                    MemoryScope(
+                        type = ru.souz.agent.memory.MemoryScopeType.valueOf(resultSet.getString("scope_type")),
+                        id = resultSet.getString("scope_id"),
+                    )
+                }
+            }
+        }
+
     private fun Connection.countByScope(tableName: String, scope: MemoryScope): Int =
         prepareStatement(
             "select count(*) from $tableName where scope_type = ? and scope_id = ?"
@@ -984,6 +1200,38 @@ class SqliteMemoryStore(
             invalidatedByFactId = getString("invalidated_by_fact_id"),
             originEpisodeId = getString("origin_episode_id"),
             writerVersion = getString("writer_version"),
+        )
+
+    private fun ResultSet.toWriteAttempt(): MemoryWriteAttemptRecord =
+        MemoryWriteAttemptRecord(
+            id = getString("id"),
+            scope = MemoryScope(
+                type = ru.souz.agent.memory.MemoryScopeType.valueOf(getString("scope_type")),
+                id = getString("scope_id"),
+            ),
+            turnRef = getString("turn_ref"),
+            triggerType = MemoryTriggerType.valueOf(getString("trigger_type")),
+            inputExcerpt = getString("input_excerpt"),
+            candidatesJson = getString("candidates_json"),
+            acceptedCount = getInt("accepted_count"),
+            rejectedCount = getInt("rejected_count"),
+            rejectionReasonsJson = getString("rejection_reasons_json"),
+            createdAt = instant("created_at"),
+        )
+
+    private fun ResultSet.toInjectionLog(): MemoryInjectionLogRecord =
+        MemoryInjectionLogRecord(
+            id = getString("id"),
+            scope = MemoryScope(
+                type = ru.souz.agent.memory.MemoryScopeType.valueOf(getString("scope_type")),
+                id = getString("scope_id"),
+            ),
+            turnRef = getString("turn_ref"),
+            queryExcerpt = getString("query_excerpt"),
+            selectedRecordIdsJson = getString("selected_record_ids_json"),
+            renderedPacket = getString("rendered_packet"),
+            estimatedTokens = getInt("estimated_tokens"),
+            createdAt = instant("created_at"),
         )
 
     private fun ResultSet.toEvidence(): MemoryEvidenceRecord =
@@ -1065,15 +1313,45 @@ class SqliteMemoryStore(
 
     private data class SqliteMigration(
         val version: Int,
-        val resourcePath: String,
+        val name: String,
+        val resourcePath: String? = null,
     )
 
     private companion object {
+        const val LEGACY_MEMORY_EVIDENCE_COMPAT_VERSION = 2
+
+        val CURRENT_MEMORY_EVIDENCE_COLUMNS: Set<String> = setOf(
+            "id",
+            "scope_type",
+            "scope_id",
+            "evidence_type",
+            "source_ref",
+            "source_hash",
+            "content_excerpt",
+            "content_json",
+            "created_at",
+        )
+
+        val LEGACY_MEMORY_EVIDENCE_COLUMNS: Set<String> = setOf(
+            "id",
+            "fact_id",
+            "source_type",
+            "source_ref",
+            "excerpt",
+            "confidence",
+            "created_at",
+        )
+
         val SQLITE_MIGRATIONS: List<SqliteMigration> = listOf(
             SqliteMigration(
                 version = 1,
+                name = "db/memory/sqlite/V1__memory_core.sql",
                 resourcePath = "db/memory/sqlite/V1__memory_core.sql",
-            )
+            ),
+            SqliteMigration(
+                version = LEGACY_MEMORY_EVIDENCE_COMPAT_VERSION,
+                name = "db/memory/sqlite/V2__legacy_memory_evidence_compat",
+            ),
         )
     }
 }

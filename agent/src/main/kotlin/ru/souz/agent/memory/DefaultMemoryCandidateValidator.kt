@@ -35,16 +35,19 @@ class DefaultMemoryCandidateValidator(
         if (resolvedEvidence.all { it.evidenceType == MemoryEvidenceType.ASSISTANT_MESSAGE }) {
             return rejected(MemoryCandidateRejectionReason.ASSISTANT_ONLY_EVIDENCE)
         }
-        if (!MemoryPredicateAllowlist.isSupported(candidate.predicate)) {
-            return rejected(MemoryCandidateRejectionReason.UNSUPPORTED_PREDICATE)
+        if (normalizeKey(candidate.predicate).isNullOrBlank()) {
+            return rejected(MemoryCandidateRejectionReason.BLANK_PREDICATE)
         }
         if (candidate.confidence < confidenceThreshold) {
             return rejected(MemoryCandidateRejectionReason.LOW_CONFIDENCE)
         }
-        if (candidate.scope.id.isBlank()) {
+        if (candidate.scope.id.isBlank() || (input.allowedScopes.isNotEmpty() && candidate.scope !in input.allowedScopes)) {
             return rejected(MemoryCandidateRejectionReason.INVALID_SCOPE)
         }
-        if (MemoryPredicateAllowlist.requiresSlotKey(candidate.predicate) && candidate.slotKey.isNullOrBlank()) {
+        if (candidate.suggestedStatus != MemoryFactStatus.ACTIVE) {
+            return rejected(MemoryCandidateRejectionReason.UNSUPPORTED_STATUS)
+        }
+        if (candidate.conflictPolicy == MemoryConflictPolicy.SINGLE_ACTIVE_PER_SLOT && candidate.slotKey.isNullOrBlank()) {
             return rejected(MemoryCandidateRejectionReason.BLANK_CONFLICT_SLOT_KEY)
         }
         if (candidate.isObviouslyEphemeral()) {

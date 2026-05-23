@@ -504,6 +504,7 @@ class FilesystemRepositoriesTest {
             interfaceLanguage = "ru",
             requestTimeoutMillis = 40_000L,
             useFewShotExamples = true,
+            memoryEnabled = true,
             toolPermissions = mapOf("ListFiles" to ToolPermission(ToolPermissionMode.ALLOW)),
             mcp = mapOf("repo" to UserMcpServer(enabled = true)),
             createdAt = Instant.parse("2026-05-01T08:00:00Z"),

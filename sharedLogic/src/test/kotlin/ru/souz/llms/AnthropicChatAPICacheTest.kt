@@ -59,6 +59,31 @@ class AnthropicChatAPICacheTest {
         assertEquals(mapOf("type" to "auto"), request["tool_choice"])
     }
 
+    @Test
+    fun `buildChatRequest can force a specific tool choice`() {
+        val api = createApi()
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = LLMRequest.Chat(
+                model = LLMModel.AnthropicHaiku45.alias,
+                maxTokens = 256,
+                messages = listOf(
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Extract memory candidates"),
+                ),
+                functionCall = "propose_memory_candidates",
+                functions = listOf(function("propose_memory_candidates")),
+            ),
+        )
+
+        assertEquals(
+            mapOf(
+                "type" to "tool",
+                "name" to "propose_memory_candidates",
+            ),
+            request["tool_choice"],
+        )
+    }
+
     private fun createApi(): AnthropicChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.anthropicKey } returns "test-key"

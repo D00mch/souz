@@ -67,6 +67,7 @@ class BackendBootstrapService(
                 interfaceLanguage = effectiveSettings.interfaceLanguage,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
+                memoryEnabled = effectiveSettings.memoryEnabled,
             ),
         )
     }

@@ -196,7 +196,7 @@ class QwenChatAPI(
             }
             if (tools.isNotEmpty()) {
                 put("tools", tools)
-                put("tool_choice", "auto")
+                put("tool_choice", openAiCompatibleToolChoice(body.functionCall))
             }
         }
     }
@@ -213,7 +213,7 @@ class QwenChatAPI(
             }
             if (tools.isNotEmpty()) {
                 put("tools", tools)
-                put("tool_choice", "auto")
+                put("tool_choice", openAiCompatibleToolChoice(body.functionCall))
                 put("parallel_tool_calls", true)
             }
         }
@@ -223,6 +223,16 @@ class QwenChatAPI(
             put("parameters", parameters)
         }
     }
+
+    private fun openAiCompatibleToolChoice(functionCall: String): Any =
+        if (functionCall == "auto") {
+            "auto"
+        } else {
+            mapOf(
+                "type" to "function",
+                "function" to mapOf("name" to functionCall),
+            )
+        }
 
     private fun buildEmbeddingsRequest(body: LLMRequest.Embeddings): Map<String, Any> = buildMap {
         put("model", resolveEmbeddingsModel(body.model))

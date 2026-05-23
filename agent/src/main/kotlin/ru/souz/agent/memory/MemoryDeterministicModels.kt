@@ -6,9 +6,10 @@ import kotlin.math.ceil
 enum class MemoryCandidateRejectionReason {
     NO_EVIDENCE_REFS,
     ASSISTANT_ONLY_EVIDENCE,
-    UNSUPPORTED_PREDICATE,
+    BLANK_PREDICATE,
     LOW_CONFIDENCE,
     INVALID_SCOPE,
+    UNSUPPORTED_STATUS,
     BLANK_CONFLICT_SLOT_KEY,
     EPHEMERAL,
     DUPLICATE_ACTIVE_FACT,
@@ -20,6 +21,7 @@ data class MemoryCandidateValidationInput(
     val evidenceIndex: Map<String, MemoryEvidenceRecord> = emptyMap(),
     val activeFacts: List<MemoryFactSnapshot> = emptyList(),
     val acceptedCountThisTurn: Int = 0,
+    val allowedScopes: Set<MemoryScope> = emptySet(),
 )
 
 data class MemoryCandidateValidationResult(
@@ -115,12 +117,7 @@ internal fun MemoryFactSnapshot.renderValue(): String = when {
 
 internal fun MemoryFactSnapshot.slotGroupingKey(): String? {
     val normalizedSlotKey = normalizeKey(slotKey) ?: return null
-    return listOf(
-        normalizeScope(scope),
-        normalizeKey(subjectNormalizedKey).orEmpty(),
-        normalizeKey(predicate).orEmpty(),
-        normalizedSlotKey,
-    ).joinToString("|")
+    return normalizedSlotKey
 }
 
 internal fun MemoryFactSnapshot.duplicateFingerprint(): String = listOf(
