@@ -1,7 +1,11 @@
 package ru.souz.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -15,6 +19,7 @@ import ru.souz.memory.NoopConversationMemoryRuntime
 class AgentExecutor internal constructor(
     private val agentProvider: (AgentId) -> TraceableAgent,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
+    private val captureScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutor::class.java)
@@ -98,26 +103,28 @@ class AgentExecutor internal constructor(
         }
     }
 
-    private suspend fun captureCompletedTurn(
+    private fun captureCompletedTurn(
         ctx: AgentContext<String>,
         userMessage: String,
         assistantMessage: String,
     ) {
-        try {
-            memoryRuntime.captureCompletedTurn(
-                CompletedTurnMemoryInput(
-                    conversationId = ctx.toolInvocationMeta.conversationId,
-                    userMessageId = ctx.toolInvocationMeta.attributes["userMessageId"]
-                        ?: ctx.toolInvocationMeta.requestId,
-                    assistantMessageId = ctx.toolInvocationMeta.attributes["assistantMessageId"],
-                    userMessage = userMessage,
-                    assistantMessage = assistantMessage,
+        captureScope.launch {
+            try {
+                memoryRuntime.captureCompletedTurn(
+                    CompletedTurnMemoryInput(
+                        conversationId = ctx.toolInvocationMeta.conversationId,
+                        userMessageId = ctx.toolInvocationMeta.attributes["userMessageId"]
+                            ?: ctx.toolInvocationMeta.requestId,
+                        assistantMessageId = ctx.toolInvocationMeta.attributes["assistantMessageId"],
+                        userMessage = userMessage,
+                        assistantMessage = assistantMessage,
+                    )
                 )
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn("Memory capture failed: {}", e.message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("Memory capture failed: {}", e.message)
+            }
         }
     }
 

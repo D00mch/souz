@@ -1,7 +1,6 @@
 package ru.souz.ui.memory
 
 import ru.souz.memory.CreateMemoryFactInput
-import ru.souz.memory.MemoryEvidenceDetail
 import ru.souz.memory.MemoryFact
 import ru.souz.memory.MemoryFactDetails
 import ru.souz.memory.MemoryFactFilter
@@ -12,15 +11,10 @@ import ru.souz.memory.MemoryScope
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-import kotlin.math.roundToInt
 
 data class MemoryUiState(
-    val facts: List<MemoryFactUi> = emptyList(),
-    val selectedFact: MemoryFactDetailsUi? = null,
+    val facts: List<MemoryFact> = emptyList(),
+    val selectedFact: MemoryFactDetails? = null,
     val detailsFactId: String? = null,
     val filters: MemoryFiltersUi = MemoryFiltersUi(),
     val isLoading: Boolean = false,
@@ -28,7 +22,7 @@ data class MemoryUiState(
     val isDetailsLoading: Boolean = false,
     val error: String? = null,
     val editor: MemoryEditorState? = null,
-    val confirmAction: MemoryConfirmAction? = null,
+    val confirm: PendingMemoryConfirm? = null,
 ) : VMState
 
 data class MemoryFiltersUi(
@@ -45,54 +39,6 @@ enum class MemoryStatusFilter {
     DELETED,
     ALL,
 }
-
-data class MemoryFactUi(
-    val id: String,
-    val title: String,
-    val bodyPreview: String,
-    val kind: String,
-    val kindEnum: MemoryFactKind,
-    val scopeLabel: String,
-    val scopeType: String,
-    val scopeId: String,
-    val status: String,
-    val statusEnum: MemoryFactStatus,
-    val confidenceLabel: String,
-    val pinned: Boolean,
-    val createdBy: String,
-    val createdByLabel: String,
-    val updatedAtLabel: String,
-    val updatedAtShortLabel: String,
-)
-
-data class MemoryFactDetailsUi(
-    val id: String,
-    val title: String,
-    val body: String,
-    val kind: String,
-    val kindEnum: MemoryFactKind,
-    val scopeLabel: String,
-    val scopeType: String,
-    val scopeId: String,
-    val status: String,
-    val statusEnum: MemoryFactStatus,
-    val confidenceLabel: String,
-    val pinned: Boolean,
-    val slotKey: String?,
-    val createdByLabel: String,
-    val createdAtLabel: String,
-    val updatedAtLabel: String,
-    val supersedesFactId: String?,
-    val evidence: List<MemoryEvidenceUi>,
-)
-
-data class MemoryEvidenceUi(
-    val text: String,
-    val sourceText: String,
-    val sourceType: String,
-    val sourceRef: String?,
-    val createdAtLabel: String,
-)
 
 data class MemoryEditorState(
     val mode: MemoryEditorMode,
@@ -115,19 +61,14 @@ data class MemoryEditorInput(
     val pinned: Boolean,
 )
 
-sealed interface MemoryConfirmAction {
-    val factId: String
-    val factTitle: String
-
-    data class Retire(
-        override val factId: String,
-        override val factTitle: String,
-    ) : MemoryConfirmAction
-
-    data class Delete(
-        override val factId: String,
-        override val factTitle: String,
-    ) : MemoryConfirmAction
+data class PendingMemoryConfirm(
+    val kind: Kind,
+    val factId: String,
+) {
+    enum class Kind {
+        Retire,
+        Delete,
+    }
 }
 
 sealed interface MemoryAction : VMEvent {
@@ -195,48 +136,6 @@ fun MemoryEditorInput.toPatch(): MemoryFactPatch {
     )
 }
 
-fun MemoryFact.toUi(): MemoryFactUi =
-    MemoryFactUi(
-        id = id,
-        title = title.trim(),
-        bodyPreview = body.preview(),
-        kind = kind.label(),
-        kindEnum = kind,
-        scopeLabel = scope.label(),
-        scopeType = scope.type,
-        scopeId = scope.id,
-        status = status.label(),
-        statusEnum = status,
-        confidenceLabel = confidence.label(),
-        pinned = pinned,
-        createdBy = createdBy,
-        createdByLabel = createdBy.label(),
-        updatedAtLabel = updatedAt.label(),
-        updatedAtShortLabel = updatedAt.shortLabel(),
-    )
-
-fun MemoryFactDetails.toUi(): MemoryFactDetailsUi =
-    MemoryFactDetailsUi(
-        id = fact.id,
-        title = fact.title,
-        body = fact.body,
-        kind = fact.kind.label(),
-        kindEnum = fact.kind,
-        scopeLabel = fact.scope.label(),
-        scopeType = fact.scope.type,
-        scopeId = fact.scope.id,
-        status = fact.status.label(),
-        statusEnum = fact.status,
-        confidenceLabel = fact.confidence.label(),
-        pinned = fact.pinned,
-        slotKey = fact.slotKey,
-        createdByLabel = fact.createdBy.label(),
-        createdAtLabel = fact.createdAt.label(),
-        updatedAtLabel = fact.updatedAt.label(),
-        supersedesFactId = fact.supersedesFactId,
-        evidence = evidence.map(MemoryEvidenceDetail::toUi),
-    )
-
 fun MemoryFactDetails.toEditorState(): MemoryEditorState =
     MemoryEditorState(
         mode = MemoryEditorMode.EDIT,
@@ -269,64 +168,3 @@ fun newMemoryEditorState(): MemoryEditorState =
 
 fun List<MemoryFact>.sortedForUi(): List<MemoryFact> =
     sortedWith(compareByDescending<MemoryFact> { it.pinned }.thenByDescending { it.updatedAt })
-
-private fun MemoryEvidenceDetail.toUi(): MemoryEvidenceUi =
-    MemoryEvidenceUi(
-        text = evidence.evidenceText
-            ?.trim()
-            .takeUnless { it.isNullOrBlank() }
-            ?: sourceEvent.text.trim(),
-        sourceText = sourceEvent.text.trim(),
-        sourceType = sourceEvent.sourceType,
-        sourceRef = sourceEvent.sourceRef,
-        createdAtLabel = sourceEvent.createdAt.label(),
-    )
-
-private fun MemoryFactKind.label(): String = name.lowercase(Locale.getDefault())
-    .split('_')
-    .joinToString(" ") { token -> token.replaceFirstChar(Char::titlecase) }
-
-private fun MemoryFactStatus.label(): String = name.lowercase(Locale.getDefault())
-    .replaceFirstChar(Char::titlecase)
-
-private fun MemoryScope.label(): String {
-    val cleanType = type.trim()
-    val cleanId = id.trim()
-    return when {
-        cleanType.equals("global", ignoreCase = true) && cleanId.equals("global", ignoreCase = true) -> "Global"
-        cleanType.equals("chat", ignoreCase = true) -> "Chat: $cleanId"
-        else -> "$cleanType:$cleanId"
-    }
-}
-
-private fun Float.label(): String = "${(this * 100f).roundToInt()}%"
-
-private fun String.label(): String = when (lowercase(Locale.getDefault())) {
-    "user" -> "Manual"
-    "writer" -> "Auto"
-    "system" -> "System"
-    else -> replaceFirstChar(Char::titlecase)
-}
-
-private fun Instant.label(): String = MEMORY_TIME_FORMATTER.format(this)
-
-private fun Instant.shortLabel(): String = MEMORY_DATE_FORMATTER.format(this)
-
-private fun String.preview(maxLength: Int = 180): String =
-    trim().let { text ->
-        if (text.length <= maxLength) {
-            text
-        } else {
-            text.take(maxLength).trimEnd() + "…"
-        }
-    }
-
-private val MEMORY_TIME_FORMATTER: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
-        .withLocale(Locale.getDefault())
-        .withZone(ZoneId.systemDefault())
-
-private val MEMORY_DATE_FORMATTER: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("dd.MM.yyyy")
-        .withLocale(Locale.getDefault())
-        .withZone(ZoneId.systemDefault())

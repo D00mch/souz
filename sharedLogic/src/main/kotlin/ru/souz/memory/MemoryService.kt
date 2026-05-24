@@ -5,7 +5,6 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.restJsonMapper
 
 interface EmbeddingClient {
@@ -33,7 +32,7 @@ class LlmEmbeddingClient(
     ): FloatArray {
         val response = api.embeddings(
             LLMRequest.Embeddings(
-                model = EmbeddingsModel.GigaEmbeddings.alias,
+                model = model,
                 input = listOf(text),
                 inputKind = inputKind,
             )
@@ -153,11 +152,13 @@ class MemoryService(
         patch: MemoryFactPatch,
     ): MemoryFact {
         val updated = repo.updateFact(factId, patch)
-        repo.replaceEmbedding(
-            factId = updated.id,
-            model = embedder.model,
-            embedding = embedder.embedDocument(updated.embeddingText()),
-        )
+        if (patch.affectsEmbedding()) {
+            repo.replaceEmbedding(
+                factId = updated.id,
+                model = embedder.model,
+                embedding = embedder.embedDocument(updated.embeddingText()),
+            )
+        }
         return updated
     }
 
@@ -176,9 +177,9 @@ class MemoryService(
     ): MemoryBlock {
         if (query.isBlank() || scopes.isEmpty()) return MemoryBlock(emptyList(), "")
         val distinctScopes = scopes.distinct()
-        ensureEmbeddingsForPrompt(distinctScopes)
         val hits = repo.searchFacts(
             scopes = distinctScopes,
+            model = embedder.model,
             queryEmbedding = embedder.embedQuery(query),
             limit = limit,
         ).filter { it.score > 0f }
@@ -207,26 +208,6 @@ class MemoryService(
         appendLine("scope=${scope.type}:${scope.id}")
     }
 
-    private suspend fun ensureEmbeddingsForPrompt(scopes: List<MemoryScope>) {
-        while (true) {
-            val facts = repo.listFactsMissingEmbedding(
-                scopes = scopes,
-                model = embedder.model,
-                limit = EMBEDDING_BACKFILL_BATCH_SIZE,
-            )
-            if (facts.isEmpty()) return
-            facts.forEach { fact ->
-                repo.replaceEmbedding(
-                    factId = fact.id,
-                    model = embedder.model,
-                    embedding = embedder.embedDocument(fact.embeddingText()),
-                )
-            }
-            if (facts.size < EMBEDDING_BACKFILL_BATCH_SIZE) return
-        }
-    }
-
-    private companion object {
-        const val EMBEDDING_BACKFILL_BATCH_SIZE = 64
-    }
+    private fun MemoryFactPatch.affectsEmbedding(): Boolean =
+        scope != null || kind != null || title != null || body != null
 }

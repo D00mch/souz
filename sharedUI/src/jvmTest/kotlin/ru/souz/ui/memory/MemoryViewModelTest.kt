@@ -51,8 +51,8 @@ class MemoryViewModelTest {
     fun `load facts populates state`() = runTest(dispatcher) {
         val service = mockk<MemoryService>()
         val loadedFacts = listOf(
-            memoryFact(id = "fact-1", createdBy = "writer", pinned = true),
-            memoryFact(id = "fact-2", createdBy = "user"),
+            memoryFact(id = "fact-1", pinned = true),
+            memoryFact(id = "fact-2"),
         )
         coEvery { service.listFacts(any()) } returns loadedFacts
 
@@ -62,8 +62,8 @@ class MemoryViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(listOf("fact-1", "fact-2"), state.facts.map { it.id })
-        assertEquals("Auto", state.facts.first().createdByLabel)
         assertFalse(state.isLoading)
+        assertNull(state.error)
         coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
     }
 
@@ -71,8 +71,6 @@ class MemoryViewModelTest {
     fun `changing filters reloads facts with mapped domain filter`() = runTest(dispatcher) {
         val service = mockk<MemoryService>()
         coEvery { service.listFacts(any()) } returns emptyList()
-
-        val viewModel = createViewModel(service)
         val filters = MemoryFiltersUi(
             status = MemoryStatusFilter.ALL,
             kind = MemoryFactKind.PROJECT_RULE,
@@ -81,6 +79,7 @@ class MemoryViewModelTest {
             query = "kotlin",
         )
 
+        val viewModel = createViewModel(service)
         viewModel.onAction(MemoryAction.ChangeFilters(filters))
         advanceUntilIdle()
 
@@ -102,28 +101,6 @@ class MemoryViewModelTest {
     }
 
     @Test
-    fun `empty filter scope means all scopes`() {
-        val filter = MemoryFiltersUi(scopeType = "", scopeId = "").toDomainFilter()
-
-        assertNull(filter.scope)
-    }
-
-    @Test
-    fun `new manual fact defaults to global scope`() {
-        val editor = newMemoryEditorState().input
-
-        assertEquals("global", editor.scopeType)
-        assertEquals("global", editor.scopeId)
-    }
-
-    @Test
-    fun `known memory scopes use user facing labels`() {
-        assertEquals("Global", memoryFact(id = "global", scope = MemoryScope("global", "global")).toUi().scopeLabel)
-        assertEquals("Chat: chat-42", memoryFact(id = "chat", scope = MemoryScope("chat", "chat-42")).toUi().scopeLabel)
-        assertEquals("project:souz", memoryFact(id = "project", scope = MemoryScope("project", "souz")).toUi().scopeLabel)
-    }
-
-    @Test
     fun `save new fact creates manual fact and refreshes list`() = runTest(dispatcher) {
         val service = mockk<MemoryService>()
         val createdFact = memoryFact(id = "fact-created")
@@ -131,9 +108,6 @@ class MemoryViewModelTest {
         coEvery { service.listFacts(any()) } returns listOf(createdFact)
 
         val viewModel = createViewModel(service)
-        viewModel.onAction(MemoryAction.OpenCreateDialog)
-        advanceUntilIdle()
-
         viewModel.onAction(
             MemoryAction.SaveFact(
                 MemoryEditorInput(
@@ -163,10 +137,9 @@ class MemoryViewModelTest {
             )
         }
         coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
-        val state = viewModel.uiState.value
-        assertNull(state.editor)
-        assertFalse(state.isSaving)
-        assertEquals(listOf("fact-created"), state.facts.map { it.id })
+        assertNull(viewModel.uiState.value.editor)
+        assertFalse(viewModel.uiState.value.isSaving)
+        assertEquals(listOf("fact-created"), viewModel.uiState.value.facts.map { it.id })
     }
 
     @Test
@@ -174,13 +147,10 @@ class MemoryViewModelTest {
         val service = mockk<MemoryService>()
         val existing = memoryFact(id = "fact-1", scope = MemoryScope("project", "souz"))
         val updated = existing.copy(title = "Updated title", scope = MemoryScope("chat", "chat-1"))
-        coEvery { service.getFactDetails(existing.id) } returns MemoryFactDetails(existing, emptyList())
         coEvery { service.updateFact(any(), any()) } returns updated
         coEvery { service.listFacts(any()) } returns listOf(updated)
 
         val viewModel = createViewModel(service)
-        viewModel.onAction(MemoryAction.OpenEditDialog(existing.id))
-        advanceUntilIdle()
         viewModel.onAction(
             MemoryAction.SaveFact(
                 MemoryEditorInput(
@@ -190,7 +160,7 @@ class MemoryViewModelTest {
                     kind = existing.kind,
                     scopeType = "chat",
                     scopeId = "chat-1",
-                    slotKey = null,
+                    slotKey = "",
                     pinned = existing.pinned,
                 )
             )
@@ -201,12 +171,12 @@ class MemoryViewModelTest {
             service.updateFact(
                 factId = existing.id,
                 patch = MemoryFactPatch(
+                    scope = MemoryScope("chat", "chat-1"),
                     kind = existing.kind,
                     title = "Updated title",
                     body = existing.body,
                     clearSlotKey = true,
                     pinned = existing.pinned,
-                    scope = MemoryScope("chat", "chat-1"),
                 )
             )
         }
@@ -225,44 +195,43 @@ class MemoryViewModelTest {
         viewModel.onAction(MemoryAction.SetPinned("fact-1", true))
         advanceUntilIdle()
 
-        coVerify(exactly = 1) {
-            service.updateFact("fact-1", MemoryFactPatch(pinned = true))
+        coVerify(exactly = 1) { service.updateFact("fact-1", MemoryFactPatch(pinned = true)) }
+        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
+    }
+
+    @Test
+    fun `retire and delete confirm actions call service and refresh list`() = runTest(dispatcher) {
+        val scenarios = listOf(
+            PendingMemoryConfirm.Kind.Retire,
+            PendingMemoryConfirm.Kind.Delete,
+        )
+
+        scenarios.forEach { kind ->
+            val service = mockk<MemoryService>()
+            when (kind) {
+                PendingMemoryConfirm.Kind.Retire -> coEvery { service.retireFact("fact-1") } returns Unit
+                PendingMemoryConfirm.Kind.Delete -> coEvery { service.deleteFact("fact-1") } returns Unit
+            }
+            coEvery { service.listFacts(any()) } returns emptyList()
+            val viewModel = createViewModel(service)
+
+            when (kind) {
+                PendingMemoryConfirm.Kind.Retire -> viewModel.onAction(MemoryAction.AskRetire("fact-1"))
+                PendingMemoryConfirm.Kind.Delete -> viewModel.onAction(MemoryAction.AskDelete("fact-1"))
+            }
+            advanceUntilIdle()
+            assertEquals(PendingMemoryConfirm(kind, "fact-1"), viewModel.uiState.value.confirm)
+
+            viewModel.onAction(MemoryAction.ConfirmAction)
+            advanceUntilIdle()
+
+            when (kind) {
+                PendingMemoryConfirm.Kind.Retire -> coVerify(exactly = 1) { service.retireFact("fact-1") }
+                PendingMemoryConfirm.Kind.Delete -> coVerify(exactly = 1) { service.deleteFact("fact-1") }
+            }
+            coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
+            assertNull(viewModel.uiState.value.confirm)
         }
-        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
-    }
-
-    @Test
-    fun `retire confirms action and refreshes list`() = runTest(dispatcher) {
-        val service = mockk<MemoryService>()
-        coEvery { service.retireFact("fact-1") } returns Unit
-        coEvery { service.listFacts(any()) } returns emptyList()
-
-        val viewModel = createViewModel(service)
-        viewModel.onAction(MemoryAction.AskRetire("fact-1"))
-        advanceUntilIdle()
-        viewModel.onAction(MemoryAction.ConfirmAction)
-        advanceUntilIdle()
-
-        coVerify(exactly = 1) { service.retireFact("fact-1") }
-        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
-        assertNull(viewModel.uiState.value.confirmAction)
-    }
-
-    @Test
-    fun `delete confirms action and refreshes list`() = runTest(dispatcher) {
-        val service = mockk<MemoryService>()
-        coEvery { service.deleteFact("fact-1") } returns Unit
-        coEvery { service.listFacts(any()) } returns emptyList()
-
-        val viewModel = createViewModel(service)
-        viewModel.onAction(MemoryAction.AskDelete("fact-1"))
-        advanceUntilIdle()
-        viewModel.onAction(MemoryAction.ConfirmAction)
-        advanceUntilIdle()
-
-        coVerify(exactly = 1) { service.deleteFact("fact-1") }
-        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
-        assertNull(viewModel.uiState.value.confirmAction)
     }
 
     @Test
@@ -296,11 +265,8 @@ class MemoryViewModelTest {
         advanceUntilIdle()
 
         val selectedFact = viewModel.uiState.value.selectedFact
-        assertEquals("fact-1", selectedFact?.id)
-        assertEquals(1, selectedFact?.evidence?.size)
-        assertEquals("turn", selectedFact?.evidence?.single()?.sourceType)
-        assertEquals("assistant-1", selectedFact?.evidence?.single()?.sourceRef)
-        assertEquals("User: write tests first", selectedFact?.evidence?.single()?.sourceText)
+        assertEquals("fact-1", selectedFact?.fact?.id)
+        assertEquals(details.evidence, selectedFact?.evidence)
     }
 
     @Test

@@ -1,76 +1,27 @@
 package ru.souz.ui.memory
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
+import ru.souz.memory.MemoryEvidenceDetail
+import ru.souz.memory.MemoryFact
 import ru.souz.memory.MemoryFactKind
 import ru.souz.memory.MemoryFactStatus
 import ru.souz.ui.common.ConfirmDialog
@@ -79,70 +30,7 @@ import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
-import souz.sharedui.generated.resources.Res
-import souz.sharedui.generated.resources.button_close
-import souz.sharedui.generated.resources.memory_action_delete
-import souz.sharedui.generated.resources.memory_action_edit
-import souz.sharedui.generated.resources.memory_action_pin
-import souz.sharedui.generated.resources.memory_action_retire
-import souz.sharedui.generated.resources.memory_action_unpin
-import souz.sharedui.generated.resources.memory_button_save
-import souz.sharedui.generated.resources.memory_button_saving
-import souz.sharedui.generated.resources.memory_confirm_delete_message
-import souz.sharedui.generated.resources.memory_confirm_delete_title
-import souz.sharedui.generated.resources.memory_confirm_retire_message
-import souz.sharedui.generated.resources.memory_confirm_retire_title
-import souz.sharedui.generated.resources.memory_create
-import souz.sharedui.generated.resources.memory_details_created_at
-import souz.sharedui.generated.resources.memory_details_created_by
-import souz.sharedui.generated.resources.memory_details_evidence
-import souz.sharedui.generated.resources.memory_details_loading
-import souz.sharedui.generated.resources.memory_details_scope
-import souz.sharedui.generated.resources.memory_details_select
-import souz.sharedui.generated.resources.memory_details_slot_key
-import souz.sharedui.generated.resources.memory_details_status
-import souz.sharedui.generated.resources.memory_details_supersedes
-import souz.sharedui.generated.resources.memory_details_title
-import souz.sharedui.generated.resources.memory_details_updated_at
-import souz.sharedui.generated.resources.memory_editor_body
-import souz.sharedui.generated.resources.memory_editor_create_title
-import souz.sharedui.generated.resources.memory_editor_edit_title
-import souz.sharedui.generated.resources.memory_editor_kind
-import souz.sharedui.generated.resources.memory_editor_pinned
-import souz.sharedui.generated.resources.memory_editor_slot_key
-import souz.sharedui.generated.resources.memory_editor_title
-import souz.sharedui.generated.resources.memory_empty
-import souz.sharedui.generated.resources.memory_evidence_empty
-import souz.sharedui.generated.resources.memory_error_inline_dismiss
-import souz.sharedui.generated.resources.memory_filter_kind
-import souz.sharedui.generated.resources.memory_filter_kind_all
-import souz.sharedui.generated.resources.memory_filter_query
-import souz.sharedui.generated.resources.memory_filter_scope
-import souz.sharedui.generated.resources.memory_filter_status
-import souz.sharedui.generated.resources.memory_filter_status_active
-import souz.sharedui.generated.resources.memory_filter_status_all
-import souz.sharedui.generated.resources.memory_filter_status_deleted
-import souz.sharedui.generated.resources.memory_filter_status_retired
-import souz.sharedui.generated.resources.memory_loading
-import souz.sharedui.generated.resources.memory_scope_all
-import souz.sharedui.generated.resources.memory_scope_global
-import souz.sharedui.generated.resources.memory_subtitle
-import souz.sharedui.generated.resources.memory_title
-import souz.sharedui.generated.resources.memory_badge_pinned
-import souz.sharedui.generated.resources.memory_details_confidence
-import souz.sharedui.generated.resources.memory_kind_semantic
-import souz.sharedui.generated.resources.memory_kind_preference
-import souz.sharedui.generated.resources.memory_kind_procedure
-import souz.sharedui.generated.resources.memory_kind_project_rule
-import souz.sharedui.generated.resources.memory_kind_episode_note
-import souz.sharedui.generated.resources.memory_kind_project_decision
-import souz.sharedui.generated.resources.memory_created_by_manual
-import souz.sharedui.generated.resources.memory_created_by_auto
-import souz.sharedui.generated.resources.memory_created_by_system
-import souz.sharedui.generated.resources.memory_scope_chat_format
-import souz.sharedui.generated.resources.memory_editor_error_title_required
-import souz.sharedui.generated.resources.memory_editor_error_body_required
-import souz.sharedui.generated.resources.memory_editor_advanced
+import souz.sharedui.generated.resources.*
 
 @Composable
 fun MemoryScreen(
@@ -195,7 +83,7 @@ fun MemoryScreen(
                 if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
                     when {
                         state.editor != null -> onAction(MemoryAction.CloseDialog)
-                        state.confirmAction != null -> onAction(MemoryAction.CancelConfirmAction)
+                        state.confirm != null -> onAction(MemoryAction.CancelConfirmAction)
                         state.detailsFactId != null -> onAction(MemoryAction.CloseDetails)
                         else -> onClose()
                     }
@@ -240,50 +128,18 @@ fun MemoryScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            val createInteraction = remember { MutableInteractionSource() }
-                            val isCreateHovered by createInteraction.collectIsHoveredAsState()
-
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        brush = Brush.linearGradient(
-                                            colors = if (isCreateHovered) {
-                                                listOf(Color(0x26FFFFFF), Color(0x0DFFFFFF))
-                                            } else {
-                                                listOf(Color(0x14FFFFFF), Color(0x05FFFFFF))
-                                            },
-                                        ),
-                                    )
-                                    .border(
-                                        1.dp,
-                                        if (isCreateHovered) Color(0x4DFFFFFF) else Color(0x33FFFFFF),
-                                        RoundedCornerShape(12.dp),
-                                    )
-                                    .clickable(
-                                        interactionSource = createInteraction,
-                                        indication = null,
-                                    ) { onAction(MemoryAction.OpenCreateDialog) }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Add,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.glassColors.textPrimary,
-                                    )
-                                    Text(
-                                        text = stringResource(Res.string.memory_create),
-                                        color = MaterialTheme.glassColors.textPrimary,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                }
+                            TextButton(onClick = { onAction(MemoryAction.OpenCreateDialog) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.glassColors.textPrimary,
+                                )
+                                Text(
+                                    text = stringResource(Res.string.memory_create),
+                                    color = MaterialTheme.glassColors.textPrimary,
+                                    fontWeight = FontWeight.Medium,
+                                )
                             }
                             IconButton(onClick = onClose) {
                                 Icon(
@@ -340,9 +196,10 @@ fun MemoryScreen(
                 )
             }
 
-            state.confirmAction?.let { confirmAction ->
+            state.confirm?.let { confirmAction ->
                 MemoryConfirmDialog(
                     action = confirmAction,
+                    factTitle = state.factTitle(confirmAction.factId),
                     onConfirm = { onAction(MemoryAction.ConfirmAction) },
                     onDismiss = { onAction(MemoryAction.CancelConfirmAction) },
                 )
@@ -473,7 +330,7 @@ private fun MemoryFactsContent(
 
 @Composable
 private fun MemoryFactRow(
-    fact: MemoryFactUi,
+    fact: MemoryFact,
     onAction: (MemoryAction) -> Unit,
 ) {
     Column(
@@ -501,7 +358,7 @@ private fun MemoryFactRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = fact.updatedAtShortLabel,
+                    text = fact.updatedAt.shortMemoryLabel(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.55f),
                 )
@@ -520,13 +377,13 @@ private fun MemoryFactRow(
         }
 
         Text(
-            text = "${fact.kindEnum.label()} · ${memoryScopeLabel(fact.scopeType, fact.scopeId)} · ${fact.confidenceLabel}",
+            text = "${fact.kind.label()} · ${fact.scope.memoryLabel()} · ${fact.confidence.confidenceLabel()}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.58f),
         )
 
         Text(
-            text = fact.bodyPreview,
+            text = fact.body.preview(),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.82f),
             maxLines = 3,
@@ -576,7 +433,8 @@ private fun MemoryFactDetailsPanel(
                 MemoryCenteredText(stringResource(Res.string.memory_details_select))
             }
 
-            else -> state.selectedFact?.let { fact ->
+            else -> state.selectedFact?.let { details ->
+                val fact = details.fact
                 val scrollState = rememberScrollState()
 
                 Column(
@@ -595,9 +453,9 @@ private fun MemoryFactDetailsPanel(
                         if (fact.pinned) {
                             MemoryBadge(text = stringResource(Res.string.memory_badge_pinned), tint = MaterialTheme.colorScheme.primary)
                         }
-                        MemoryBadge(text = createdByLabel(fact.createdByLabel), tint = Color(0xFF82B1FF))
-                        if (fact.statusEnum != MemoryFactStatus.ACTIVE) {
-                            MemoryBadge(text = fact.statusEnum.label(), tint = Color(0xFFFFB86C))
+                        MemoryBadge(text = createdByLabel(fact.createdBy), tint = Color(0xFF82B1FF))
+                        if (fact.status != MemoryFactStatus.ACTIVE) {
+                            MemoryBadge(text = fact.status.label(), tint = Color(0xFFFFB86C))
                         }
                     }
 
@@ -609,13 +467,13 @@ private fun MemoryFactDetailsPanel(
 
                     HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
-                    MemoryDetailItem(stringResource(Res.string.memory_editor_kind), fact.kindEnum.label())
-                    MemoryDetailItem(stringResource(Res.string.memory_details_scope), memoryScopeLabel(fact.scopeType, fact.scopeId))
-                    MemoryDetailItem(stringResource(Res.string.memory_details_status), fact.statusEnum.label())
-                    MemoryDetailItem(stringResource(Res.string.memory_details_confidence), fact.confidenceLabel)
-                    MemoryDetailItem(stringResource(Res.string.memory_details_created_by), createdByLabel(fact.createdByLabel))
-                    MemoryDetailItem(stringResource(Res.string.memory_details_created_at), fact.createdAtLabel)
-                    MemoryDetailItem(stringResource(Res.string.memory_details_updated_at), fact.updatedAtLabel)
+                    MemoryDetailItem(stringResource(Res.string.memory_editor_kind), fact.kind.label())
+                    MemoryDetailItem(stringResource(Res.string.memory_details_scope), fact.scope.memoryLabel())
+                    MemoryDetailItem(stringResource(Res.string.memory_details_status), fact.status.label())
+                    MemoryDetailItem(stringResource(Res.string.memory_details_confidence), fact.confidence.confidenceLabel())
+                    MemoryDetailItem(stringResource(Res.string.memory_details_created_by), createdByLabel(fact.createdBy))
+                    MemoryDetailItem(stringResource(Res.string.memory_details_created_at), fact.createdAt.memoryLabel())
+                    MemoryDetailItem(stringResource(Res.string.memory_details_updated_at), fact.updatedAt.memoryLabel())
                     fact.slotKey?.let {
                         MemoryDetailItem(stringResource(Res.string.memory_details_slot_key), it)
                     }
@@ -632,14 +490,14 @@ private fun MemoryFactDetailsPanel(
                         color = MaterialTheme.glassColors.textPrimary,
                     )
 
-                    if (fact.evidence.isEmpty()) {
+                    if (details.evidence.isEmpty()) {
                         Text(
                             text = stringResource(Res.string.memory_evidence_empty),
                             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.6f),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     } else {
-                        fact.evidence.forEach { evidence ->
+                        details.evidence.forEach { evidence ->
                             MemoryEvidenceCard(evidence = evidence)
                         }
                     }
@@ -662,12 +520,12 @@ private fun MemoryFactDetailsPanel(
                         ) {
                             onAction(MemoryAction.SetPinned(fact.id, !fact.pinned))
                         }
-                        if (fact.statusEnum != MemoryFactStatus.RETIRED && fact.statusEnum != MemoryFactStatus.DELETED) {
+                        if (fact.status != MemoryFactStatus.RETIRED && fact.status != MemoryFactStatus.DELETED) {
                             MemoryActionButton(stringResource(Res.string.memory_action_retire)) {
                                 onAction(MemoryAction.AskRetire(fact.id))
                             }
                         }
-                        if (fact.statusEnum != MemoryFactStatus.DELETED) {
+                        if (fact.status != MemoryFactStatus.DELETED) {
                             MemoryActionButton(
                                 text = stringResource(Res.string.memory_action_delete),
                                 tint = MaterialTheme.colorScheme.error,
@@ -684,8 +542,10 @@ private fun MemoryFactDetailsPanel(
 
 @Composable
 private fun MemoryEvidenceCard(
-    evidence: MemoryEvidenceUi,
+    evidence: MemoryEvidenceDetail,
 ) {
+    val evidenceText = evidence.displayText()
+    val sourceText = evidence.sourceEvent.text.trim()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -696,13 +556,13 @@ private fun MemoryEvidenceCard(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = evidence.text,
+            text = evidenceText,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.glassColors.textPrimary,
         )
-        if (evidence.sourceText != evidence.text) {
+        if (sourceText != evidenceText) {
             Text(
-                text = evidence.sourceText,
+                text = sourceText,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.68f),
                 lineHeight = 18.sp,
@@ -710,9 +570,9 @@ private fun MemoryEvidenceCard(
         }
         Text(
             text = listOfNotNull(
-                evidence.sourceType,
-                evidence.sourceRef,
-                evidence.createdAtLabel,
+                evidence.sourceEvent.sourceType,
+                evidence.sourceEvent.sourceRef,
+                evidence.sourceEvent.createdAt.memoryLabel(),
             ).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.55f),
@@ -735,7 +595,6 @@ private fun MemoryFactEditorDialog(
     var slotKey by remember(editor) { mutableStateOf(editor.input.slotKey.orEmpty()) }
     var pinned by remember(editor) { mutableStateOf(editor.input.pinned) }
     val scopeLabel = memoryScopeLabel(scopeType, scopeId)
-    var showAdvanced by remember { mutableStateOf(!editor.input.slotKey.isNullOrBlank()) }
     var showValidationErrors by remember { mutableStateOf(false) }
 
     val titleRequiredMsg = stringResource(Res.string.memory_editor_error_title_required)
@@ -815,71 +674,32 @@ private fun MemoryFactEditorDialog(
                         entry.label() to { kind = entry }
                     },
                 )
-                Column(
+                LabeledTextField(
+                    label = stringResource(Res.string.memory_editor_slot_key),
+                    value = slotKey,
+                    onValueChange = { slotKey = it },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) { showAdvanced = !showAdvanced }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            imageVector = if (showAdvanced) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = Color.White.copy(alpha = 0.7f),
-                        )
-                        Text(
-                            text = stringResource(Res.string.memory_editor_advanced),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.7f),
-                        )
-                    }
-                    if (showAdvanced) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            LabeledTextField(
-                                label = stringResource(Res.string.memory_editor_slot_key),
-                                value = slotKey,
-                                onValueChange = { slotKey = it },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) { pinned = !pinned }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Checkbox(
-                                    checked = pinned,
-                                    onCheckedChange = { pinned = it },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = MaterialTheme.colorScheme.primary,
-                                        uncheckedColor = Color.White.copy(alpha = 0.4f),
-                                    ),
-                                )
-                                Text(
-                                    text = stringResource(Res.string.memory_editor_pinned),
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    }
+                    Checkbox(
+                        checked = pinned,
+                        onCheckedChange = { pinned = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = Color.White.copy(alpha = 0.4f),
+                        ),
+                    )
+                    Text(
+                        text = stringResource(Res.string.memory_editor_pinned),
+                        color = Color.White.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.clickable { pinned = !pinned },
+                    )
                 }
                 if (showValidationErrors) {
                     validationMessage?.let {
@@ -899,26 +719,27 @@ private fun MemoryFactEditorDialog(
 
 @Composable
 private fun MemoryConfirmDialog(
-    action: MemoryConfirmAction,
+    action: PendingMemoryConfirm,
+    factTitle: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val title = when (action) {
-        is MemoryConfirmAction.Delete -> stringResource(Res.string.memory_confirm_delete_title)
-        is MemoryConfirmAction.Retire -> stringResource(Res.string.memory_confirm_retire_title)
+    val title = when (action.kind) {
+        PendingMemoryConfirm.Kind.Delete -> stringResource(Res.string.memory_confirm_delete_title)
+        PendingMemoryConfirm.Kind.Retire -> stringResource(Res.string.memory_confirm_retire_title)
     }
-    val message = when (action) {
-        is MemoryConfirmAction.Delete -> stringResource(Res.string.memory_confirm_delete_message)
-        is MemoryConfirmAction.Retire -> stringResource(Res.string.memory_confirm_retire_message)
-    }.format(action.factTitle)
+    val message = when (action.kind) {
+        PendingMemoryConfirm.Kind.Delete -> stringResource(Res.string.memory_confirm_delete_message)
+        PendingMemoryConfirm.Kind.Retire -> stringResource(Res.string.memory_confirm_retire_message)
+    }.format(factTitle)
 
     ConfirmDialog(
         type = ConfirmDialogType.WARNING,
         title = title,
         message = message,
-        confirmText = when (action) {
-            is MemoryConfirmAction.Delete -> stringResource(Res.string.memory_action_delete)
-            is MemoryConfirmAction.Retire -> stringResource(Res.string.memory_action_retire)
+        confirmText = when (action.kind) {
+            PendingMemoryConfirm.Kind.Delete -> stringResource(Res.string.memory_action_delete)
+            PendingMemoryConfirm.Kind.Retire -> stringResource(Res.string.memory_action_retire)
         },
         onConfirm = onConfirm,
         onDismiss = onDismiss,
@@ -1027,59 +848,31 @@ private fun MemoryMenuField(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember(label, selectedText, options.size) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
 
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (label.isNotBlank()) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    fontWeight = FontWeight.Medium
-                ),
-                color = Color.White.copy(alpha = 0.7f)
-            )
+            Text(label, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(42.dp)
-        ) {
-            Box(
+        Box(modifier = Modifier.fillMaxWidth()) {
+            TextButton(
+                onClick = { expanded = true },
                 modifier = Modifier
-                    .fillMaxSize()
-                    .clip(shape)
-                    .background(Color(0x0DFFFFFF), shape)
-                    .border(1.dp, Color(0x14FFFFFF), shape)
-                    .clickable { expanded = true }
-                    .padding(horizontal = 12.dp),
-                contentAlignment = Alignment.CenterStart
+                    .fillMaxWidth()
+                    .height(42.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = selectedText,
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            color = Color.White.copy(alpha = 0.9f)
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Icon(
-                        imageVector = Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = Color.White.copy(alpha = 0.6f),
-                    )
-                }
+                Text(
+                    text = selectedText,
+                    modifier = Modifier.weight(1f),
+                    color = Color.White.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = Color.White.copy(alpha = 0.6f),
+                )
             }
             DropdownMenu(
                 expanded = expanded,
@@ -1090,12 +883,7 @@ private fun MemoryMenuField(
             ) {
                 options.forEach { (title, action) ->
                     DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = title,
-                                color = MaterialTheme.glassColors.textPrimary,
-                            )
-                        },
+                        text = { Text(title, color = MaterialTheme.glassColors.textPrimary) },
                         onClick = {
                             expanded = false
                             action()
@@ -1122,60 +910,3 @@ private fun Modifier.panelSurface(): Modifier =
     clip(RoundedCornerShape(18.dp))
         .background(Color.Black.copy(alpha = 0.32f))
         .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
-
-@Composable
-private fun memoryScopeLabel(
-    scopeType: String,
-    scopeId: String,
-): String {
-    val cleanType = scopeType.trim()
-    val cleanId = scopeId.trim()
-    return when {
-        cleanType.isBlank() && cleanId.isBlank() -> ""
-        isGlobalScope(cleanType, cleanId) -> stringResource(Res.string.memory_scope_global)
-        cleanType.equals("chat", ignoreCase = true) -> stringResource(Res.string.memory_scope_chat_format).format(cleanId)
-        else -> "$cleanType:$cleanId"
-    }
-}
-
-private fun isGlobalScope(
-    scopeType: String,
-    scopeId: String,
-): Boolean = scopeType.trim().equals(DEFAULT_SCOPE_TYPE, ignoreCase = true) &&
-    scopeId.trim().equals(DEFAULT_SCOPE_ID, ignoreCase = true)
-
-@Composable
-private fun MemoryStatusFilter.label(): String = when (this) {
-    MemoryStatusFilter.ACTIVE -> stringResource(Res.string.memory_filter_status_active)
-    MemoryStatusFilter.RETIRED -> stringResource(Res.string.memory_filter_status_retired)
-    MemoryStatusFilter.DELETED -> stringResource(Res.string.memory_filter_status_deleted)
-    MemoryStatusFilter.ALL -> stringResource(Res.string.memory_filter_status_all)
-}
-
-@Composable
-private fun MemoryFactStatus.label(): String = when (this) {
-    MemoryFactStatus.ACTIVE -> stringResource(Res.string.memory_filter_status_active)
-    MemoryFactStatus.RETIRED -> stringResource(Res.string.memory_filter_status_retired)
-    MemoryFactStatus.DELETED -> stringResource(Res.string.memory_filter_status_deleted)
-}
-
-@Composable
-private fun MemoryFactKind.label(): String = when (this) {
-    MemoryFactKind.SEMANTIC -> stringResource(Res.string.memory_kind_semantic)
-    MemoryFactKind.PREFERENCE -> stringResource(Res.string.memory_kind_preference)
-    MemoryFactKind.PROCEDURE -> stringResource(Res.string.memory_kind_procedure)
-    MemoryFactKind.PROJECT_RULE -> stringResource(Res.string.memory_kind_project_rule)
-    MemoryFactKind.EPISODE_NOTE -> stringResource(Res.string.memory_kind_episode_note)
-    MemoryFactKind.PROJECT_DECISION -> stringResource(Res.string.memory_kind_project_decision)
-}
-
-@Composable
-private fun createdByLabel(label: String): String = when (label) {
-    "Manual" -> stringResource(Res.string.memory_created_by_manual)
-    "Auto" -> stringResource(Res.string.memory_created_by_auto)
-    "System" -> stringResource(Res.string.memory_created_by_system)
-    else -> label
-}
-
-private const val DEFAULT_SCOPE_TYPE = "global"
-private const val DEFAULT_SCOPE_ID = "global"

@@ -34,14 +34,9 @@ interface MemoryRepository {
         embedding: FloatArray,
     )
 
-    suspend fun listFactsMissingEmbedding(
-        scopes: List<MemoryScope>,
-        model: String,
-        limit: Int,
-    ): List<MemoryFact>
-
     suspend fun searchFacts(
         scopes: List<MemoryScope>,
+        model: String,
         queryEmbedding: FloatArray,
         limit: Int,
     ): List<MemoryFactSearchHit>

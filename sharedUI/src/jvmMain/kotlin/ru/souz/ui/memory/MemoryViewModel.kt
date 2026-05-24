@@ -29,7 +29,7 @@ class MemoryViewModel(
             is MemoryAction.AskRetire -> askRetire(event.factId)
             is MemoryAction.AskDelete -> askDelete(event.factId)
             MemoryAction.ConfirmAction -> confirmAction()
-            MemoryAction.CancelConfirmAction -> setState { copy(confirmAction = null) }
+            MemoryAction.CancelConfirmAction -> setState { copy(confirm = null) }
             MemoryAction.CloseDialog -> setState { copy(editor = null) }
             MemoryAction.ClearError -> setState { copy(error = null) }
         }
@@ -44,7 +44,7 @@ class MemoryViewModel(
         }.onSuccess { facts ->
             setState {
                 copy(
-                    facts = facts.sortedForUi().map { it.toUi() },
+                    facts = facts.sortedForUi(),
                     isLoading = false,
                 )
             }
@@ -104,7 +104,7 @@ class MemoryViewModel(
             )
         }
         runCatching {
-            memoryService.getFactDetails(factId)?.toUi()
+            memoryService.getFactDetails(factId)
                 ?: error("Memory fact not found: $factId")
         }.onSuccess { details ->
             setState {
@@ -151,24 +151,24 @@ class MemoryViewModel(
 
     private suspend fun askRetire(factId: String) {
         setState {
-            copy(confirmAction = MemoryConfirmAction.Retire(factId, factTitleFor(factId)))
+            copy(confirm = PendingMemoryConfirm(PendingMemoryConfirm.Kind.Retire, factId))
         }
     }
 
     private suspend fun askDelete(factId: String) {
         setState {
-            copy(confirmAction = MemoryConfirmAction.Delete(factId, factTitleFor(factId)))
+            copy(confirm = PendingMemoryConfirm(PendingMemoryConfirm.Kind.Delete, factId))
         }
     }
 
     private suspend fun confirmAction() {
-        val action = currentState.confirmAction ?: return
-        setState { copy(confirmAction = null, error = null) }
+        val action = currentState.confirm ?: return
+        setState { copy(confirm = null, error = null) }
 
         runCatching {
-            when (action) {
-                is MemoryConfirmAction.Delete -> memoryService.deleteFact(action.factId)
-                is MemoryConfirmAction.Retire -> memoryService.retireFact(action.factId)
+            when (action.kind) {
+                PendingMemoryConfirm.Kind.Delete -> memoryService.deleteFact(action.factId)
+                PendingMemoryConfirm.Kind.Retire -> memoryService.retireFact(action.factId)
             }
         }.onSuccess {
             if (currentState.detailsFactId == action.factId) {
@@ -178,9 +178,9 @@ class MemoryViewModel(
         }.onFailure { error ->
             fail(
                 error,
-                when (action) {
-                    is MemoryConfirmAction.Delete -> "Failed to delete memory fact"
-                    is MemoryConfirmAction.Retire -> "Failed to retire memory fact"
+                when (action.kind) {
+                    PendingMemoryConfirm.Kind.Delete -> "Failed to delete memory fact"
+                    PendingMemoryConfirm.Kind.Retire -> "Failed to retire memory fact"
                 },
             )
         }
@@ -191,9 +191,6 @@ class MemoryViewModel(
             loadDetails(factId)
         }
     }
-
-    private fun factTitleFor(factId: String): String =
-        currentState.facts.firstOrNull { it.id == factId }?.title ?: factId
 
     private suspend fun fail(
         error: Throwable,

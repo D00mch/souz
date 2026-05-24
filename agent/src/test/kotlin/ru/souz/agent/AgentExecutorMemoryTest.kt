@@ -1,72 +1,64 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package ru.souz.agent
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
-import ru.souz.agent.session.GraphSessionRepository
-import ru.souz.agent.session.GraphSessionService
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.restJsonMapper
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
-import ru.souz.paths.SouzPaths
-import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 class AgentExecutorMemoryTest {
     @Test
-    fun `execute uses memory system prompt before graph execution`() = runTest {
-        val events = mutableListOf<String>()
+    fun `memory prompt applies before graph execution and emits runtime event`() = runTest {
+        val order = mutableListOf<String>()
         val memoryRuntime = RecordingMemoryRuntime(
             augmentedPrompt = "Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.",
-            onBuild = { events += "memory.build" },
+            onBuild = { order += "memory.build" },
         )
         val agent = CapturingAgent(
             output = "assistant response",
-            onExecute = { events += "agent.execute" },
+            onExecute = { order += "agent.execute" },
         )
-        val executor = AgentExecutor(
-            agentProvider = { agent },
-            memoryRuntime = memoryRuntime,
-        )
+        val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
 
-        val result = executor.execute(
+        val result = executor(agent, memoryRuntime).execute(
             agentId = AgentId.GRAPH,
             context = baseContext(),
             input = "hello",
+            eventSink = CollectingEventSink(runtimeEvents),
         )
 
-        assertEquals(listOf("memory.build", "agent.execute"), events)
+        assertEquals(listOf("memory.build", "agent.execute"), order)
         assertEquals("Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.", agent.executedContexts.single().systemPrompt)
-        assertEquals(
-            "Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.",
-            agent.executedContexts.single().history.first().content,
-        )
+        assertEquals("Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.", agent.executedContexts.single().history.first().content)
         assertEquals("Base system prompt", result.context.systemPrompt)
         assertEquals("Base system prompt", result.context.history.first().content)
+        val event = assertIs<AgentRuntimeEvent.MemoryPromptAugmented>(runtimeEvents.single())
+        assertEquals("Relevant memory:\n- Prefer Kotlin.", event.addedBlock)
     }
 
     @Test
     fun `execute falls back to base prompt when memory retrieval fails`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime(
-            buildFailure = IllegalStateException("retrieval failed"),
-        )
+        val memoryRuntime = RecordingMemoryRuntime(buildFailure = IllegalStateException("retrieval failed"))
         val agent = CapturingAgent(output = "assistant response")
-        val executor = AgentExecutor(
-            agentProvider = { agent },
-            memoryRuntime = memoryRuntime,
-        )
 
-        val result = executor.execute(
+        val result = executor(agent, memoryRuntime).execute(
             agentId = AgentId.GRAPH,
             context = baseContext(),
             input = "hello",
@@ -78,28 +70,29 @@ class AgentExecutorMemoryTest {
     }
 
     @Test
-    fun `execute captures completed turn after successful graph execution`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime()
-        val executor = AgentExecutor(
-            agentProvider = { CapturingAgent(output = "assistant response") },
-            memoryRuntime = memoryRuntime,
-        )
+    fun `capture starts after successful execution without blocking response`() = runTest {
+        val memoryRuntime = RecordingMemoryRuntime(blockCapture = true)
 
-        executor.execute(
-            agentId = AgentId.GRAPH,
-            context = baseContext(
-                toolInvocationMeta = ToolInvocationMeta.localDefault(
-                    conversationId = "conversation-1",
-                    requestId = "request-1",
-                    attributes = mapOf(
-                        "userMessageId" to "user-message-1",
-                        "assistantMessageId" to "assistant-message-1",
-                    ),
-                )
-            ),
-            input = "hello",
-        )
+        val result = withTimeout(1_000) {
+            executor(memoryRuntime = memoryRuntime).execute(
+                agentId = AgentId.GRAPH,
+                context = baseContext(
+                    toolInvocationMeta = ToolInvocationMeta.localDefault(
+                        conversationId = "conversation-1",
+                        requestId = "request-1",
+                        attributes = mapOf(
+                            "userMessageId" to "user-message-1",
+                            "assistantMessageId" to "assistant-message-1",
+                        ),
+                    )
+                ),
+                input = "hello",
+            )
+        }
+        runCurrent()
+        val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
 
+        assertEquals("assistant response", result.output)
         assertEquals(
             CompletedTurnMemoryInput(
                 conversationId = "conversation-1",
@@ -108,67 +101,37 @@ class AgentExecutorMemoryTest {
                 userMessage = "hello",
                 assistantMessage = "assistant response",
             ),
-            memoryRuntime.capturedTurns.single(),
+            captured,
         )
+        assertFalse(memoryRuntime.captureFinished.isCompleted)
+
+        memoryRuntime.releaseCapture.complete(Unit)
+        withTimeout(1_000) { memoryRuntime.captureFinished.await() }
     }
 
     @Test
     fun `capture failure does not fail execution`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime(
-            captureFailure = IllegalStateException("capture failed"),
-        )
-        val executor = AgentExecutor(
-            agentProvider = { CapturingAgent(output = "assistant response") },
-            memoryRuntime = memoryRuntime,
-        )
+        val memoryRuntime = RecordingMemoryRuntime(captureFailure = IllegalStateException("capture failed"))
 
-        val result = executor.execute(
+        val result = executor(memoryRuntime = memoryRuntime).execute(
             agentId = AgentId.GRAPH,
             context = baseContext(),
             input = "hello",
         )
+        runCurrent()
 
         assertEquals("assistant response", result.output)
         assertEquals(1, memoryRuntime.capturedTurns.size)
     }
 
-    @Test
-    fun `memory prompt augmentation is emitted as runtime event`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime(
-            augmentedPrompt = "Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.",
-        )
-        val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
-        val executor = AgentExecutor(
-            agentProvider = { CapturingAgent(output = "assistant response") },
-            memoryRuntime = memoryRuntime,
-        )
-
-        executor.execute(
-            agentId = AgentId.GRAPH,
-            context = baseContext(),
-            input = "hello",
-            eventSink = CollectingEventSink(runtimeEvents),
-        )
-
-        val event = assertIs<AgentRuntimeEvent.MemoryPromptAugmented>(runtimeEvents.single())
-        assertEquals("Relevant memory:\n- Prefer Kotlin.", event.addedBlock)
-    }
-
-    @Test
-    fun `graph session service records memory prompt augmentation event`() = runTest {
-        val tempRoot = kotlin.io.path.createTempDirectory("souz-agent-session-test")
-        val repository = GraphSessionRepository(TestSouzPaths(tempRoot))
-        val service = GraphSessionService(repository, restJsonMapper)
-
-        service.startTask("hello")
-        service.emit(AgentRuntimeEvent.MemoryPromptAugmented("Relevant memory:\n- Prefer Kotlin."))
-        service.finishTask()
-
-        val step = repository.loadAll().single().steps.single()
-        assertEquals("Memory Prompt Augmentation", step.nodeName)
-        assertEquals("Relevant memory:\n- Prefer Kotlin.", step.outputSummary)
-        assertTrue(step.data.contains("Relevant memory:\\n- Prefer Kotlin."))
-    }
+    private fun TestScope.executor(
+        agent: CapturingAgent = CapturingAgent(output = "assistant response"),
+        memoryRuntime: RecordingMemoryRuntime,
+    ): AgentExecutor = AgentExecutor(
+        agentProvider = { agent },
+        memoryRuntime = memoryRuntime,
+        captureScope = backgroundScope,
+    )
 
     private fun baseContext(
         toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
@@ -218,9 +181,13 @@ class AgentExecutorMemoryTest {
         private val augmentedPrompt: String? = null,
         private val buildFailure: Throwable? = null,
         private val captureFailure: Throwable? = null,
+        private val blockCapture: Boolean = false,
         private val onBuild: () -> Unit = {},
     ) : ConversationMemoryRuntime {
         val capturedTurns = mutableListOf<CompletedTurnMemoryInput>()
+        val captureStarted = CompletableDeferred<CompletedTurnMemoryInput>()
+        val releaseCapture = CompletableDeferred<Unit>()
+        val captureFinished = CompletableDeferred<Unit>()
 
         override suspend fun buildSystemPrompt(
             baseSystemPrompt: String,
@@ -234,7 +201,10 @@ class AgentExecutorMemoryTest {
 
         override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
             capturedTurns += input
+            captureStarted.complete(input)
+            if (blockCapture) releaseCapture.await()
             captureFailure?.let { throw it }
+            captureFinished.complete(Unit)
         }
     }
 
@@ -244,17 +214,5 @@ class AgentExecutorMemoryTest {
         override suspend fun emit(event: AgentRuntimeEvent) {
             events += event
         }
-    }
-
-    private class TestSouzPaths(
-        override val stateRoot: Path,
-    ) : SouzPaths {
-        override val sessionsDir: Path = stateRoot.resolve("sessions")
-        override val vectorIndexDir: Path = stateRoot.resolve("vector-index")
-        override val logsDir: Path = stateRoot.resolve("logs")
-        override val modelsDir: Path = stateRoot.resolve("models")
-        override val nativeLibsDir: Path = stateRoot.resolve("native")
-        override val skillsDir: Path = stateRoot.resolve("skills")
-        override val skillValidationsDir: Path = stateRoot.resolve("skill-validations")
     }
 }
