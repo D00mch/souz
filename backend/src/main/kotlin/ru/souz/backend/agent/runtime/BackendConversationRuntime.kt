@@ -25,6 +25,8 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.runtime.ApiClassifier
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.LocalRegexClassifier
 
 /** Result of one backend agent execution turn plus final usage data. */
@@ -127,6 +129,7 @@ class BackendConversationRuntimeFactory(
     private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCommandTool: LLMToolSetup? = null,
+    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -175,6 +178,7 @@ class BackendConversationRuntimeFactory(
             apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
             skillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository,
+            memoryRuntime = memoryRuntime,
         ).create()
         return BackendConversationRuntime(
             key = key,

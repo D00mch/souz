@@ -293,7 +293,7 @@ class AgentScenarioTestSupport(
         fewShotExamplesEnabled = useFewShotExamples
         try {
             val di = DI.invoke(allowSilentOverride = true) {
-                import(mainDiModule)
+                import(mainDiModule, allowOverride = true)
                 import(testOverrideModule, allowOverride = true)
                 bindProvider<DI> { this.di }
                 overrides()

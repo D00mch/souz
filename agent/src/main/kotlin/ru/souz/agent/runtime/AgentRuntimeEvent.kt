@@ -18,6 +18,10 @@ interface AgentRuntimeEventSink {
 }
 
 sealed interface AgentRuntimeEvent {
+    data class MemoryPromptAugmented(
+        val addedBlock: String,
+    ) : AgentRuntimeEvent
+
     data class LlmMessageDelta(
         val text: String,
     ) : AgentRuntimeEvent

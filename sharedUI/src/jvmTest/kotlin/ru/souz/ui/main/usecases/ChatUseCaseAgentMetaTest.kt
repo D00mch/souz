@@ -3,13 +3,12 @@
 package ru.souz.ui.main.usecases
 
 import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
@@ -21,19 +20,19 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
-import ru.souz.memory.CompletedTurnMemoryInput
-import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.ChatRequestSource
 import ru.souz.service.observability.DesktopStructuredLogger
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-class ChatUseCaseMemoryTest {
+class ChatUseCaseAgentMetaTest {
     @Test
-    fun `sendChatMessage uses memory prompt overlay and captures completed turn`() = runTest {
+    fun `sendChatMessage passes conversation and message ids to agent execution meta`() = runTest {
+        val executionMeta = mutableListOf<ToolInvocationMeta?>()
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
         every { agentFacade.currentContext } returns MutableStateFlow(
@@ -50,11 +49,14 @@ class ChatUseCaseMemoryTest {
             )
         )
         coEvery {
-            agentFacade.executeWithSystemPrompt(
+            agentFacade.execute(
                 input = "hello",
-                systemPromptOverride = "Base system prompt\n\nRelevant memory:\n- [preference] Prefer Kotlin: Use Kotlin.",
+                toolInvocationMetaOverride = any(),
             )
-        } returns "response"
+        } coAnswers {
+            executionMeta += secondArg<ToolInvocationMeta?>()
+            "response"
+        }
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.gigaModel } returns LLMModel.Max
@@ -66,18 +68,6 @@ class ChatUseCaseMemoryTest {
         every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
         every { tokenLogging.sessionTokenUsage() } returns LLMResponse.Usage(0, 0, 0, 0)
 
-        val memoryRuntime = mockk<ConversationMemoryRuntime>(relaxed = true)
-        val completedTurns = mutableListOf<CompletedTurnMemoryInput>()
-        coEvery {
-            memoryRuntime.buildSystemPrompt(
-                baseSystemPrompt = "Base system prompt",
-                userMessage = "hello",
-                conversationId = any(),
-            )
-        } returns "Base system prompt\n\nRelevant memory:\n- [preference] Prefer Kotlin: Use Kotlin."
-        coEvery { memoryRuntime.captureCompletedTurn(any()) } coAnswers {
-            completedTurns += firstArg<CompletedTurnMemoryInput>()
-        }
         val toolModifyReviewUseCase = mockk<ToolModifyReviewUseCase>(relaxed = true)
         coEvery {
             toolModifyReviewUseCase.resolvePendingReviewIfNeeded(
@@ -101,7 +91,6 @@ class ChatUseCaseMemoryTest {
             observabilityTracker = ChatObservabilityTracker(log = DesktopStructuredLogger()),
             log = DesktopStructuredLogger(),
             tokenLogging = tokenLogging,
-            memoryRuntime = memoryRuntime,
             ioDispatcher = UnconfinedTestDispatcher(testScheduler),
         )
 
@@ -113,18 +102,10 @@ class ChatUseCaseMemoryTest {
         )
         advanceUntilIdle()
 
-        coVerify(exactly = 1) {
-            agentFacade.executeWithSystemPrompt(
-                input = "hello",
-                systemPromptOverride = "Base system prompt\n\nRelevant memory:\n- [preference] Prefer Kotlin: Use Kotlin.",
-            )
-        }
-        coVerify(exactly = 1) {
-            memoryRuntime.captureCompletedTurn(any())
-        }
-        assertEquals("hello", completedTurns.single().userMessage)
-        assertEquals("response", completedTurns.single().assistantMessage)
-        assertTrue(completedTurns.single().userMessageId.isNotBlank())
-        assertTrue(completedTurns.single().assistantMessageId.isNotBlank())
+        val meta = assertNotNull(executionMeta.single())
+        assertTrue(meta.conversationId?.isNotBlank() == true)
+        assertTrue(meta.requestId?.isNotBlank() == true)
+        assertTrue(meta.attributes["userMessageId"]?.isNotBlank() == true)
+        assertTrue(meta.attributes["assistantMessageId"]?.isNotBlank() == true)
     }
 }

@@ -139,7 +139,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<MemoryWriter> { LlmMemoryWriter(instance(), instance()) }
     bindSingleton { MemoryService(instance(), instance()) }
     bindSingleton { MemoryCaptureService(instance(), instance()) }
-    bindSingleton<ConversationMemoryRuntime>(overrides = true) { DesktopConversationMemoryRuntime(instance(), instance()) }
+    bindSingleton<ConversationMemoryRuntime> { DesktopConversationMemoryRuntime(instance(), instance()) }
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<DesktopIndexRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<ToolAvailabilityPolicy> { DesktopToolAvailabilityPolicy(instance()) }

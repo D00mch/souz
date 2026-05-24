@@ -23,7 +23,6 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
-import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.service.observability.ChatConversationCloseReason
 import ru.souz.service.observability.ChatConversationMetrics
 import ru.souz.service.observability.ChatObservabilityTracker
@@ -57,7 +56,7 @@ class ChatUseCaseTest {
         every { agentFacade.cancelActiveJob() } answers {
             executeResult.completeExceptionally(CancellationException("view model cleared"))
         }
-        coEvery { agentFacade.executeWithSystemPrompt("hello", any()) } coAnswers {
+        coEvery { agentFacade.execute("hello", any()) } coAnswers {
             executeStarted.complete(Unit)
             executeResult.await()
         }
@@ -83,7 +82,6 @@ class ChatUseCaseTest {
             observabilityTracker = tracker,
             log = DesktopStructuredLogger(),
             tokenLogging = tokenLogging,
-            memoryRuntime = NoopConversationMemoryRuntime,
             ioDispatcher = UnconfinedTestDispatcher(testScheduler),
         )
 

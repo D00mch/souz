@@ -41,7 +41,9 @@ fun main() {
     logStartupPlatformInfo()
 
     application(exitProcessOnExit = false) {
-        withDI(mainDiModule) {
+        withDI({
+            import(mainDiModule, allowOverride = true)
+        }) {
             val di = localDI()
             val settingsProvider: SettingsProvider by di.instance()
             val mcpClientManager: McpClientManager by di.instance()

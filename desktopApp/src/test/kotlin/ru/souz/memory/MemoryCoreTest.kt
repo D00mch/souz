@@ -3,6 +3,7 @@
 package ru.souz.memory
 
 import java.nio.file.Files
+import java.sql.DriverManager
 import kotlinx.coroutines.test.runTest
 import kotlin.math.abs
 import kotlin.test.Test
@@ -94,6 +95,90 @@ class MemoryCoreTest {
         )
         assertEquals(fact.id, hits.first().fact.id)
         assertTrue(hits.first().score > 0.5f)
+    }
+
+    @Test
+    fun `updateFact updates scope and preserves discoverability in new scope`() = runTest {
+        val fixture = createFixture()
+        val fact = fixture.memoryService.createManualFact(
+            CreateMemoryFactInput(
+                scope = projectScope(),
+                kind = MemoryFactKind.PROJECT_DECISION,
+                title = "Scope target",
+                body = "This fact should move to chat scope.",
+            )
+        )
+
+        val updated = fixture.memoryService.updateFact(
+            factId = fact.id,
+            patch = MemoryFactPatch(
+                scope = chatScope("chat-7"),
+            )
+        )
+
+        assertEquals(chatScope("chat-7"), updated.scope)
+        assertTrue(
+            fixture.repository.listFacts(
+                MemoryFactFilter(scope = projectScope())
+            ).none { it.id == fact.id }
+        )
+        assertEquals(
+            listOf(fact.id),
+            fixture.repository.listFacts(
+                MemoryFactFilter(scope = chatScope("chat-7"))
+            ).map { it.id }
+        )
+
+        val hits = fixture.repository.searchFacts(
+            scopes = listOf(chatScope("chat-7")),
+            queryEmbedding = fixture.embedder.embedQuery("scope move chat"),
+            limit = 5,
+        )
+        assertEquals(fact.id, hits.first().fact.id)
+    }
+
+    @Test
+    fun `legacy memory facts schema is migrated on first access`() = runTest {
+        val dbDir = Files.createTempDirectory("souz-memory-legacy-test-")
+        val dbPath = dbDir.resolve("memory.db")
+        seedLegacyMemoryFactsSchema(dbPath)
+
+        val repository = SqliteMemoryRepository(dbPath)
+        val service = MemoryService(repository, FakeEmbeddingClient())
+
+        val facts = service.listFacts(MemoryFactFilter(statuses = setOf(MemoryFactStatus.ACTIVE)))
+        val migrated = facts.single()
+        val details = repository.getFactDetails(migrated.id)
+
+        assertEquals("legacy-fact-1", migrated.id)
+        assertEquals(MemoryScope("global", "global"), migrated.scope)
+        assertEquals(MemoryFactKind.PREFERENCE, migrated.kind)
+        assertEquals("User Preference Theme", migrated.title)
+        assertEquals("User prefers concise dark theme dashboards.", migrated.body)
+        assertEquals("system", migrated.createdBy)
+        assertNotNull(details)
+        assertEquals(1, details.evidence.size)
+        assertEquals("legacy_v0", details.evidence.single().sourceEvent.sourceType)
+        assertEquals("user.preference.theme", details.evidence.single().sourceEvent.sourceRef)
+    }
+
+    @Test
+    fun `legacy migrated facts are retrievable for prompt`() = runTest {
+        val dbDir = Files.createTempDirectory("souz-memory-legacy-search-test-")
+        val dbPath = dbDir.resolve("memory.db")
+        seedLegacyMemoryFactsSchema(dbPath)
+
+        val repository = SqliteMemoryRepository(dbPath)
+        val memoryService = MemoryService(repository, FakeEmbeddingClient())
+
+        val block = memoryService.retrieveForPrompt(
+            scopes = listOf(globalScope()),
+            query = "dark theme dashboards",
+            limit = 5,
+        )
+
+        assertEquals(listOf("legacy-fact-1"), block.facts.map { it.id })
+        assertTrue(block.rendered.contains("dark theme dashboards"))
     }
 
     @Test
@@ -538,6 +623,9 @@ class MemoryCoreTest {
                 keywordScore(normalized, "project"),
                 keywordScore(normalized, "chat"),
                 keywordScore(normalized, "rule"),
+                keywordScore(normalized, "dark"),
+                keywordScore(normalized, "theme"),
+                keywordScore(normalized, "dashboard"),
             )
         }
 
@@ -574,4 +662,66 @@ class MemoryCoreTest {
     private fun projectScope(): MemoryScope = MemoryScope(type = "project", id = "souz")
 
     private fun chatScope(id: String): MemoryScope = MemoryScope(type = "chat", id = id)
+
+    private fun seedLegacyMemoryFactsSchema(dbPath: java.nio.file.Path) {
+        Class.forName("org.sqlite.JDBC")
+        DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    create table memory_facts (
+                        id text primary key,
+                        slot_key text not null,
+                        text text not null,
+                        category text not null,
+                        status text not null,
+                        confidence real not null,
+                        created_at integer not null,
+                        updated_at integer not null,
+                        last_seen_at integer not null,
+                        last_confirmed_at integer not null,
+                        source_count integer not null default 0,
+                        superseded_by text,
+                        embedding_json text not null default '[]'
+                    )
+                    """.trimIndent()
+                )
+                statement.execute(
+                    """
+                    create table memory_fact_evidence (
+                        id text primary key,
+                        fact_id text not null,
+                        evidence_id text not null,
+                        support_type text not null,
+                        weight real not null,
+                        created_at text not null
+                    )
+                    """.trimIndent()
+                )
+            }
+            connection.prepareStatement(
+                """
+                insert into memory_facts(
+                    id, slot_key, text, category, status, confidence,
+                    created_at, updated_at, last_seen_at, last_confirmed_at, source_count, superseded_by, embedding_json
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, "legacy-fact-1")
+                statement.setString(2, "user.preference.theme")
+                statement.setString(3, "User prefers concise dark theme dashboards.")
+                statement.setString(4, "PREFERENCE")
+                statement.setString(5, "ACTIVE")
+                statement.setFloat(6, 0.93f)
+                statement.setLong(7, 1_717_000_000_000L)
+                statement.setLong(8, 1_717_000_100_000L)
+                statement.setLong(9, 1_717_000_100_000L)
+                statement.setLong(10, 1_717_000_100_000L)
+                statement.setInt(11, 1)
+                statement.setString(12, null)
+                statement.setString(13, "[]")
+                statement.executeUpdate()
+            }
+        }
+    }
 }

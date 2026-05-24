@@ -175,8 +175,10 @@ class MemoryService(
         limit: Int = 8,
     ): MemoryBlock {
         if (query.isBlank() || scopes.isEmpty()) return MemoryBlock(emptyList(), "")
+        val distinctScopes = scopes.distinct()
+        ensureEmbeddingsForPrompt(distinctScopes)
         val hits = repo.searchFacts(
-            scopes = scopes.distinct(),
+            scopes = distinctScopes,
             queryEmbedding = embedder.embedQuery(query),
             limit = limit,
         ).filter { it.score > 0f }
@@ -203,5 +205,28 @@ class MemoryService(
         appendLine(body)
         appendLine("kind=$kind")
         appendLine("scope=${scope.type}:${scope.id}")
+    }
+
+    private suspend fun ensureEmbeddingsForPrompt(scopes: List<MemoryScope>) {
+        while (true) {
+            val facts = repo.listFactsMissingEmbedding(
+                scopes = scopes,
+                model = embedder.model,
+                limit = EMBEDDING_BACKFILL_BATCH_SIZE,
+            )
+            if (facts.isEmpty()) return
+            facts.forEach { fact ->
+                repo.replaceEmbedding(
+                    factId = fact.id,
+                    model = embedder.model,
+                    embedding = embedder.embedDocument(fact.embeddingText()),
+                )
+            }
+            if (facts.size < EMBEDDING_BACKFILL_BATCH_SIZE) return
+        }
+    }
+
+    private companion object {
+        const val EMBEDDING_BACKFILL_BATCH_SIZE = 64
     }
 }

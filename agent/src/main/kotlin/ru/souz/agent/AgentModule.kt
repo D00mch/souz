@@ -23,6 +23,7 @@ import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
+import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
 
 fun agentDiModule(
@@ -86,7 +87,8 @@ fun agentDiModule(
     }
     bindSingleton {
         AgentExecutor(
-            agentProvider = { instance<GraphBasedAgent>() }
+            agentProvider = { instance<GraphBasedAgent>() },
+            memoryRuntime = instance<ConversationMemoryRuntime>(),
         )
     }
     bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }

@@ -25,6 +25,8 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
 
 class AgentExecutionKernel(
@@ -48,6 +50,7 @@ class AgentExecutionKernelFactory(
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
     private val skillRegistryRepository: SkillRegistryRepository,
+    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -96,7 +99,8 @@ class AgentExecutionKernelFactory(
             nodesSkills = nodesSkills,
         )
         val executor = AgentExecutor(
-            agentProvider = { graphAgent }
+            agentProvider = { graphAgent },
+            memoryRuntime = memoryRuntime,
         )
         return AgentExecutionKernel(
             contextFactory = contextFactory,

@@ -129,6 +129,7 @@ data class CreateCapturedFactInput(
 )
 
 data class MemoryFactPatch(
+    val scope: MemoryScope? = null,
     val kind: MemoryFactKind? = null,
     val title: String? = null,
     val body: String? = null,

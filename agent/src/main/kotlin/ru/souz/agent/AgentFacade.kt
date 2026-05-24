@@ -13,9 +13,8 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.session.GraphSessionService
-import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMModel
+import ru.souz.llms.ToolInvocationMeta
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade internal constructor(
@@ -101,57 +100,30 @@ class AgentFacade internal constructor(
         executor.cancelActiveJob(_activeAgentId.value)
     }
 
-    suspend fun execute(input: String): String {
-        return executeWithSystemPrompt(input)
-    }
-
-    suspend fun executeWithSystemPrompt(
+    suspend fun execute(
         input: String,
-        systemPromptOverride: String? = null,
+        toolInvocationMetaOverride: ToolInvocationMeta? = null,
     ): String {
         cancelActiveJob()
         sessionService.startTask(input)
         return try {
             val baseContext = _currentContext.value
-            val executionContext = systemPromptOverride
-                ?.takeIf { it != baseContext.systemPrompt }
-                ?.let { baseContext.withSystemPrompt(it) }
+            val executionContext = toolInvocationMetaOverride
+                ?.let { baseContext.copy(toolInvocationMeta = it) }
                 ?: baseContext
             val result = executor.executeWithTrace(
                 agentId = _activeAgentId.value,
                 context = executionContext,
                 input = input,
+                eventSink = sessionService,
             ) { step, node, from, to ->
                 sessionService.onStep(step, node, from, to)
             }
-            val normalizedResult = if (systemPromptOverride != null) {
-                result.context.restoreSystemPrompt(baseContext.systemPrompt)
-            } else {
-                result.context
-            }
-            _currentContext.emit(normalizedResult)
+            _currentContext.emit(result.context.copy(toolInvocationMeta = baseContext.toolInvocationMeta))
             result.output
         } finally {
             runCatching { sessionService.finishTask() }
                 .onFailure { e -> l.warn("sessionService fail", e) }
         }
     }
-
-    private fun AgentContext<String>.withSystemPrompt(prompt: String): AgentContext<String> =
-        copy(
-            systemPrompt = prompt,
-            history = history.replaceSystemPromptIfPresent(prompt),
-        )
-
-    private fun AgentContext<String>.restoreSystemPrompt(prompt: String): AgentContext<String> =
-        copy(
-            systemPrompt = prompt,
-            history = history.replaceSystemPromptIfPresent(prompt),
-        )
-
-    private fun List<LLMRequest.Message>.replaceSystemPromptIfPresent(systemPrompt: String): List<LLMRequest.Message> =
-        when (firstOrNull()?.role) {
-            LLMMessageRole.system -> listOf(first().copy(content = systemPrompt)) + drop(1)
-            else -> this
-        }
 }

@@ -7,12 +7,14 @@ import java.sql.DriverManager
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.time.Instant
+import java.time.format.DateTimeParseException
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import ru.souz.llms.restJsonMapper
 
 class SqliteMemoryRepository(
     private val dbPath: Path,
@@ -250,7 +252,9 @@ class SqliteMemoryRepository(
         connection.prepareStatement(
             """
             update memory_facts
-            set kind = ?,
+            set scope_type = ?,
+                scope_id = ?,
+                kind = ?,
                 title = ?,
                 body = ?,
                 slot_key = ?,
@@ -260,14 +264,17 @@ class SqliteMemoryRepository(
             where id = ?
             """.trimIndent()
         ).use { statement ->
-            statement.setString(1, (patch.kind ?: existing.kind).name)
-            statement.setString(2, patch.title?.trim()?.ifBlank { existing.title } ?: existing.title)
-            statement.setString(3, patch.body?.trim()?.ifBlank { existing.body } ?: existing.body)
-            statement.setString(4, nextSlotKey)
-            statement.setFloat(5, patch.confidence ?: existing.confidence)
-            statement.setInt(6, if (patch.pinned ?: existing.pinned) 1 else 0)
-            statement.setString(7, updatedAt.toString())
-            statement.setString(8, factId)
+            val nextScope = patch.scope ?: existing.scope
+            statement.setString(1, nextScope.type)
+            statement.setString(2, nextScope.id)
+            statement.setString(3, (patch.kind ?: existing.kind).name)
+            statement.setString(4, patch.title?.trim()?.ifBlank { existing.title } ?: existing.title)
+            statement.setString(5, patch.body?.trim()?.ifBlank { existing.body } ?: existing.body)
+            statement.setString(6, nextSlotKey)
+            statement.setFloat(7, patch.confidence ?: existing.confidence)
+            statement.setInt(8, if (patch.pinned ?: existing.pinned) 1 else 0)
+            statement.setString(9, updatedAt.toString())
+            statement.setString(10, factId)
             statement.executeUpdate()
         }
 
@@ -341,6 +348,47 @@ class SqliteMemoryRepository(
             statement.executeUpdate()
         }
             Unit
+        }
+    }
+
+    override suspend fun listFactsMissingEmbedding(
+        scopes: List<MemoryScope>,
+        model: String,
+        limit: Int,
+    ): List<MemoryFact> {
+        if (scopes.isEmpty() || limit <= 0) return emptyList()
+        return withConnection { connection ->
+            val scopeClause = scopes.joinToString(" or ") { "(f.scope_type = ? and f.scope_id = ?)" }
+            connection.prepareStatement(
+                """
+                select f.*
+                from memory_facts f
+                left join memory_fact_embeddings e
+                    on e.fact_id = f.id
+                   and e.embedding_model = ?
+                where f.status = ?
+                  and ($scopeClause)
+                  and e.fact_id is null
+                order by f.updated_at desc
+                limit ?
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, model)
+                statement.setString(2, MemoryFactStatus.ACTIVE.name)
+                var index = 3
+                scopes.forEach { scope ->
+                    statement.setString(index++, scope.type)
+                    statement.setString(index++, scope.id)
+                }
+                statement.setInt(index, limit)
+                statement.executeQuery().use { rs ->
+                    buildList {
+                        while (rs.next()) {
+                            add(rs.toFact())
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -428,32 +476,220 @@ class SqliteMemoryRepository(
             Class.forName("org.sqlite.JDBC")
             Files.createDirectories(dbPath.parent)
             DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
-                val version = connection.createStatement().use { statement ->
-                    statement.executeQuery("pragma user_version").use { rs ->
-                        if (rs.next()) rs.getInt(1) else 0
-                    }
-                }
-                if (version < 1) {
-                    connection.autoCommit = false
-                    try {
-                        MIGRATION_V1.forEach { sql ->
-                            connection.createStatement().use { statement -> statement.execute(sql) }
-                        }
-                        connection.createStatement().use { statement ->
-                            statement.execute("pragma user_version = 1")
-                        }
-                        connection.commit()
-                    } catch (error: Exception) {
-                        connection.rollback()
-                        throw error
-                    } finally {
-                        connection.autoCommit = true
-                    }
+                connection.autoCommit = false
+                try {
+                    prepareLegacyCompatibility(connection)
+                    ensureCurrentSchema(connection)
+                    connection.commit()
+                } catch (error: Exception) {
+                    connection.rollback()
+                    throw error
+                } finally {
+                    connection.autoCommit = true
                 }
             }
             initialized = true
         }
     }
+
+    private fun prepareLegacyCompatibility(connection: Connection) {
+        moveIncompatibleTableToBackup(
+            connection = connection,
+            tableName = "memory_facts",
+            backupName = LEGACY_FACTS_TABLE,
+            expectedColumns = CURRENT_FACT_COLUMNS,
+        )
+        moveIncompatibleTableToBackup(
+            connection = connection,
+            tableName = "memory_source_events",
+            backupName = LEGACY_SOURCE_EVENTS_TABLE,
+            expectedColumns = CURRENT_SOURCE_EVENT_COLUMNS,
+        )
+        moveIncompatibleTableToBackup(
+            connection = connection,
+            tableName = "memory_fact_evidence",
+            backupName = LEGACY_FACT_EVIDENCE_TABLE,
+            expectedColumns = CURRENT_FACT_EVIDENCE_COLUMNS,
+        )
+        moveIncompatibleTableToBackup(
+            connection = connection,
+            tableName = "memory_fact_embeddings",
+            backupName = LEGACY_FACT_EMBEDDINGS_TABLE,
+            expectedColumns = CURRENT_FACT_EMBEDDING_COLUMNS,
+        )
+    }
+
+    private fun ensureCurrentSchema(connection: Connection) {
+        MIGRATION_V1.forEach { sql ->
+            connection.createStatement().use { statement -> statement.execute(sql) }
+        }
+        importLegacyFactsIfNeeded(connection)
+        connection.createStatement().use { statement ->
+            statement.execute("pragma user_version = 1")
+        }
+    }
+
+    private fun importLegacyFactsIfNeeded(connection: Connection) {
+        if (!connection.tableExists(LEGACY_FACTS_TABLE)) return
+        if (connection.tableRowCount("memory_facts") > 0) return
+
+        val reverseSupersedes = HashMap<String, String>()
+        val legacyFacts = connection.prepareStatement(
+            """
+            select id, slot_key, text, category, status, confidence, created_at, updated_at, superseded_by
+            from $LEGACY_FACTS_TABLE
+            order by created_at asc
+            """.trimIndent()
+        ).use { statement ->
+            statement.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        val supersededBy = rs.getString("superseded_by")
+                        if (!supersededBy.isNullOrBlank()) {
+                            reverseSupersedes[supersededBy] = rs.getString("id")
+                        }
+                        add(
+                            LegacyFactRow(
+                                id = rs.getString("id"),
+                                slotKey = rs.getString("slot_key"),
+                                text = rs.getString("text"),
+                                category = rs.getString("category"),
+                                status = rs.getString("status"),
+                                confidence = rs.getFloat("confidence"),
+                                createdAtEpochMillis = rs.getLong("created_at"),
+                                updatedAtEpochMillis = rs.getLong("updated_at"),
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        if (legacyFacts.isEmpty()) return
+
+        connection.prepareStatement(
+            """
+            insert into memory_source_events(
+                id, scope_type, scope_id, source_type, source_ref, text, metadata_json, created_at
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent()
+        ).use { sourceStatement ->
+            connection.prepareStatement(
+                """
+                insert into memory_facts(
+                    id, scope_type, scope_id, kind, title, body, slot_key, status, confidence,
+                    pinned, created_by, created_at, updated_at, supersedes_fact_id
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { factStatement ->
+                connection.prepareStatement(
+                    """
+                    insert into memory_fact_evidence(
+                        fact_id, source_event_id, evidence_text
+                    ) values (?, ?, ?)
+                    """.trimIndent()
+                ).use { evidenceStatement ->
+                    legacyFacts.forEach { legacy ->
+                        val sourceEventId = "legacy-src-${legacy.id}"
+                        val createdAt = legacy.createdAtEpochMillis.asLegacyInstant()
+                        val updatedAt = legacy.updatedAtEpochMillis.asLegacyInstant(createdAt)
+                        val title = legacy.slotKey.toLegacyTitle()
+                        val scope = LEGACY_DEFAULT_SCOPE
+
+                        sourceStatement.setString(1, sourceEventId)
+                        sourceStatement.setString(2, scope.type)
+                        sourceStatement.setString(3, scope.id)
+                        sourceStatement.setString(4, "legacy_v0")
+                        sourceStatement.setString(5, legacy.slotKey)
+                        sourceStatement.setString(6, legacy.text)
+                        sourceStatement.setString(
+                            7,
+                            restJsonMapper.writeValueAsString(
+                                mapOf(
+                                    "legacyCategory" to legacy.category,
+                                    "legacySlotKey" to legacy.slotKey,
+                                    "migratedFrom" to LEGACY_FACTS_TABLE,
+                                )
+                            )
+                        )
+                        sourceStatement.setString(8, createdAt.toString())
+                        sourceStatement.addBatch()
+
+                        factStatement.setString(1, legacy.id)
+                        factStatement.setString(2, scope.type)
+                        factStatement.setString(3, scope.id)
+                        factStatement.setString(4, legacy.category.toLegacyKind().name)
+                        factStatement.setString(5, title)
+                        factStatement.setString(6, legacy.text)
+                        factStatement.setString(7, legacy.slotKey.ifBlank { null })
+                        factStatement.setString(8, legacy.status.toLegacyStatus().name)
+                        factStatement.setFloat(9, legacy.confidence)
+                        factStatement.setInt(10, 0)
+                        factStatement.setString(11, "system")
+                        factStatement.setString(12, createdAt.toString())
+                        factStatement.setString(13, updatedAt.toString())
+                        factStatement.setString(14, reverseSupersedes[legacy.id])
+                        factStatement.addBatch()
+
+                        evidenceStatement.setString(1, legacy.id)
+                        evidenceStatement.setString(2, sourceEventId)
+                        evidenceStatement.setString(3, legacy.text.takeIf(String::isNotBlank))
+                        evidenceStatement.addBatch()
+                    }
+
+                    sourceStatement.executeBatch()
+                    factStatement.executeBatch()
+                    evidenceStatement.executeBatch()
+                }
+            }
+        }
+    }
+
+    private fun moveIncompatibleTableToBackup(
+        connection: Connection,
+        tableName: String,
+        backupName: String,
+        expectedColumns: Set<String>,
+    ) {
+        if (!connection.tableExists(tableName)) return
+        val columns = connection.tableColumns(tableName)
+        if (expectedColumns.all(columns::contains)) return
+        if (!connection.tableExists(backupName)) {
+            connection.createStatement().use { statement ->
+                statement.execute("alter table $tableName rename to $backupName")
+            }
+        }
+    }
+
+    private fun Connection.tableExists(tableName: String): Boolean =
+        prepareStatement(
+            """
+            select 1
+            from sqlite_master
+            where type = 'table' and name = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, tableName)
+            statement.executeQuery().use(ResultSet::next)
+        }
+
+    private fun Connection.tableColumns(tableName: String): Set<String> =
+        prepareStatement("pragma table_info($tableName)").use { statement ->
+            statement.executeQuery().use { rs ->
+                buildSet {
+                    while (rs.next()) {
+                        add(rs.getString("name"))
+                    }
+                }
+            }
+        }
+
+    private fun Connection.tableRowCount(tableName: String): Int =
+        prepareStatement("select count(*) from $tableName").use { statement ->
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.getInt(1) else 0
+            }
+        }
 
     private fun ResultSet.toFactOrNull(): MemoryFact? = if (next()) toFact() else null
 
@@ -497,7 +733,61 @@ class SqliteMemoryRepository(
         val embedding: FloatArray,
     )
 
+    private data class LegacyFactRow(
+        val id: String,
+        val slotKey: String,
+        val text: String,
+        val category: String,
+        val status: String,
+        val confidence: Float,
+        val createdAtEpochMillis: Long,
+        val updatedAtEpochMillis: Long,
+    )
+
     private companion object {
+        private val LEGACY_DEFAULT_SCOPE = MemoryScope(type = "global", id = "global")
+        private const val LEGACY_FACTS_TABLE = "memory_facts_legacy_v0"
+        private const val LEGACY_SOURCE_EVENTS_TABLE = "memory_source_events_legacy_v0"
+        private const val LEGACY_FACT_EVIDENCE_TABLE = "memory_fact_evidence_legacy_v0"
+        private const val LEGACY_FACT_EMBEDDINGS_TABLE = "memory_fact_embeddings_legacy_v0"
+        private val CURRENT_FACT_COLUMNS = setOf(
+            "id",
+            "scope_type",
+            "scope_id",
+            "kind",
+            "title",
+            "body",
+            "slot_key",
+            "status",
+            "confidence",
+            "pinned",
+            "created_by",
+            "created_at",
+            "updated_at",
+            "supersedes_fact_id",
+        )
+        private val CURRENT_SOURCE_EVENT_COLUMNS = setOf(
+            "id",
+            "scope_type",
+            "scope_id",
+            "source_type",
+            "source_ref",
+            "text",
+            "metadata_json",
+            "created_at",
+        )
+        private val CURRENT_FACT_EVIDENCE_COLUMNS = setOf(
+            "fact_id",
+            "source_event_id",
+            "evidence_text",
+        )
+        private val CURRENT_FACT_EMBEDDING_COLUMNS = setOf(
+            "fact_id",
+            "embedding_model",
+            "embedding_blob",
+            "dimension",
+            "updated_at",
+        )
         private val MIGRATION_V1 = listOf(
             """
             create table if not exists memory_source_events (
@@ -554,3 +844,35 @@ class SqliteMemoryRepository(
         )
     }
 }
+
+private fun String.toLegacyKind(): MemoryFactKind = when (uppercase()) {
+    "PREFERENCE" -> MemoryFactKind.PREFERENCE
+    "PROCEDURE" -> MemoryFactKind.PROCEDURE
+    "CONSTRAINT" -> MemoryFactKind.PROJECT_RULE
+    "TASK" -> MemoryFactKind.EPISODE_NOTE
+    "USER_PROFILE" -> MemoryFactKind.SEMANTIC
+    else -> MemoryFactKind.SEMANTIC
+}
+
+private fun String.toLegacyStatus(): MemoryFactStatus = when (uppercase()) {
+    "ACTIVE" -> MemoryFactStatus.ACTIVE
+    "DELETED" -> MemoryFactStatus.DELETED
+    "RETIRED" -> MemoryFactStatus.RETIRED
+    else -> MemoryFactStatus.ACTIVE
+}
+
+private fun String.toLegacyTitle(): String =
+    trim()
+        .split('.', '_', '-', ' ')
+        .filter(String::isNotBlank)
+        .joinToString(" ") { token -> token.lowercase().replaceFirstChar(Char::titlecase) }
+        .ifBlank { "Migrated memory fact" }
+
+private fun Long.asLegacyInstant(fallback: Instant = Instant.now()): Instant =
+    try {
+        if (this <= 0L) fallback else Instant.ofEpochMilli(this)
+    } catch (_: DateTimeParseException) {
+        fallback
+    } catch (_: Exception) {
+        fallback
+    }

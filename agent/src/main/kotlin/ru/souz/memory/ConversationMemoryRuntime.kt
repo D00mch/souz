@@ -2,8 +2,8 @@ package ru.souz.memory
 
 data class CompletedTurnMemoryInput(
     val conversationId: String?,
-    val userMessageId: String,
-    val assistantMessageId: String,
+    val userMessageId: String?,
+    val assistantMessageId: String?,
     val userMessage: String,
     val assistantMessage: String,
 )
