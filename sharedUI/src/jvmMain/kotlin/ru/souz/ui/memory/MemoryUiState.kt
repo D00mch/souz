@@ -51,13 +51,18 @@ data class MemoryFactUi(
     val title: String,
     val bodyPreview: String,
     val kind: String,
+    val kindEnum: MemoryFactKind,
     val scopeLabel: String,
+    val scopeType: String,
+    val scopeId: String,
     val status: String,
+    val statusEnum: MemoryFactStatus,
     val confidenceLabel: String,
     val pinned: Boolean,
     val createdBy: String,
     val createdByLabel: String,
     val updatedAtLabel: String,
+    val updatedAtShortLabel: String,
 )
 
 data class MemoryFactDetailsUi(
@@ -65,8 +70,12 @@ data class MemoryFactDetailsUi(
     val title: String,
     val body: String,
     val kind: String,
+    val kindEnum: MemoryFactKind,
     val scopeLabel: String,
+    val scopeType: String,
+    val scopeId: String,
     val status: String,
+    val statusEnum: MemoryFactStatus,
     val confidenceLabel: String,
     val pinned: Boolean,
     val slotKey: String?,
@@ -192,13 +201,18 @@ fun MemoryFact.toUi(): MemoryFactUi =
         title = title.trim(),
         bodyPreview = body.preview(),
         kind = kind.label(),
+        kindEnum = kind,
         scopeLabel = scope.label(),
+        scopeType = scope.type,
+        scopeId = scope.id,
         status = status.label(),
+        statusEnum = status,
         confidenceLabel = confidence.label(),
         pinned = pinned,
         createdBy = createdBy,
         createdByLabel = createdBy.label(),
         updatedAtLabel = updatedAt.label(),
+        updatedAtShortLabel = updatedAt.shortLabel(),
     )
 
 fun MemoryFactDetails.toUi(): MemoryFactDetailsUi =
@@ -207,8 +221,12 @@ fun MemoryFactDetails.toUi(): MemoryFactDetailsUi =
         title = fact.title,
         body = fact.body,
         kind = fact.kind.label(),
+        kindEnum = fact.kind,
         scopeLabel = fact.scope.label(),
+        scopeType = fact.scope.type,
+        scopeId = fact.scope.id,
         status = fact.status.label(),
+        statusEnum = fact.status,
         confidenceLabel = fact.confidence.label(),
         pinned = fact.pinned,
         slotKey = fact.slotKey,
@@ -292,6 +310,8 @@ private fun String.label(): String = when (lowercase(Locale.getDefault())) {
 
 private fun Instant.label(): String = MEMORY_TIME_FORMATTER.format(this)
 
+private fun Instant.shortLabel(): String = MEMORY_DATE_FORMATTER.format(this)
+
 private fun String.preview(maxLength: Int = 180): String =
     trim().let { text ->
         if (text.length <= maxLength) {
@@ -303,5 +323,10 @@ private fun String.preview(maxLength: Int = 180): String =
 
 private val MEMORY_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+        .withLocale(Locale.getDefault())
+        .withZone(ZoneId.systemDefault())
+
+private val MEMORY_DATE_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("dd.MM.yyyy")
         .withLocale(Locale.getDefault())
         .withZone(ZoneId.systemDefault())

@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -49,6 +50,7 @@ fun LabeledTextField(
     placeholder: String = "",
     isError: Boolean = false,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    height: Dp? = null,
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val textColor = if (isError) MaterialTheme.colorScheme.error else LabeledFieldTextColor
@@ -77,16 +79,13 @@ fun LabeledTextField(
                 .fillMaxWidth()
                 .then(
                     if (singleLine) Modifier.height(LabeledFieldSingleLineHeight)
+                    else if (height != null) Modifier.height(height)
                     else Modifier.heightIn(min = LabeledFieldMultiLineMinHeight)
-                ),
+                )
+                .background(LabeledFieldBackgroundColor, LabeledFieldShape)
+                .border(1.dp, currentBorderColor, LabeledFieldShape),
             contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(LabeledFieldBackgroundColor, LabeledFieldShape)
-                    .border(1.dp, currentBorderColor, LabeledFieldShape)
-            )
             if (value.isEmpty() && placeholder.isNotEmpty()) {
                 Text(
                     text = placeholder,

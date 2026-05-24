@@ -5,11 +5,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,14 +21,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
@@ -52,7 +55,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -67,15 +72,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.memory.MemoryFactKind
+import ru.souz.memory.MemoryFactStatus
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.ConfirmDialogType
+import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.button_close
 import souz.sharedui.generated.resources.memory_action_delete
-import souz.sharedui.generated.resources.memory_action_details
 import souz.sharedui.generated.resources.memory_action_edit
 import souz.sharedui.generated.resources.memory_action_pin
 import souz.sharedui.generated.resources.memory_action_retire
@@ -120,10 +126,23 @@ import souz.sharedui.generated.resources.memory_filter_status_retired
 import souz.sharedui.generated.resources.memory_loading
 import souz.sharedui.generated.resources.memory_scope_all
 import souz.sharedui.generated.resources.memory_scope_global
-import souz.sharedui.generated.resources.memory_section_other
-import souz.sharedui.generated.resources.memory_section_pinned
 import souz.sharedui.generated.resources.memory_subtitle
 import souz.sharedui.generated.resources.memory_title
+import souz.sharedui.generated.resources.memory_badge_pinned
+import souz.sharedui.generated.resources.memory_details_confidence
+import souz.sharedui.generated.resources.memory_kind_semantic
+import souz.sharedui.generated.resources.memory_kind_preference
+import souz.sharedui.generated.resources.memory_kind_procedure
+import souz.sharedui.generated.resources.memory_kind_project_rule
+import souz.sharedui.generated.resources.memory_kind_episode_note
+import souz.sharedui.generated.resources.memory_kind_project_decision
+import souz.sharedui.generated.resources.memory_created_by_manual
+import souz.sharedui.generated.resources.memory_created_by_auto
+import souz.sharedui.generated.resources.memory_created_by_system
+import souz.sharedui.generated.resources.memory_scope_chat_format
+import souz.sharedui.generated.resources.memory_editor_error_title_required
+import souz.sharedui.generated.resources.memory_editor_error_body_required
+import souz.sharedui.generated.resources.memory_editor_advanced
 
 @Composable
 fun MemoryScreen(
@@ -221,14 +240,50 @@ fun MemoryScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Button(onClick = { onAction(MemoryAction.OpenCreateDialog) }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(Res.string.memory_create))
+                            val createInteraction = remember { MutableInteractionSource() }
+                            val isCreateHovered by createInteraction.collectIsHoveredAsState()
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        brush = Brush.linearGradient(
+                                            colors = if (isCreateHovered) {
+                                                listOf(Color(0x26FFFFFF), Color(0x0DFFFFFF))
+                                            } else {
+                                                listOf(Color(0x14FFFFFF), Color(0x05FFFFFF))
+                                            },
+                                        ),
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isCreateHovered) Color(0x4DFFFFFF) else Color(0x33FFFFFF),
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .clickable(
+                                        interactionSource = createInteraction,
+                                        indication = null,
+                                    ) { onAction(MemoryAction.OpenCreateDialog) }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.glassColors.textPrimary,
+                                    )
+                                    Text(
+                                        text = stringResource(Res.string.memory_create),
+                                        color = MaterialTheme.glassColors.textPrimary,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
                             }
                             IconButton(onClick = onClose) {
                                 Icon(
@@ -275,23 +330,23 @@ fun MemoryScreen(
                     }
                 }
             }
-        }
 
-        state.editor?.let { editor ->
-            MemoryFactEditorDialog(
-                editor = editor,
-                isSaving = state.isSaving,
-                onDismiss = { onAction(MemoryAction.CloseDialog) },
-                onSave = { onAction(MemoryAction.SaveFact(it)) },
-            )
-        }
+            state.editor?.let { editor ->
+                MemoryFactEditorDialog(
+                    editor = editor,
+                    isSaving = state.isSaving,
+                    onDismiss = { onAction(MemoryAction.CloseDialog) },
+                    onSave = { onAction(MemoryAction.SaveFact(it)) },
+                )
+            }
 
-        state.confirmAction?.let { confirmAction ->
-            MemoryConfirmDialog(
-                action = confirmAction,
-                onConfirm = { onAction(MemoryAction.ConfirmAction) },
-                onDismiss = { onAction(MemoryAction.CancelConfirmAction) },
-            )
+            state.confirmAction?.let { confirmAction ->
+                MemoryConfirmDialog(
+                    action = confirmAction,
+                    onConfirm = { onAction(MemoryAction.ConfirmAction) },
+                    onDismiss = { onAction(MemoryAction.CancelConfirmAction) },
+                )
+            }
         }
     }
 }
@@ -303,74 +358,67 @@ private fun MemoryFilters(
 ) {
     val allScopesLabel = stringResource(Res.string.memory_scope_all)
     val globalScopeLabel = stringResource(Res.string.memory_scope_global)
-    val selectedScopeLabel = remember(filters.scopeType, filters.scopeId, allScopesLabel, globalScopeLabel) {
-        when {
-            filters.scopeType.isBlank() && filters.scopeId.isBlank() -> allScopesLabel
-            isGlobalScope(filters.scopeType, filters.scopeId) -> globalScopeLabel
-            else -> memoryScopeLabel(filters.scopeType, filters.scopeId)
-        }
+    val selectedScopeLabel = when {
+        filters.scopeType.isBlank() && filters.scopeId.isBlank() -> allScopesLabel
+        isGlobalScope(filters.scopeType, filters.scopeId) -> globalScopeLabel
+        else -> memoryScopeLabel(filters.scopeType, filters.scopeId)
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            OutlinedTextField(
-                value = filters.query,
-                onValueChange = { onFiltersChange(filters.copy(query = it)) },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text(stringResource(Res.string.memory_filter_query)) },
-                colors = memoryTextFieldColors(),
-            )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = filters.query,
+            onValueChange = { onFiltersChange(filters.copy(query = it)) },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            label = { Text(stringResource(Res.string.memory_filter_query)) },
+            shape = RoundedCornerShape(12.dp),
+            colors = memoryTextFieldColors(),
+        )
 
-            MemoryMenuField(
-                label = stringResource(Res.string.memory_filter_status),
-                selectedText = filters.status.label(),
-                modifier = Modifier.width(170.dp),
-                options = MemoryStatusFilter.entries.map { status ->
-                    status.label() to { onFiltersChange(filters.copy(status = status)) }
+        MemoryMenuField(
+            label = stringResource(Res.string.memory_filter_status),
+            selectedText = filters.status.label(),
+            modifier = Modifier.width(150.dp),
+            options = MemoryStatusFilter.entries.map { status ->
+                status.label() to { onFiltersChange(filters.copy(status = status)) }
+            },
+        )
+
+        MemoryMenuField(
+            label = stringResource(Res.string.memory_filter_kind),
+            selectedText = filters.kind?.label() ?: stringResource(Res.string.memory_filter_kind_all),
+            modifier = Modifier.width(170.dp),
+            options = listOf(
+                stringResource(Res.string.memory_filter_kind_all) to {
+                    onFiltersChange(filters.copy(kind = null))
+                }
+            ) + MemoryFactKind.entries.map { kind ->
+                kind.label() to { onFiltersChange(filters.copy(kind = kind)) }
+            },
+        )
+
+        MemoryMenuField(
+            label = stringResource(Res.string.memory_filter_scope),
+            selectedText = selectedScopeLabel,
+            modifier = Modifier.width(170.dp),
+            options = listOf(
+                allScopesLabel to {
+                    onFiltersChange(filters.copy(scopeType = "", scopeId = ""))
                 },
-            )
-
-            MemoryMenuField(
-                label = stringResource(Res.string.memory_filter_kind),
-                selectedText = filters.kind?.let(::kindLabel) ?: stringResource(Res.string.memory_filter_kind_all),
-                modifier = Modifier.width(190.dp),
-                options = listOf(
-                    stringResource(Res.string.memory_filter_kind_all) to {
-                        onFiltersChange(filters.copy(kind = null))
-                    }
-                ) + MemoryFactKind.entries.map { kind ->
-                    kindLabel(kind) to { onFiltersChange(filters.copy(kind = kind)) }
-                },
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            MemoryMenuField(
-                label = stringResource(Res.string.memory_filter_scope),
-                selectedText = selectedScopeLabel,
-                modifier = Modifier.width(220.dp),
-                options = listOf(
-                    allScopesLabel to {
-                        onFiltersChange(filters.copy(scopeType = "", scopeId = ""))
-                    },
-                    globalScopeLabel to {
-                        onFiltersChange(
-                            filters.copy(
-                                scopeType = DEFAULT_SCOPE_TYPE,
-                                scopeId = DEFAULT_SCOPE_ID,
-                            )
+                globalScopeLabel to {
+                    onFiltersChange(
+                        filters.copy(
+                            scopeType = DEFAULT_SCOPE_TYPE,
+                            scopeId = DEFAULT_SCOPE_ID,
                         )
-                    },
-                ),
-            )
-        }
+                    )
+                },
+            ),
+        )
     }
 }
 
@@ -379,13 +427,9 @@ private fun MemoryFactsContent(
     state: MemoryUiState,
     onAction: (MemoryAction) -> Unit,
 ) {
-    val pinnedFacts = remember(state.facts) { state.facts.filter { it.pinned } }
-    val otherFacts = remember(state.facts) { state.facts.filterNot { it.pinned } }
-
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .panelSurface(),
+            .fillMaxSize(),
     ) {
         if (state.error != null && state.facts.isNotEmpty()) {
             MemoryInlineError(
@@ -410,32 +454,15 @@ private fun MemoryFactsContent(
 
             else -> {
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize(),
                 ) {
-                    if (pinnedFacts.isNotEmpty()) {
-                        item {
-                            MemorySectionHeader(stringResource(Res.string.memory_section_pinned))
-                        }
-                        items(pinnedFacts, key = MemoryFactUi::id) { fact ->
-                            MemoryFactRow(fact = fact, onAction = onAction)
-                        }
-                    }
-
-                    if (otherFacts.isNotEmpty()) {
-                        item {
-                            MemorySectionHeader(
-                                if (pinnedFacts.isNotEmpty()) {
-                                    stringResource(Res.string.memory_section_other)
-                                } else {
-                                    stringResource(Res.string.memory_title)
-                                }
+                    itemsIndexed(state.facts, key = { _, fact -> fact.id }) { index, fact ->
+                        MemoryFactRow(fact = fact, onAction = onAction)
+                        if (index < state.facts.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                                color = Color.White.copy(alpha = 0.08f)
                             )
-                        }
-                        items(otherFacts, key = MemoryFactUi::id) { fact ->
-                            MemoryFactRow(fact = fact, onAction = onAction)
                         }
                     }
                 }
@@ -452,45 +479,51 @@ private fun MemoryFactRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.05f))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
             .clickable { onAction(MemoryAction.OpenDetails(fact.id)) }
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
+            Text(
+                text = fact.title,
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.glassColors.textPrimary,
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = fact.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.glassColors.textPrimary,
+                    text = fact.updatedAtShortLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.55f),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (fact.pinned) {
-                        MemoryBadge(text = "Pinned", tint = MaterialTheme.colorScheme.primary)
-                    }
-                    MemoryBadge(text = fact.createdByLabel, tint = Color(0xFF82B1FF))
-                    if (fact.status != "Active") {
-                        MemoryBadge(text = fact.status, tint = Color(0xFFFFB86C))
-                    }
+                IconButton(
+                    onClick = { onAction(MemoryAction.AskDelete(fact.id)) },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = stringResource(Res.string.memory_action_delete),
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
-
-            Text(
-                text = fact.updatedAtLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.55f),
-            )
         }
+
+        Text(
+            text = "${fact.kindEnum.label()} · ${memoryScopeLabel(fact.scopeType, fact.scopeId)} · ${fact.confidenceLabel}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.58f),
+        )
 
         Text(
             text = fact.bodyPreview,
@@ -499,48 +532,6 @@ private fun MemoryFactRow(
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
         )
-
-        Text(
-            text = "${fact.kind} · ${fact.scopeLabel} · ${fact.confidenceLabel}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.58f),
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            MemoryActionButton(stringResource(Res.string.memory_action_details)) {
-                onAction(MemoryAction.OpenDetails(fact.id))
-            }
-            MemoryActionButton(stringResource(Res.string.memory_action_edit)) {
-                onAction(MemoryAction.OpenEditDialog(fact.id))
-            }
-            MemoryActionButton(
-                if (fact.pinned) {
-                    stringResource(Res.string.memory_action_unpin)
-                } else {
-                    stringResource(Res.string.memory_action_pin)
-                }
-            ) {
-                onAction(MemoryAction.SetPinned(fact.id, !fact.pinned))
-            }
-            if (fact.status != "Retired" && fact.status != "Deleted") {
-                MemoryActionButton(stringResource(Res.string.memory_action_retire)) {
-                    onAction(MemoryAction.AskRetire(fact.id))
-                }
-            }
-            if (fact.status != "Deleted") {
-                MemoryActionButton(
-                    text = stringResource(Res.string.memory_action_delete),
-                    tint = MaterialTheme.colorScheme.error,
-                ) {
-                    onAction(MemoryAction.AskDelete(fact.id))
-                }
-            }
-        }
     }
 }
 
@@ -602,11 +593,11 @@ private fun MemoryFactDetailsPanel(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (fact.pinned) {
-                            MemoryBadge(text = "Pinned", tint = MaterialTheme.colorScheme.primary)
+                            MemoryBadge(text = stringResource(Res.string.memory_badge_pinned), tint = MaterialTheme.colorScheme.primary)
                         }
-                        MemoryBadge(text = fact.createdByLabel, tint = Color(0xFF82B1FF))
-                        if (fact.status != "Active") {
-                            MemoryBadge(text = fact.status, tint = Color(0xFFFFB86C))
+                        MemoryBadge(text = createdByLabel(fact.createdByLabel), tint = Color(0xFF82B1FF))
+                        if (fact.statusEnum != MemoryFactStatus.ACTIVE) {
+                            MemoryBadge(text = fact.statusEnum.label(), tint = Color(0xFFFFB86C))
                         }
                     }
 
@@ -618,11 +609,11 @@ private fun MemoryFactDetailsPanel(
 
                     HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
-                    MemoryDetailItem(stringResource(Res.string.memory_editor_kind), fact.kind)
-                    MemoryDetailItem(stringResource(Res.string.memory_details_scope), fact.scopeLabel)
-                    MemoryDetailItem(stringResource(Res.string.memory_details_status), fact.status)
-                    MemoryDetailItem("Confidence", fact.confidenceLabel)
-                    MemoryDetailItem(stringResource(Res.string.memory_details_created_by), fact.createdByLabel)
+                    MemoryDetailItem(stringResource(Res.string.memory_editor_kind), fact.kindEnum.label())
+                    MemoryDetailItem(stringResource(Res.string.memory_details_scope), memoryScopeLabel(fact.scopeType, fact.scopeId))
+                    MemoryDetailItem(stringResource(Res.string.memory_details_status), fact.statusEnum.label())
+                    MemoryDetailItem(stringResource(Res.string.memory_details_confidence), fact.confidenceLabel)
+                    MemoryDetailItem(stringResource(Res.string.memory_details_created_by), createdByLabel(fact.createdByLabel))
                     MemoryDetailItem(stringResource(Res.string.memory_details_created_at), fact.createdAtLabel)
                     MemoryDetailItem(stringResource(Res.string.memory_details_updated_at), fact.updatedAtLabel)
                     fact.slotKey?.let {
@@ -671,12 +662,12 @@ private fun MemoryFactDetailsPanel(
                         ) {
                             onAction(MemoryAction.SetPinned(fact.id, !fact.pinned))
                         }
-                        if (fact.status != "Retired" && fact.status != "Deleted") {
+                        if (fact.statusEnum != MemoryFactStatus.RETIRED && fact.statusEnum != MemoryFactStatus.DELETED) {
                             MemoryActionButton(stringResource(Res.string.memory_action_retire)) {
                                 onAction(MemoryAction.AskRetire(fact.id))
                             }
                         }
-                        if (fact.status != "Deleted") {
+                        if (fact.statusEnum != MemoryFactStatus.DELETED) {
                             MemoryActionButton(
                                 text = stringResource(Res.string.memory_action_delete),
                                 tint = MaterialTheme.colorScheme.error,
@@ -744,11 +735,15 @@ private fun MemoryFactEditorDialog(
     var slotKey by remember(editor) { mutableStateOf(editor.input.slotKey.orEmpty()) }
     var pinned by remember(editor) { mutableStateOf(editor.input.pinned) }
     val scopeLabel = memoryScopeLabel(scopeType, scopeId)
+    var showAdvanced by remember { mutableStateOf(!editor.input.slotKey.isNullOrBlank()) }
+    var showValidationErrors by remember { mutableStateOf(false) }
 
-    val validationMessage = remember(title, body) {
+    val titleRequiredMsg = stringResource(Res.string.memory_editor_error_title_required)
+    val bodyRequiredMsg = stringResource(Res.string.memory_editor_error_body_required)
+    val validationMessage = remember(title, body, titleRequiredMsg, bodyRequiredMsg) {
         when {
-            title.isBlank() -> "Title is required"
-            body.isBlank() -> "Body is required"
+            title.isBlank() -> titleRequiredMsg
+            body.isBlank() -> bodyRequiredMsg
             else -> null
         }
     }
@@ -760,105 +755,147 @@ private fun MemoryFactEditorDialog(
         } else {
             stringResource(Res.string.memory_editor_edit_title)
         },
-        dialogMaxWidth = 720.dp,
+        message = "${stringResource(Res.string.memory_details_scope)}: $scopeLabel",
+        dialogMaxWidth = 540.dp,
         confirmText = if (isSaving) {
             stringResource(Res.string.memory_button_saving)
         } else {
             stringResource(Res.string.memory_button_save)
         },
-        confirmEnabled = !isSaving && validationMessage == null,
+        confirmEnabled = !isSaving,
         onConfirm = {
-            onSave(
-                MemoryEditorInput(
-                    factId = editor.input.factId,
-                    title = title,
-                    body = body,
-                    kind = kind,
-                    scopeType = scopeType,
-                    scopeId = scopeId,
-                    slotKey = slotKey,
-                    pinned = pinned,
+            if (validationMessage != null) {
+                showValidationErrors = true
+            } else {
+                onSave(
+                    MemoryEditorInput(
+                        factId = editor.input.factId,
+                        title = title,
+                        body = body,
+                        kind = kind,
+                        scopeType = scopeType,
+                        scopeId = scopeId,
+                        slotKey = slotKey,
+                        pinned = pinned,
+                    )
                 )
-            )
+            }
         },
         onDismiss = onDismiss,
         detailsContent = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
+                LabeledTextField(
+                    label = stringResource(Res.string.memory_editor_title),
                     value = title,
-                    onValueChange = { title = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    onValueChange = {
+                        title = it
+                        if (showValidationErrors) showValidationErrors = false
+                    },
                     singleLine = true,
-                    label = { Text(stringResource(Res.string.memory_editor_title)) },
-                    colors = memoryTextFieldColors(),
+                    isError = showValidationErrors && title.isBlank(),
+                    modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
+                LabeledTextField(
+                    label = stringResource(Res.string.memory_editor_body),
                     value = body,
-                    onValueChange = { body = it },
-                    modifier = Modifier.fillMaxWidth().height(160.dp),
-                    label = { Text(stringResource(Res.string.memory_editor_body)) },
-                    colors = memoryTextFieldColors(),
+                    onValueChange = {
+                        body = it
+                        if (showValidationErrors) showValidationErrors = false
+                    },
+                    singleLine = false,
+                    isError = showValidationErrors && body.isBlank(),
+                    height = 120.dp,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Row(
+                MemoryMenuField(
+                    label = stringResource(Res.string.memory_editor_kind),
+                    selectedText = kind.label(),
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    MemoryMenuField(
-                        label = stringResource(Res.string.memory_editor_kind),
-                        selectedText = kindLabel(kind),
-                        modifier = Modifier.weight(1f),
-                        options = MemoryFactKind.entries.map { entry ->
-                            kindLabel(entry) to { kind = entry }
-                        },
-                    )
-                    OutlinedTextField(
-                        value = slotKey,
-                        onValueChange = { slotKey = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        label = { Text(stringResource(Res.string.memory_editor_slot_key)) },
-                        colors = memoryTextFieldColors(),
-                    )
-                }
-                Row(
+                    options = MemoryFactKind.entries.map { entry ->
+                        entry.label() to { kind = entry }
+                    },
+                )
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "${stringResource(Res.string.memory_details_scope)}: $scopeLabel",
-                        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Row(
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { showAdvanced = !showAdvanced }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (showAdvanced) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = Color.White.copy(alpha = 0.7f),
+                        )
+                        Text(
+                            text = stringResource(Res.string.memory_editor_advanced),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.7f),
+                        )
+                    }
+                    if (showAdvanced) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            LabeledTextField(
+                                label = stringResource(Res.string.memory_editor_slot_key),
+                                value = slotKey,
+                                onValueChange = { slotKey = it },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { pinned = !pinned }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = pinned,
+                                    onCheckedChange = { pinned = it },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.primary,
+                                        uncheckedColor = Color.White.copy(alpha = 0.4f),
+                                    ),
+                                )
+                                Text(
+                                    text = stringResource(Res.string.memory_editor_pinned),
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Checkbox(
-                        checked = pinned,
-                        onCheckedChange = { pinned = it },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary,
-                            uncheckedColor = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.65f),
-                        ),
-                    )
-                    Text(
-                        text = stringResource(Res.string.memory_editor_pinned),
-                        color = MaterialTheme.glassColors.textPrimary,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                validationMessage?.let {
-                    Text(
-                        text = it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                if (showValidationErrors) {
+                    validationMessage?.let {
+                        Text(
+                            text = it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
                 }
             }
         },
     )
 }
+
 
 @Composable
 private fun MemoryConfirmDialog(
@@ -914,18 +951,6 @@ private fun MemoryInlineError(
             )
         }
     }
-}
-
-@Composable
-private fun MemorySectionHeader(
-    title: String,
-) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f),
-    )
 }
 
 @Composable
@@ -1002,67 +1027,81 @@ private fun MemoryMenuField(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember(label, selectedText, options.size) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(12.dp)
 
-    Box(modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .clip(shape)
-                .border(1.dp, MaterialTheme.glassColors.textPrimary.copy(alpha = 0.35f), shape)
-                .clickable { expanded = true }
-                .padding(horizontal = 16.dp, vertical = 7.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (label.isNotBlank()) {
             Text(
                 text = label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.62f),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.Medium
+                ),
+                color = Color.White.copy(alpha = 0.7f)
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = selectedText,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.glassColors.textPrimary,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.75f),
-                )
-            }
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF1A1A1D), RoundedCornerShape(12.dp)),
+                .height(42.dp)
         ) {
-            options.forEach { (title, action) ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = title,
-                            color = MaterialTheme.glassColors.textPrimary,
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        action()
-                    },
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(shape)
+                    .background(Color(0x0DFFFFFF), shape)
+                    .border(1.dp, Color(0x14FFFFFF), shape)
+                    .clickable { expanded = true }
+                    .padding(horizontal = 12.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = selectedText,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            color = Color.White.copy(alpha = 0.9f)
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = Color.White.copy(alpha = 0.6f),
+                    )
+                }
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .background(Color(0xFF1A1A1D), RoundedCornerShape(12.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp)),
+            ) {
+                options.forEach { (title, action) ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = title,
+                                color = MaterialTheme.glassColors.textPrimary,
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            action()
+                        },
+                    )
+                }
             }
         }
     }
@@ -1084,6 +1123,7 @@ private fun Modifier.panelSurface(): Modifier =
         .background(Color.Black.copy(alpha = 0.32f))
         .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
 
+@Composable
 private fun memoryScopeLabel(
     scopeType: String,
     scopeId: String,
@@ -1092,8 +1132,8 @@ private fun memoryScopeLabel(
     val cleanId = scopeId.trim()
     return when {
         cleanType.isBlank() && cleanId.isBlank() -> ""
-        isGlobalScope(cleanType, cleanId) -> "Global"
-        cleanType.equals("chat", ignoreCase = true) -> "Chat: $cleanId"
+        isGlobalScope(cleanType, cleanId) -> stringResource(Res.string.memory_scope_global)
+        cleanType.equals("chat", ignoreCase = true) -> stringResource(Res.string.memory_scope_chat_format).format(cleanId)
         else -> "$cleanType:$cleanId"
     }
 }
@@ -1112,9 +1152,30 @@ private fun MemoryStatusFilter.label(): String = when (this) {
     MemoryStatusFilter.ALL -> stringResource(Res.string.memory_filter_status_all)
 }
 
-private fun kindLabel(kind: MemoryFactKind): String = kind.name.lowercase()
-    .split('_')
-    .joinToString(" ") { token -> token.replaceFirstChar(Char::titlecase) }
+@Composable
+private fun MemoryFactStatus.label(): String = when (this) {
+    MemoryFactStatus.ACTIVE -> stringResource(Res.string.memory_filter_status_active)
+    MemoryFactStatus.RETIRED -> stringResource(Res.string.memory_filter_status_retired)
+    MemoryFactStatus.DELETED -> stringResource(Res.string.memory_filter_status_deleted)
+}
+
+@Composable
+private fun MemoryFactKind.label(): String = when (this) {
+    MemoryFactKind.SEMANTIC -> stringResource(Res.string.memory_kind_semantic)
+    MemoryFactKind.PREFERENCE -> stringResource(Res.string.memory_kind_preference)
+    MemoryFactKind.PROCEDURE -> stringResource(Res.string.memory_kind_procedure)
+    MemoryFactKind.PROJECT_RULE -> stringResource(Res.string.memory_kind_project_rule)
+    MemoryFactKind.EPISODE_NOTE -> stringResource(Res.string.memory_kind_episode_note)
+    MemoryFactKind.PROJECT_DECISION -> stringResource(Res.string.memory_kind_project_decision)
+}
+
+@Composable
+private fun createdByLabel(label: String): String = when (label) {
+    "Manual" -> stringResource(Res.string.memory_created_by_manual)
+    "Auto" -> stringResource(Res.string.memory_created_by_auto)
+    "System" -> stringResource(Res.string.memory_created_by_system)
+    else -> label
+}
 
 private const val DEFAULT_SCOPE_TYPE = "global"
 private const val DEFAULT_SCOPE_ID = "global"

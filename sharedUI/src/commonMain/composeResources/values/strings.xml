@@ -240,6 +240,21 @@
     <string name="memory_confirm_delete_title">Delete memory fact</string>
     <string name="memory_confirm_delete_message">Delete “%s”?</string>
     <string name="memory_error_inline_dismiss">Dismiss</string>
+    <string name="memory_badge_pinned">Pinned</string>
+    <string name="memory_details_confidence">Confidence</string>
+    <string name="memory_kind_semantic">Semantic</string>
+    <string name="memory_kind_preference">Preference</string>
+    <string name="memory_kind_procedure">Procedure</string>
+    <string name="memory_kind_project_rule">Project Rule</string>
+    <string name="memory_kind_episode_note">Episode Note</string>
+    <string name="memory_kind_project_decision">Project Decision</string>
+    <string name="memory_created_by_manual">Manual</string>
+    <string name="memory_created_by_auto">Auto</string>
+    <string name="memory_created_by_system">System</string>
+    <string name="memory_scope_chat_format">Chat: %s</string>
+    <string name="memory_editor_error_title_required">Title is required</string>
+    <string name="memory_editor_error_body_required">Body is required</string>
+    <string name="memory_editor_advanced">Advanced settings</string>
 
     <!-- Folders Management -->
     <string name="folders_title">Forbidden\nfolders</string>
