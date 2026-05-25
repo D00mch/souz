@@ -4,6 +4,7 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class MemoryRulesTest {
@@ -44,6 +45,28 @@ class MemoryRulesTest {
         assertEquals(ExplicitMemoryIntent.NONE, parseExplicitMemoryIntent("Explain how an LSTM forget gate works"))
         assertEquals(ExplicitMemoryIntent.NONE, parseExplicitMemoryIntent("Расскажи про forgetting curve"))
         assertEquals(ExplicitMemoryIntent.NONE, parseExplicitMemoryIntent("Просто ответь на вопрос"))
+    }
+
+    @Test
+    fun `explicit remember candidate is built from user command`() {
+        val candidate = buildExplicitRememberCandidate(
+            MemoryCaptureInput(
+                scopes = listOf(MemoryScope("chat", "chat-1")),
+                primaryScope = MemoryScope("chat", "chat-1"),
+                userMessage = "Remember that I prefer Kotlin implementation.",
+                assistantMessage = "Ok.",
+                conversationId = "chat-1",
+                userMessageId = "u-1",
+                assistantMessageId = "a-1",
+            )
+        )
+
+        assertNotNull(candidate)
+        assertEquals(MemoryScope("chat", "chat-1"), candidate.scope)
+        assertEquals(MemoryFactKind.PREFERENCE, candidate.kind)
+        assertEquals("I prefer Kotlin implementation", candidate.title)
+        assertEquals("I prefer Kotlin implementation.", candidate.body)
+        assertEquals("i_prefer_kotlin_implementation", candidate.slotKey)
     }
 
     @Test
