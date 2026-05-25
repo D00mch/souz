@@ -53,19 +53,21 @@ class MemoryService(
     private val embedder: EmbeddingClient,
 ) {
     suspend fun createManualFact(input: CreateMemoryFactInput): MemoryFact {
+        val cleanTitle = MemorySanitizer.redact(input.title.trim())
+        val cleanBody = MemorySanitizer.redact(input.body.trim())
         val sourceEventId = repo.insertSourceEvent(
             NewMemorySourceEvent(
                 scope = input.scope,
                 sourceType = "manual",
                 sourceRef = null,
                 text = buildString {
-                    appendLine(input.title.trim())
-                    append(input.body.trim())
+                    appendLine(cleanTitle)
+                    append(cleanBody)
                 }.trim(),
                 metadataJson = restJsonMapper.writeValueAsString(
                     mapOf(
                         "kind" to input.kind.name,
-                        "title" to input.title,
+                        "title" to cleanTitle,
                     )
                 ),
             )
@@ -74,8 +76,8 @@ class MemoryService(
             input = NewMemoryFact(
                 scope = input.scope,
                 kind = input.kind,
-                title = input.title.trim(),
-                body = input.body.trim(),
+                title = cleanTitle,
+                body = cleanBody,
                 slotKey = input.slotKey?.trim()?.ifBlank { null },
                 status = MemoryFactStatus.ACTIVE,
                 confidence = input.confidence,
@@ -86,13 +88,16 @@ class MemoryService(
             evidence = listOf(
                 MemoryEvidenceRef(
                     sourceEventId = sourceEventId,
-                    evidenceText = input.body.trim().takeIf(String::isNotBlank),
+                    evidenceText = cleanBody.takeIf(String::isNotBlank),
                 )
             ),
         )
     }
 
     suspend fun createCapturedFact(input: CreateCapturedFactInput): MemoryFact {
+        val cleanTitle = MemorySanitizer.redact(input.title.trim())
+        val cleanBody = MemorySanitizer.redact(input.body.trim())
+        val cleanEvidence = MemorySanitizer.redact(input.evidenceText.trim())
         val existing = input.slotKey
             ?.trim()
             ?.takeIf(String::isNotBlank)
@@ -102,8 +107,8 @@ class MemoryService(
             input = NewMemoryFact(
                 scope = input.scope,
                 kind = input.kind,
-                title = input.title.trim(),
-                body = input.body.trim(),
+                title = cleanTitle,
+                body = cleanBody,
                 slotKey = input.slotKey?.trim()?.ifBlank { null },
                 status = MemoryFactStatus.ACTIVE,
                 confidence = input.confidence,
@@ -114,25 +119,19 @@ class MemoryService(
             evidence = listOf(
                 MemoryEvidenceRef(
                     sourceEventId = input.sourceEventId,
-                    evidenceText = input.evidenceText.trim(),
+                    evidenceText = cleanEvidence,
                 )
             ),
         )
     }
 
-    suspend fun saveTurnSourceEvent(input: MemoryCaptureInput): String =
+    suspend fun saveRedactedSourceEvent(input: MemoryCaptureInput, redactedText: String): String =
         repo.insertSourceEvent(
             NewMemorySourceEvent(
                 scope = input.primaryScope,
                 sourceType = "turn",
                 sourceRef = input.assistantMessageId ?: input.conversationId,
-                text = buildString {
-                    appendLine("User:")
-                    appendLine(input.userMessage.trim())
-                    appendLine()
-                    appendLine("Assistant:")
-                    append(input.assistantMessage.trim())
-                },
+                text = redactedText,
                 metadataJson = restJsonMapper.writeValueAsString(
                     mapOf(
                         "conversationId" to input.conversationId,
@@ -175,8 +174,19 @@ class MemoryService(
         query: String,
         limit: Int = 8,
     ): MemoryBlock {
-        if (query.isBlank() || scopes.isEmpty()) return MemoryBlock(emptyList(), "")
+        if (query.isBlank() || scopes.isEmpty()) return MemoryBlock(emptyList(), "", emptyList())
         val distinctScopes = scopes.distinct()
+
+        runCatching {
+            val missing = repo.getFactsWithoutEmbedding(embedder.model)
+            for (fact in missing) {
+                runCatching {
+                    val emb = embedder.embedDocument(fact.embeddingText())
+                    repo.replaceEmbedding(fact.id, embedder.model, emb)
+                }
+            }
+        }
+
         val hits = repo.searchFacts(
             scopes = distinctScopes,
             model = embedder.model,
@@ -184,7 +194,7 @@ class MemoryService(
             limit = limit,
         ).filter { it.score > 0f }
         val facts = hits.map(MemoryFactSearchHit::fact)
-        return MemoryBlock(facts = facts, rendered = MemoryBlockRenderer.render(facts))
+        return MemoryBlock(facts = facts, rendered = renderMemoryPrompt(hits), hits = hits)
     }
 
     private suspend fun createFact(

@@ -130,6 +130,7 @@ class BackendConversationRuntimeFactory(
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCommandTool: LLMToolSetup? = null,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
+    private val executionScope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -179,6 +180,7 @@ class BackendConversationRuntimeFactory(
             localClassifier = LocalRegexClassifier,
             skillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository,
             memoryRuntime = memoryRuntime,
+            captureScope = executionScope,
         ).create()
         return BackendConversationRuntime(
             key = key,

@@ -89,6 +89,7 @@ fun agentDiModule(
         AgentExecutor(
             agentProvider = { instance<GraphBasedAgent>() },
             memoryRuntime = instance<ConversationMemoryRuntime>(),
+            captureScope = instance<kotlinx.coroutines.CoroutineScope>(),
         )
     }
     bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }

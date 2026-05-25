@@ -16,6 +16,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.cancel
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 import org.slf4j.LoggerFactory
@@ -50,11 +51,13 @@ fun main() {
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
             val localLlamaRuntime: LocalLlamaRuntime by di.instance()
             val log: DesktopStructuredLogger by di.instance()
+            val appScope: kotlinx.coroutines.CoroutineScope by di.instance()
             val closeServices: () -> Unit = remember(
                 localLlamaRuntime,
                 mcpClientManager,
                 telegramBotController,
                 log,
+                appScope,
             ) {
                 val closed = AtomicBoolean(false)
                 ({
@@ -62,6 +65,8 @@ fun main() {
                         Unit
                     } else {
                         startupLog.info("Shutting down services")
+                        runCatching { appScope.cancel() }
+                            .onFailure { startupLog.warn("Failed to cancel app scope: {}", it.message) }
                         runCatching { localLlamaRuntime.close() }
                             .onFailure { startupLog.warn("Failed to close local runtime: {}", it.message) }
                         runCatching { mcpClientManager.close() }

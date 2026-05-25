@@ -51,6 +51,7 @@ class AgentExecutionKernelFactory(
     private val localClassifier: UserMessageClassifier,
     private val skillRegistryRepository: SkillRegistryRepository,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
+    private val captureScope: kotlinx.coroutines.CoroutineScope,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -101,6 +102,7 @@ class AgentExecutionKernelFactory(
         val executor = AgentExecutor(
             agentProvider = { graphAgent },
             memoryRuntime = memoryRuntime,
+            captureScope = captureScope,
         )
         return AgentExecutionKernel(
             contextFactory = contextFactory,

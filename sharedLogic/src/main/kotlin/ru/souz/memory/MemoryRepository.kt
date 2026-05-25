@@ -40,4 +40,6 @@ interface MemoryRepository {
         queryEmbedding: FloatArray,
         limit: Int,
     ): List<MemoryFactSearchHit>
+
+    suspend fun getFactsWithoutEmbedding(model: String): List<MemoryFact>
 }

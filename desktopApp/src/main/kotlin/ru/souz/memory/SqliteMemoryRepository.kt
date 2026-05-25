@@ -50,6 +50,24 @@ class SqliteMemoryRepository(
         val id = UUID.randomUUID().toString()
         connection.autoCommit = false
         try {
+            if (input.slotKey != null && input.status == MemoryFactStatus.ACTIVE) {
+                connection.prepareStatement(
+                    """
+                    update memory_facts
+                    set status = ?, updated_at = ?
+                    where scope_type = ? and scope_id = ? and slot_key = ? and status = ?
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, MemoryFactStatus.RETIRED.name)
+                    statement.setString(2, Instant.now().toString())
+                    statement.setString(3, input.scope.type)
+                    statement.setString(4, input.scope.id)
+                    statement.setString(5, input.slotKey)
+                    statement.setString(6, MemoryFactStatus.ACTIVE.name)
+                    statement.executeUpdate()
+                }
+            }
+
             connection.prepareStatement(
                 """
                 insert into memory_facts(
@@ -291,8 +309,84 @@ class SqliteMemoryRepository(
         updateStatus(factId, MemoryFactStatus.RETIRED)
     }
 
-    override suspend fun deleteFact(factId: String) {
-        updateStatus(factId, MemoryFactStatus.DELETED)
+    override suspend fun deleteFact(factId: String): Unit = withConnection { connection ->
+        connection.autoCommit = false
+        try {
+            val sourceEventIds = ArrayList<String>()
+            connection.prepareStatement(
+                "select source_event_id from memory_fact_evidence where fact_id = ?"
+            ).use { statement ->
+                statement.setString(1, factId)
+                statement.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        sourceEventIds.add(rs.getString("source_event_id"))
+                    }
+                }
+            }
+
+            connection.prepareStatement(
+                "delete from memory_fact_embeddings where fact_id = ?"
+            ).use { statement ->
+                statement.setString(1, factId)
+                statement.executeUpdate()
+            }
+
+            connection.prepareStatement(
+                "delete from memory_fact_evidence where fact_id = ?"
+            ).use { statement ->
+                statement.setString(1, factId)
+                statement.executeUpdate()
+            }
+
+            connection.prepareStatement(
+                "delete from memory_facts where id = ?"
+            ).use { statement ->
+                statement.setString(1, factId)
+                statement.executeUpdate()
+            }
+
+            if (sourceEventIds.isNotEmpty()) {
+                connection.prepareStatement(
+                    """
+                    delete from memory_source_events
+                    where id = ? and not exists (
+                        select 1 from memory_fact_evidence where source_event_id = id
+                    )
+                    """.trimIndent()
+                ).use { statement ->
+                    for (sourceEventId in sourceEventIds) {
+                        statement.setString(1, sourceEventId)
+                        statement.addBatch()
+                    }
+                    statement.executeBatch()
+                }
+            }
+
+            connection.commit()
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
+        }
+    }
+
+    override suspend fun getFactsWithoutEmbedding(model: String): List<MemoryFact> = withConnection { connection ->
+        connection.prepareStatement(
+            """
+            select f.* from memory_facts f
+            left join memory_fact_embeddings e on e.fact_id = f.id and e.embedding_model = ?
+            where f.status = ? and e.fact_id is null
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, model)
+            statement.setString(2, MemoryFactStatus.ACTIVE.name)
+            statement.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        add(rs.toFact())
+                    }
+                }
+            }
+        }
     }
 
     override suspend fun findActiveFactBySlotKey(
@@ -424,6 +518,11 @@ class SqliteMemoryRepository(
     private suspend fun <T> withConnection(block: (Connection) -> T): T = withContext(ioDispatcher) {
         ensureInitialized()
         DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("PRAGMA foreign_keys = ON;")
+                statement.execute("PRAGMA journal_mode = WAL;")
+                statement.execute("PRAGMA busy_timeout = 5000;")
+            }
             block(connection)
         }
     }
@@ -434,6 +533,9 @@ class SqliteMemoryRepository(
             Class.forName("org.sqlite.JDBC")
             Files.createDirectories(dbPath.parent)
             DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute("PRAGMA journal_mode = WAL;")
+                }
                 connection.autoCommit = false
                 try {
                     ensureCurrentSchema(connection)
@@ -552,6 +654,7 @@ class SqliteMemoryRepository(
             "create index if not exists memory_facts_slot_idx on memory_facts(scope_type, scope_id, slot_key)",
             "create index if not exists memory_facts_updated_idx on memory_facts(updated_at desc)",
             "create index if not exists memory_source_events_scope_idx on memory_source_events(scope_type, scope_id, created_at desc)",
+            "create unique index if not exists memory_active_slot_unique on memory_facts(scope_type, scope_id, slot_key) where status = 'ACTIVE' and slot_key is not null",
         )
     }
 }

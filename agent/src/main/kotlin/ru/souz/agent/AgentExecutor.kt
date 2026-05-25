@@ -19,7 +19,7 @@ import ru.souz.memory.NoopConversationMemoryRuntime
 class AgentExecutor internal constructor(
     private val agentProvider: (AgentId) -> TraceableAgent,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
-    private val captureScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val captureScope: CoroutineScope,
     val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutor::class.java)
@@ -55,14 +55,15 @@ class AgentExecutor internal constructor(
             input = input,
             runtimeEventSink = runtimeEventSink,
         )
-        val augmentedSystemPrompt = buildMemorySystemPrompt(baseSeed)
+        val memoryResult = buildMemorySystemPrompt(baseSeed)
+        val augmentedSystemPrompt = memoryResult.augmentedSystemPrompt
         val memoryAddedBlock = memoryAddedBlock(
             baseSystemPrompt = baseSeed.systemPrompt,
             augmentedSystemPrompt = augmentedSystemPrompt,
         )
         val seed = memoryAddedBlock
             ?.let {
-                emitMemoryPromptAugmented(runtimeEventSink, it)
+                emitMemoryPromptAugmented(runtimeEventSink, it, memoryResult.facts)
                 baseSeed.withSystemPrompt(augmentedSystemPrompt)
             }
             ?: baseSeed
@@ -76,7 +77,7 @@ class AgentExecutor internal constructor(
         return normalizedResult
     }
 
-    private suspend fun buildMemorySystemPrompt(ctx: AgentContext<String>): String =
+    private suspend fun buildMemorySystemPrompt(ctx: AgentContext<String>): ru.souz.memory.MemoryPromptAugmentationResult =
         try {
             memoryRuntime.buildSystemPrompt(
                 baseSystemPrompt = ctx.systemPrompt,
@@ -87,15 +88,16 @@ class AgentExecutor internal constructor(
             throw e
         } catch (e: Exception) {
             logger.warn("Memory retrieval failed: {}", e.message)
-            ctx.systemPrompt
+            ru.souz.memory.MemoryPromptAugmentationResult(ctx.systemPrompt)
         }
 
     private suspend fun emitMemoryPromptAugmented(
         eventSink: AgentRuntimeEventSink,
         addedBlock: String,
+        facts: List<ru.souz.memory.MemoryPromptAugmentation.Fact>,
     ) {
         try {
-            eventSink.emit(AgentRuntimeEvent.MemoryPromptAugmented(addedBlock))
+            eventSink.emit(AgentRuntimeEvent.MemoryPromptAugmented(addedBlock, facts))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

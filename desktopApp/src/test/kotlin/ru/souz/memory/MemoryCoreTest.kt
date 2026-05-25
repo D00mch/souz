@@ -188,7 +188,10 @@ class MemoryCoreTest {
                 )
             )
         )
-        val projectSourceId = fixture.memoryService.saveTurnSourceEvent(memoryCapture(primaryScope = projectScope(), scopes = listOf(projectScope())))
+        val projectSourceId = fixture.memoryService.saveRedactedSourceEvent(
+            memoryCapture(primaryScope = projectScope(), scopes = listOf(projectScope())),
+            "project evidence"
+        )
         val projectFact = fixture.memoryService.createCapturedFact(
             CreateCapturedFactInput(
                 scope = projectScope(),
@@ -240,7 +243,7 @@ class MemoryCoreTest {
     }
 
     @Test
-    fun `retrieveForPrompt skips facts without embeddings instead of backfilling in hot path`() = runTest {
+    fun `retrieveForPrompt lazily backfills facts without embeddings in hot path`() = runTest {
         val fixture = createFixture()
         val sourceId = fixture.repository.insertSourceEvent(
             NewMemorySourceEvent(
@@ -250,7 +253,7 @@ class MemoryCoreTest {
                 text = "User prefers Kotlin.",
             )
         )
-        fixture.repository.insertFact(
+        val factId = fixture.repository.insertFact(
             NewMemoryFact(
                 scope = globalScope(),
                 kind = MemoryFactKind.PREFERENCE,
@@ -273,9 +276,10 @@ class MemoryCoreTest {
             limit = 5,
         )
 
-        assertTrue(block.facts.isEmpty())
+        assertEquals(1, block.facts.size)
+        assertEquals(factId, block.facts.first().id)
         assertEquals(1, fixture.embedder.queryCallCount)
-        assertEquals(0, fixture.embedder.documentCallCount)
+        assertEquals(1, fixture.embedder.documentCallCount)
     }
 
     @Test
@@ -288,7 +292,7 @@ class MemoryCoreTest {
         fixture.memoryService.deleteFact(deleted.id)
 
         assertEquals(MemoryFactStatus.RETIRED, fixture.repository.getFact(retired.id)?.status)
-        assertEquals(MemoryFactStatus.DELETED, fixture.repository.getFact(deleted.id)?.status)
+        assertEquals(null, fixture.repository.getFact(deleted.id))
     }
 
     @Test

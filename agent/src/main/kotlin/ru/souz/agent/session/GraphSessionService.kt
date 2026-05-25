@@ -119,6 +119,13 @@ internal class GraphSessionService(
                 mapOf(
                     DATA_KEY_EVENT to EVENT_MEMORY_PROMPT_AUGMENTED,
                     DATA_KEY_MEMORY_ADDED_BLOCK to event.addedBlock,
+                    "facts" to event.facts.map { fact ->
+                        mapOf(
+                            "factId" to fact.factId,
+                            "scope" to fact.scope,
+                            "score" to fact.score,
+                        )
+                    }
                 )
             )
         } catch (e: Exception) {

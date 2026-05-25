@@ -8,12 +8,27 @@ data class CompletedTurnMemoryInput(
     val assistantMessage: String,
 )
 
+data class MemoryPromptAugmentation(
+    val facts: List<Fact>
+) {
+    data class Fact(
+        val factId: String,
+        val scope: String,
+        val score: Float,
+    )
+}
+
+data class MemoryPromptAugmentationResult(
+    val augmentedSystemPrompt: String,
+    val facts: List<MemoryPromptAugmentation.Fact> = emptyList(),
+)
+
 interface ConversationMemoryRuntime {
     suspend fun buildSystemPrompt(
         baseSystemPrompt: String,
         userMessage: String,
         conversationId: String?,
-    ): String
+    ): MemoryPromptAugmentationResult
 
     suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput)
 }
@@ -23,7 +38,7 @@ object NoopConversationMemoryRuntime : ConversationMemoryRuntime {
         baseSystemPrompt: String,
         userMessage: String,
         conversationId: String?,
-    ): String = baseSystemPrompt
+    ): MemoryPromptAugmentationResult = MemoryPromptAugmentationResult(baseSystemPrompt)
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) = Unit
 }

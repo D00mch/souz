@@ -127,7 +127,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<UiAudioRecorder> { instance<InMemoryAudioRecorder>() }
     bindSingleton<DesktopPermissionService> { MacDesktopPermissionService() }
 
-    // Native
+    // DB
+    bindSingleton<kotlinx.coroutines.CoroutineScope> { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
     bindSingleton { Keys() }
 
     // DB

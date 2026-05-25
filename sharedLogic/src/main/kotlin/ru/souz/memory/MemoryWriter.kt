@@ -129,11 +129,12 @@ class LlmMemoryWriter(
             "remember that",
             "remember",
             "from now on",
-            "going forward",
-            "в будущем учитывай",
-            "учитывай дальше",
+            "с этого момента",
+            "запомни, что",
             "запомни",
             "запиши",
+            "в будущем учитывай",
+            "учитывай дальше"
         )
         val lower = normalized.lowercase()
         val marker = markers.firstOrNull(lower::contains) ?: return normalized
@@ -198,16 +199,42 @@ If there is no durable memory, return [].
     }
 }
 
-fun hasExplicitRememberIntent(text: String): Boolean {
+enum class ExplicitMemoryIntent {
+    SAVE,
+    SKIP,
+    NONE
+}
+
+fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
     val normalized = text.lowercase()
-    return listOf(
+    val negatives = listOf(
+        "не запоминай",
+        "не нужно запоминать",
+        "don't remember",
+        "do not remember",
+        "don't save",
+        "do not save",
+        "forget",
+        "забудь"
+    )
+    if (negatives.any { normalized.contains(it) }) {
+        return ExplicitMemoryIntent.SKIP
+    }
+
+    val positives = listOf(
+        "запомни, что",
         "запомни",
-        "запиши",
-        "в будущем учитывай",
-        "учитывай дальше",
-        "remember",
         "remember that",
         "from now on",
-        "going forward",
-    ).any(normalized::contains)
+        "с этого момента"
+    )
+    if (positives.any { normalized.contains(it) }) {
+        return ExplicitMemoryIntent.SAVE
+    }
+
+    return ExplicitMemoryIntent.NONE
+}
+
+fun hasExplicitRememberIntent(text: String): Boolean {
+    return parseExplicitMemoryIntent(text) == ExplicitMemoryIntent.SAVE
 }

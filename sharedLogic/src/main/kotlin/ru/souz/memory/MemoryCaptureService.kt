@@ -1,28 +1,43 @@
 package ru.souz.memory
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
 class MemoryCaptureService(
     private val memoryService: MemoryService,
     private val writer: MemoryWriter,
 ) {
-    suspend fun captureAfterTurn(input: MemoryCaptureInput): List<MemoryFact> {
-        val sourceEventId = memoryService.saveTurnSourceEvent(input)
-        val explicitRemember = hasExplicitRememberIntent(input.userMessage)
-        return writer.extractCandidates(input)
-            .filter { candidate -> isValidCandidate(candidate, explicitRemember) }
-            .map { candidate ->
-                memoryService.createCapturedFact(
-                    CreateCapturedFactInput(
-                        scope = candidate.scope ?: input.primaryScope,
-                        kind = candidate.kind,
-                        title = candidate.title.trim(),
-                        body = candidate.body.trim(),
-                        slotKey = candidate.slotKey?.trim()?.ifBlank { null },
-                        confidence = candidate.confidence,
-                        evidenceText = candidate.evidenceText.trim(),
-                        sourceEventId = sourceEventId,
-                    )
+    private val captureMutex = Mutex()
+
+    suspend fun captureAfterTurn(input: MemoryCaptureInput): List<MemoryFact> = captureMutex.withLock {
+        val intent = parseExplicitMemoryIntent(input.userMessage)
+        if (intent == ExplicitMemoryIntent.SKIP) return emptyList()
+
+        val isExplicitPositive = intent == ExplicitMemoryIntent.SAVE
+        val candidates = writer.extractCandidates(input)
+        val validCandidates = candidates.filter { candidate -> isValidCandidate(candidate, isExplicitPositive) }
+        if (validCandidates.isEmpty()) return emptyList()
+
+        val redactedCombinedText = validCandidates
+            .joinToString("\n---\n") { MemorySanitizer.redact(it.evidenceText) }
+            .trim()
+
+        val sourceEventId = memoryService.saveRedactedSourceEvent(input, redactedCombinedText)
+
+        return validCandidates.map { candidate ->
+            memoryService.createCapturedFact(
+                CreateCapturedFactInput(
+                    scope = candidate.scope ?: input.primaryScope,
+                    kind = candidate.kind,
+                    title = candidate.title.trim(),
+                    body = candidate.body.trim(),
+                    slotKey = candidate.slotKey?.trim()?.ifBlank { null },
+                    confidence = candidate.confidence,
+                    evidenceText = candidate.evidenceText.trim(),
+                    sourceEventId = sourceEventId,
                 )
-            }
+            )
+        }
     }
 
     private fun isValidCandidate(

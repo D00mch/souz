@@ -18,6 +18,8 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.MemoryPromptAugmentationResult
+import ru.souz.memory.MemoryPromptAugmentation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -51,6 +53,8 @@ class AgentExecutorMemoryTest {
         assertEquals("Base system prompt", result.context.history.first().content)
         val event = assertIs<AgentRuntimeEvent.MemoryPromptAugmented>(runtimeEvents.single())
         assertEquals("Relevant memory:\n- Prefer Kotlin.", event.addedBlock)
+        assertEquals(1, event.facts.size)
+        assertEquals("fact-1", event.facts[0].factId)
     }
 
     @Test
@@ -193,10 +197,16 @@ class AgentExecutorMemoryTest {
             baseSystemPrompt: String,
             userMessage: String,
             conversationId: String?,
-        ): String {
+        ): MemoryPromptAugmentationResult {
             onBuild()
             buildFailure?.let { throw it }
-            return augmentedPrompt ?: baseSystemPrompt
+            val prompt = augmentedPrompt ?: baseSystemPrompt
+            val facts = if (prompt != baseSystemPrompt) {
+                listOf(MemoryPromptAugmentation.Fact("fact-1", "user", 0.9f))
+            } else {
+                emptyList()
+            }
+            return MemoryPromptAugmentationResult(prompt, facts)
         }
 
         override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
