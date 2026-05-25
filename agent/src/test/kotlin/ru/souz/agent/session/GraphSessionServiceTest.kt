@@ -14,7 +14,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.runtime.AgentRuntimeEvent
-import ru.souz.memory.MemoryPromptAugmentation
+import ru.souz.memory.MemoryPromptFact
 import ru.souz.paths.DefaultSouzPaths
 
 class GraphSessionServiceTest {
@@ -42,12 +42,12 @@ class GraphSessionServiceTest {
             AgentRuntimeEvent.MemoryPromptAugmented(
                 addedBlock = "Relevant memory:\n- Prefer Kotlin.",
                 facts = listOf(
-                    MemoryPromptAugmentation.Fact(
+                    MemoryPromptFact(
                         factId = "fact-1",
                         scope = "global:global",
                         score = 0.91f,
                     ),
-                    MemoryPromptAugmentation.Fact(
+                    MemoryPromptFact(
                         factId = "fact-2",
                         scope = "chat:chat-1",
                         score = 0.72f,

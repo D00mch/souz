@@ -14,7 +14,7 @@ class DesktopConversationMemoryRuntime(
         )
         if (block.rendered.isBlank()) return MemoryPromptAugmentationResult(renderedBlock = "", emptyList())
         val facts = block.hits.map { hit ->
-            MemoryPromptAugmentation.Fact(
+            MemoryPromptFact(
                 factId = hit.fact.id,
                 scope = "${hit.fact.scope.type}:${hit.fact.scope.id}",
                 score = hit.score,

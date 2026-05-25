@@ -18,8 +18,8 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.MemoryPromptFact
 import ru.souz.memory.MemoryPromptAugmentationResult
-import ru.souz.memory.MemoryPromptAugmentation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -170,7 +170,7 @@ class AgentExecutorMemoryTest {
             onRetrieve()
             retrieveFailure?.let { throw it }
             val facts = if (renderedBlock.isNotBlank()) {
-                listOf(MemoryPromptAugmentation.Fact("fact-1", "user", 0.9f))
+                listOf(MemoryPromptFact("fact-1", "user", 0.9f))
             } else {
                 emptyList()
             }

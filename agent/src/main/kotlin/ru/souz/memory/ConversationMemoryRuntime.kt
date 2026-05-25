@@ -12,27 +12,20 @@ data class CompletedTurnMemoryInput(
 )
 
 /**
- * Structured description of facts attached to a prompt augmentation.
+ * Single fact reference included into the prompt augmentation.
  */
-data class MemoryPromptAugmentation(
-    val facts: List<Fact>
-) {
-    /**
-     * Single fact reference included into the prompt augmentation.
-     */
-    data class Fact(
-        val factId: String,
-        val scope: String,
-        val score: Float,
-    )
-}
+data class MemoryPromptFact(
+    val factId: String,
+    val scope: String,
+    val score: Float,
+)
 
 /**
  * Rendered memory block plus referenced fact metadata for tracing and UI.
  */
 data class MemoryPromptAugmentationResult(
     val renderedBlock: String,
-    val facts: List<MemoryPromptAugmentation.Fact> = emptyList(),
+    val facts: List<MemoryPromptFact> = emptyList(),
 )
 
 /**
