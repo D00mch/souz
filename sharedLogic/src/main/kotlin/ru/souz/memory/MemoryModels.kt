@@ -10,6 +10,24 @@ data class MemoryScope(
     val id: String,
 )
 
+fun MemoryScope.normalized(): MemoryScope {
+    val cleanType = type.trim()
+    val cleanId = id.trim()
+    val normalizedId = cleanId.removePrefix("$cleanType:")
+    return MemoryScope(cleanType, normalizedId.ifBlank { cleanId })
+}
+
+fun MemoryScope.compatibilityScopes(): List<MemoryScope> {
+    val normalized = normalized()
+    val legacyId = "${normalized.type}:${normalized.id}"
+    return buildList {
+        add(normalized)
+        if (legacyId != normalized.id) {
+            add(MemoryScope(normalized.type, legacyId))
+        }
+    }
+}
+
 enum class MemoryFactKind {
     SEMANTIC,
     PREFERENCE,
@@ -266,5 +284,4 @@ fun renderMemoryPrompt(hits: List<MemoryFactSearchHit>): String {
         }
     }.trim()
 }
-
 

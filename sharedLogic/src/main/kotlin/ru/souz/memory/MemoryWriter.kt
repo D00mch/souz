@@ -178,6 +178,10 @@ Good memory facts:
 - reusable procedures
 - long-term project context
 
+Keep each fact concise.
+Prefer a short title and one short body sentence.
+Avoid repeating surrounding conversation context.
+
 Use the user's text as evidence.
 Return JSON array only.
 

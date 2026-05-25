@@ -53,11 +53,12 @@ class MemoryService(
     private val embedder: EmbeddingClient,
 ) {
     suspend fun createManualFact(input: CreateMemoryFactInput): MemoryFact {
+        val scope = input.scope.normalized()
         val cleanTitle = MemorySanitizer.redact(input.title.trim())
         val cleanBody = MemorySanitizer.redact(input.body.trim())
         val sourceEventId = repo.insertSourceEvent(
             NewMemorySourceEvent(
-                scope = input.scope,
+                scope = scope,
                 sourceType = "manual",
                 sourceRef = null,
                 text = buildString {
@@ -74,7 +75,7 @@ class MemoryService(
         )
         return createFact(
             input = NewMemoryFact(
-                scope = input.scope,
+                scope = scope,
                 kind = input.kind,
                 title = cleanTitle,
                 body = cleanBody,
@@ -95,17 +96,18 @@ class MemoryService(
     }
 
     suspend fun createCapturedFact(input: CreateCapturedFactInput): MemoryFact {
+        val scope = input.scope.normalized()
         val cleanTitle = MemorySanitizer.redact(input.title.trim())
         val cleanBody = MemorySanitizer.redact(input.body.trim())
         val cleanEvidence = MemorySanitizer.redact(input.evidenceText.trim())
         val existing = input.slotKey
             ?.trim()
             ?.takeIf(String::isNotBlank)
-            ?.let { repo.findActiveFactBySlotKey(input.scope, it) }
+            ?.let { repo.findActiveFactBySlotKey(scope, it) }
         existing?.let { repo.retireFact(it.id) }
         return createFact(
             input = NewMemoryFact(
-                scope = input.scope,
+                scope = scope,
                 kind = input.kind,
                 title = cleanTitle,
                 body = cleanBody,
@@ -128,7 +130,7 @@ class MemoryService(
     suspend fun saveRedactedSourceEvent(input: MemoryCaptureInput, redactedText: String): String =
         repo.insertSourceEvent(
             NewMemorySourceEvent(
-                scope = input.primaryScope,
+                scope = input.primaryScope.normalized(),
                 sourceType = "turn",
                 sourceRef = input.assistantMessageId ?: input.conversationId,
                 text = redactedText,
@@ -150,8 +152,9 @@ class MemoryService(
         factId: String,
         patch: MemoryFactPatch,
     ): MemoryFact {
-        val updated = repo.updateFact(factId, patch)
-        if (patch.affectsEmbedding()) {
+        val normalizedPatch = patch.copy(scope = patch.scope?.normalized())
+        val updated = repo.updateFact(factId, normalizedPatch)
+        if (normalizedPatch.affectsEmbedding()) {
             repo.replaceEmbedding(
                 factId = updated.id,
                 model = embedder.model,
@@ -172,10 +175,12 @@ class MemoryService(
     suspend fun retrieveForPrompt(
         scopes: List<MemoryScope>,
         query: String,
-        limit: Int = 8,
+        limit: Int = 5,
     ): MemoryBlock {
-        if (query.isBlank() || scopes.isEmpty()) return MemoryBlock(emptyList(), "", emptyList())
-        val distinctScopes = scopes.distinct()
+        if (scopes.isEmpty()) return MemoryBlock(emptyList(), "", emptyList())
+        val distinctScopes = scopes
+            .flatMap(MemoryScope::compatibilityScopes)
+            .distinct()
 
         runCatching {
             val missing = repo.getFactsWithoutEmbedding(embedder.model)
@@ -187,12 +192,27 @@ class MemoryService(
             }
         }
 
-        val hits = repo.searchFacts(
-            scopes = distinctScopes,
-            model = embedder.model,
-            queryEmbedding = embedder.embedQuery(query),
-            limit = limit,
-        ).filter { it.score > 0f }
+        val pinnedFacts = distinctScopes
+            .flatMap { scope -> repo.listFacts(MemoryFactFilter(scope = scope, limit = Int.MAX_VALUE)) }
+            .filter(MemoryFact::pinned)
+            .distinctBy(MemoryFact::id)
+            .sortedByDescending(MemoryFact::updatedAt)
+            .take(limit)
+        val pinnedIds = pinnedFacts.mapTo(linkedSetOf(), MemoryFact::id)
+        val semanticHits = if (query.isBlank()) {
+            emptyList()
+        } else {
+            repo.searchFacts(
+                scopes = distinctScopes,
+                model = embedder.model,
+                queryEmbedding = embedder.embedQuery(query),
+                limit = limit + pinnedFacts.size,
+            ).filter { it.score > 0f && it.fact.id !in pinnedIds }
+        }
+        val hits = buildList {
+            pinnedFacts.forEach { fact -> add(MemoryFactSearchHit(fact, 1f)) }
+            addAll(semanticHits)
+        }.take(limit)
         val facts = hits.map(MemoryFactSearchHit::fact)
         return MemoryBlock(facts = facts, rendered = renderMemoryPrompt(hits), hits = hits)
     }

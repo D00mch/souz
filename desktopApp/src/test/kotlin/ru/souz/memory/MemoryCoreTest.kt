@@ -213,6 +213,30 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `capture normalizes malformed writer scope ids`() = runTest {
+        val fixture = createFixture(
+            writer = FixedWriter(
+                candidate(
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Primary career goal: Anthropic",
+                    body = "User wants to work at Anthropic.",
+                    scope = MemoryScope("global", "global:global"),
+                    slotKey = "career_goal_anthropic",
+                    confidence = 0.95f,
+                    evidenceText = "My primary career goal is Anthropic.",
+                )
+            )
+        )
+
+        val created = fixture.capture(
+            userMessage = "Запомни: моя главная карьерная цель - Anthropic",
+        ).single()
+
+        assertEquals(globalScope(), created.scope)
+        assertEquals(listOf(created.id), fixture.search(globalScope(), "anthropic career goal").map { it.fact.id })
+    }
+
+    @Test
     fun `retrieveForPrompt returns only active facts from requested scopes`() = runTest {
         val fixture = createFixture()
         val active = fixture.createManual(
@@ -240,6 +264,37 @@ class MemoryCoreTest {
         )
 
         assertEquals(listOf(active.id), block.facts.map { it.id })
+    }
+
+    @Test
+    fun `retrieveForPrompt prepends pinned facts includes legacy scopes and keeps five facts`() = runTest {
+        val fixture = createFixture()
+        val pinnedPreference = fixture.createManual(
+            title = "User Language",
+            body = "Respond in Russian.",
+            kind = MemoryFactKind.PREFERENCE,
+            pinned = true,
+        )
+        val pinnedLegacy = fixture.createLegacy(
+            title = "Primary career goal: Anthropic",
+            body = "User wants to work at Anthropic.",
+            scope = legacyGlobalScope(),
+            kind = MemoryFactKind.SEMANTIC,
+            pinned = true,
+        )
+        val strong = fixture.createManual(title = "SQLite memory", body = "SQLite desktop memory Kotlin.")
+        val medium = fixture.createManual(title = "Kotlin desktop", body = "Kotlin desktop memory project.")
+        val weak = fixture.createManual(title = "Chat memory", body = "Chat memory Kotlin.")
+        fixture.createManual(title = "Python notes", body = "Python project.")
+
+        val block = fixture.memoryService.retrieveForPrompt(
+            scopes = listOf(globalScope()),
+            query = "kotlin desktop memory",
+        )
+
+        assertEquals(5, block.facts.size)
+        assertEquals(setOf(pinnedPreference.id, pinnedLegacy.id), block.facts.take(2).map { it.id }.toSet())
+        assertEquals(listOf(strong.id, medium.id, weak.id), block.facts.drop(2).map { it.id })
     }
 
     @Test
@@ -336,14 +391,49 @@ class MemoryCoreTest {
         body: String = "Souz is a desktop app.",
         scope: MemoryScope = globalScope(),
         kind: MemoryFactKind = MemoryFactKind.SEMANTIC,
+        pinned: Boolean = false,
     ): MemoryFact = memoryService.createManualFact(
         CreateMemoryFactInput(
             scope = scope,
             kind = kind,
             title = title,
             body = body,
+            pinned = pinned,
         )
     )
+
+    private suspend fun Fixture.createLegacy(
+        title: String,
+        body: String,
+        scope: MemoryScope,
+        kind: MemoryFactKind,
+        pinned: Boolean = false,
+    ): MemoryFact {
+        val sourceId = repository.insertSourceEvent(
+            NewMemorySourceEvent(
+                scope = scope,
+                sourceType = "manual",
+                sourceRef = null,
+                text = body,
+            )
+        )
+        val factId = repository.insertFact(
+            NewMemoryFact(
+                scope = scope,
+                kind = kind,
+                title = title,
+                body = body,
+                slotKey = null,
+                status = MemoryFactStatus.ACTIVE,
+                confidence = 1f,
+                pinned = pinned,
+                createdBy = "writer",
+                supersedesFactId = null,
+            ),
+            evidence = listOf(MemoryEvidenceRef(sourceId, body)),
+        )
+        return repository.getFact(factId) ?: error("Legacy fact not found: $factId")
+    }
 
     private suspend fun Fixture.capture(
         userMessage: String = "Перед началом пиши тесты.",
@@ -450,6 +540,8 @@ class MemoryCoreTest {
         )
 
     private fun globalScope(): MemoryScope = MemoryScope(type = "global", id = "global")
+
+    private fun legacyGlobalScope(): MemoryScope = MemoryScope(type = "global", id = "global:global")
 
     private fun projectScope(): MemoryScope = MemoryScope(type = "project", id = "souz")
 
