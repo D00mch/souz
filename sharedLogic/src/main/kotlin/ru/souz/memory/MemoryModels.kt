@@ -215,6 +215,9 @@ fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
     return dot / (sqrt(normA) * sqrt(normB))
 }
 
+/**
+ * Redacts obvious secrets and private local data before memory is persisted.
+ */
 object MemorySanitizer {
     private val apiKeysRegex = Regex(
         "(?i)(api[-_]?key|secret|token|password|auth|authorization|credential)[\\s]*[:=][\\s]*[\"']?[a-zA-Z0-9_\\-\\.\\~]{10,}[\"']?"
@@ -284,4 +287,3 @@ fun renderMemoryPrompt(hits: List<MemoryFactSearchHit>): String {
         }
     }.trim()
 }
-

@@ -3,9 +3,13 @@ package ru.souz.di
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.paths.SouzPaths
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentTelemetry
@@ -128,14 +132,18 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<DesktopPermissionService> { MacDesktopPermissionService() }
 
     // DB
-    bindSingleton<kotlinx.coroutines.CoroutineScope> { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
+    bindSingleton<CoroutineScope> {
+        CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    }
     bindSingleton { Keys() }
 
     // DB
     bindSingleton { VectorDB }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
-    bindSingleton<MemoryRepository> { SqliteMemoryRepository(instance<ru.souz.paths.SouzPaths>().stateRoot.resolve("memory.db")) }
+    bindSingleton<MemoryRepository> {
+        SqliteMemoryRepository(instance<SouzPaths>().stateRoot.resolve("memory.db"))
+    }
     bindSingleton<EmbeddingClient> { LlmEmbeddingClient(instance(), instance()) }
     bindSingleton<MemoryWriter> { LlmMemoryWriter(instance(), instance()) }
     bindSingleton { MemoryService(instance(), instance()) }

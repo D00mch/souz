@@ -20,7 +20,8 @@ class LlmMemoryWriter(
     private val logger = LoggerFactory.getLogger(LlmMemoryWriter::class.java)
 
     override suspend fun extractCandidates(input: MemoryCaptureInput): List<MemoryFactCandidate> {
-        explicitRememberCandidate(input)?.let { return listOf(it) }
+        val explicitRememberCandidate = explicitRememberCandidate(input)
+        if (explicitRememberCandidate != null) return listOf(explicitRememberCandidate)
 
         val response = api.message(
             LLMRequest.Chat(
@@ -218,8 +219,6 @@ fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
         "do not remember",
         "don't save",
         "do not save",
-        "forget",
-        "забудь"
     )
     if (negatives.any { normalized.contains(it) }) {
         return ExplicitMemoryIntent.SKIP
@@ -229,11 +228,18 @@ fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
         "запомни, что",
         "запомни",
         "remember that",
+        "don't forget",
+        "do not forget",
         "from now on",
-        "с этого момента"
+        "с этого момента",
+        "не забудь",
     )
     if (positives.any { normalized.contains(it) }) {
         return ExplicitMemoryIntent.SAVE
+    }
+
+    if (listOf("forget", "забудь").any { normalized.contains(it) }) {
+        return ExplicitMemoryIntent.SKIP
     }
 
     return ExplicitMemoryIntent.NONE

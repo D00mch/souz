@@ -369,20 +369,34 @@ class SqliteMemoryRepository(
         }
     }
 
-    override suspend fun getFactsWithoutEmbedding(model: String): List<MemoryFact> = withConnection { connection ->
-        connection.prepareStatement(
-            """
-            select f.* from memory_facts f
-            left join memory_fact_embeddings e on e.fact_id = f.id and e.embedding_model = ?
-            where f.status = ? and e.fact_id is null
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, model)
-            statement.setString(2, MemoryFactStatus.ACTIVE.name)
-            statement.executeQuery().use { rs ->
-                buildList {
-                    while (rs.next()) {
-                        add(rs.toFact())
+    override suspend fun getFactsWithoutEmbedding(
+        scopes: List<MemoryScope>,
+        model: String,
+    ): List<MemoryFact> {
+        if (scopes.isEmpty()) return emptyList()
+        return withConnection { connection ->
+            val scopeClause = scopes.joinToString(" or ") { "(f.scope_type = ? and f.scope_id = ?)" }
+            connection.prepareStatement(
+                """
+                select f.* from memory_facts f
+                left join memory_fact_embeddings e on e.fact_id = f.id and e.embedding_model = ?
+                where f.status = ?
+                  and e.fact_id is null
+                  and ($scopeClause)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, model)
+                statement.setString(2, MemoryFactStatus.ACTIVE.name)
+                var index = 3
+                scopes.forEach { scope ->
+                    statement.setString(index++, scope.type)
+                    statement.setString(index++, scope.id)
+                }
+                statement.executeQuery().use { rs ->
+                    buildList {
+                        while (rs.next()) {
+                            add(rs.toFact())
+                        }
                     }
                 }
             }

@@ -338,6 +338,51 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `retrieveForPrompt does not backfill unrelated scopes`() = runTest {
+        val fixture = createFixture()
+        val current = fixture.createManual(
+            scope = globalScope(),
+            title = "Use Kotlin",
+            body = "User prefers Kotlin implementation.",
+            kind = MemoryFactKind.PREFERENCE,
+        )
+        val foreignSourceId = fixture.repository.insertSourceEvent(
+            NewMemorySourceEvent(
+                scope = chatScope("foreign"),
+                sourceType = "test",
+                sourceRef = null,
+                text = "Foreign chat uses Python.",
+            )
+        )
+        fixture.repository.insertFact(
+            NewMemoryFact(
+                scope = chatScope("foreign"),
+                kind = MemoryFactKind.PREFERENCE,
+                title = "Use Python",
+                body = "Foreign chat prefers Python implementation.",
+                slotKey = null,
+                status = MemoryFactStatus.ACTIVE,
+                confidence = 1f,
+                pinned = false,
+                createdBy = "user",
+                supersedesFactId = null,
+            ),
+            evidence = listOf(MemoryEvidenceRef(foreignSourceId, "Foreign chat uses Python.")),
+        )
+        fixture.embedder.resetCounts()
+
+        val block = fixture.memoryService.retrieveForPrompt(
+            scopes = listOf(globalScope()),
+            query = "kotlin implementation",
+            limit = 5,
+        )
+
+        assertEquals(listOf(current.id), block.facts.map { it.id })
+        assertEquals(1, fixture.embedder.queryCallCount)
+        assertEquals(0, fixture.embedder.documentCallCount)
+    }
+
+    @Test
     fun `retireFact and deleteFact mark status`() = runTest {
         val fixture = createFixture()
         val retired = fixture.createManual(title = "Retired fact")

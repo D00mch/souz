@@ -36,6 +36,8 @@ class MemoryRulesTest {
         assertEquals(ExplicitMemoryIntent.SKIP, parseExplicitMemoryIntent("don't remember this"))
         assertEquals(ExplicitMemoryIntent.SAVE, parseExplicitMemoryIntent("запомни, что я предпочитаю Kotlin"))
         assertEquals(ExplicitMemoryIntent.SAVE, parseExplicitMemoryIntent("remember that I prefer Kotlin"))
+        assertEquals(ExplicitMemoryIntent.SAVE, parseExplicitMemoryIntent("don't forget that I prefer Kotlin"))
+        assertEquals(ExplicitMemoryIntent.SAVE, parseExplicitMemoryIntent("не забудь, что я предпочитаю Kotlin"))
         assertEquals(ExplicitMemoryIntent.SKIP, parseExplicitMemoryIntent("remember that, but don't save this"))
         assertEquals(ExplicitMemoryIntent.NONE, parseExplicitMemoryIntent("Просто ответь на вопрос"))
     }

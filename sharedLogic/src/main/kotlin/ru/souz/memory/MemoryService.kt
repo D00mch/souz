@@ -183,7 +183,10 @@ class MemoryService(
             .distinct()
 
         runCatching {
-            val missing = repo.getFactsWithoutEmbedding(embedder.model)
+            val missing = repo.getFactsWithoutEmbedding(
+                scopes = distinctScopes,
+                model = embedder.model,
+            )
             for (fact in missing) {
                 runCatching {
                     val emb = embedder.embedDocument(fact.embeddingText())
