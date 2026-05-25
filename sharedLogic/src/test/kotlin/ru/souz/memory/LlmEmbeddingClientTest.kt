@@ -15,6 +15,8 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
+import kotlin.test.assertFails
+
 class LlmEmbeddingClientTest {
     @Test
     fun `embedding request uses selected settings model`() = runTest {
@@ -31,16 +33,58 @@ class LlmEmbeddingClientTest {
         assertContentEquals(floatArrayOf(0.25f, 0.5f), embedding)
     }
 
-    private class RecordingEmbeddingApi : LLMChatAPI {
-        val requests = mutableListOf<LLMRequest.Embeddings>()
+    @Test
+    fun `empty list response causes client error`() = runTest {
+        val api = RecordingEmbeddingApi {
+            LLMResponse.Embeddings.Ok(
+                data = emptyList(),
+                model = it.model,
+                objectType = "list",
+            )
+        }
+        val settingsProvider = mockk<SettingsProvider> {
+            every { embeddingsModel } returns EmbeddingsModel.QwenEmbeddings
+        }
+        val client = LlmEmbeddingClient(api, settingsProvider)
 
-        override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
-            requests += body
-            return LLMResponse.Embeddings.Ok(
+        assertFails {
+            client.embedDocument("hello")
+        }
+    }
+
+    @Test
+    fun `empty embedding inside element causes client error`() = runTest {
+        val api = RecordingEmbeddingApi {
+            LLMResponse.Embeddings.Ok(
+                data = listOf(LLMResponse.Embedding(emptyList(), index = 0)),
+                model = it.model,
+                objectType = "list",
+            )
+        }
+        val settingsProvider = mockk<SettingsProvider> {
+            every { embeddingsModel } returns EmbeddingsModel.QwenEmbeddings
+        }
+        val client = LlmEmbeddingClient(api, settingsProvider)
+
+        assertFails {
+            client.embedDocument("hello")
+        }
+    }
+
+    private class RecordingEmbeddingApi(
+        private val responseCreator: (LLMRequest.Embeddings) -> LLMResponse.Embeddings = { body ->
+            LLMResponse.Embeddings.Ok(
                 data = listOf(LLMResponse.Embedding(listOf(0.25, 0.5), index = 0)),
                 model = body.model,
                 objectType = "list",
             )
+        }
+    ) : LLMChatAPI {
+        val requests = mutableListOf<LLMRequest.Embeddings>()
+
+        override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
+            requests += body
+            return responseCreator(body)
         }
 
         override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =

@@ -1,11 +1,15 @@
 package ru.souz.memory
 
+import java.time.Instant
+
 interface MemoryRepository {
     suspend fun insertSourceEvent(input: NewMemorySourceEvent): String
 
     suspend fun insertFact(
         input: NewMemoryFact,
         evidence: List<MemoryEvidenceRef>,
+        embedding: FloatArray? = null,
+        embeddingModel: String? = null,
     ): String
 
     suspend fun getFact(factId: String): MemoryFact?
@@ -15,13 +19,17 @@ interface MemoryRepository {
     suspend fun listFacts(filter: MemoryFactFilter): List<MemoryFact>
 
     suspend fun updateFact(
-        factId: String,
-        patch: MemoryFactPatch,
+        fact: MemoryFact,
+        expectedUpdatedAt: Instant,
+        embedding: FloatArray? = null,
+        embeddingModel: String? = null,
     ): MemoryFact
 
     suspend fun retireFact(factId: String)
 
     suspend fun deleteFact(factId: String)
+
+    suspend fun deleteSourceEventIfUnused(sourceEventId: String)
 
     suspend fun findActiveFactBySlotKey(
         scope: MemoryScope,

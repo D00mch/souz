@@ -3,6 +3,9 @@
 package ru.souz.memory
 
 import java.nio.file.Files
+import java.nio.file.Path
+import java.sql.DriverManager
+import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -413,18 +416,229 @@ class MemoryCoreTest {
         assertTrue(hits[0].score >= hits[1].score)
     }
 
+    @Test
+    fun `repository updateFact rejects stale updatedAt`() = runTest {
+        val fixture = createFixture()
+        val fact = fixture.createManual(
+            scope = projectScope(),
+            kind = MemoryFactKind.PROJECT_DECISION,
+            title = "Initial storage",
+            body = "Use Postgres for memory storage.",
+        )
+        val snapshot = fixture.repository.getFact(fact.id)
+        assertNotNull(snapshot)
+
+        val firstUpdate = snapshot.copy(
+            title = "First storage",
+            updatedAt = snapshot.updatedAt.plusMillis(1),
+        )
+        fixture.repository.updateFact(
+            fact = firstUpdate,
+            expectedUpdatedAt = snapshot.updatedAt,
+            embedding = fixture.embedder.embedDocument(firstUpdate.embeddingText()),
+            embeddingModel = fixture.embedder.model,
+        )
+
+        val staleUpdate = snapshot.copy(
+            title = "Stale storage",
+            updatedAt = snapshot.updatedAt.plusMillis(2),
+        )
+        val result = kotlin.runCatching {
+            fixture.repository.updateFact(
+                fact = staleUpdate,
+                expectedUpdatedAt = snapshot.updatedAt,
+                embedding = fixture.embedder.embedDocument(staleUpdate.embeddingText()),
+                embeddingModel = fixture.embedder.model,
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals("First storage", fixture.repository.getFact(fact.id)?.title)
+    }
+
+    @Test
+    fun `createManualFact cleans up source event after embedding failure`() = runTest {
+        val fixture = createFixture()
+        fixture.embedder.mode = FakeEmbeddingClient.Mode.THROW_ON_DOCUMENT
+
+        val result = kotlin.runCatching {
+            fixture.memoryService.createManualFact(
+                CreateMemoryFactInput(
+                    scope = globalScope(),
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Manual note",
+                    body = "Remember this manual note.",
+                )
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(0, fixture.countRows("memory_source_events"))
+        assertEquals(0, fixture.countRows("memory_facts"))
+        assertEquals(0, fixture.countRows("memory_fact_evidence"))
+    }
+
+    @Test
+    fun `capture cleans up source event after embedding failure`() = runTest {
+        val fixture = createFixture(
+            writer = FixedWriter(
+                candidate(
+                    kind = MemoryFactKind.PROJECT_RULE,
+                    title = "Write tests first",
+                    body = "Implement features test-first in this project.",
+                    scope = globalScope(),
+                    confidence = 0.91f,
+                    evidenceText = "Before implementing the feature, write tests first.",
+                )
+            )
+        )
+        fixture.embedder.mode = FakeEmbeddingClient.Mode.THROW_ON_DOCUMENT
+
+        val result = kotlin.runCatching {
+            fixture.capture()
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(0, fixture.countRows("memory_source_events"))
+        assertEquals(0, fixture.countRows("memory_facts"))
+        assertEquals(0, fixture.countRows("memory_fact_evidence"))
+    }
+
+    @Test
+    fun `replacement with same slot key and failing document embedding`() = runTest {
+        val fixture = createFixture(writer = ReplacementWriter(projectScope()))
+        val first = fixture.capture(
+            userMessage = "Use Postgres for memory storage.",
+            primaryScope = projectScope(),
+            scopes = listOf(projectScope()),
+        ).single()
+
+        // Set mode to THROW_ON_DOCUMENT
+        fixture.embedder.mode = FakeEmbeddingClient.Mode.THROW_ON_DOCUMENT
+
+        // Capture replacement; this should throw/fail
+        val result = kotlin.runCatching {
+            fixture.capture(
+                userMessage = "Use SQLite for desktop memory storage.",
+                primaryScope = projectScope(),
+                scopes = listOf(projectScope()),
+            )
+        }
+        assertTrue(result.isFailure)
+
+        // Verify the old fact remains ACTIVE, and new fact was not created or has status ACTIVE.
+        val oldFact = fixture.repository.getFact(first.id)
+        assertNotNull(oldFact)
+        assertEquals(MemoryFactStatus.ACTIVE, oldFact.status)
+
+        // Find active fact by slot key is still the old one
+        val activeFact = fixture.repository.findActiveFactBySlotKey(projectScope(), "memory_storage_target")
+        assertNotNull(activeFact)
+        assertEquals(first.id, activeFact.id)
+
+        // Old semantic search still works
+        val hits = fixture.search(projectScope(), "postgres storage")
+        assertEquals(listOf(first.id), hits.map { it.fact.id })
+    }
+
+    @Test
+    fun `updateFact with failing document embedding`() = runTest {
+        val fixture = createFixture()
+        val fact = fixture.createManual(
+            scope = projectScope(),
+            kind = MemoryFactKind.PROJECT_DECISION,
+            title = "Initial storage",
+            body = "Use Postgres for memory storage.",
+        )
+
+        // Set mode to THROW_ON_DOCUMENT
+        fixture.embedder.mode = FakeEmbeddingClient.Mode.THROW_ON_DOCUMENT
+
+        // updateFact should throw/fail
+        val result = kotlin.runCatching {
+            fixture.memoryService.updateFact(
+                factId = fact.id,
+                patch = MemoryFactPatch(
+                    title = "Desktop storage",
+                    body = "Use SQLite for desktop memory storage.",
+                )
+            )
+        }
+        assertTrue(result.isFailure)
+
+        // Check text remains old
+        val currentFact = fixture.repository.getFact(fact.id)
+        assertNotNull(currentFact)
+        assertEquals("Initial storage", currentFact.title)
+        assertEquals("Use Postgres for memory storage.", currentFact.body)
+
+        // Old semantic search still works by previous content
+        fixture.embedder.mode = FakeEmbeddingClient.Mode.NORMAL
+        val hits = fixture.search(projectScope(), "postgres storage")
+        assertEquals(listOf(fact.id), hits.map { it.fact.id })
+    }
+
+    @Test
+    fun `out-of-scope writer candidate is rejected`() = runTest {
+        val fixture = createFixture(
+            writer = FixedWriter(
+                candidate(
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Secret rule",
+                    body = "This is a secret rule.",
+                    scope = chatScope("other-chat"),
+                    confidence = 0.9f,
+                    evidenceText = "We use other-chat here."
+                )
+            )
+        )
+
+        val created = fixture.capture(
+            primaryScope = chatScope("my-chat"),
+            scopes = listOf(chatScope("my-chat"))
+        )
+
+        assertTrue(created.isEmpty())
+    }
+
+    @Test
+    fun `invented scope is rejected`() = runTest {
+        val fixture = createFixture(
+            writer = FixedWriter(
+                candidate(
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Invented rule",
+                    body = "This is an invented rule.",
+                    scope = chatScope("invented-chat"),
+                    confidence = 0.9f,
+                    evidenceText = "We use invented-chat here."
+                )
+            )
+        )
+
+        val created = fixture.capture(
+            primaryScope = chatScope("my-chat"),
+            scopes = listOf(chatScope("my-chat"))
+        )
+
+        assertTrue(created.isEmpty())
+    }
+
     private fun createFixture(
         writer: MemoryWriter = FixedWriter(),
-    ): Fixture = SqliteMemoryRepository(Files.createTempDirectory("souz-memory-test-").resolve("memory.db"))
-        .let { repository ->
+    ): Fixture = Files.createTempDirectory("souz-memory-test-").resolve("memory.db")
+        .let { dbPath ->
+            SqliteMemoryRepository(dbPath).let { repository ->
             FakeEmbeddingClient().let { embedder ->
                 MemoryService(repository, embedder).let { service ->
-                    Fixture(repository, embedder, service, MemoryCaptureService(service, writer))
+                    Fixture(dbPath, repository, embedder, service, MemoryCaptureService(service, writer))
                 }
             }
         }
+    }
 
     private data class Fixture(
+        val dbPath: Path,
         val repository: MemoryRepository,
         val embedder: FakeEmbeddingClient,
         val memoryService: MemoryService,
@@ -499,8 +713,27 @@ class MemoryCoreTest {
             limit = 5,
         )
 
+    private fun Fixture.countRows(table: String): Int {
+        Class.forName("org.sqlite.JDBC")
+        DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+            connection.prepareStatement("select count(*) from $table").use { statement ->
+                statement.executeQuery().use { rs ->
+                    rs.next()
+                    return rs.getInt(1)
+                }
+            }
+        }
+    }
+
     private class FakeEmbeddingClient : EmbeddingClient {
+        enum class Mode {
+            NORMAL,
+            THROW_ON_DOCUMENT,
+            EMPTY_DOCUMENT,
+        }
+
         override val model: String = "fake-embedding-v1"
+        var mode: Mode = Mode.NORMAL
         var queryCallCount = 0
             private set
         var documentCallCount = 0
@@ -513,7 +746,11 @@ class MemoryCoreTest {
 
         override suspend fun embedDocument(text: String): FloatArray {
             documentCallCount++
-            return embed(text)
+            return when (mode) {
+                Mode.NORMAL -> embed(text)
+                Mode.THROW_ON_DOCUMENT -> error("Fake embedder error")
+                Mode.EMPTY_DOCUMENT -> FloatArray(0)
+            }
         }
 
         fun resetCounts() {
@@ -591,4 +828,11 @@ class MemoryCoreTest {
     private fun projectScope(): MemoryScope = MemoryScope(type = "project", id = "souz")
 
     private fun chatScope(id: String): MemoryScope = MemoryScope(type = "chat", id = id)
+
+    private fun MemoryFact.embeddingText(): String = buildString {
+        appendLine(title)
+        appendLine(body)
+        appendLine("kind=$kind")
+        appendLine("scope=${scope.type}:${scope.id}")
+    }
 }

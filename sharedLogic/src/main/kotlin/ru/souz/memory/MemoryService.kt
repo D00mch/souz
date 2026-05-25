@@ -38,11 +38,14 @@ class LlmEmbeddingClient(
             )
         )
         return when (response) {
-            is LLMResponse.Embeddings.Ok -> response.data.firstOrNull()
-                ?.embedding
-                ?.map(Double::toFloat)
-                ?.toFloatArray()
-                ?: FloatArray(0)
+            is LLMResponse.Embeddings.Ok -> {
+                val data = response.data.firstOrNull() ?: error("Memory embeddings returned empty data list")
+                val emb = data.embedding
+                if (emb.isEmpty()) {
+                    error("Memory embeddings returned empty float list")
+                }
+                emb.map(Double::toFloat).toFloatArray()
+            }
             is LLMResponse.Embeddings.Error -> error("Memory embeddings failed: ${response.status} ${response.message}")
         }
     }
@@ -73,26 +76,31 @@ class MemoryService(
                 ),
             )
         )
-        return createFact(
-            input = NewMemoryFact(
-                scope = scope,
-                kind = input.kind,
-                title = cleanTitle,
-                body = cleanBody,
-                slotKey = input.slotKey?.trim()?.ifBlank { null },
-                status = MemoryFactStatus.ACTIVE,
-                confidence = input.confidence,
-                pinned = input.pinned,
-                createdBy = "user",
-                supersedesFactId = null,
-            ),
-            evidence = listOf(
-                MemoryEvidenceRef(
-                    sourceEventId = sourceEventId,
-                    evidenceText = cleanBody.takeIf(String::isNotBlank),
-                )
-            ),
-        )
+        return try {
+            createFact(
+                input = NewMemoryFact(
+                    scope = scope,
+                    kind = input.kind,
+                    title = cleanTitle,
+                    body = cleanBody,
+                    slotKey = input.slotKey?.trim()?.ifBlank { null },
+                    status = MemoryFactStatus.ACTIVE,
+                    confidence = input.confidence,
+                    pinned = input.pinned,
+                    createdBy = "user",
+                    supersedesFactId = null,
+                ),
+                evidence = listOf(
+                    MemoryEvidenceRef(
+                        sourceEventId = sourceEventId,
+                        evidenceText = cleanBody.takeIf(String::isNotBlank),
+                    )
+                ),
+            )
+        } catch (error: Exception) {
+            runCatching { repo.deleteSourceEventIfUnused(sourceEventId) }
+            throw error
+        }
     }
 
     suspend fun createCapturedFact(input: CreateCapturedFactInput): MemoryFact {
@@ -104,7 +112,6 @@ class MemoryService(
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?.let { repo.findActiveFactBySlotKey(scope, it) }
-        existing?.let { repo.retireFact(it.id) }
         return createFact(
             input = NewMemoryFact(
                 scope = scope,
@@ -153,15 +160,19 @@ class MemoryService(
         patch: MemoryFactPatch,
     ): MemoryFact {
         val normalizedPatch = patch.copy(scope = patch.scope?.normalized())
-        val updated = repo.updateFact(factId, normalizedPatch)
-        if (normalizedPatch.affectsEmbedding()) {
-            repo.replaceEmbedding(
-                factId = updated.id,
-                model = embedder.model,
-                embedding = embedder.embedDocument(updated.embeddingText()),
-            )
+        val existing = repo.getFact(factId) ?: error("Memory fact not found: $factId")
+        val updated = existing.applyPatch(normalizedPatch)
+        val embedding = if (normalizedPatch.affectsEmbedding()) {
+            embedder.embedDocument(updated.embeddingText())
+        } else {
+            null
         }
-        return updated
+        return repo.updateFact(
+            fact = updated,
+            expectedUpdatedAt = existing.updatedAt,
+            embedding = embedding,
+            embeddingModel = embedding?.let { embedder.model },
+        )
     }
 
     suspend fun retireFact(factId: String) {
@@ -170,6 +181,10 @@ class MemoryService(
 
     suspend fun deleteFact(factId: String) {
         repo.deleteFact(factId)
+    }
+
+    suspend fun deleteSourceEventIfUnused(sourceEventId: String) {
+        repo.deleteSourceEventIfUnused(sourceEventId)
     }
 
     suspend fun retrieveForPrompt(
@@ -224,14 +239,20 @@ class MemoryService(
         input: NewMemoryFact,
         evidence: List<MemoryEvidenceRef>,
     ): MemoryFact {
-        val factId = repo.insertFact(input, evidence)
-        val fact = repo.getFact(factId) ?: error("Memory fact not found after insert: $factId")
-        repo.replaceEmbedding(
-            factId = factId,
-            model = embedder.model,
-            embedding = embedder.embedDocument(fact.embeddingText()),
+        val embeddingText = buildString {
+            appendLine(input.title)
+            appendLine(input.body)
+            appendLine("kind=${input.kind}")
+            appendLine("scope=${input.scope.type}:${input.scope.id}")
+        }
+        val emb = embedder.embedDocument(embeddingText)
+        val factId = repo.insertFact(
+            input = input,
+            evidence = evidence,
+            embedding = emb,
+            embeddingModel = embedder.model,
         )
-        return fact
+        return repo.getFact(factId) ?: error("Memory fact not found after insert: $factId")
     }
 
     private fun MemoryFact.embeddingText(): String = buildString {
@@ -239,6 +260,24 @@ class MemoryService(
         appendLine(body)
         appendLine("kind=$kind")
         appendLine("scope=${scope.type}:${scope.id}")
+    }
+
+    private fun MemoryFact.applyPatch(patch: MemoryFactPatch): MemoryFact {
+        val nextSlotKey = when {
+            patch.clearSlotKey -> null
+            patch.slotKey != null -> patch.slotKey.trim().ifBlank { null }
+            else -> slotKey
+        }
+        return copy(
+            scope = patch.scope ?: scope,
+            kind = patch.kind ?: kind,
+            title = patch.title?.trim()?.ifBlank { title } ?: title,
+            body = patch.body?.trim()?.ifBlank { body } ?: body,
+            slotKey = nextSlotKey,
+            confidence = patch.confidence ?: confidence,
+            pinned = patch.pinned ?: pinned,
+            updatedAt = java.time.Instant.now(),
+        )
     }
 
     private fun MemoryFactPatch.affectsEmbedding(): Boolean =

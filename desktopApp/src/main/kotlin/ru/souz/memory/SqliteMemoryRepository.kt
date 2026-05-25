@@ -46,6 +46,8 @@ class SqliteMemoryRepository(
     override suspend fun insertFact(
         input: NewMemoryFact,
         evidence: List<MemoryEvidenceRef>,
+        embedding: FloatArray?,
+        embeddingModel: String?,
     ): String = withConnection { connection ->
         val id = UUID.randomUUID().toString()
         connection.autoCommit = false
@@ -109,6 +111,32 @@ class SqliteMemoryRepository(
                     statement.executeBatch()
                 }
             }
+
+            if (embedding != null && embeddingModel != null) {
+                if (embedding.isEmpty()) {
+                    error("Cannot save empty embedding (zero dimension)")
+                }
+                connection.prepareStatement(
+                    """
+                    insert into memory_fact_embeddings(
+                        fact_id, embedding_model, embedding_blob, dimension, updated_at
+                    ) values (?, ?, ?, ?, ?)
+                    on conflict(fact_id) do update set
+                        embedding_model = excluded.embedding_model,
+                        embedding_blob = excluded.embedding_blob,
+                        dimension = excluded.dimension,
+                        updated_at = excluded.updated_at
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, id)
+                    statement.setString(2, embeddingModel)
+                    statement.setBytes(3, embedding.toBlob())
+                    statement.setInt(4, embedding.size)
+                    statement.setString(5, Instant.now().toString())
+                    statement.executeUpdate()
+                }
+            }
+
             connection.commit()
         } catch (error: Exception) {
             connection.rollback()
@@ -242,67 +270,76 @@ class SqliteMemoryRepository(
     }
 
     override suspend fun updateFact(
-        factId: String,
-        patch: MemoryFactPatch,
+        fact: MemoryFact,
+        expectedUpdatedAt: Instant,
+        embedding: FloatArray?,
+        embeddingModel: String?,
     ): MemoryFact = withConnection { connection ->
-        val existing = connection.prepareStatement(
-            """
-            select * from memory_facts
-            where id = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeQuery().use { rs -> rs.toFactOrNull() }
-        } ?: error("Memory fact not found: $factId")
-
-        val updatedAt = Instant.now()
-        val patchedSlotKey = patch.slotKey
-        val nextSlotKey = when {
-            patch.clearSlotKey -> null
-            patchedSlotKey != null -> patchedSlotKey.trim().ifBlank { null }
-            else -> existing.slotKey
-        }
-
-        connection.prepareStatement(
-            """
-            update memory_facts
-            set scope_type = ?,
-                scope_id = ?,
-                kind = ?,
-                title = ?,
-                body = ?,
-                slot_key = ?,
-                confidence = ?,
-                pinned = ?,
-                updated_at = ?
-            where id = ?
-            """.trimIndent()
-        ).use { statement ->
-            val nextScope = patch.scope ?: existing.scope
-            statement.setString(1, nextScope.type)
-            statement.setString(2, nextScope.id)
-            statement.setString(3, (patch.kind ?: existing.kind).name)
-            statement.setString(4, patch.title?.trim()?.ifBlank { existing.title } ?: existing.title)
-            statement.setString(5, patch.body?.trim()?.ifBlank { existing.body } ?: existing.body)
-            statement.setString(6, nextSlotKey)
-            statement.setFloat(7, patch.confidence ?: existing.confidence)
-            statement.setInt(8, if (patch.pinned ?: existing.pinned) 1 else 0)
-            statement.setString(9, updatedAt.toString())
-            statement.setString(10, factId)
-            statement.executeUpdate()
-        }
-
-        connection.prepareStatement(
-            """
-            select * from memory_facts
-            where id = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, factId)
-            statement.executeQuery().use { rs ->
-                rs.toFactOrNull() ?: error("Memory fact not found after update: $factId")
+        connection.autoCommit = false
+        try {
+            val updatedRows = connection.prepareStatement(
+                """
+                update memory_facts
+                set scope_type = ?,
+                    scope_id = ?,
+                    kind = ?,
+                    title = ?,
+                    body = ?,
+                    slot_key = ?,
+                    confidence = ?,
+                    pinned = ?,
+                    updated_at = ?
+                where id = ? and updated_at = ?
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, fact.scope.type)
+                statement.setString(2, fact.scope.id)
+                statement.setString(3, fact.kind.name)
+                statement.setString(4, fact.title)
+                statement.setString(5, fact.body)
+                statement.setString(6, fact.slotKey)
+                statement.setFloat(7, fact.confidence)
+                statement.setInt(8, if (fact.pinned) 1 else 0)
+                statement.setString(9, fact.updatedAt.toString())
+                statement.setString(10, fact.id)
+                statement.setString(11, expectedUpdatedAt.toString())
+                statement.executeUpdate()
             }
+            if (updatedRows == 0) {
+                error("Memory fact was modified concurrently: ${fact.id}")
+            }
+
+            if (embedding != null && embeddingModel != null) {
+                if (embedding.isEmpty()) {
+                    error("Cannot save empty embedding (zero dimension)")
+                }
+                connection.prepareStatement(
+                    """
+                    insert into memory_fact_embeddings(
+                        fact_id, embedding_model, embedding_blob, dimension, updated_at
+                    ) values (?, ?, ?, ?, ?)
+                    on conflict(fact_id) do update set
+                        embedding_model = excluded.embedding_model,
+                        embedding_blob = excluded.embedding_blob,
+                        dimension = excluded.dimension,
+                        updated_at = excluded.updated_at
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setString(1, fact.id)
+                    statement.setString(2, embeddingModel)
+                    statement.setBytes(3, embedding.toBlob())
+                    statement.setInt(4, embedding.size)
+                    statement.setString(5, Instant.now().toString())
+                    statement.executeUpdate()
+                }
+            }
+
+            connection.commit()
+        } catch (error: Exception) {
+            connection.rollback()
+            throw error
         }
+        fact
     }
 
     override suspend fun retireFact(factId: String) {
@@ -369,6 +406,24 @@ class SqliteMemoryRepository(
         }
     }
 
+    override suspend fun deleteSourceEventIfUnused(sourceEventId: String) {
+        withConnection { connection ->
+            connection.prepareStatement(
+                """
+                delete from memory_source_events
+                where id = ?
+                  and not exists (
+                      select 1 from memory_fact_evidence where source_event_id = ?
+                  )
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, sourceEventId)
+                statement.setString(2, sourceEventId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
     override suspend fun getFactsWithoutEmbedding(
         scopes: List<MemoryScope>,
         model: String,
@@ -431,6 +486,9 @@ class SqliteMemoryRepository(
         model: String,
         embedding: FloatArray,
     ) {
+        if (embedding.isEmpty()) {
+            error("Cannot save empty embedding (zero dimension)")
+        }
         withConnection { connection ->
             connection.prepareStatement(
                 """
