@@ -50,10 +50,9 @@ class SqliteMemoryRepository(
         embeddingModel: String?,
     ): String = withConnection { connection ->
         val id = UUID.randomUUID().toString()
-        connection.autoCommit = false
-        try {
+        connection.inTransaction {
             if (input.slotKey != null && input.status == MemoryFactStatus.ACTIVE) {
-                connection.prepareStatement(
+                prepareStatement(
                     """
                     update memory_facts
                     set status = ?, updated_at = ?
@@ -70,7 +69,7 @@ class SqliteMemoryRepository(
                 }
             }
 
-            connection.prepareStatement(
+            prepareStatement(
                 """
                 insert into memory_facts(
                     id, scope_type, scope_id, kind, title, body, slot_key, status, confidence,
@@ -95,7 +94,7 @@ class SqliteMemoryRepository(
                 statement.executeUpdate()
             }
             if (evidence.isNotEmpty()) {
-                connection.prepareStatement(
+                prepareStatement(
                     """
                     insert into memory_fact_evidence(
                         fact_id, source_event_id, evidence_text
@@ -111,36 +110,7 @@ class SqliteMemoryRepository(
                     statement.executeBatch()
                 }
             }
-
-            if (embedding != null && embeddingModel != null) {
-                if (embedding.isEmpty()) {
-                    error("Cannot save empty embedding (zero dimension)")
-                }
-                connection.prepareStatement(
-                    """
-                    insert into memory_fact_embeddings(
-                        fact_id, embedding_model, embedding_blob, dimension, updated_at
-                    ) values (?, ?, ?, ?, ?)
-                    on conflict(fact_id) do update set
-                        embedding_model = excluded.embedding_model,
-                        embedding_blob = excluded.embedding_blob,
-                        dimension = excluded.dimension,
-                        updated_at = excluded.updated_at
-                    """.trimIndent()
-                ).use { statement ->
-                    statement.setString(1, id)
-                    statement.setString(2, embeddingModel)
-                    statement.setBytes(3, embedding.toBlob())
-                    statement.setInt(4, embedding.size)
-                    statement.setString(5, Instant.now().toString())
-                    statement.executeUpdate()
-                }
-            }
-
-            connection.commit()
-        } catch (error: Exception) {
-            connection.rollback()
-            throw error
+            upsertEmbedding(id, embedding, embeddingModel)
         }
         id
     }
@@ -275,9 +245,8 @@ class SqliteMemoryRepository(
         embedding: FloatArray?,
         embeddingModel: String?,
     ): MemoryFact = withConnection { connection ->
-        connection.autoCommit = false
-        try {
-            val updatedRows = connection.prepareStatement(
+        connection.inTransaction {
+            val updatedRows = prepareStatement(
                 """
                 update memory_facts
                 set scope_type = ?,
@@ -308,36 +277,7 @@ class SqliteMemoryRepository(
             if (updatedRows == 0) {
                 error("Memory fact was modified concurrently: ${fact.id}")
             }
-
-            if (embedding != null && embeddingModel != null) {
-                if (embedding.isEmpty()) {
-                    error("Cannot save empty embedding (zero dimension)")
-                }
-                connection.prepareStatement(
-                    """
-                    insert into memory_fact_embeddings(
-                        fact_id, embedding_model, embedding_blob, dimension, updated_at
-                    ) values (?, ?, ?, ?, ?)
-                    on conflict(fact_id) do update set
-                        embedding_model = excluded.embedding_model,
-                        embedding_blob = excluded.embedding_blob,
-                        dimension = excluded.dimension,
-                        updated_at = excluded.updated_at
-                    """.trimIndent()
-                ).use { statement ->
-                    statement.setString(1, fact.id)
-                    statement.setString(2, embeddingModel)
-                    statement.setBytes(3, embedding.toBlob())
-                    statement.setInt(4, embedding.size)
-                    statement.setString(5, Instant.now().toString())
-                    statement.executeUpdate()
-                }
-            }
-
-            connection.commit()
-        } catch (error: Exception) {
-            connection.rollback()
-            throw error
+            upsertEmbedding(fact.id, embedding, embeddingModel)
         }
         fact
     }
@@ -347,10 +287,9 @@ class SqliteMemoryRepository(
     }
 
     override suspend fun deleteFact(factId: String): Unit = withConnection { connection ->
-        connection.autoCommit = false
-        try {
+        connection.inTransaction {
             val sourceEventIds = ArrayList<String>()
-            connection.prepareStatement(
+            prepareStatement(
                 "select source_event_id from memory_fact_evidence where fact_id = ?"
             ).use { statement ->
                 statement.setString(1, factId)
@@ -361,68 +300,33 @@ class SqliteMemoryRepository(
                 }
             }
 
-            connection.prepareStatement(
+            prepareStatement(
                 "delete from memory_fact_embeddings where fact_id = ?"
             ).use { statement ->
                 statement.setString(1, factId)
                 statement.executeUpdate()
             }
 
-            connection.prepareStatement(
+            prepareStatement(
                 "delete from memory_fact_evidence where fact_id = ?"
             ).use { statement ->
                 statement.setString(1, factId)
                 statement.executeUpdate()
             }
 
-            connection.prepareStatement(
+            prepareStatement(
                 "delete from memory_facts where id = ?"
             ).use { statement ->
                 statement.setString(1, factId)
                 statement.executeUpdate()
             }
 
-            if (sourceEventIds.isNotEmpty()) {
-                connection.prepareStatement(
-                    """
-                    delete from memory_source_events
-                    where id = ? and not exists (
-                        select 1 from memory_fact_evidence where source_event_id = id
-                    )
-                    """.trimIndent()
-                ).use { statement ->
-                    for (sourceEventId in sourceEventIds) {
-                        statement.setString(1, sourceEventId)
-                        statement.addBatch()
-                    }
-                    statement.executeBatch()
-                }
-            }
-
-            connection.commit()
-        } catch (error: Exception) {
-            connection.rollback()
-            throw error
+            sourceEventIds.distinct().forEach { deleteSourceEventIfUnused(it) }
         }
     }
 
-    override suspend fun deleteSourceEventIfUnused(sourceEventId: String) {
-        withConnection { connection ->
-            connection.prepareStatement(
-                """
-                delete from memory_source_events
-                where id = ?
-                  and not exists (
-                      select 1 from memory_fact_evidence where source_event_id = ?
-                  )
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, sourceEventId)
-                statement.setString(2, sourceEventId)
-                statement.executeUpdate()
-            }
-        }
-    }
+    override suspend fun deleteSourceEventIfUnused(sourceEventId: String) =
+        withConnection { it.deleteSourceEventIfUnused(sourceEventId) }
 
     override suspend fun getFactsWithoutEmbedding(
         scopes: List<MemoryScope>,
@@ -485,33 +389,7 @@ class SqliteMemoryRepository(
         factId: String,
         model: String,
         embedding: FloatArray,
-    ) {
-        if (embedding.isEmpty()) {
-            error("Cannot save empty embedding (zero dimension)")
-        }
-        withConnection { connection ->
-            connection.prepareStatement(
-                """
-                insert into memory_fact_embeddings(
-                    fact_id, embedding_model, embedding_blob, dimension, updated_at
-                ) values (?, ?, ?, ?, ?)
-                on conflict(fact_id) do update set
-                    embedding_model = excluded.embedding_model,
-                    embedding_blob = excluded.embedding_blob,
-                    dimension = excluded.dimension,
-                    updated_at = excluded.updated_at
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, factId)
-                statement.setString(2, model)
-                statement.setBytes(3, embedding.toBlob())
-                statement.setInt(4, embedding.size)
-                statement.setString(5, Instant.now().toString())
-                statement.executeUpdate()
-            }
-            Unit
-        }
-    }
+    ) = withConnection { it.upsertEmbedding(factId, embedding, model) }
 
     override suspend fun searchFacts(
         scopes: List<MemoryScope>,
@@ -608,14 +486,7 @@ class SqliteMemoryRepository(
                 connection.createStatement().use { statement ->
                     statement.execute("PRAGMA journal_mode = WAL;")
                 }
-                connection.autoCommit = false
-                try {
-                    ensureCurrentSchema(connection)
-                    connection.commit()
-                } catch (error: Exception) {
-                    connection.rollback()
-                    throw error
-                }
+                connection.inTransaction { ensureCurrentSchema(this) }
             }
             initialized = true
         }
@@ -666,6 +537,60 @@ class SqliteMemoryRepository(
     }
 
     private fun placeholders(size: Int): String = List(size) { "?" }.joinToString(", ")
+
+    private inline fun <T> Connection.inTransaction(block: Connection.() -> T): T {
+        autoCommit = false
+        return try {
+            block().also { commit() }
+        } catch (error: Exception) {
+            rollback()
+            throw error
+        }
+    }
+
+    private fun Connection.deleteSourceEventIfUnused(sourceEventId: String) {
+        prepareStatement(
+            """
+            delete from memory_source_events
+            where id = ?
+              and not exists (
+                  select 1 from memory_fact_evidence where source_event_id = ?
+              )
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, sourceEventId)
+            statement.setString(2, sourceEventId)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun Connection.upsertEmbedding(
+        factId: String,
+        embedding: FloatArray?,
+        model: String?,
+    ) {
+        if (embedding == null || model == null) return
+        if (embedding.isEmpty()) error("Cannot save empty embedding (zero dimension)")
+        prepareStatement(
+            """
+            insert into memory_fact_embeddings(
+                fact_id, embedding_model, embedding_blob, dimension, updated_at
+            ) values (?, ?, ?, ?, ?)
+            on conflict(fact_id) do update set
+                embedding_model = excluded.embedding_model,
+                embedding_blob = excluded.embedding_blob,
+                dimension = excluded.dimension,
+                updated_at = excluded.updated_at
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, factId)
+            statement.setString(2, model)
+            statement.setBytes(3, embedding.toBlob())
+            statement.setInt(4, embedding.size)
+            statement.setString(5, Instant.now().toString())
+            statement.executeUpdate()
+        }
+    }
 
     private data class FactEmbeddingRow(
         val fact: MemoryFact,

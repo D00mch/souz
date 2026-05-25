@@ -5,6 +5,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.unmockkAll
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import ru.souz.agent.graph.GraphRuntime
@@ -32,6 +33,7 @@ import ru.souz.memory.MemoryPromptAugmentation
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -392,5 +394,104 @@ class NodesCommonTest {
         assertNotNull(event)
         assertEquals("Relevant memory:\n- [preference] User prefers Kotlin", event.addedBlock)
         assertEquals("fact-1", event.facts.single().factId)
+    }
+
+    @Test
+    fun `memory retrieval cancellation is rethrown`() = runTest {
+        val nodesCommon = NodesCommon(
+            desktopInfoRepository = mockk(relaxed = true),
+            settingsProvider = mockk {
+                every { defaultCalendar } returns null
+            },
+            agentToolExecutor = mockk(relaxed = true),
+            defaultBrowserProvider = mockk {
+                every { defaultBrowserDisplayName() } returns null
+            },
+            runtimeEnvironment = SystemAgentRuntimeEnvironment,
+            memoryRuntime = object : ConversationMemoryRuntime {
+                override suspend fun retrieveMemory(
+                    userMessage: String,
+                    conversationId: String?,
+                ): MemoryPromptAugmentationResult {
+                    throw CancellationException("cancelled")
+                }
+
+                override suspend fun captureCompletedTurn(input: ru.souz.memory.CompletedTurnMemoryInput) = Unit
+            },
+        )
+
+        val context = AgentContext(
+            input = "hello",
+            settings = AgentSettings(
+                model = "gpt-model",
+                temperature = 0.2f,
+                toolsByCategory = emptyMap(),
+            ),
+            history = listOf(
+                "system".toSystemPromptMessage(),
+                LLMRequest.Message(LLMMessageRole.user, "hello"),
+            ),
+            activeTools = emptyList(),
+            systemPrompt = "system",
+        )
+
+        assertFailsWith<CancellationException> {
+            nodesCommon.nodeAppendAdditionalData().execute(
+                ctx = context,
+                runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+            )
+        }
+    }
+
+    @Test
+    fun `memory event emission cancellation is rethrown`() = runTest {
+        val nodesCommon = NodesCommon(
+            desktopInfoRepository = mockk(relaxed = true),
+            settingsProvider = mockk {
+                every { defaultCalendar } returns null
+            },
+            agentToolExecutor = mockk(relaxed = true),
+            defaultBrowserProvider = mockk {
+                every { defaultBrowserDisplayName() } returns null
+            },
+            runtimeEnvironment = SystemAgentRuntimeEnvironment,
+            memoryRuntime = object : ConversationMemoryRuntime {
+                override suspend fun retrieveMemory(
+                    userMessage: String,
+                    conversationId: String?,
+                ): MemoryPromptAugmentationResult = MemoryPromptAugmentationResult(
+                    renderedBlock = "Relevant memory:\n- [preference] User prefers Kotlin",
+                    facts = listOf(MemoryPromptAugmentation.Fact("fact-1", "user", 0.9f)),
+                )
+
+                override suspend fun captureCompletedTurn(input: ru.souz.memory.CompletedTurnMemoryInput) = Unit
+            },
+        )
+        val context = AgentContext(
+            input = "hello",
+            settings = AgentSettings(
+                model = "gpt-model",
+                temperature = 0.2f,
+                toolsByCategory = emptyMap(),
+            ),
+            history = listOf(
+                "system".toSystemPromptMessage(),
+                LLMRequest.Message(LLMMessageRole.user, "hello"),
+            ),
+            activeTools = emptyList(),
+            systemPrompt = "system",
+            runtimeEventSink = object : AgentRuntimeEventSink {
+                override suspend fun emit(event: AgentRuntimeEvent) {
+                    throw CancellationException("cancelled")
+                }
+            },
+        )
+
+        assertFailsWith<CancellationException> {
+            nodesCommon.nodeAppendAdditionalData().execute(
+                ctx = context,
+                runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+            )
+        }
     }
 }

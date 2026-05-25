@@ -76,7 +76,7 @@ class MemoryService(
                 ),
             )
         )
-        return try {
+        return withSourceEventCleanup(sourceEventId) {
             createFact(
                 input = NewMemoryFact(
                     scope = scope,
@@ -97,9 +97,6 @@ class MemoryService(
                     )
                 ),
             )
-        } catch (error: Exception) {
-            runCatching { repo.deleteSourceEventIfUnused(sourceEventId) }
-            throw error
         }
     }
 
@@ -175,17 +172,11 @@ class MemoryService(
         )
     }
 
-    suspend fun retireFact(factId: String) {
-        repo.retireFact(factId)
-    }
+    suspend fun retireFact(factId: String) = repo.retireFact(factId)
 
-    suspend fun deleteFact(factId: String) {
-        repo.deleteFact(factId)
-    }
+    suspend fun deleteFact(factId: String) = repo.deleteFact(factId)
 
-    suspend fun deleteSourceEventIfUnused(sourceEventId: String) {
-        repo.deleteSourceEventIfUnused(sourceEventId)
-    }
+    suspend fun deleteSourceEventIfUnused(sourceEventId: String) = repo.deleteSourceEventIfUnused(sourceEventId)
 
     suspend fun retrieveForPrompt(
         scopes: List<MemoryScope>,
@@ -193,29 +184,24 @@ class MemoryService(
         limit: Int = 5,
     ): MemoryBlock {
         if (scopes.isEmpty()) return MemoryBlock(emptyList(), "", emptyList())
-        val distinctScopes = scopes
-            .flatMap(MemoryScope::compatibilityScopes)
-            .distinct()
+        val distinctScopes = scopes.flatMap(MemoryScope::compatibilityScopes).distinct()
 
         runCatching {
-            val missing = repo.getFactsWithoutEmbedding(
-                scopes = distinctScopes,
-                model = embedder.model,
-            )
-            for (fact in missing) {
+            repo.getFactsWithoutEmbedding(distinctScopes, embedder.model).forEach { fact ->
                 runCatching {
-                    val emb = embedder.embedDocument(fact.embeddingText())
-                    repo.replaceEmbedding(fact.id, embedder.model, emb)
+                    repo.replaceEmbedding(fact.id, embedder.model, embedder.embedDocument(fact.embeddingText()))
                 }
             }
         }
 
         val pinnedFacts = distinctScopes
-            .flatMap { scope -> repo.listFacts(MemoryFactFilter(scope = scope, limit = Int.MAX_VALUE)) }
+            .flatMap { repo.listFacts(MemoryFactFilter(scope = it, limit = limit)) }
+            .asSequence()
             .filter(MemoryFact::pinned)
             .distinctBy(MemoryFact::id)
             .sortedByDescending(MemoryFact::updatedAt)
             .take(limit)
+            .toList()
         val pinnedIds = pinnedFacts.mapTo(linkedSetOf(), MemoryFact::id)
         val semanticHits = if (query.isBlank()) {
             emptyList()
@@ -239,27 +225,13 @@ class MemoryService(
         input: NewMemoryFact,
         evidence: List<MemoryEvidenceRef>,
     ): MemoryFact {
-        val embeddingText = buildString {
-            appendLine(input.title)
-            appendLine(input.body)
-            appendLine("kind=${input.kind}")
-            appendLine("scope=${input.scope.type}:${input.scope.id}")
-        }
-        val emb = embedder.embedDocument(embeddingText)
         val factId = repo.insertFact(
             input = input,
             evidence = evidence,
-            embedding = emb,
+            embedding = embedder.embedDocument(input.embeddingText()),
             embeddingModel = embedder.model,
         )
         return repo.getFact(factId) ?: error("Memory fact not found after insert: $factId")
-    }
-
-    private fun MemoryFact.embeddingText(): String = buildString {
-        appendLine(title)
-        appendLine(body)
-        appendLine("kind=$kind")
-        appendLine("scope=${scope.type}:${scope.id}")
     }
 
     private fun MemoryFact.applyPatch(patch: MemoryFactPatch): MemoryFact {
@@ -282,4 +254,27 @@ class MemoryService(
 
     private fun MemoryFactPatch.affectsEmbedding(): Boolean =
         scope != null || kind != null || title != null || body != null
+
+    private suspend fun <T> withSourceEventCleanup(sourceEventId: String, block: suspend () -> T): T = try {
+        block()
+    } catch (error: Exception) {
+        runCatching { repo.deleteSourceEventIfUnused(sourceEventId) }
+        throw error
+    }
+
+    private fun NewMemoryFact.embeddingText(): String = embeddingText(title, body, kind, scope)
+
+    private fun MemoryFact.embeddingText(): String = embeddingText(title, body, kind, scope)
+
+    private fun embeddingText(
+        title: String,
+        body: String,
+        kind: MemoryFactKind,
+        scope: MemoryScope,
+    ): String = buildString {
+        appendLine(title)
+        appendLine(body)
+        appendLine("kind=$kind")
+        appendLine("scope=${scope.type}:${scope.id}")
+    }
 }
