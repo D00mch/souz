@@ -4,8 +4,7 @@ class DesktopConversationMemoryRuntime(
     private val memoryService: MemoryService,
     private val captureService: MemoryCaptureService,
 ) : ConversationMemoryRuntime {
-    override suspend fun buildSystemPrompt(
-        baseSystemPrompt: String,
+    override suspend fun retrieveMemory(
         userMessage: String,
         conversationId: String?,
     ): MemoryPromptAugmentationResult {
@@ -13,16 +12,7 @@ class DesktopConversationMemoryRuntime(
             scopes = scopes(conversationId),
             query = userMessage,
         )
-        if (block.rendered.isBlank()) return MemoryPromptAugmentationResult(baseSystemPrompt, emptyList())
-        val augmented = if (baseSystemPrompt.isBlank()) {
-            block.rendered
-        } else {
-            buildString {
-                append(baseSystemPrompt.trimEnd())
-                append("\n\n")
-                append(block.rendered)
-            }
-        }
+        if (block.rendered.isBlank()) return MemoryPromptAugmentationResult(renderedBlock = "", emptyList())
         val facts = block.hits.map { hit ->
             MemoryPromptAugmentation.Fact(
                 factId = hit.fact.id,
@@ -30,7 +20,7 @@ class DesktopConversationMemoryRuntime(
                 score = hit.score,
             )
         }
-        return MemoryPromptAugmentationResult(augmented, facts)
+        return MemoryPromptAugmentationResult(renderedBlock = block.rendered, facts = facts)
     }
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {

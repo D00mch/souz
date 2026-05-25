@@ -62,6 +62,7 @@ class AgentExecutionKernelFactory(
             agentToolExecutor = agentToolExecutor,
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
+            memoryRuntime = memoryRuntime,
         )
         val nodesClassification = NodesClassification(
             settingsProvider = settingsProvider,

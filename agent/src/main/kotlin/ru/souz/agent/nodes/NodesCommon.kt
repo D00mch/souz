@@ -16,6 +16,9 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
+import ru.souz.agent.runtime.AgentRuntimeEvent
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -32,6 +35,7 @@ internal class NodesCommon(
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
+    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -96,6 +100,8 @@ internal class NodesCommon(
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
         val additionalMessage: LLMRequest.Message? = appendActualInformation(
             userText = ctx.input,
+            conversationId = ctx.toolInvocationMeta.conversationId,
+            eventSink = ctx.runtimeEventSink,
         )
 
         val newHistory = ArrayList<LLMRequest.Message>()
@@ -121,8 +127,26 @@ internal class NodesCommon(
 
     private suspend fun appendActualInformation(
         userText: String,
+        conversationId: String?,
+        eventSink: ru.souz.agent.runtime.AgentRuntimeEventSink,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
+
+        val memoryResult = try {
+            memoryRuntime.retrieveMemory(userText, conversationId)
+        } catch (e: Exception) {
+            l.warn("Memory retrieval failed: {}", e.message)
+            null
+        }
+
+        val hasMemory = memoryResult != null && memoryResult.renderedBlock.isNotBlank()
+        if (hasMemory) {
+            try {
+                eventSink.emit(AgentRuntimeEvent.MemoryPromptAugmented(memoryResult.renderedBlock, memoryResult.facts))
+            } catch (e: Exception) {
+                l.warn("Memory augmentation trace failed: {}", e.message)
+            }
+        }
 
         val additionalData = ArrayList<StorredData>()
 
@@ -150,16 +174,28 @@ internal class NodesCommon(
         )
         additionalData.add(StorredData("Текущие дата и время: $currentDateTime", StorredType.GENERAL_FACT))
 
-        if (additionalData.isEmpty()) return null
+        val hasOther = additionalData.isNotEmpty()
+
+        if (!hasMemory && !hasOther) return null
 
         val content = buildString {
             append("<context>\n")
             append("Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n")
             append("---\n")
 
-            additionalData.forEach { data ->
-                val typeReadable = data.type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
-                append("- [$typeReadable]: ${data.text}\n")
+            if (hasMemory) {
+                append(memoryResult!!.renderedBlock.trim())
+                append("\n")
+            }
+
+            if (hasOther) {
+                if (hasMemory) {
+                    append("\nOther relevant context:\n")
+                }
+                additionalData.forEach { data ->
+                    val typeReadable = data.type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
+                    append("- [$typeReadable]: ${data.text}\n")
+                }
             }
             append("</context>")
         }

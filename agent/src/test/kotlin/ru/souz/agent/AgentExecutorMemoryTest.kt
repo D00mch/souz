@@ -27,39 +27,10 @@ import kotlin.test.assertIs
 
 class AgentExecutorMemoryTest {
     @Test
-    fun `memory prompt applies before graph execution and emits runtime event`() = runTest {
-        val order = mutableListOf<String>()
+    fun `agent executor does not modify system prompt`() = runTest {
         val memoryRuntime = RecordingMemoryRuntime(
-            augmentedPrompt = "Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.",
-            onBuild = { order += "memory.build" },
+            renderedBlock = "Relevant memory:\n- Prefer Kotlin."
         )
-        val agent = CapturingAgent(
-            output = "assistant response",
-            onExecute = { order += "agent.execute" },
-        )
-        val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
-
-        val result = executor(agent, memoryRuntime).execute(
-            agentId = AgentId.GRAPH,
-            context = baseContext(),
-            input = "hello",
-            eventSink = CollectingEventSink(runtimeEvents),
-        )
-
-        assertEquals(listOf("memory.build", "agent.execute"), order)
-        assertEquals("Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.", agent.executedContexts.single().systemPrompt)
-        assertEquals("Base system prompt\n\nRelevant memory:\n- Prefer Kotlin.", agent.executedContexts.single().history.first().content)
-        assertEquals("Base system prompt", result.context.systemPrompt)
-        assertEquals("Base system prompt", result.context.history.first().content)
-        val event = assertIs<AgentRuntimeEvent.MemoryPromptAugmented>(runtimeEvents.single())
-        assertEquals("Relevant memory:\n- Prefer Kotlin.", event.addedBlock)
-        assertEquals(1, event.facts.size)
-        assertEquals("fact-1", event.facts[0].factId)
-    }
-
-    @Test
-    fun `execute falls back to base prompt when memory retrieval fails`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime(buildFailure = IllegalStateException("retrieval failed"))
         val agent = CapturingAgent(output = "assistant response")
 
         val result = executor(agent, memoryRuntime).execute(
@@ -68,9 +39,8 @@ class AgentExecutorMemoryTest {
             input = "hello",
         )
 
-        assertEquals("assistant response", result.output)
         assertEquals("Base system prompt", agent.executedContexts.single().systemPrompt)
-        assertEquals("Base system prompt", agent.executedContexts.single().history.first().content)
+        assertEquals("Base system prompt", result.context.systemPrompt)
     }
 
     @Test
@@ -182,31 +152,29 @@ class AgentExecutorMemoryTest {
     }
 
     private class RecordingMemoryRuntime(
-        private val augmentedPrompt: String? = null,
-        private val buildFailure: Throwable? = null,
+        private val renderedBlock: String = "",
+        private val retrieveFailure: Throwable? = null,
         private val captureFailure: Throwable? = null,
         private val blockCapture: Boolean = false,
-        private val onBuild: () -> Unit = {},
+        private val onRetrieve: () -> Unit = {},
     ) : ConversationMemoryRuntime {
         val capturedTurns = mutableListOf<CompletedTurnMemoryInput>()
         val captureStarted = CompletableDeferred<CompletedTurnMemoryInput>()
         val releaseCapture = CompletableDeferred<Unit>()
         val captureFinished = CompletableDeferred<Unit>()
 
-        override suspend fun buildSystemPrompt(
-            baseSystemPrompt: String,
+        override suspend fun retrieveMemory(
             userMessage: String,
             conversationId: String?,
         ): MemoryPromptAugmentationResult {
-            onBuild()
-            buildFailure?.let { throw it }
-            val prompt = augmentedPrompt ?: baseSystemPrompt
-            val facts = if (prompt != baseSystemPrompt) {
+            onRetrieve()
+            retrieveFailure?.let { throw it }
+            val facts = if (renderedBlock.isNotBlank()) {
                 listOf(MemoryPromptAugmentation.Fact("fact-1", "user", 0.9f))
             } else {
                 emptyList()
             }
-            return MemoryPromptAugmentationResult(prompt, facts)
+            return MemoryPromptAugmentationResult(renderedBlock, facts)
         }
 
         override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {

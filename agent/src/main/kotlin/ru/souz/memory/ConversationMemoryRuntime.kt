@@ -19,13 +19,12 @@ data class MemoryPromptAugmentation(
 }
 
 data class MemoryPromptAugmentationResult(
-    val augmentedSystemPrompt: String,
+    val renderedBlock: String,
     val facts: List<MemoryPromptAugmentation.Fact> = emptyList(),
 )
 
 interface ConversationMemoryRuntime {
-    suspend fun buildSystemPrompt(
-        baseSystemPrompt: String,
+    suspend fun retrieveMemory(
         userMessage: String,
         conversationId: String?,
     ): MemoryPromptAugmentationResult
@@ -34,11 +33,10 @@ interface ConversationMemoryRuntime {
 }
 
 object NoopConversationMemoryRuntime : ConversationMemoryRuntime {
-    override suspend fun buildSystemPrompt(
-        baseSystemPrompt: String,
+    override suspend fun retrieveMemory(
         userMessage: String,
         conversationId: String?,
-    ): MemoryPromptAugmentationResult = MemoryPromptAugmentationResult(baseSystemPrompt)
+    ): MemoryPromptAugmentationResult = MemoryPromptAugmentationResult(renderedBlock = "")
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) = Unit
 }

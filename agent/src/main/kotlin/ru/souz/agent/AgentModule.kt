@@ -41,7 +41,7 @@ fun agentDiModule(
     }
     bindSingleton { AgentToolExecutor(instance<AgentTelemetry>()) }
     bindSingleton { NodesErrorHandling(instance()) }
-    bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { JsonUtils(restJsonMapper) }
