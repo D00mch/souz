@@ -238,7 +238,7 @@ fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
         return ExplicitMemoryIntent.SAVE
     }
 
-    if (listOf("forget", "забудь").any { normalized.contains(it) }) {
+    if (normalized.isExplicitForgetIntent()) {
         return ExplicitMemoryIntent.SKIP
     }
 
@@ -248,3 +248,16 @@ fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
 fun hasExplicitRememberIntent(text: String): Boolean {
     return parseExplicitMemoryIntent(text) == ExplicitMemoryIntent.SAVE
 }
+
+private fun String.isExplicitForgetIntent(): Boolean {
+    val trimmed = trim()
+    if (trimmed == "forget" || trimmed == "забудь") return true
+    return EXPLICIT_FORGET_PATTERNS.any { it.containsMatchIn(this) }
+}
+
+private val EXPLICIT_FORGET_PATTERNS = listOf(
+    Regex("""\bforget\s+(?:this|that|it|everything|all this)\b"""),
+    Regex("""\bforget\s+about\s+(?:this|that|it)\b"""),
+    Regex("""\bзабудь\s+(?:это|все|всё|все это|всё это)\b"""),
+    Regex("""\bзабудь\s+об\s+этом\b"""),
+)

@@ -209,6 +209,10 @@ class SqliteMemoryRepository(
             params.add(scope.type)
             params.add(scope.id)
         }
+        filter.pinned?.let { pinned ->
+            clauses += "pinned = ?"
+            params.add(if (pinned) 1 else 0)
+        }
         filter.query?.trim()?.takeIf(String::isNotBlank)?.let { query ->
             clauses += "(title like ? or body like ?)"
             val like = "%$query%"

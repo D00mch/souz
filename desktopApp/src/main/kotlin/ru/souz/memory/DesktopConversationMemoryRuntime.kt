@@ -27,7 +27,7 @@ class DesktopConversationMemoryRuntime(
         captureService.captureAfterTurn(
             MemoryCaptureInput(
                 scopes = scopes(input.conversationId),
-                primaryScope = GLOBAL_SCOPE,
+                primaryScope = primaryScope(input.conversationId),
                 userMessage = input.userMessage,
                 assistantMessage = input.assistantMessage,
                 conversationId = input.conversationId,
@@ -41,6 +41,9 @@ class DesktopConversationMemoryRuntime(
         add(GLOBAL_SCOPE)
         conversationId?.let { add(MemoryScope(type = "chat", id = it)) }
     }
+
+    private fun primaryScope(conversationId: String?): MemoryScope =
+        conversationId?.let { MemoryScope(type = "chat", id = it) } ?: GLOBAL_SCOPE
 
     private companion object {
         val GLOBAL_SCOPE = MemoryScope(type = "global", id = "global")

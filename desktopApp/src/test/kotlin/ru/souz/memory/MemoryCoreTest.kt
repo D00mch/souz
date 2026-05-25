@@ -6,9 +6,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -341,6 +343,29 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `retrieveForPrompt backfills at most five missing embeddings per request`() = runTest {
+        val fixture = createFixture()
+        repeat(7) { index ->
+            fixture.createLegacy(
+                title = "Kotlin note $index",
+                body = "Kotlin desktop memory note $index.",
+                scope = globalScope(),
+                kind = MemoryFactKind.SEMANTIC,
+            )
+        }
+        fixture.embedder.resetCounts()
+
+        fixture.memoryService.retrieveForPrompt(
+            scopes = listOf(globalScope()),
+            query = "kotlin desktop memory",
+            limit = 5,
+        )
+
+        assertEquals(1, fixture.embedder.queryCallCount)
+        assertEquals(5, fixture.embedder.documentCallCount)
+    }
+
+    @Test
     fun `retrieveForPrompt does not backfill unrelated scopes`() = runTest {
         val fixture = createFixture()
         val current = fixture.createManual(
@@ -383,6 +408,32 @@ class MemoryCoreTest {
         assertEquals(listOf(current.id), block.facts.map { it.id })
         assertEquals(1, fixture.embedder.queryCallCount)
         assertEquals(0, fixture.embedder.documentCallCount)
+    }
+
+    @Test
+    fun `retrieveForPrompt includes older pinned facts even when newer facts fill the page`() = runTest {
+        val fixture = createFixture()
+        val pinned = fixture.createManual(
+            title = "Respond in Russian",
+            body = "User prefers Russian.",
+            kind = MemoryFactKind.PREFERENCE,
+            pinned = true,
+        )
+        repeat(5) { index ->
+            fixture.createManual(
+                title = "Recent note $index",
+                body = "Recent unpinned note $index.",
+                kind = MemoryFactKind.SEMANTIC,
+            )
+        }
+
+        val block = fixture.memoryService.retrieveForPrompt(
+            scopes = listOf(globalScope()),
+            query = "",
+            limit = 5,
+        )
+
+        assertEquals(listOf(pinned.id), block.facts.map { it.id })
     }
 
     @Test
@@ -579,6 +630,26 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `retrieveForPrompt rethrows cancellation from embedding backfill`() = runTest {
+        val fixture = createFixture()
+        fixture.createLegacy(
+            title = "Use Kotlin",
+            body = "User prefers Kotlin implementation.",
+            scope = globalScope(),
+            kind = MemoryFactKind.PREFERENCE,
+        )
+        fixture.embedder.mode = FakeEmbeddingClient.Mode.CANCEL_ON_DOCUMENT
+
+        assertFailsWith<CancellationException> {
+            fixture.memoryService.retrieveForPrompt(
+                scopes = listOf(globalScope()),
+                query = "kotlin implementation",
+                limit = 5,
+            )
+        }
+    }
+
+    @Test
     fun `out-of-scope writer candidate is rejected`() = runTest {
         val fixture = createFixture(
             writer = FixedWriter(
@@ -730,6 +801,7 @@ class MemoryCoreTest {
             NORMAL,
             THROW_ON_DOCUMENT,
             EMPTY_DOCUMENT,
+            CANCEL_ON_DOCUMENT,
         }
 
         override val model: String = "fake-embedding-v1"
@@ -750,6 +822,7 @@ class MemoryCoreTest {
                 Mode.NORMAL -> embed(text)
                 Mode.THROW_ON_DOCUMENT -> error("Fake embedder error")
                 Mode.EMPTY_DOCUMENT -> FloatArray(0)
+                Mode.CANCEL_ON_DOCUMENT -> throw CancellationException("Fake cancellation")
             }
         }
 

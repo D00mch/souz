@@ -1,5 +1,6 @@
 package ru.souz.memory
 
+import kotlinx.coroutines.CancellationException
 import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
@@ -186,18 +187,23 @@ class MemoryService(
         if (scopes.isEmpty()) return MemoryBlock(emptyList(), "", emptyList())
         val distinctScopes = scopes.flatMap(MemoryScope::compatibilityScopes).distinct()
 
-        runCatching {
-            repo.getFactsWithoutEmbedding(distinctScopes, embedder.model).forEach { fact ->
-                runCatching {
+        try {
+            repo.getFactsWithoutEmbedding(distinctScopes, embedder.model).take(5).forEach { fact ->
+                try {
                     repo.replaceEmbedding(fact.id, embedder.model, embedder.embedDocument(fact.embeddingText()))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
         }
 
         val pinnedFacts = distinctScopes
-            .flatMap { repo.listFacts(MemoryFactFilter(scope = it, limit = limit)) }
+            .flatMap { repo.listFacts(MemoryFactFilter(scope = it, pinned = true, limit = limit)) }
             .asSequence()
-            .filter(MemoryFact::pinned)
             .distinctBy(MemoryFact::id)
             .sortedByDescending(MemoryFact::updatedAt)
             .take(limit)

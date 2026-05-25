@@ -162,6 +162,7 @@ data class MemoryFactFilter(
     val statuses: Set<MemoryFactStatus> = setOf(MemoryFactStatus.ACTIVE),
     val kinds: Set<MemoryFactKind> = emptySet(),
     val scope: MemoryScope? = null,
+    val pinned: Boolean? = null,
     val query: String? = null,
     val limit: Int = 100,
     val offset: Int = 0,
