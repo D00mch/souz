@@ -12,6 +12,7 @@ data class ApiKeyValues(
     val anthropicKey: String,
     val openaiKey: String,
     val saluteSpeechKey: String,
+    val codexConnected: Boolean = false,
 )
 
 data class ApiKeyAvailability(
@@ -36,6 +37,7 @@ class ApiKeyAvailabilityUseCase(
 
     fun configuredKeysCount(values: ApiKeyValues): Int {
         val availableFields = availableFields()
+        val codexValue = if (values.codexConnected) "connected" else ""
         return mapOf(
             ApiKeyField.GIGA_CHAT to values.gigaChatKey,
             ApiKeyField.QWEN_CHAT to values.qwenChatKey,
@@ -43,6 +45,7 @@ class ApiKeyAvailabilityUseCase(
             ApiKeyField.ANTHROPIC to values.anthropicKey,
             ApiKeyField.OPENAI to values.openaiKey,
             ApiKeyField.SALUTE_SPEECH to values.saluteSpeechKey,
+            ApiKeyField.CODEX to codexValue,
         ).count { (field, key) ->
             field in availableFields && key.isNotBlank()
         }
@@ -60,6 +63,7 @@ class ApiKeyAvailabilityUseCase(
         if (LlmProvider.AI_TUNNEL in providers) add(ApiKeyField.AI_TUNNEL)
         if (LlmProvider.ANTHROPIC in providers) add(ApiKeyField.ANTHROPIC)
         if (LlmProvider.OPENAI in providers) add(ApiKeyField.OPENAI)
+        if (LlmProvider.CODEX in providers) add(ApiKeyField.CODEX)
     }
 
     private fun supportsVoiceRecognitionApiKeys(availableFields: Set<ApiKeyField>): Boolean =
@@ -71,5 +75,6 @@ class ApiKeyAvailabilityUseCase(
         if (ApiKeyField.QWEN_CHAT in availableFields) add(ApiKeyProvider.QWEN)
         if (ApiKeyField.AI_TUNNEL in availableFields) add(ApiKeyProvider.AI_TUNNEL)
         if (ApiKeyField.ANTHROPIC in availableFields) add(ApiKeyProvider.ANTHROPIC)
+        if (ApiKeyField.CODEX in availableFields) add(ApiKeyProvider.CODEX)
     }
 }

@@ -149,6 +149,7 @@ class SkillActivationPipelineE2ETest {
             LlmProvider.ANTHROPIC -> di.direct.instance<AnthropicChatAPI>()
             LlmProvider.OPENAI -> di.direct.instance<OpenAIChatAPI>()
             LlmProvider.LOCAL -> error("Local model is not used in this E2E test.")
+            LlmProvider.CODEX -> error("Codex model is not used in this E2E test.")
         }
     }
 

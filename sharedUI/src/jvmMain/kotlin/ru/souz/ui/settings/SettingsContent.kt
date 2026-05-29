@@ -543,6 +543,8 @@ fun KeysSettingsContent(
     onOpenAiKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
+    onStartCodexOAuth: () -> Unit,
+    onDisconnectCodex: () -> Unit,
     onClose: () -> Unit
 ) {
     val supportsSaluteSpeech = ApiKeyField.SALUTE_SPEECH in state.availableApiKeyFields
@@ -636,6 +638,16 @@ fun KeysSettingsContent(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+
+            if (ApiKeyField.CODEX in state.availableApiKeyFields) {
+                CodexOAuthButton(
+                    connected = state.codexConnected,
+                    oauthState = state.codexOAuthState,
+                    onConnect = onStartCodexOAuth,
+                    onDisconnect = onDisconnectCodex,
+                    onOpenProviderLink = onOpenProviderLink,
+                )
+            }
         }
 
         if (supportsSaluteSpeech) {
@@ -708,6 +720,141 @@ private fun ProviderLinkCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = SettingsStrongTextColor
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CodexOAuthButton(
+    connected: Boolean,
+    oauthState: CodexOAuthUiState,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenProviderLink: (ApiKeyProvider) -> Unit,
+) {
+    val clipboardManager = LocalClipboardManager.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = SettingsFieldBackground,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, SettingsDefaultBorder),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(Res.string.provider_codex_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = SettingsStrongTextColor
+            )
+            when {
+                connected && oauthState !is CodexOAuthUiState.AwaitingUserCode -> {
+                    Text(
+                        text = stringResource(Res.string.label_codex_connected),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SettingsHintColor
+                    )
+                    OutlinedButton(
+                        onClick = onDisconnect,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, SettingsDefaultBorder),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.label_codex_disconnect),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SettingsStrongTextColor
+                        )
+                    }
+                }
+                oauthState is CodexOAuthUiState.AwaitingUserCode -> {
+                    Text(
+                        text = stringResource(Res.string.label_codex_user_code),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SettingsHintColor
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = oauthState.userCode,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = SettingsStrongTextColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(
+                            onClick = { clipboardManager.setText(AnnotatedString(oauthState.userCode)) },
+                            border = BorderStroke(1.dp, SettingsDefaultBorder),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.label_copy),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SettingsStrongTextColor
+                            )
+                        }
+                    }
+                    Text(
+                        text = ApiKeyProvider.CODEX.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onOpenProviderLink(ApiKeyProvider.CODEX) }
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = stringResource(Res.string.label_codex_polling),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SettingsHintColor
+                        )
+                    }
+                }
+                oauthState is CodexOAuthUiState.Error -> {
+                    Text(
+                        text = oauthState.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    OutlinedButton(
+                        onClick = onConnect,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, SettingsDefaultBorder),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.label_codex_connect),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SettingsStrongTextColor
+                        )
+                    }
+                }
+                else -> {
+                    Text(
+                        text = stringResource(Res.string.provider_codex_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SettingsHintColor
+                    )
+                    OutlinedButton(
+                        onClick = onConnect,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, SettingsDefaultBorder),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.label_codex_connect),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SettingsStrongTextColor
+                        )
+                    }
+                }
             }
         }
     }
@@ -2099,6 +2246,8 @@ private fun KeysSettingsContentPreview() {
             onOpenAiKeyInput = {},
             onSaluteSpeechKeyInput = {},
             onOpenProviderLink = {},
+            onStartCodexOAuth = {},
+            onDisconnectCodex = {},
             onClose = {}
         )
     }

@@ -22,6 +22,8 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.codex.CodexOAuthService
+import ru.souz.llms.codex.CodexOAuthState
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.downloadPromptFor
@@ -68,6 +70,8 @@ class SettingsViewModel(
     private val pendingKeySaveJobs = mutableMapOf<DeferredSettingsKey, Job>()
     private val pendingTextSettingDrafts = mutableMapOf<DeferredTextSetting, String>()
     private val pendingTextSettingSaveJobs = mutableMapOf<DeferredTextSetting, Job>()
+    private val codexOAuthService: CodexOAuthService by di.instance()
+    private var codexOAuthJob: Job? = null
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
     private val localModelUiCoordinator by lazy(kotlin.LazyThreadSafetyMode.NONE) {
@@ -170,6 +174,33 @@ class SettingsViewModel(
             }
             is InputOpenAiKey -> {
                 handleDeferredKeyInput(DeferredSettingsKey.OPENAI, event.key)
+            }
+            StartCodexOAuth -> {
+                codexOAuthJob?.cancel()
+                codexOAuthJob = viewModelScope.launch {
+                    codexOAuthService.oauthState.collect { oauthState ->
+                        val uiState = oauthState.toUiState()
+                        setState { copy(codexOAuthState = uiState) }
+                        if (oauthState is CodexOAuthState.Success || oauthState is CodexOAuthState.Error) {
+                            if (oauthState is CodexOAuthState.Success) refreshFromProvider()
+                        }
+                    }
+                }
+                codexOAuthService.launchFlow(viewModelScope)
+            }
+            CancelCodexOAuth -> {
+                codexOAuthService.cancelFlow()
+                codexOAuthJob?.cancel()
+                codexOAuthJob = null
+                setState { copy(codexOAuthState = CodexOAuthUiState.Idle) }
+            }
+            DisconnectCodex -> {
+                keysProvider.codexAccessToken = null
+                keysProvider.codexRefreshToken = null
+                keysProvider.codexAccountId = null
+                keysProvider.codexExpiresAt = null
+                viewModelScope.launch { refreshFromProvider() }
+                setState { copy(codexConnected = false, codexOAuthState = CodexOAuthUiState.Idle) }
             }
             is InputSafeModeEnabled -> {
                 keysProvider.safeModeEnabled = event.enabled
@@ -510,6 +541,7 @@ class SettingsViewModel(
             keysProvider.voiceRecognitionModel = selectedVoiceRecognitionModel
         }
 
+        val codexConnected = !keysProvider.codexAccessToken.isNullOrBlank()
         val configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(
             values = ApiKeyValues(
                 gigaChatKey = gigaChatKey,
@@ -518,6 +550,7 @@ class SettingsViewModel(
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
+                codexConnected = codexConnected,
             ),
         )
 
@@ -529,6 +562,7 @@ class SettingsViewModel(
                 anthropicKey = anthropicKey,
                 openaiKey = openAiKey,
                 saluteSpeechKey = saluteSpeechKey,
+                codexConnected = codexConnected,
                 availableApiKeyFields = apiKeyAvailability.fields,
                 availableApiKeyProviders = apiKeyAvailability.providers,
                 supportsVoiceRecognitionApiKeys = apiKeyAvailability.supportsVoiceRecognitionApiKeys,
@@ -898,6 +932,16 @@ class SettingsViewModel(
                 }
                 return@launch
             }
+            LlmProvider.CODEX -> {
+                setState {
+                    copy(
+                        balance = emptyList(),
+                        balanceError = "Balance is not available for Codex.",
+                        isBalanceLoading = false
+                    )
+                }
+                return@launch
+            }
 
         }
 
@@ -1005,4 +1049,12 @@ class SettingsViewModel(
         private const val KEY_INPUT_SAVE_DEBOUNCE_MS = 400L
         private const val TEXT_INPUT_SAVE_DEBOUNCE_MS = 400L
     }
+}
+
+private fun CodexOAuthState.toUiState(): CodexOAuthUiState = when (this) {
+    is CodexOAuthState.Idle -> CodexOAuthUiState.Idle
+    is CodexOAuthState.AwaitingUserCode -> CodexOAuthUiState.AwaitingUserCode(userCode)
+    is CodexOAuthState.Polling -> CodexOAuthUiState.Polling
+    is CodexOAuthState.Success -> CodexOAuthUiState.Done
+    is CodexOAuthState.Error -> CodexOAuthUiState.Error(message)
 }

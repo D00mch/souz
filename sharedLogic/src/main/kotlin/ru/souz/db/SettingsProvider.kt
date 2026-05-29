@@ -24,6 +24,10 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var aiTunnelKey: String?
     var anthropicKey: String?
     var openaiKey: String?
+    var codexAccessToken: String?
+    var codexRefreshToken: String?
+    var codexAccountId: String?
+    var codexExpiresAt: Long?
     var saluteSpeechKey: String?
     var supportEmail: String?
     override var defaultCalendar: String?
@@ -139,6 +143,13 @@ class SettingsProviderImpl(
     override var aiTunnelKey: String? by keyDelegate(configKey = AI_TUNNEL_KEY, envKey = "AITUNNEL_KEY")
     override var anthropicKey: String? by keyDelegate(configKey = ANTHROPIC_KEY, envKey = "ANTHROPIC_API_KEY")
     override var openaiKey: String? by keyDelegate(configKey = OPENAI_KEY, envKey = "OPENAI_API_KEY")
+    override var codexAccessToken: String? by keyDelegate(configKey = CODEX_ACCESS_TOKEN, envKey = CODEX_ACCESS_TOKEN)
+    override var codexRefreshToken: String? by keyDelegate(configKey = CODEX_REFRESH_TOKEN, envKey = CODEX_REFRESH_TOKEN)
+    override var codexAccountId: String? by keyDelegate(configKey = CODEX_ACCOUNT_ID, envKey = CODEX_ACCOUNT_ID)
+    private var _codexExpiresAtDelegate: String? by keyDelegate(configKey = CODEX_EXPIRES_AT, envKey = CODEX_EXPIRES_AT)
+    override var codexExpiresAt: Long?
+        get() = _codexExpiresAtDelegate?.toLongOrNull()
+        set(value) { _codexExpiresAtDelegate = value?.toString() }
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
@@ -337,6 +348,7 @@ class SettingsProviderImpl(
         LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
         LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
         LlmProvider.LOCAL -> localProviderAvailability.isProviderAvailable()
+        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
     }
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
@@ -361,6 +373,10 @@ class SettingsProviderImpl(
         const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
         const val ANTHROPIC_KEY = "ANTHROPIC_KEY"
         const val OPENAI_KEY = "OPENAI_KEY"
+        const val CODEX_ACCESS_TOKEN = "CODEX_ACCESS_TOKEN"
+        const val CODEX_REFRESH_TOKEN = "CODEX_REFRESH_TOKEN"
+        const val CODEX_ACCOUNT_ID = "CODEX_ACCOUNT_ID"
+        const val CODEX_EXPIRES_AT = "CODEX_EXPIRES_AT"
         const val SALUTE_SPEECH_KEY = "SALUTE_SPEECH_KEY"
         const val APP_LANGUAGE = "APP_LANGUAGE"
         private const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
@@ -407,6 +423,7 @@ fun SettingsProvider.hasKey(provider: LlmProvider): Boolean = when (provider) {
     LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
     LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
     LlmProvider.LOCAL -> true
+    LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
 }
 
 fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {

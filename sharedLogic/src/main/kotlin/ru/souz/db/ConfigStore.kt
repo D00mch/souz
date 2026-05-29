@@ -4,6 +4,10 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProviderImpl.Companion.AI_TUNNEL_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.ANTHROPIC_KEY
+import ru.souz.db.SettingsProviderImpl.Companion.CODEX_ACCESS_TOKEN
+import ru.souz.db.SettingsProviderImpl.Companion.CODEX_ACCOUNT_ID
+import ru.souz.db.SettingsProviderImpl.Companion.CODEX_EXPIRES_AT
+import ru.souz.db.SettingsProviderImpl.Companion.CODEX_REFRESH_TOKEN
 import ru.souz.db.SettingsProviderImpl.Companion.GIGA_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.OPENAI_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
@@ -82,6 +86,10 @@ internal object SecretPrefsCodec {
         AI_TUNNEL_KEY,
         ANTHROPIC_KEY,
         OPENAI_KEY,
+        CODEX_ACCESS_TOKEN,
+        CODEX_REFRESH_TOKEN,
+        CODEX_ACCOUNT_ID,
+        CODEX_EXPIRES_AT,
         SALUTE_SPEECH_KEY,
         TELEMETRY_PRIVATE_KEY,
     )

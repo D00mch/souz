@@ -244,6 +244,8 @@ fun SettingsScreenMain(
                             onOpenAiKeyInput = { viewModel.send(SettingsEvent.InputOpenAiKey(it)) },
                             onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
                             onOpenProviderLink = { viewModel.send(SettingsEvent.OpenProviderLink(it)) },
+                            onStartCodexOAuth = { viewModel.send(SettingsEvent.StartCodexOAuth) },
+                            onDisconnectCodex = { viewModel.send(SettingsEvent.DisconnectCodex) },
                             onClose = onClose
                         )
                         SettingsSection.FUNCTIONS -> FunctionsSettingsContent(

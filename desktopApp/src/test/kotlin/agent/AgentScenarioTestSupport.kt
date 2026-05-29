@@ -250,6 +250,7 @@ class AgentScenarioTestSupport(
                     LlmProvider.ANTHROPIC -> instance<AnthropicChatAPI>()
                     LlmProvider.OPENAI -> instance<OpenAIChatAPI>()
                     LlmProvider.LOCAL -> instance<LocalChatAPI>()
+                    LlmProvider.CODEX -> error("Codex OAuth provider is not supported in integration tests.")
                 }
             }
             bindSingleton<DesktopInfoRepository>(overrides = true) {
@@ -275,6 +276,7 @@ class AgentScenarioTestSupport(
             LlmProvider.ANTHROPIC -> "ANTHROPIC_API_KEY"
             LlmProvider.OPENAI -> "OPENAI_API_KEY"
             LlmProvider.LOCAL -> null
+            LlmProvider.CODEX -> null
         }
         if (apiKeyName == null) return
         val apiKey = readEnvironment(apiKeyName) ?: readSystemProperty(apiKeyName)
@@ -320,6 +322,7 @@ class AgentScenarioTestSupport(
                 localChatAPI = null
                 localLlamaRuntime = null
             }
+            LlmProvider.CODEX -> println("Spent: codex provider (no session tracking)")
         }
         val requestCount = httpRequestCount.get()
         if (requestCount == 0L) {

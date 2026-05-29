@@ -142,6 +142,17 @@
     <string name="provider_openai_desc">Кабинет OpenAI для API-ключей и статистики использования.</string>
     <string name="provider_openai_details">Используйте этот ключ для прямого доступа к моделям GPT-5.</string>
 
+    <string name="provider_codex_title">OpenAI Codex</string>
+    <string name="provider_codex_desc">Доступ к моделям OpenAI через аккаунт ChatGPT с помощью device code авторизации.</string>
+    <string name="provider_codex_details">Использует тот же OAuth-механизм, что и Codex CLI.</string>
+    <string name="label_copy">Скопировать</string>
+    <string name="label_codex_connect">Подключить через OpenAI</string>
+    <string name="label_codex_connected">Подключено к OpenAI Codex</string>
+    <string name="label_codex_disconnect">Отключить</string>
+    <string name="label_codex_user_code">Откройте auth.openai.com/codex/device и введите код:</string>
+    <string name="label_codex_polling">Ожидание авторизации…</string>
+    <string name="label_codex_cancel">Отмена</string>
+
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>
     <string name="setting_fewshot_desc">Класть примеры использования тулов в контекст</string>

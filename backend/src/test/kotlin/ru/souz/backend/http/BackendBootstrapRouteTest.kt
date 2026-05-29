@@ -579,6 +579,10 @@ private class FakeSettingsProvider : SettingsProvider {
     override var aiTunnelKey: String? = null
     override var anthropicKey: String? = null
     override var openaiKey: String? = null
+    override var codexAccessToken: String? = null
+    override var codexRefreshToken: String? = null
+    override var codexAccountId: String? = null
+    override var codexExpiresAt: Long? = null
     override var saluteSpeechKey: String? = null
     override var supportEmail: String? = null
     override var defaultCalendar: String? = null
