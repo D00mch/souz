@@ -1,6 +1,6 @@
 # Souz
 
-Souz is a Kotlin Multiplatform desktop AI assistant built with Compose for Desktop.
+Souz is a Kotlin Multiplatform AI assistant with a Compose Desktop host and an Android app entry point.
 
 ## Note for LLM
 
@@ -26,7 +26,7 @@ If you are not sure about something, left a note for other developers to review.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Provider-agnostic image tools** with shared runtime gateways and split responsibilities: `ViewImage` routes local image understanding through provider-specific vision gateways with file-size limits before any OpenAI byte loading, `GenerateImage` routes image creation through capability-based provider selection independent from the current chat model, and desktop capture stays under `DESKTOP` so screen-understanding requests chain `TakeScreenshot -> ViewImage` without activating image generation.
 - **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, automatic Gemma multimodal projector downloads for local vision, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, multimodal completion budgeting based on actual `mtmd` prompt/image token counts, settings-driven context windows for local inference within model caps, model storage under `~/.local/state/souz/models/`, and extracted native bridge libraries under `~/.local/state/souz/native/`.
-- **Shared JVM runtime and application logic layer** in `:sharedLogic` for provider clients, config/settings access, sandbox/skills infrastructure, shared Telegram models/selection brokers, and backend-safe tool categories (`FILES`, `IMAGE`, `IMAGE_GENERATION`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`).
+- **Shared JVM runtime and application logic layer** in `:sharedLogic` for desktop/backend provider clients, config/settings access, sandbox/skills infrastructure, shared Telegram models/selection brokers, and backend-safe tool categories (`FILES`, `IMAGE`, `IMAGE_GENERATION`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`).
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop host layer** in `:desktopApp`, wired through `:sharedUI` host ports: browser, calendar, mail, notes, desktop automation, TDLight Telegram, app launch, text/clipboard actions, audio, permissions, native keys, and desktop indexing.
@@ -59,6 +59,10 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── src/main/kotlin/ru/souz/            # Main.kt/TextMain.kt, DI, desktop services/tools, desktop data extraction
 │   ├── src/main/resources/                 # Native libraries, icons, entitlements, scripts, support assets
 │   └── build.gradle.kts                    # Compose Desktop packaging and distribution tasks
+├── androidApp/                             # Android application host and app-local smoke implementation
+│   ├── src/main/kotlin/ru/souz/android/    # MainActivity, smoke UI, Android settings/storage/sandbox/client code
+│   ├── src/main/res/                       # Android launcher/theme resources
+│   └── build.gradle.kts                    # Android application Gradle configuration
 ├── backend/                                # JVM HTTP backend with shared agent runtime reuse
 │   ├── src/main/kotlin/ru/souz/backend/    # app, http, agent runtime, bootstrap, config, security, storage backend packages
 │   ├── src/test/kotlin/ru/souz/backend/    # Backend service/runtime tests
@@ -90,5 +94,7 @@ flowchart LR
 
 ## Builds
 
+- JVM/KMP modules compile and run tests with a Java 21 Gradle toolchain from the root build script, so local Gradle can be launched from newer JDKs without emitting newer class files.
 - Desktop app: `./gradlew :desktopApp:run` or the existing Compose distribution tasks under `:desktopApp`. UI/ViewModel tests live under `:sharedUI:jvmTest`; desktop host/tool/service tests live under `:desktopApp:test`. For Docker sandbox mode, build the runtime image with `./gradlew :sharedLogic:buildRuntimeSandboxImage` and run with `SOUZ_SANDBOX_MODE=docker`.
+- Android app: `./gradlew :androidApp:assembleDebug` builds the Android entry point. The Android smoke implementation is app-local under `:androidApp`: Compose UI, Android Keystore-encrypted OpenAI key storage via SharedPreferences, SQLite-backed local chat/vector/sandbox storage, and a direct OpenAI Responses API smoke client. Full parity with the desktop agent runtime still requires Android-safe implementations for the remaining shared runtime/tools and a deliberate UI reuse strategy.
 - Backend JVM app: `./gradlew :backend:run`. It binds to `127.0.0.1:8080` by default, configurable with `SOUZ_BACKEND_HOST` and `SOUZ_BACKEND_PORT`.
