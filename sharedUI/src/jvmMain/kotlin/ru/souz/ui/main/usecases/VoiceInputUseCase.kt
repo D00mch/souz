@@ -21,6 +21,7 @@ import ru.souz.llms.giga.MissingVoiceKeyException
 import ru.souz.llms.tunnel.MissingAiTunnelVoiceKeyException
 import ru.souz.llms.openai.MissingOpenAiVoiceKeyException
 import ru.souz.service.speech.LocalMacOsSpeechAppBundleMissingUsageDescriptionException
+import ru.souz.service.speech.LocalMacOsSpeechAudioTooLongException
 import ru.souz.service.speech.LocalMacOsSpeechLocaleUnsupportedException
 import ru.souz.service.speech.LocalMacOsSpeechOnDeviceUnsupportedException
 import ru.souz.service.speech.LocalMacOsSpeechPermissionDeniedException
@@ -142,6 +143,10 @@ class VoiceInputUseCase(
                     emitLocalMacOsSpeechUnavailable()
                     return@retryWhen false
                 }
+                if (cause is LocalMacOsSpeechAudioTooLongException) {
+                    emitLocalMacOsSpeechAudioTooLong()
+                    return@retryWhen true
+                }
                 if (cause is LocalMacOsSpeechUnavailableException) {
                     emitLocalMacOsSpeechUnavailable()
                     delay(1000L)
@@ -259,6 +264,12 @@ class VoiceInputUseCase(
 
     private suspend fun emitLocalMacOsSpeechLocaleUnsupported() {
         val msg = getString(Res.string.voice_error_local_macos_locale_unsupported)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechAudioTooLong() {
+        val msg = getString(Res.string.voice_error_local_macos_audio_too_long)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }

@@ -9,7 +9,7 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.local.LocalEmbeddingProfiles
-import ru.souz.service.speech.MacOsSpeechBridgeLoader
+import ru.souz.service.speech.LocalMacOsSpeechHost
 
 fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
     llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
@@ -91,6 +91,6 @@ private fun VoiceRecognitionProvider.isEnabledInBuild(llmBuildProfile: LlmBuildP
 }
 
 private fun VoiceRecognitionProvider.isEnabledInCurrentEnvironment(llmBuildProfile: LlmBuildProfile): Boolean = when (this) {
-    VoiceRecognitionProvider.LOCAL_MACOS -> MacOsSpeechBridgeLoader.isCurrentHost()
+    VoiceRecognitionProvider.LOCAL_MACOS -> LocalMacOsSpeechHost.isCurrentHost()
     else -> isEnabledInBuild(llmBuildProfile)
 }

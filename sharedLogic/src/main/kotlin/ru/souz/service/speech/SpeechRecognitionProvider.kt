@@ -1,6 +1,9 @@
 package ru.souz.service.speech
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
@@ -10,7 +13,10 @@ import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 private const val LOCAL_MACOS_PCM_SAMPLE_RATE_HZ = 16_000
 private const val LOCAL_MACOS_PCM_BYTES_PER_SAMPLE = 2
@@ -70,7 +76,7 @@ class AiTunnelSpeechRecognitionProvider(
 class MacOsSpeechRecognitionProvider(
     private val settingsProvider: SettingsProvider,
     private val bridge: MacOsSpeechBridgeApi,
-    private val isMacOsProvider: () -> Boolean = { MacOsSpeechBridgeLoader.isCurrentHost() },
+    private val isMacOsProvider: () -> Boolean = LocalMacOsSpeechHost::isCurrentHost,
 ) : SpeechRecognitionProvider {
     override val enabled: Boolean
         get() = isMacOsProvider()
@@ -91,17 +97,38 @@ class MacOsSpeechRecognitionProvider(
             LOCAL_MACOS_PCM_CHANNELS *
             MAX_LOCAL_MACOS_STT_AUDIO_SECONDS
         if (audio.size > maxBytes) {
-            throw LocalMacOsSpeechUnavailableException(
-                "Local macOS speech recognition supports up to $MAX_LOCAL_MACOS_STT_AUDIO_SECONDS seconds per request."
-            )
+            throw LocalMacOsSpeechAudioTooLongException()
         }
         val wavPath = MacOsSpeechWavWriter.writePcmToTempWav(audio)
         try {
-            bridge.recognizeWav(wavPath.toString(), locale).trim()
+            recognizeWavCancellable(wavPath, locale)
         } catch (error: Throwable) {
-            throw mapBridgeError(error, locale)
+            throw if (error is CancellationException) error else mapBridgeError(error, locale)
         } finally {
             Files.deleteIfExists(wavPath)
+        }
+    }
+
+    private suspend fun recognizeWavCancellable(wavPath: Path, locale: String): String = coroutineScope {
+        suspendCancellableCoroutine { continuation ->
+            val recognitionJob = launch(Dispatchers.IO) {
+                try {
+                    val recognized = bridge.recognizeWav(wavPath.toString(), locale).trim()
+                    if (continuation.isActive) {
+                        runCatching { continuation.resume(recognized) }
+                    }
+                } catch (error: Throwable) {
+                    val mappedError = if (error is CancellationException) error else mapBridgeError(error, locale)
+                    if (continuation.isActive) {
+                        runCatching { continuation.resumeWithException(mappedError) }
+                    }
+                }
+            }
+
+            continuation.invokeOnCancellation {
+                runCatching { bridge.cancelRecognition() }
+                recognitionJob.cancel()
+            }
         }
     }
 
@@ -168,6 +195,14 @@ class MacOsSpeechRecognitionProvider(
 
             message.startsWith(MacOsSpeechBridgeError.RESTRICTED.prefix) ->
                 LocalMacOsSpeechUnavailableException("macOS speech recognition is restricted on this device.")
+
+            message.startsWith(MacOsSpeechBridgeError.CANCELLED.prefix) ->
+                CancellationException(
+                    message
+                        .removePrefix(MacOsSpeechBridgeError.CANCELLED.prefix)
+                        .removePrefix(":")
+                        .ifBlank { "Local macOS speech recognition was cancelled." }
+                )
 
             message.startsWith(MacOsSpeechBridgeError.UNSUPPORTED_LOCALE.prefix) ->
                 LocalMacOsSpeechLocaleUnsupportedException(locale)
@@ -253,6 +288,10 @@ class LocalMacOsSpeechAppBundleMissingUsageDescriptionException :
 class LocalMacOsSpeechUnavailableException(message: String) :
     LocalMacOsSpeechRecognitionException(message)
 
+class LocalMacOsSpeechAudioTooLongException(
+    message: String = "Local macOS speech recognition supports up to $MAX_LOCAL_MACOS_STT_AUDIO_SECONDS seconds per request."
+) : LocalMacOsSpeechRecognitionException(message)
+
 class LocalMacOsSpeechOnDeviceUnsupportedException(message: String) :
     LocalMacOsSpeechRecognitionException(message)
 
@@ -262,6 +301,7 @@ class LocalMacOsSpeechLocaleUnsupportedException(locale: String) :
 private enum class MacOsSpeechBridgeError(val prefix: String) {
     PERMISSION_DENIED("LOCAL_MACOS_STT:PERMISSION_DENIED"),
     RESTRICTED("LOCAL_MACOS_STT:RESTRICTED"),
+    CANCELLED("LOCAL_MACOS_STT:CANCELLED"),
     UNAVAILABLE("LOCAL_MACOS_STT:UNAVAILABLE"),
     UNSUPPORTED_LOCALE("LOCAL_MACOS_STT:UNSUPPORTED_LOCALE"),
     ON_DEVICE_UNSUPPORTED("LOCAL_MACOS_STT:ON_DEVICE_UNSUPPORTED"),

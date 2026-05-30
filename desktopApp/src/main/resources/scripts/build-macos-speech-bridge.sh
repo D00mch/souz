@@ -3,11 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
-BUILD_DIR="$PROJECT_DIR/composeApp/build/macos-speech-bridge"
-SWIFT_SRC="$PROJECT_DIR/composeApp/src/jvmMain/swift/MacOsSpeechBridge.swift"
-JNI_SRC="$PROJECT_DIR/composeApp/src/jvmMain/swift/MacOsSpeechBridgeJNI.c"
-COMPOSE_OUT_ARM64="$PROJECT_DIR/composeApp/src/jvmMain/resources/darwin-arm64"
-COMPOSE_OUT_X64="$PROJECT_DIR/composeApp/src/jvmMain/resources/darwin-x64"
+BUILD_DIR="$PROJECT_DIR/desktopApp/build/macos-speech-bridge"
+SWIFT_SRC="$PROJECT_DIR/desktopApp/src/main/swift/MacOsSpeechBridge.swift"
+JNI_SRC="$PROJECT_DIR/desktopApp/src/main/swift/MacOsSpeechBridgeJNI.c"
 DESKTOP_OUT_ARM64="$PROJECT_DIR/desktopApp/src/main/resources/darwin-arm64"
 DESKTOP_OUT_X64="$PROJECT_DIR/desktopApp/src/main/resources/darwin-x64"
 LIB_NAME="libsouz_macos_speech_bridge.dylib"
@@ -26,8 +24,6 @@ mkdir -p \
   "$ARM64_DIR" \
   "$X64_DIR" \
   "$MODULE_CACHE_DIR" \
-  "$COMPOSE_OUT_ARM64" \
-  "$COMPOSE_OUT_X64" \
   "$DESKTOP_OUT_ARM64" \
   "$DESKTOP_OUT_X64"
 
@@ -67,18 +63,9 @@ SWIFT_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" CLANG_MODULE_CACHE_PATH="$MODULE_CAC
   -framework Speech \
   -o "$X64_DIR/$LIB_NAME"
 
-lipo -create \
-  "$ARM64_DIR/$LIB_NAME" \
-  "$X64_DIR/$LIB_NAME" \
-  -output "$BUILD_DIR/$LIB_NAME"
+cp "$ARM64_DIR/$LIB_NAME" "$DESKTOP_OUT_ARM64/$LIB_NAME"
+cp "$X64_DIR/$LIB_NAME" "$DESKTOP_OUT_X64/$LIB_NAME"
 
-cp "$BUILD_DIR/$LIB_NAME" "$COMPOSE_OUT_ARM64/$LIB_NAME"
-cp "$BUILD_DIR/$LIB_NAME" "$COMPOSE_OUT_X64/$LIB_NAME"
-cp "$BUILD_DIR/$LIB_NAME" "$DESKTOP_OUT_ARM64/$LIB_NAME"
-cp "$BUILD_DIR/$LIB_NAME" "$DESKTOP_OUT_X64/$LIB_NAME"
-
-file "$COMPOSE_OUT_ARM64/$LIB_NAME"
-file "$COMPOSE_OUT_X64/$LIB_NAME"
 file "$DESKTOP_OUT_ARM64/$LIB_NAME"
 file "$DESKTOP_OUT_X64/$LIB_NAME"
 

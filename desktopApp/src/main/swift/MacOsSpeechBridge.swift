@@ -11,6 +11,7 @@ private let authorizationUnsupported: Int32 = 4
 private enum BridgeError: String {
     case permissionDenied = "LOCAL_MACOS_STT:PERMISSION_DENIED"
     case restricted = "LOCAL_MACOS_STT:RESTRICTED"
+    case cancelled = "LOCAL_MACOS_STT:CANCELLED"
     case unavailable = "LOCAL_MACOS_STT:UNAVAILABLE"
     case unsupportedLocale = "LOCAL_MACOS_STT:UNSUPPORTED_LOCALE"
     case onDeviceUnsupported = "LOCAL_MACOS_STT:ON_DEVICE_UNSUPPORTED"
@@ -18,6 +19,47 @@ private enum BridgeError: String {
 
 private let authorizationTimeoutSeconds: Int = 30
 private let recognitionTimeoutSeconds: Int = 120
+private let activeRecognitionLock = NSLock()
+private var activeRecognitionContext: RecognitionContext?
+
+private final class RecognitionContext {
+    let semaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    var task: SFSpeechRecognitionTask?
+
+    private var didFinish = false
+    private var recognizedText: String?
+    private var failure: String?
+
+    func finishSuccess(_ text: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !didFinish else { return }
+        didFinish = true
+        recognizedText = text
+        semaphore.signal()
+    }
+
+    func finishFailure(_ message: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !didFinish else { return }
+        didFinish = true
+        failure = message
+        semaphore.signal()
+    }
+
+    func snapshot() -> (String?, String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (recognizedText, failure)
+    }
+
+    func cancel() {
+        task?.cancel()
+        finishFailure("\(BridgeError.cancelled.rawValue):Recognition cancelled.")
+    }
+}
 
 @_cdecl("souz_macos_speech_has_usage_description")
 public func souz_macos_speech_has_usage_description() -> Int32 {
@@ -48,6 +90,14 @@ public func souz_macos_speech_request_authorization_if_needed() -> Int32 {
         return authorizationUnsupported
     }
     return mapAuthorizationStatus(resolved)
+}
+
+@_cdecl("souz_macos_speech_cancel_recognition")
+public func souz_macos_speech_cancel_recognition() {
+    activeRecognitionLock.lock()
+    let context = activeRecognitionContext
+    activeRecognitionLock.unlock()
+    context?.cancel()
 }
 
 @_cdecl("souz_macos_speech_recognize_wav")
@@ -131,24 +181,16 @@ public func souz_macos_speech_recognize_wav(
     request.requiresOnDeviceRecognition = true
     request.shouldReportPartialResults = false
 
-    let semaphore = DispatchSemaphore(value: 0)
-    let lock = NSLock()
-    var didFinish = false
-    var recognizedText: String?
-    var failure: String?
+    let context = RecognitionContext()
+    activeRecognitionLock.lock()
+    activeRecognitionContext = context
+    activeRecognitionLock.unlock()
+
     var task: SFSpeechRecognitionTask?
 
     task = recognizer.recognitionTask(with: request) { result, error in
-        lock.lock()
-        defer { lock.unlock() }
-        if didFinish {
-            return
-        }
-
         if let error {
-            didFinish = true
-            failure = "\(BridgeError.unavailable.rawValue):\(error.localizedDescription)"
-            semaphore.signal()
+            context.finishFailure("\(BridgeError.unavailable.rawValue):\(error.localizedDescription)")
             return
         }
 
@@ -156,27 +198,25 @@ public func souz_macos_speech_recognize_wav(
             return
         }
         if result.isFinal {
-            didFinish = true
-            recognizedText = result.bestTranscription.formattedString
-            semaphore.signal()
+            context.finishSuccess(result.bestTranscription.formattedString)
         }
+    }
+    context.task = task
+
+    let waitResult = context.semaphore.wait(timeout: .now() + .seconds(recognitionTimeoutSeconds))
+    if waitResult == .timedOut {
+        context.finishFailure("\(BridgeError.unavailable.rawValue):Speech recognition timed out.")
     }
 
-    let waitResult = semaphore.wait(timeout: .now() + .seconds(recognitionTimeoutSeconds))
-    if waitResult == .timedOut {
-        lock.lock()
-        if !didFinish {
-            didFinish = true
-            failure = "\(BridgeError.unavailable.rawValue):Speech recognition timed out."
-        }
-        lock.unlock()
+    activeRecognitionLock.lock()
+    if activeRecognitionContext === context {
+        activeRecognitionContext = nil
     }
+    activeRecognitionLock.unlock()
+
     task?.cancel()
 
-    lock.lock()
-    let finalText = recognizedText
-    let finalFailure = failure
-    lock.unlock()
+    let (finalText, finalFailure) = context.snapshot()
 
     if let finalText {
         return strdup(finalText)

@@ -7,6 +7,7 @@
 extern int32_t souz_macos_speech_authorization_status(void);
 extern int32_t souz_macos_speech_request_authorization_if_needed(void);
 extern int32_t souz_macos_speech_has_usage_description(void);
+extern void souz_macos_speech_cancel_recognition(void);
 extern char *souz_macos_speech_recognize_wav(
     const char *path,
     const char *locale,
@@ -41,6 +42,13 @@ Java_ru_souz_service_speech_MacOsSpeechBridge_requestAuthorizationIfNeededNative
     (void)env;
     (void)thiz;
     (void)souz_macos_speech_request_authorization_if_needed();
+}
+
+JNIEXPORT void JNICALL
+Java_ru_souz_service_speech_MacOsSpeechBridge_cancelRecognitionNative(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    souz_macos_speech_cancel_recognition();
 }
 
 JNIEXPORT jstring JNICALL

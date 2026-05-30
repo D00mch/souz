@@ -1,15 +1,10 @@
 package ru.souz.service.speech
 
-import org.slf4j.LoggerFactory
-import ru.souz.runtime.files.FilesToolUtil
 import java.io.ByteArrayOutputStream
-import java.io.InputStream
-import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 
 enum class MacOsSpeechAuthorizationStatus(val code: Int) {
     NOT_DETERMINED(0),
@@ -33,123 +28,26 @@ interface MacOsSpeechBridgeApi {
     fun requestAuthorizationIfNeeded()
 
     fun recognizeWav(path: String, locale: String): String
+
+    fun cancelRecognition()
 }
 
-class MacOsSpeechBridge(
-    private val loader: MacOsSpeechBridgeLoader = MacOsSpeechBridgeLoader(),
-) : MacOsSpeechBridgeApi {
+object LocalMacOsSpeechHost {
+    fun isCurrentHost(): Boolean = currentResourceDirectory(
+        osName = System.getProperty("os.name", ""),
+        osArch = System.getProperty("os.arch", ""),
+    ) != null
 
-    override fun hasSpeechRecognitionUsageDescription(): Boolean {
-        loader.load()
-        return hasSpeechRecognitionUsageDescriptionNative()
-    }
+    fun currentResourceDirectory(osName: String, osArch: String): String? = when {
+        osName.contains("Mac", ignoreCase = true) &&
+            (osArch.contains("aarch64", ignoreCase = true) || osArch.contains("arm64", ignoreCase = true)) ->
+            "darwin-arm64"
 
-    override fun authorizationStatus(): MacOsSpeechAuthorizationStatus {
-        loader.load()
-        return MacOsSpeechAuthorizationStatus.fromCode(authorizationStatusNative())
-    }
+        osName.contains("Mac", ignoreCase = true) &&
+            (osArch.contains("x86_64", ignoreCase = true) || osArch.contains("amd64", ignoreCase = true)) ->
+            "darwin-x64"
 
-    override fun requestAuthorizationIfNeeded() {
-        loader.load()
-        requestAuthorizationIfNeededNative()
-    }
-
-    override fun recognizeWav(path: String, locale: String): String {
-        loader.load()
-        return recognizeWavNative(path, locale)
-    }
-
-    private external fun hasSpeechRecognitionUsageDescriptionNative(): Boolean
-
-    private external fun authorizationStatusNative(): Int
-
-    private external fun requestAuthorizationIfNeededNative()
-
-    private external fun recognizeWavNative(path: String, locale: String): String
-}
-
-class MacOsSpeechBridgeLoader(
-    private val osNameProvider: () -> String = { System.getProperty("os.name", "") },
-    private val osArchProvider: () -> String = { System.getProperty("os.arch", "") },
-    private val userHomeProvider: () -> String = { FilesToolUtil.homeStr },
-    private val resourceUrlProvider: (String) -> URL? =
-        { resourcePath -> MacOsSpeechBridgeLoader::class.java.classLoader.getResource(resourcePath) },
-    private val resourceStreamProvider: (String) -> InputStream? =
-        { resourcePath -> MacOsSpeechBridgeLoader::class.java.classLoader.getResourceAsStream(resourcePath) },
-) {
-    private val logger = LoggerFactory.getLogger(MacOsSpeechBridgeLoader::class.java)
-
-    private val loadedLibraryPath: Path by lazy {
-        val resourceDirectory = currentResourceDirectory(
-            osName = osNameProvider(),
-            osArch = osArchProvider(),
-        ) ?: error("Local macOS speech bridge is supported only on macOS arm64/x64.")
-
-        val libraryPath = resolveLibraryPath(
-            resourceDirectory = resourceDirectory,
-            userHome = userHomeProvider(),
-        )
-        logger.info("Loading local macOS speech bridge from {}", libraryPath.toAbsolutePath())
-        System.load(libraryPath.toAbsolutePath().toString())
-        libraryPath
-    }
-
-    fun load() {
-        loadedLibraryPath
-    }
-
-    private fun resolveLibraryPath(resourceDirectory: String, userHome: String): Path {
-        val resourcePath = "$resourceDirectory/$LIBRARY_FILE_NAME"
-        directResourcePath(resourceUrlProvider(resourcePath))?.let { return it }
-        return extractLibrary(
-            resourcePath = resourcePath,
-            resourceDirectory = resourceDirectory,
-            userHome = userHome,
-        )
-    }
-
-    private fun extractLibrary(resourcePath: String, resourceDirectory: String, userHome: String): Path {
-        val resourceStream = resourceStreamProvider(resourcePath)
-            ?: error("Local macOS speech bridge resource not found: $resourcePath")
-
-        val targetDir = Path.of(userHome, ".local", "state", "souz", "native", resourceDirectory)
-        Files.createDirectories(targetDir)
-        val target = targetDir.resolve(LIBRARY_FILE_NAME)
-        resourceStream.use { input ->
-            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
-        }
-        target.toFile().setExecutable(true)
-        return target
-    }
-
-    companion object {
-        const val LIBRARY_FILE_NAME = "libsouz_macos_speech_bridge.dylib"
-
-        fun isCurrentHost(): Boolean = currentResourceDirectory(
-            osName = System.getProperty("os.name", ""),
-            osArch = System.getProperty("os.arch", ""),
-        ) != null
-
-        fun currentResourceDirectory(osName: String, osArch: String): String? = when {
-            osName.contains("Mac", ignoreCase = true) &&
-                (osArch.contains("aarch64", ignoreCase = true) || osArch.contains("arm64", ignoreCase = true)) ->
-                "darwin-arm64"
-
-            osName.contains("Mac", ignoreCase = true) &&
-                (osArch.contains("x86_64", ignoreCase = true) || osArch.contains("amd64", ignoreCase = true)) ->
-                "darwin-x64"
-
-            else -> null
-        }
-
-        fun directResourcePath(resourceUrl: URL?): Path? {
-            if (resourceUrl == null || !resourceUrl.protocol.equals("file", ignoreCase = true)) {
-                return null
-            }
-            return runCatching { Path.of(resourceUrl.toURI()) }
-                .getOrNull()
-                ?.takeIf(Files::exists)
-        }
+        else -> null
     }
 }
 
