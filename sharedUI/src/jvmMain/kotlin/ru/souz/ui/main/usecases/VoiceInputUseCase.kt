@@ -20,6 +20,11 @@ import org.slf4j.LoggerFactory
 import ru.souz.llms.giga.MissingVoiceKeyException
 import ru.souz.llms.tunnel.MissingAiTunnelVoiceKeyException
 import ru.souz.llms.openai.MissingOpenAiVoiceKeyException
+import ru.souz.service.speech.LocalMacOsSpeechAppBundleMissingUsageDescriptionException
+import ru.souz.service.speech.LocalMacOsSpeechLocaleUnsupportedException
+import ru.souz.service.speech.LocalMacOsSpeechOnDeviceUnsupportedException
+import ru.souz.service.speech.LocalMacOsSpeechPermissionDeniedException
+import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.service.speech.VoiceRecognitionUnavailableException
 import ru.souz.ui.host.DesktopPermissionService
@@ -133,9 +138,14 @@ class VoiceInputUseCase(
                     emitLocalMacOsSpeechLocaleUnsupported()
                     return@retryWhen false
                 }
-                if (cause is LocalMacOsSpeechUnavailableException) {
+                if (cause is LocalMacOsSpeechOnDeviceUnsupportedException) {
                     emitLocalMacOsSpeechUnavailable()
                     return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechUnavailableException) {
+                    emitLocalMacOsSpeechUnavailable()
+                    delay(1000L)
+                    return@retryWhen true
                 }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)

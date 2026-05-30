@@ -19,6 +19,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -38,6 +39,7 @@ import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.chat_action_web_search
 import souz.sharedui.generated.resources.onboarding_display_text
 import souz.sharedui.generated.resources.onboarding_input_permission_request
+import souz.sharedui.generated.resources.voice_error_local_macos_unavailable
 import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
@@ -55,6 +57,7 @@ import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.observability.DesktopStructuredLogger
+import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
@@ -379,6 +382,43 @@ class MainViewModelTest {
             runCurrent()
         } finally {
             releaseRecognition.complete(Unit)
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `local macos unavailable recognition retries and processes next audio event`() = runTest(mainDispatcher) {
+        var recognizeCalls = 0
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                recognizeCalls += 1
+                if (recognizeCalls == 1) {
+                    throw LocalMacOsSpeechUnavailableException("Local macOS unavailable")
+                }
+                LLMResponse.RecognizeResponse(result = listOf("final draft"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(7, 8, 9))
+
+            val unavailableMessage = getString(Res.string.voice_error_local_macos_unavailable)
+            val unavailableState = awaitState(viewModel) { it.statusMessage == unavailableMessage }
+            assertEquals(unavailableMessage, unavailableState.statusMessage)
+
+            advanceTimeBy(1_000L)
+            runCurrent()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
+
+            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "final draft" }
+            assertEquals("final draft", recoveredState.pendingVoiceInputDraft)
+            assertEquals(2, recognizeCalls)
+        } finally {
             harness.clear()
         }
     }

@@ -23,28 +23,28 @@ static void throw_illegal_state(JNIEnv *env, const char *message) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_ru_souz_ui_main_usecases_MacOsSpeechBridge_hasSpeechRecognitionUsageDescriptionNative(JNIEnv *env, jobject thiz) {
+Java_ru_souz_service_speech_MacOsSpeechBridge_hasSpeechRecognitionUsageDescriptionNative(JNIEnv *env, jobject thiz) {
     (void)env;
     (void)thiz;
     return (jboolean)(souz_macos_speech_has_usage_description() != 0);
 }
 
 JNIEXPORT jint JNICALL
-Java_ru_souz_ui_main_usecases_MacOsSpeechBridge_authorizationStatusNative(JNIEnv *env, jobject thiz) {
+Java_ru_souz_service_speech_MacOsSpeechBridge_authorizationStatusNative(JNIEnv *env, jobject thiz) {
     (void)env;
     (void)thiz;
     return (jint)souz_macos_speech_authorization_status();
 }
 
 JNIEXPORT void JNICALL
-Java_ru_souz_ui_main_usecases_MacOsSpeechBridge_requestAuthorizationIfNeededNative(JNIEnv *env, jobject thiz) {
+Java_ru_souz_service_speech_MacOsSpeechBridge_requestAuthorizationIfNeededNative(JNIEnv *env, jobject thiz) {
     (void)env;
     (void)thiz;
     (void)souz_macos_speech_request_authorization_if_needed();
 }
 
 JNIEXPORT jstring JNICALL
-Java_ru_souz_ui_main_usecases_MacOsSpeechBridge_recognizeWavNative(
+Java_ru_souz_service_speech_MacOsSpeechBridge_recognizeWavNative(
     JNIEnv *env,
     jobject thiz,
     jstring path,

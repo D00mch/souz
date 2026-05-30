@@ -13,6 +13,7 @@ private enum BridgeError: String {
     case restricted = "LOCAL_MACOS_STT:RESTRICTED"
     case unavailable = "LOCAL_MACOS_STT:UNAVAILABLE"
     case unsupportedLocale = "LOCAL_MACOS_STT:UNSUPPORTED_LOCALE"
+    case onDeviceUnsupported = "LOCAL_MACOS_STT:ON_DEVICE_UNSUPPORTED"
 }
 
 private let authorizationTimeoutSeconds: Int = 30
@@ -117,8 +118,17 @@ public func souz_macos_speech_recognize_wav(
         )
         return nil
     }
+    guard recognizer.supportsOnDeviceRecognition else {
+        writeError(
+            "\(BridgeError.onDeviceUnsupported.rawValue):On-device speech recognition is not supported for \(localeIdentifier).",
+            to: errorBuffer,
+            size: errorBufferSize
+        )
+        return nil
+    }
 
     let request = SFSpeechURLRecognitionRequest(url: URL(fileURLWithPath: String(cString: pathPtr)))
+    request.requiresOnDeviceRecognition = true
     request.shouldReportPartialResults = false
 
     let semaphore = DispatchSemaphore(value: 0)

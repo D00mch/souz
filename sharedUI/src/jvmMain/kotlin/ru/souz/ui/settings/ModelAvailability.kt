@@ -9,7 +9,7 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.local.LocalEmbeddingProfiles
-import ru.souz.ui.main.usecases.MacOsSpeechBridgeLoader
+import ru.souz.service.speech.MacOsSpeechBridgeLoader
 
 fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
     llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }

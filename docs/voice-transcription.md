@@ -28,6 +28,8 @@ This document summarizes provider selection, audio packaging, and endpoint-speci
   - filename: `capture.wav`
   - media type: `audio/wav`
 - `Local MacOS STT` reuses the same PCM capture, writes it to a temporary WAV file on the JVM side, and transcribes that file with `SFSpeechURLRecognitionRequest`.
+- The current `Local MacOS STT` path is batch/file-based: record PCM -> write temporary WAV -> `SFSpeechURLRecognitionRequest` -> final text.
+- One `Local MacOS STT` request is limited to 45 seconds of `16 kHz` mono `16-bit` PCM.
 
 ## Endpoint Constraints
 
@@ -46,4 +48,8 @@ This document summarizes provider selection, audio packaging, and endpoint-speci
 - Local MacOS STT:
   - JVM side requests Speech authorization lazily on first use
   - locale resolution: `ru` -> `ru-RU`, `en` -> `en-US`
-  - explicit local errors are surfaced for denied permission, unavailable recognizer, and unsupported locale
+  - `requiresOnDeviceRecognition = true` is always set, and cloud recognition fallback is not allowed
+  - audio should stay local to the macOS Speech on-device recognizer and must not be sent over the network by this backend
+  - the current backend returns final-only results; partial or streaming updates are not supported
+  - explicit local errors are surfaced for denied permission, unavailable recognizer, unsupported locale, and missing on-device support
+  - ambient/live transcription remains a separate future change and would require a different API path such as `SpeechAnalyzer` / `SpeechTranscriber` on supported macOS versions

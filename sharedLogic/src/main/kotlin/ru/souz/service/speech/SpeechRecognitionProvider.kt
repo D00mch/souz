@@ -12,6 +12,11 @@ import ru.souz.llms.openai.OpenAIVoiceAPI
 import java.nio.file.Files
 import kotlin.coroutines.cancellation.CancellationException
 
+private const val LOCAL_MACOS_PCM_SAMPLE_RATE_HZ = 16_000
+private const val LOCAL_MACOS_PCM_BYTES_PER_SAMPLE = 2
+private const val LOCAL_MACOS_PCM_CHANNELS = 1
+private const val MAX_LOCAL_MACOS_STT_AUDIO_SECONDS = 45
+
 /** Provide locality specific Voice recognition, e.g. SaluteSpeech for Ru. */
 interface SpeechRecognitionProvider {
     val enabled: Boolean
@@ -81,6 +86,15 @@ class MacOsSpeechRecognitionProvider(
         val locale = localeFor(settingsProvider.regionProfile)
         ensureSpeechUsageDescription(locale)
         ensureAuthorization(locale)
+        val maxBytes = LOCAL_MACOS_PCM_SAMPLE_RATE_HZ *
+            LOCAL_MACOS_PCM_BYTES_PER_SAMPLE *
+            LOCAL_MACOS_PCM_CHANNELS *
+            MAX_LOCAL_MACOS_STT_AUDIO_SECONDS
+        if (audio.size > maxBytes) {
+            throw LocalMacOsSpeechUnavailableException(
+                "Local macOS speech recognition supports up to $MAX_LOCAL_MACOS_STT_AUDIO_SECONDS seconds per request."
+            )
+        }
         val wavPath = MacOsSpeechWavWriter.writePcmToTempWav(audio)
         try {
             bridge.recognizeWav(wavPath.toString(), locale).trim()
@@ -158,6 +172,14 @@ class MacOsSpeechRecognitionProvider(
             message.startsWith(MacOsSpeechBridgeError.UNSUPPORTED_LOCALE.prefix) ->
                 LocalMacOsSpeechLocaleUnsupportedException(locale)
 
+            message.startsWith(MacOsSpeechBridgeError.ON_DEVICE_UNSUPPORTED.prefix) ->
+                LocalMacOsSpeechOnDeviceUnsupportedException(
+                    message
+                        .removePrefix(MacOsSpeechBridgeError.ON_DEVICE_UNSUPPORTED.prefix)
+                        .removePrefix(":")
+                        .ifBlank { "Local macOS speech recognition requires on-device recognition support." }
+                )
+
             message.startsWith(MacOsSpeechBridgeError.UNAVAILABLE.prefix) ->
                 LocalMacOsSpeechUnavailableException(
                     message
@@ -231,6 +253,9 @@ class LocalMacOsSpeechAppBundleMissingUsageDescriptionException :
 class LocalMacOsSpeechUnavailableException(message: String) :
     LocalMacOsSpeechRecognitionException(message)
 
+class LocalMacOsSpeechOnDeviceUnsupportedException(message: String) :
+    LocalMacOsSpeechRecognitionException(message)
+
 class LocalMacOsSpeechLocaleUnsupportedException(locale: String) :
     LocalMacOsSpeechRecognitionException("Local macOS speech recognition locale is unsupported: $locale")
 
@@ -239,4 +264,5 @@ private enum class MacOsSpeechBridgeError(val prefix: String) {
     RESTRICTED("LOCAL_MACOS_STT:RESTRICTED"),
     UNAVAILABLE("LOCAL_MACOS_STT:UNAVAILABLE"),
     UNSUPPORTED_LOCALE("LOCAL_MACOS_STT:UNSUPPORTED_LOCALE"),
+    ON_DEVICE_UNSUPPORTED("LOCAL_MACOS_STT:ON_DEVICE_UNSUPPORTED"),
 }
