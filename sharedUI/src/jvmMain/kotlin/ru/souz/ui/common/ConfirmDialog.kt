@@ -220,7 +220,6 @@ private fun ConfirmDialogInternal(
             modifier = Modifier
                 .fillMaxSize()
                 .background(ConfirmDialogColors.backdrop)
-                .blur(12.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -237,6 +236,8 @@ private fun ConfirmDialogInternal(
                     this.alpha = alpha
                     scaleX = scale
                     scaleY = scale
+                    this.clip = true
+                    this.shape = shape
                 }
                 .clip(shape)
                 .pointerHoverIcon(PointerIcon.Default)
@@ -246,16 +247,10 @@ private fun ConfirmDialogInternal(
                     onClick = {}
                 )
         ) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(ConfirmDialogColors.dialogBg, shape)
-                    .blur(48.dp)
-            )
-
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(shape)
                     .background(ConfirmDialogColors.dialogBg, shape)
                     .border(1.dp, ConfirmDialogColors.dialogBorder, shape)
             ) {

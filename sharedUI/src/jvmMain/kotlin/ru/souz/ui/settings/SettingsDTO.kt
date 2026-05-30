@@ -20,6 +20,14 @@ import souz.sharedui.generated.resources.*
 
 
 
+sealed interface CodexOAuthUiState {
+    object Idle : CodexOAuthUiState
+    data class AwaitingUserCode(val userCode: String) : CodexOAuthUiState
+    object Polling : CodexOAuthUiState
+    object Done : CodexOAuthUiState
+    data class Error(val message: String) : CodexOAuthUiState
+}
+
 enum class SettingsSubScreen {
     MAIN, SESSIONS, VISUALIZATION, FOLDERS, TELEGRAM
 }
@@ -52,6 +60,8 @@ data class SettingsState(
     val anthropicKey: String = "",
     val openaiKey: String = "",
     val saluteSpeechKey: String = "",
+    val codexConnected: Boolean = false,
+    val codexOAuthState: CodexOAuthUiState = CodexOAuthUiState.Idle,
     val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
     val availableApiKeyProviders: List<ApiKeyProvider> = emptyList(),
     val supportsVoiceRecognitionApiKeys: Boolean = false,
@@ -126,6 +136,9 @@ sealed interface SettingsEvent : VMEvent {
     data class InputAnthropicKey(val key: String): SettingsEvent
     data class InputOpenAiKey(val key: String): SettingsEvent
     data class InputSaluteSpeechKey(val key: String): SettingsEvent
+    object StartCodexOAuth : SettingsEvent
+    object CancelCodexOAuth : SettingsEvent
+    object DisconnectCodex : SettingsEvent
     data class OpenProviderLink(val provider: ApiKeyProvider): SettingsEvent
     data class InputMcpServersJson(val json: String): SettingsEvent
     data class InputUseFewShotExamples(val enabled: Boolean): SettingsEvent

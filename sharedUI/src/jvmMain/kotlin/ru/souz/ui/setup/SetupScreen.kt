@@ -4,21 +4,26 @@ import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -29,6 +34,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +56,7 @@ import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.main.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
+import ru.souz.ui.settings.CodexOAuthUiState
 import ru.souz.ui.settings.SettingsUiColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -98,6 +106,8 @@ fun SetupScreen(
         onOpenAiKeyInput = { key -> viewModel.send(SetupEvent.InputOpenAiKey(key)) },
         onSaluteSpeechKeyInput = { key -> viewModel.send(SetupEvent.InputSaluteSpeechKey(key)) },
         onOpenProviderLink = { provider -> viewModel.send(SetupEvent.OpenProviderLink(provider)) },
+        onStartCodexOAuth = { viewModel.send(SetupEvent.StartCodexOAuth) },
+        onCancelCodexOAuth = { viewModel.send(SetupEvent.CancelCodexOAuth) },
         onChooseVoice = { viewModel.send(SetupEvent.ChooseVoice) },
         onDismissVoiceReminderDialog = { viewModel.send(SetupEvent.DismissVoiceReminderDialog) },
         onProceed = { viewModel.send(SetupEvent.Proceed) },
@@ -116,6 +126,8 @@ fun SetupScreenContent(
     onOpenAiKeyInput: (String) -> Unit,
     onSaluteSpeechKeyInput: (String) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
+    onStartCodexOAuth: () -> Unit = {},
+    onCancelCodexOAuth: () -> Unit = {},
     onChooseVoice: () -> Unit,
     onDismissVoiceReminderDialog: () -> Unit,
     onProceed: () -> Unit,
@@ -273,6 +285,16 @@ fun SetupScreenContent(
                                 value = state.openaiKey,
                                 onValueChange = onOpenAiKeyInput,
                                 modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+
+                        if (ApiKeyField.CODEX in state.availableApiKeyFields) {
+                            SetupCodexCard(
+                                connected = state.codexConnected,
+                                oauthState = state.codexOAuthState,
+                                onConnect = onStartCodexOAuth,
+                                onCancel = onCancelCodexOAuth,
+                                onOpenProviderLink = onOpenProviderLink,
                             )
                         }
                     }
@@ -501,6 +523,119 @@ private fun ProviderLinkCard(
                     ),
                     color = SetupStrongTextColor
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupCodexCard(
+    connected: Boolean,
+    oauthState: CodexOAuthUiState,
+    onConnect: () -> Unit,
+    onCancel: () -> Unit,
+    onOpenProviderLink: (ApiKeyProvider) -> Unit,
+) {
+    val fieldBackground = SettingsUiColors.inputBackground
+    val fieldBorder = SettingsUiColors.inputBorder
+    val strongText = SettingsUiColors.inputText
+    val hintText = SettingsUiColors.labelTextSecondary
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = fieldBackground,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, fieldBorder),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(Res.string.provider_codex_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = strongText
+            )
+            val clipboardManager = LocalClipboardManager.current
+            when {
+                connected && oauthState !is CodexOAuthUiState.AwaitingUserCode -> {
+                    Text(
+                        text = stringResource(Res.string.label_codex_connected),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = hintText
+                    )
+                }
+                oauthState is CodexOAuthUiState.AwaitingUserCode -> {
+                    Text(
+                        text = stringResource(Res.string.label_codex_user_code),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = hintText
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = oauthState.userCode,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = strongText,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedButton(
+                            onClick = { clipboardManager.setText(AnnotatedString(oauthState.userCode)) },
+                            border = BorderStroke(1.dp, fieldBorder),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.label_copy),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = strongText
+                            )
+                        }
+                    }
+                    Text(
+                        text = ApiKeyProvider.CODEX.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onOpenProviderLink(ApiKeyProvider.CODEX) }
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = stringResource(Res.string.label_codex_polling),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = hintText
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onCancel,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, fieldBorder),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(text = stringResource(Res.string.label_codex_cancel), color = strongText)
+                    }
+                }
+                else -> {
+                    Text(
+                        text = stringResource(Res.string.provider_codex_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = hintText
+                    )
+                    OutlinedButton(
+                        onClick = onConnect,
+                        modifier = Modifier.fillMaxWidth(),
+                        border = BorderStroke(1.dp, fieldBorder),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(text = stringResource(Res.string.label_codex_connect), color = strongText)
+                    }
+                }
             }
         }
     }

@@ -5,6 +5,7 @@ import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
+import ru.souz.ui.settings.CodexOAuthUiState
 
 data class SetupState(
     val gigaChatKey: String = "",
@@ -13,6 +14,8 @@ data class SetupState(
     val anthropicKey: String = "",
     val openaiKey: String = "",
     val saluteSpeechKey: String = "",
+    val codexConnected: Boolean = false,
+    val codexOAuthState: CodexOAuthUiState = CodexOAuthUiState.Idle,
     val useEnglishVersion: Boolean = false,
     val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
     val availableApiKeyProviders: List<ApiKeyProvider> = emptyList(),
@@ -33,6 +36,8 @@ sealed interface SetupEvent : VMEvent {
     data class InputAnthropicKey(val key: String) : SetupEvent
     data class InputOpenAiKey(val key: String) : SetupEvent
     data class InputSaluteSpeechKey(val key: String) : SetupEvent
+    object StartCodexOAuth : SetupEvent
+    object CancelCodexOAuth : SetupEvent
     data class OpenProviderLink(val provider: ApiKeyProvider) : SetupEvent
     object ChooseVoice : SetupEvent
     object DismissVoiceReminderDialog : SetupEvent

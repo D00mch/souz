@@ -4,6 +4,8 @@ The `:desktopApp` module contains the runnable desktop entry points, desktop DI 
 
 It depends on `:sharedLogic` and `:sharedUI`. Keep Compose screens, view models, UI adapters, and UI tests in `:sharedUI`; keep backend-safe runtime logic in `:sharedLogic`; keep OS-bound desktop services/tools and app composition wiring here.
 
+Desktop-only persistence such as the SQLite working-memory repository belongs here when the shared layer only needs contracts/services.
+
 ## Project Structure
 
 ```text
@@ -16,6 +18,7 @@ desktopApp/
         ├── kotlin/ru/souz/
         │   ├── db/                      # Desktop indexing/data extraction
         │   ├── di/                      # Desktop composition root
+        │   ├── memory/                  # Desktop SQLite memory repository and runtime bridge
         │   ├── service/                 # Audio, image capture, keys, permissions, TDLight Telegram
         │   ├── tool/                    # Browser/calendar/mail/notes/desktop/application/text/Telegram tools
         │   ├── Main.kt                 # Windowed Compose Desktop entry point

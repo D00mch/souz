@@ -18,6 +18,11 @@ interface AgentRuntimeEventSink {
 }
 
 sealed interface AgentRuntimeEvent {
+    data class MemoryPromptAugmented(
+        val addedBlock: String,
+        val facts: List<ru.souz.memory.MemoryPromptFact> = emptyList(),
+    ) : AgentRuntimeEvent
+
     data class LlmMessageDelta(
         val text: String,
     ) : AgentRuntimeEvent

@@ -31,6 +31,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.tool.ToolCategory
 import ru.souz.ui.AppTheme
 import ru.souz.ui.main.MainScreen
+import ru.souz.ui.memory.MemoryScreen
 import ru.souz.ui.setup.SetupScreen
 import ru.souz.ui.settings.SettingsScreen
 import ru.souz.ui.tools.ToolDetailsScreen
@@ -102,6 +103,7 @@ fun App(
                             )
                             Main -> MainScreen(
                                 onOpenSettings = { currentScreen = Settings },
+                                onOpenMemory = { currentScreen = Memory },
                                 onCloseWindow = onCloseWindow,
                                 onMinimizeWindow = onMinimizeWindow,
                                 onToggleMaximizeWindow = onToggleMaximizeWindow,
@@ -109,6 +111,12 @@ fun App(
                                     snackbarScope.launch { snackbarHostState.showSnackbar(message) }
                                 },
                                 isOnline = isOnline.value
+                            )
+                            Memory -> MemoryScreen(
+                                onClose = { currentScreen = Main },
+                                onShowSnack = { message ->
+                                    snackbarScope.launch { snackbarHostState.showSnackbar(message) }
+                                },
                             )
                             Settings -> SettingsScreen(
                                 onClose = { currentScreen = Main },
@@ -164,6 +172,7 @@ fun App(
 private sealed interface Screen {
     data object Setup : Screen
     data object Main : Screen
+    data object Memory : Screen
     data object Settings : Screen
     data class Tools(val id: String = UUID.randomUUID().toString()) : Screen
     data class ToolDetails(val category: ToolCategory, val toolName: String) : Screen

@@ -146,6 +146,17 @@
     <string name="provider_openai_desc">OpenAI dashboard for managing API keys and usage.</string>
     <string name="provider_openai_details">Use this key for direct GPT-5 model access.</string>
 
+    <string name="provider_codex_title">OpenAI Codex</string>
+    <string name="provider_codex_desc">Access OpenAI models using your ChatGPT account via device code login.</string>
+    <string name="provider_codex_details">Uses the same OAuth mechanism as the Codex CLI.</string>
+    <string name="label_copy">Copy</string>
+    <string name="label_codex_connect">Connect with OpenAI</string>
+    <string name="label_codex_connected">Connected to OpenAI Codex</string>
+    <string name="label_codex_disconnect">Disconnect</string>
+    <string name="label_codex_user_code">Open auth.openai.com/codex/device and enter this code:</string>
+    <string name="label_codex_polling">Waiting for authorization…</string>
+    <string name="label_codex_cancel">Cancel</string>
+
     <!-- Functions Settings -->
     <string name="setting_fewshot_title">Few-Shot Examples</string>
     <string name="setting_fewshot_desc">Put tool usage examples into context</string>
@@ -188,6 +199,72 @@
     <string name="button_saving">Saving...</string>
     <string name="tooltip_collapse">Collapse</string>
     <string name="tooltip_expand">Expand</string>
+
+    <!-- Memory Screen -->
+    <string name="memory_title">Memory</string>
+    <string name="memory_subtitle">Manage saved facts and inspect their evidence</string>
+    <string name="memory_create">Create fact</string>
+    <string name="memory_loading">Loading memory...</string>
+    <string name="memory_empty">No memory facts yet.</string>
+    <string name="memory_section_pinned">Pinned</string>
+    <string name="memory_section_other">Other facts</string>
+    <string name="memory_filter_query">Search</string>
+    <string name="memory_filter_status">Status</string>
+    <string name="memory_filter_kind">Kind</string>
+    <string name="memory_filter_scope">Scope</string>
+    <string name="memory_filter_kind_all">All kinds</string>
+    <string name="memory_scope_all">All scopes</string>
+    <string name="memory_scope_global">Global</string>
+    <string name="memory_filter_status_active">Active</string>
+    <string name="memory_filter_status_retired">Retired</string>
+    <string name="memory_filter_status_all">All</string>
+    <string name="memory_action_details">Details</string>
+    <string name="memory_action_edit">Edit</string>
+    <string name="memory_action_pin">Pin</string>
+    <string name="memory_action_unpin">Unpin</string>
+    <string name="memory_action_retire">Retire</string>
+    <string name="memory_action_delete">Delete</string>
+    <string name="memory_details_title">Fact details</string>
+    <string name="memory_details_loading">Loading details...</string>
+    <string name="memory_details_select">Select a fact to view details.</string>
+    <string name="memory_details_evidence">Evidence</string>
+    <string name="memory_evidence_empty">No evidence yet.</string>
+    <string name="memory_details_scope">Scope</string>
+    <string name="memory_details_status">Status</string>
+    <string name="memory_details_created_by">Created by</string>
+    <string name="memory_details_created_at">Created at</string>
+    <string name="memory_details_updated_at">Updated at</string>
+    <string name="memory_details_slot_key">Slot key</string>
+    <string name="memory_details_supersedes">Supersedes fact</string>
+    <string name="memory_editor_create_title">Create memory fact</string>
+    <string name="memory_editor_edit_title">Edit memory fact</string>
+    <string name="memory_editor_title">Title</string>
+    <string name="memory_editor_body">Body</string>
+    <string name="memory_editor_kind">Kind</string>
+    <string name="memory_editor_slot_key">Slot key</string>
+    <string name="memory_editor_pinned">Pinned</string>
+    <string name="memory_button_save">Save fact</string>
+    <string name="memory_button_saving">Saving...</string>
+    <string name="memory_confirm_retire_title">Retire memory fact</string>
+    <string name="memory_confirm_retire_message">Retire “%s”?</string>
+    <string name="memory_confirm_delete_title">Delete memory fact</string>
+    <string name="memory_confirm_delete_message">Delete “%s”?</string>
+    <string name="memory_error_inline_dismiss">Dismiss</string>
+    <string name="memory_badge_pinned">Pinned</string>
+    <string name="memory_details_confidence">Confidence</string>
+    <string name="memory_kind_semantic">Semantic</string>
+    <string name="memory_kind_preference">Preference</string>
+    <string name="memory_kind_procedure">Procedure</string>
+    <string name="memory_kind_project_rule">Project Rule</string>
+    <string name="memory_kind_episode_note">Episode Note</string>
+    <string name="memory_kind_project_decision">Project Decision</string>
+    <string name="memory_created_by_manual">Manual</string>
+    <string name="memory_created_by_auto">Auto</string>
+    <string name="memory_created_by_system">System</string>
+    <string name="memory_scope_chat_format">Chat: %s</string>
+    <string name="memory_editor_error_title_required">Title is required</string>
+    <string name="memory_editor_error_body_required">Body is required</string>
+    <string name="memory_editor_advanced">Advanced settings</string>
 
     <!-- Folders Management -->
     <string name="folders_title">Forbidden\nfolders</string>

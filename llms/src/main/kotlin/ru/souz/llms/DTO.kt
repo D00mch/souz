@@ -120,6 +120,7 @@ enum class LlmProvider {
     ANTHROPIC,
     OPENAI,
     LOCAL,
+    CODEX,
 }
 
 enum class VoiceRecognitionProvider {
@@ -158,6 +159,8 @@ enum class LLMModel(
     LocalQwen3_4B_Instruct_2507("Local Qwen3 4B Instruct", "local-qwen3-4b-instruct-2507", LlmProvider.LOCAL),
     LocalGemma4_E2B_It("Local Gemma 4 E2B Instruct", "local-gemma-4-e2b-it", LlmProvider.LOCAL),
     LocalGemma4_E4B_It("Local Gemma 4 E4B Instruct", "local-gemma-4-e4b-it", LlmProvider.LOCAL),
+    CodexGpt54("GPT-5.4 (Codex)", "gpt-5.4", LlmProvider.CODEX),
+    CodexGpt53("GPT-5.3 Codex", "gpt-5.3-codex", LlmProvider.CODEX),
 }
 
 enum class EmbeddingsModel(

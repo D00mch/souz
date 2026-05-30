@@ -9,6 +9,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
@@ -23,6 +24,7 @@ class LLMFactory(
     private val anthropicApi: AnthropicChatAPI,
     private val openAiApi: OpenAIChatAPI,
     private val localApi: LocalChatAPI,
+    private val codexApi: CodexChatAPI,
 ) : LLMChatAPI {
 
     private fun chatApiFor(provider: LlmProvider): LLMChatAPI = when (provider) {
@@ -32,6 +34,7 @@ class LLMFactory(
         LlmProvider.OPENAI -> openAiApi
         LlmProvider.GIGA -> restApi
         LlmProvider.LOCAL -> localApi
+        LlmProvider.CODEX -> codexApi
     }
 
     fun current(): LLMChatAPI {

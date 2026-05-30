@@ -12,6 +12,8 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.SessionTokenLogging
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.codex.CodexChatAPI
+import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.local.LocalBridgeLoader
@@ -77,10 +79,12 @@ fun runtimeLlmDiModule(
     bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance()) }
     bindSingleton { OpenAIImageGenerationGateway(instance()) }
     bindSingleton<LocalChatAPI> { LocalChatAPI(instance()) }
+    bindSingleton { CodexOAuthService(instance()) }
+    bindSingleton<CodexChatAPI> { CodexChatAPI(instance(), instance(), instance()) }
     bindSingleton { OpenAIVisionGateway(instance(), instance()) }
     bindSingleton { AnthropicVisionGateway(instance(), instance()) }
     bindSingleton { LocalVisionGateway(instance(), instance()) }
-    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<LLMChatAPI> { instance<LLMFactory>() }
     bindSingleton { LLMCapabilityResolver(instance(), instance(), instance(), instance()) }
     bindSingleton { CapabilityBasedImageGenerationGateway(instance(), instance()) }

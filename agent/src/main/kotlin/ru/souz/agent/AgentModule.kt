@@ -23,6 +23,7 @@ import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
+import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
 
 fun agentDiModule(
@@ -40,7 +41,7 @@ fun agentDiModule(
     }
     bindSingleton { AgentToolExecutor(instance<AgentTelemetry>()) }
     bindSingleton { NodesErrorHandling(instance()) }
-    bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { JsonUtils(restJsonMapper) }
@@ -86,7 +87,9 @@ fun agentDiModule(
     }
     bindSingleton {
         AgentExecutor(
-            agentProvider = { instance<GraphBasedAgent>() }
+            agentProvider = { instance<GraphBasedAgent>() },
+            memoryRuntime = instance<ConversationMemoryRuntime>(),
+            captureScope = instance<kotlinx.coroutines.CoroutineScope>(),
         )
     }
     bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }

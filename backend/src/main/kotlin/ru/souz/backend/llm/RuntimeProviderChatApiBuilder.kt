@@ -29,6 +29,7 @@ class RuntimeProviderChatApiBuilder(
             LlmProvider.ANTHROPIC -> AnthropicChatAPI(settingsProvider, tokenLogging)
             LlmProvider.OPENAI -> OpenAIChatAPI(settingsProvider, tokenLogging)
             LlmProvider.LOCAL -> error("Local provider is handled separately.")
+            LlmProvider.CODEX -> error("Codex OAuth provider is not supported in the backend.")
         }
         return RetryingLlmChatApi(
             delegate = api,

@@ -36,6 +36,7 @@ class BackendBootstrapService(
             addAll(LlmProvider.entries.filter { provider ->
                 provider != LlmProvider.LOCAL && settingsProvider.hasKey(provider)
             })
+            remove(LlmProvider.CODEX)
         }
         return BootstrapResponse(
             user = BootstrapUser(id = identity.userId),

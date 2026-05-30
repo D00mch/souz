@@ -382,24 +382,3 @@ tasks.matching { it.name == "prepareAppResources" || it.name == "createReleaseDi
     dependsOn(prepareMacAppResources)
 }
 
-// Keep dev runs stable: run from the packaged jar instead of mutable classes directories.
-tasks.withType<JavaExec>().configureEach {
-    if (name != "run") return@configureEach
-
-    val jarTask = tasks.named<Jar>("jar")
-    val runtimeClasspath = configurations.named("runtimeClasspath")
-    val buildClassesDir = layout.buildDirectory.dir("classes").get().asFile.absolutePath
-    val buildResourcesDir = layout.buildDirectory.dir("resources").get().asFile.absolutePath
-
-    dependsOn(jarTask)
-    mainClass.set(providers.systemProperty("mainClass").orElse("ru.souz.MainKt"))
-    standardInput = System.`in`
-
-    doFirst {
-        val stableRuntimeClasspath = runtimeClasspath.get().filterNot { file ->
-            val path = file.absolutePath
-            path.startsWith(buildClassesDir) || path.startsWith(buildResourcesDir)
-        }
-        classpath = files(jarTask.flatMap { it.archiveFile }) + files(stableRuntimeClasspath)
-    }
-}

@@ -52,6 +52,7 @@ class LlmBuildProfile(
                 LlmProvider.LOCAL to LLMModel.LocalQwen3_4B_Instruct_2507,
             ),
             BuildEdition.EN to mapOf(
+                LlmProvider.CODEX to LLMModel.CodexGpt54,
                 LlmProvider.OPENAI to LLMModel.OpenAIGpt5Nano,
                 LlmProvider.QWEN to LLMModel.QwenMax,
                 LlmProvider.ANTHROPIC to LLMModel.AnthropicHaiku45,
@@ -67,7 +68,7 @@ class LlmBuildProfile(
 
         fun providerPrioritiesForEdition(edition: BuildEdition): List<LlmProvider> = when (edition) {
             BuildEdition.RU -> listOf(LlmProvider.AI_TUNNEL, LlmProvider.GIGA, LlmProvider.QWEN, LlmProvider.LOCAL)
-            BuildEdition.EN -> listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN, LlmProvider.LOCAL)
+            BuildEdition.EN -> listOf(LlmProvider.CODEX, LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.QWEN, LlmProvider.LOCAL)
         }
 
         fun providerPrioritiesForLanguage(language: String): List<LlmProvider> =

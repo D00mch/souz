@@ -15,6 +15,7 @@ import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.runtime.LLMFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,6 +49,7 @@ class LLMFactoryEmbeddingsTest {
             anthropicApi = anthropicApi,
             openAiApi = openAiApi,
             localApi = localApi,
+            codexApi = mockk<CodexChatAPI>(),
         )
 
         factory.embeddings(
@@ -86,6 +88,7 @@ class LLMFactoryEmbeddingsTest {
             anthropicApi = anthropicApi,
             openAiApi = openAiApi,
             localApi = localApi,
+            codexApi = mockk<CodexChatAPI>(),
         )
 
         factory.embeddings(

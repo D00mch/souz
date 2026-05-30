@@ -26,6 +26,7 @@ class StoredProviderCredentialResolver(
             LlmProvider.ANTHROPIC -> baseSettingsProvider.anthropicKey
             LlmProvider.OPENAI -> baseSettingsProvider.openaiKey
             LlmProvider.LOCAL -> null
+            LlmProvider.CODEX -> null
         }
         return serverManaged
             ?.takeIf { it.isNotBlank() }

@@ -39,6 +39,12 @@ enum class ApiKeyProvider(
         url = "https://developers.sber.ru/studio/workspaces",
         description = Res.string.provider_sber_desc,
         details = Res.string.provider_sber_details,
+    ),
+    CODEX(
+        title = Res.string.provider_codex_title,
+        url = "https://auth.openai.com/codex/device",
+        description = Res.string.provider_codex_desc,
+        details = Res.string.provider_codex_details,
     )
 }
 
@@ -49,4 +55,5 @@ enum class ApiKeyField {
     ANTHROPIC,
     OPENAI,
     SALUTE_SPEECH,
+    CODEX,
 }
