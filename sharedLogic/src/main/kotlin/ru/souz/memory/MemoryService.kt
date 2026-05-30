@@ -186,9 +186,17 @@ class MemoryService(
     ): MemoryBlock {
         if (scopes.isEmpty()) return MemoryBlock(emptyList(), "", emptyList())
         val distinctScopes = scopes.flatMap(MemoryScope::compatibilityScopes).distinct()
+        val queryEmbedding = query.trim()
+            .takeIf(String::isNotBlank)
+            ?.let { embedder.embedQuery(it) }
 
         try {
-            repo.getFactsWithoutEmbedding(distinctScopes, embedder.model, limit = 5).forEach { fact ->
+            repo.getFactsWithoutEmbedding(
+                scopes = distinctScopes,
+                model = embedder.model,
+                expectedDimension = queryEmbedding?.size,
+                limit = 5,
+            ).forEach { fact ->
                 try {
                     repo.replaceEmbedding(fact.id, embedder.model, embedder.embedDocument(fact.embeddingText()))
                 } catch (e: CancellationException) {
@@ -209,13 +217,13 @@ class MemoryService(
             .take(limit)
             .toList()
         val pinnedIds = pinnedFacts.mapTo(linkedSetOf(), MemoryFact::id)
-        val semanticHits = if (query.isBlank()) {
+        val semanticHits = if (queryEmbedding == null) {
             emptyList()
         } else {
             repo.searchFacts(
                 scopes = distinctScopes,
                 model = embedder.model,
-                queryEmbedding = embedder.embedQuery(query),
+                queryEmbedding = queryEmbedding,
                 limit = limit + pinnedFacts.size,
             ).filter { it.score > 0f && it.fact.id !in pinnedIds }
         }

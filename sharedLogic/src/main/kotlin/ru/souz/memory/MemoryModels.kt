@@ -40,7 +40,6 @@ enum class MemoryFactKind {
 enum class MemoryFactStatus {
     ACTIVE,
     RETIRED,
-    DELETED,
 }
 
 data class MemorySourceEvent(
@@ -201,12 +200,13 @@ fun ByteArray.toFloatArray(): FloatArray {
 }
 
 fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+    if (a.size != b.size) return 0f
+
     var dot = 0f
     var normA = 0f
     var normB = 0f
 
-    val size = minOf(a.size, b.size)
-    for (index in 0 until size) {
+    for (index in a.indices) {
         dot += a[index] * b[index]
         normA += a[index] * a[index]
         normB += b[index] * b[index]
@@ -242,7 +242,7 @@ object MemorySanitizer {
         "[a-zA-Z0-9_\\-\\.\\+]+@[a-zA-Z0-9_\\-\\.]+\\.[a-zA-Z]{2,}"
     )
     private val filePathRegex = Regex(
-        "(?:/Users/[a-zA-Z0-9_\\-\\.]+/[a-zA-Z0-9_\\-\\./]+)"
+        """(?:/Users/[^\s"'<>]+|/home/[^\s"'<>]+|~/[^\s"'<>]+|[A-Za-z]:\\Users\\[^\s"'<>]+)"""
     )
 
     fun redact(text: String): String {

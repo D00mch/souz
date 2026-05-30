@@ -152,18 +152,16 @@ internal fun MemoryFactDetailsPanel(
                         ) {
                             onAction(MemoryAction.SetPinned(fact.id, !fact.pinned))
                         }
-                        if (fact.status != MemoryFactStatus.RETIRED && fact.status != MemoryFactStatus.DELETED) {
+                        if (fact.status != MemoryFactStatus.RETIRED) {
                             MemoryActionButton(stringResource(Res.string.memory_action_retire)) {
                                 onAction(MemoryAction.AskRetire(fact.id))
                             }
                         }
-                        if (fact.status != MemoryFactStatus.DELETED) {
-                            MemoryActionButton(
-                                text = stringResource(Res.string.memory_action_delete),
-                                tint = MaterialTheme.colorScheme.error,
-                            ) {
-                                onAction(MemoryAction.AskDelete(fact.id))
-                            }
+                        MemoryActionButton(
+                            text = stringResource(Res.string.memory_action_delete),
+                            tint = MaterialTheme.colorScheme.error,
+                        ) {
+                            onAction(MemoryAction.AskDelete(fact.id))
                         }
                     }
                 }

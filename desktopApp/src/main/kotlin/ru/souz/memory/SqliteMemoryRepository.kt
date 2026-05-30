@@ -335,17 +335,23 @@ class SqliteMemoryRepository(
     override suspend fun getFactsWithoutEmbedding(
         scopes: List<MemoryScope>,
         model: String,
+        expectedDimension: Int?,
         limit: Int,
     ): List<MemoryFact> {
         if (scopes.isEmpty()) return emptyList()
         return withConnection { connection ->
             val scopeClause = scopes.joinToString(" or ") { "(f.scope_type = ? and f.scope_id = ?)" }
+            val dimensionClause = if (expectedDimension != null) {
+                "and (e.fact_id is null or e.dimension != ?)"
+            } else {
+                "and e.fact_id is null"
+            }
             connection.prepareStatement(
                 """
                 select f.* from memory_facts f
                 left join memory_fact_embeddings e on e.fact_id = f.id and e.embedding_model = ?
                 where f.status = ?
-                  and e.fact_id is null
+                  $dimensionClause
                   and ($scopeClause)
                 limit ?
                 """.trimIndent()
@@ -353,6 +359,7 @@ class SqliteMemoryRepository(
                 statement.setString(1, model)
                 statement.setString(2, MemoryFactStatus.ACTIVE.name)
                 var index = 3
+                expectedDimension?.let { statement.setInt(index++, it) }
                 scopes.forEach { scope ->
                     statement.setString(index++, scope.type)
                     statement.setString(index++, scope.id)
@@ -416,12 +423,14 @@ class SqliteMemoryRepository(
                 join memory_fact_embeddings e on e.fact_id = f.id
                 where f.status = ?
                   and e.embedding_model = ?
+                  and e.dimension = ?
                   and ($scopeClause)
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, MemoryFactStatus.ACTIVE.name)
                 statement.setString(2, model)
-                var index = 3
+                statement.setInt(3, queryEmbedding.size)
+                var index = 4
                 scopes.forEach { scope ->
                     statement.setString(index++, scope.type)
                     statement.setString(index++, scope.id)

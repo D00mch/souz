@@ -203,7 +203,6 @@
     <string name="memory_scope_chat_format">Чат: %s</string>
     <string name="memory_filter_status_active">Активный</string>
     <string name="memory_filter_status_retired">Архивный</string>
-    <string name="memory_filter_status_deleted">Удаленный</string>
     <string name="memory_filter_status_all">Все</string>
     <string name="memory_action_details">Подробнее</string>
     <string name="memory_action_edit">Редактировать</string>

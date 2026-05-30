@@ -24,6 +24,14 @@ import ru.souz.memory.NoopConversationMemoryRuntime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
+private const val INJECTED_CONTEXT_PREFIX = "<context>\nBackground information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n---\n"
+private const val INJECTED_CONTEXT_SUFFIX = "</context>"
+
+internal fun LLMRequest.Message.isInjectedContextMessage(): Boolean =
+    role == LLMMessageRole.user &&
+        content.startsWith(INJECTED_CONTEXT_PREFIX) &&
+        content.endsWith(INJECTED_CONTEXT_SUFFIX)
+
 /**
  * Nodes related to local data manipulation.
  * The nodes may update [AgentContext.input] or [AgentContext.history].
@@ -104,7 +112,7 @@ internal class NodesCommon(
         )
 
         val newHistory = ctx.history
-            .filterNot { it.role == LLMMessageRole.user && it.content.contains("<context>") }
+            .filterNot(LLMRequest.Message::isInjectedContextMessage)
             .toMutableList()
         additionalMessage?.let {
             l.info("Injecting additional context ({} chars)", it.content.length)
@@ -249,9 +257,7 @@ internal class NodesCommon(
         memoryBlock: String?,
         additionalData: List<StorredData>,
     ): String = buildString {
-        append("<context>\n")
-        append("Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n")
-        append("---\n")
+        append(INJECTED_CONTEXT_PREFIX)
         memoryBlock?.let {
             append(it)
             append('\n')
@@ -260,7 +266,7 @@ internal class NodesCommon(
             if (memoryBlock != null) append("\nOther relevant context:\n")
             additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
         }
-        append("</context>")
+        append(INJECTED_CONTEXT_SUFFIX)
     }
 
     private fun StorredData.readableType(): String =

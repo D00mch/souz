@@ -52,6 +52,7 @@ interface MemoryRepository {
     suspend fun getFactsWithoutEmbedding(
         scopes: List<MemoryScope>,
         model: String,
+        expectedDimension: Int? = null,
         limit: Int,
     ): List<MemoryFact>
 }

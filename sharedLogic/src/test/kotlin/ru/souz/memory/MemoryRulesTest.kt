@@ -14,6 +14,9 @@ class MemoryRulesTest {
             Authorization: Bearer sk-secret-1234567890
             OPENAI_API_KEY=sk-prod-abcdef1234567890
             /Users/duxx/Secrets/notes.txt
+            /home/alice/project/.env
+            ~/.local/state/souz/models/model.gguf
+            C:\Users\Alice\Secrets\notes.txt
             user@example.com
             dGhpcy1sb29rcy1saWtlLWEtc2VjcmV0LXRva2VuLWFuZC1zaG91bGQtYmUtcmVkYWN0ZWQ=
         """.trimIndent()
@@ -23,12 +26,20 @@ class MemoryRulesTest {
         assertFalse(redacted.contains("sk-secret-1234567890"))
         assertFalse(redacted.contains("sk-prod-abcdef1234567890"))
         assertFalse(redacted.contains("/Users/duxx/Secrets/notes.txt"))
+        assertFalse(redacted.contains("/home/alice/project/.env"))
+        assertFalse(redacted.contains("~/.local/state/souz/models/model.gguf"))
+        assertFalse(redacted.contains("""C:\Users\Alice\Secrets\notes.txt"""))
         assertFalse(redacted.contains("user@example.com"))
         assertFalse(redacted.contains("dGhpcy1sb29rcy1saWtl"))
         assertTrue(redacted.contains("[redacted-auth]"))
         assertTrue(redacted.contains("[redacted-secret]"))
         assertTrue(redacted.contains("[redacted-path]"))
         assertTrue(redacted.contains("[redacted-email]"))
+    }
+
+    @Test
+    fun `cosine similarity returns zero for mismatched dimensions`() {
+        assertEquals(0f, cosineSimilarity(floatArrayOf(1f, 2f), floatArrayOf(1f)))
     }
 
     @Test

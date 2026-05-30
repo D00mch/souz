@@ -90,7 +90,6 @@ class MemoryViewModelTest {
                     statuses = setOf(
                         MemoryFactStatus.ACTIVE,
                         MemoryFactStatus.RETIRED,
-                        MemoryFactStatus.DELETED,
                     ),
                     kinds = setOf(MemoryFactKind.PROJECT_RULE),
                     scope = MemoryScope("chat", "chat-42"),

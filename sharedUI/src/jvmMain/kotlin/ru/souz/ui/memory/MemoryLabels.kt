@@ -44,7 +44,6 @@ internal fun MemoryScope.memoryLabel(): String = memoryScopeLabel(type, id)
 internal fun MemoryStatusFilter.label(): String = when (this) {
     MemoryStatusFilter.ACTIVE -> stringResource(Res.string.memory_filter_status_active)
     MemoryStatusFilter.RETIRED -> stringResource(Res.string.memory_filter_status_retired)
-    MemoryStatusFilter.DELETED -> stringResource(Res.string.memory_filter_status_deleted)
     MemoryStatusFilter.ALL -> stringResource(Res.string.memory_filter_status_all)
 }
 
@@ -52,7 +51,6 @@ internal fun MemoryStatusFilter.label(): String = when (this) {
 internal fun MemoryFactStatus.label(): String = when (this) {
     MemoryFactStatus.ACTIVE -> stringResource(Res.string.memory_filter_status_active)
     MemoryFactStatus.RETIRED -> stringResource(Res.string.memory_filter_status_retired)
-    MemoryFactStatus.DELETED -> stringResource(Res.string.memory_filter_status_deleted)
 }
 
 @Composable

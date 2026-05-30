@@ -437,7 +437,7 @@ class MemoryCoreTest {
     }
 
     @Test
-    fun `retireFact and deleteFact mark status`() = runTest {
+    fun `retireFact marks status and deleteFact removes row`() = runTest {
         val fixture = createFixture()
         val retired = fixture.createManual(title = "Retired fact")
         val deleted = fixture.createManual(title = "Deleted fact")
@@ -465,6 +465,38 @@ class MemoryCoreTest {
 
         assertEquals(listOf(strong.id, weaker.id), hits.map { it.fact.id })
         assertTrue(hits[0].score >= hits[1].score)
+    }
+
+    @Test
+    fun `mismatched embedding dimension is ignored and treated as missing`() = runTest {
+        val fixture = createFixture()
+        val fact = fixture.createManual(
+            title = "SQLite memory",
+            body = "SQLite desktop memory Kotlin.",
+        )
+        val queryEmbedding = fixture.embedder.embedQuery("sqlite kotlin desktop")
+
+        fixture.repository.replaceEmbedding(
+            factId = fact.id,
+            model = fixture.embedder.model,
+            embedding = floatArrayOf(1f, 0f),
+        )
+
+        val hits = fixture.repository.searchFacts(
+            scopes = listOf(globalScope()),
+            model = fixture.embedder.model,
+            queryEmbedding = queryEmbedding,
+            limit = 5,
+        )
+        val missing = fixture.repository.getFactsWithoutEmbedding(
+            scopes = listOf(globalScope()),
+            model = fixture.embedder.model,
+            expectedDimension = queryEmbedding.size,
+            limit = 5,
+        )
+
+        assertTrue(hits.none { it.fact.id == fact.id })
+        assertEquals(listOf(fact.id), missing.map { it.id })
     }
 
     @Test

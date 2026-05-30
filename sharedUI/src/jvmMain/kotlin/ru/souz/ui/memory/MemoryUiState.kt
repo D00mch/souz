@@ -36,7 +36,6 @@ data class MemoryFiltersUi(
 enum class MemoryStatusFilter {
     ACTIVE,
     RETIRED,
-    DELETED,
     ALL,
 }
 
@@ -97,11 +96,9 @@ fun MemoryFiltersUi.toDomainFilter(): MemoryFactFilter =
         statuses = when (status) {
             MemoryStatusFilter.ACTIVE -> setOf(MemoryFactStatus.ACTIVE)
             MemoryStatusFilter.RETIRED -> setOf(MemoryFactStatus.RETIRED)
-            MemoryStatusFilter.DELETED -> setOf(MemoryFactStatus.DELETED)
             MemoryStatusFilter.ALL -> setOf(
                 MemoryFactStatus.ACTIVE,
                 MemoryFactStatus.RETIRED,
-                MemoryFactStatus.DELETED,
             )
         },
         kinds = kind?.let(::setOf) ?: emptySet(),

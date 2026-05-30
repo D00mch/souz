@@ -206,7 +206,6 @@
     <string name="memory_scope_global">Global</string>
     <string name="memory_filter_status_active">Active</string>
     <string name="memory_filter_status_retired">Retired</string>
-    <string name="memory_filter_status_deleted">Deleted</string>
     <string name="memory_filter_status_all">All</string>
     <string name="memory_action_details">Details</string>
     <string name="memory_action_edit">Edit</string>
