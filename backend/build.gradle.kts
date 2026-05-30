@@ -1,4 +1,4 @@
-import org.gradle.api.file.DuplicatesStrategy
+    import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
 

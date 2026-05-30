@@ -19,6 +19,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.plus
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.ChatConversationCloseReason
@@ -342,7 +343,22 @@ class ChatUseCase internal constructor(
             session.requestContext.asCoroutineContext() +
             tokenLogging.requestContextElement(session.requestContext.requestId)
     ) {
-        agentFacade.execute(userText)
+        agentFacade.execute(
+            input = userText,
+            toolInvocationMetaOverride = executionMeta(session),
+        )
+    }
+
+    private fun executionMeta(session: ChatRequestSession): ToolInvocationMeta {
+        val current = agentFacade.currentContext.value.toolInvocationMeta
+        return current.copy(
+            conversationId = session.requestContext.conversationId,
+            requestId = session.requestContext.requestId,
+            attributes = current.attributes + mapOf(
+                "userMessageId" to session.userMessage.id,
+                "assistantMessageId" to session.pendingBotMessage.id,
+            ),
+        )
     }
 
     /**

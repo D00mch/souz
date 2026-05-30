@@ -72,6 +72,7 @@ internal class BackendAgentRuntimeEventSink(
 
     private suspend fun handleEvent(event: AgentRuntimeEvent) {
         when (event) {
+            is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
 

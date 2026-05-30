@@ -131,6 +131,7 @@ enum class LiquidGlassPreset {
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
+    onOpenMemory: () -> Unit,
     onCloseWindow: () -> Unit,
     onMinimizeWindow: () -> Unit,
     onToggleMaximizeWindow: () -> Unit,
@@ -166,6 +167,7 @@ fun MainScreen(
         onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
         onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
         onOpenSettings = onOpenSettings,
+        onOpenMemory = onOpenMemory,
         onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
         onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
         onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
@@ -213,6 +215,7 @@ fun MainScreenContent(
     onMinimize: () -> Unit = {},
     onToggleMaximize: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenMemory: () -> Unit = {},
     onStopSpeech: () -> Unit = {},
     onShowLastText: () -> Unit = {},
     onToggleThinkingPanel: () -> Unit = {},
@@ -392,6 +395,18 @@ fun MainScreenContent(
                             onPrevious = onSelectPreviousChatSearchResult,
                             onClose = { searchPanelState.close() },
                         )
+
+                        TopToolbarIconButton(
+                            size = TopActionButtonSize,
+                            onClick = onOpenMemory
+                        ) { iconTint ->
+                            Icon(
+                                Icons.Rounded.Memory,
+                                null,
+                                tint = iconTint,
+                                modifier = Modifier.size(TopActionIconSize)
+                            )
+                        }
 
                         TopToolbarIconButton(
                             size = TopActionButtonSize,

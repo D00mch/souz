@@ -1,7 +1,10 @@
 package ru.souz.agent.nodes
 
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -16,11 +19,18 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
-import java.time.LocalDateTime
-import java.time.ZoneId
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.Locale
+
+private const val INJECTED_CONTEXT_PREFIX = "<context>\nBackground information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n---\n"
+private const val INJECTED_CONTEXT_SUFFIX = "</context>"
+
+internal fun LLMRequest.Message.isInjectedContextMessage(): Boolean =
+    role == LLMMessageRole.user &&
+        content.startsWith(INJECTED_CONTEXT_PREFIX) &&
+        content.endsWith(INJECTED_CONTEXT_SUFFIX)
 
 /**
  * Nodes related to local data manipulation.
@@ -32,6 +42,7 @@ internal class NodesCommon(
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
+    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -94,80 +105,33 @@ internal class NodesCommon(
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
-        val additionalMessage: LLMRequest.Message? = appendActualInformation(
+        val additionalMessage = appendActualInformation(
             userText = ctx.input,
+            conversationId = ctx.toolInvocationMeta.conversationId,
+            eventSink = ctx.runtimeEventSink,
         )
 
-        val newHistory = ArrayList<LLMRequest.Message>()
-        ctx.history.forEach { msg ->
-            val isOldContext = msg.role == LLMMessageRole.user && msg.content.contains("<context>")
-            if (!isOldContext) newHistory.add(msg)
+        val newHistory = ctx.history
+            .filterNot(LLMRequest.Message::isInjectedContextMessage)
+            .toMutableList()
+        additionalMessage?.let {
+            l.info("Injecting additional context ({} chars)", it.content.length)
+            if (newHistory.isEmpty()) newHistory += it else newHistory.add(newHistory.lastIndex, it)
         }
-
-        if (additionalMessage == null) {
-            ctx.map(history = newHistory)
-        } else {
-            l.info("Injecting additional context (${additionalMessage.content.length} chars)")
-
-            if (newHistory.isNotEmpty()) {
-                newHistory.add(newHistory.size - 1, additionalMessage)
-            } else {
-                newHistory.add(additionalMessage)
-            }
-
-            ctx.map(history = newHistory)
-        }
+        ctx.map(history = newHistory)
     }
 
     private suspend fun appendActualInformation(
         userText: String,
+        conversationId: String?,
+        eventSink: AgentRuntimeEventSink,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
-        val additionalData = ArrayList<StorredData>()
-
-        try {
-            additionalData.addAll(desktopInfoRepository.search(userText))
-        } catch (e: Exception) {
-            l.error("Error searching desktop info: ${e.message}")
-        }
-
-        defaultBrowserProvider.defaultBrowserDisplayName()?.let { browserName ->
-            additionalData.add(StorredData(browserName, StorredType.DEFAULT_BROWSER))
-        }
-
-        val defaultCalendar = settingsProvider.defaultCalendar
-        if (!defaultCalendar.isNullOrBlank()) {
-            additionalData.add(StorredData("Календарь по умолчанию: $defaultCalendar", StorredType.GENERAL_FACT))
-        }
-
-        buildUserGeoLocationFact()?.let { geoFact ->
-            additionalData.add(StorredData(geoFact, StorredType.GENERAL_FACT))
-        }
-
-        val currentDateTime = ZonedDateTime.now(runtimeEnvironment.zoneId).format(
-            DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
-        )
-        additionalData.add(StorredData("Текущие дата и время: $currentDateTime", StorredType.GENERAL_FACT))
-
-        if (additionalData.isEmpty()) return null
-
-        val content = buildString {
-            append("<context>\n")
-            append("Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n")
-            append("---\n")
-
-            additionalData.forEach { data ->
-                val typeReadable = data.type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
-                append("- [$typeReadable]: ${data.text}\n")
-            }
-            append("</context>")
-        }
-
-        return LLMRequest.Message(
-            role = LLMMessageRole.user,
-            content = content
-        )
+        val memoryBlock = retrieveMemoryBlock(userText, conversationId, eventSink)
+        val additionalData = loadAdditionalData(userText)
+        if (memoryBlock == null && additionalData.isEmpty()) return null
+        return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(memoryBlock, additionalData))
     }
 
     private fun buildUserGeoLocationFact(): String? = try {
@@ -209,8 +173,8 @@ internal class NodesCommon(
         null
     }
 
-    private suspend fun fnCallMessages(ctx: AgentContext<LLMResponse.Chat.Ok>): List<LLMRequest.Message> {
-        val fnCallMessages = ctx.input.choices.mapNotNull { choice ->
+    private suspend fun fnCallMessages(ctx: AgentContext<LLMResponse.Chat.Ok>): List<LLMRequest.Message> =
+        ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
             val functionCall = msg.functionCall
             val functionsStateId = msg.functionsStateId
@@ -224,15 +188,13 @@ internal class NodesCommon(
                 ).copy(functionsStateId = functionsStateId)
             } else null
         }
-        return fnCallMessages
-    }
 
     private suspend fun executeTool(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
         meta: ToolInvocationMeta,
         toolCallId: String? = null,
-        eventSink: ru.souz.agent.runtime.AgentRuntimeEventSink = ru.souz.agent.runtime.AgentRuntimeEventSink.NONE,
+        eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
     ): LLMRequest.Message = agentToolExecutor.execute(
         settings = settings,
         functionCall = functionCall,
@@ -240,6 +202,75 @@ internal class NodesCommon(
         toolCallId = toolCallId,
         eventSink = eventSink,
     )
+
+    private suspend fun retrieveMemoryBlock(
+        userText: String,
+        conversationId: String?,
+        eventSink: AgentRuntimeEventSink,
+    ): String? {
+        val memoryResult = try {
+            memoryRuntime.retrieveMemory(userText, conversationId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            l.warn("Memory retrieval failed: {}", e.message)
+            return null
+        }
+        val renderedBlock = memoryResult.renderedBlock.trim()
+        if (renderedBlock.isBlank()) return null
+        try {
+            eventSink.emit(AgentRuntimeEvent.MemoryPromptAugmented(renderedBlock, memoryResult.facts))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            l.warn("Memory augmentation trace failed: {}", e.message)
+        }
+        return renderedBlock
+    }
+
+    private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
+        try {
+            addAll(desktopInfoRepository.search(userText))
+        } catch (e: Exception) {
+            l.error("Error searching desktop info: ${e.message}")
+        }
+        defaultBrowserProvider.defaultBrowserDisplayName()?.let {
+            add(StorredData(it, StorredType.DEFAULT_BROWSER))
+        }
+        settingsProvider.defaultCalendar
+            ?.takeIf(String::isNotBlank)
+            ?.let { add(StorredData("Календарь по умолчанию: $it", StorredType.GENERAL_FACT)) }
+        buildUserGeoLocationFact()?.let { add(StorredData(it, StorredType.GENERAL_FACT)) }
+        add(
+            StorredData(
+                "Текущие дата и время: ${
+                    ZonedDateTime.now(runtimeEnvironment.zoneId).format(
+                        DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
+                    )
+                }",
+                StorredType.GENERAL_FACT,
+            )
+        )
+    }
+
+    private fun buildContextMessage(
+        memoryBlock: String?,
+        additionalData: List<StorredData>,
+    ): String = buildString {
+        append(INJECTED_CONTEXT_PREFIX)
+        memoryBlock?.let {
+            append(it)
+            append('\n')
+        }
+        if (additionalData.isNotEmpty()) {
+            if (memoryBlock != null) append("\nOther relevant context:\n")
+            additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
+        }
+        append(INJECTED_CONTEXT_SUFFIX)
+    }
+
+    private fun StorredData.readableType(): String =
+        type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {

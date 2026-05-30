@@ -14,6 +14,7 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.LLMModel
+import ru.souz.llms.ToolInvocationMeta
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade internal constructor(
@@ -99,18 +100,26 @@ class AgentFacade internal constructor(
         executor.cancelActiveJob(_activeAgentId.value)
     }
 
-    suspend fun execute(input: String): String {
+    suspend fun execute(
+        input: String,
+        toolInvocationMetaOverride: ToolInvocationMeta? = null,
+    ): String {
         cancelActiveJob()
         sessionService.startTask(input)
         return try {
+            val baseContext = _currentContext.value
+            val executionContext = toolInvocationMetaOverride
+                ?.let { baseContext.copy(toolInvocationMeta = it) }
+                ?: baseContext
             val result = executor.executeWithTrace(
                 agentId = _activeAgentId.value,
-                context = _currentContext.value,
+                context = executionContext,
                 input = input,
+                eventSink = sessionService,
             ) { step, node, from, to ->
                 sessionService.onStep(step, node, from, to)
             }
-            _currentContext.emit(result.context)
+            _currentContext.emit(result.context.copy(toolInvocationMeta = baseContext.toolInvocationMeta))
             result.output
         } finally {
             runCatching { sessionService.finishTask() }

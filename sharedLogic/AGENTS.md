@@ -8,6 +8,7 @@ Keep this module UI-free and backend-safe by default. OS-bound desktop tools/ser
 
 - Provider clients and shared LLM runtime wiring.
 - Settings and config access.
+- Shared memory contracts and services (facts, evidence, embeddings, capture, retrieval, writer interfaces).
 - Runtime-safe tool implementations.
 - Shared MCP, observability, speech provider selection, Telegram models, and Telegram selection broker types.
 - Skill bundle loading, storage, filesystem access, and validation storage.
@@ -28,9 +29,10 @@ sharedLogic/
     └── main/
         ├── kotlin/
         │   └── ru/souz/
-        │       ├── db/                       # ConfigStore, SettingsProvider, vector DB
-        │       ├── llms/                     # Provider clients, voice APIs, and LLM runtime helpers
-        │       ├── skills/
+│       ├── db/                       # ConfigStore, SettingsProvider, vector DB
+│       ├── llms/                     # Provider clients, voice APIs, and LLM runtime helpers
+│       ├── memory/                   # Shared working-memory models, services, embedding client, capture, and writer contracts
+│       ├── skills/
         │       │   ├── bundle/               # Load SkillBundle: how bytes/files become a SkillBundle
         │       │   ├── filesystem/           # Safe/replaceable filesystem access: host/user/sandbox
         │       │   ├── registry/             # Store and load installed skill bundles

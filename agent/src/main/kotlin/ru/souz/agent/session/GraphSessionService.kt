@@ -3,6 +3,8 @@ package ru.souz.agent.session
 import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.graph.StepInfo
 import ru.souz.agent.nodes.CLASSIFY_NODE_NAME
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 import ru.souz.graph.Node
 import java.util.Collections
@@ -16,13 +18,18 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
-) {
+) : AgentRuntimeEventSink {
     companion object {
         private const val DATA_KEY_SELECTED_CATEGORIES = "selectedCategories"
         private const val DATA_KEY_INPUT = "input"
         private const val DATA_KEY_ACTIVE_TOOLS = "activeTools"
         private const val DATA_KEY_IN = "in"
         private const val DATA_KEY_OUT = "out"
+        private const val DATA_KEY_EVENT = "event"
+        private const val DATA_KEY_MEMORY_ADDED_BLOCK = "memoryAddedBlock"
+        private const val EVENT_MEMORY_PROMPT_AUGMENTED = "memory.prompt_augmented"
+        private const val MEMORY_PROMPT_NODE_NAME = "Memory Prompt Augmentation"
+        private const val MEMORY_PROMPT_STEP_INDEX = -1
     }
 
     private val currentSessionId = AtomicReference<String?>(null)
@@ -94,6 +101,45 @@ internal class GraphSessionService(
                 outputSummary = prettyOutput,
                 data = debugData,
                 addedHistory = historyDelta
+            )
+        )
+    }
+
+    override suspend fun emit(event: AgentRuntimeEvent) {
+        if (currentSessionId.get() == null) return
+        when (event) {
+            is AgentRuntimeEvent.MemoryPromptAugmented -> recordMemoryPromptAugmentation(event)
+            else -> Unit
+        }
+    }
+
+    private fun recordMemoryPromptAugmentation(event: AgentRuntimeEvent.MemoryPromptAugmented) {
+        val debugData = try {
+            logObjectMapper.writeValueAsString(
+                mapOf(
+                    DATA_KEY_EVENT to EVENT_MEMORY_PROMPT_AUGMENTED,
+                    DATA_KEY_MEMORY_ADDED_BLOCK to event.addedBlock,
+                    "facts" to event.facts.map { fact ->
+                        mapOf(
+                            "factId" to fact.factId,
+                            "scope" to fact.scope,
+                            "score" to fact.score,
+                        )
+                    }
+                )
+            )
+        } catch (e: Exception) {
+            logObjectMapper.writeValueAsString(mapOf("error" to e.toString()))
+        }
+
+        steps.add(
+            GraphStepRecord(
+                stepIndex = MEMORY_PROMPT_STEP_INDEX,
+                nodeName = MEMORY_PROMPT_NODE_NAME,
+                timestamp = System.currentTimeMillis(),
+                inputSummary = initialInput.get(),
+                outputSummary = event.addedBlock,
+                data = debugData,
             )
         )
     }

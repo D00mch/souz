@@ -205,9 +205,27 @@ class NodesClassificationPromptTest {
             history = listOf(
                 LLMRequest.Message(LLMMessageRole.system, "system"),
                 LLMRequest.Message(LLMMessageRole.user, "Please fix typos in `/tmp/article.md`"),
-                LLMRequest.Message(LLMMessageRole.user, "<context>\n- [General fact]: Current date and time\n</context>"),
+                LLMRequest.Message(
+                    LLMMessageRole.user,
+                    """
+                    <context>
+                    Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.
+                    ---
+                    - [General fact]: Current date and time
+                    </context>
+                    """.trimIndent()
+                ),
                 LLMRequest.Message(LLMMessageRole.assistant, "The file is fixed. I can also apply a couple of style improvements."),
-                LLMRequest.Message(LLMMessageRole.user, "<context>\n- [Default browser]: Safari\n</context>"),
+                LLMRequest.Message(
+                    LLMMessageRole.user,
+                    """
+                    <context>
+                    Background information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.
+                    ---
+                    - [Default browser]: Safari
+                    </context>
+                    """.trimIndent()
+                ),
                 LLMRequest.Message(LLMMessageRole.assistant, "I would only apply the optional style improvements now."),
                 LLMRequest.Message(LLMMessageRole.user, "do it"),
             ),

@@ -1019,7 +1019,7 @@ class MainViewModelTest {
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
-        coEvery { agentFacade.execute(any()) } coAnswers {
+        coEvery { agentFacade.execute(any(), any()) } coAnswers {
             executeBehavior.invoke(firstArg())
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
