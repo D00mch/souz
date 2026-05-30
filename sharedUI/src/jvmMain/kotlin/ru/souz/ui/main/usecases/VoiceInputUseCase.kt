@@ -128,7 +128,7 @@ class VoiceInputUseCase(
                 }
                 if (cause is LocalMacOsSpeechPermissionDeniedException) {
                     emitSpeechRecognitionPermissionDenied()
-                    return@retryWhen true
+                    return@retryWhen false
                 }
                 if (cause is LocalMacOsSpeechAppBundleMissingUsageDescriptionException) {
                     emitLocalMacOsSpeechBundleRequired()
