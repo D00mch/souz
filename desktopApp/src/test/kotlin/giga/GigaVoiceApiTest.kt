@@ -12,7 +12,7 @@ import kotlin.test.Ignore
 
 class GigaVoiceApiTest {
 
-    private val di = DI.invoke { import(mainDiModule) }
+    private val di = DI.invoke { import(mainDiModule, allowOverride = true) }
     private val api: GigaVoiceAPI by di.instance()
 
     @Ignore

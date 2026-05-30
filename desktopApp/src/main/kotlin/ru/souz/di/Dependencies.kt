@@ -3,9 +3,13 @@ package ru.souz.di
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.paths.SouzPaths
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentTelemetry
@@ -84,6 +88,16 @@ import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.DesktopConversationMemoryRuntime
+import ru.souz.memory.EmbeddingClient
+import ru.souz.memory.LlmEmbeddingClient
+import ru.souz.memory.LlmMemoryWriter
+import ru.souz.memory.MemoryCaptureService
+import ru.souz.memory.MemoryRepository
+import ru.souz.memory.MemoryService
+import ru.souz.memory.MemoryWriter
+import ru.souz.memory.SqliteMemoryRepository
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.DesktopIndexRepository
 import ru.souz.ui.host.DesktopPermissionService
@@ -117,13 +131,24 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<UiAudioRecorder> { instance<InMemoryAudioRecorder>() }
     bindSingleton<DesktopPermissionService> { MacDesktopPermissionService() }
 
-    // Native
+    // DB
+    bindSingleton<CoroutineScope> {
+        CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    }
     bindSingleton { Keys() }
 
     // DB
     bindSingleton { VectorDB }
     bindSingleton { LlmBuildProfile(instance(), instance()) }
     bindSingleton { DesktopInfoRepository(instance(), instance(), instance(), instance()) }
+    bindSingleton<MemoryRepository> {
+        SqliteMemoryRepository(instance<SouzPaths>().stateRoot.resolve("memory.db"))
+    }
+    bindSingleton<EmbeddingClient> { LlmEmbeddingClient(instance(), instance()) }
+    bindSingleton<MemoryWriter> { LlmMemoryWriter(instance(), instance()) }
+    bindSingleton { MemoryService(instance(), instance()) }
+    bindSingleton { MemoryCaptureService(instance(), instance()) }
+    bindSingleton<ConversationMemoryRuntime> { DesktopConversationMemoryRuntime(instance(), instance()) }
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<DesktopIndexRepository> { instance<DesktopInfoRepository>() }
     bindSingleton<ToolAvailabilityPolicy> { DesktopToolAvailabilityPolicy(instance()) }

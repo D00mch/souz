@@ -11,7 +11,7 @@ import ru.souz.di.mainDiModule
 private val logAgent = LoggerFactory.getLogger("Agent")
 
 suspend fun main() {
-    val di = DI.invoke { import(mainDiModule) }
+    val di = DI.invoke { import(mainDiModule, allowOverride = true) }
     val agent: AgentFacade by di.instance()
     userInputFlow().collect { input ->
         val response = agent.execute(input)

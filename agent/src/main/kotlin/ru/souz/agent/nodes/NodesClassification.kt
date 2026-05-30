@@ -108,7 +108,7 @@ internal class NodesClassification(
     ): List<LLMRequest.Message> {
         val conversationHistory = history
             .filterNot { it.role == LLMMessageRole.system }
-            .filterNot { it.isInjectedContext() }
+            .filterNot(LLMRequest.Message::isInjectedContextMessage)
             .dropCurrentUserTurn(userText)
 
         val historyWindow = if (isUserPromptTooShort(userText)) {
@@ -119,9 +119,6 @@ internal class NodesClassification(
 
         return conversationHistory.takeLast(historyWindow)
     }
-
-    private fun LLMRequest.Message.isInjectedContext(): Boolean =
-        role == LLMMessageRole.user && content.contains("<context>")
 
     private fun List<LLMRequest.Message>.dropCurrentUserTurn(userText: String): List<LLMRequest.Message> {
         val lastMessage = lastOrNull() ?: return this

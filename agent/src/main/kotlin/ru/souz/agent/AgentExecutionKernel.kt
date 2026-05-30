@@ -25,6 +25,8 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
 
 class AgentExecutionKernel(
@@ -48,6 +50,8 @@ class AgentExecutionKernelFactory(
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
     private val skillRegistryRepository: SkillRegistryRepository,
+    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
+    private val captureScope: kotlinx.coroutines.CoroutineScope,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -58,6 +62,7 @@ class AgentExecutionKernelFactory(
             agentToolExecutor = agentToolExecutor,
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
+            memoryRuntime = memoryRuntime,
         )
         val nodesClassification = NodesClassification(
             settingsProvider = settingsProvider,
@@ -96,7 +101,9 @@ class AgentExecutionKernelFactory(
             nodesSkills = nodesSkills,
         )
         val executor = AgentExecutor(
-            agentProvider = { graphAgent }
+            agentProvider = { graphAgent },
+            memoryRuntime = memoryRuntime,
+            captureScope = captureScope,
         )
         return AgentExecutionKernel(
             contextFactory = contextFactory,

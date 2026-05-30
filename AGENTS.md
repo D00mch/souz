@@ -26,6 +26,9 @@ If you are not sure about something, left a note for other developers to review.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
 - **Provider-agnostic image tools** with shared runtime gateways and split responsibilities: `ViewImage` routes local image understanding through provider-specific vision gateways with file-size limits before any OpenAI byte loading, `GenerateImage` routes image creation through capability-based provider selection independent from the current chat model, and desktop capture stays under `DESKTOP` so screen-understanding requests chain `TakeScreenshot -> ViewImage` without activating image generation.
 - **Local llama.cpp provider** with a thin native bridge, strict JSON tool contract, a RAM-gated local model catalog (Qwen plus Gemma 4 chat profiles), linked local EmbeddingGemma GGUF downloads/usage for embeddings, automatic Gemma multimodal projector downloads for local vision, background preload/warmup on local chat model selection, prompt-family-aware rendering (Qwen ChatML and Gemma 4 turns), prompt-prefix/KV reuse inside the native runtime, multimodal completion budgeting based on actual `mtmd` prompt/image token counts, settings-driven context windows for local inference within model caps, model storage under `~/.local/state/souz/models/`, and extracted native bridge libraries under `~/.local/state/souz/native/`.
+- **Desktop working memory core** with SQLite-backed source events, facts, evidence, embeddings, conservative post-turn capture, explicit remember handling, slot-key replacement inside scope, cosine retrieval across active scopes, and compact memory prompt injection for future turns.
+- **Desktop memory management UI** with a dedicated Memory screen for listing facts, filtering/search, manual fact create/edit, pin/unpin, retire/delete, details inspection, and evidence/raw turn review for writer-created facts.
+- **Shared JVM runtime and application logic layer** in `:sharedLogic` for provider clients, config/settings access, sandbox/skills infrastructure, shared Telegram models/selection brokers, and backend-safe tool categories (`FILES`, `IMAGE`, `IMAGE_GENERATION`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`).
 - **Shared JVM runtime and application logic layer** in `:sharedLogic` for desktop/backend provider clients, config/settings access, sandbox/skills infrastructure, shared Telegram models/selection brokers, and backend-safe tool categories (`FILES`, `IMAGE`, `IMAGE_GENERATION`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`).
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
@@ -47,6 +50,7 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── docker/                             # Docker entrypoint and bundled development skill fixtures
 │   ├── src/main/kotlin/ru/souz/db/         # Config store + settings provider
 │   ├── src/main/kotlin/ru/souz/llms/       # Provider APIs and runtime LLM helpers
+│   ├── src/main/kotlin/ru/souz/memory/     # Shared memory models/services, embedding client, capture, and writer contracts
 │   ├── src/main/kotlin/ru/souz/runtime/    # Shared runtime infrastructure (sandbox, DI helpers)
 │   ├── src/main/kotlin/ru/souz/service/    # Shared JVM services (MCP, observability, speech, Telegram models)
 │   ├── src/main/kotlin/ru/souz/skills/     # Safe skill bundle loading plus persistent skill/validation storage
@@ -57,6 +61,7 @@ If you are not sure about something, left a note for other developers to review.
 │   └── src/jvmTest/                        # Desktop behavior, integration, and UI/view-model tests
 ├── desktopApp/                             # Runnable desktop host, composition root, OS integrations, and packaging resources
 │   ├── src/main/kotlin/ru/souz/            # Main.kt/TextMain.kt, DI, desktop services/tools, desktop data extraction
+│   ├── src/main/kotlin/ru/souz/memory/     # Desktop SQLite memory repository and runtime bridge wiring
 │   ├── src/main/resources/                 # Native libraries, icons, entitlements, scripts, support assets
 │   └── build.gradle.kts                    # Compose Desktop packaging and distribution tasks
 ├── androidApp/                             # Android application host and app-local smoke implementation
