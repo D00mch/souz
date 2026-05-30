@@ -3,7 +3,7 @@ package ru.souz.android
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import ru.souz.android.llms.AndroidOpenAiClient
+import ru.souz.android.agent.AndroidAgentRuntime
 import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.android.storage.AndroidChatDatabase
 import ru.souz.android.ui.SouzAndroidApp
@@ -14,13 +14,13 @@ class MainActivity : ComponentActivity() {
 
         val settings = AndroidSettingsProvider(applicationContext)
         val chatDatabase = AndroidChatDatabase(applicationContext)
-        val chatClient = AndroidOpenAiClient(settings)
+        val agentRuntime = AndroidAgentRuntime(applicationContext, settings)
 
         setContent {
             SouzAndroidApp(
                 settings = settings,
                 chatDatabase = chatDatabase,
-                chatClient = chatClient,
+                agentRuntime = agentRuntime,
             )
         }
     }

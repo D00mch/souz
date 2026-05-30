@@ -27,6 +27,8 @@ extensions.configure<ApplicationExtension>("android") {
 dependencies {
     implementation(projects.agent)
     implementation(projects.llms)
+    implementation(projects.sharedLogic)
+    implementation(projects.sharedUI)
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation(compose.runtime)
     implementation(compose.foundation)
@@ -34,6 +36,8 @@ dependencies {
     implementation(compose.ui)
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.coroutinesAndroid)
+    implementation(libs.jackson)
     implementation(libs.slf4j.api)
+    implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
     implementation(kotlin("stdlib-jdk8"))
 }

@@ -1,8 +1,8 @@
 # Shared Logic Module
 
-`:sharedLogic` contains the JVM runtime layer shared by the desktop app (`:desktopApp` through `:sharedUI`) and the HTTP backend (`:backend`).
+`:sharedLogic` contains the JVM runtime layer shared by the desktop app (`:desktopApp` through `:sharedUI`) and the HTTP backend (`:backend`), plus an Android-safe LLM/runtime variant used by `:androidApp`.
 
-It owns provider clients, shared LLM runtime wiring, settings access, backend-safe tools, shared models/contracts, skill bundle storage/loading, and the sandbox contracts used by tools and skills. OS-bound desktop services/tools live in `:desktopApp`.
+The full JVM implementation lives under `src/jvmMain`: provider clients, shared LLM runtime wiring, settings access, backend-safe tools, shared models/contracts, skill bundle storage/loading, and the sandbox contracts used by tools and skills. The Android variant lives under `src/androidMain` and intentionally exposes only the settings and LLM runtime surface needed by Android chat-agent execution. OS-bound desktop services/tools live in `:desktopApp`.
 
 ## Sandbox Modes
 
@@ -72,7 +72,7 @@ The bind mount covers `/souz`, so Docker image files copied directly to `/souz/.
 Docker integration tests are opt-in:
 
 ```zsh
-SOUZ_TEST_DOCKER=1 ./gradlew :sharedLogic:test --tests 'ru.souz.runtime.sandbox.docker.*'
+SOUZ_TEST_DOCKER=1 ./gradlew :sharedLogic:jvmTest --tests 'ru.souz.runtime.sandbox.docker.*'
 ```
 
 Those tests build `souz-runtime-sandbox:test` from `sharedLogic/Dockerfile` when needed. They verify:
@@ -85,7 +85,7 @@ Those tests build `souz-runtime-sandbox:test` from `sharedLogic/Dockerfile` when
 Run regular runtime tests without Docker:
 
 ```zsh
-./gradlew :sharedLogic:test
+./gradlew :sharedLogic:jvmTest
 ```
 
 ## Skills Flow

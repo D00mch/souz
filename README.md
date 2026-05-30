@@ -2,15 +2,15 @@
 
 [Website](https://souz.app) · [Releases](https://github.com/D00mch/souz/releases) · [Contributing](docs/CONTRIBUTING.md)
 
-Souz is a Kotlin Multiplatform desktop AI assistant focused on **safe, observable, user-approved automation**. It combines a Compose Desktop app, a reusable graph-based agent runtime, shared backend-safe tools, local and cloud LLM providers, sandbox-aware file/process access, and an HTTP backend for web/API integrations.
+Souz is a Kotlin Multiplatform AI assistant focused on **safe, observable, user-approved automation**. It combines a Compose Desktop app, an Android chat-agent entry point, a reusable graph-based agent runtime, shared backend-safe tools, local and cloud LLM providers, sandbox-aware file/process access, and an HTTP backend for web/API integrations.
 
 The project is designed around one core idea: an AI agent should be useful enough to operate your desktop and data, but transparent and constrained enough that users can trust what it is doing.
 
 ## Highlights
 
-- **Kotlin Multiplatform desktop app** built with Compose for Desktop.
+- **Kotlin Multiplatform app surfaces** built with Compose for Desktop plus an Android chat-agent entry point.
 - **GraphBasedAgent** powered by an explicit graph runtime with classification, MCP tool injection, prompt enrichment, LLM execution, tool loops, summarization, retries, tracing, and cancellation.
-- **Shared runtime layer** used by both desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools.
+- **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and memory/filesystem/Postgres storage.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, presentations, and calculator.
@@ -38,9 +38,10 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 ├── graph-engine/           # Framework-free typed graph DSL/runtime
 ├── llms/                   # Shared LLM DTOs, provider enums, model profiles, token logging
 ├── native/                 # llama.cpp bridge and local model runtime
-├── sharedLogic/            # Shared JVM runtime, sandbox, provider clients, backend-safe tools
-├── sharedUI/               # Compose Desktop UI, view models, host ports, UI adapters, UI resources
+├── sharedLogic/            # Shared JVM runtime plus Android-safe LLM/agent support variant
+├── sharedUI/               # Shared Compose presentation plus desktop UI, view models, host ports, UI adapters, UI resources
 ├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
+├── androidApp/             # Android chat-agent host over sharedUI, sharedLogic, and GraphBasedAgent
 ├── backend/                # Ktor HTTP backend over the shared agent runtime
 ├── scripts/                # Build, release, and packaging helper scripts
 ├── docs/                   # Project documentation
@@ -57,6 +58,7 @@ Gradle modules included by the build:
 :sharedLogic
 :sharedUI
 :desktopApp
+:androidApp
 :backend
 ```
 
@@ -70,6 +72,10 @@ Module docs:
 flowchart LR
     userNode["User"] --> desktopApp[":desktopApp\nDesktop entry + packaging"]
     desktopApp --> sharedUi[":sharedUI\nCompose UI + UI adapters"]
+    userNode --> androidApp[":androidApp\nAndroid chat entry"]
+    androidApp --> sharedUi
+    androidApp --> agentNode
+    androidApp --> runtimeNode
     sharedUi --> agentNode[":agent\nGraphBasedAgent"]
     backendApi[":backend\nHTTP API"] --> agentNode
 
@@ -92,9 +98,10 @@ flowchart LR
 
 `:desktopApp` owns the runnable desktop entry point, app composition root, OS integrations, desktop-only services/tools, and Compose Desktop packaging. It depends on `:sharedLogic` and `:sharedUI`.
 
-`:sharedUI` owns the desktop experience:
+`:sharedUI` owns shared presentation surfaces and the desktop experience:
 
-- Compose screens, ViewModels, app theme, reusable UI components, and setup/settings flows.
+- Android-capable shared chat/settings presentation surface for the Android chat-agent entry point.
+- Compose screens, ViewModels, app theme, reusable UI components, and setup/settings flows for desktop.
 - Chat UI with model/context selectors, attachments, send/mic controls, streaming state, speech output, and graph/thinking visualization.
 - Tool-management UI and permission/selection approval flows.
 - Settings UI for models, provider keys, general behavior, security, folders, Telegram, sessions, visualization, and support logs.
@@ -109,10 +116,11 @@ Souz keeps platform-specific logic at the edges:
 - `:llms` contains provider-agnostic contracts and shared model/profile definitions.
 - `:graph-engine` contains no LLM/tool/agent knowledge; it only runs typed suspendable graph nodes.
 - `:agent` implements agent behavior on top of the graph engine.
-- `:sharedLogic` contains JVM-shared runtime services, backend-safe tools, sandbox/skills infrastructure, provider clients, and shared contracts/models. See [`sharedLogic/README.md`](sharedLogic/README.md).
+- `:sharedLogic` contains JVM-shared runtime services, backend-safe tools, sandbox/skills infrastructure, provider clients, shared contracts/models, and a minimal Android-safe LLM runtime surface for the Android agent host. See [`sharedLogic/README.md`](sharedLogic/README.md).
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
-- `:sharedUI` contains Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
-- `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, packaging resources, and is the only app module that depends on `:sharedUI`.
+- `:sharedUI` contains shared Compose presentation, Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
+- `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
+- `:androidApp` contains the Android entry point, Android storage/settings adapters, and the Android bridge from shared chat UI events to `GraphBasedAgent`.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
 
 ## GraphBasedAgent
