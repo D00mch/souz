@@ -98,8 +98,8 @@ private fun String.isExplicitForgetIntent(): Boolean {
 }
 
 private val EXPLICIT_FORGET_PATTERNS = listOf(
-    Regex("""\bforget\s+(?:this|that|it|everything|all this)\b"""),
-    Regex("""\bforget\s+about\s+(?:this|that|it)\b"""),
-    Regex("""\bзабудь\s+(?:это|все|всё|все это|всё это)\b"""),
-    Regex("""\bзабудь\s+об\s+этом\b"""),
+    Regex("""(?U)\bforget\s+(?:this|that|it|everything|all this)\b"""),
+    Regex("""(?U)\bforget\s+about\s+(?:this|that|it)\b"""),
+    Regex("""(?U)\bзабудь\s+(?:это|все|всё|все это|всё это)\b"""),
+    Regex("""(?U)\bзабудь\s+об\s+этом\b"""),
 )
