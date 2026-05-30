@@ -335,6 +335,7 @@ class SqliteMemoryRepository(
     override suspend fun getFactsWithoutEmbedding(
         scopes: List<MemoryScope>,
         model: String,
+        limit: Int,
     ): List<MemoryFact> {
         if (scopes.isEmpty()) return emptyList()
         return withConnection { connection ->
@@ -346,6 +347,7 @@ class SqliteMemoryRepository(
                 where f.status = ?
                   and e.fact_id is null
                   and ($scopeClause)
+                limit ?
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, model)
@@ -355,6 +357,7 @@ class SqliteMemoryRepository(
                     statement.setString(index++, scope.type)
                     statement.setString(index++, scope.id)
                 }
+                statement.setInt(index++, limit)
                 statement.executeQuery().use { rs ->
                     buildList {
                         while (rs.next()) {

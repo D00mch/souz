@@ -188,7 +188,7 @@ class MemoryService(
         val distinctScopes = scopes.flatMap(MemoryScope::compatibilityScopes).distinct()
 
         try {
-            repo.getFactsWithoutEmbedding(distinctScopes, embedder.model).take(5).forEach { fact ->
+            repo.getFactsWithoutEmbedding(distinctScopes, embedder.model, limit = 5).forEach { fact ->
                 try {
                     repo.replaceEmbedding(fact.id, embedder.model, embedder.embedDocument(fact.embeddingText()))
                 } catch (e: CancellationException) {
