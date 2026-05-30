@@ -1,0 +1,240 @@
+package ru.souz.backend.http
+
+import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import io.ktor.http.HttpStatusCode
+import io.ktor.serialization.jackson.jackson
+import io.ktor.server.application.Application
+import io.ktor.server.application.call
+import io.ktor.server.application.install
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.request.path
+import io.ktor.server.response.respond
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
+import java.net.InetSocketAddress
+import kotlinx.coroutines.CancellationException
+import org.slf4j.LoggerFactory
+import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.chat.service.ChatService
+import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.http.routes.v1Routes
+import ru.souz.backend.keys.service.UserProviderKeyService
+import ru.souz.backend.onboarding.BackendOnboardingService
+import ru.souz.backend.options.service.OptionService
+import ru.souz.backend.security.RequestIdentityPlugin
+import ru.souz.backend.settings.service.UserSettingsService
+import ru.souz.backend.telegram.TelegramBotBindingService
+
+/** Health-check response returned by `GET /health`. */
+data class HealthResponse(
+    val status: String,
+    val model: String,
+)
+
+/** Root endpoint response describing the available backend routes. */
+data class RootResponse(
+    val service: String,
+    val endpoints: List<String>,
+)
+
+/** Embedded Ktor server wrapper for the Souz backend HTTP API. */
+class BackendHttpServer(
+    bootstrapService: BackendBootstrapService,
+    onboardingService: BackendOnboardingService? = null,
+    userSettingsService: UserSettingsService? = null,
+    providerKeyService: UserProviderKeyService? = null,
+    chatService: ChatService? = null,
+    messageService: MessageService? = null,
+    executionService: AgentExecutionService? = null,
+    optionService: OptionService? = null,
+    eventService: AgentEventService? = null,
+    telegramBotBindingService: TelegramBotBindingService? = null,
+    featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
+    selectedModel: () -> String,
+    private val bindAddress: InetSocketAddress,
+    trustedProxyToken: () -> String? = { null },
+    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
+) : AutoCloseable {
+    private val logger = LoggerFactory.getLogger(BackendHttpServer::class.java)
+    private val dependencies = BackendHttpDependencies(
+        bootstrapService = bootstrapService,
+        onboardingService = onboardingService,
+        userSettingsService = userSettingsService,
+        providerKeyService = providerKeyService,
+        chatService = chatService,
+        messageService = messageService,
+        executionService = executionService,
+        optionService = optionService,
+        eventService = eventService,
+        telegramBotBindingService = telegramBotBindingService,
+        featureFlags = featureFlags,
+        selectedModel = selectedModel,
+        trustedProxyToken = trustedProxyToken,
+        ensureTrustedUser = ensureTrustedUser,
+    )
+    private val server = embeddedServer(
+        factory = Netty,
+        host = bindAddress.hostString,
+        port = bindAddress.port,
+    ) {
+        configureBackendHttpServer(dependencies)
+    }
+    private var startedAddress: InetSocketAddress? = null
+
+    val address: InetSocketAddress
+        get() = startedAddress ?: bindAddress
+
+    fun start() {
+        server.start(wait = false)
+        startedAddress = bindAddress
+        logger.info("Souz backend started on http://{}:{}", address.hostString, address.port)
+    }
+
+    override fun close() {
+        server.stop(gracePeriodMillis = STOP_GRACE_PERIOD_MILLIS, timeoutMillis = STOP_TIMEOUT_MILLIS)
+    }
+
+    private companion object {
+        const val STOP_GRACE_PERIOD_MILLIS = 500L
+        const val STOP_TIMEOUT_MILLIS = 1_000L
+    }
+}
+
+/** Installs backend HTTP routes into a Ktor application. */
+fun Application.backendApplication(
+    bootstrapService: BackendBootstrapService,
+    onboardingService: BackendOnboardingService? = null,
+    userSettingsService: UserSettingsService? = null,
+    providerKeyService: UserProviderKeyService? = null,
+    chatService: ChatService? = null,
+    messageService: MessageService? = null,
+    executionService: AgentExecutionService? = null,
+    optionService: OptionService? = null,
+    eventService: AgentEventService? = null,
+    telegramBotBindingService: TelegramBotBindingService? = null,
+    featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
+    selectedModel: () -> String,
+    trustedProxyToken: () -> String? = { null },
+    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
+) {
+    configureBackendHttpServer(
+        BackendHttpDependencies(
+            bootstrapService = bootstrapService,
+            onboardingService = onboardingService,
+            userSettingsService = userSettingsService,
+            providerKeyService = providerKeyService,
+            chatService = chatService,
+            messageService = messageService,
+            executionService = executionService,
+            optionService = optionService,
+            eventService = eventService,
+            telegramBotBindingService = telegramBotBindingService,
+            featureFlags = featureFlags,
+            selectedModel = selectedModel,
+            trustedProxyToken = trustedProxyToken,
+            ensureTrustedUser = ensureTrustedUser,
+        )
+    )
+}
+
+internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDependencies) {
+    val logger = LoggerFactory.getLogger("SouzBackendRoutes")
+
+    install(ContentNegotiation) {
+        jackson {
+            registerKotlinModule()
+            disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        }
+    }
+    install(WebSockets)
+    install(StatusPages) {
+        exception<BackendV1Exception> { call, cause ->
+            call.respond(
+                cause.status,
+                BackendV1ErrorEnvelope(
+                    error = BackendV1Error(code = cause.code, message = cause.message),
+                ),
+            )
+        }
+        exception<Throwable> { call, cause ->
+            if (cause is CancellationException) {
+                throw cause
+            }
+            logger.error("Unhandled backend request failure", cause)
+            if (BackendHttpRoutes.isV1Path(call.request.path())) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    BackendV1ErrorEnvelope(
+                        error = BackendV1Error(
+                            code = "internal_error",
+                            message = "Internal server error.",
+                        ),
+                    ),
+                )
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, ErrorResponse("Internal server error."))
+            }
+        }
+    }
+    install(RequestIdentityPlugin) {
+        trustedProxyToken = dependencies.trustedProxyToken
+        ensureUser = dependencies.ensureTrustedUser
+    }
+
+    routing {
+        get(BackendHttpRoutes.ROOT) {
+            call.respondBackend(logger) {
+                RootResponse(
+                    service = "souz-backend",
+                    endpoints = rootEndpoints(dependencies.featureFlags),
+                )
+            }
+        }
+
+        get(BackendHttpRoutes.HEALTH) {
+            call.respondBackend(logger) {
+                HealthResponse(status = "ok", model = dependencies.selectedModel())
+            }
+        }
+
+        v1Routes(dependencies)
+    }
+}
+
+private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
+    buildList {
+        add("GET ${BackendHttpRoutes.HEALTH}")
+        add("GET ${BackendHttpRoutes.BOOTSTRAP}")
+        add("GET ${BackendHttpRoutes.ONBOARDING_STATE}")
+        add("POST ${BackendHttpRoutes.ONBOARDING_COMPLETE}")
+        add("GET ${BackendHttpRoutes.SETTINGS}")
+        add("PATCH ${BackendHttpRoutes.SETTINGS}")
+        add("GET ${BackendHttpRoutes.PROVIDER_KEYS}")
+        add("PUT ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}")
+        add("DELETE ${BackendHttpRoutes.PROVIDER_KEY_PATTERN}")
+        add("GET ${BackendHttpRoutes.CHATS}")
+        add("POST ${BackendHttpRoutes.CHATS}")
+        add("PATCH ${BackendHttpRoutes.CHAT_TITLE_PATTERN}")
+        add("POST ${BackendHttpRoutes.CHAT_ARCHIVE_PATTERN}")
+        add("POST ${BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN}")
+        add("GET ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}")
+        add("GET ${BackendHttpRoutes.CHAT_EVENTS_PATTERN}")
+        add("POST ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}")
+        if (featureFlags.telegramBot) {
+            add("GET ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
+            add("PUT ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
+            add("DELETE ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
+        }
+        add("POST ${BackendHttpRoutes.CHAT_CANCEL_ACTIVE_PATTERN}")
+        add("POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}")
+        add("POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}")
+        add("WS ${BackendHttpRoutes.CHAT_WS_PATTERN}")
+    }

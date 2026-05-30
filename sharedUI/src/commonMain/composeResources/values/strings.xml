@@ -1,0 +1,521 @@
+<resources>
+    <string name="app_name">Souz AI</string>
+    <string name="app_title_short">Souz AI</string>
+
+    <!-- Tray -->
+    <string name="tray_tooltip">Souz AI</string>
+    <string name="tray_show_hide">Show/Hide</string>
+    <string name="tray_mute">Mute</string>
+    <string name="tray_exit">Exit</string>
+
+    <!-- Main Screen -->
+    <string name="status_processing">Processing...</string>
+    <string name="status_thinking">Thinking</string>
+    <string name="chat_placeholder_tip">Ask me anything...</string>
+    <string name="chat_search_placeholder">Search</string>
+    <string name="welcome_logo_content_desc">Souz logo</string>
+    <string name="welcome_quick_actions_subtitle">Ask anything or choose a quick action</string>
+    <string name="quick_action_mail_label">Check mail</string>
+    <string name="quick_action_mail_description">Work with mail</string>
+    <string name="quick_action_mail_message">Check my mail</string>
+    <string name="quick_action_calendar_label">My day</string>
+    <string name="quick_action_calendar_description">View calendar</string>
+    <string name="quick_action_calendar_message">Check my calendar for today</string>
+    <string name="quick_action_telegram_label">Telegram</string>
+    <string name="quick_action_telegram_description">Check messages</string>
+    <string name="quick_action_telegram_message">Check Telegram</string>
+    <string name="quick_action_documents_label">Documents</string>
+    <string name="quick_action_documents_description">Create or find a file</string>
+    <string name="quick_action_documents_message">Help me work with files on my computer</string>
+    <string name="quick_action_presentation_label">Presentation</string>
+    <string name="quick_action_presentation_description">Create a presentation</string>
+    <string name="quick_action_presentation_message">Help me create a presentation</string>
+    <string name="quick_action_analytics_label">Analytics</string>
+    <string name="quick_action_analytics_description">Charts and data</string>
+    <string name="quick_action_analytics_message">Help me work with data</string>
+    <string name="quick_action_search_label">Search</string>
+    <string name="quick_action_search_description">Find on the web</string>
+    <string name="quick_action_search_message">I need to find something on the web</string>
+    <string name="quick_action_browser_label">Browser</string>
+    <string name="quick_action_browser_description">Work in browser</string>
+    <string name="quick_action_browser_message">I need help with browser tasks</string>
+    
+    <!-- Dialogs -->
+    <string name="dialog_confirm">Confirm</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_new_chat_title">Start new conversation?</string>
+    <string name="dialog_new_chat_text">Current message history will be lost</string>
+    <string name="dialog_new_chat_confirm">Start</string>
+    <string name="dialog_permission_title">Action confirmation</string>
+    <string name="dialog_permission_allow">Allow</string>
+    <string name="dialog_permission_deny">Deny</string>
+    <string name="telegram_contact_select_title">Select Telegram Contact</string>
+    <string name="telegram_contact_select_message">Multiple contacts match “%s”. Choose the right one.</string>
+    <string name="telegram_contact_select_choose">Choose</string>
+    <string name="telegram_contact_select_cancel">Cancel</string>
+    <string name="telegram_contact_select_contact_badge">contact</string>
+    <string name="telegram_chat_select_title">Select Telegram Chat</string>
+    <string name="telegram_chat_select_message">Multiple chats match “%s”. Choose the right one.</string>
+    <string name="telegram_chat_select_choose">Choose</string>
+    <string name="telegram_chat_select_cancel">Cancel</string>
+    <string name="telegram_chat_select_private_badge">private chat</string>
+    <string name="telegram_chat_select_unread">unread: %d</string>
+    <string name="telegram_dialog_delete_title">Delete bot</string>
+    <string name="telegram_dialog_delete_text">Are you sure you want to permanently delete the bot @%s?</string>
+    <string name="telegram_dialog_delete_confirm">Delete</string>
+    <string name="telegram_dialog_delete_cancel">Cancel</string>
+
+    <!-- Settings Sidebar -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_configuration">Configuration</string>
+    <string name="settings_section_models">Models</string>
+    <string name="settings_section_general">General</string>
+    <string name="settings_section_keys">My Keys</string>
+    <string name="settings_section_functions">Functions</string>
+    <string name="settings_section_security">Security</string>
+    <string name="settings_section_support">Support</string>
+
+    <!-- Settings Content -->
+    <string name="settings_models_subtitle">Models and generation parameters</string>
+    <string name="settings_general_subtitle">General application settings</string>
+    <string name="settings_keys_subtitle">Keys configuration and quick links</string>
+    <string name="settings_functions_subtitle">Tools and agent capabilities</string>
+    <string name="settings_security_subtitle">Security and restrictions</string>
+
+    <!-- Models Settings -->
+    <string name="label_temperature">Temperature</string>
+    <string name="label_timeout">Timeout (ms)</string>
+    <string name="label_context_size">Context window size</string>
+    <string name="label_system_prompt">System prompt</string>
+    <string name="button_reset">Reset</string>
+    <string name="hint_system_prompt_reset">Reset system prompt to default</string>
+
+    <!-- General Settings -->
+    <string name="setting_streaming_title">Streaming mode</string>
+    <string name="setting_streaming_desc">Responses appear gradually as they are generated</string>
+    <string name="setting_notification_sound_title">Notification sound</string>
+    <string name="setting_notification_sound_desc">Play a short sound when the assistant response is ready</string>
+    <string name="setting_voice_input_review_title">Voice input review</string>
+    <string name="setting_voice_input_review_desc">Insert recognized speech into chat input instead of sending it immediately</string>
+    <string name="setting_language_profile_title">Region profile</string>
+    <string name="setting_language_profile_desc">Different models and LLM providers available per region.</string>
+    <string name="region_profile_ru_label">Russian (RU)</string>
+    <string name="region_profile_en_label">English (EN)</string>
+    <string name="label_voice_speed">Voice speed</string>
+    <string name="hint_voice_speed">Current value: %d. Higher is faster.</string>
+    <string name="label_voice_selection">Voice selection</string>
+    <string name="button_select_voice">Select voice</string>
+    <string name="label_mcp_servers">MCP servers JSON</string>
+    <string name="warning_mcp_risk">Warning: use MCP at your own risk. MCP can be insecure and expensive to use.</string>
+    <string name="hint_restart_required">Changes will apply after application restart</string>
+
+    <!-- Keys Settings -->
+    <string name="keys_configured_count">Configured keys: %d</string>
+    <string name="keys_hint_chat">One key is enough to chat.</string>
+    <string name="keys_hint_chat_ru_build">One key is enough to chat in RU profile: GigaChat, Qwen, or AI Tunnel.</string>
+    <string name="keys_hint_chat_en_build">One key is enough to chat in EN profile: OpenAI, Qwen, or Anthropic.</string>
+    <string name="keys_hint_voice">Voice commands depend on the active profile.</string>
+    <string name="keys_hint_voice_required">For voice commands, add at least one speech recognition key.</string>
+    <string name="keys_hint_voice_unavailable">Voice commands are not available in the active profile.</string>
+    <string name="label_key_gigachat">GigaChat Key</string>
+    <string name="label_key_qwen">Qwen Key</string>
+    <string name="label_key_aitunnel">AI Tunnel Key</string>
+    <string name="label_key_anthropic">Anthropic Key</string>
+    <string name="label_key_openai">OpenAI Key</string>
+    <string name="label_key_salutespeech">SaluteSpeech Key</string>
+    <string name="header_where_to_get_keys">Where to get keys</string>
+    
+    <!-- API Providers -->
+    <string name="provider_aitunnel_title">AiTunnel</string>
+    <string name="provider_aitunnel_desc">Unified key for popular foreign models.</string>
+    <string name="provider_aitunnel_details">OpenAI, Anthropic, and Grok models available.</string>
+
+    <string name="provider_qwen_title">Alibaba Model Studio (Qwen)</string>
+    <string name="provider_qwen_desc">Keys and management for Qwen family models.</string>
+    <string name="provider_qwen_details">Suitable for chat and generation on Qwen models.</string>
+
+    <string name="provider_sber_title">Sber Studio (GigaChat + Speech)</string>
+    <string name="provider_sber_desc">Cabinet for GigaChat and SaluteSpeech keys.</string>
+    <string name="provider_sber_details">If planning voice commands, get Speech API key here.</string>
+
+    <string name="provider_anthropic_title">Anthropic Console</string>
+    <string name="provider_anthropic_desc">Anthropic dashboard for managing Claude API keys.</string>
+    <string name="provider_anthropic_details">Get an API key for direct access to Claude models.</string>
+
+    <string name="provider_openai_title">OpenAI Platform</string>
+    <string name="provider_openai_desc">OpenAI dashboard for managing API keys and usage.</string>
+    <string name="provider_openai_details">Use this key for direct GPT-5 model access.</string>
+
+    <!-- Functions Settings -->
+    <string name="setting_fewshot_title">Few-Shot Examples</string>
+    <string name="setting_fewshot_desc">Put tool usage examples into context</string>
+    <string name="label_agent">Agent</string>
+    <string name="agent_option_graph_title">Graph Agent</string>
+    <string name="agent_option_graph_description">Classic graph flow with iterative tool calls and summarization.</string>
+    <string name="agent_switch_dialog_title">Switch active agent?</string>
+    <string name="agent_switch_dialog_message">Current work will be cancelled and the active conversation context will be cleared.</string>
+    <string name="agent_switch_dialog_confirm">Switch</string>
+    <string name="agent_switch_dialog_cancel">Cancel</string>
+    <string name="button_configure_tools">Configure tools</string>
+    <string name="button_configure_telegram">Configure Telegram connection</string>
+    <string name="telegram_status_connected_format">Connected: %s</string>
+    <string name="telegram_session_default">Active session</string>
+    <string name="telegram_status_logging_out">Logging out...</string>
+    <string name="telegram_status_initializing">Initializing...</string>
+    <string name="telegram_status_not_connected">Not connected</string>
+    <string name="telegram_error_macos_15_required">Telegram is unavailable on this macOS version. Minimum supported version is macOS 15.</string>
+
+    <!-- Security Settings -->
+    <string name="setting_safemode_title">Safe Mode</string>
+    <string name="setting_safemode_desc">Request confirmation for dangerous actions (deleting files, sending data)</string>
+    <string name="label_forbidden_folders">Forbidden folders</string>
+    <string name="hint_forbidden_folders">Open separate folder access management screen</string>
+    <string name="button_manage_forbidden_folders">Manage forbidden folders</string>
+
+    <!-- Support Settings -->
+    <string name="label_support_email">Support Email</string>
+    <string name="button_send_logs">Send logs</string>
+    <string name="button_view_sessions">View graph sessions</string>
+    <string name="label_privacy_policy">Privacy Policy</string>
+    <string name="hint_privacy_policy">Open the bundled privacy policy in your default browser.</string>
+    <string name="button_open_privacy_policy">Open privacy policy</string>
+
+    <!-- Tools Screen -->
+    <string name="tools_title">Tools</string>
+    <string name="tools_subtitle">Select available categories and functions</string>
+    <string name="button_close">Close</string>
+    <string name="button_save">Save</string>
+    <string name="button_saving">Saving...</string>
+    <string name="tooltip_collapse">Collapse</string>
+    <string name="tooltip_expand">Expand</string>
+
+    <!-- Folders Management -->
+    <string name="folders_title">Forbidden\nfolders</string>
+    <string name="button_browse">Browse...</string>
+    <string name="folder_list_empty">List is empty. Add a folder via "Browse...".</string>
+    <string name="hint_folders_default">Everything outside home directory is forbidden by default</string>
+    <string name="tooltip_remove_folder">Remove folder from forbidden list</string>
+
+    <!-- Setup Screen -->
+    <string name="setup_title">Connect API Keys</string>
+    <string name="setup_hint_add_key">Add at least one key to start. Others can be connected later in settings.</string>
+    <string name="setup_hint_keys_found">Keys found: %d. You can continue.</string>
+    <string name="setup_hint_voice_required">Voice commands require at least one speech recognition key.</string>
+    <string name="setup_hint_voice_unavailable">Voice commands are not available in this build yet.</string>
+    <string name="button_open_souz">Open Souz AI</string>
+    <string name="button_add_key_to_proceed">Add at least one key</string>
+
+    <!-- Common -->
+    <string name="back">Back</string>
+    <string name="session_not_found">Session not found</string>
+    <string name="snack_saved_summarization">Saved. Will be applied after the first summarization</string>
+
+    <!-- Support Settings & Logs -->
+    <string name="settings_support_subtitle">Contact developers and debugging</string>
+    <string name="button_sending_logs">Sending logs...</string>
+    <string name="snack_logs_path_copied">Path to logs copied</string>
+    <string name="error_failed_open_privacy_policy">Failed to open privacy policy</string>
+    
+    <!-- Calendars -->
+    <string name="label_default_calendar">Default calendar</string>
+    <string name="status_loading_calendars">Loading calendars...</string>
+    <string name="calendar_not_selected">Not selected (system default)</string>
+    <string name="calendar_not_selected_short">Not selected (system)</string>
+    <string name="calendar_no_available">No available calendars</string>
+    <string name="hint_calendar_usage">Agent will use this calendar for creating events unless specified otherwise.</string>
+    <string name="content_desc_choose_calendar">Choose calendar</string>
+    
+    <!-- Token Balance -->
+    <string name="label_tokens_balance">Tokens balance</string>
+    <string name="status_checking_balance">Checking balance...</string>
+    <string name="status_balance_no_data">No balance data</string>
+
+    <!-- Dropdowns -->
+    <string name="label_model">Model</string>
+    <string name="content_desc_select_agent">Select agent</string>
+    <string name="label_embeddings_model">Embeddings model</string>
+    <string name="label_voice_recognition_model">Voice recognition model</string>
+    <string name="local_model_download_dialog_title">Download local model</string>
+    <string name="local_model_download_dialog_message">Souz needs to download %1$s before it can be used locally.</string>
+    <string name="local_model_download_dialog_confirm">Download</string>
+    <string name="local_model_download_dialog_cancel">Not now</string>
+    <string name="local_model_download_progress_title">Downloading local model</string>
+    <string name="local_model_download_progress_message">Souz is downloading %1$s to the local models folder.</string>
+    <string name="local_model_download_progress_action">Downloading</string>
+    <string name="local_model_download_cancel">Cancel download</string>
+    <string name="local_model_download_progress_known">%1$s of %2$s</string>
+    <string name="local_model_download_progress_unknown">%1$s downloaded</string>
+    <string name="local_model_download_detail_repo">Repo: %1$s</string>
+    <string name="local_model_download_detail_quantization">Quantization: %1$s</string>
+    <string name="local_model_download_detail_storage">Storage: %1$s</string>
+    <string name="local_model_download_detail_license">License: %1$s</string>
+    <string name="local_model_download_detail_manual_license">Manual license review may be required on Hugging Face before download.</string>
+    <string name="local_model_download_cancelled">Local model download cancelled.</string>
+    <string name="local_model_download_failed">Failed to download the local model.</string>
+
+    <!-- Finder Service -->
+    <string name="error_empty_path">Empty path</string>
+    <string name="error_path_not_found">Path not found: %s</string>
+    <string name="error_desktop_not_supported">Desktop API not supported</string>
+    <string name="error_opening_paths_not_supported">Opening paths not supported</string>
+
+    <!-- Graph Sessions -->
+    <string name="graph_sessions_title">Graph Session History</string>
+    <string name="graph_sessions_count_format">%d sessions</string>
+    <string name="action_close">Close</string>
+    <string name="graph_sessions_empty">No saved sessions.\nSend a request to the agent to create the first session.</string>
+    <string name="status_in_progress">in progress</string>
+    <string name="graph_steps_count">%d steps</string>
+    <string name="duration_suffix_s">s</string>
+
+    <!-- Chat Input -->
+    <string name="chat_input_placeholder">Type a message...</string>
+    <string name="tooltip_hold_option">Hold right Option</string>
+    <string name="tooltip_hold_mic_button">Press and hold the microphone button</string>
+    <string name="tooltip_stop_speech">Stop speech</string>
+    <string name="tooltip_attach_file">Attach file</string>
+    <string name="content_desc_voice_input">Voice input</string>
+    <string name="content_desc_attach_file">Attach file</string>
+    <string name="content_desc_remove_attachment">Remove attachment</string>
+    <string name="tooltip_stop_request">Stop request</string>
+    <string name="tooltip_send_enter">Send (Enter)</string>
+    <string name="content_desc_send">Send</string>
+    <string name="content_desc_open_label">Open %s</string>
+    <string name="label_model_default">Model</string>
+    <string name="label_context">Context</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_speech_text">Hello! I am Souz AI, your smart assistant on your computer... I will now ask for permissions to access applications, the system, and files to work correctly... I can use the browser, work with mail and calendar, work with files on your PC, explain and rewrite selected text, open applications, create notes, answer questions, and build charts and diagrams based on data.</string>
+    <string name="onboarding_display_text">Hello! I am Souz AI, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nTo start voice input - hold right opt(alt)\nTo clear conversation context - use top left button\n</string>
+    <string name="onboarding_display_text_sandbox">Hello! I am Souz AI, a smart assistant on your computer.\nNow I will ask for permissions to access applications, the system, and files to work correctly.\nI can:\n- Use the browser\n- Work with mail and calendar\n- Work with files on your PC\n- Explain and rewrite selected text\n- Open applications, create notes, answer questions\n- Build charts and diagrams based on data\n\n\nIn sandbox builds, global Option(Alt) hotkey is unavailable.\nTo start voice input - press and hold the microphone button.\nTo clear conversation context - use top left button\n</string>
+    <string name="onboarding_input_permission_request">Allow access to input monitoring in macOS settings — the application will try to restart automatically after confirmation</string>
+    <string name="onboarding_input_permission_restart_failed">Input Monitoring permission is granted, but automatic restart failed. Please restart the application manually.</string>
+    <string name="onboarding_input_permission_sandbox_limited">Global input monitoring is unavailable in the sandboxed build. You can still use voice input from the microphone button.</string>
+
+    <!-- Voice Input -->
+    <string name="error_prefix">Error: %s</string>
+    <string name="error_agent_timeout">The agent wasn't able to solve the problem in time. Try increasing the timeout in Settings.</string>
+    <string name="error_agent_context_reset">There is too much information, and I got confused. Let's start over and go step by step.</string>
+    <string name="error_agent_no_money">No more tokens left to proceed</string>
+    <string name="voice_status_recording_started">Recording started</string>
+    <string name="voice_status_processing_input">Processing input</string>
+    <string name="voice_status_speech_not_recognized">Speech not recognized</string>
+    <string name="voice_error_empty_audio">No audio was captured. Hold the microphone button a bit longer and try again.</string>
+    <string name="voice_error_microphone_unavailable">Microphone capture failed. Allow access in macOS Settings &gt; Privacy &amp; Security &gt; Microphone, then restart the app.</string>
+    <string name="voice_error_missing_key">Add the API key for the selected voice recognition model in Settings > My Keys to use voice commands</string>
+    <string name="voice_error_speech_permission_denied">Speech recognition permission was denied. Allow access in macOS Settings &gt; Privacy &amp; Security &gt; Speech Recognition, then try again.</string>
+    <string name="voice_error_local_macos_bundle_required">Local macOS speech recognition requires the packaged macOS app. The IDE or plain Java launcher does not provide the required speech recognition permission metadata.</string>
+    <string name="voice_error_local_macos_unavailable">Local macOS speech recognition is unavailable on this device right now.</string>
+    <string name="voice_error_local_macos_locale_unsupported">The selected macOS speech recognition locale is not supported on this device.</string>
+    <string name="voice_error_recognition_unavailable">Voice recognition is not available in this build yet.</string>
+
+    <!-- Main ViewModel & status -->
+    <string name="status_context_cleared">Context cleared</string>
+    <string name="status_context_cleared_hint">%s. Press again to hide.</string>
+    <string name="status_context_cleared_default">Context cleared</string>
+    <string name="error_failed_to_open_path">Failed to open path</string>
+    <string name="error_failed_to_pick_files">Failed to choose files</string>
+
+    <string-array name="start_tips">
+        <item>Want me to check the weather in Moscow?</item>
+        <item>Check the calendar?</item>
+        <item>Want me to check mail?</item>
+        <item>Find a file, read it, or create a new one?</item>
+        <item>Need to send an email or reply?</item>
+        <item>Show unread emails?</item>
+        <item>Create or cancel a meeting in the calendar?</item>
+        <item>Show to-do list for today?</item>
+        <item>Restore a closed browser tab?</item>
+        <item>Find a site in Safari or Chrome history?</item>
+        <item>Open a note or create a new one?</item>
+        <item>Delete an unnecessary file?</item>
+        <item>Read an email and prepare a reply?</item>
+        <item>Help with text work?</item>
+    </string-array>
+
+    <!-- Thinking Panel -->
+    <string name="thinking_panel_title">Thinking Process</string>
+    <string name="thinking_user_request">User Request</string>
+    <string name="thinking_reasoning">Reasoning</string>
+    <string name="thinking_answer">Answer</string>
+    <string name="thinking_generating_answer">Generating answer...</string>
+    <string name="thinking_status_in_progress">In progress...</string>
+    <string name="thinking_status_completed">Completed</string>
+
+    <!-- Settings & Misc -->
+    <string name="title_select_folder">Select folder</string>
+    <string name="title_select_files">Select files</string>
+    <string name="snack_saved_system_prompt">Saved. Will apply after first summarization</string>
+    <string name="error_session_not_found">Session not found</string>
+    <string name="button_back">Back</string>
+    <string name="settings_subtitle_config">Configuration</string>
+    
+    <string name="error_enter_phone">Enter phone number</string>
+    <string name="error_enter_code">Enter code</string>
+    <string name="error_enter_password">Enter 2FA password</string>
+    <string name="error_failed_request_code">Failed to request Telegram code</string>
+    <string name="error_failed_verify_code">Failed to verify code</string>
+    <string name="error_failed_verify_password">Failed to verify 2FA password</string>
+    <string name="error_failed_logout">Failed to logout from Telegram</string>
+    
+    <string name="error_gigachat_key_missing">Specify GigaChat key</string>
+    <string name="error_balance_unavailable_qwen">Balance unavailable for Qwen</string>
+    <string name="error_balance_unavailable_aitunnel">Balance unavailable for AI Tunnel</string>
+    <string name="error_balance_unavailable_anthropic">Balance unavailable for Anthropic</string>
+    <string name="error_balance_unavailable_openai">Balance unavailable for OpenAI</string>
+    <string name="error_failed_send_logs">Failed to send logs</string>
+    <string name="support_email_subject">Souz AI logs</string>
+    <string name="support_email_body">Hello! Attached are the application log files.</string>
+    <string name="support_email_success_format">Email created. If the attachment did not appear automatically, please attach the file %s manually.</string>
+
+    <!-- Tools Permissions -->
+    <string name="permission_modify_file">Modify file?</string>
+    <string name="permission_move_file">Move file?</string>
+    <string name="permission_delete_file">Delete file?</string>
+    <string name="permission_delete_note">Delete note?</string>
+    <string name="permission_create_note">Create note?</string>
+    <string name="permission_telegram_send">Send Telegram message?</string>
+    <string name="permission_telegram_forward">Forward Telegram message?</string>
+    <string name="permission_telegram_set_state">Apply Telegram chat action?</string>
+
+    <!-- Telegram Login -->
+    <string name="telegram_step_phone">Step 1: enter phone number</string>
+    <string name="telegram_step_code">Step 2: enter code from Telegram</string>
+    <string name="telegram_step_password">Step 3: enter 2FA password (if enabled)</string>
+    <string name="telegram_step_connected">Connection active</string>
+    <string name="telegram_step_logging_out">Logging out...</string>
+    <string name="telegram_step_initializing">Connecting Telegram client...</string>
+    <string name="telegram_step_error">Check data and try again</string>
+    <string name="telegram_label_phone">Phone Number</string>
+    <string name="telegram_label_code">Login Code</string>
+    <string name="telegram_label_password">2FA Password</string>
+    <string name="telegram_btn_request_code">Request Code</string>
+    <string name="telegram_btn_request_code_again">Request code again</string>
+    <string name="telegram_btn_verify_code">Verify Code</string>
+    <string name="telegram_btn_verify_password">Verify Password</string>
+    <string name="telegram_btn_start_over">Start over</string>
+    <string name="telegram_btn_start_work">Start work</string>
+    <string name="telegram_status_connected">Connected</string>
+    <string name="telegram_btn_logout">Logout</string>
+    <string name="telegram_hint_code_sent">Code sent to: %1$s</string>
+    <string name="telegram_hint_password">Password hint: %1$s</string>
+    <string name="telegram_info_code_requested_again">Requested a new code. Check Telegram.</string>
+    <string name="bot_created_success_message">Telegram PC Control created successfully!</string>
+    <string name="error_failed_to_create_bot">Failed to create Telegram PC Control</string>
+    <string name="bot_deleted_success_message">Telegram PC Control deleted successfully!</string>
+    <string name="error_failed_to_delete_bot">Failed to delete Telegram PC Control</string>
+    <string name="telegram_btn_create_control">Create Telegram PC Control</string>
+    <string name="telegram_btn_delete_control">Delete Telegram PC Control</string>
+
+    <!-- Setup -->
+    <string name="setup_btn_choose_voice">Choose voice</string>
+    <string name="setup_title_keys">Where to get keys</string>
+    <string name="setup_voice_reminder_title">Choose a voice before continuing</string>
+    <string name="setup_voice_reminder_message">Pick a macOS voice that matches the language you plan to use with the agent.</string>
+    <string name="setup_voice_reminder_details">For example, select an English voice for English conversations or a Russian voice for Russian conversations. You can change it later in Settings.</string>
+
+    <!-- Tool Details -->
+    <string name="tool_details_title">Tool details</string>
+    <string name="tool_details_subtitle">Configure tool description and examples</string>
+    <string name="tool_details_reset_desc">Reset to default</string>
+    <string name="tool_details_back_desc">Back</string>
+    <string name="tool_details_checkbox_enabled">Tool enabled</string>
+    <string name="tool_details_label_desc">Description</string>
+    <string name="tool_details_section_examples">Examples</string>
+    <string name="tool_details_btn_add_example">Add example</string>
+    <string name="tool_details_no_examples">No examples</string>
+    <string name="tool_details_btn_reset">Reset</string>
+    <string name="tool_details_btn_save">Save</string>
+    <string name="tool_details_btn_saving">Saving...</string>
+    <string name="tool_details_example_title">Example %1$d</string>
+    <string name="tool_details_delete_example_desc">Delete example</string>
+    <string name="tool_details_label_request">Request</string>
+    <string name="tool_details_label_params">Params (JSON)</string>
+    <string name="tool_details_saved">Tool settings saved</string>
+    <string name="tools_settings_saved">Tool settings saved</string>
+    <string name="tool_details_error_json">Invalid params JSON: %1$s</string>
+    <string name="tool_details_error_missing">Tool is missing in the factory</string>
+
+    <!-- Tools Screen -->
+    <string name="tools_expand">Expand</string>
+    <string name="tools_collapse">Collapse</string>
+
+    <!-- Chat Tool Actions -->
+    <string name="chat_action_list_files">Listing files in: %1$s</string>
+    <string name="chat_action_search_file_content">Searching file contents: %1$s</string>
+    <string name="chat_action_new_file">Creating: %1$s</string>
+    <string name="chat_action_delete_file">Deleting: %1$s</string>
+    <string name="chat_action_edit_file">Editing file: %1$s</string>
+    <string name="chat_action_move_file">Moving: %1$s -> %2$s</string>
+    <string name="chat_action_extract_text_from_file">Extracting text from file: %1$s</string>
+    <string name="chat_action_find_files_by_name">Searching for file: %1$s</string>
+    <string name="chat_action_read_pdf_pages">Reading PDF: %1$s</string>
+    <string name="chat_action_read_file">Reading file: %1$s</string>
+    <string name="chat_action_find_folders">Searching for folder: %1$s</string>
+    <string name="chat_action_open">Opening: %1$s</string>
+    <string name="chat_action_create_browser_tab">Opening tab: %1$s</string>
+    <string name="chat_action_safari_info">Checking Safari: %1$s</string>
+    <string name="chat_action_browser_hotkeys">Pressing browser command: %1$s</string>
+    <string name="chat_action_focus_on_tab">Switching to tab: %1$s</string>
+    <string name="chat_action_chrome_info">Checking Chrome: %1$s</string>
+    <string name="chat_action_open_default_browser">Opening default browser</string>
+    <string name="chat_action_run_bash_command">Running command: %1$s</string>
+    <string name="chat_action_web_search">Searching the web: %1$s</string>
+    <string name="chat_action_internet_research">Researching the web: %1$s</string>
+    <string name="chat_action_web_image_search">Searching images: %1$s</string>
+    <string name="chat_action_web_page_text">Reading page: %1$s</string>
+    <string name="chat_action_sound_config">Updating speech speed: %1$s</string>
+    <string name="chat_action_sound_config_diff">Adjusting speech speed: %1$s</string>
+    <string name="chat_action_instruction_store">Saving instruction: %1$s</string>
+    <string name="chat_action_open_note">Opening note: %1$s</string>
+    <string name="chat_action_create_note">Creating note: %1$s</string>
+    <string name="chat_action_delete_note">Deleting note: %1$s</string>
+    <string name="chat_action_list_notes">Listing notes</string>
+    <string name="chat_action_search_notes">Searching notes: %1$s</string>
+    <string name="chat_action_show_apps">Listing apps: %1$s</string>
+    <string name="chat_action_create_plot">Creating plot from: %1$s</string>
+    <string name="chat_action_upload_file">Uploading file: %1$s</string>
+    <string name="chat_action_download_file">Downloading file: %1$s</string>
+    <string name="chat_action_excel_read">Reading Excel: %1$s</string>
+    <string name="chat_action_excel_report">Creating Excel report: %1$s</string>
+    <string name="chat_action_create_calendar_event">Creating calendar event: %1$s</string>
+    <string name="chat_action_delete_calendar_event">Deleting calendar event: %1$s</string>
+    <string name="chat_action_list_calendars">Checking calendars: %1$s</string>
+    <string name="chat_action_list_calendar_events">Checking calendar events: %1$s</string>
+    <string name="chat_action_mail_unread_count">Checking unread mail count</string>
+    <string name="chat_action_list_mail">Checking recent mail</string>
+    <string name="chat_action_read_mail">Reading email</string>
+    <string name="chat_action_reply_mail">Preparing email reply</string>
+    <string name="chat_action_send_mail">Preparing email to %1$s</string>
+    <string name="chat_action_search_mail">Searching mail: %1$s</string>
+    <string name="chat_action_get_clipboard">Reading clipboard</string>
+    <string name="chat_action_text_replace">Replacing selected text: %1$s</string>
+    <string name="chat_action_text_under_selection">Reading selected text</string>
+    <string name="chat_action_calculator">Calculating: %1$s</string>
+    <string name="chat_action_telegram_read_inbox">Checking Telegram inbox</string>
+    <string name="chat_action_telegram_get_history">Reading Telegram chat history: %1$s</string>
+    <string name="chat_action_telegram_set_state">Applying Telegram chat action: %1$s (%2$s)</string>
+    <string name="chat_action_telegram_send">Sending Telegram message: %1$s</string>
+    <string name="chat_action_telegram_forward">Forwarding Telegram message: %1$s -> %2$s</string>
+    <string name="chat_action_telegram_search">Searching Telegram: %1$s</string>
+    <string name="chat_action_telegram_saved_messages">Saving to Telegram Saved Messages</string>
+    <string name="chat_action_take_screenshot">Taking screenshot: %1$s</string>
+    <string name="chat_action_start_screen_recording">Opening screen recording</string>
+    <string name="chat_action_presentation_create">Creating presentation: %1$s</string>
+    <string name="chat_action_presentation_read">Reading presentation: %1$s</string>
+    <string name="chat_action_generic_tool">Running tool: %1$s</string>
+    <string name="chat_action_value_history">history</string>
+    <string name="chat_action_value_bookmarks">bookmarks</string>
+    <string name="chat_action_value_tabs">tabs</string>
+    <string name="chat_action_value_current_tab_url">current tab URL</string>
+    <string name="chat_action_value_page_text">page text</string>
+    <string name="chat_action_value_installed">installed</string>
+    <string name="chat_action_value_running">running</string>
+    <string name="chat_action_value_mute">mute</string>
+    <string name="chat_action_value_archive">archive</string>
+    <string name="chat_action_value_mark_read">mark read</string>
+    <string name="chat_action_value_delete">delete</string>
+    <string name="chat_action_value_all">all</string>
+    <string name="chat_action_value_default">default</string>
+    <string name="chat_action_value_today">today</string>
+</resources>

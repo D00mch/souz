@@ -6,7 +6,7 @@ import ru.souz.db.StorredData
  * Provides desktop-index search results to the agent.
  *
  * The agent uses this to enrich prompts with local context without depending on
- * the concrete desktop indexing implementation in `composeApp`.
+ * the concrete desktop indexing implementation in `:sharedUI`.
  */
 interface AgentDesktopInfoRepository {
     /**

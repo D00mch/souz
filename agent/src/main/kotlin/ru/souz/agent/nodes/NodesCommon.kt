@@ -6,6 +6,7 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.StorredData
@@ -13,6 +14,7 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -29,6 +31,7 @@ internal class NodesCommon(
     private val settingsProvider: AgentSettingsProvider,
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
+    private val runtimeEnvironment: AgentRuntimeEnvironment,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -142,8 +145,8 @@ internal class NodesCommon(
             additionalData.add(StorredData(geoFact, StorredType.GENERAL_FACT))
         }
 
-        val currentDateTime = LocalDateTime.now().format(
-            DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss")
+        val currentDateTime = ZonedDateTime.now(runtimeEnvironment.zoneId).format(
+            DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss", runtimeEnvironment.locale)
         )
         additionalData.add(StorredData("Текущие дата и время: $currentDateTime", StorredType.GENERAL_FACT))
 
@@ -168,8 +171,8 @@ internal class NodesCommon(
     }
 
     private fun buildUserGeoLocationFact(): String? = try {
-        val locale = Locale.getDefault()
-        val zoneId = ZoneId.systemDefault()
+        val locale = runtimeEnvironment.locale
+        val zoneId = runtimeEnvironment.zoneId
 
         val parts = mutableListOf<String>()
 
@@ -212,7 +215,13 @@ internal class NodesCommon(
             val functionCall = msg.functionCall
             val functionsStateId = msg.functionsStateId
             if (functionCall != null && functionsStateId != null) {
-                executeTool(ctx.settings, functionCall).copy(functionsStateId = functionsStateId)
+                executeTool(
+                    settings = ctx.settings,
+                    functionCall = functionCall,
+                    meta = ctx.toolInvocationMeta,
+                    toolCallId = functionsStateId,
+                    eventSink = ctx.runtimeEventSink,
+                ).copy(functionsStateId = functionsStateId)
             } else null
         }
         return fnCallMessages
@@ -221,7 +230,16 @@ internal class NodesCommon(
     private suspend fun executeTool(
         settings: AgentSettings,
         functionCall: LLMResponse.FunctionCall,
-    ): LLMRequest.Message = agentToolExecutor.execute(settings, functionCall)
+        meta: ToolInvocationMeta,
+        toolCallId: String? = null,
+        eventSink: ru.souz.agent.runtime.AgentRuntimeEventSink = ru.souz.agent.runtime.AgentRuntimeEventSink.NONE,
+    ): LLMRequest.Message = agentToolExecutor.execute(
+        settings = settings,
+        functionCall = functionCall,
+        meta = meta,
+        toolCallId = toolCallId,
+        eventSink = eventSink,
+    )
 }
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {

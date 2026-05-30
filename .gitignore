@@ -1,11 +1,12 @@
 .gradle
+.gradle-home/
 .gradle-local
 .gradle-home/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
-composeApp/kls_database.db
+sharedUI/kls_database.db
 local.properties
 
 ### IntelliJ IDEA ###

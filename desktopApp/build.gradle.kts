@@ -1,0 +1,405 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.tasks.JavaExec
+
+fun tdlightNativeClassifier(): String {
+    val osName = System.getProperty("os.name", "").lowercase()
+    val osArch = System.getProperty("os.arch", "").lowercase()
+
+    return when {
+        osName.contains("mac") -> if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            "macos_arm64"
+        } else {
+            "macos_amd64"
+        }
+
+        osName.contains("win") -> "windows_amd64"
+        osName.contains("linux") -> if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            "linux_arm64_gnu_ssl3"
+        } else {
+            "linux_amd64_gnu_ssl3"
+        }
+
+        else -> error("Unsupported OS for tdlight natives: $osName ($osArch)")
+    }
+}
+
+plugins {
+    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
+}
+
+val distributionPackageName = "Souz AI"
+val distributionBundleId = "ru.souz"
+val distributionDockName = "Souz AI"
+val macSigningEnabled = providers.gradleProperty("mac.signing.enabled").orElse("false").map(String::toBoolean)
+val macSigningIdentity = providers.gradleProperty("mac.signing.identity").orNull?.trim().orEmpty().ifBlank { null }
+val macNotarizationEnabled = providers.gradleProperty("mac.notarization.enabled").orElse("false").map(String::toBoolean)
+val macNotarizationAppleId = providers.gradleProperty("mac.notarization.appleId")
+    .orElse(providers.environmentVariable("APPLE_ID"))
+    .orNull
+    ?.trim()
+    .orEmpty()
+    .ifBlank { null }
+val macNotarizationPassword = providers.gradleProperty("mac.notarization.password")
+    .orElse(providers.environmentVariable("APPLE_APP_SPECIFIC_PASSWORD"))
+    .orNull
+    ?.trim()
+    .orEmpty()
+    .ifBlank { null }
+val macNotarizationTeamId = providers.gradleProperty("mac.notarization.teamId").orElse("A6VYB9APPM")
+
+val sourceAppResourcesDir = layout.projectDirectory.dir("src/main/resources")
+val sourceNativeResourcesDir = rootProject.layout.projectDirectory.dir("native/src/main/resources")
+val preparedAppResourcesDir = layout.buildDirectory.dir("generated/souz-app-resources")
+
+val prepareMacAppResources by tasks.registering(Sync::class) {
+    group = "distribution"
+    description = "Prepare app resources and mirror macOS native binaries into common/darwin-* for packaging."
+
+    from(sourceAppResourcesDir)
+    into(preparedAppResourcesDir)
+
+    // Compose copies app resources from <root>/common + OS/target subfolders.
+    // Mirror native binaries into common so they are available in
+    // Contents/app/resources for macOS packaging and signing.
+    from(sourceAppResourcesDir.file("darwin-arm64/libtdjni.macos_arm64.dylib")) {
+        into("common/darwin-arm64")
+    }
+    from(sourceAppResourcesDir.file("darwin-x64/libtdjni.macos_amd64.dylib")) {
+        into("common/darwin-x64")
+    }
+    from(sourceAppResourcesDir.file("darwin-arm64/libJNativeHook.dylib")) {
+        into("common/darwin-arm64")
+    }
+    from(sourceAppResourcesDir.file("darwin-x64/libJNativeHook.dylib")) {
+        into("common/darwin-x64")
+    }
+    from(sourceAppResourcesDir.file("darwin-arm64/libsouz_macos_speech_bridge.dylib")) {
+        into("common/darwin-arm64")
+    }
+    from(sourceAppResourcesDir.file("darwin-x64/libsouz_macos_speech_bridge.dylib")) {
+        into("common/darwin-x64")
+    }
+    from(sourceNativeResourcesDir.file("darwin-arm64/libsouz_llama_bridge.dylib")) {
+        into("common/darwin-arm64")
+    }
+    from(sourceNativeResourcesDir.file("darwin-x64/libsouz_llama_bridge.dylib")) {
+        into("common/darwin-x64")
+    }
+}
+
+dependencies {
+    implementation(projects.sharedLogic)
+    implementation(projects.sharedUI)
+    implementation(projects.agent)
+    implementation(projects.llms)
+    implementation(projects.native)
+
+    implementation(compose.runtime)
+    implementation(compose.ui)
+    implementation(compose.components.resources)
+    implementation(compose.desktop.currentOs)
+    implementation(libs.kodein.di.framework.compose)
+    implementation(libs.kotlinx.coroutines)
+    implementation(libs.kotlinx.coroutinesSwing)
+    implementation(libs.sqlite.jdbc)
+
+    implementation(kotlin("reflect"))
+
+    implementation(libs.jackson)
+    implementation(libs.logback)
+    implementation(libs.slfj)
+    implementation(libs.log4j.to.slf4j)
+
+    implementation(libs.bundles.ktorClient)
+    implementation(libs.ktor.serializationJackson)
+
+    implementation(libs.jnativehook)
+    implementation(libs.jna)
+    implementation(libs.jna.platform)
+
+    implementation(libs.lucene.core)
+    implementation(libs.tika.core)
+    implementation(libs.tika.parsersStandardPackage)
+    implementation(libs.icu4j)
+    implementation(libs.commons.csv)
+    implementation(libs.bundles.letsPlot)
+    implementation(libs.markdown)
+    implementation(libs.jsoup)
+    implementation(libs.java.diffUtils)
+
+    implementation(libs.poi)
+    implementation(libs.poi.ooxml)
+
+    implementation(libs.tdlight.java)
+    runtimeOnly("it.tdlight:tdlight-natives:${libs.versions.tdlight.natives.get()}:${tdlightNativeClassifier()}")
+
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlin.testJunit5)
+    testImplementation(libs.junit.jupiterParams)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutinesTest)
+}
+
+tasks.test {
+    useJUnitPlatform()
+    systemProperty("junit.jupiter.execution.timeout.default", "5 m")
+    systemProperty("junit.jupiter.execution.timeout.mode", "enabled")
+}
+
+val isAppStoreRelease: Boolean = (project.findProperty("macOsAppStoreRelease") as String?)?.toBoolean() ?: false
+val macBuildNumber: String = (project.findProperty("buildNumber") as String?) ?: "1"
+val includeAllMacNativeResources: Boolean =
+    (project.findProperty("mac.includeAllNativeResources") as String?)?.toBoolean() ?: false
+
+compose.desktop {
+    application {
+        mainClass = "ru.souz.MainKt"
+
+        val isArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
+        val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
+        val nativeLibraryPath = if (includeAllMacNativeResources) {
+            "\$APPDIR/resources/darwin-arm64:\$APPDIR/resources/darwin-x64"
+        } else {
+            "\$APPDIR/resources/$nativeResourceDir"
+        }
+        val sqliteLibraryPath = "\$APPDIR/resources"
+        val sqliteLibraryName = "libsqlitejdbc.dylib"
+
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+            configurationFiles.from(project.file("proguard-rules.pro"))
+        }
+
+        nativeDistributions {
+            targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
+            packageName = distributionPackageName
+            packageVersion = "1.0.6"
+            // Compose copies app resources from <root>/common + OS/target subfolders.
+            appResourcesRootDir.set(preparedAppResourcesDir)
+
+            // Include Tika dependencies plus management modules used by local-model host detection.
+            modules("java.management", "java.naming", "java.net.http", "java.sql", "jdk.management")
+
+            macOS {
+                bundleID = distributionBundleId
+                appCategory = "public.app-category.productivity"
+                minimumSystemVersion = "12.0"
+                appStore = isAppStoreRelease
+
+                iconFile.set(File("src/main/resources/icon-light.icns"))
+
+                signing {
+                    sign.set(macSigningEnabled)
+                    macSigningIdentity?.let { identity.set(it) } ?: identity.set("Souz AI")
+                }
+
+                notarization {
+                    if (macNotarizationEnabled.get()) {
+                        val appleId = requireNotNull(macNotarizationAppleId) {
+                            "mac.notarization.appleId (or APPLE_ID env) is required when mac.notarization.enabled=true."
+                        }
+                        val appSpecificPassword = requireNotNull(macNotarizationPassword) {
+                            "mac.notarization.password (or APPLE_APP_SPECIFIC_PASSWORD env) is required when mac.notarization.enabled=true."
+                        }
+                        appleID.set(appleId)
+                        password.set(appSpecificPassword)
+                        teamID.set(macNotarizationTeamId.get())
+                    }
+                }
+
+                infoPlist {
+                    packageBuildVersion = macBuildNumber
+                    extraKeysRawXml = """
+                        <key>ITSAppUsesNonExemptEncryption</key><false/>
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>Needed for voice capture.</string>
+                        <key>NSSpeechRecognitionUsageDescription</key>
+                        <string>Needed for local speech transcription.</string>
+                        <key>NSSystemAdministrationUsageDescription</key>
+                        <string>Needed to observe input for shortcuts.</string>
+                        <key>NSCalendarsUsageDescription</key>
+                        <string>Needed to read and manage calendar events.</string>
+                        <key>NSCalendarsFullAccessUsageDescription</key>
+                        <string>Needed to read and manage calendar events.</string>
+                        <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+                        <string>Needed to create calendar events requested by the user.</string>
+                        <key>NSAppleEventsUsageDescription</key>
+                        <string>Needed to automate Calendar and browser actions requested by the user.</string>
+                    """.trimIndent()
+                }
+
+                if (isAppStoreRelease) {
+                    entitlementsFile.set(project.file("src/main/resources/entitlements.plist"))
+                    runtimeEntitlementsFile.set(project.file("src/main/resources/runtime-entitlements.plist"))
+                    provisioningProfile.set(project.file("src/main/resources/embedded.provisionprofile"))
+                    runtimeProvisioningProfile.set(project.file("src/main/resources/runtime.provisionprofile"))
+                } else {
+                    entitlementsFile.set(project.file("src/main/resources/entitlements-dev.plist"))
+                    runtimeEntitlementsFile.set(project.file("src/main/resources/runtime-entitlements-dev.plist"))
+                }
+            }
+
+            // macOS dark mode support, works only on the release build, not in debug
+            // Include both architectures so universal bundles are not pinned to build-host arch.
+            jvmArgs("-Djava.library.path=$nativeLibraryPath")
+            // Force JNA to load the bundled dispatcher and never unpack jna*.tmp at runtime.
+            jvmArgs("-Djna.boot.library.path=$nativeLibraryPath")
+            jvmArgs("-Djna.nosys=true")
+            // Force sqlite-jdbc to use bundled native binary and avoid sqlite-*.tmp extraction.
+            jvmArgs("-Dorg.sqlite.lib.path=$sqliteLibraryPath")
+            jvmArgs("-Dorg.sqlite.lib.name=$sqliteLibraryName")
+            // Safety net: never let JNativeHook extract into Contents/app (which breaks code signature).
+            jvmArgs("-Djnativehook.lib.path=/tmp")
+            jvmArgs("-Dapple.awt.application.appearance=system")
+            // Needed for reflective access to AWT peers to attach NSVisualEffectView on macOS.
+            jvmArgs("--add-opens=java.desktop/java.awt=ALL-UNNAMED")
+            jvmArgs("--add-opens=java.desktop/sun.lwawt=ALL-UNNAMED")
+            jvmArgs("--add-opens=java.desktop/sun.lwawt.macosx=ALL-UNNAMED")
+            jvmArgs("-Xdock:icon=src/main/resources/icon-light.icns")
+            jvmArgs("-Xdock:name=$distributionDockName")
+        }
+    }
+}
+
+val releaseAppBundleDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$distributionPackageName.app")
+
+val resignReleaseAppForNotarization by tasks.registering {
+    group = "distribution"
+    description = "Re-sign bundled native libraries in the release app before DMG packaging/notarization."
+    dependsOn("createReleaseDistributable")
+
+    onlyIf {
+        macSigningEnabled.get() &&
+            macSigningIdentity != null &&
+            System.getProperty("os.name", "").lowercase().contains("mac")
+    }
+
+    doLast {
+        val identity = requireNotNull(macSigningIdentity) {
+            "mac.signing.identity is required when mac.signing.enabled=true."
+        }
+
+        val appBundle = releaseAppBundleDir.get().asFile
+        check(appBundle.exists()) { "Release app bundle not found: $appBundle" }
+
+        val appEntitlementsFile = if (isAppStoreRelease) {
+            project.file("src/main/resources/entitlements.plist")
+        } else {
+            project.file("src/main/resources/entitlements-dev.plist")
+        }
+        val runtimeEntitlementsFile = if (isAppStoreRelease) {
+            project.file("src/main/resources/runtime-entitlements.plist")
+        } else {
+            project.file("src/main/resources/runtime-entitlements-dev.plist")
+        }
+
+        fun runCodesign(vararg args: String) {
+            exec {
+                commandLine("codesign", *args)
+            }
+        }
+
+        val nativeResourceDir = appBundle.resolve("Contents/app/resources")
+        check(nativeResourceDir.exists()) { "Native resource directory not found: $nativeResourceDir" }
+
+        val nativeResourceLibs = fileTree(nativeResourceDir) {
+            include("**/*.dylib", "**/*.jnilib")
+        }.files.sortedBy { it.absolutePath }
+        check(nativeResourceLibs.isNotEmpty()) {
+            "No native resource libraries were found under $nativeResourceDir."
+        }
+
+        logger.lifecycle("Re-signing ${nativeResourceLibs.size} native resource libraries in ${nativeResourceDir.absolutePath}")
+        nativeResourceLibs.forEach { nativeLib ->
+            runCodesign(
+                "--force",
+                "--timestamp",
+                "--options",
+                "runtime",
+                "--sign",
+                identity,
+                nativeLib.absolutePath
+            )
+        }
+
+        val runtimeBundle = appBundle.resolve("Contents/runtime")
+        if (runtimeBundle.exists()) {
+            runCodesign(
+                "--force",
+                "--timestamp",
+                "--options",
+                "runtime",
+                "--entitlements",
+                runtimeEntitlementsFile.absolutePath,
+                "--sign",
+                identity,
+                runtimeBundle.absolutePath
+            )
+        }
+
+        val launcherBinary = appBundle.resolve("Contents/MacOS/${appBundle.nameWithoutExtension}")
+        if (launcherBinary.exists()) {
+            runCodesign(
+                "--force",
+                "--timestamp",
+                "--options",
+                "runtime",
+                "--entitlements",
+                appEntitlementsFile.absolutePath,
+                "--sign",
+                identity,
+                launcherBinary.absolutePath
+            )
+        }
+
+            runCodesign(
+                "--force",
+                "--timestamp",
+                "--options",
+                "runtime",
+                "--entitlements",
+                appEntitlementsFile.absolutePath,
+                "--sign",
+                identity,
+                appBundle.absolutePath
+            )
+
+        exec {
+            commandLine("codesign", "--verify", "--deep", "--strict", appBundle.absolutePath)
+        }
+    }
+}
+
+tasks.matching { it.name == "packageReleaseDmg" || it.name == "notarizeReleaseDmg" }.configureEach {
+    dependsOn(resignReleaseAppForNotarization)
+}
+
+tasks.matching { it.name == "prepareAppResources" || it.name == "createReleaseDistributable" || it.name == "notarizeReleaseDmg" }.configureEach {
+    dependsOn(prepareMacAppResources)
+}
+
+// Keep dev runs stable: run from the packaged jar instead of mutable classes directories.
+tasks.withType<JavaExec>().configureEach {
+    if (name != "run") return@configureEach
+
+    val jarTask = tasks.named<Jar>("jar")
+    val runtimeClasspath = configurations.named("runtimeClasspath")
+    val buildClassesDir = layout.buildDirectory.dir("classes").get().asFile.absolutePath
+    val buildResourcesDir = layout.buildDirectory.dir("resources").get().asFile.absolutePath
+
+    dependsOn(jarTask)
+    mainClass.set(providers.systemProperty("mainClass").orElse("ru.souz.MainKt"))
+    standardInput = System.`in`
+
+    doFirst {
+        val stableRuntimeClasspath = runtimeClasspath.get().filterNot { file ->
+            val path = file.absolutePath
+            path.startsWith(buildClassesDir) || path.startsWith(buildResourcesDir)
+        }
+        classpath = files(jarTask.flatMap { it.archiveFile }) + files(stableRuntimeClasspath)
+    }
+}

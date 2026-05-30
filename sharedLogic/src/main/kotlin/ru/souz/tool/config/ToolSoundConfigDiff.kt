@@ -1,0 +1,45 @@
+package ru.souz.tool.config
+
+import ru.souz.db.ConfigStore
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.tool.*
+
+class ToolSoundConfigDiff(private val config: ConfigStore) : ToolSetup<ToolSoundConfigDiff.Input> {
+    data class Input(
+        @InputParamDescription("Speed diff to apply to the current speed")
+        val diff: Int,
+    )
+
+    override val name: String = "SoundConfigDiff"
+    override val description: String = "Updates sound speed by applying diff to current speed"
+
+    override val fewShotExamples = listOf(
+        FewShotExample(
+            request = "Сделай скорость речи медленнее",
+            params = mapOf("diff" to -40)
+        ),
+        FewShotExample(
+            request = "Сделай скорость речи намного быстрее",
+            params = mapOf("diff" to 80)
+        ),
+        FewShotExample(
+            request = "Можешь совсем немногожко замедлить речь",
+            params = mapOf("diff" to -20)
+        ),
+    )
+
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "Confirmation message or error")
+        )
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val currentSpeed = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
+        val newSpeed = currentSpeed + input.diff
+        config.put(ToolSoundConfig.SPEED_KEY, newSpeed)
+        return "Sound speed updated to $newSpeed"
+    }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+}

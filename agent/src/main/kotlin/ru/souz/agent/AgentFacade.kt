@@ -9,45 +9,39 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import org.slf4j.LoggerFactory
-import ru.souz.GraphBasedAgent
-import ru.souz.LuaGraphBasedAgent
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.LLMModel
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentFacade internal constructor(
     private val settingsProvider: AgentSettingsProvider,
-    private val systemPromptResolver: SystemPromptResolver,
+    private val contextFactory: AgentContextFactory,
+    private val executor: AgentExecutor,
     private val sessionService: GraphSessionService,
-    private val toolCatalog: AgentToolCatalog,
     private val agentToolExecutor: AgentToolExecutor,
-    private val graphBasedAgent: GraphBasedAgent,
-    private val luaGraphBasedAgent: LuaGraphBasedAgent,
 ) {
     private val l = LoggerFactory.getLogger(AgentFacade::class.java)
 
-    val availableAgents: List<AgentId> = listOf(AgentId.LUA_GRAPH, AgentId.GRAPH)
+    val availableAgents: List<AgentId> = executor.availableAgents
 
-    private val _activeAgentId = MutableStateFlow(normalizedActiveAgent(settingsProvider.activeAgentId))
+    private val _activeAgentId = MutableStateFlow(contextFactory.normalizeAgentId(settingsProvider.activeAgentId))
     val activeAgentId: StateFlow<AgentId> = _activeAgentId.asStateFlow()
 
-    private val _currentContext = MutableStateFlow(createInitialContext(_activeAgentId.value))
+    private val _currentContext = MutableStateFlow(contextFactory.create(_activeAgentId.value))
     val currentContext: StateFlow<AgentContext<String>> = _currentContext.asStateFlow()
 
     val sideEffects: Flow<AgentSideEffect> = _activeAgentId.flatMapLatest { id ->
         merge(
-            agentById(id).sideEffects.map { AgentSideEffect.Text(it) },
+            executor.sideEffects(id).map { AgentSideEffect.Text(it) },
             agentToolExecutor.toolInvocations.map { AgentSideEffect.Fn(it) },
         )
     }
 
     fun setActiveAgent(agentId: AgentId) {
-        val normalized = normalizedActiveAgent(agentId)
+        val normalized = contextFactory.normalizeAgentId(agentId)
         if (normalized == _activeAgentId.value) return
 
         cancelActiveJob()
@@ -65,13 +59,13 @@ class AgentFacade internal constructor(
     fun resetSystemPrompt() {
         val model = settingsProvider.gigaModel
         settingsProvider.setSystemPromptForAgentModel(_activeAgentId.value, model, null)
-        val prompt = defaultPromptFor(_activeAgentId.value, model)
+        val prompt = contextFactory.systemPromptFor(_activeAgentId.value, model)
         _currentContext.tryEmit(_currentContext.value.copy(systemPrompt = prompt))
     }
 
     fun clearContext(): Boolean {
         cancelActiveJob()
-        return _currentContext.tryEmit(createInitialContext(_activeAgentId.value))
+        return _currentContext.tryEmit(contextFactory.create(_activeAgentId.value))
     }
 
     fun setContext(ctx: AgentContext<String>): Boolean {
@@ -81,8 +75,7 @@ class AgentFacade internal constructor(
 
     fun setModel(model: LLMModel): String {
         settingsProvider.gigaModel = model
-        val prompt = settingsProvider.getSystemPromptForAgentModel(_activeAgentId.value, model)
-            ?: defaultPromptFor(_activeAgentId.value, model)
+        val prompt = contextFactory.systemPromptFor(_activeAgentId.value, model)
         val newSettings = _currentContext.value.settings.copy(model = model.alias)
         _currentContext.tryEmit(
             _currentContext.value.copy(settings = newSettings, systemPrompt = prompt)
@@ -103,18 +96,19 @@ class AgentFacade internal constructor(
     }
 
     fun cancelActiveJob() {
-        agentById(_activeAgentId.value).cancelActiveJob()
+        executor.cancelActiveJob(_activeAgentId.value)
     }
 
     suspend fun execute(input: String): String {
         cancelActiveJob()
-        val seed = _currentContext.value.copy(input = input)
-        val agent = agentById(_activeAgentId.value)
-
         sessionService.startTask(input)
         return try {
-            val result = agent.executeWithTrace(seed) { step, node, from, to ->
-                    sessionService.onStep(step, node, from, to)
+            val result = executor.executeWithTrace(
+                agentId = _activeAgentId.value,
+                context = _currentContext.value,
+                input = input,
+            ) { step, node, from, to ->
+                sessionService.onStep(step, node, from, to)
             }
             _currentContext.emit(result.context)
             result.output
@@ -122,41 +116,5 @@ class AgentFacade internal constructor(
             runCatching { sessionService.finishTask() }
                 .onFailure { e -> l.warn("sessionService fail", e) }
         }
-    }
-
-    private fun createInitialContext(agentId: AgentId): AgentContext<String> {
-        val model = settingsProvider.gigaModel
-        val settings = AgentSettings(
-            model = model.alias,
-            temperature = settingsProvider.temperature,
-            toolsByCategory = toolCatalog.toolsByCategory,
-            contextSize = settingsProvider.contextSize,
-        )
-        val prompt = settingsProvider.getSystemPromptForAgentModel(agentId, model)
-            ?: defaultPromptFor(agentId, model)
-        val allFunctions = settings.tools.byName.values.map { it.fn }
-
-        return AgentContext(
-            input = "",
-            settings = settings,
-            history = emptyList(),
-            activeTools = allFunctions,
-            systemPrompt = prompt,
-        )
-    }
-
-    private fun defaultPromptFor(agentId: AgentId, model: LLMModel): String =
-        systemPromptResolver.defaultPrompt(
-            agentId = agentId,
-            model = model,
-            regionProfile = settingsProvider.regionProfile,
-        )
-
-    private fun normalizedActiveAgent(agentId: AgentId): AgentId =
-        if (agentId in availableAgents) agentId else AgentId.default
-
-    private fun agentById(agentId: AgentId): TraceableAgent = when (agentId) {
-        AgentId.GRAPH -> graphBasedAgent
-        AgentId.LUA_GRAPH -> luaGraphBasedAgent
     }
 }

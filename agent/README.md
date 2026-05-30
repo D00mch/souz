@@ -1,18 +1,18 @@
 # Agent Module
 
-This package contains the standalone agent runtime extracted from `composeApp`.
+This package contains the standalone agent runtime extracted from the desktop app.
 
 ## Responsibilities
 
 - Own the graph-based agent runtime and execution flow.
-- Own agent-specific models, graph/session mechanics, Lua runtime support, and node orchestration.
+- Own agent-specific models, graph/session mechanics, and node orchestration.
 - Define the SPI boundary that the host application implements.
 
 ## Boundaries
 
 - `agent` depends on shared agent-facing contracts and DTOs moved into the `:agent` module.
-- `agent` does not depend on Compose UI, application DI wiring, or concrete host services from `composeApp`.
-- Host integrations such as settings, telemetry, MCP discovery, localization, and desktop context are accessed through `spi/`.
+- `agent` does not depend on Compose UI, application DI wiring, or concrete host services from `:sharedUI`/`:desktopApp`.
+- Host integrations such as settings, telemetry/observability, MCP discovery, localization, and desktop context are accessed through `spi/`.
 
 ## Host Contract
 
@@ -29,4 +29,4 @@ The host application is expected to provide implementations for:
 
 ## Structure
 
-See [INFO.md](/Users/dumch/work/souz/agent/src/main/kotlin/ru/souz/agent/INFO.md) for the package layout.
+See [AGENTS.md](/Users/dumch/work/souz/agent/src/main/kotlin/ru/souz/agent/AGENTS.md) for the package layout.

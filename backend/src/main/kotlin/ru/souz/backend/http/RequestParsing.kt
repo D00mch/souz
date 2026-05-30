@@ -1,0 +1,123 @@
+package ru.souz.backend.http
+
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.receive
+import java.time.DateTimeException
+import java.time.ZoneId
+import java.util.IllformedLocaleException
+import java.util.Locale
+import kotlinx.coroutines.CancellationException
+import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.llms.LLMModel
+
+internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
+    receiveOrRequestError(::invalidV1Request)
+
+internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrBadRequest(): T =
+    receiveOrRequestError(::badRequestV1)
+
+internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettingsOverrides =
+    UserSettingsOverrides(
+        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },
+        contextSize = contextSize?.takeIf { it > 0 }
+            ?: contextSize?.let { throw invalidV1Request("contextSize must be positive.") },
+        temperature = temperature?.takeIf { it.isFinite() }
+            ?: temperature?.let { throw invalidV1Request("temperature must be finite.") },
+        locale = locale?.let { parseLocale(it, fieldName = "locale") },
+        timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
+        systemPrompt = systemPrompt?.trim()?.takeIf { it.isNotEmpty() },
+        enabledTools = enabledTools?.map { toolName ->
+            toolName.trim().takeIf { it.isNotEmpty() }
+                ?: throw invalidV1Request("enabledTools must not contain blank values.")
+        }?.toCollection(linkedSetOf()),
+        showToolEvents = showToolEvents,
+        streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage?.let { parseInterfaceLanguage(it, fieldName = "interfaceLanguage") },
+        requestTimeoutMillis = requestTimeoutMillis?.let {
+            parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
+        },
+        useFewShotExamples = useFewShotExamples,
+    )
+
+internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserSettingsOverrides =
+    UserSettingsOverrides(
+        defaultModel = defaultModel?.let { parseModel(it, fieldName = "defaultModel") },
+        locale = locale?.let { parseLocale(it, fieldName = "locale") },
+        timeZone = timeZone?.let { parseTimeZone(it, fieldName = "timeZone") },
+        enabledTools = enabledTools?.map { toolName ->
+            toolName.trim().takeIf { it.isNotEmpty() }
+                ?: throw invalidV1Request("enabledTools must not contain blank values.")
+        }?.toCollection(linkedSetOf()),
+        showToolEvents = showToolEvents,
+        streamingMessages = streamingMessages,
+        interfaceLanguage = interfaceLanguage?.let { parseInterfaceLanguage(it, fieldName = "interfaceLanguage") },
+        requestTimeoutMillis = requestTimeoutMillis?.let {
+            parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
+        },
+        useFewShotExamples = useFewShotExamples,
+    )
+
+internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSettingsOverrides =
+    UserSettingsOverrides(
+        defaultModel = this?.model?.let { parseModel(it, fieldName = "options.model") },
+        contextSize = this?.contextSize?.takeIf { it > 0 }
+            ?: this?.contextSize?.let { throw invalidV1Request("options.contextSize must be positive.") },
+        temperature = this?.temperature?.takeIf { it.isFinite() }
+            ?: this?.temperature?.let { throw invalidV1Request("options.temperature must be finite.") },
+        locale = this?.locale?.let { parseLocale(it, fieldName = "options.locale") },
+        timeZone = this?.timeZone?.let { parseTimeZone(it, fieldName = "options.timeZone") },
+        systemPrompt = this?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() },
+    )
+
+internal fun parseModel(rawModel: String, fieldName: String): LLMModel =
+    LLMModel.entries.firstOrNull { model ->
+        model.alias.equals(rawModel.trim(), ignoreCase = true) || model.name.equals(rawModel.trim(), ignoreCase = true)
+    } ?: throw invalidV1Request("$fieldName must be a known model alias.")
+
+internal fun parseLocale(rawLocale: String, fieldName: String): Locale =
+    try {
+        Locale.Builder()
+            .setLanguageTag(rawLocale.trim())
+            .build()
+            .takeIf(Locale::isRecognizedLocaleTag)
+            ?: throw invalidV1Request("$fieldName must be a valid locale.")
+    } catch (_: IllformedLocaleException) {
+        throw invalidV1Request("$fieldName must be a valid locale.")
+    }
+
+private fun Locale.isRecognizedLocaleTag(): Boolean =
+    language.isNotBlank() &&
+        !language.equals(UNDEFINED_LANGUAGE, ignoreCase = true) &&
+        !getDisplayLanguage(Locale.ENGLISH).equals(language, ignoreCase = true)
+
+internal fun parseTimeZone(rawTimeZone: String, fieldName: String): ZoneId =
+    try {
+        ZoneId.of(rawTimeZone.trim())
+    } catch (_: DateTimeException) {
+        throw invalidV1Request("$fieldName must be a valid time zone.")
+    }
+
+internal fun parseInterfaceLanguage(rawInterfaceLanguage: String, fieldName: String): String =
+    when (rawInterfaceLanguage.trim().lowercase()) {
+        "en" -> "en"
+        "ru" -> "ru"
+        else -> throw invalidV1Request("$fieldName must be one of: en, ru.")
+    }
+
+internal fun parseRequestTimeoutMillis(rawRequestTimeoutMillis: Long, fieldName: String): Long =
+    rawRequestTimeoutMillis.takeIf { it >= MIN_REQUEST_TIMEOUT_MILLIS }
+        ?: throw invalidV1Request("$fieldName must be at least $MIN_REQUEST_TIMEOUT_MILLIS.")
+
+private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestError(
+    crossinline errorFactory: (String) -> RuntimeException,
+): T =
+    try {
+        receive<T>()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        throw errorFactory("Invalid payload: ${e.message ?: "request body cannot be parsed."}")
+    }
+
+private const val UNDEFINED_LANGUAGE = "und"
+private const val MIN_REQUEST_TIMEOUT_MILLIS = 1_000L

@@ -1,23 +1,24 @@
 package ru.souz.agent.spi
 
-import ru.souz.tool.ToolCategory
+fun interface AgentTelemetry {
+    fun recordToolExecution(event: AgentToolExecutionEvent)
 
-/**
- * Records tool execution telemetry for the host application.
- *
- * The agent runtime reports structured events through this interface instead of
- * depending on a concrete telemetry service.
- */
-interface AgentTelemetry {
-    /**
-     * Records one tool execution attempt together with timing and outcome.
-     */
-    fun recordToolExecution(
-        functionName: String,
-        functionArguments: Map<String, Any>,
-        toolCategory: ToolCategory?,
-        durationMs: Long,
-        success: Boolean,
-        errorMessage: String?,
-    )
+    companion object {
+        val NONE = AgentTelemetry { }
+    }
 }
+
+data class AgentToolExecutionEvent(
+    val appSessionId: String? = null,
+    val conversationId: String? = null,
+    val requestId: String? = null,
+    val requestSource: String? = null,
+    val model: String? = null,
+    val provider: String? = null,
+    val functionName: String,
+    val toolCategory: String? = null,
+    val argumentKeys: List<String>,
+    val durationMs: Long,
+    val success: Boolean,
+    val errorType: String? = null,
+)

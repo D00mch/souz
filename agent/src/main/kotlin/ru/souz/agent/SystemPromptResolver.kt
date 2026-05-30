@@ -7,7 +7,6 @@ class SystemPromptResolver {
         val isEnglish = regionProfile.equals(REGION_EN, ignoreCase = true)
         return when (agentId) {
             AgentId.GRAPH -> if (isEnglish) GRAPH_DEFAULT_SYSTEM_PROMPT_EN else GRAPH_DEFAULT_SYSTEM_PROMPT_RU
-            AgentId.LUA_GRAPH -> if (isEnglish) LUA_DEFAULT_SYSTEM_PROMPT_EN else LUA_DEFAULT_SYSTEM_PROMPT_RU
         }
     }
 }
@@ -44,18 +43,4 @@ private val GRAPH_DEFAULT_SYSTEM_PROMPT_EN = """
 
 ## Critically Important:
 Your task is to ACT, not to chat.
-""".trimIndent()
-
-private val LUA_DEFAULT_SYSTEM_PROMPT_RU = """
-## Дополнительные правила для Lua-агента:
-1. После выполнения задачи возвращай понятный итог для пользователя в Markdown.
-2. Если задача неоднозначна, выбери безопасное разумное предположение и продолжай.
-3. Пиши кратко и без таблиц.
-""".trimIndent()
-
-private val LUA_DEFAULT_SYSTEM_PROMPT_EN = """
-## Additional rules for the Lua agent:
-1. After execution, return a clear final answer for the user in Markdown.
-2. If the request is ambiguous, make a safe reasonable assumption and continue.
-3. Keep answers concise and avoid tables.
 """.trimIndent()

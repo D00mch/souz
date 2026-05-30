@@ -1,0 +1,76 @@
+package ru.souz.tool.files
+
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.restJsonMapper
+import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.tool.BadInputException
+import ru.souz.tool.FewShotExample
+import ru.souz.tool.InputParamDescription
+import ru.souz.tool.ReturnParameters
+import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolSetup
+
+class ToolFindFilesByName(private val filesToolUtil: FilesToolUtil) : ToolSetup<ToolFindFilesByName.Input> {
+    data class Input(
+        @InputParamDescription("Relative or absolute path to limit the search. Defaults to user HOME.")
+        val path: String = "~",
+        @InputParamDescription("The name or partial name of the file we are searching for.")
+        val fileName: String,
+    )
+
+    override val name: String = "FindFilesByName"
+    override val description: String = """
+        [PRIMARY TOOL for Finding Files]
+        Search for the PATH of a file by its name (or partial name).
+        Use this when the user asks "Find file X" or "Where is file Y".
+
+        Mechanism: recursive filesystem traversal inside the allowed home subtree.
+    """.trimIndent()
+
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Find where the 'budget_2024.xlsx' is located",
+            params = mapOf(
+                "path" to "~",
+                "fileName" to "budget_2024"
+            )
+        )
+    )
+
+    override val returnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty(
+                "string", """JSON array of file paths. Example:
+```json
+[
+    "/Users/m1/Documents/Work/budget_2024.xlsx",
+    "/Users/m1/Downloads/budget_2024_v2.xlsx"
+]
+```""".trimMargin()
+            )
+        )
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val base = filesToolUtil.resolveSafeExistingDirectory(input.path, meta)
+        val needle = input.fileName.trim().lowercase()
+        if (needle.isBlank()) {
+            throw BadInputException("fileName must not be empty")
+        }
+
+        val result = filesToolUtil.listDescendants(base, includeHidden = false, meta = meta)
+            .asSequence()
+            .filter { it.isRegularFile && it.name.lowercase().contains(needle) }
+            .map { it.path }
+            .take(MAX_RESULTS)
+            .toList()
+
+        return restJsonMapper.writeValueAsString(result)
+    }
+
+    private companion object {
+        const val MAX_RESULTS = 200
+    }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+}

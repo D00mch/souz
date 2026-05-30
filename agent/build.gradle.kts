@@ -9,7 +9,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines)
     implementation(libs.jackson)
     implementation(libs.logback)
-    implementation(libs.luaj.jse)
     implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
 
     testImplementation(libs.kotlin.test)
@@ -17,6 +16,13 @@ dependencies {
     testImplementation(libs.junit.jupiterParams)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutinesTest)
+    testImplementation(projects.sharedLogic)
+}
+
+sourceSets {
+    test {
+        resources.srcDir(project(":sharedLogic").layout.projectDirectory.dir("docker"))
+    }
 }
 
 tasks.test {

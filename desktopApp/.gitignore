@@ -1,0 +1,6 @@
+src/main/resources/darwin-arm64/libtdjni.macos_arm64.dylib
+src/main/resources/darwin-arm64/libJNativeHook.dylib
+src/main/resources/darwin-x64/libtdjni.macos_amd64.dylib
+src/main/resources/darwin-x64/libJNativeHook.dylib
+src/main/resources/runtime.provisionprofile
+src/main/resources/embedded.provisionprofile

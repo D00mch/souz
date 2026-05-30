@@ -2,6 +2,7 @@ package ru.souz.agent.session
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.graph.StepInfo
+import ru.souz.agent.nodes.CLASSIFY_NODE_NAME
 import ru.souz.agent.state.AgentContext
 import ru.souz.graph.Node
 import java.util.Collections
@@ -17,7 +18,6 @@ internal class GraphSessionService(
     private val repository: GraphSessionRepository, private val logObjectMapper: ObjectMapper
 ) {
     companion object {
-        const val NODE_NAME_CLASSIFY = "classify"
         private const val DATA_KEY_SELECTED_CATEGORIES = "selectedCategories"
         private const val DATA_KEY_INPUT = "input"
         private const val DATA_KEY_ACTIVE_TOOLS = "activeTools"
@@ -59,7 +59,7 @@ internal class GraphSessionService(
                 DATA_KEY_OUT to contextDebugData(to),
             )
 
-            if (node.name.lowercase().contains(NODE_NAME_CLASSIFY)) {
+            if (node.name.lowercase().contains(CLASSIFY_NODE_NAME)) {
                 val toToolNames = to.activeToolNames().toSet()
                 val selectedCategories = to.settings.tools.byCategory
                     .filter { (_, tools) -> tools.keys.any { it in toToolNames } }

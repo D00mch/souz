@@ -27,6 +27,10 @@ if(NOT EXISTS "${LLAMA_CPP_SOURCE_DIR}/CMakeLists.txt")
 endif()
 
 add_subdirectory("${LLAMA_CPP_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/llama.cpp")
+if(NOT DEFINED LLAMA_INSTALL_VERSION)
+    set(LLAMA_INSTALL_VERSION "0.0.0")
+endif()
+add_subdirectory("${LLAMA_CPP_SOURCE_DIR}/tools/mtmd" "${CMAKE_CURRENT_BINARY_DIR}/mtmd")
 
 add_library(souz_llama_bridge SHARED
     include/souz_llama_bridge.h
@@ -38,10 +42,11 @@ target_include_directories(souz_llama_bridge
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${LLAMA_CPP_SOURCE_DIR}/include
         ${LLAMA_CPP_SOURCE_DIR}/ggml/include
+        ${LLAMA_CPP_SOURCE_DIR}/tools/mtmd
         ${LLAMA_CPP_SOURCE_DIR}/vendor
 )
 
-target_link_libraries(souz_llama_bridge PRIVATE llama)
+target_link_libraries(souz_llama_bridge PRIVATE llama mtmd)
 
 set_target_properties(souz_llama_bridge PROPERTIES
     OUTPUT_NAME "souz_llama_bridge"
