@@ -34,7 +34,7 @@ If you are not sure about something, left a note for other developers to review.
 - **Rich desktop host layer** in `:desktopApp`, wired through `:sharedUI` host ports: browser, calendar, mail, notes, desktop automation, TDLight Telegram, app launch, text/clipboard actions, audio, permissions, native keys, and desktop indexing.
 - **Two-mode internet search**: quick-answer web lookup for simple factual questions and multi-step research mode with LLM-built strategy, broader source coverage, cited long-form synthesis, and automatic `.md` export for oversized reports.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
-- **Ambient speech foundation** with live-backend-only local microphone transcription, an ephemeral transcript buffer, and desktop PCM frame streaming for future proactive features.
+- **Ambient agent foundation** with live-backend-only local microphone transcription, an ephemeral transcript buffer, semantic speech blocks, and local-only structured block analysis for future proactive features.
 
 ## Project Structure
 
@@ -45,6 +45,7 @@ If you are not sure about something, left a note for other developers to review.
 ├── graph-engine/                           # Shared graph DSL/runtime module
 ├── llms/                                   # Shared LLM contracts/helpers module
 ├── native/                                 # Shared local-model runtime/native bridge module
+├── ambientAgent/                           # Ambient speech semantic-block and local analysis core module
 ├── sharedLogic/                            # Shared JVM runtime, sandbox/skills, provider clients, and backend-safe tools
 │   ├── Dockerfile                          # Shared local/test Docker runtime sandbox image
 │   ├── docker/                             # Docker entrypoint and bundled development skill fixtures

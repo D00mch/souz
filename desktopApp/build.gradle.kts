@@ -92,6 +92,7 @@ val prepareMacAppResources by tasks.registering(Sync::class) {
 }
 
 dependencies {
+    implementation(projects.ambientAgent)
     implementation(projects.sharedLogic)
     implementation(projects.sharedUI)
     implementation(projects.agent)

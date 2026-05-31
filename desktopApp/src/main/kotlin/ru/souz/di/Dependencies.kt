@@ -9,6 +9,21 @@ import kotlinx.coroutines.SupervisorJob
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.ambient.AgentToolAmbientCapabilityProvider
+import ru.souz.ambient.AmbientAnalysisPipeline
+import ru.souz.ambient.AmbientAnalysisService
+import ru.souz.ambient.AmbientBlockAnalyzer
+import ru.souz.ambient.AmbientCapabilityProvider
+import ru.souz.ambient.AmbientLocalLlm
+import ru.souz.ambient.AmbientSemanticBlockService
+import ru.souz.ambient.CompositeAmbientCapabilityProvider
+import ru.souz.ambient.DefaultAmbientAnalysisService
+import ru.souz.ambient.DefaultAmbientAnalysisPipeline
+import ru.souz.ambient.DefaultAmbientSemanticBlockService
+import ru.souz.ambient.EmptyAmbientSkillCapabilityProvider
+import ru.souz.ambient.LocalChatAmbientLocalLlm
+import ru.souz.ambient.LocalLlmAmbientBlockAnalyzer
+import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.paths.SouzPaths
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.spi.AgentDesktopInfoRepository
@@ -31,6 +46,9 @@ import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.local.LocalChatAPI
 import ru.souz.service.keys.Keys
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
@@ -279,6 +297,50 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         DefaultAmbientTranscriptionService(
             liveSpeechProvider = instance(),
             audioSource = instance(),
+            scope = instance(),
+        )
+    }
+    bindSingleton { SemanticBlockBuilder() }
+    bindSingleton<AmbientSemanticBlockService> {
+        DefaultAmbientSemanticBlockService(
+            transcriptEvents = instance<AmbientTranscriptionService>().transcriptEvents,
+            builder = instance(),
+            scope = instance(),
+        )
+    }
+    bindSingleton<AmbientCapabilityProvider> {
+        CompositeAmbientCapabilityProvider(
+            listOf(
+                AgentToolAmbientCapabilityProvider(
+                    toolCatalog = instance(),
+                    toolsFilter = instance(),
+                ),
+                EmptyAmbientSkillCapabilityProvider,
+            )
+        )
+    }
+    bindSingleton<AmbientLocalLlm> {
+        val buildProfile = instance<LlmBuildProfile>()
+        LocalChatAmbientLocalLlm(instance<LocalChatAPI>()) {
+            when {
+                buildProfile.isModelAvailable(LLMModel.LocalGemma4_E4B_It) -> LLMModel.LocalGemma4_E4B_It
+                else -> buildProfile.defaultModelForProvider(LlmProvider.LOCAL)
+                    ?: LLMModel.LocalGemma4_E4B_It
+            }
+        }
+    }
+    bindSingleton<AmbientBlockAnalyzer> { LocalLlmAmbientBlockAnalyzer(instance()) }
+    bindSingleton<AmbientAnalysisService> {
+        DefaultAmbientAnalysisService(
+            analyzer = instance(),
+            capabilityProvider = instance(),
+            scope = instance(),
+        )
+    }
+    bindSingleton<AmbientAnalysisPipeline> {
+        DefaultAmbientAnalysisPipeline(
+            blockService = instance(),
+            analysisService = instance(),
             scope = instance(),
         )
     }
