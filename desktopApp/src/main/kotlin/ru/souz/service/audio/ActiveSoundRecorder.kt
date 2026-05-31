@@ -5,6 +5,8 @@ import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -29,6 +31,9 @@ class ActiveSoundRecorderImpl(
     private val lineBufferBytes: Int = 16384,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : ActiveSoundRecorder {
+    override val sampleRateHz: Int = sampleRate.toInt()
+    override val channels: Int = channels
+    override val bitsPerSample: Int = sampleSizeBits
 
     private val prepared = AtomicBoolean(false)
 
@@ -63,11 +68,25 @@ class ActiveSoundRecorderImpl(
         val ch = Channel<ByteArray>(capacity = 3072)
 
         channelLock.withLock {
-            activeChannelRef.getAndSet(ch)?.close()
+            if (activeChannelRef.get() != null) {
+                throw IllegalStateException("Microphone capture is already active")
+            }
+            activeChannelRef.set(ch)
         }
-        localLine.flush()
-        localLine.start()
-        startCaptureLoopIfNeeded(localLine)
+
+        try {
+            localLine.flush()
+            localLine.start()
+            startCaptureLoopIfNeeded(localLine)
+        } catch (error: Throwable) {
+            channelLock.withLock {
+                if (activeChannelRef.get() == ch) {
+                    activeChannelRef.set(null)
+                }
+            }
+            ch.close()
+            throw error
+        }
     }
 
     private fun startCaptureLoopIfNeeded(localLine: TargetDataLine) {
@@ -110,6 +129,14 @@ class ActiveSoundRecorderImpl(
         return out
     }
 
+    override fun frames(): Flow<ByteArray> = flow {
+        val ch = channelLock.withLock { activeChannelRef.get() }
+            ?: throw IllegalStateException("Microphone capture is not active")
+        for (frame in ch) {
+            emit(frame)
+        }
+    }
+
     /** Optional: call when app exits to release the mic. */
     suspend fun close() {
         activeChannelRef.getAndSet(null)?.close()
@@ -124,6 +151,9 @@ class ActiveSoundRecorderImpl(
 }
 
 interface ActiveSoundRecorder {
+    val sampleRateHz: Int
+    val channels: Int
+    val bitsPerSample: Int
 
     /**
      * Open the microphone line and create internal capture resources.
@@ -136,6 +166,9 @@ interface ActiveSoundRecorder {
 
     /** Stop capturing and return the recorded audio. */
     suspend fun stopRecording(): ByteArray
+
+    /** Stream raw PCM frames while recording is active. */
+    fun frames(): Flow<ByteArray>
 }
 
 private fun rawToWav(

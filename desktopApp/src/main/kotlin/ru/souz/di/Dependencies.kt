@@ -19,6 +19,8 @@ import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.service.audio.ActiveSoundRecorderImpl
+import ru.souz.service.audio.ActiveRecorderPcmAudioFrameSource
+import ru.souz.service.audio.ActiveSoundRecorder
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
@@ -73,6 +75,9 @@ import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
 import ru.souz.service.speech.OpenAISpeechRecognitionProvider
 import ru.souz.service.speech.SaluteSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
+import ru.souz.service.speech.ambient.AmbientTranscriptionService
+import ru.souz.service.speech.ambient.DefaultAmbientTranscriptionService
+import ru.souz.service.speech.ambient.PcmAudioFrameSource
 import ru.souz.service.telegram.TelegramChatSelectionBroker
 import ru.souz.service.telegram.TelegramContactSelectionBroker
 import ru.souz.tool.presentation.ToolPresentationCreate
@@ -134,8 +139,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { Say() }
     bindSingleton<UiSpeechPlayer> { instance<Say>() }
-    bindSingleton { InMemoryAudioRecorder(ActiveSoundRecorderImpl()) }
+    bindSingleton<ActiveSoundRecorder> { ActiveSoundRecorderImpl() }
+    bindSingleton { InMemoryAudioRecorder(instance()) }
     bindSingleton<UiAudioRecorder> { instance<InMemoryAudioRecorder>() }
+    bindSingleton<PcmAudioFrameSource> { ActiveRecorderPcmAudioFrameSource(instance()) }
     bindSingleton<DesktopPermissionService> { MacDesktopPermissionService() }
 
     // DB
@@ -268,6 +275,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { AiTunnelVoiceAPI(instance()) }
     bindSingleton { MacOsSpeechBridge() }
     bindSingleton<LiveSpeechTranscriptionProvider> { MacOsSpeechAnalyzerLiveTranscriptionProvider(instance()) }
+    bindSingleton<AmbientTranscriptionService> {
+        DefaultAmbientTranscriptionService(
+            liveSpeechProvider = instance(),
+            audioSource = instance(),
+            scope = instance(),
+        )
+    }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
