@@ -1,7 +1,7 @@
 package ru.souz.ui.common
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -10,7 +10,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,14 +41,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,12 +89,12 @@ private object ConfirmDialogColors {
 enum class ConfirmDialogType {
     INFO,
     WARNING,
-    SUCCESS
+    SUCCESS,
 }
 
 enum class DialogVariant {
     INFO,
-    WARNING
+    WARNING,
 }
 
 @Composable
@@ -140,7 +149,7 @@ fun ConfirmDialog(
     confirmEnabled: Boolean = true,
     dismissOnBackdropClick: Boolean = true,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     val icon = when (type) {
         ConfirmDialogType.INFO -> Icons.Outlined.Info
@@ -198,19 +207,19 @@ private fun ConfirmDialogInternal(
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(durationMillis = 200),
-        label = "confirm_dialog_alpha"
+        label = "confirm_dialog_alpha",
     )
     val scale by animateFloatAsState(
         targetValue = if (visible) 1f else 0.95f,
         animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
-        label = "confirm_dialog_scale"
+        label = "confirm_dialog_scale",
     )
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(100f),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         val shape = RoundedCornerShape(16.dp)
         val scrollState = rememberScrollState()
@@ -223,8 +232,8 @@ private fun ConfirmDialogInternal(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = if (dismissOnBackdropClick) onDismiss else ({})
-                )
+                    onClick = if (dismissOnBackdropClick) onDismiss else ({}),
+                ),
         )
 
         Box(
@@ -240,19 +249,18 @@ private fun ConfirmDialogInternal(
                     this.shape = shape
                 }
                 .clip(shape)
-                .pointerHoverIcon(PointerIcon.Default)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = {}
-                )
+                    onClick = {},
+                ),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
                     .background(ConfirmDialogColors.dialogBg, shape)
-                    .border(1.dp, ConfirmDialogColors.dialogBorder, shape)
+                    .border(1.dp, ConfirmDialogColors.dialogBorder, shape),
             ) {
                 Column(
                     modifier = Modifier
@@ -261,16 +269,16 @@ private fun ConfirmDialogInternal(
                         .verticalScroll(scrollState)
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     DialogIcon(
                         icon = icon,
-                        tint = iconTint
+                        tint = iconTint,
                     )
 
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
                             text = title,
@@ -278,7 +286,7 @@ private fun ConfirmDialogInternal(
                             lineHeight = 22.sp,
                             fontWeight = FontWeight.Medium,
                             color = ConfirmDialogColors.titleColor,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
                         )
 
                         if (!description.isNullOrBlank()) {
@@ -287,7 +295,7 @@ private fun ConfirmDialogInternal(
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp,
                                 color = ConfirmDialogColors.descriptionColor,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
                             )
                         }
                     }
@@ -298,20 +306,20 @@ private fun ConfirmDialogInternal(
                                 .fillMaxWidth()
                                 .background(
                                     color = ConfirmDialogColors.detailsBg,
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
                                 )
                                 .border(
                                     width = 1.dp,
                                     color = ConfirmDialogColors.detailsBorder,
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
                                 )
-                                .padding(12.dp)
+                                .padding(12.dp),
                         ) {
                             if (detailsContent != null) {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    content = detailsContent
+                                    content = detailsContent,
                                 )
                             } else {
                                 Text(
@@ -319,7 +327,7 @@ private fun ConfirmDialogInternal(
                                     fontSize = 12.sp,
                                     lineHeight = 18.sp,
                                     color = ConfirmDialogColors.detailsText,
-                                    fontFamily = FontFamily.Monospace
+                                    fontFamily = FontFamily.Monospace,
                                 )
                             }
                         }
@@ -330,21 +338,21 @@ private fun ConfirmDialogInternal(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(1.dp)
-                        .background(ConfirmDialogColors.actionsBorder)
+                        .background(ConfirmDialogColors.actionsBorder),
                 )
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     DialogButton(
                         text = cancelText,
                         primary = false,
                         enabled = true,
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
 
                     DialogButton(
@@ -352,7 +360,7 @@ private fun ConfirmDialogInternal(
                         primary = true,
                         enabled = confirmEnabled,
                         onClick = onConfirm,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -363,20 +371,20 @@ private fun ConfirmDialogInternal(
 @Composable
 private fun DialogIcon(
     icon: ImageVector,
-    tint: Color
+    tint: Color,
 ) {
     Box(
         modifier = Modifier
             .size(48.dp)
             .background(ConfirmDialogColors.iconBg, CircleShape)
             .border(1.dp, ConfirmDialogColors.iconBorder, CircleShape),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -403,7 +411,7 @@ private fun DialogButton(
             else -> ConfirmDialogColors.cancelBg
         },
         animationSpec = tween(150),
-        label = "confirm_dialog_button_bg"
+        label = "confirm_dialog_button_bg",
     )
 
     val border by animateColorAsState(
@@ -416,7 +424,7 @@ private fun DialogButton(
             else -> ConfirmDialogColors.cancelBorder
         },
         animationSpec = tween(150),
-        label = "confirm_dialog_button_border"
+        label = "confirm_dialog_button_border",
     )
 
     val textColor by animateColorAsState(
@@ -428,13 +436,13 @@ private fun DialogButton(
             else -> ConfirmDialogColors.cancelText
         },
         animationSpec = tween(150),
-        label = "confirm_dialog_button_text"
+        label = "confirm_dialog_button_text",
     )
 
     val scale by animateFloatAsState(
         targetValue = if (enabled && isPressed) 0.98f else 1f,
         animationSpec = tween(120, easing = FastOutSlowInEasing),
-        label = "confirm_dialog_button_scale"
+        label = "confirm_dialog_button_scale",
     )
 
     val buttonShape = RoundedCornerShape(12.dp)
@@ -445,26 +453,25 @@ private fun DialogButton(
             .scale(scale)
             .background(background, buttonShape)
             .border(1.dp, border, buttonShape)
-            .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
             .then(
                 if (enabled) {
                     Modifier.clickable(
                         interactionSource = interactionSource,
                         indication = null,
-                        onClick = onClick
+                        onClick = onClick,
                     )
                 } else {
                     Modifier
-                }
+                },
             ),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             fontSize = 14.sp,
             lineHeight = 20.sp,
             fontWeight = FontWeight.Medium,
-            color = textColor
+            color = textColor,
         )
     }
 }

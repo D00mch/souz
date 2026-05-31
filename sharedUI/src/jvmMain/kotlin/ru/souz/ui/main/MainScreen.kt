@@ -78,6 +78,11 @@ import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
 import ru.souz.ui.main.search.*
+import ru.souz.ui.sharedchat.SharedChatList
+import ru.souz.ui.sharedchat.SharedChatMessageUi
+import ru.souz.ui.sharedchat.SharedChatRole
+import ru.souz.ui.sharedchat.SharedChatUiState
+import ru.souz.ui.sharedchat.SharedMessageMarkdown
 import souz.sharedui.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
@@ -874,6 +879,23 @@ fun ChatModeContent(
         }
     }
 
+    val canUseSharedChatList = !searchEnabled &&
+        agentActions.isEmpty() &&
+        messages.all { message ->
+            message.toolModifyReview == null &&
+                message.attachedFiles.isEmpty() &&
+                message.finderPaths.isEmpty()
+        }
+    val sharedChatListState = remember(messages, isProcessing, stringThinking, chatPlaceholder) {
+        SharedChatUiState(
+            input = "",
+            messages = messages.map { it.toSharedChatMessageUi() },
+            isSending = isProcessing,
+            thinkingLabel = stringThinking,
+            emptyText = chatPlaceholder,
+        )
+    }
+
 
     ChatFileDropTarget(
         enabled = true,
@@ -904,6 +926,15 @@ fun ChatModeContent(
                     onSendMessage(command)
                     inputText = TextFieldValue("")
                 }
+            )
+        } else if (canUseSharedChatList) {
+            SharedChatList(
+                state = sharedChatListState,
+                listState = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(top = 0.dp),
             )
         } else {
             LazyColumn(
@@ -1270,78 +1301,78 @@ private fun ChatBubble(
 
                     CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
                         SelectionContainer {
-                            Column {
-                                messageSearchProjection.parts.forEach { part ->
-                                    val partMatchRanges = if (searchEnabled) {
-                                        searchState.matchRangesForPart(message.id, part.partIndex)
-                                    } else {
-                                        emptyList()
-                                    }
-                                    val activeRange = if (searchEnabled) {
-                                        searchState.activeRangeForPart(message.id, part.partIndex)
-                                    } else {
-                                        null
-                                    }
-                                    when (part) {
-                                        is MarkdownTextSearchPartProjection -> {
-                                            val annotator = if (partMatchRanges.isEmpty()) {
-                                                null
-                                            } else {
-                                                rememberSearchMarkdownAnnotator(
-                                                    matchRanges = partMatchRanges,
-                                                    highlightColor = highlightColor,
-                                                    activeHighlightColor = activeHighlightColor,
-                                                    activeRange = activeRange,
-                                                    linkSpanStyle = linkSpanStyle,
+                            if (!searchEnabled) {
+                                SharedMessageMarkdown(
+                                    content = message.text,
+                                    textStyle = baseStyle,
+                                    codeStyle = codeStyle,
+                                )
+                            } else {
+                                Column {
+                                    messageSearchProjection.parts.forEach { part ->
+                                        val partMatchRanges = searchState.matchRangesForPart(message.id, part.partIndex)
+                                        val activeRange = searchState.activeRangeForPart(message.id, part.partIndex)
+                                        when (part) {
+                                            is MarkdownTextSearchPartProjection -> {
+                                                val annotator = if (partMatchRanges.isEmpty()) {
+                                                    null
+                                                } else {
+                                                    rememberSearchMarkdownAnnotator(
+                                                        matchRanges = partMatchRanges,
+                                                        highlightColor = highlightColor,
+                                                        activeHighlightColor = activeHighlightColor,
+                                                        activeRange = activeRange,
+                                                        linkSpanStyle = linkSpanStyle,
+                                                    )
+                                                }
+                                                Markdown(
+                                                    content = part.markdown,
+                                                    colors = colors,
+                                                    typography = typography,
+                                                    annotator = annotator ?: com.mikepenz.markdown.model.markdownAnnotator(),
+                                                    modifier = Modifier.fillMaxWidth()
                                                 )
                                             }
-                                            Markdown(
-                                                content = part.markdown,
-                                                colors = colors,
-                                                typography = typography,
-                                                annotator = annotator ?: com.mikepenz.markdown.model.markdownAnnotator(),
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                        }
 
-                                        is CodeBlockSearchPartProjection -> {
-                                            val highlightedCode = remember(
-                                                part.code,
-                                                partMatchRanges,
-                                                activeRange,
-                                            ) {
-                                                part.code.buildSearchHighlightedAnnotatedString(
-                                                    matchRanges = partMatchRanges,
-                                                    highlightColor = highlightColor,
-                                                    activeHighlightColor = activeHighlightColor,
-                                                    activeRange = activeRange,
+                                            is CodeBlockSearchPartProjection -> {
+                                                val highlightedCode = remember(
+                                                    part.code,
+                                                    partMatchRanges,
+                                                    activeRange,
+                                                ) {
+                                                    part.code.buildSearchHighlightedAnnotatedString(
+                                                        matchRanges = partMatchRanges,
+                                                        highlightColor = highlightColor,
+                                                        activeHighlightColor = activeHighlightColor,
+                                                        activeRange = activeRange,
+                                                    )
+                                                }
+                                                CodeBlockWithCopy(
+                                                    code = part.code,
+                                                    language = part.language,
+                                                    style = codeStyle,
+                                                    renderedCode = highlightedCode,
                                                 )
                                             }
-                                            CodeBlockWithCopy(
-                                                code = part.code,
-                                                language = part.language,
-                                                style = codeStyle,
-                                                renderedCode = highlightedCode,
-                                            )
-                                        }
 
-                                        is PlainTextSearchPartProjection -> {
-                                            val highlightedAssistantText = remember(
-                                                part.text,
-                                                partMatchRanges,
-                                                activeRange,
-                                            ) {
-                                                part.text.buildSearchHighlightedAnnotatedString(
-                                                    matchRanges = partMatchRanges,
-                                                    highlightColor = highlightColor,
-                                                    activeHighlightColor = activeHighlightColor,
-                                                    activeRange = activeRange,
+                                            is PlainTextSearchPartProjection -> {
+                                                val highlightedAssistantText = remember(
+                                                    part.text,
+                                                    partMatchRanges,
+                                                    activeRange,
+                                                ) {
+                                                    part.text.buildSearchHighlightedAnnotatedString(
+                                                        matchRanges = partMatchRanges,
+                                                        highlightColor = highlightColor,
+                                                        activeHighlightColor = activeHighlightColor,
+                                                        activeRange = activeRange,
+                                                    )
+                                                }
+                                                Text(
+                                                    text = highlightedAssistantText,
+                                                    style = baseStyle,
                                                 )
                                             }
-                                            Text(
-                                                text = highlightedAssistantText,
-                                                style = baseStyle,
-                                            )
                                         }
                                     }
                                 }
@@ -1628,6 +1659,15 @@ private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.L
 
 private fun formatTimestamp(timestamp: Long): String = 
     timestampFormatter.format(java.util.Date(timestamp))
+
+private fun ChatMessage.toSharedChatMessageUi(): SharedChatMessageUi =
+    SharedChatMessageUi(
+        id = id,
+        role = if (isUser) SharedChatRole.USER else SharedChatRole.ASSISTANT,
+        content = text,
+        timestampText = formatTimestamp(timestamp),
+        actionLines = agentActions,
+    )
 
 @Composable
 private fun MacTrafficLightButton(

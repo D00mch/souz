@@ -29,7 +29,7 @@ If you are not sure about something, left a note for other developers to review.
 - **Desktop working memory core** with SQLite-backed source events, facts, evidence, embeddings, conservative post-turn capture, explicit remember handling, slot-key replacement inside scope, cosine retrieval across active scopes, and compact memory prompt injection for future turns.
 - **Desktop memory management UI** with a dedicated Memory screen for listing facts, filtering/search, manual fact create/edit, pin/unpin, retire/delete, details inspection, and evidence/raw turn review for writer-created facts.
 - **Shared KMP runtime and application logic layer** in `:sharedLogic`: JVM variants carry desktop/backend provider clients, config/settings access, sandbox/skills infrastructure, shared Telegram models/selection brokers, and backend-safe tool categories (`FILES`, `IMAGE`, `IMAGE_GENERATION`, `WEB_SEARCH`, `CONFIG`, `DATA_ANALYTICS`, `CALCULATOR`), while the Android variant exposes the Android-safe settings/OpenAI LLM runtime surface needed by `GraphBasedAgent`.
-- **Android chat-agent entry point** using shared presentation from `:sharedUI`, Android Keystore-backed OpenAI settings, SQLite local chat storage, and `GraphBasedAgent` through `AgentFacade` with no-op Android host adapters for desktop-only services.
+- **Android chat-agent entry point** using shared chat/settings presentation from `:sharedUI` `commonMain`, Android Keystore-backed provider key settings, SQLite local chat storage, and `GraphBasedAgent` through `AgentFacade` with no-op Android host adapters for desktop-only services.
 - **Key-aware model selection in Settings**: chat, embeddings, and voice recognition model lists are filtered by configured provider keys; invalid saved selections are normalized to available providers.
 - **MCP integration** over `stdio` and `http` with OAuth discovery and token refresh support.
 - **Rich desktop host layer** in `:desktopApp`, wired through `:sharedUI` host ports: browser, calendar, mail, notes, desktop automation, TDLight Telegram, app launch, text/clipboard actions, audio, permissions, native keys, and desktop indexing.
@@ -56,9 +56,9 @@ If you are not sure about something, left a note for other developers to review.
 │   ├── src/jvmMain/kotlin/ru/souz/service/ # Shared JVM services (MCP, observability, speech, Telegram models)
 │   ├── src/jvmMain/kotlin/ru/souz/skills/  # Safe skill bundle loading plus persistent skill/validation storage
 │   └── src/jvmMain/kotlin/ru/souz/tool/    # Backend-safe runtime tools plus shared tool contracts
-├── sharedUI/                               # Shared Compose presentation plus desktop UI, view models, host ports, UI adapters, UI resources, JVM tests
+├── sharedUI/                               # Common Android/Desktop Compose presentation plus desktop UI, view models, host ports, UI adapters, UI resources, JVM tests
 │   ├── src/commonMain/composeResources/    # Shared localized Compose resources
-│   ├── src/commonMain/kotlin/ru/souz/ui/   # Android-capable shared presentation surfaces
+│   ├── src/commonMain/kotlin/ru/souz/ui/   # Platform-neutral UI DTOs, chat/settings surfaces, markdown rendering, and common primitives
 │   ├── src/jvmMain/kotlin/ru/souz/         # Desktop UI/support code (di, UI adapters, screens)
 │   └── src/jvmTest/                        # Desktop behavior, integration, and UI/view-model tests
 ├── desktopApp/                             # Runnable desktop host, composition root, OS integrations, and packaging resources
@@ -103,5 +103,5 @@ flowchart LR
 
 - JVM/KMP modules compile and run tests with a Java 21 Gradle toolchain from the root build script, so local Gradle can be launched from newer JDKs without emitting newer class files.
 - Desktop app: `./gradlew :desktopApp:run` or the existing Compose distribution tasks under `:desktopApp`. UI/ViewModel tests live under `:sharedUI:jvmTest`; desktop host/tool/service tests live under `:desktopApp:test`. For Docker sandbox mode, build the runtime image with `./gradlew :sharedLogic:buildRuntimeSandboxImage` and run with `SOUZ_SANDBOX_MODE=docker`.
-- Android app: `./gradlew :androidApp:assembleDebug` builds the Android entry point. The Android smoke implementation uses `:sharedUI` for the chat/settings presentation surface, Android Keystore-encrypted OpenAI key storage via SharedPreferences, SQLite-backed local chat/vector/sandbox storage, and `GraphBasedAgent` chat execution through the Android-safe `:sharedLogic` LLM runtime. Full parity with the desktop agent runtime still requires Android-safe implementations for the remaining shared runtime/tools.
+- Android app: `./gradlew :androidApp:assembleDebug` builds the Android entry point. The Android smoke implementation adapts Android settings/chat/runtime state into `:sharedUI` common chat/settings DTO surfaces, uses Android Keystore-encrypted provider key storage via SharedPreferences, SQLite-backed local chat/vector/sandbox storage, and `GraphBasedAgent` chat execution through the Android-safe `:sharedLogic` LLM runtime. Full parity with the desktop agent runtime still requires Android-safe implementations for the remaining shared runtime/tools.
 - Backend JVM app: `./gradlew :backend:run`. It binds to `127.0.0.1:8080` by default, configurable with `SOUZ_BACKEND_HOST` and `SOUZ_BACKEND_PORT`.

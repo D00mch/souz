@@ -18,6 +18,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SouzAndroidApp(
+                context = applicationContext,
                 settings = settings,
                 chatDatabase = chatDatabase,
                 agentRuntime = agentRuntime,

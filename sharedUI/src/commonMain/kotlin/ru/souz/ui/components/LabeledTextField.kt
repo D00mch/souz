@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -21,11 +20,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,7 +60,7 @@ fun LabeledTextField(
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (label.isNotBlank()) {
             Text(
@@ -69,37 +68,41 @@ fun LabeledTextField(
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 ),
-                color = labelColor
+                color = labelColor,
             )
         }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (singleLine) Modifier.height(LabeledFieldSingleLineHeight)
-                    else if (height != null) Modifier.height(height)
-                    else Modifier.heightIn(min = LabeledFieldMultiLineMinHeight)
+                    if (singleLine) {
+                        Modifier.height(LabeledFieldSingleLineHeight)
+                    } else if (height != null) {
+                        Modifier.height(height)
+                    } else {
+                        Modifier.heightIn(min = LabeledFieldMultiLineMinHeight)
+                    },
                 )
                 .background(LabeledFieldBackgroundColor, LabeledFieldShape)
                 .border(1.dp, currentBorderColor, LabeledFieldShape),
-            contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart
+            contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
         ) {
             if (value.isEmpty() && placeholder.isNotEmpty()) {
                 Text(
                     text = placeholder,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 14.sp,
-                        lineHeight = 20.sp
+                        lineHeight = 20.sp,
                     ),
                     color = LabeledFieldLabelColor,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
                             horizontal = 12.dp,
-                            vertical = if (singleLine) 0.dp else 10.dp
-                        )
+                            vertical = if (singleLine) 0.dp else 10.dp,
+                        ),
                 )
             }
             BasicTextField(
@@ -110,7 +113,7 @@ fun LabeledTextField(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
-                    color = textColor
+                    color = textColor,
                 ),
                 cursorBrush = SolidColor(if (isError) MaterialTheme.colorScheme.error else LabeledFieldAccentColor),
                 modifier = Modifier
@@ -118,8 +121,8 @@ fun LabeledTextField(
                     .onFocusChanged { isFocused = it.isFocused }
                     .padding(
                         horizontal = 12.dp,
-                        vertical = if (singleLine) 0.dp else 10.dp
-                    )
+                        vertical = if (singleLine) 0.dp else 10.dp,
+                    ),
             )
         }
     }

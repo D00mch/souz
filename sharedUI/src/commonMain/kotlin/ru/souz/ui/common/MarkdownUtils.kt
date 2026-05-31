@@ -3,7 +3,14 @@ package ru.souz.ui.common
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
@@ -38,7 +45,7 @@ sealed class MarkdownPart {
 
 private data class FenceInfo(
     val language: String,
-    val inlineCodePrefix: String?
+    val inlineCodePrefix: String?,
 )
 
 private val KnownFenceLanguages = listOf(
@@ -86,12 +93,12 @@ private fun parseFenceInfo(rawInfoLine: String): FenceInfo {
     if (KnownFenceLanguages.contains(normalizedToken)) {
         return FenceInfo(
             language = normalizedToken,
-            inlineCodePrefix = rest.ifBlank { null }
+            inlineCodePrefix = rest.ifBlank { null },
         )
     }
 
     val gluedLanguage = KnownFenceLanguages
-        .firstOrNull { lang -> normalizedToken.startsWith(lang) && normalizedToken.length > lang.length }
+        .firstOrNull { language -> normalizedToken.startsWith(language) && normalizedToken.length > language.length }
 
     if (gluedLanguage != null) {
         val gluedRemainder = firstToken.substring(gluedLanguage.length)
@@ -101,7 +108,7 @@ private fun parseFenceInfo(rawInfoLine: String): FenceInfo {
             .trim()
         return FenceInfo(
             language = gluedLanguage,
-            inlineCodePrefix = inline.ifBlank { null }
+            inlineCodePrefix = inline.ifBlank { null },
         )
     }
 
@@ -112,16 +119,12 @@ private fun parseFenceInfo(rawInfoLine: String): FenceInfo {
         .orEmpty()
     return FenceInfo(
         language = language,
-        inlineCodePrefix = rest.ifBlank { null }
+        inlineCodePrefix = rest.ifBlank { null },
     )
 }
 
 fun parseMarkdownContent(input: String): List<MarkdownPart> {
     val parts = mutableListOf<MarkdownPart>()
-    // Ищем только корректные fenced code blocks:
-    // - fence открывается с начала строки
-    // - info string и код разделены переводом строки
-    // - fence закрывается на отдельной строке
     val regex = Regex("(?m)^[\\t ]{0,3}```([^\\r\\n`]*)[\\t ]*\\r?\\n([\\s\\S]*?)\\r?\\n[\\t ]{0,3}```[\\t ]*(?=\\r?\\n|$)")
     var lastIndex = 0
     regex.findAll(input).forEach { match ->
@@ -176,17 +179,17 @@ fun CodeBlockWithCopy(
             .padding(vertical = 8.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Color.Black.copy(alpha = 0.4f))
-            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(8.dp))
+            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(8.dp)),
     ) {
         Column {
             DisableSelection {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF2A2A2A)) // Darker, explicit header background
+                        .background(Color(0xFF2A2A2A))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = displayLang,
@@ -194,27 +197,27 @@ fun CodeBlockWithCopy(
                             color = Color.White.copy(0.7f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
+                            fontFamily = FontFamily.Monospace,
+                        ),
                     )
 
                     Box(
                         modifier = Modifier
-                            .size(32.dp) // Slightly larger touch target
+                            .size(32.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(0.15f)) // More visible button bg
+                            .background(Color.White.copy(0.15f))
                             .clickable {
                                 clipboardManager.setText(AnnotatedString(code))
                                 copied = true
                             }
-                            .padding(7.dp), // Icon padding
-                        contentAlignment = Alignment.Center
+                            .padding(7.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                             contentDescription = if (copied) "Copied" else "Copy code",
-                            tint = Color.White, // Pure white icon
-                            modifier = Modifier.fillMaxSize()
+                            tint = Color.White,
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }
@@ -223,7 +226,7 @@ fun CodeBlockWithCopy(
             Text(
                 text = renderedCode,
                 style = style,
-                modifier = Modifier.padding(12.dp)
+                modifier = Modifier.padding(12.dp),
             )
         }
     }

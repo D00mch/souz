@@ -25,6 +25,7 @@ kotlin {
             implementation(compose.components.uiToolingPreview)
             implementation(compose.materialIconsExtended)
             implementation(libs.kotlinx.coroutines)
+            implementation(libs.markdown)
         }
 
         jvmMain.dependencies {
@@ -48,7 +49,6 @@ kotlin {
 
             implementation(libs.jna)
 
-            implementation(libs.markdown)
             implementation(libs.java.diffUtils)
         }
 
