@@ -1,6 +1,7 @@
 .gradle
 .gradle-home/
 .gradle-local
+.gradle-home/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/

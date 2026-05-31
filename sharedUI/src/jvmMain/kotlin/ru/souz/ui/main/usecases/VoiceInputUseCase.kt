@@ -2,6 +2,7 @@ package ru.souz.ui.main.usecases
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -14,10 +15,17 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.llms.giga.MissingVoiceKeyException
 import ru.souz.llms.tunnel.MissingAiTunnelVoiceKeyException
 import ru.souz.llms.openai.MissingOpenAiVoiceKeyException
+import ru.souz.service.speech.LocalMacOsSpeechAppBundleMissingUsageDescriptionException
+import ru.souz.service.speech.LocalMacOsSpeechAudioTooLongException
+import ru.souz.service.speech.LocalMacOsSpeechLocaleUnsupportedException
+import ru.souz.service.speech.LocalMacOsSpeechOnDeviceUnsupportedException
+import ru.souz.service.speech.LocalMacOsSpeechPermissionDeniedException
+import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.service.speech.VoiceRecognitionUnavailableException
 import ru.souz.ui.host.DesktopPermissionService
@@ -102,7 +110,6 @@ class VoiceInputUseCase(
                     }
                 }
 
-                .catch { l.error("Error in recognition: ${it.message}") }
                 .onEach(::onTextRecognizeSideEffects)
                 .filter { it.isNotBlank() }
 
@@ -119,6 +126,31 @@ class VoiceInputUseCase(
                 if (cause is VoiceRecognitionUnavailableException) {
                     emitVoiceRecognitionUnavailable()
                     return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechPermissionDeniedException) {
+                    emitSpeechRecognitionPermissionDenied()
+                    return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechAppBundleMissingUsageDescriptionException) {
+                    emitLocalMacOsSpeechBundleRequired()
+                    return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechLocaleUnsupportedException) {
+                    emitLocalMacOsSpeechLocaleUnsupported()
+                    return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechOnDeviceUnsupportedException) {
+                    emitLocalMacOsSpeechUnavailable()
+                    return@retryWhen false
+                }
+                if (cause is LocalMacOsSpeechAudioTooLongException) {
+                    emitLocalMacOsSpeechAudioTooLong()
+                    return@retryWhen true
+                }
+                if (cause is LocalMacOsSpeechUnavailableException) {
+                    emitLocalMacOsSpeechUnavailable()
+                    delay(1000L)
+                    return@retryWhen true
                 }
 
                 l.error("Agent flow failed, attempt {}, cause: {}", attempt, cause.message, cause)
@@ -165,7 +197,9 @@ class VoiceInputUseCase(
             )
         }
 
-        val started = audioRecorder.start()
+        val started = withContext(Dispatchers.IO) {
+            audioRecorder.start()
+        }
         if (!started) {
             val recorderState = audioRecorder.recordingState.value
             val errorMsg = (recorderState as? UiAudioRecordingState.Error)?.message.orEmpty()
@@ -206,6 +240,36 @@ class VoiceInputUseCase(
 
     private suspend fun emitVoiceRecognitionUnavailable() {
         val msg = getString(Res.string.voice_error_recognition_unavailable)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitSpeechRecognitionPermissionDenied() {
+        val msg = getString(Res.string.voice_error_speech_permission_denied)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechUnavailable() {
+        val msg = getString(Res.string.voice_error_local_macos_unavailable)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechBundleRequired() {
+        val msg = getString(Res.string.voice_error_local_macos_bundle_required)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechLocaleUnsupported() {
+        val msg = getString(Res.string.voice_error_local_macos_locale_unsupported)
+        speechUseCase.queue(msg)
+        emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
+    }
+
+    private suspend fun emitLocalMacOsSpeechAudioTooLong() {
+        val msg = getString(Res.string.voice_error_local_macos_audio_too_long)
         speechUseCase.queue(msg)
         emitState { copy(isListening = false, isProcessing = false, statusMessage = msg) }
     }

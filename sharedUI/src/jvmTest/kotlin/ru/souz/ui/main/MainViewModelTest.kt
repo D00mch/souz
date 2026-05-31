@@ -19,6 +19,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -27,6 +28,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -38,6 +40,8 @@ import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.chat_action_web_search
 import souz.sharedui.generated.resources.onboarding_display_text
 import souz.sharedui.generated.resources.onboarding_input_permission_request
+import souz.sharedui.generated.resources.voice_error_local_macos_audio_too_long
+import souz.sharedui.generated.resources.voice_error_local_macos_unavailable
 import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
@@ -55,6 +59,11 @@ import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.observability.DesktopStructuredLogger
+import ru.souz.service.speech.LocalMacOsSpeechAudioTooLongException
+import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
+import ru.souz.service.speech.MacOsSpeechAuthorizationStatus
+import ru.souz.service.speech.MacOsSpeechBridgeApi
+import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
@@ -379,6 +388,146 @@ class MainViewModelTest {
             runCurrent()
         } finally {
             releaseRecognition.complete(Unit)
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `local macos unavailable recognition retries and processes next audio event`() = runTest(mainDispatcher) {
+        var recognizeCalls = 0
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                recognizeCalls += 1
+                if (recognizeCalls == 1) {
+                    throw LocalMacOsSpeechUnavailableException("Local macOS unavailable")
+                }
+                LLMResponse.RecognizeResponse(result = listOf("final draft"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(7, 8, 9))
+
+            val unavailableMessage = getString(Res.string.voice_error_local_macos_unavailable)
+            val unavailableState = awaitState(viewModel) { it.statusMessage == unavailableMessage }
+            assertEquals(unavailableMessage, unavailableState.statusMessage)
+
+            advanceTimeBy(1_000L)
+            runCurrent()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
+
+            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "final draft" }
+            assertEquals("final draft", recoveredState.pendingVoiceInputDraft)
+            assertEquals(2, recognizeCalls)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `new audio cancels in flight local macos recognition and processes latest draft`() = runTest(mainDispatcher) {
+        val localSettingsProvider = mockk<SettingsProvider>()
+        every { localSettingsProvider.regionProfile } returns "ru"
+
+        val firstRecognitionStarted = CompletableDeferred<Unit>()
+        val firstRecognitionCancelled = CompletableDeferred<Unit>()
+        var recognizeCalls = 0
+        val bridge = object : MacOsSpeechBridgeApi {
+            override fun hasSpeechRecognitionUsageDescription(): Boolean = true
+
+            override fun authorizationStatus(): MacOsSpeechAuthorizationStatus =
+                MacOsSpeechAuthorizationStatus.AUTHORIZED
+
+            override fun requestAuthorizationIfNeeded() = Unit
+
+            override fun recognizeWav(path: String, locale: String): String {
+                recognizeCalls += 1
+                return when (recognizeCalls) {
+                    1 -> {
+                        firstRecognitionStarted.complete(Unit)
+                        runBlocking { firstRecognitionCancelled.await() }
+                        throw IllegalStateException("LOCAL_MACOS_STT:CANCELLED:Recognition cancelled.")
+                    }
+
+                    2 -> "second draft"
+                    else -> error("Unexpected recognition call: $recognizeCalls")
+                }
+            }
+
+            override fun cancelRecognition() {
+                firstRecognitionCancelled.complete(Unit)
+            }
+        }
+
+        val provider = MacOsSpeechRecognitionProvider(
+            settingsProvider = localSettingsProvider,
+            bridge = bridge,
+            isMacOsProvider = { true },
+        )
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            speechRecognitionProviderOverride = provider,
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(9, 9, 9))
+            awaitDeferred(firstRecognitionStarted)
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
+
+            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "second draft" }
+            assertEquals("second draft", recoveredState.pendingVoiceInputDraft)
+            assertEquals(2, recognizeCalls)
+            assertTrue(firstRecognitionCancelled.isCompleted)
+        } finally {
+            firstRecognitionCancelled.complete(Unit)
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `too long local macos audio shows specific message without automatic retry and keeps voice input alive`() = runTest(mainDispatcher) {
+        var recognizeCalls = 0
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                recognizeCalls += 1
+                if (recognizeCalls == 1) {
+                    throw LocalMacOsSpeechAudioTooLongException()
+                }
+                LLMResponse.RecognizeResponse(result = listOf("short draft"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            emitAudioFlowEvent(viewModel, ByteArray(16_000 * 2 * 45 + 1))
+
+            val tooLongMessage = getString(Res.string.voice_error_local_macos_audio_too_long)
+            val tooLongState = awaitState(viewModel) { it.statusMessage == tooLongMessage }
+            assertEquals(tooLongMessage, tooLongState.statusMessage)
+            assertEquals(1, recognizeCalls)
+
+            advanceTimeBy(1_000L)
+            runCurrent()
+            assertEquals(1, recognizeCalls)
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(7, 8, 9))
+
+            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "short draft" }
+            assertEquals("short draft", recoveredState.pendingVoiceInputDraft)
+            assertEquals(2, recognizeCalls)
+        } finally {
             harness.clear()
         }
     }
@@ -967,6 +1116,19 @@ class MainViewModelTest {
         error("Timed out waiting for expected MainState")
     }
 
+    private suspend fun TestScope.awaitDeferred(signal: CompletableDeferred<Unit>) {
+        val deadlineMs = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadlineMs) {
+            if (signal.isCompleted) {
+                signal.await()
+                return
+            }
+            runCurrent()
+            withContext(Dispatchers.Default) { yield() }
+        }
+        error("Timed out waiting for deferred completion")
+    }
+
     private suspend fun TestScope.awaitVoiceRequestStarted(
         viewModel: MainViewModel,
         data: ByteArray,
@@ -1010,6 +1172,7 @@ class MainViewModelTest {
         localAvailableModel: LLMModel? = null,
         localModelDownloaded: Boolean = true,
         localEmbeddingsDownloaded: Boolean = localModelDownloaded,
+        speechRecognitionProviderOverride: SpeechRecognitionProvider? = null,
         recognizeBehavior: suspend (ByteArray) -> LLMResponse.RecognizeResponse = {
             LLMResponse.RecognizeResponse()
         },
@@ -1074,11 +1237,14 @@ class MainViewModelTest {
         coEvery { desktopInfoRepository.storeDesktopDataDaily() } returns Unit
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
 
-        val speechRecognitionProvider = mockk<SpeechRecognitionProvider>(relaxed = true)
-        every { speechRecognitionProvider.enabled } returns true
-        every { speechRecognitionProvider.hasRequiredKey } returns true
-        coEvery { speechRecognitionProvider.recognize(any()) } coAnswers {
-            recognizeBehavior.invoke(firstArg()).result.joinToString("\n").trim()
+        val speechRecognitionProvider = speechRecognitionProviderOverride ?: mockk<SpeechRecognitionProvider>(
+            relaxed = true
+        ).also {
+            every { it.enabled } returns true
+            every { it.hasRequiredKey } returns true
+            coEvery { it.recognize(any()) } coAnswers {
+                recognizeBehavior.invoke(firstArg()).result.joinToString("\n").trim()
+            }
         }
 
         val toolPermissionBroker: ToolPermissionBroker = ImmediateToolPermissionBroker(settingsProvider)

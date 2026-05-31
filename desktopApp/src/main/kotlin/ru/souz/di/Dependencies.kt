@@ -61,7 +61,12 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.ui.main.usecases.MainUseCasesFactory
+import ru.souz.ui.main.usecases.FinderPathExtractor
+import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.service.speech.AiTunnelSpeechRecognitionProvider
+import ru.souz.service.speech.MacOsSpeechBridge
+import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
 import ru.souz.service.speech.OpenAISpeechRecognitionProvider
 import ru.souz.service.speech.SaluteSpeechRecognitionProvider
@@ -259,11 +264,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
     bindSingleton { OpenAIVoiceAPI(instance()) }
     bindSingleton { AiTunnelVoiceAPI(instance()) }
+    bindSingleton { MacOsSpeechBridge() }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { MacOsSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton<SpeechRecognitionProvider> {
-        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance())
+        ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance(), instance())
     }
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
