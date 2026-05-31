@@ -33,8 +33,12 @@ import kotlinx.coroutines.yield
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import org.kodein.di.DI
+import org.kodein.di.bind
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.scoped
+import org.kodein.di.singleton
+import org.kodein.di.with
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.chat_action_web_search
@@ -72,12 +76,18 @@ import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.ui.BaseViewModel
+import ru.souz.di.sharedUiMainViewModelUseCasesDiModule
+import ru.souz.ui.main.createMainViewModel
+import ru.souz.ui.main.mainViewModelDiScope
 import ru.souz.ui.main.usecases.FinderPathExtractor
-import ru.souz.ui.main.usecases.MainUseCasesFactory
+import ru.souz.ui.main.usecases.DesktopAttachmentMetadataProvider
+import ru.souz.ui.main.usecases.DesktopDroppedFilePathExtractor
+import ru.souz.ui.main.usecases.DesktopPathPicker
+import ru.souz.ui.main.usecases.VoiceInputController
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.ui.common.FinderService
-import ru.souz.ui.host.DesktopIndexRepository
-import ru.souz.ui.host.DesktopPermissionService
+import ru.souz.ui.host.BackgroundIndexRefresher
+import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.host.TelegramControlBot
 import ru.souz.ui.host.TelegramControlIncomingMessage
 import ru.souz.ui.host.UiAudioRecorder
@@ -93,6 +103,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class MainViewModelTest {
@@ -527,6 +538,30 @@ class MainViewModelTest {
             val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "short draft" }
             assertEquals("short draft", recoveredState.pendingVoiceInputDraft)
             assertEquals(2, recognizeCalls)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `scoped MainViewModel graph shares use case instances across voice permission and review flows`() = runTest(mainDispatcher) {
+        val harness = createHarness(voiceInputReviewEnabled = true)
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            val chatUseCase = privateField<Any>(viewModel, "chatUseCase")
+            val toolModifyReviewUseCase = privateField<Any>(viewModel, "toolModifyReviewUseCase")
+            val voiceInputUseCase = privateField<Any>(viewModel, "voiceInputUseCase")
+            val speechUseCase = privateField<Any>(viewModel, "speechUseCase")
+            val permissionsUseCase = privateField<Any>(viewModel, "permissionsUseCase")
+
+            assertSame(chatUseCase, privateField(voiceInputUseCase, "chatUseCase"))
+            assertSame(speechUseCase, privateField(voiceInputUseCase, "speechUseCase"))
+            assertSame(permissionsUseCase, privateField(voiceInputUseCase, "permissionsUseCase"))
+            assertSame(speechUseCase, privateField(permissionsUseCase, "speechUseCase"))
+            assertSame(toolModifyReviewUseCase, privateField(chatUseCase, "toolModifyReviewUseCase"))
         } finally {
             harness.clear()
         }
@@ -1153,10 +1188,14 @@ class MainViewModelTest {
         uiState.value = state
     }
 
+    private inline fun <reified T> privateField(instance: Any, name: String): T {
+        val field = instance::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return field.get(instance) as T
+    }
+
     private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {
-        val voiceInputUseCaseField = MainViewModel::class.java.getDeclaredField("voiceInputUseCase")
-        voiceInputUseCaseField.isAccessible = true
-        val voiceInputUseCase = voiceInputUseCaseField.get(viewModel) as VoiceInputUseCase
+        val voiceInputUseCase = privateField<VoiceInputUseCase>(viewModel, "voiceInputUseCase")
         val recorder = voiceInputUseCase.audioRecorder as TestAudioRecorder
         recorder.emit(data)
     }
@@ -1233,7 +1272,7 @@ class MainViewModelTest {
         val speakingFlow = MutableStateFlow(false)
         every { speechPlayer.isSpeaking } returns speakingFlow
 
-        val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
+        val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.storeDesktopDataDaily() } returns Unit
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
 
@@ -1256,7 +1295,7 @@ class MainViewModelTest {
         every { telegramBotController.incomingMessages } returns incomingMessages
         every { telegramBotController.cleanCommands } returns cleanCommands
         val audioRecorder = TestAudioRecorder()
-        val desktopPermissionService = mockk<DesktopPermissionService>(relaxed = true)
+        val desktopPermissionService = mockk<PermissionPromptService>(relaxed = true)
         every { desktopPermissionService.isSandboxed } returns false
         every { desktopPermissionService.isHeadless } answers { java.awt.GraphicsEnvironment.isHeadless() }
         every { desktopPermissionService.registerNativeHook() } returns false
@@ -1267,9 +1306,11 @@ class MainViewModelTest {
         every { tokenLogging.sessionTokenUsage() } returns LLMResponse.Usage(0, 0, 0, 0)
 
         val di = DI {
+            import(sharedUiMainViewModelUseCasesDiModule())
+
             bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<SpeechRecognitionProvider> { speechRecognitionProvider }
-            bindSingleton<DesktopIndexRepository> { desktopInfoRepository }
+            bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton { localModelStore }
@@ -1284,26 +1325,20 @@ class MainViewModelTest {
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { DesktopStructuredLogger() }
-            bindSingleton<DesktopPermissionService> { desktopPermissionService }
-            bindSingleton {
-                MainUseCasesFactory(
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
-                    instance(),
+            bindSingleton<PermissionPromptService> { desktopPermissionService }
+            bind<VoiceInputController>(overrides = true) with scoped(mainViewModelDiScope).singleton {
+                VoiceInputUseCase(
+                    audioRecorder = audioRecorder,
+                    speechRecognitionProvider = speechRecognitionProvider,
+                    chatUseCase = instance(),
+                    speechUseCase = instance(),
+                    permissionsUseCase = instance(),
+                    permissionPromptService = desktopPermissionService,
                 )
             }
         }
 
-        val viewModel = MainViewModel(di)
+        val viewModel = createMainViewModel(di)
 
         return TestHarness(
             viewModel = viewModel,

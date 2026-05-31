@@ -38,7 +38,7 @@ import ru.souz.tool.FewShotExample
 import ru.souz.tool.ToolCategory
 import ru.souz.ui.AppTheme
 import ru.souz.ui.glassColors
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*

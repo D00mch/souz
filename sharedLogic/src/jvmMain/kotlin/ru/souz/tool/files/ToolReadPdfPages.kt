@@ -1,13 +1,13 @@
 package ru.souz.tool.files
 
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.io.MemoryUsageSetting
 import org.apache.pdfbox.text.PDFTextStripper
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
-import ru.souz.db.ConfigStore
-import ru.souz.db.SettingsProviderImpl
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.files.FilesToolUtil
 import java.io.IOException
@@ -47,52 +47,60 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
         if (file.name.substringAfterLast('.', "").lowercase() != "pdf") return "Error: Expecting .pdf file"
 
         return try {
-            filesToolUtil.openPdfDocument(file, meta).use { loaded ->
-                val document = loaded.document
+            filesToolUtil.withReadableLocalPath(file, meta, prefix = "pdf-read-", suffix = ".pdf") { localPath ->
+                val document = Loader.loadPDF(
+                    localPath.toFile(),
+                    MemoryUsageSetting.setupTempFileOnly()
+                        .setTempDir(filesToolUtil.scratchDirectory(meta).toFile())
+                        .streamCache,
+                )
+                try {
+                    // 1. Проверка на шифрование (частая причина "пустоты")
+                    if (document.isEncrypted) {
+                        // Пытаемся снять защиту (для стандартных прав доступа)
+                        document.isAllSecurityToBeRemoved = true
+                    }
 
-                // 1. Проверка на шифрование (частая причина "пустоты")
-                if (document.isEncrypted) {
-                    // Пытаемся снять защиту (для стандартных прав доступа)
-                    document.isAllSecurityToBeRemoved = true
-                }
+                    val totalPages = document.numberOfPages
+                    val start = input.startPage.coerceAtLeast(1)
+                    val end = (input.endPage ?: start).coerceAtMost(totalPages)
 
-                val totalPages = document.numberOfPages
-                val start = input.startPage.coerceAtLeast(1)
-                val end = (input.endPage ?: start).coerceAtMost(totalPages)
+                    if (start > totalPages) {
+                        return@withReadableLocalPath "Error: Requested page $start but document only has $totalPages pages."
+                    }
 
-                if (start > totalPages) {
-                    return "Error: Requested page $start but document only has $totalPages pages."
-                }
+                    // Настройка извлекателя
+                    val stripper = PDFTextStripper()
+                    stripper.startPage = start
+                    stripper.endPage = end
 
-                // Настройка извлекателя
-                val stripper = PDFTextStripper()
-                stripper.startPage = start
-                stripper.endPage = end
+                    // ВАЖНО: Сортировка по позиции помогает читать сложную верстку (колонки, врезки)
+                    stripper.sortByPosition = true
 
-                // ВАЖНО: Сортировка по позиции помогает читать сложную верстку (колонки, врезки)
-                stripper.sortByPosition = true
+                    // Настройка: не пытаться читать текст, скрытый слоями (иногда мешает)
+                    stripper.suppressDuplicateOverlappingText = true
 
-                // Настройка: не пытаться читать текст, скрытый слоями (иногда мешает)
-                stripper.suppressDuplicateOverlappingText = true
+                    val text = stripper.getText(document).trim()
 
-                val text = stripper.getText(document).trim()
+                    if (text.isBlank()) {
+                        """
+                        Warning: Output is empty.
+                        - Requested pages: $start to $end
+                        - Total pages in file: $totalPages
+                        - Encryption: ${document.isEncrypted}
 
-                if (text.isBlank()) {
-                    """
-                    Warning: Output is empty. 
-                    - Requested pages: $start to $end
-                    - Total pages in file: $totalPages
-                    - Encryption: ${document.isEncrypted}
-                    
-                    Possible reasons:
-                    1. These specific pages contain only images/scans without text layer.
-                    2. The PDF has strict DRM protection.
-                    """.trimIndent()
-                } else {
-                    """
-                    === PDF CONTENT (Pages $start-$end of $totalPages) ===
-                    $text
-                    """
+                        Possible reasons:
+                        1. These specific pages contain only images/scans without text layer.
+                        2. The PDF has strict DRM protection.
+                        """.trimIndent()
+                    } else {
+                        """
+                        === PDF CONTENT (Pages $start-$end of $totalPages) ===
+                        $text
+                        """
+                    }
+                } finally {
+                    document.close()
                 }
             }
         } catch (e: IOException) {
@@ -103,17 +111,4 @@ class ToolReadPdfPages(private val filesToolUtil: FilesToolUtil) : ToolSetup<Too
     }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
-}
-
-fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
-    val result = ToolReadPdfPages(filesToolUtil).invoke(
-        ToolReadPdfPages.Input(
-            filePath = "/Users/duxx/Книги/100 ошибок в го.pdf",
-            startPage = 27,
-            endPage = 75
-        ),
-        ToolInvocationMeta.localDefault(),
-    )
-    println(result)
 }

@@ -8,10 +8,6 @@ import ru.souz.paths.DefaultSouzPaths
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 
-fun interface RuntimeSandboxFactory {
-    fun create(scope: SandboxScope): RuntimeSandbox
-}
-
 class RuntimeSandboxModeResolver(
     private val rawValueProvider: () -> String? = { System.getenv(SANDBOX_MODE_ENV) },
 ) {
@@ -70,6 +66,8 @@ class DefaultRuntimeSandboxFactory(
                 DockerRuntimeSandbox.defaultContainerName(scope),
             )
         }
+
+        SandboxMode.ANDROID -> error("Android sandbox mode is not available in the JVM runtime.")
     }
 
     companion object {

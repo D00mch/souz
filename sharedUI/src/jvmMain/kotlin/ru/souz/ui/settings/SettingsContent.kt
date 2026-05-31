@@ -58,7 +58,7 @@ import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.sharedsettings.SharedApiKeyFieldUi
 import ru.souz.ui.sharedsettings.SharedAuthAccountUiState
 import ru.souz.ui.sharedsettings.SharedBalanceItemUi

@@ -42,8 +42,19 @@ import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.host.CalendarListProvider
-import ru.souz.ui.host.DesktopIndexRepository
+import ru.souz.ui.host.BackgroundIndexRefresher
+import ru.souz.ui.host.DesktopLocalModelUiHost
+import ru.souz.ui.host.DesktopTelegramSettingsHost
+import ru.souz.ui.host.ExternalLinkOpener
+import ru.souz.ui.host.InMemorySettingsHostPreferences
+import ru.souz.ui.host.LocalModelUiHost
+import ru.souz.ui.host.NoopPrivacyPolicyOpener
+import ru.souz.ui.host.NoopSupportLogService
+import ru.souz.ui.host.PrivacyPolicyOpener
+import ru.souz.ui.host.SettingsHostPreferences
+import ru.souz.ui.host.SupportLogService
 import ru.souz.ui.host.TelegramControlBot
+import ru.souz.ui.host.TelegramSettingsHost
 import ru.souz.ui.host.TelegramUiService
 import ru.souz.ui.host.UiSpeechPlayer
 import java.io.File
@@ -131,14 +142,15 @@ class SettingsViewModelTest {
         val telegramService = mockk<TelegramUiService>(relaxed = true)
         every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
+        val telegramControlBot = mockk<TelegramControlBot>(relaxed = true)
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
-        val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
+        val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
 
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<DesktopIndexRepository> { desktopInfoRepository }
+            bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
@@ -146,7 +158,15 @@ class SettingsViewModelTest {
             bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<TelegramUiService> { telegramService }
-            bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
+            bindSingleton<TelegramControlBot> { telegramControlBot }
+            bindSingleton<LocalModelUiHost> {
+                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
+            }
+            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramControlBot) }
+            bindSingleton<SupportLogService> { NoopSupportLogService }
+            bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
+            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+            bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
             bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
@@ -216,12 +236,13 @@ class SettingsViewModelTest {
         val telegramService = mockk<TelegramUiService>(relaxed = true)
         every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
-        val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
+        val telegramControlBot = mockk<TelegramControlBot>(relaxed = true)
+        val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
 
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<DesktopIndexRepository> { desktopInfoRepository }
+            bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
@@ -229,7 +250,15 @@ class SettingsViewModelTest {
             bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<TelegramUiService> { telegramService }
-            bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
+            bindSingleton<TelegramControlBot> { telegramControlBot }
+            bindSingleton<LocalModelUiHost> {
+                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
+            }
+            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramControlBot) }
+            bindSingleton<SupportLogService> { NoopSupportLogService }
+            bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
+            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+            bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
             bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
@@ -307,12 +336,13 @@ class SettingsViewModelTest {
         val telegramService = mockk<TelegramUiService>(relaxed = true)
         every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
-        val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
+        val telegramControlBot = mockk<TelegramControlBot>(relaxed = true)
+        val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
 
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<DesktopIndexRepository> { desktopInfoRepository }
+            bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
             bindSingleton<LlmBuildProfile> { llmBuildProfile }
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
@@ -320,7 +350,15 @@ class SettingsViewModelTest {
             bindSingleton<LLMChatAPI> { chatApi }
             bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<TelegramUiService> { telegramService }
-            bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
+            bindSingleton<TelegramControlBot> { telegramControlBot }
+            bindSingleton<LocalModelUiHost> {
+                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
+            }
+            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramControlBot) }
+            bindSingleton<SupportLogService> { NoopSupportLogService }
+            bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
+            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+            bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
             bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }

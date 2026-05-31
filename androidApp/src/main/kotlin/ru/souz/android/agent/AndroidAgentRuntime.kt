@@ -1,6 +1,8 @@
 package ru.souz.android.agent
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
@@ -24,55 +26,111 @@ import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentTelemetry
-import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
+import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
 import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.db.SettingsProvider
+import ru.souz.di.sharedUiCommonJvmDiModule
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.SessionTokenLogging
 import ru.souz.llms.TokenLogging
+import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.anthropic.AnthropicVisionGateway
+import ru.souz.llms.codex.CodexChatAPI
+import ru.souz.llms.codex.CodexOAuthService
+import ru.souz.llms.giga.GigaAuth
+import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAIImageGenerationGateway
+import ru.souz.llms.openai.OpenAIVisionGateway
+import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.runtime.CapabilityBasedImageGenerationGateway
+import ru.souz.llms.runtime.ImageGenerationGateway
+import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.llms.runtime.LLMFactory
+import ru.souz.llms.runtime.VisionGateway
+import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.paths.SouzPaths
-import ru.souz.tool.ToolCategory
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
+import ru.souz.llms.runtime.ApiClassifier
+import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.service.observability.DesktopStructuredLogger
+import ru.souz.tool.ImmediateToolPermissionBroker
+import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.ToolsSettings
+import ru.souz.tool.ToolsSettingsState
+import ru.souz.tool.ToolsSettingsStore
 import ru.souz.tool.UserMessageClassifier
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
+import ru.souz.tool.portableRuntimeToolsDiModule
+import ru.souz.ui.host.ExternalLinkOpener
 import java.nio.file.Path
 
 class AndroidAgentRuntime(
     context: Context,
     settings: AndroidSettingsProvider,
 ) {
+    val di: DI
     val agentFacade: AgentFacade
 
     init {
+        val appContext = context.applicationContext
         val paths = AndroidSouzPaths(
-            stateRoot = context.applicationContext.filesDir.toPath().resolve("souz-state"),
+            stateRoot = appContext.filesDir.toPath().resolve("souz-state"),
         )
-        val di = DI {
+        di = DI {
             bindSingleton<ObjectMapper>(tag = DiTags.LOG_OBJECT_MAPPER) {
                 jacksonObjectMapper()
                     .setSerializationInclusion(JsonInclude.Include.NON_NULL)
                     .enable(SerializationFeature.INDENT_OUTPUT)
             }
             bindSingleton<SettingsProvider> { settings }
+            bindSingleton { LlmBuildProfile(instance<SettingsProvider>()) }
+            bindSingleton { DesktopStructuredLogger() }
             bindSingleton<TokenLogging> {
                 SessionTokenLogging(instance(tag = DiTags.LOG_OBJECT_MAPPER))
             }
+            bindSingleton { GigaAuth(instance()) }
+            bindSingleton<GigaRestChatAPI> { GigaRestChatAPI(instance(), instance(), instance()) }
+            bindSingleton<QwenChatAPI> { QwenChatAPI(instance(), instance()) }
+            bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
+            bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance()) }
             bindSingleton { OpenAIChatAPI(instance(), instance()) }
-            bindSingleton { LLMFactory(instance(), instance()) }
+            bindSingleton { CodexOAuthService(instance()) }
+            bindSingleton<CodexChatAPI> { CodexChatAPI(instance(), instance(), instance()) }
+            bindSingleton {
+                LLMFactory(
+                    settingsProvider = instance(),
+                    apisByProvider = mapOf(
+                        LlmProvider.GIGA to instance<GigaRestChatAPI>(),
+                        LlmProvider.QWEN to instance<QwenChatAPI>(),
+                        LlmProvider.AI_TUNNEL to instance<AiTunnelChatAPI>(),
+                        LlmProvider.ANTHROPIC to instance<AnthropicChatAPI>(),
+                        LlmProvider.OPENAI to instance<OpenAIChatAPI>(),
+                        LlmProvider.CODEX to instance<CodexChatAPI>(),
+                    ),
+                )
+            }
             bindSingleton<LLMChatAPI> { instance<LLMFactory>() }
+            bindSingleton { OpenAIImageGenerationGateway(instance()) }
+            bindSingleton { OpenAIVisionGateway(instance(), instance()) }
+            bindSingleton { AnthropicVisionGateway(instance(), instance()) }
+            bindSingleton { LLMCapabilityResolver(instance(), instance(), instance()) }
+            bindSingleton { CapabilityBasedImageGenerationGateway(instance(), instance()) }
+            bindSingleton<VisionGateway> { instance<LLMCapabilityResolver>() }
+            bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }
+            bindSingleton<RuntimeSandboxFactory> { AndroidRuntimeSandboxFactory(appContext) }
             bindSingleton<GraphSessionRepository>(tag = DiTags.GRAPH_SESSION_REPOSITORY) {
                 GraphSessionRepository(paths)
             }
 
             bindSingleton<AgentDesktopInfoRepository> { AndroidNoopDesktopInfoRepository }
-            bindSingleton<AgentToolCatalog> { AndroidEmptyToolCatalog }
-            bindSingleton<AgentToolsFilter> { AndroidNoopToolsFilter }
             bindSingleton<DefaultBrowserProvider> { DefaultBrowserProvider { null } }
             bindSingleton<McpToolProvider> { AndroidNoopMcpToolProvider }
             bindSingleton<AgentTelemetry> { AgentTelemetry.NONE }
@@ -80,9 +138,19 @@ class AndroidAgentRuntime(
             bindSingleton<ConversationMemoryRuntime> { NoopConversationMemoryRuntime }
             bindSingleton<CoroutineScope> { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
             bindSingleton<SkillRegistryRepository> { AndroidNoopSkillRegistryRepository }
-            bindSingleton<UserMessageClassifier>(tag = DiTags.API_CLASSIFIER) { AndroidNoopClassifier }
+            bindSingleton<UserMessageClassifier>(tag = DiTags.API_CLASSIFIER) { ApiClassifier(instance<LLMChatAPI>()) }
             bindSingleton<UserMessageClassifier>(tag = DiTags.LOCAL_CLASSIFIER) { AndroidNoopClassifier }
+            bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance<SettingsProvider>()) }
+            bindSingleton { DeferredToolModifyPermissionBroker(instance<SettingsProvider>(), instance<FilesToolUtil>()) }
+            bindSingleton<ToolsSettingsStore> {
+                AndroidToolsSettingsStore(
+                    context = appContext,
+                    objectMapper = instance(tag = DiTags.LOG_OBJECT_MAPPER),
+                )
+            }
+            bindSingleton { ToolsSettings(instance(), instance()) }
 
+            import(portableRuntimeToolsDiModule())
             import(
                 agentDiModule(
                     logObjectMapperTag = DiTags.LOG_OBJECT_MAPPER,
@@ -91,6 +159,17 @@ class AndroidAgentRuntime(
                     graphSessionRepositoryTag = DiTags.GRAPH_SESSION_REPOSITORY,
                 )
             )
+            import(sharedUiCommonJvmDiModule(), allowOverride = true)
+            bindSingleton<ExternalLinkOpener>(overrides = true) {
+                ExternalLinkOpener { url ->
+                    runCatching {
+                        appContext.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }
+            }
         }
         agentFacade = di.direct.instance()
     }
@@ -100,6 +179,22 @@ class AndroidAgentRuntime(
         const val API_CLASSIFIER = "androidApiClassifier"
         const val LOCAL_CLASSIFIER = "androidLocalClassifier"
         const val GRAPH_SESSION_REPOSITORY = "androidGraphSessionRepository"
+    }
+}
+
+private class AndroidToolsSettingsStore(
+    context: Context,
+    private val objectMapper: ObjectMapper,
+) : ToolsSettingsStore {
+    private val prefs = context.getSharedPreferences("souz_android_tool_settings", Context.MODE_PRIVATE)
+
+    override fun loadToolsSettings(key: String): ToolsSettingsState? =
+        prefs.getString(key, null)?.let { json ->
+            runCatching { objectMapper.readValue(json, ToolsSettingsState::class.java) }.getOrNull()
+        }
+
+    override fun saveToolsSettings(key: String, state: ToolsSettingsState) {
+        prefs.edit().putString(key, objectMapper.writeValueAsString(state)).apply()
     }
 }
 
@@ -118,16 +213,6 @@ private class AndroidSouzPaths(
 private object AndroidNoopClassifier : UserMessageClassifier {
     override suspend fun classify(body: String): UserMessageClassifier.Reply =
         UserMessageClassifier.Reply(categories = emptyList(), confidence = 100.0)
-}
-
-private object AndroidEmptyToolCatalog : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = emptyMap()
-}
-
-private object AndroidNoopToolsFilter : AgentToolsFilter {
-    override fun applyFilter(
-        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-    ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
 }
 
 private object AndroidNoopDesktopInfoRepository : AgentDesktopInfoRepository {

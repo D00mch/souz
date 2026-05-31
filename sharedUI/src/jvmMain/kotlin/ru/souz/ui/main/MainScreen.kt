@@ -78,11 +78,6 @@ import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
 import ru.souz.ui.main.search.*
-import ru.souz.ui.sharedchat.SharedChatList
-import ru.souz.ui.sharedchat.SharedChatMessageUi
-import ru.souz.ui.sharedchat.SharedChatRole
-import ru.souz.ui.sharedchat.SharedChatUiState
-import ru.souz.ui.sharedchat.SharedMessageMarkdown
 import souz.sharedui.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
@@ -127,12 +122,6 @@ private enum class MacTrafficKind {
     Maximize,
 }
 
-enum class LiquidGlassPreset {
-    Default,
-    Hero
-}
-
-
 @Composable
 fun MainScreen(
     onOpenSettings: () -> Unit,
@@ -144,7 +133,7 @@ fun MainScreen(
     isOnline: Boolean = true,
 ) {
     val di = localDI()
-    val viewModel = viewModel { MainViewModel(di) }
+    val viewModel = viewModel { createMainViewModel(di) }
     val state by viewModel.uiState.collectAsState()
 
     LaunchedEffect(viewModel) {
@@ -182,7 +171,7 @@ fun MainScreen(
         onCancelLocalModelDownload = { viewModel.send(MainEvent.CancelLocalModelDownload) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
         onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
-        onAttachDroppedTransferable = { viewModel.onAttachDroppedTransferable(it) },
+        onAttachDroppedTransferable = { viewModel.onAttachDroppedPayload(it) },
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
@@ -793,6 +782,11 @@ private fun chatMarkdownTypography(
 
 private enum class HeadingScale { LARGE, SMALL }
 
+private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru", "RU"))
+
+private fun formatTimestamp(timestamp: Long): String =
+    timestampFormatter.format(java.util.Date(timestamp))
+
 @Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
@@ -879,24 +873,6 @@ fun ChatModeContent(
         }
     }
 
-    val canUseSharedChatList = !searchEnabled &&
-        agentActions.isEmpty() &&
-        messages.all { message ->
-            message.toolModifyReview == null &&
-                message.attachedFiles.isEmpty() &&
-                message.finderPaths.isEmpty()
-        }
-    val sharedChatListState = remember(messages, isProcessing, stringThinking, chatPlaceholder) {
-        SharedChatUiState(
-            input = "",
-            messages = messages.map { it.toSharedChatMessageUi() },
-            isSending = isProcessing,
-            thinkingLabel = stringThinking,
-            emptyText = chatPlaceholder,
-        )
-    }
-
-
     ChatFileDropTarget(
         enabled = true,
         onDropTransferable = onDropTransferable,
@@ -926,15 +902,6 @@ fun ChatModeContent(
                     onSendMessage(command)
                     inputText = TextFieldValue("")
                 }
-            )
-        } else if (canUseSharedChatList) {
-            SharedChatList(
-                state = sharedChatListState,
-                listState = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(top = 0.dp),
             )
         } else {
             LazyColumn(
@@ -1302,7 +1269,7 @@ private fun ChatBubble(
                     CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
                         SelectionContainer {
                             if (!searchEnabled) {
-                                SharedMessageMarkdown(
+                                MessageMarkdown(
                                     content = message.text,
                                     textStyle = baseStyle,
                                     codeStyle = codeStyle,
@@ -1655,20 +1622,6 @@ private fun FinderPathChip(
     }
 }
 
-private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru", "RU"))
-
-private fun formatTimestamp(timestamp: Long): String = 
-    timestampFormatter.format(java.util.Date(timestamp))
-
-private fun ChatMessage.toSharedChatMessageUi(): SharedChatMessageUi =
-    SharedChatMessageUi(
-        id = id,
-        role = if (isUser) SharedChatRole.USER else SharedChatRole.ASSISTANT,
-        content = text,
-        timestampText = formatTimestamp(timestamp),
-        actionLines = agentActions,
-    )
-
 @Composable
 private fun MacTrafficLightButton(
     color: Color,
@@ -1784,130 +1737,6 @@ private fun TopToolbarIconButton(
 }
 
 
-
-@Composable
-fun RealLiquidGlassCard(
-    modifier: Modifier = Modifier,
-    isWindowFocused: Boolean,
-    cornerRadius: Dp = 24.dp,
-    preset: LiquidGlassPreset = LiquidGlassPreset.Hero,
-    content: @Composable BoxScope.() -> Unit
-) {
-    val cardShape = RoundedCornerShape(cornerRadius)
-    val borderThickness = if (preset == LiquidGlassPreset.Hero) 1.dp else 1.5.dp
-
-    val backdropAlpha by animateFloatAsState(
-        targetValue = when (preset) {
-            LiquidGlassPreset.Default -> if (isWindowFocused) 0.95f else 0.0f
-            LiquidGlassPreset.Hero -> 1.0f
-        },
-        animationSpec = tween(400)
-    )
-
-    Box(
-        modifier = modifier.graphicsLayer {
-            shape = cardShape
-            clip = true
-            compositingStrategy = CompositingStrategy.Offscreen
-        }
-    ) {
-        when (preset) {
-            LiquidGlassPreset.Default -> {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(Color.Black.copy(alpha = backdropAlpha))
-                )
-            }
-
-            LiquidGlassPreset.Hero -> {
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    drawRect(
-                        color = Color(0xF21B1C20),
-                        alpha = backdropAlpha
-                    )
-
-                    drawRect(color = Color(0xB0000000))
-                }
-            }
-        }
-
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val strokeWidth = borderThickness.toPx()
-            when (preset) {
-                LiquidGlassPreset.Default -> {
-                    drawRoundRect(
-                        brush = Brush.linearGradient(
-                            0.0f to Color(0xCCFFFFFF),
-                            0.5f to Color(0x00FFFFFF),
-                            1.0f to Color(0x4DFFFFFF),
-                            start = Offset(0f, 0f),
-                            end = Offset(size.width, size.height)
-                        ),
-                        cornerRadius = CornerRadius(cornerRadius.toPx()),
-                        style = Stroke(width = strokeWidth)
-                    )
-
-                    drawPath(
-                        path = Path().apply {
-                            moveTo(0f, size.height * 0.2f)
-                            lineTo(size.width * 0.4f, 0f)
-                            lineTo(size.width * 0.65f, 0f)
-                            lineTo(0f, size.height * 0.6f)
-                            close()
-                        },
-                        brush = Brush.linearGradient(
-                            colors = listOf(Color(0x0DFFFFFF), Color.Transparent),
-                            start = Offset(0f, 0f),
-                            end = Offset(size.width / 2, size.height / 2)
-                        )
-                    )
-                }
-
-                LiquidGlassPreset.Hero -> {
-                    drawRoundRect(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color(0x3AFFFFFF),
-                                Color(0x18FFFFFF),
-                                Color(0x14FFFFFF),
-                                Color(0x2AFFFFFF)
-                            ),
-                            start = Offset(0f, 0f),
-                            end = Offset(size.width, size.height)
-                        ),
-                        cornerRadius = CornerRadius(cornerRadius.toPx()),
-                        style = Stroke(width = strokeWidth)
-                    )
-
-                    val inset = strokeWidth * 1.4f
-                    val innerWidth = (size.width - inset * 2f).coerceAtLeast(0f)
-                    val innerHeight = (size.height - inset * 2f).coerceAtLeast(0f)
-                    drawRoundRect(
-                        color = Color(0x08FFFFFF),
-                        topLeft = Offset(inset, inset),
-                        size = Size(innerWidth, innerHeight),
-                        cornerRadius = CornerRadius((cornerRadius.toPx() - inset).coerceAtLeast(0f)),
-                        style = Stroke(width = strokeWidth * 0.7f)
-                    )
-                }
-            }
-        }
-
-        if (preset == LiquidGlassPreset.Default) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(Color(0x03FFFFFF))
-            )
-        }
-
-        val innerShape = RoundedCornerShape(cornerRadius - borderThickness)
-        Box(modifier = Modifier.padding(borderThickness).clip(innerShape)) {
-            content()
-        }
-    }
-}
 
 @Preview
 @Composable

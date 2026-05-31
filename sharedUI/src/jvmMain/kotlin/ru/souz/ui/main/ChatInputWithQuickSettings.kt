@@ -102,7 +102,7 @@ import kotlin.math.max
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.souz.llms.LLMModel
-import ru.souz.ui.host.DesktopPermissionService
+import ru.souz.ui.host.PermissionPromptService
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -198,8 +198,8 @@ internal fun ChatInputWithQuickSettings(
     var isContextDropdownOpen by remember { mutableStateOf(false) }
     val windowInfo = LocalWindowInfo.current
     val di = localDI()
-    val desktopPermissionService: DesktopPermissionService by di.instance()
-    val isSandboxed = remember(desktopPermissionService) { desktopPermissionService.isSandboxed }
+    val permissionPromptService: PermissionPromptService by di.instance()
+    val isSandboxed = remember(permissionPromptService) { permissionPromptService.isSandboxed }
 
     LaunchedEffect(scrollCloseSignal, windowInfo.containerSize) {
         isModelDropdownOpen = false

@@ -4,20 +4,14 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
-import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
-import ru.souz.runtime.sandbox.SandboxScope
-import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.tool.config.ToolSoundConfigDiff
 import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
 import ru.souz.tool.dataAnalytics.excel.ExcelRead
 import ru.souz.tool.dataAnalytics.excel.ExcelReport
-import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolExtractText
 import ru.souz.tool.files.ToolFindFilesByName
@@ -31,7 +25,6 @@ import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadPdfPages
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebImageSearch
@@ -45,51 +38,29 @@ import ru.souz.skills.registry.SkillStorageScope
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
     skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
-    scopeResolver: ToolInvocationSandboxScopeResolver = ToolInvocationSandboxScopeResolver {
-        SandboxScope(
-            userId = it.userId.trim(),
-            conversationId = it.conversationId,
-        )
-    },
+    scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
 ): DI.Module = DI.Module("runtimeTools") {
     bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
-    bindSingleton<ToolInvocationSandboxScopeResolver> { scopeResolver }
-    bindSingleton<ToolInvocationRuntimeSandboxResolver> {
-        FactoryBackedToolInvocationRuntimeSandboxResolver(
-            sandboxFactory = instance(),
-            scopeResolver = instance(),
+    import(
+        portableRuntimeToolsDiModule(
+            skillStorageScope = skillStorageScope,
+            scopeResolver = scopeResolver,
         )
-    }
-    bindSingleton { FilesToolUtil(instance<ToolInvocationRuntimeSandboxResolver>()) }
-    bindSingleton { ToolListFiles(instance()) }
-    bindSingleton { ToolFindInFiles(instance()) }
-    bindSingleton { ToolNewFile(instance()) }
-    bindSingleton { ToolDeleteFile(instance()) }
-    bindSingleton { ToolModifyFile(instance()) }
-    bindSingleton { ToolMoveFile(instance()) }
+    )
     bindSingleton { ToolExtractText(instance()) }
-    bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
-    bindSingleton { ToolFindFolders(instance()) }
-    bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }
-    bindSingleton { ToolGenerateImage(filesToolUtil = instance(), imageGenerationGateway = instance()) }
 
     bindSingleton { ToolSoundConfig(instance()) }
     bindSingleton { ToolSoundConfigDiff(instance()) }
-    bindSingleton { ToolCalculator() }
 
     bindSingleton { ToolCreatePlotFromCsv(instance()) }
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
 
-    bindSingleton { WebResearchClient() }
-    bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
-    bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
     if (includeWebImageSearch) {
         bindSingleton { WebImageDownloader(instance()) }
         bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
     }
-    bindSingleton { ToolWebPageText(webResearchClient = instance()) }
 
     bindSingleton {
         RuntimeToolsFactory(
@@ -117,20 +88,7 @@ fun runtimeToolsDiModule(
             toolWebPageText = instance(),
         )
     }
-    bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
-    bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
-        ToolRunSkillCommand(
-            sandboxResolver = instance(),
-            skillStorageScope = skillStorageScope,
-        ).toGiga()
-    }
-}
-
-object RuntimePassThroughToolsFilter : AgentToolsFilter {
-    override fun applyFilter(
-        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-    ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
+    bindSingleton<AgentToolCatalog>(overrides = true) { instance<RuntimeToolsFactory>() }
 }
 
 class RuntimeToolsFactory(

@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import ru.souz.android.agent.AndroidAgentRuntime
 import ru.souz.android.settings.AndroidSettingsProvider
-import ru.souz.android.storage.AndroidChatDatabase
 import ru.souz.android.ui.SouzAndroidApp
 
 class MainActivity : ComponentActivity() {
@@ -13,14 +12,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val settings = AndroidSettingsProvider(applicationContext)
-        val chatDatabase = AndroidChatDatabase(applicationContext)
         val agentRuntime = AndroidAgentRuntime(applicationContext, settings)
 
         setContent {
             SouzAndroidApp(
-                context = applicationContext,
-                settings = settings,
-                chatDatabase = chatDatabase,
                 agentRuntime = agentRuntime,
             )
         }

@@ -9,6 +9,7 @@ import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.SessionTokenLogging
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.anthropic.AnthropicChatAPI
@@ -84,9 +85,29 @@ fun runtimeLlmDiModule(
     bindSingleton { OpenAIVisionGateway(instance(), instance()) }
     bindSingleton { AnthropicVisionGateway(instance(), instance()) }
     bindSingleton { LocalVisionGateway(instance(), instance()) }
-    bindSingleton { LLMFactory(instance(), instance(), instance(), instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        LLMFactory(
+            settingsProvider = instance(),
+            apisByProvider = mapOf(
+                LlmProvider.GIGA to instance<GigaRestChatAPI>(),
+                LlmProvider.QWEN to instance<QwenChatAPI>(),
+                LlmProvider.AI_TUNNEL to instance<AiTunnelChatAPI>(),
+                LlmProvider.ANTHROPIC to instance<AnthropicChatAPI>(),
+                LlmProvider.OPENAI to instance<OpenAIChatAPI>(),
+                LlmProvider.LOCAL to instance<LocalChatAPI>(),
+                LlmProvider.CODEX to instance<CodexChatAPI>(),
+            ),
+        )
+    }
     bindSingleton<LLMChatAPI> { instance<LLMFactory>() }
-    bindSingleton { LLMCapabilityResolver(instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        LLMCapabilityResolver(
+            settingsProvider = instance(),
+            openAiGateway = instance(),
+            anthropicGateway = instance(),
+            additionalGateways = mapOf(LlmProvider.LOCAL to instance<LocalVisionGateway>()),
+        )
+    }
     bindSingleton { CapabilityBasedImageGenerationGateway(instance(), instance()) }
     bindSingleton<VisionGateway> { instance<LLMCapabilityResolver>() }
     bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }

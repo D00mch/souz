@@ -14,6 +14,28 @@ kotlin {
     }
 
     sourceSets {
+        val commonMain by getting
+        val commonJvmMain by creating {
+            dependsOn(commonMain)
+            kotlin.srcDir("src/commonJvmMain/kotlin")
+            resources.srcDir("src/commonJvmMain/resources")
+            dependencies {
+                implementation(projects.sharedLogic)
+                implementation(projects.agent)
+                implementation(projects.llms)
+
+                implementation(kotlin("stdlib"))
+                implementation(kotlin("reflect"))
+                implementation(libs.kotlinx.coroutines)
+                implementation(libs.androidx.lifecycle.viewmodelCompose)
+                implementation(libs.androidx.lifecycle.runtimeCompose)
+                implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
+                implementation(libs.kodein.di.framework.compose)
+                implementation(libs.jackson)
+                implementation(libs.slf4j.api)
+            }
+        }
+
         commonMain.dependencies {
             implementation(compose.runtime)
             implementation(compose.animation)
@@ -28,28 +50,26 @@ kotlin {
             implementation(libs.markdown)
         }
 
-        jvmMain.dependencies {
-            implementation(projects.sharedLogic)
-            implementation(projects.agent)
-            implementation(projects.llms)
-            implementation(projects.native)
+        val androidMain by getting {
+            dependsOn(commonJvmMain)
+        }
 
-            implementation(compose.desktop.currentOs)
-            implementation(libs.compose.ui.tooling.preview.desktop)
-            implementation(libs.kodein.di.framework.compose)
-            implementation(libs.platformtools.darkmodedetector)
-            implementation(libs.androidx.lifecycle.viewmodelCompose)
-            implementation(libs.androidx.lifecycle.runtimeCompose)
-            implementation(libs.kotlinx.coroutinesSwing)
+        val jvmMain by getting {
+            dependsOn(commonJvmMain)
+            dependencies {
+                implementation(projects.native)
 
-            implementation(kotlin("reflect"))
+                implementation(compose.desktop.currentOs)
+                implementation(libs.compose.ui.tooling.preview.desktop)
+                implementation(libs.platformtools.darkmodedetector)
+                implementation(libs.kotlinx.coroutinesSwing)
 
-            implementation(libs.jackson)
-            implementation(libs.slfj)
+                implementation(libs.slfj)
 
-            implementation(libs.jna)
+                implementation(libs.jna)
 
-            implementation(libs.java.diffUtils)
+                implementation(libs.java.diffUtils)
+            }
         }
 
         jvmTest.dependencies {

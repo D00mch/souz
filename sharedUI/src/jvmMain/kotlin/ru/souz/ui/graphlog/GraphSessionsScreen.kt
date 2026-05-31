@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import ru.souz.agent.session.GraphSession
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.glassColors
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import java.text.SimpleDateFormat
 import java.util.*

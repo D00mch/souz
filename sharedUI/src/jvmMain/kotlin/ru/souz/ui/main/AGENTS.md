@@ -1,30 +1,19 @@
 ## Project Structure
 ```text
 ui/main/
-├── MainScreen.kt                      # Main screen composables and UI-to-event wiring
-├── MainViewModel.kt                   # Main state/event/effect orchestration for the chat window
-├── MainDTO.kt                         # MainState, MainEvent, MainEffect, chat DTOs and attachment models
+├── MainScreen.kt                      # Desktop main screen composables and UI-to-event wiring
 ├── ChatInputWithQuickSettings.kt      # Chat input UI, model/context selectors, send/mic controls
 ├── ChatAttachmentUi.kt                # Attachment visuals (icons/colors), thumbnail decode, size formatting
-├── ThinkingProcessPanel.kt            # Thinking/trace panel rendering from agent history
-├── search/                            # Chat search projection, indexing, highlighting, and panel UI
-│   └── AGENTS.md                      # Local notes for the search related features
 ├── usecases/                          # Use-case layer for business logic behind the main screen
-│   ├── MainUseCasesFactory.kt         # Builds and wires all use cases used by MainViewModel
-│   ├── MainUseCaseOutput.kt           # Shared use-case output contract (state reducer/effect)
-│   ├── ChatUseCase.kt                 # Agent execution, streaming updates, chat message lifecycle
-│   ├── ChatAttachmentsUseCase.kt      # Finder/file-drop integration and attachment metadata building
-│   ├── FinderPathExtractor.kt         # Extracts/normalizes filesystem paths from model responses
-│   ├── ToolModifyReviewUseCase.kt     # Deferred tool-modify review/approval flow for chat messages
+│   ├── DesktopAttachmentHostPorts.kt  # Swing/drop/thumbnail adapters for common attachment orchestration
 │   ├── VoiceInputUseCase.kt           # Hotkey recording + speech recognition pipeline
-│   ├── SpeechUseCase.kt               # Speech queue and `isSpeaking` state synchronization
-│   └── PermissionsUseCase.kt          # Onboarding + runtime approval orchestration (tool permissions + pluggable selection dialogs)
 └── AGENTS.md                          # This file
 ```
 
 Notes:
+- `MainViewModel`, `MainDTO`, `MainUseCasesFactory`, `ChatUseCase`, shared DTOs, chat search, attachment orchestration, path extraction, speech queue state, permission orchestration, and tool-modify review logic live in `sharedUI/src/commonJvmMain/kotlin/ru/souz/ui/main`.
 - Data flow is unidirectional: `MainScreen` sends `MainEvent` -> `MainViewModel` delegates to use cases -> use cases emit `MainUseCaseOutput` reducers/effects -> `MainState` updates.
 - Tool/file approval flows are split by responsibility: `PermissionsUseCase` handles generic tool and selection approvals, while `ToolModifyReviewUseCase` owns deferred file-modification review state.
-- Speech recognition providers live in `:sharedLogic` under `ru.souz.service.speech`; `VoiceInputUseCase` only orchestrates UI state and recording flow.
+- Desktop speech recognition providers live in `:sharedLogic` under `ru.souz.service.speech`; `VoiceInputUseCase` stays in `jvmMain` and implements the common `VoiceInputController` port.
 - To add a new user action, update `MainDTO.kt` (`MainEvent`), handle it in `MainViewModel.kt`, and keep domain logic in `usecases/` instead of composables.
 - Main regression coverage for this package is in `sharedUI/src/jvmTest/kotlin/ru/souz/ui/main/MainViewModelTest.kt`.

@@ -13,6 +13,8 @@ import ru.souz.db.SettingsProviderImpl.Companion.OPENAI_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.QWEN_CHAT_KEY
 import ru.souz.db.SettingsProviderImpl.Companion.SALUTE_SPEECH_KEY
 import ru.souz.llms.restJsonMapper
+import ru.souz.tool.ToolsSettingsState
+import ru.souz.tool.ToolsSettingsStore
 import java.security.SecureRandom
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
@@ -21,7 +23,7 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.atomic.AtomicReference
 import java.util.prefs.Preferences
 
-object ConfigStore {
+object ConfigStore : ToolsSettingsStore {
     // TODO: move into SettingsProviderImpl
     const val TG_BOT_TOKEN = "TG_BOT_TOKEN"
     const val TG_BOT_OWNER_ID = "TG_BOT_OWNER_ID"
@@ -65,6 +67,12 @@ object ConfigStore {
                 else -> restJsonMapper.readValue<T>(str)
             } as T
         }.getOrNull()
+    }
+
+    override fun loadToolsSettings(key: String): ToolsSettingsState? = get(key)
+
+    override fun saveToolsSettings(key: String, state: ToolsSettingsState) {
+        put(key, state)
     }
 }
 
