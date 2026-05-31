@@ -65,6 +65,8 @@ import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.service.speech.AiTunnelSpeechRecognitionProvider
+import ru.souz.service.speech.LiveSpeechTranscriptionProvider
+import ru.souz.service.speech.MacOsSpeechAnalyzerLiveTranscriptionProvider
 import ru.souz.service.speech.MacOsSpeechBridge
 import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
@@ -265,10 +267,11 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { OpenAIVoiceAPI(instance()) }
     bindSingleton { AiTunnelVoiceAPI(instance()) }
     bindSingleton { MacOsSpeechBridge() }
+    bindSingleton<LiveSpeechTranscriptionProvider> { MacOsSpeechAnalyzerLiveTranscriptionProvider(instance()) }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
-    bindSingleton { MacOsSpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { MacOsSpeechRecognitionProvider(instance(), instance(), liveSpeechProvider = instance()) }
     bindSingleton<SpeechRecognitionProvider> {
         ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance(), instance())
     }

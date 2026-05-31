@@ -37,6 +37,46 @@ class MacOsSpeechBridge(
         cancelRecognitionNative()
     }
 
+    override fun liveIsSupported(locale: String): Boolean {
+        loader.load()
+        return try {
+            liveIsSupportedNative(locale)
+        } catch (_: UnsatisfiedLinkError) {
+            false
+        }
+    }
+
+    override fun liveStart(locale: String): Long {
+        loader.load()
+        return liveStartNative(locale)
+    }
+
+    override fun liveAcceptPcm(
+        sessionId: Long,
+        audio: ByteArray,
+        sampleRateHz: Int,
+        channels: Int,
+        bitsPerSample: Int,
+    ) {
+        loader.load()
+        liveAcceptPcmNative(sessionId, audio, sampleRateHz, channels, bitsPerSample)
+    }
+
+    override fun livePollEvents(sessionId: Long): String {
+        loader.load()
+        return livePollEventsNative(sessionId)
+    }
+
+    override fun liveFinalizeAndFinish(sessionId: Long): String {
+        loader.load()
+        return liveFinalizeAndFinishNative(sessionId)
+    }
+
+    override fun liveCancel(sessionId: Long) {
+        loader.load()
+        liveCancelNative(sessionId)
+    }
+
     private external fun hasSpeechRecognitionUsageDescriptionNative(): Boolean
 
     private external fun authorizationStatusNative(): Int
@@ -46,6 +86,24 @@ class MacOsSpeechBridge(
     private external fun recognizeWavNative(path: String, locale: String): String
 
     private external fun cancelRecognitionNative()
+
+    private external fun liveIsSupportedNative(locale: String): Boolean
+
+    private external fun liveStartNative(locale: String): Long
+
+    private external fun liveAcceptPcmNative(
+        sessionId: Long,
+        audio: ByteArray,
+        sampleRateHz: Int,
+        channels: Int,
+        bitsPerSample: Int,
+    )
+
+    private external fun livePollEventsNative(sessionId: Long): String
+
+    private external fun liveFinalizeAndFinishNative(sessionId: Long): String
+
+    private external fun liveCancelNative(sessionId: Long)
 }
 
 class MacOsSpeechBridgeLoader(

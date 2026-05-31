@@ -30,6 +30,31 @@ interface MacOsSpeechBridgeApi {
     fun recognizeWav(path: String, locale: String): String
 
     fun cancelRecognition()
+
+    fun liveIsSupported(locale: String): Boolean = false
+
+    fun liveStart(locale: String): Long =
+        throw UnsupportedOperationException("Local macOS live speech transcription is not supported.")
+
+    fun liveAcceptPcm(
+        sessionId: Long,
+        audio: ByteArray,
+        sampleRateHz: Int,
+        channels: Int,
+        bitsPerSample: Int,
+    ) {
+        throw UnsupportedOperationException("Local macOS live speech transcription is not supported.")
+    }
+
+    fun livePollEvents(sessionId: Long): String =
+        throw UnsupportedOperationException("Local macOS live speech transcription is not supported.")
+
+    fun liveFinalizeAndFinish(sessionId: Long): String =
+        throw UnsupportedOperationException("Local macOS live speech transcription is not supported.")
+
+    fun liveCancel(sessionId: Long) {
+        throw UnsupportedOperationException("Local macOS live speech transcription is not supported.")
+    }
 }
 
 object LocalMacOsSpeechHost {

@@ -267,10 +267,35 @@ compose.desktop {
 
 val releaseAppBundleDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$distributionPackageName.app")
 
+val patchReleaseRuntimeInfoPlist by tasks.registering {
+    group = "distribution"
+    description = "Add privacy usage descriptions to the bundled Java runtime Info.plist for macOS TCC."
+    dependsOn("createReleaseDistributable")
+
+    onlyIf {
+        System.getProperty("os.name", "").lowercase().contains("mac")
+    }
+
+    doLast {
+        val appBundle = releaseAppBundleDir.get().asFile
+        val runtimeInfoPlist = appBundle.resolve("Contents/runtime/Contents/Info.plist")
+        check(runtimeInfoPlist.exists()) { "Runtime Info.plist not found: $runtimeInfoPlist" }
+
+        fun replacePlistString(key: String, value: String) {
+            exec {
+                commandLine("plutil", "-replace", key, "-string", value, runtimeInfoPlist.absolutePath)
+            }
+        }
+
+        replacePlistString("NSMicrophoneUsageDescription", "Needed for voice capture.")
+        replacePlistString("NSSpeechRecognitionUsageDescription", "Needed for local speech transcription.")
+    }
+}
+
 val resignReleaseAppForNotarization by tasks.registering {
     group = "distribution"
     description = "Re-sign bundled native libraries in the release app before DMG packaging/notarization."
-    dependsOn("createReleaseDistributable")
+    dependsOn(patchReleaseRuntimeInfoPlist)
 
     onlyIf {
         macSigningEnabled.get() &&
@@ -374,11 +399,15 @@ val resignReleaseAppForNotarization by tasks.registering {
     }
 }
 
+tasks.matching { it.name == "createReleaseDistributable" }.configureEach {
+    finalizedBy(patchReleaseRuntimeInfoPlist)
+}
+
 tasks.matching { it.name == "packageReleaseDmg" || it.name == "notarizeReleaseDmg" }.configureEach {
+    dependsOn(patchReleaseRuntimeInfoPlist)
     dependsOn(resignReleaseAppForNotarization)
 }
 
 tasks.matching { it.name == "prepareAppResources" || it.name == "createReleaseDistributable" || it.name == "notarizeReleaseDmg" }.configureEach {
     dependsOn(prepareMacAppResources)
 }
-

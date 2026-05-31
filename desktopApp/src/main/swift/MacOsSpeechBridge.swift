@@ -1,4 +1,5 @@
 import Darwin
+import AVFoundation
 import Foundation
 import Speech
 
@@ -60,6 +61,388 @@ private final class RecognitionContext {
         finishFailure("\(BridgeError.cancelled.rawValue):Recognition cancelled.")
     }
 }
+
+private enum LiveSpeechBridgeError: Error {
+    case unsupportedOS
+    case unsupportedLocale(String)
+    case modelUnavailable(String)
+    case permissionDenied
+    case unavailable(String)
+    case sessionNotFound(Int64)
+
+    var message: String {
+        switch self {
+        case .unsupportedOS:
+            return "LOCAL_MACOS_LIVE_STT:UNSUPPORTED_OS:SpeechAnalyzer requires macOS 26.0 or newer."
+        case .unsupportedLocale(let locale):
+            return "LOCAL_MACOS_LIVE_STT:UNSUPPORTED_LOCALE:\(locale)"
+        case .modelUnavailable(let details):
+            return "LOCAL_MACOS_LIVE_STT:MODEL_UNAVAILABLE:\(details)"
+        case .permissionDenied:
+            return "LOCAL_MACOS_LIVE_STT:PERMISSION_DENIED:Speech recognition permission denied."
+        case .unavailable(let details):
+            return "LOCAL_MACOS_LIVE_STT:UNAVAILABLE:\(details)"
+        case .sessionNotFound(let sessionId):
+            return "LOCAL_MACOS_LIVE_STT:SESSION_NOT_FOUND:\(sessionId)"
+        }
+    }
+}
+
+private let liveStartTimeoutSeconds: Int = 30
+private let liveFinishTimeoutSeconds: Int = 120
+
+#if compiler(>=6.2)
+@available(macOS 26.0, *)
+private final class LiveSpeechSessionRegistry {
+    static let shared = LiveSpeechSessionRegistry()
+
+    private let lock = NSLock()
+    private var nextSessionId: Int64 = 1
+    private var sessions: [Int64: LiveSpeechSession] = [:]
+
+    func register(_ session: LiveSpeechSession) -> Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let sessionId = nextSessionId
+        nextSessionId += 1
+        sessions[sessionId] = session
+        return sessionId
+    }
+
+    func session(_ sessionId: Int64) throws -> LiveSpeechSession {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let session = sessions[sessionId] else {
+            throw LiveSpeechBridgeError.sessionNotFound(sessionId)
+        }
+        return session
+    }
+
+    func remove(_ sessionId: Int64) {
+        lock.lock()
+        sessions.removeValue(forKey: sessionId)
+        lock.unlock()
+    }
+}
+
+@available(macOS 26.0, *)
+private final class LiveSpeechSession {
+    private let transcriber: SpeechTranscriber
+    private let analyzer: SpeechAnalyzer
+    private let inputBuilder: AsyncStream<AnalyzerInput>.Continuation
+    private let analyzerFormat: AVAudioFormat
+    private let lock = NSLock()
+
+    private var resultTask: Task<Void, Never>?
+    private var queuedEvents: [LiveSpeechEvent] = []
+    private var finalEventKeys: Set<String> = []
+    private var failure: String?
+    private var closed = false
+
+    static func isSupported(localeIdentifier: String) async -> Bool {
+        guard SpeechTranscriber.isAvailable else { return false }
+        let requestedLocale = Locale(identifier: localeIdentifier)
+        guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
+            return false
+        }
+
+        let transcriber = SpeechTranscriber(
+            locale: supportedLocale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults],
+            attributeOptions: []
+        )
+        let status = await AssetInventory.status(forModules: [transcriber])
+        return status == .installed
+    }
+
+    static func create(localeIdentifier: String) async throws -> LiveSpeechSession {
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            break
+        case .denied:
+            throw LiveSpeechBridgeError.permissionDenied
+        case .restricted:
+            throw LiveSpeechBridgeError.unavailable("Speech recognition is restricted on this device.")
+        case .notDetermined:
+            throw LiveSpeechBridgeError.permissionDenied
+        @unknown default:
+            throw LiveSpeechBridgeError.unavailable("Speech recognition authorization status is unsupported.")
+        }
+
+        guard SpeechTranscriber.isAvailable else {
+            throw LiveSpeechBridgeError.unsupportedOS
+        }
+
+        let requestedLocale = Locale(identifier: localeIdentifier)
+        guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
+            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
+        }
+
+        let transcriber = SpeechTranscriber(
+            locale: supportedLocale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults],
+            attributeOptions: []
+        )
+
+        let status = await AssetInventory.status(forModules: [transcriber])
+        switch status {
+        case .installed:
+            break
+        case .supported, .downloading:
+            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets are not installed for \(localeIdentifier).")
+        case .unsupported:
+            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
+        @unknown default:
+            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model asset status is unknown for \(localeIdentifier).")
+        }
+
+        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+            throw LiveSpeechBridgeError.unavailable("No compatible SpeechAnalyzer audio format is available.")
+        }
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let (inputSequence, inputBuilder) = AsyncStream.makeStream(of: AnalyzerInput.self)
+        try await analyzer.start(inputSequence: inputSequence)
+
+        let session = LiveSpeechSession(
+            transcriber: transcriber,
+            analyzer: analyzer,
+            inputBuilder: inputBuilder,
+            analyzerFormat: analyzerFormat
+        )
+        session.startResultReader()
+        return session
+    }
+
+    private init(
+        transcriber: SpeechTranscriber,
+        analyzer: SpeechAnalyzer,
+        inputBuilder: AsyncStream<AnalyzerInput>.Continuation,
+        analyzerFormat: AVAudioFormat
+    ) {
+        self.transcriber = transcriber
+        self.analyzer = analyzer
+        self.inputBuilder = inputBuilder
+        self.analyzerFormat = analyzerFormat
+    }
+
+    func acceptPcm(
+        audio: Data,
+        sampleRateHz: Int32,
+        channels: Int32,
+        bitsPerSample: Int32
+    ) throws {
+        try ensureOpen()
+        let buffer = try makeAnalyzerBuffer(
+            audio: audio,
+            sampleRateHz: sampleRateHz,
+            channels: channels,
+            bitsPerSample: bitsPerSample
+        )
+        inputBuilder.yield(AnalyzerInput(buffer: buffer))
+    }
+
+    func pollEvents() throws -> String {
+        try drainEncodedEvents()
+    }
+
+    func finalizeAndFinish() async throws -> String {
+        try markClosed()
+        inputBuilder.finish()
+        try await analyzer.finalizeAndFinishThroughEndOfInput()
+        _ = await resultTask?.result
+        return try drainEncodedEvents()
+    }
+
+    func cancel() async {
+        let wasClosed = markCancelled()
+
+        if !wasClosed {
+            inputBuilder.finish()
+        }
+        resultTask?.cancel()
+        await analyzer.cancelAndFinishNow()
+    }
+
+    private func startResultReader() {
+        resultTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await result in self.transcriber.results {
+                    let text = String(result.text.characters)
+                    self.enqueueEvent(text: text, isFinal: result.isFinal)
+                }
+            } catch {
+                self.recordFailure("SpeechTranscriber failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func enqueueEvent(text: String, isFinal: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if isFinal {
+            let key = "final:\(text)"
+            guard finalEventKeys.insert(key).inserted else { return }
+            queuedEvents.append(LiveSpeechEvent(text: text, isFinal: true))
+        } else {
+            queuedEvents.removeAll { !$0.isFinal }
+            queuedEvents.append(LiveSpeechEvent(text: text, isFinal: false))
+        }
+
+        if queuedEvents.count > 128 {
+            let finalEvents = queuedEvents.filter(\.isFinal)
+            let volatileEvents = queuedEvents.filter { !$0.isFinal }.suffix(1)
+            queuedEvents = finalEvents + Array(volatileEvents)
+        }
+    }
+
+    private func recordFailure(_ message: String) {
+        lock.lock()
+        if failure == nil {
+            failure = message
+        }
+        lock.unlock()
+    }
+
+    private func drainEncodedEvents() throws -> String {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let failure {
+            throw LiveSpeechBridgeError.unavailable(failure)
+        }
+
+        let events = queuedEvents
+        queuedEvents.removeAll()
+        return events.map(\.encodedLine).joined(separator: "\n")
+    }
+
+    private func ensureOpen() throws {
+        lock.lock()
+        let isClosed = closed
+        let currentFailure = failure
+        lock.unlock()
+
+        if let currentFailure {
+            throw LiveSpeechBridgeError.unavailable(currentFailure)
+        }
+        if isClosed {
+            throw LiveSpeechBridgeError.unavailable("Live speech transcription session is closed.")
+        }
+    }
+
+    private func markClosed() throws {
+        lock.lock()
+        let wasClosed = closed
+        let currentFailure = failure
+        if !closed {
+            closed = true
+        }
+        lock.unlock()
+
+        if let currentFailure {
+            throw LiveSpeechBridgeError.unavailable(currentFailure)
+        }
+        if wasClosed {
+            throw LiveSpeechBridgeError.unavailable("Live speech transcription session is closed.")
+        }
+    }
+
+    private func markCancelled() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let wasClosed = closed
+        closed = true
+        return wasClosed
+    }
+
+    private func makeAnalyzerBuffer(
+        audio: Data,
+        sampleRateHz: Int32,
+        channels: Int32,
+        bitsPerSample: Int32
+    ) throws -> AVAudioPCMBuffer {
+        guard sampleRateHz > 0, channels == 1, bitsPerSample == 16 else {
+            throw LiveSpeechBridgeError.unavailable("Unsupported PCM format.")
+        }
+        guard audio.count % MemoryLayout<Int16>.size == 0 else {
+            throw LiveSpeechBridgeError.unavailable("PCM audio byte count must be aligned to 16-bit samples.")
+        }
+        guard !audio.isEmpty else {
+            throw LiveSpeechBridgeError.unavailable("PCM audio chunk is empty.")
+        }
+        guard let sourceFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: Double(sampleRateHz),
+            channels: AVAudioChannelCount(channels),
+            interleaved: false
+        ) else {
+            throw LiveSpeechBridgeError.unavailable("Failed to create source audio format.")
+        }
+
+        let frameCount = AVAudioFrameCount(audio.count / MemoryLayout<Int16>.size)
+        guard let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {
+            throw LiveSpeechBridgeError.unavailable("Failed to create source audio buffer.")
+        }
+        sourceBuffer.frameLength = frameCount
+
+        guard let channelData = sourceBuffer.int16ChannelData?[0] else {
+            throw LiveSpeechBridgeError.unavailable("Failed to access source audio buffer.")
+        }
+        audio.withUnsafeBytes { rawBuffer in
+            if let source = rawBuffer.bindMemory(to: Int16.self).baseAddress {
+                channelData.update(from: source, count: Int(frameCount))
+            }
+        }
+
+        guard let converter = AVAudioConverter(from: sourceFormat, to: analyzerFormat) else {
+            throw LiveSpeechBridgeError.unavailable("Failed to create audio converter.")
+        }
+
+        let ratio = analyzerFormat.sampleRate / sourceFormat.sampleRate
+        let convertedCapacity = AVAudioFrameCount(Double(frameCount) * ratio) + 1024
+        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: convertedCapacity) else {
+            throw LiveSpeechBridgeError.unavailable("Failed to create converted audio buffer.")
+        }
+
+        var didProvideInput = false
+        var conversionError: NSError?
+        let status = converter.convert(to: convertedBuffer, error: &conversionError) { _, outStatus in
+            if didProvideInput {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            didProvideInput = true
+            outStatus.pointee = .haveData
+            return sourceBuffer
+        }
+
+        if status == .error {
+            throw LiveSpeechBridgeError.unavailable(
+                conversionError?.localizedDescription ?? "Audio conversion failed."
+            )
+        }
+        return convertedBuffer
+    }
+}
+
+private struct LiveSpeechEvent {
+    let text: String
+    let isFinal: Bool
+
+    var encodedLine: String {
+        let finalField = isFinal ? "1" : "0"
+        let encodedText = text.data(using: .utf8)?.base64EncodedString() ?? ""
+        return "\(finalField)\t\t\t\(encodedText)"
+    }
+}
+#endif
 
 @_cdecl("souz_macos_speech_has_usage_description")
 public func souz_macos_speech_has_usage_description() -> Int32 {
@@ -230,6 +613,169 @@ public func souz_macos_speech_recognize_wav(
     return nil
 }
 
+@_cdecl("souz_macos_live_speech_is_supported")
+public func souz_macos_live_speech_is_supported(_ localePtr: UnsafePointer<CChar>?) -> Int32 {
+    guard let localePtr else { return 0 }
+
+#if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+        let localeIdentifier = String(cString: localePtr)
+        let supported = (try? waitForLiveAsync(timeoutSeconds: liveStartTimeoutSeconds) {
+            await LiveSpeechSession.isSupported(localeIdentifier: localeIdentifier)
+        }) ?? false
+        return supported ? 1 : 0
+    }
+#endif
+
+    return 0
+}
+
+@_cdecl("souz_macos_live_speech_start")
+public func souz_macos_live_speech_start(
+    _ localePtr: UnsafePointer<CChar>?,
+    _ errorBuffer: UnsafeMutablePointer<CChar>?,
+    _ errorBufferSize: Int32
+) -> Int64 {
+    guard let localePtr else {
+        writeError(
+            LiveSpeechBridgeError.unavailable("Missing locale.").message,
+            to: errorBuffer,
+            size: errorBufferSize
+        )
+        return 0
+    }
+
+#if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+        do {
+            let localeIdentifier = String(cString: localePtr)
+            let session = try waitForLiveAsync(timeoutSeconds: liveStartTimeoutSeconds) {
+                try await LiveSpeechSession.create(localeIdentifier: localeIdentifier)
+            }
+            return LiveSpeechSessionRegistry.shared.register(session)
+        } catch {
+            writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
+            return 0
+        }
+    }
+#endif
+
+    writeError(LiveSpeechBridgeError.unsupportedOS.message, to: errorBuffer, size: errorBufferSize)
+    return 0
+}
+
+@_cdecl("souz_macos_live_speech_accept_pcm")
+public func souz_macos_live_speech_accept_pcm(
+    _ sessionId: Int64,
+    _ audioPtr: UnsafePointer<Int8>?,
+    _ audioSize: Int32,
+    _ sampleRateHz: Int32,
+    _ channels: Int32,
+    _ bitsPerSample: Int32,
+    _ errorBuffer: UnsafeMutablePointer<CChar>?,
+    _ errorBufferSize: Int32
+) -> Int32 {
+#if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+        do {
+            guard let audioPtr, audioSize >= 0 else {
+                throw LiveSpeechBridgeError.unavailable("Missing PCM audio.")
+            }
+            let audio = Data(bytes: UnsafeRawPointer(audioPtr), count: Int(audioSize))
+            let session = try LiveSpeechSessionRegistry.shared.session(sessionId)
+            try session.acceptPcm(
+                audio: audio,
+                sampleRateHz: sampleRateHz,
+                channels: channels,
+                bitsPerSample: bitsPerSample
+            )
+            return 1
+        } catch {
+            writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
+            return 0
+        }
+    }
+#endif
+
+    writeError(LiveSpeechBridgeError.unsupportedOS.message, to: errorBuffer, size: errorBufferSize)
+    return 0
+}
+
+@_cdecl("souz_macos_live_speech_poll_events")
+public func souz_macos_live_speech_poll_events(
+    _ sessionId: Int64,
+    _ errorBuffer: UnsafeMutablePointer<CChar>?,
+    _ errorBufferSize: Int32
+) -> UnsafeMutablePointer<CChar>? {
+#if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+        do {
+            let session = try LiveSpeechSessionRegistry.shared.session(sessionId)
+            return strdup(try session.pollEvents())
+        } catch {
+            writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
+            return nil
+        }
+    }
+#endif
+
+    writeError(LiveSpeechBridgeError.unsupportedOS.message, to: errorBuffer, size: errorBufferSize)
+    return nil
+}
+
+@_cdecl("souz_macos_live_speech_finalize_and_finish")
+public func souz_macos_live_speech_finalize_and_finish(
+    _ sessionId: Int64,
+    _ errorBuffer: UnsafeMutablePointer<CChar>?,
+    _ errorBufferSize: Int32
+) -> UnsafeMutablePointer<CChar>? {
+#if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+        do {
+            let session = try LiveSpeechSessionRegistry.shared.session(sessionId)
+            defer { LiveSpeechSessionRegistry.shared.remove(sessionId) }
+            let events = try waitForLiveAsync(timeoutSeconds: liveFinishTimeoutSeconds) {
+                try await session.finalizeAndFinish()
+            }
+            return strdup(events)
+        } catch {
+            LiveSpeechSessionRegistry.shared.remove(sessionId)
+            writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
+            return nil
+        }
+    }
+#endif
+
+    writeError(LiveSpeechBridgeError.unsupportedOS.message, to: errorBuffer, size: errorBufferSize)
+    return nil
+}
+
+@_cdecl("souz_macos_live_speech_cancel")
+public func souz_macos_live_speech_cancel(
+    _ sessionId: Int64,
+    _ errorBuffer: UnsafeMutablePointer<CChar>?,
+    _ errorBufferSize: Int32
+) -> Int32 {
+#if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+        do {
+            let session = try LiveSpeechSessionRegistry.shared.session(sessionId)
+            LiveSpeechSessionRegistry.shared.remove(sessionId)
+            try waitForLiveAsync(timeoutSeconds: liveStartTimeoutSeconds) {
+                await session.cancel()
+            }
+            return 1
+        } catch {
+            writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
+            return 0
+        }
+    }
+#endif
+
+    writeError(LiveSpeechBridgeError.unsupportedOS.message, to: errorBuffer, size: errorBufferSize)
+    return 0
+}
+
 @_cdecl("souz_macos_speech_string_free")
 public func souz_macos_speech_string_free(_ value: UnsafeMutablePointer<CChar>?) {
     free(value)
@@ -261,6 +807,58 @@ private func normalizedLocaleIdentifier(_ identifier: String) -> String {
     Locale.canonicalIdentifier(from: identifier)
         .replacingOccurrences(of: "_", with: "-")
         .lowercased()
+}
+
+private final class AsyncResultBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<T, Error>?
+
+    func set(_ result: Result<T, Error>) {
+        lock.lock()
+        self.result = result
+        lock.unlock()
+    }
+
+    func get() -> Result<T, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return result
+    }
+}
+
+private func waitForLiveAsync<T>(
+    timeoutSeconds: Int,
+    _ operation: @escaping () async throws -> T
+) throws -> T {
+    let semaphore = DispatchSemaphore(value: 0)
+    let box = AsyncResultBox<T>()
+
+    Task {
+        do {
+            box.set(.success(try await operation()))
+        } catch {
+            box.set(.failure(error))
+        }
+        semaphore.signal()
+    }
+
+    guard semaphore.wait(timeout: .now() + .seconds(timeoutSeconds)) == .success else {
+        throw LiveSpeechBridgeError.unavailable("Live speech transcription timed out.")
+    }
+    guard let result = box.get() else {
+        throw LiveSpeechBridgeError.unavailable("Live speech transcription finished without a result.")
+    }
+    return try result.get()
+}
+
+private func liveSpeechErrorMessage(_ error: Error) -> String {
+    if let liveError = error as? LiveSpeechBridgeError {
+        return liveError.message
+    }
+    if error is CancellationError {
+        return "LOCAL_MACOS_LIVE_STT:UNAVAILABLE:Live speech transcription was cancelled."
+    }
+    return "LOCAL_MACOS_LIVE_STT:UNAVAILABLE:\(error.localizedDescription)"
 }
 
 private func writeError(_ message: String, to buffer: UnsafeMutablePointer<CChar>?, size: Int32) {
