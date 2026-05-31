@@ -3,6 +3,7 @@ package ru.souz.tool
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.SkillToolBindingTags
@@ -15,6 +16,7 @@ import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 import ru.souz.skills.registry.SkillStorageScope
+import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolFindFilesByName
 import ru.souz.tool.files.ToolFindFolders
@@ -48,9 +50,9 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { ToolListFiles(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }
-    bindSingleton { ToolDeleteFile(instance()) }
-    bindSingleton { ToolModifyFile(instance()) }
-    bindSingleton { ToolMoveFile(instance()) }
+    bindSingleton { ToolDeleteFile(instance(), instanceOrNull<ToolPermissionBroker>()) }
+    bindSingleton { ToolModifyFile(instance(), instanceOrNull<DeferredToolModifyPermissionBroker>()) }
+    bindSingleton { ToolMoveFile(instance(), instanceOrNull<ToolPermissionBroker>()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolFindFolders(instance()) }
     bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }

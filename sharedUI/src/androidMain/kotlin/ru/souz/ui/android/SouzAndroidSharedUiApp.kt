@@ -1,5 +1,7 @@
 package ru.souz.ui.android
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,12 +10,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -21,8 +25,10 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,8 +51,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
@@ -54,11 +62,15 @@ import org.kodein.di.DI
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import ru.souz.llms.LLMModel
+import ru.souz.tool.files.ToolModifyApplyStatus
+import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.AppTheme
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainEffect
 import ru.souz.ui.main.MainEvent
 import ru.souz.ui.main.MainState
+import ru.souz.ui.main.ToolModifyReviewItemUi
+import ru.souz.ui.main.ToolModifyReviewUi
 import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.settings.SettingsEffect
 import ru.souz.ui.settings.SettingsEvent
@@ -121,6 +133,14 @@ private fun AndroidChatRoute(
         onSendMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
         onCancel = { viewModel.send(MainEvent.UserPressStop) },
         onModelChange = { viewModel.send(MainEvent.UpdateChatModel(it.alias)) },
+        onToggleToolModifyReviewSelection = { messageId, itemId ->
+            viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
+        },
+        onResolveToolModifyReview = { messageId, action ->
+            viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
+        },
+        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
+        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
         onShowMessage = { snackbarScope.launch { snackbarHostState.showSnackbar(it) } },
     )
 }
@@ -137,9 +157,40 @@ private fun AndroidChatScreen(
     onSendMessage: (String) -> Unit,
     onCancel: () -> Unit,
     onModelChange: (LLMModel) -> Unit,
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit,
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
+    onApproveToolPermission: () -> Unit,
+    onRejectToolPermission: () -> Unit,
     onShowMessage: (String) -> Unit,
 ) {
     var input by remember(state.chatSessionId) { mutableStateOf("") }
+    val canSend = !state.isProcessing && !state.isAwaitingToolReview && input.trim().isNotEmpty()
+
+    state.toolPermissionDialog?.let { dialog ->
+        val paramsText = dialog.params.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+        AlertDialog(
+            onDismissRequest = onRejectToolPermission,
+            title = { Text("Tool permission") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(dialog.description)
+                    if (paramsText.isNotBlank()) {
+                        Text(
+                            text = paramsText,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = onApproveToolPermission) { Text("Allow") }
+            },
+            dismissButton = {
+                TextButton(onClick = onRejectToolPermission) { Text("Deny") }
+            },
+        )
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -209,7 +260,11 @@ private fun AndroidChatScreen(
                 }
 
                 items(state.chatMessages, key = { it.id }) { message ->
-                    AndroidChatMessage(message)
+                    AndroidChatMessage(
+                        message = message,
+                        onToggleToolModifyReviewSelection = onToggleToolModifyReviewSelection,
+                        onResolveToolModifyReview = onResolveToolModifyReview,
+                    )
                 }
 
                 if (state.isProcessing) {
@@ -248,14 +303,17 @@ private fun AndroidChatScreen(
                 )
                 Spacer(Modifier.width(8.dp))
                 IconButton(
+                    enabled = state.isProcessing || canSend,
                     onClick = {
-                        if (state.isProcessing) {
-                            onCancel()
-                        } else {
-                            val text = input.trim()
-                            if (text.isNotEmpty()) {
-                                input = ""
-                                onSendMessage(text)
+                        when {
+                            state.isProcessing -> onCancel()
+                            state.isAwaitingToolReview -> Unit
+                            else -> {
+                                val text = input.trim()
+                                if (text.isNotEmpty()) {
+                                    input = ""
+                                    onSendMessage(text)
+                                }
                             }
                         }
                     },
@@ -271,7 +329,11 @@ private fun AndroidChatScreen(
 }
 
 @Composable
-private fun AndroidChatMessage(message: ChatMessage) {
+private fun AndroidChatMessage(
+    message: ChatMessage,
+    onToggleToolModifyReviewSelection: (String, Long) -> Unit,
+    onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -282,7 +344,11 @@ private fun AndroidChatMessage(message: ChatMessage) {
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(message.text.ifBlank { "..." })
+            if (message.text.isNotBlank()) {
+                Text(message.text)
+            } else if (message.agentActions.isEmpty() && message.toolModifyReview == null) {
+                Text("...")
+            }
             if (message.agentActions.isNotEmpty()) {
                 Text(
                     text = message.agentActions.joinToString("\n"),
@@ -290,9 +356,160 @@ private fun AndroidChatMessage(message: ChatMessage) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            message.toolModifyReview?.let { review ->
+                AndroidToolModifyReview(
+                    messageId = message.id,
+                    review = review,
+                    onToggleSelection = onToggleToolModifyReviewSelection,
+                    onResolve = onResolveToolModifyReview,
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun AndroidToolModifyReview(
+    messageId: String,
+    review: ToolModifyReviewUi,
+    onToggleSelection: (String, Long) -> Unit,
+    onResolve: (String, ToolModifySelectionAction) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = if (review.isResolved) "Edit review result" else "Review staged edits",
+            fontWeight = FontWeight.SemiBold,
+        )
+        review.summary?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        review.items.forEach { item ->
+            AndroidToolModifyReviewItem(
+                messageId = messageId,
+                item = item,
+                reviewResolved = review.isResolved,
+                onToggleSelection = onToggleSelection,
+            )
+        }
+        if (!review.isResolved) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onResolve(messageId, ToolModifySelectionAction.APPLY_SELECTED) },
+                ) {
+                    Text("Apply selected")
+                }
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onResolve(messageId, ToolModifySelectionAction.DISCARD_SELECTED) },
+                ) {
+                    Text("Discard selected")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AndroidToolModifyReviewItem(
+    messageId: String,
+    item: ToolModifyReviewItemUi,
+    reviewResolved: Boolean,
+    onToggleSelection: (String, Long) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (!reviewResolved) {
+                Checkbox(
+                    checked = item.selected,
+                    onCheckedChange = { onToggleSelection(messageId, item.id) },
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = item.path,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = androidToolModifyStatusText(item, reviewResolved),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item.warning?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Text(
+            text = item.patchPreview.ifBlank { "(empty patch)" },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 220.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(6.dp),
+                )
+                .padding(8.dp)
+                .verticalScroll(rememberScrollState()),
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+private fun androidToolModifyStatusText(
+    item: ToolModifyReviewItemUi,
+    reviewResolved: Boolean,
+): String =
+    if (!reviewResolved) {
+        if (item.selected) "Selected" else "Not selected"
+    } else {
+        when (item.status) {
+            ToolModifyApplyStatus.APPLIED -> "Applied"
+            ToolModifyApplyStatus.DISCARDED -> "Discarded"
+            ToolModifyApplyStatus.SKIPPED_CONFLICT -> "Skipped: dependency conflict"
+            ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT -> "Skipped: file changed"
+            null -> "Pending"
+        }
+    }
 
 @Composable
 private fun AndroidModelSelector(

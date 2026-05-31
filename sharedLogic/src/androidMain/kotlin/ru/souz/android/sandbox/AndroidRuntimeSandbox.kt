@@ -15,6 +15,7 @@ import ru.souz.runtime.sandbox.SandboxMode
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
 import ru.souz.runtime.sandbox.SandboxScope
+import ru.souz.runtime.sandbox.SandboxUserFacingPathNormalizer
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.nio.file.Path
@@ -307,18 +308,8 @@ class AndroidSQLiteSandboxFileSystem(context: Context) : SQLiteOpenHelper(
         return rows
     }
 
-    private fun normalize(rawPath: String): String {
-        val raw = rawPath.ifBlank { ROOT }.replace('\\', '/')
-        val stack = ArrayDeque<String>()
-        raw.split('/').forEach { segment ->
-            when {
-                segment.isBlank() || segment == "." -> Unit
-                segment == ".." -> if (stack.isNotEmpty()) stack.removeLast()
-                else -> stack.addLast(segment)
-            }
-        }
-        return if (stack.isEmpty()) ROOT else stack.joinToString(prefix = ROOT, separator = "/")
-    }
+    private fun normalize(rawPath: String): String =
+        SandboxUserFacingPathNormalizer.normalize(rawPath, runtimePaths)
 
     private fun descendantLike(path: String): String =
         if (path == ROOT) "/%" else "$path/%"
