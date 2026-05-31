@@ -38,8 +38,6 @@ kotlin {
         val commonMain by getting
         val commonJvmMain by creating {
             dependsOn(commonMain)
-            kotlin.srcDir("src/commonJvmMain/kotlin")
-            resources.srcDir("src/commonJvmMain/resources")
             dependencies {
                 implementation(projects.agent)
                 implementation(projects.llms)
