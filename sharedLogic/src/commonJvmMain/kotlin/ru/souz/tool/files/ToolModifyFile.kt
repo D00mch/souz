@@ -52,7 +52,7 @@ class ToolModifyFile(
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         if (permissionBroker?.shouldStageEdits() == true) {
-            permissionBroker.stageEdit(input)
+            permissionBroker.stageEdit(input, meta)
             return "Staged, not yet applied"
         }
         return invoke(input, meta)

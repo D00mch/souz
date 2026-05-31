@@ -37,6 +37,7 @@ import ru.souz.tool.web.internal.WebResearchClient
 fun portableRuntimeToolsDiModule(
     skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
+    bindAgentToolCatalog: Boolean = true,
 ): DI.Module = DI.Module("portableRuntimeTools") {
     bindSingleton<ToolInvocationSandboxScopeResolver> { scopeResolver }
     bindSingleton<ToolInvocationRuntimeSandboxResolver> {
@@ -82,7 +83,9 @@ fun portableRuntimeToolsDiModule(
             toolWebPageText = instance(),
         )
     }
-    bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
+    if (bindAgentToolCatalog) {
+        bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
+    }
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
         ToolRunSkillCommand(

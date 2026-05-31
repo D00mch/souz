@@ -45,6 +45,7 @@ fun runtimeToolsDiModule(
         portableRuntimeToolsDiModule(
             skillStorageScope = skillStorageScope,
             scopeResolver = scopeResolver,
+            bindAgentToolCatalog = false,
         )
     )
     bindSingleton { ToolExtractText(instance()) }
@@ -88,7 +89,7 @@ fun runtimeToolsDiModule(
             toolWebPageText = instance(),
         )
     }
-    bindSingleton<AgentToolCatalog>(overrides = true) { instance<RuntimeToolsFactory>() }
+    bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
 }
 
 class RuntimeToolsFactory(

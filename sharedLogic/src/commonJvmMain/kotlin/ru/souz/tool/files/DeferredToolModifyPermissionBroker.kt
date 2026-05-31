@@ -5,7 +5,9 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.tool.BadInputException
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolPermissionRequest
@@ -76,7 +78,7 @@ class DeferredToolModifyPermissionBroker(
     private val mutex = Mutex()
     private var nextStagedId = 0L
     private val stagedCalls = ArrayList<StagedEditCall>()
-    private val virtualFiles = LinkedHashMap<String, VirtualFileState>()
+    private val virtualFiles = LinkedHashMap<StagedFileKey, VirtualFileState>()
 
     fun shouldStageEdits(): Boolean = settingsProvider.safeModeEnabled
 
@@ -88,13 +90,20 @@ class DeferredToolModifyPermissionBroker(
     /**
      * Validates and stages one [ToolModifyFile] call against the current virtual file state.
      */
-    suspend fun stageEdit(input: ToolModifyFile.Input) {
+    suspend fun stageEdit(
+        input: ToolModifyFile.Input,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
+    ) {
         mutex.withLock {
-            val canonicalFile = filesToolUtil.resolveSafeExistingFile(input.path)
-            val fileKey = canonicalFile.path
+            val canonicalFile = filesToolUtil.resolveSafeExistingFile(input.path, meta)
+            val fileKey = StagedFileKey(
+                scope = filesToolUtil.runtimeSandbox(meta).scope,
+                path = canonicalFile.path,
+            )
             val virtualFile = virtualFiles.getOrPut(fileKey) {
-                val editable = filesToolUtil.readEditableUtf8TextFile(canonicalFile)
+                val editable = filesToolUtil.readEditableUtf8TextFile(canonicalFile, meta)
                 VirtualFileState(
+                    meta = meta,
                     path = editable.path,
                     originalRawText = editable.rawText,
                     currentRawText = editable.rawText,
@@ -107,6 +116,7 @@ class DeferredToolModifyPermissionBroker(
             stagedCalls += StagedEditCall(
                 id = nextStagedId,
                 input = input.copy(path = canonicalFile.path),
+                fileKey = fileKey,
                 path = canonicalFile.path,
                 patchPreview = prepared.patchPreview,
             )
@@ -151,8 +161,8 @@ class DeferredToolModifyPermissionBroker(
         }
         val results = ArrayList<ToolModifyApplyResult.Item>(stagedSnapshot.size)
 
-        stagedSnapshot.groupBy { it.path }.forEach { (path, callsForFile) ->
-            val virtualFile = virtualFiles[path]
+        stagedSnapshot.groupBy { it.fileKey }.forEach { (fileKey, callsForFile) ->
+            val virtualFile = virtualFiles[fileKey]
             if (virtualFile == null) {
                 callsForFile.forEach { staged ->
                     results += ToolModifyApplyResult.Item(
@@ -174,7 +184,10 @@ class DeferredToolModifyPermissionBroker(
             }
 
             val currentFile = try {
-                filesToolUtil.readEditableUtf8TextFile(filesToolUtil.resolveSafeExistingFile(virtualFile.path))
+                filesToolUtil.readEditableUtf8TextFile(
+                    filesToolUtil.resolveSafeExistingFile(virtualFile.path, virtualFile.meta),
+                    virtualFile.meta,
+                )
             } catch (_: BadInputException) {
                 appendExternalConflictResults(
                     results = results,
@@ -240,9 +253,10 @@ class DeferredToolModifyPermissionBroker(
 
             if (hasAppliedChanges) {
                 filesToolUtil.writeUtf8TextFileAtomically(
-                    filesToolUtil.resolvePath(virtualFile.path),
+                    filesToolUtil.resolvePath(virtualFile.path, virtualFile.meta),
                     workingRawText,
                     l,
+                    virtualFile.meta,
                 )
             }
         }
@@ -276,14 +290,24 @@ class DeferredToolModifyPermissionBroker(
     private data class StagedEditCall(
         val id: Long,
         val input: ToolModifyFile.Input,
+        val fileKey: StagedFileKey,
         val path: String,
         val patchPreview: String,
+    )
+
+    /**
+     * Key for a staged file inside the invocation sandbox that produced the edit.
+     */
+    private data class StagedFileKey(
+        val scope: SandboxScope,
+        val path: String,
     )
 
     /**
      * Per-file virtual editing state used while additional staged edits are still accumulating.
      */
     private data class VirtualFileState(
+        val meta: ToolInvocationMeta,
         val path: String,
         val originalRawText: String,
         var currentRawText: String,

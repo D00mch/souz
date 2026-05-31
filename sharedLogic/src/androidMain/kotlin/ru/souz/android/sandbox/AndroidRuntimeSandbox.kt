@@ -171,7 +171,7 @@ class AndroidSQLiteSandboxFileSystem(context: Context) : SQLiteOpenHelper(
         }
         writableDatabase.delete(
             "sandbox_entries",
-            "path = ? OR path LIKE ?",
+            "path = ? OR path LIKE ? ESCAPE '\\'",
             arrayOf(path.path, descendantLike(path.path)),
         )
     }
@@ -223,7 +223,7 @@ class AndroidSQLiteSandboxFileSystem(context: Context) : SQLiteOpenHelper(
         try {
             writableDatabase.delete(
                 "sandbox_entries",
-                "path = ? OR path LIKE ?",
+                "path = ? OR path LIKE ? ESCAPE '\\'",
                 arrayOf(source.path, descendantLike(source.path)),
             )
             rows.forEach { entry ->
@@ -288,7 +288,7 @@ class AndroidSQLiteSandboxFileSystem(context: Context) : SQLiteOpenHelper(
         readableDatabase.query(
             "sandbox_entries",
             arrayOf("path", "is_directory", "content"),
-            "path LIKE ?",
+            "path LIKE ? ESCAPE '\\'",
             arrayOf(descendantLike(path)),
             null,
             null,
@@ -312,7 +312,16 @@ class AndroidSQLiteSandboxFileSystem(context: Context) : SQLiteOpenHelper(
         SandboxUserFacingPathNormalizer.normalize(rawPath, runtimePaths)
 
     private fun descendantLike(path: String): String =
-        if (path == ROOT) "/%" else "$path/%"
+        if (path == ROOT) "/%" else "${path.escapeSqlLikeLiteral()}/%"
+
+    private fun String.escapeSqlLikeLiteral(): String = buildString(length) {
+        this@escapeSqlLikeLiteral.forEach { char ->
+            if (char == '\\' || char == '%' || char == '_') {
+                append('\\')
+            }
+            append(char)
+        }
+    }
 
     private fun String.parentPath(): String? {
         if (this == ROOT) return null
