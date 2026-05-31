@@ -35,6 +35,22 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
     }
 
     @Test
+    fun `parser preserves repeated identical final events`() {
+        val raw = listOf(
+            "1\t100\t200\t${encoded("да")}",
+            "1\t210\t300\t${encoded("да")}",
+        ).joinToString("\n")
+
+        assertEquals(
+            listOf(
+                LiveSpeechTranscriptEvent("да", isFinal = true, startedAtMs = 100, endedAtMs = 200),
+                LiveSpeechTranscriptEvent("да", isFinal = true, startedAtMs = 210, endedAtMs = 300),
+            ),
+            parseLiveSpeechTranscriptEvents(raw),
+        )
+    }
+
+    @Test
     fun `parser decodes volatile event with non ascii text and nullable timestamps`() {
         val events = parseLiveSpeechTranscriptEvents("0\t\t\t${encoded("привет мир")}")
 
@@ -48,6 +64,14 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
                 )
             ),
             events,
+        )
+    }
+
+    @Test
+    fun `parser decodes event without timestamps`() {
+        assertEquals(
+            listOf(LiveSpeechTranscriptEvent("no timestamps", isFinal = true)),
+            parseLiveSpeechTranscriptEvents("1\t\t\t${encoded("no timestamps")}"),
         )
     }
 
@@ -145,6 +169,26 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
         assertFailsWith<LocalMacOsLiveSpeechUnavailableException> {
             session.acceptPcm(byteArrayOf(1))
         }
+    }
+
+    @Test
+    fun `session poll returns repeated identical final events`() = runTest {
+        val raw = listOf(
+            "1\t10\t20\t${encoded("да")}",
+            "1\t30\t40\t${encoded("да")}",
+        ).joinToString("\n")
+        val session = MacOsSpeechAnalyzerLiveTranscriptionProvider(
+            bridge = FakeMacOsSpeechBridge(pollRaw = raw),
+            isMacOsProvider = { true },
+        ).start("ru-RU")
+
+        assertEquals(
+            listOf(
+                LiveSpeechTranscriptEvent("да", isFinal = true, startedAtMs = 10, endedAtMs = 20),
+                LiveSpeechTranscriptEvent("да", isFinal = true, startedAtMs = 30, endedAtMs = 40),
+            ),
+            session.pollEvents(),
+        )
     }
 
     @Test

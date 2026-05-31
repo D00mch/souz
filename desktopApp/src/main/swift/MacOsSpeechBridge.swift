@@ -1,5 +1,6 @@
 import Darwin
 import AVFoundation
+import CoreMedia
 import Foundation
 import Speech
 
@@ -90,6 +91,9 @@ private enum LiveSpeechBridgeError: Error {
 
 private let liveStartTimeoutSeconds: Int = 30
 private let liveFinishTimeoutSeconds: Int = 120
+private let livePcmSampleRateHz: Int32 = 16_000
+private let livePcmChannels: Int32 = 1
+private let livePcmBitsPerSample: Int32 = 16
 
 #if compiler(>=6.2)
 @available(macOS 26.0, *)
@@ -133,11 +137,13 @@ private final class LiveSpeechSession {
     private let analyzer: SpeechAnalyzer
     private let inputBuilder: AsyncStream<AnalyzerInput>.Continuation
     private let analyzerFormat: AVAudioFormat
+    private let sourceFormat: AVAudioFormat
+    private let audioConverter: AVAudioConverter
     private let lock = NSLock()
+    private let conversionLock = NSLock()
 
     private var resultTask: Task<Void, Never>?
     private var queuedEvents: [LiveSpeechEvent] = []
-    private var finalEventKeys: Set<String> = []
     private var failure: String?
     private var closed = false
 
@@ -152,7 +158,7 @@ private final class LiveSpeechSession {
             locale: supportedLocale,
             transcriptionOptions: [],
             reportingOptions: [.volatileResults],
-            attributeOptions: []
+            attributeOptions: [.audioTimeRange]
         )
         let status = await AssetInventory.status(forModules: [transcriber])
         return status == .installed
@@ -185,7 +191,7 @@ private final class LiveSpeechSession {
             locale: supportedLocale,
             transcriptionOptions: [],
             reportingOptions: [.volatileResults],
-            attributeOptions: []
+            attributeOptions: [.audioTimeRange]
         )
 
         let status = await AssetInventory.status(forModules: [transcriber])
@@ -203,6 +209,18 @@ private final class LiveSpeechSession {
         guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             throw LiveSpeechBridgeError.unavailable("No compatible SpeechAnalyzer audio format is available.")
         }
+        guard let sourceFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: Double(livePcmSampleRateHz),
+            channels: AVAudioChannelCount(livePcmChannels),
+            interleaved: false
+        ) else {
+            throw LiveSpeechBridgeError.unavailable("Failed to create source audio format.")
+        }
+        guard let audioConverter = AVAudioConverter(from: sourceFormat, to: analyzerFormat) else {
+            throw LiveSpeechBridgeError.unavailable("Failed to create audio converter.")
+        }
+
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let (inputSequence, inputBuilder) = AsyncStream.makeStream(of: AnalyzerInput.self)
         try await analyzer.start(inputSequence: inputSequence)
@@ -211,7 +229,9 @@ private final class LiveSpeechSession {
             transcriber: transcriber,
             analyzer: analyzer,
             inputBuilder: inputBuilder,
-            analyzerFormat: analyzerFormat
+            analyzerFormat: analyzerFormat,
+            sourceFormat: sourceFormat,
+            audioConverter: audioConverter
         )
         session.startResultReader()
         return session
@@ -221,12 +241,16 @@ private final class LiveSpeechSession {
         transcriber: SpeechTranscriber,
         analyzer: SpeechAnalyzer,
         inputBuilder: AsyncStream<AnalyzerInput>.Continuation,
-        analyzerFormat: AVAudioFormat
+        analyzerFormat: AVAudioFormat,
+        sourceFormat: AVAudioFormat,
+        audioConverter: AVAudioConverter
     ) {
         self.transcriber = transcriber
         self.analyzer = analyzer
         self.inputBuilder = inputBuilder
         self.analyzerFormat = analyzerFormat
+        self.sourceFormat = sourceFormat
+        self.audioConverter = audioConverter
     }
 
     func acceptPcm(
@@ -273,7 +297,8 @@ private final class LiveSpeechSession {
             do {
                 for try await result in self.transcriber.results {
                     let text = String(result.text.characters)
-                    self.enqueueEvent(text: text, isFinal: result.isFinal)
+                    let timeRange = Self.audioTimeRange(from: result.text)
+                    self.enqueueEvent(text: text, isFinal: result.isFinal, timeRange: timeRange)
                 }
             } catch {
                 self.recordFailure("SpeechTranscriber failed: \(error.localizedDescription)")
@@ -281,22 +306,75 @@ private final class LiveSpeechSession {
         }
     }
 
-    private func enqueueEvent(text: String, isFinal: Bool) {
+    private static func audioTimeRange(from text: AttributedString) -> CMTimeRange? {
+        var startedAt: CMTime?
+        var endedAt: CMTime?
+
+        for run in text.runs {
+            guard let runRange = run.audioTimeRange, isUsable(range: runRange) else {
+                continue
+            }
+            let runStart = runRange.start
+            let runEnd = CMTimeRangeGetEnd(runRange)
+
+            if startedAt == nil || CMTimeCompare(runStart, startedAt!) < 0 {
+                startedAt = runStart
+            }
+            if endedAt == nil || CMTimeCompare(runEnd, endedAt!) > 0 {
+                endedAt = runEnd
+            }
+        }
+
+        guard let startedAt, let endedAt, CMTimeCompare(endedAt, startedAt) >= 0 else {
+            return nil
+        }
+        return CMTimeRangeFromTimeToTime(start: startedAt, end: endedAt)
+    }
+
+    private static func isUsable(range: CMTimeRange) -> Bool {
+        range.start.isValid &&
+            range.duration.isValid &&
+            !range.start.isIndefinite &&
+            !range.duration.isIndefinite &&
+            !range.start.isPositiveInfinity &&
+            !range.start.isNegativeInfinity &&
+            !range.duration.isPositiveInfinity &&
+            !range.duration.isNegativeInfinity
+    }
+
+    private func enqueueEvent(text: String, isFinal: Bool, timeRange: CMTimeRange?) {
         lock.lock()
         defer { lock.unlock() }
 
-        if isFinal {
-            let key = "final:\(text)"
-            guard finalEventKeys.insert(key).inserted else { return }
-            queuedEvents.append(LiveSpeechEvent(text: text, isFinal: true))
-        } else {
-            queuedEvents.removeAll { !$0.isFinal }
-            queuedEvents.append(LiveSpeechEvent(text: text, isFinal: false))
-        }
+        let event = LiveSpeechEvent(
+            text: text,
+            isFinal: isFinal,
+            startedAtMs: timeRange.flatMap { Self.milliseconds(from: $0.start) },
+            endedAtMs: timeRange.flatMap { Self.milliseconds(from: CMTimeRangeGetEnd($0)) }
+        )
 
+        queuedEvents.removeAll { !$0.isFinal }
+        queuedEvents.append(event)
+        trimQueueIfNeeded()
+    }
+
+    private static func milliseconds(from time: CMTime) -> Int64? {
+        guard time.isValid,
+              !time.isIndefinite,
+              !time.isPositiveInfinity,
+              !time.isNegativeInfinity else {
+            return nil
+        }
+        let seconds = CMTimeGetSeconds(time)
+        guard seconds.isFinite else { return nil }
+        return Int64((seconds * 1_000.0).rounded())
+    }
+
+    private func trimQueueIfNeeded() {
         if queuedEvents.count > 128 {
             let finalEvents = queuedEvents.filter(\.isFinal)
             let volatileEvents = queuedEvents.filter { !$0.isFinal }.suffix(1)
+            // Future ambient listening needs explicit backpressure/overflow policy; keep all finals for now.
             queuedEvents = finalEvents + Array(volatileEvents)
         }
     }
@@ -368,7 +446,9 @@ private final class LiveSpeechSession {
         channels: Int32,
         bitsPerSample: Int32
     ) throws -> AVAudioPCMBuffer {
-        guard sampleRateHz > 0, channels == 1, bitsPerSample == 16 else {
+        guard sampleRateHz == livePcmSampleRateHz,
+              channels == livePcmChannels,
+              bitsPerSample == livePcmBitsPerSample else {
             throw LiveSpeechBridgeError.unavailable("Unsupported PCM format.")
         }
         guard audio.count % MemoryLayout<Int16>.size == 0 else {
@@ -377,15 +457,6 @@ private final class LiveSpeechSession {
         guard !audio.isEmpty else {
             throw LiveSpeechBridgeError.unavailable("PCM audio chunk is empty.")
         }
-        guard let sourceFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: Double(sampleRateHz),
-            channels: AVAudioChannelCount(channels),
-            interleaved: false
-        ) else {
-            throw LiveSpeechBridgeError.unavailable("Failed to create source audio format.")
-        }
-
         let frameCount = AVAudioFrameCount(audio.count / MemoryLayout<Int16>.size)
         guard let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {
             throw LiveSpeechBridgeError.unavailable("Failed to create source audio buffer.")
@@ -401,10 +472,6 @@ private final class LiveSpeechSession {
             }
         }
 
-        guard let converter = AVAudioConverter(from: sourceFormat, to: analyzerFormat) else {
-            throw LiveSpeechBridgeError.unavailable("Failed to create audio converter.")
-        }
-
         let ratio = analyzerFormat.sampleRate / sourceFormat.sampleRate
         let convertedCapacity = AVAudioFrameCount(Double(frameCount) * ratio) + 1024
         guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: convertedCapacity) else {
@@ -413,7 +480,10 @@ private final class LiveSpeechSession {
 
         var didProvideInput = false
         var conversionError: NSError?
-        let status = converter.convert(to: convertedBuffer, error: &conversionError) { _, outStatus in
+        conversionLock.lock()
+        defer { conversionLock.unlock() }
+
+        let status = audioConverter.convert(to: convertedBuffer, error: &conversionError) { _, outStatus in
             if didProvideInput {
                 outStatus.pointee = .noDataNow
                 return nil
@@ -435,11 +505,15 @@ private final class LiveSpeechSession {
 private struct LiveSpeechEvent {
     let text: String
     let isFinal: Bool
+    let startedAtMs: Int64?
+    let endedAtMs: Int64?
 
     var encodedLine: String {
         let finalField = isFinal ? "1" : "0"
+        let startField = startedAtMs.map(String.init) ?? ""
+        let endField = endedAtMs.map(String.init) ?? ""
         let encodedText = text.data(using: .utf8)?.base64EncodedString() ?? ""
-        return "\(finalField)\t\t\t\(encodedText)"
+        return "\(finalField)\t\(startField)\t\(endField)\t\(encodedText)"
     }
 }
 #endif

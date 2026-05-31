@@ -72,9 +72,13 @@ This document summarizes provider selection, audio packaging, and endpoint-speci
 - Uses `SpeechAnalyzer` with `SpeechTranscriber`.
 - Accepts live PCM chunks through `start`, `acceptPcm`, `pollEvents`, `finalizeAndFinish`, and `cancel`.
 - Emits volatile and final transcript events.
+- Final events are append-only transcript fragments and are never deduplicated by text.
+- Volatile events are temporary hypotheses; the native queue keeps only the latest volatile event and removes stale volatile hypotheses when a final event arrives.
+- Event timestamps are populated from `SpeechTranscriber` `audioTimeRange` attributes when available. When the attribute is absent, timestamp fields remain empty/null instead of being fabricated.
 - Does not persist raw audio.
+- Packaged native dylib artifacts must include `LOCAL_MACOS_LIVE_STT` symbols before the live backend can run from a distribution bundle.
 - Intended as the backend for future ambient listening.
-- Future `AmbientMicListener` work should require this backend and must not fall back to the legacy batch backend.
+- Future `AmbientMicListener` work should require this backend, poll frequently, define backpressure/overflow handling, and must not fall back to the legacy batch backend.
 
 ### Legacy Batch Backend
 

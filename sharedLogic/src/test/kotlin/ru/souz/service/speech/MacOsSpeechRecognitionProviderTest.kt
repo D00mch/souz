@@ -235,6 +235,88 @@ class MacOsSpeechRecognitionProviderTest {
     }
 
     @Test
+    fun `provider preserves repeated final fragments from live transcription`() = runTest {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.regionProfile } returns REGION_RU
+
+        val bridge = FakeMacOsSpeechBridge(
+            status = MacOsSpeechAuthorizationStatus.AUTHORIZED,
+        )
+        val liveProvider = FakeLiveSpeechTranscriptionProvider(
+            supported = true,
+            session = FakeLiveSpeechTranscriptionSession(
+                finalizeEvents = listOf(
+                    LiveSpeechTranscriptEvent("да", isFinal = true),
+                    LiveSpeechTranscriptEvent("да", isFinal = true),
+                )
+            ),
+        )
+        val provider = MacOsSpeechRecognitionProvider(
+            settingsProvider = settingsProvider,
+            bridge = bridge,
+            isMacOsProvider = { true },
+            liveSpeechProvider = liveProvider,
+        )
+
+        assertEquals("дада", provider.recognize(byteArrayOf(1, 2, 3, 4)))
+        assertEquals(0, bridge.recognizeCalls)
+    }
+
+    @Test
+    fun `provider prefers final live events over volatile hypotheses`() = runTest {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.regionProfile } returns REGION_RU
+
+        val bridge = FakeMacOsSpeechBridge(
+            status = MacOsSpeechAuthorizationStatus.AUTHORIZED,
+        )
+        val liveProvider = FakeLiveSpeechTranscriptionProvider(
+            supported = true,
+            session = FakeLiveSpeechTranscriptionSession(
+                pollEvents = listOf(LiveSpeechTranscriptEvent("черновик", isFinal = false)),
+                finalizeEvents = listOf(LiveSpeechTranscriptEvent("финал", isFinal = true)),
+            ),
+        )
+        val provider = MacOsSpeechRecognitionProvider(
+            settingsProvider = settingsProvider,
+            bridge = bridge,
+            isMacOsProvider = { true },
+            liveSpeechProvider = liveProvider,
+        )
+
+        assertEquals("финал", provider.recognize(byteArrayOf(1, 2, 3, 4)))
+        assertEquals(0, bridge.recognizeCalls)
+    }
+
+    @Test
+    fun `provider uses last volatile live event when no final events are returned`() = runTest {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.regionProfile } returns REGION_RU
+
+        val bridge = FakeMacOsSpeechBridge(
+            status = MacOsSpeechAuthorizationStatus.AUTHORIZED,
+        )
+        val liveProvider = FakeLiveSpeechTranscriptionProvider(
+            supported = true,
+            session = FakeLiveSpeechTranscriptionSession(
+                pollEvents = listOf(
+                    LiveSpeechTranscriptEvent("старый черновик", isFinal = false),
+                    LiveSpeechTranscriptEvent("последний черновик", isFinal = false),
+                ),
+            ),
+        )
+        val provider = MacOsSpeechRecognitionProvider(
+            settingsProvider = settingsProvider,
+            bridge = bridge,
+            isMacOsProvider = { true },
+            liveSpeechProvider = liveProvider,
+        )
+
+        assertEquals("последний черновик", provider.recognize(byteArrayOf(1, 2, 3, 4)))
+        assertEquals(0, bridge.recognizeCalls)
+    }
+
+    @Test
     fun `provider does not apply legacy duration limit to live transcription`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.regionProfile } returns REGION_RU

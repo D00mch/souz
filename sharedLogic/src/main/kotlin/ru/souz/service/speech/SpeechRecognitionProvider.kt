@@ -114,6 +114,10 @@ class MacOsSpeechRecognitionProvider(
         recognizeWithLegacyBatch(locale, audio).trim()
     }
 
+    /**
+     * Checks only whether the local macOS SpeechAnalyzer live backend is available for this locale.
+     * It does not imply that an ambient listener, VAD, or backpressure policy is implemented.
+     */
     suspend fun supportsAmbientLiveTranscription(locale: String): Boolean = withContext(Dispatchers.IO) {
         enabled && currentLiveSpeechProvider().isSupported(locale)
     }
