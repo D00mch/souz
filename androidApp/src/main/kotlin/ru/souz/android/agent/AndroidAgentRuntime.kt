@@ -25,6 +25,7 @@ import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
+import ru.souz.android.python.ChaquopyPythonSkillRunner
 import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.db.SettingsProvider
 import ru.souz.di.sharedUiCommonJvmDiModule
@@ -124,7 +125,11 @@ class AndroidAgentRuntime(
             bindSingleton<VisionGateway> { instance<LLMCapabilityResolver>() }
             bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }
             bindSingleton<RuntimeSandboxFactory> {
-                AndroidRuntimeSandboxFactory(appContext, instance<SettingsProvider>())
+                AndroidRuntimeSandboxFactory(
+                    context = appContext,
+                    settingsProvider = instance<SettingsProvider>(),
+                    pythonCommandRunner = ChaquopyPythonSkillRunner(appContext),
+                )
             }
             bindSingleton<GraphSessionRepository>(tag = DiTags.GRAPH_SESSION_REPOSITORY) {
                 GraphSessionRepository(paths)

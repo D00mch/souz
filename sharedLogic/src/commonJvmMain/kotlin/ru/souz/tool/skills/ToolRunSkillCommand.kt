@@ -32,7 +32,7 @@ class ToolRunSkillCommand(
     data class Input(
         @InputParamDescription("Activated Skill ID whose bundle contains the script/supporting file to use.")
         val skillId: String,
-        @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands. Android maps BASH to POSIX /system/bin/sh, so Android skill scripts must avoid GNU Bash-only syntax.")
+        @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts, PYTHON for Python skill helpers, and PROCESS for argv commands. Android maps BASH to POSIX /system/bin/sh and runs PYTHON through the embedded app interpreter.")
         val runtime: SandboxCommandRuntime = SandboxCommandRuntime.BASH,
         @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. Leave empty for BASH/PYTHON/NODE.")
         val command: List<String> = emptyList(),
@@ -58,7 +58,7 @@ class ToolRunSkillCommand(
     override val description: String = buildString {
         append("Run a command or script for one of the currently active Skills inside the Souz runtime sandbox. ")
         append("The working directory defaults to the selected skill bundle root, so supporting files can be used by relative path. ")
-        append("On Android, BASH uses POSIX /system/bin/sh rather than GNU Bash. ")
+        append("On Android, BASH uses POSIX /system/bin/sh rather than GNU Bash, and PYTHON uses embedded Python with stdlib plus vendored pure-Python skill files. ")
         append("Use only for files or instructions from active Skills, and only when a skill explicitly needs command execution. ")
         append("Do not use this tool just to list, inspect, or browse skill bundle files. ")
         append("Do not call it for instruction-only/template-only skills that can be followed from the system prompt.")
@@ -96,6 +96,7 @@ class ToolRunSkillCommand(
         val skillRoot = resolveSkillRoot(sandbox = sandbox, skill = skill, userId = meta.userId)
         val workingDirectory = resolveWorkingDirectory(skillRoot, input.workingDirectory)
         val scriptPath = resolveScriptPath(sandbox, skillRoot, input.scriptPath)
+        validateEnvironment(input.environment)
         val timeoutMillis = input.timeoutMillis.coerceIn(1L, MAX_TIMEOUT_MILLIS)
         val result = sandbox.commandExecutor.execute(
             SandboxCommandRequest(
@@ -202,6 +203,12 @@ class ToolRunSkillCommand(
         "SOUZ_SKILL_SUPPORTING_FILES" to skill.supportingFiles.joinToString(","),
     )
 
+    private fun validateEnvironment(environment: Map<String, String>) {
+        val reservedKey = environment.keys.firstOrNull { it.startsWith(RESERVED_ENVIRONMENT_PREFIX) }
+            ?: return
+        throw BadInputException("Environment variable is reserved for skill execution: $reservedKey")
+    }
+
     private fun SandboxCommandResult.render(): String = buildString {
         appendLine("exitCode: $exitCode")
         appendLine("timedOut: $timedOut")
@@ -225,6 +232,7 @@ class ToolRunSkillCommand(
     companion object {
         const val NAME = "RunSkillCommand"
         private const val BUNDLES_DIRECTORY_NAME = "bundles"
+        private const val RESERVED_ENVIRONMENT_PREFIX = "SOUZ_SKILL_"
         private const val DEFAULT_TIMEOUT_MILLIS = 60_000L
         private const val MAX_TIMEOUT_MILLIS = 300_000L
         private const val MAX_OUTPUT_CHARS = 20_000

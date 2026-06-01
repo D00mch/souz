@@ -173,6 +173,33 @@ class ToolRunSkillCommandTest {
         }
     }
 
+    @Test
+    fun `rejects reserved skill environment variables`() = runTest {
+        val home = createTempDirectory("skill-command-env-home-")
+        val stateRoot = home.resolve("state").createDirectories()
+        stateRoot.resolve("skills/env-skill").createDirectories()
+        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
+        val tool = ToolRunSkillCommand(
+            sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(sandbox),
+        )
+
+        val error = assertFailsWith<BadInputException> {
+            tool.suspendInvoke(
+                ToolRunSkillCommand.Input(
+                    skillId = "env-skill",
+                    runtime = SandboxCommandRuntime.BASH,
+                    script = "printf ok",
+                    environment = mapOf("SOUZ_SKILL_ROOT" to home.toString()),
+                    timeoutMillis = 1_000,
+                    activeSkills = listOf(activeSkill("env-skill")),
+                ),
+                ToolInvocationMeta(userId = "user-1"),
+            )
+        }
+
+        assertContains(error.message.orEmpty(), "SOUZ_SKILL_ROOT")
+    }
+
     private fun createSandbox(
         home: Path,
         stateRoot: Path,

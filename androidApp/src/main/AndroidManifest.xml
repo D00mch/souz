@@ -40,5 +40,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".python.PythonSkillExecutionService"
+            android:exported="false"
+            android:process=":python_skill" />
     </application>
 </manifest>
