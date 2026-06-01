@@ -1,14 +1,10 @@
 package ru.souz.runtime.sandbox.docker
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import ru.souz.runtime.sandbox.startSandboxCommandOutputCapture
 
 internal class DockerCli(
     private val executable: String = "docker",
@@ -32,25 +28,42 @@ internal class DockerCli(
         arguments: List<String>,
         stdin: String? = null,
         timeoutMillis: Long? = null,
+    ): DockerCliResult = runProcess(
+        arguments = arguments,
+        stdin = stdin,
+        timeoutMillis = timeoutMillis,
+        outputThreadNamePrefix = "docker-cli",
+    )
+
+    suspend fun runAsync(
+        arguments: List<String>,
+        stdin: String? = null,
+        timeoutMillis: Long? = null,
+    ): DockerCliResult = withContext(Dispatchers.IO) {
+        runProcess(
+            arguments = arguments,
+            stdin = stdin,
+            timeoutMillis = timeoutMillis,
+            outputThreadNamePrefix = "docker-cli-async",
+        )
+    }
+
+    private fun runProcess(
+        arguments: List<String>,
+        stdin: String?,
+        timeoutMillis: Long?,
+        outputThreadNamePrefix: String,
     ): DockerCliResult {
         val process = ProcessBuilder(listOf(executable) + arguments)
             .redirectErrorStream(false)
             .start()
+        val output = process.startSandboxCommandOutputCapture(outputThreadNamePrefix)
 
         stdin?.let { input ->
             process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
                 writer.write(input)
             }
         } ?: process.outputStream.close()
-
-        val stdout = ByteArrayOutputStream()
-        val stderr = ByteArrayOutputStream()
-        val stdoutCopy = thread(start = true, name = "docker-cli-stdout") {
-            process.inputStream.copyToOutput(stdout)
-        }
-        val stderrCopy = thread(start = true, name = "docker-cli-stderr") {
-            process.errorStream.copyToOutput(stderr)
-        }
         val timedOut = timeoutMillis?.let { timeout ->
             !process.waitFor(timeout, TimeUnit.MILLISECONDS)
         } ?: run {
@@ -60,65 +73,14 @@ internal class DockerCli(
         if (timedOut) {
             process.destroyForcibly()
         }
-        stdoutCopy.join()
-        stderrCopy.join()
+        output.awaitDrainedOrClose()
         val exitCode = if (timedOut) -1 else process.exitValue()
         return DockerCliResult(
             exitCode = exitCode,
-            stdout = stdout.toString(StandardCharsets.UTF_8),
-            stderr = stderr.toString(StandardCharsets.UTF_8),
+            stdout = output.stdoutText(),
+            stderr = output.stderrText(),
             timedOut = timedOut,
         )
-    }
-
-    suspend fun runAsync(
-        arguments: List<String>,
-        stdin: String? = null,
-        timeoutMillis: Long? = null,
-    ): DockerCliResult = withContext(Dispatchers.IO) {
-        coroutineScope {
-            val process = ProcessBuilder(listOf(executable) + arguments)
-                .redirectErrorStream(false)
-                .start()
-
-            stdin?.let { input ->
-                process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                    writer.write(input)
-                }
-            } ?: process.outputStream.close()
-
-            val stdout = ByteArrayOutputStream()
-            val stderr = ByteArrayOutputStream()
-            val stdoutCopy = async { process.inputStream.copyToOutput(stdout) }
-            val stderrCopy = async { process.errorStream.copyToOutput(stderr) }
-
-            val timedOut = timeoutMillis?.let { timeout ->
-                !process.waitFor(timeout, TimeUnit.MILLISECONDS)
-            } ?: run {
-                process.waitFor()
-                false
-            }
-
-            if (timedOut) {
-                process.destroyForcibly()
-            }
-
-            stdoutCopy.await()
-            stderrCopy.await()
-
-            DockerCliResult(
-                exitCode = if (timedOut) -1 else process.exitValue(),
-                stdout = stdout.toString(StandardCharsets.UTF_8),
-                stderr = stderr.toString(StandardCharsets.UTF_8),
-                timedOut = timedOut,
-            )
-        }
-    }
-
-    private fun InputStream.copyToOutput(output: ByteArrayOutputStream) {
-        use { source ->
-            source.copyTo(output)
-        }
     }
 }
 

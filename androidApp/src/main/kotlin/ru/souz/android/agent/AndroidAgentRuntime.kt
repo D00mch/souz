@@ -17,17 +17,13 @@ import org.kodein.di.instance
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.session.GraphSessionRepository
-import ru.souz.agent.skills.activation.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
+import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
 import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.db.SettingsProvider
@@ -60,7 +56,9 @@ import ru.souz.paths.SouzPaths
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.service.observability.DesktopStructuredLogger
+import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolsSettings
@@ -125,7 +123,9 @@ class AndroidAgentRuntime(
             bindSingleton { CapabilityBasedImageGenerationGateway(instance(), instance()) }
             bindSingleton<VisionGateway> { instance<LLMCapabilityResolver>() }
             bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }
-            bindSingleton<RuntimeSandboxFactory> { AndroidRuntimeSandboxFactory(appContext) }
+            bindSingleton<RuntimeSandboxFactory> {
+                AndroidRuntimeSandboxFactory(appContext, instance<SettingsProvider>())
+            }
             bindSingleton<GraphSessionRepository>(tag = DiTags.GRAPH_SESSION_REPOSITORY) {
                 GraphSessionRepository(paths)
             }
@@ -137,7 +137,6 @@ class AndroidAgentRuntime(
             bindSingleton<AgentErrorMessages> { AndroidAgentErrorMessages }
             bindSingleton<ConversationMemoryRuntime> { NoopConversationMemoryRuntime }
             bindSingleton<CoroutineScope> { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
-            bindSingleton<SkillRegistryRepository> { AndroidNoopSkillRegistryRepository }
             bindSingleton<UserMessageClassifier>(tag = DiTags.API_CLASSIFIER) { ApiClassifier(instance<LLMChatAPI>()) }
             bindSingleton<UserMessageClassifier>(tag = DiTags.LOCAL_CLASSIFIER) { AndroidNoopClassifier }
             bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance<SettingsProvider>()) }
@@ -151,11 +150,17 @@ class AndroidAgentRuntime(
             bindSingleton { ToolsSettings(instance(), instance()) }
 
             import(portableRuntimeToolsDiModule())
+            bindSingleton<SkillRegistryRepository> {
+                FileSystemSkillRegistryRepository(
+                    sandboxResolver = instance<ToolInvocationRuntimeSandboxResolver>(),
+                )
+            }
             import(
                 agentDiModule(
                     logObjectMapperTag = DiTags.LOG_OBJECT_MAPPER,
                     apiClassifierTag = DiTags.API_CLASSIFIER,
                     localClassifierTag = DiTags.LOCAL_CLASSIFIER,
+                    skillCommandToolTag = SkillToolBindingTags.COMMAND_TOOL,
                     graphSessionRepositoryTag = DiTags.GRAPH_SESSION_REPOSITORY,
                 )
             )
@@ -232,43 +237,4 @@ private object AndroidAgentErrorMessages : AgentErrorMessages {
 
     override suspend fun noMoney(): String =
         "The configured provider has no available balance."
-}
-
-private object AndroidNoopSkillRegistryRepository : SkillRegistryRepository {
-    override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = null
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? = null
-
-    override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill =
-        error("Skills are not available in the Android chat-agent runtime yet.")
-
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null
-
-    override suspend fun getValidation(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-    ): SkillValidationRecord? = null
-
-    override suspend fun saveValidation(record: SkillValidationRecord) = Unit
-
-    override suspend fun markValidationStatus(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-        status: SkillValidationStatus,
-        reason: String?,
-    ) = Unit
-
-    override suspend fun invalidateOtherValidations(
-        userId: String,
-        skillId: SkillId,
-        activeBundleHash: String,
-        policyVersion: String,
-        reason: String?,
-    ) = Unit
 }

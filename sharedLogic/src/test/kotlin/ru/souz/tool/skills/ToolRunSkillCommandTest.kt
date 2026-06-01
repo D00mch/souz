@@ -100,6 +100,59 @@ class ToolRunSkillCommandTest {
     }
 
     @Test
+    fun `executes script path from active skill root with args`() = runTest {
+        val home = createTempDirectory("skill-command-path-home-")
+        val stateRoot = home.resolve("state").createDirectories()
+        val skillRoot = stateRoot.resolve("skills/path-skill").createDirectories()
+        skillRoot.resolve("scripts").createDirectories()
+        skillRoot.resolve("scripts/args.sh").writeText("printf '%s:%s:%s' \"${'$'}PWD\" \"${'$'}1\" \"${'$'}2\"")
+        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
+        val tool = ToolRunSkillCommand(
+            sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(sandbox),
+        )
+
+        val result = tool.suspendInvoke(
+            ToolRunSkillCommand.Input(
+                skillId = "path-skill",
+                runtime = SandboxCommandRuntime.BASH,
+                scriptPath = "scripts/args.sh",
+                args = listOf("alpha", "beta"),
+                timeoutMillis = 1_000,
+                activeSkills = listOf(activeSkill("path-skill")),
+            ),
+            ToolInvocationMeta(userId = "user-1"),
+        )
+
+        assertContains(result, "exitCode: 0")
+        assertContains(result, "${skillRoot.toRealPath()}:alpha:beta")
+    }
+
+    @Test
+    fun `rejects script path outside active skill root`() = runTest {
+        val home = createTempDirectory("skill-command-escape-home-")
+        val stateRoot = home.resolve("state").createDirectories()
+        stateRoot.resolve("skills/path-skill").createDirectories()
+        stateRoot.resolve("outside.sh").writeText("printf bad")
+        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
+        val tool = ToolRunSkillCommand(
+            sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(sandbox),
+        )
+
+        assertFailsWith<BadInputException> {
+            tool.suspendInvoke(
+                ToolRunSkillCommand.Input(
+                    skillId = "path-skill",
+                    runtime = SandboxCommandRuntime.BASH,
+                    scriptPath = "../outside.sh",
+                    timeoutMillis = 1_000,
+                    activeSkills = listOf(activeSkill("path-skill")),
+                ),
+                ToolInvocationMeta(userId = "user-1"),
+            )
+        }
+    }
+
+    @Test
     fun `rejects inactive skill id`() = runTest {
         val home = createTempDirectory("skill-command-inactive-home-")
         val sandbox = createSandbox(home = home, stateRoot = home.resolve("state").createDirectories())

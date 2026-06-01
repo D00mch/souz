@@ -42,9 +42,9 @@ internal class DockerSandboxCommandExecutor(
                 command
             }
 
-            SandboxCommandRuntime.BASH -> listOf("bash", "-lc", requireNotNull(script) { "script is required for BASH runtime." })
-            SandboxCommandRuntime.PYTHON -> listOf("python3", "-c", requireNotNull(script) { "script is required for PYTHON runtime." })
-            SandboxCommandRuntime.NODE -> listOf("node", "-e", requireNotNull(script) { "script is required for NODE runtime." })
+            SandboxCommandRuntime.BASH -> scriptCommand("bash", "-lc", "script is required for BASH runtime.", inlineCommandName = "bash")
+            SandboxCommandRuntime.PYTHON -> scriptCommand("python3", "-c", "script is required for PYTHON runtime.")
+            SandboxCommandRuntime.NODE -> scriptCommand("node", "-e", "script is required for NODE runtime.")
         }
         return timeoutMillis?.let { timeout ->
             listOf(
@@ -54,6 +54,17 @@ internal class DockerSandboxCommandExecutor(
                 formatDockerTimeoutDuration(timeout),
             ) + command
         } ?: command
+    }
+
+    private fun SandboxCommandRequest.scriptCommand(
+        executable: String,
+        inlineFlag: String,
+        missingMessage: String,
+        inlineCommandName: String? = null,
+    ): List<String> {
+        scriptPath?.let { return listOf(executable, fileSystem.resolveExistingFile(it).path) + args }
+        val command = listOf(executable, inlineFlag, requireNotNull(script) { missingMessage })
+        return if (inlineCommandName == null) command + args else command + inlineCommandName + args
     }
 
     private companion object {
