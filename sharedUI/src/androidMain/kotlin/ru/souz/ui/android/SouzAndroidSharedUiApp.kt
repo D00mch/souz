@@ -2,6 +2,7 @@ package ru.souz.ui.android
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,10 +31,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -51,6 +55,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -58,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.DI
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
@@ -65,6 +72,8 @@ import ru.souz.llms.LLMModel
 import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.AppTheme
+import ru.souz.ui.common.ApiKeyField
+import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainEffect
 import ru.souz.ui.main.MainEvent
@@ -72,10 +81,21 @@ import ru.souz.ui.main.MainState
 import ru.souz.ui.main.ToolModifyReviewItemUi
 import ru.souz.ui.main.ToolModifyReviewUi
 import ru.souz.ui.main.createMainViewModel
+import ru.souz.ui.settings.CodexOAuthUiState
 import ru.souz.ui.settings.SettingsEffect
 import ru.souz.ui.settings.SettingsEvent
 import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
+import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.label_codex_cancel
+import souz.sharedui.generated.resources.label_codex_connect
+import souz.sharedui.generated.resources.label_codex_connected
+import souz.sharedui.generated.resources.label_codex_disconnect
+import souz.sharedui.generated.resources.label_codex_polling
+import souz.sharedui.generated.resources.label_codex_user_code
+import souz.sharedui.generated.resources.label_copy
+import souz.sharedui.generated.resources.provider_codex_desc
+import souz.sharedui.generated.resources.provider_codex_title
 
 @Composable
 fun SouzAndroidSharedUiApp(di: DI) {
@@ -627,6 +647,16 @@ private fun AndroidSettingsScreen(
             AndroidKeyField("Anthropic", state.anthropicKey) { onEvent(SettingsEvent.InputAnthropicKey(it)) }
             AndroidKeyField("OpenAI", state.openaiKey) { onEvent(SettingsEvent.InputOpenAiKey(it)) }
             AndroidKeyField("SaluteSpeech", state.saluteSpeechKey) { onEvent(SettingsEvent.InputSaluteSpeechKey(it)) }
+            if (ApiKeyField.CODEX in state.availableApiKeyFields) {
+                AndroidCodexAuthCard(
+                    connected = state.codexConnected,
+                    oauthState = state.codexOAuthState,
+                    onConnect = { onEvent(SettingsEvent.StartCodexOAuth) },
+                    onCancel = { onEvent(SettingsEvent.CancelCodexOAuth) },
+                    onDisconnect = { onEvent(SettingsEvent.DisconnectCodex) },
+                    onOpenAuthUrl = { onEvent(SettingsEvent.OpenProviderLink(ApiKeyProvider.CODEX)) },
+                )
+            }
 
             OutlinedTextField(
                 value = state.systemPrompt,
@@ -660,4 +690,150 @@ private fun AndroidKeyField(
         visualTransformation = PasswordVisualTransformation(),
         singleLine = true,
     )
+}
+
+@Composable
+private fun AndroidCodexAuthCard(
+    connected: Boolean,
+    oauthState: CodexOAuthUiState,
+    onConnect: () -> Unit,
+    onCancel: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenAuthUrl: () -> Unit,
+) {
+    val clipboardManager = LocalClipboardManager.current
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(Res.string.provider_codex_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(Res.string.provider_codex_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            when (oauthState) {
+                is CodexOAuthUiState.AwaitingUserCode -> {
+                    Text(
+                        text = stringResource(Res.string.label_codex_user_code),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = oauthState.userCode,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(oauthState.userCode))
+                            },
+                        ) {
+                            Text(stringResource(Res.string.label_copy))
+                        }
+                    }
+                    Text(
+                        text = ApiKeyProvider.CODEX.url,
+                        modifier = Modifier.clickable(onClick = onOpenAuthUrl),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text(
+                            text = stringResource(Res.string.label_codex_polling),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onCancel,
+                    ) {
+                        Text(stringResource(Res.string.label_codex_cancel))
+                    }
+                }
+
+                CodexOAuthUiState.Polling -> {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text(stringResource(Res.string.label_codex_polling))
+                    }
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onCancel,
+                    ) {
+                        Text(stringResource(Res.string.label_codex_cancel))
+                    }
+                }
+
+                is CodexOAuthUiState.Error -> {
+                    Text(
+                        text = oauthState.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onConnect,
+                    ) {
+                        Text(stringResource(Res.string.label_codex_connect))
+                    }
+                }
+
+                CodexOAuthUiState.Done,
+                CodexOAuthUiState.Idle -> {
+                    if (connected) {
+                        Text(
+                            text = stringResource(Res.string.label_codex_connected),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onDisconnect,
+                        ) {
+                            Text(stringResource(Res.string.label_codex_disconnect))
+                        }
+                    } else {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onConnect,
+                        ) {
+                            Text(stringResource(Res.string.label_codex_connect))
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
