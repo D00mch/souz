@@ -32,12 +32,16 @@ class ToolRunSkillCommand(
     data class Input(
         @InputParamDescription("Activated Skill ID whose bundle contains the script/supporting file to use.")
         val skillId: String,
-        @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands.")
+        @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands. Android maps BASH to POSIX /system/bin/sh, so Android skill scripts must avoid GNU Bash-only syntax.")
         val runtime: SandboxCommandRuntime = SandboxCommandRuntime.BASH,
         @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. Leave empty for BASH/PYTHON/NODE.")
         val command: List<String> = emptyList(),
         @InputParamDescription("Inline script for BASH/PYTHON/NODE runtimes. For bundled scripts, call them by relative path, for example: bash scripts/run.sh")
         val script: String? = null,
+        @InputParamDescription("Path to a bundled script inside the active Skill root. Prefer this over inline script when running supporting scripts.")
+        val scriptPath: String? = null,
+        @InputParamDescription("Arguments to pass to scriptPath, or to the inline script process as positional arguments.")
+        val args: List<String> = emptyList(),
         @InputParamDescription("Working directory relative to the selected skill bundle root. Defaults to the skill bundle root.")
         val workingDirectory: String? = null,
         @InputParamDescription("Environment variables to pass to the process.")
@@ -54,6 +58,7 @@ class ToolRunSkillCommand(
     override val description: String = buildString {
         append("Run a command or script for one of the currently active Skills inside the Souz runtime sandbox. ")
         append("The working directory defaults to the selected skill bundle root, so supporting files can be used by relative path. ")
+        append("On Android, BASH uses POSIX /system/bin/sh rather than GNU Bash. ")
         append("Use only for files or instructions from active Skills, and only when a skill explicitly needs command execution. ")
         append("Do not use this tool just to list, inspect, or browse skill bundle files. ")
         append("Do not call it for instruction-only/template-only skills that can be followed from the system prompt.")
@@ -65,7 +70,7 @@ class ToolRunSkillCommand(
             params = mapOf(
                 "skillId" to "skill-id",
                 "runtime" to SandboxCommandRuntime.BASH.name,
-                "script" to "bash scripts/run.sh",
+                "scriptPath" to "scripts/run.sh",
             ),
         )
     )
@@ -90,12 +95,15 @@ class ToolRunSkillCommand(
         val sandbox = sandboxResolver.resolve(meta)
         val skillRoot = resolveSkillRoot(sandbox = sandbox, skill = skill, userId = meta.userId)
         val workingDirectory = resolveWorkingDirectory(skillRoot, input.workingDirectory)
+        val scriptPath = resolveScriptPath(sandbox, skillRoot, input.scriptPath)
         val timeoutMillis = input.timeoutMillis.coerceIn(1L, MAX_TIMEOUT_MILLIS)
         val result = sandbox.commandExecutor.execute(
             SandboxCommandRequest(
                 runtime = input.runtime,
                 command = input.command,
                 script = input.script,
+                scriptPath = scriptPath,
+                args = input.args,
                 workingDirectory = workingDirectory,
                 environment = defaultEnvironment(skill, skillRoot) + input.environment,
                 stdin = input.stdin,
@@ -145,6 +153,23 @@ class ToolRunSkillCommand(
             throw BadInputException("workingDirectory must stay inside the selected skill bundle root.")
         }
         return workingDirectory.toString()
+    }
+
+    private fun resolveScriptPath(
+        sandbox: RuntimeSandbox,
+        skillRoot: String,
+        rawScriptPath: String?,
+    ): String? {
+        val scriptPath = rawScriptPath
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: return null
+        val skillRootPath = Path.of(skillRoot).normalize()
+        val resolved = skillRootPath.resolve(scriptPath).normalize()
+        if (!resolved.startsWith(skillRootPath)) {
+            throw BadInputException("scriptPath must stay inside the selected skill bundle root.")
+        }
+        return sandbox.fileSystem.resolveExistingFile(resolved.toString()).path
     }
 
     private fun bundleRootPath(

@@ -59,6 +59,7 @@ sharedLogic/
 * OS-bound desktop logic lives in `:desktopApp`, even when it has no Compose/UI dependency. Keep UI resources, composables, and localized UI adapters in `:sharedUI`.
 * `RuntimeSandboxFactory` selects sandbox mode with `SOUZ_SANDBOX_MODE=local|docker`.
 * Local mode is the default when `SOUZ_SANDBOX_MODE` is unset.
+* Android skill shell execution maps `SandboxCommandRuntime.BASH` to POSIX `/system/bin/sh`; Android skills should not rely on GNU Bash-only syntax unless a future runtime explicitly bundles Bash.
 * The runtime Docker image is built from `sharedLogic/Dockerfile`; use `./gradlew :sharedLogic:buildRuntimeSandboxImage` for local app testing.
 * Docker-bundled skill files are development fixtures. The entrypoint seeds them into the single-user skill registry storage under `/souz/state/skills/` so desktop/KMP Docker runs can discover them directly.
 * Tools should resolve sandbox/filesystem access per invocation from `ToolInvocationMeta`, not cache user-specific paths in singleton tools.
