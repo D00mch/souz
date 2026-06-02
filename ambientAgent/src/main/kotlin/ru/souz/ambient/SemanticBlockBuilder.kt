@@ -1,11 +1,13 @@
 package ru.souz.ambient
 
 import ru.souz.service.speech.ambient.AmbientTranscriptEvent
+import ru.souz.service.speech.ambient.AmbientTranscriptSource
 import java.util.Locale
 
 data class SemanticBlockBuilderConfig(
     val pauseToCloseMs: Long = 3_000L,
     val maxBlockDurationMs: Long = 3_000L,
+    val batchFallbackMaxBlockDurationMs: Long = 10_000L,
     val maxBlockChars: Int = 1_800,
     val minUsefulChars: Int = 8,
 )
@@ -44,7 +46,12 @@ class SemanticBlockBuilder(
 
         val duration = maxOf(current.first().eventStartMs(), next.eventEndMs()) -
             minOf(current.first().eventStartMs(), next.eventEndMs())
-        if (duration > config.maxBlockDurationMs) {
+        val maxBlockDurationMs = if (isBatchFallbackWindow(next)) {
+            config.batchFallbackMaxBlockDurationMs
+        } else {
+            config.maxBlockDurationMs
+        }
+        if (duration > maxBlockDurationMs) {
             return AmbientBlockCloseReason.MAX_DURATION
         }
 
@@ -107,6 +114,9 @@ class SemanticBlockBuilder(
 
     private fun AmbientTranscriptEvent.eventStartMs(): Long = startedAtMs ?: receivedAtMs
     private fun AmbientTranscriptEvent.eventEndMs(): Long = endedAtMs ?: receivedAtMs
+    private fun isBatchFallbackWindow(next: AmbientTranscriptEvent): Boolean =
+        next.source == AmbientTranscriptSource.BATCH_FALLBACK ||
+            current.any { it.source == AmbientTranscriptSource.BATCH_FALLBACK }
 
     private companion object {
         val DIRECT_MARKERS = listOf("souz", "souз", "союз", "ассистент")

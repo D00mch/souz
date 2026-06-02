@@ -42,15 +42,13 @@ class AmbientCapabilityManifestRenderer(
     private val maxChars: Int = DEFAULT_MAX_CHARS,
 ) {
     fun render(capabilities: List<AmbientCapability>): String {
-        val sortedCapabilities = capabilities
-            .sortedWith(compareBy<AmbientCapability> { it.category.priority() }.thenBy { it.id })
+        val sortedCategories = capabilities
+            .groupBy { it.category }
+            .toList()
+            .sortedWith(compareBy<Pair<String, List<AmbientCapability>>> { it.first.priority() }.thenBy { it.first })
         return buildString {
-            sortedCapabilities
-                .map { capability -> "tool|${capability.id}|${capability.name.sanitize()}" }
-                .forEach { line -> appendCompleteLine(line) }
-            exampleLines(sortedCapabilities).forEach { line -> appendCompleteLine(line) }
-            sortedCapabilities
-                .map { capability -> capability.detailLine() }
+            sortedCategories
+                .map { (category, categoryCapabilities) -> category.capabilityLine(categoryCapabilities) }
                 .forEach { line -> appendCompleteLine(line) }
         }
     }
@@ -66,106 +64,21 @@ class AmbientCapabilityManifestRenderer(
         append(line)
     }
 
-    private fun AmbientCapability.detailLine(): String {
-        val compactDescription = description.compact(MAX_DESCRIPTION_CHARS)
-        val example = examples.firstOrNull()
-            ?.compact(MAX_EXAMPLE_CHARS)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { "|ex=${it.sanitize()}" }
-            .orEmpty()
-        return "detail|$id|${compactDescription.sanitize()}$example"
+    private fun String.capabilityLine(capabilities: List<AmbientCapability>): String {
+        val example = categoryExample(capabilities)
+        return "capability|${sanitize()}|heard=${example.heard.sanitize()}|task=${example.task.sanitize()}"
     }
 
-    private fun exampleLines(capabilities: List<AmbientCapability>): List<String> {
-        val byCategory = capabilities.groupBy { it.category }
-        return buildList {
-            byCategory["CALENDAR"]?.pick("create", "event")?.let {
-                add(
-                    exampleLine(
-                        heard = "надо поставить в шесть встречу с командой",
-                        task = "Создать встречу с командой на 18:00",
-                    )
-                )
-            }
-            byCategory["CALENDAR"]?.pick("list", "event")?.let {
-                add(
-                    exampleLine(
-                        heard = "нужно проверить календарь на завтра",
-                        task = "Проверить события в календаре на завтра",
-                    )
-                )
-            }
-            byCategory["WEB_SEARCH"]?.pick("internet", "search")?.let {
-                add(
-                    exampleLine(
-                        heard = "интересно, какая погода в Москве",
-                        task = "Найти текущую погоду в Москве",
-                    )
-                )
-            }
-            byCategory["NOTES"]?.pick("create", "note")?.let {
-                add(
-                    exampleLine(
-                        heard = "надо записать идею для проекта",
-                        task = "Создать заметку с идеей для проекта",
-                    )
-                )
-            }
-            byCategory["APPLICATIONS"]?.pick("open")?.let {
-                add(
-                    exampleLine(
-                        heard = "нужно открыть телеграм",
-                        task = "Открыть приложение Telegram",
-                    )
-                )
-            }
-            byCategory["MAIL"]?.pick("search")?.let {
-                add(
-                    exampleLine(
-                        heard = "надо посмотреть письмо от Анны",
-                        task = "Найти письмо от Анны",
-                    )
-                )
-            }
-            byCategory["TELEGRAM"]?.pick("send")?.let {
-                add(
-                    exampleLine(
-                        heard = "надо написать Пете что я опоздаю",
-                        task = "Подготовить сообщение Пете",
-                    )
-                )
-            }
-            byCategory["BROWSER"]?.pick("open")?.let {
-                add(
-                    exampleLine(
-                        heard = "нужно открыть сайт Kotlin",
-                        task = "Открыть сайт Kotlin в браузере",
-                    )
-                )
-            }
-            byCategory["CALCULATOR"]?.pick("calculate")?.let {
-                add(
-                    exampleLine(
-                        heard = "сколько будет 18 процентов от 2400",
-                        task = "Посчитать 18 процентов от 2400",
-                    )
-                )
-            }
-        }
-    }
-
-    private fun List<AmbientCapability>.pick(vararg tokens: String): AmbientCapability? {
-        val normalizedTokens = tokens.map { it.lowercase() }
-        return firstOrNull { capability ->
-            val haystack = "${capability.name} ${capability.description}".lowercase()
-            normalizedTokens.all { token -> token in haystack }
-        } ?: firstOrNull()
-    }
-
-    private fun exampleLine(
-        heard: String,
-        task: String,
-    ): String = "example|heard=${heard.sanitize()}|task=${task.sanitize()}"
+    private fun String.categoryExample(capabilities: List<AmbientCapability>): CategoryExample =
+        CATEGORY_EXAMPLES[this]
+            ?: capabilities.asSequence()
+                .flatMap { it.examples.asSequence() }
+                .firstOrNull()
+                ?.let { example -> CategoryExample(heard = example.compact(MAX_EXAMPLE_CHARS), task = example.compact(MAX_EXAMPLE_CHARS)) }
+            ?: CategoryExample(
+                heard = "нужна помощь с ${lowercase()}",
+                task = "Помочь с ${lowercase()}",
+            )
 
     private fun String.compact(limit: Int): String =
         replace(Regex("\\s+"), " ").trim().let { normalized ->
@@ -178,8 +91,7 @@ class AmbientCapabilityManifestRenderer(
             .trim()
 
     private companion object {
-        const val DEFAULT_MAX_CHARS = 900
-        const val MAX_DESCRIPTION_CHARS = 120
+        const val DEFAULT_MAX_CHARS = 1_800
         const val MAX_EXAMPLE_CHARS = 90
         val CATEGORY_PRIORITY = listOf(
             "CALENDAR",
@@ -190,6 +102,41 @@ class AmbientCapabilityManifestRenderer(
             "TELEGRAM",
             "BROWSER",
             "CALCULATOR",
+            "FILES",
+            "DESKTOP",
+            "IMAGE",
+            "IMAGE_GENERATION",
+            "DATA_ANALYTICS",
+            "TEXT_REPLACE",
+            "PRESENTATION",
+            "CONFIG",
+            "CHAT",
+            "HELP",
+        )
+        val CATEGORY_EXAMPLES = mapOf(
+            "FILES" to CategoryExample("что в загрузках", "Показать файлы в папке Загрузки"),
+            "IMAGE" to CategoryExample("что на этой картинке", "Описать изображение"),
+            "IMAGE_GENERATION" to CategoryExample("сгенерируй картинку кота в очках", "Сгенерировать картинку кота в очках"),
+            "BROWSER" to CategoryExample("открой сайт Kotlin", "Открыть сайт Kotlin в браузере"),
+            "WEB_SEARCH" to CategoryExample("интересно, какая погода в Москве", "Найти текущую погоду в Москве"),
+            "CONFIG" to CategoryExample("запомни что тишина значит уменьшить громкость", "Сохранить настройку для команды тишина"),
+            "NOTES" to CategoryExample("надо записать идею для проекта", "Создать заметку с идеей для проекта"),
+            "APPLICATIONS" to CategoryExample("нужно открыть телеграм", "Открыть приложение Telegram"),
+            "DATA_ANALYTICS" to CategoryExample("построй график продаж за неделю", "Построить график продаж за неделю"),
+            "CALENDAR" to CategoryExample("нужно проверить календарь на завтра", "Проверить календарь на завтра"),
+            "MAIL" to CategoryExample("надо посмотреть письмо от Анны", "Найти письмо от Анны"),
+            "TEXT_REPLACE" to CategoryExample("исправь выделенный текст", "Исправить выделенный текст"),
+            "CALCULATOR" to CategoryExample("сколько будет 18 процентов от 2400", "Посчитать 18 процентов от 2400"),
+            "CHAT" to CategoryExample("ответь на последний вопрос", "Ответить на последний вопрос"),
+            "TELEGRAM" to CategoryExample("надо написать Пете что я опоздаю", "Подготовить сообщение Пете"),
+            "DESKTOP" to CategoryExample("сделай скриншот", "Сделать скриншот экрана"),
+            "PRESENTATION" to CategoryExample("создай презентацию про ИИ", "Создать презентацию про ИИ"),
+            "HELP" to CategoryExample("покажи что ты умеешь", "Показать доступные возможности"),
         )
     }
 }
+
+private data class CategoryExample(
+    val heard: String,
+    val task: String,
+)

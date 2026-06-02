@@ -76,6 +76,7 @@ class DefaultAmbientTranscriptionServiceTest {
         assertEquals(64_000, batchProvider.lastAudio.size)
         assertEquals(listOf("помоги мне"), emitted.map { it.text })
         assertEquals(listOf(true), emitted.map { it.isFinal })
+        assertEquals(listOf(AmbientTranscriptSource.BATCH_FALLBACK), emitted.map { it.source })
         assertEquals(listOf("помоги мне"), service.snapshot().finalEvents.map { it.text })
         collectJob.cancel()
     }
@@ -271,6 +272,7 @@ class DefaultAmbientTranscriptionServiceTest {
         assertEquals(1, session.finalizeCalls)
         assertEquals(listOf("draft", "final"), emitted.map { it.text })
         assertEquals(listOf(false, true), emitted.map { it.isFinal })
+        assertEquals(listOf(AmbientTranscriptSource.LIVE, AmbientTranscriptSource.LIVE), emitted.map { it.source })
         assertTrue(emitted.all { it.id.isNotBlank() })
         assertEquals(listOf("final"), service.snapshot().finalEvents.map { it.text })
         assertEquals(null, service.snapshot().currentVolatile)

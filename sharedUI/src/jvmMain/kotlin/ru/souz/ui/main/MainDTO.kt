@@ -105,6 +105,8 @@ data class AmbientSuggestionUiModel(
     val title: String,
     val suggestionText: String,
     val taskText: String,
+    val createdAtMs: Long,
+    val expiresAtMs: Long,
     val risk: String,
     val capabilityLabels: List<String>,
     val status: String,

@@ -109,6 +109,8 @@ class MainViewModel(
     private var startTips: List<String> = emptyList()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private var ambientModelPreloadJob: Job? = null
+    private var ambientSuggestionExpiryJob: Job? = null
     private val localModelUiCoordinator by lazy(kotlin.LazyThreadSafetyMode.NONE) {
         LocalModelUiCoordinator(
             scope = viewModelScope,
@@ -422,13 +424,26 @@ class MainViewModel(
 
     private suspend fun collectAmbientSuggestions() {
         ambientSuggestionStore.suggestions.collect { suggestions ->
+            val pendingSuggestions = suggestions.filter { it.status == AmbientSuggestionStatus.PENDING }
             setState {
                 copy(
-                    ambientSuggestions = suggestions
-                        .filter { it.status == AmbientSuggestionStatus.PENDING }
-                        .map { it.toUiModel() },
+                    ambientSuggestions = pendingSuggestions.map { it.toUiModel() },
                 )
             }
+            scheduleAmbientSuggestionExpiry(pendingSuggestions)
+        }
+    }
+
+    private fun scheduleAmbientSuggestionExpiry(suggestions: List<AmbientSuggestion>) {
+        ambientSuggestionExpiryJob?.cancel()
+        val nextExpiry = suggestions.minOfOrNull { it.expiresAtMs } ?: run {
+            ambientSuggestionExpiryJob = null
+            return
+        }
+        val delayMs = (nextExpiry - System.currentTimeMillis()).coerceAtLeast(0L) + 25L
+        ambientSuggestionExpiryJob = viewModelScope.launch {
+            delay(delayMs)
+            ambientSuggestionStore.expireOld()
         }
     }
 
@@ -450,6 +465,7 @@ class MainViewModel(
         try {
             val locale = ambientLocale()
             l.info("Ambient mode start requested: locale={}", locale)
+            scheduleAmbientModelPreload()
             ambientAnalysisPipeline.start()
             ambientSuggestionPipeline.start()
             when (val availability = ambientTranscriptionService.start(locale)) {
@@ -533,12 +549,21 @@ class MainViewModel(
             title = candidate.title,
             suggestionText = candidate.suggestionText,
             taskText = candidate.taskText,
+            createdAtMs = createdAtMs,
+            expiresAtMs = expiresAtMs,
             risk = candidate.risk.name,
             capabilityLabels = candidate.matchedCapabilityIds
                 .map { id -> id.substringAfterLast(":") }
                 .take(3),
             status = status.name,
         )
+
+    private fun scheduleAmbientModelPreload() {
+        ambientModelPreloadJob = localModelUiCoordinator.scheduleLocalModelPreload(
+            currentJob = ambientModelPreloadJob,
+            model = settingsProvider.ambientAnalysisModel,
+        )
+    }
 
     private suspend fun setStateAndReindexChatSearch(
         reduce: MainState.() -> MainState,

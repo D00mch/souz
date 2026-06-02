@@ -20,6 +20,7 @@ data class AmbientSuggestion(
     val status: AmbientSuggestionStatus,
     val createdAtMs: Long,
     val updatedAtMs: Long,
+    val expiresAtMs: Long,
     val failureReason: String? = null,
 )
 
@@ -35,7 +36,7 @@ enum class AmbientSuggestionStatus {
 
 data class AmbientSuggestionStoreConfig(
     val maxPendingSuggestions: Int = 3,
-    val ttlMs: Long = 5 * 60 * 1_000L,
+    val ttlMs: Long = 10_000L,
     val dedupeCooldownMs: Long = 2 * 60 * 1_000L,
 )
 
@@ -77,6 +78,7 @@ class InMemoryAmbientSuggestionStore(
                 status = AmbientSuggestionStatus.PENDING,
                 createdAtMs = now,
                 updatedAtMs = now,
+                expiresAtMs = now + config.ttlMs,
             )
 
             (expired + suggestion).trimPendingLimit()
@@ -153,7 +155,7 @@ class InMemoryAmbientSuggestionStore(
 
     private fun List<AmbientSuggestion>.expirePending(now: Long): List<AmbientSuggestion> =
         map { suggestion ->
-            if (suggestion.status == AmbientSuggestionStatus.PENDING && now - suggestion.createdAtMs > config.ttlMs) {
+            if (suggestion.status == AmbientSuggestionStatus.PENDING && now >= suggestion.expiresAtMs) {
                 suggestion.copy(status = AmbientSuggestionStatus.EXPIRED, updatedAtMs = now)
             } else {
                 suggestion

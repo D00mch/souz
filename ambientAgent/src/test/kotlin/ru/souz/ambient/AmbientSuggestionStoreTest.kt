@@ -16,6 +16,7 @@ class AmbientSuggestionStoreTest {
         assertEquals("c1", suggestion.id)
         assertEquals(AmbientSuggestionStatus.PENDING, suggestion.status)
         assertEquals(1_000L, suggestion.createdAtMs)
+        assertEquals(11_000L, suggestion.expiresAtMs)
     }
 
     @Test
@@ -59,10 +60,15 @@ class AmbientSuggestionStoreTest {
     @Test
     fun `expiration marks old pending suggestions expired`() {
         var now = 1_000L
-        val store = store(clock = { now }, ttlMs = 500L)
+        val store = store(clock = { now })
 
         store.addCandidate(candidate(id = "c1"))
-        now = 1_501L
+        now = 10_999L
+        store.expireOld()
+
+        assertEquals(AmbientSuggestionStatus.PENDING, store.suggestions.value.single().status)
+
+        now = 11_001L
         store.expireOld()
 
         assertEquals(AmbientSuggestionStatus.EXPIRED, store.suggestions.value.single().status)
@@ -108,7 +114,7 @@ class AmbientSuggestionStoreTest {
     private fun store(
         clock: () -> Long,
         maxPendingSuggestions: Int = 3,
-        ttlMs: Long = 5 * 60 * 1_000L,
+        ttlMs: Long = AmbientSuggestionStoreConfig().ttlMs,
         dedupeCooldownMs: Long = 2 * 60 * 1_000L,
     ): InMemoryAmbientSuggestionStore = InMemoryAmbientSuggestionStore(
         clock = clock,

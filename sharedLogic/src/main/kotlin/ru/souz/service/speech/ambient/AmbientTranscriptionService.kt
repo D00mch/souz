@@ -236,9 +236,9 @@ class DefaultAmbientTranscriptionService(
             audioSource.frames().collect { chunk ->
                 if (chunk.isEmpty()) return@collect
                 session.acceptPcm(chunk)
-                publish(session.pollEvents())
+                publish(session.pollEvents(), source = AmbientTranscriptSource.LIVE)
             }
-            publish(session.finalizeAndFinish())
+            publish(session.finalizeAndFinish(), source = AmbientTranscriptSource.LIVE)
             finalized = true
         } catch (error: CancellationException) {
             // Normal stop path. Cleanup happens in finally.
@@ -350,14 +350,15 @@ class DefaultAmbientTranscriptionService(
             recognized,
         )
         publish(
-            listOf(
+            events = listOf(
                 LiveSpeechTranscriptEvent(
                     text = recognized,
                     isFinal = true,
                     startedAtMs = startedAtMs,
                     endedAtMs = endedAtMs,
                 )
-            )
+            ),
+            source = AmbientTranscriptSource.BATCH_FALLBACK,
         )
         return endedAtMs
     }
@@ -366,11 +367,11 @@ class DefaultAmbientTranscriptionService(
         this is LocalMacOsSpeechUnavailableException &&
             message?.contains("No speech detected", ignoreCase = true) == true
 
-    private suspend fun publish(events: List<LiveSpeechTranscriptEvent>) {
+    private suspend fun publish(events: List<LiveSpeechTranscriptEvent>, source: AmbientTranscriptSource) {
         if (events.isEmpty()) return
         val ambientEvents = mutex.withLock {
             events.map { event ->
-                event.toAmbientEvent().also { ambientEvent ->
+                event.toAmbientEvent(source).also { ambientEvent ->
                     buffer.append(ambientEvent)
                     _snapshot.value = buffer.snapshot()
                 }
@@ -378,8 +379,9 @@ class DefaultAmbientTranscriptionService(
         }
         for (event in ambientEvents) {
             logger.info(
-                "Ambient transcript event id={} final={} startedAtMs={} endedAtMs={} receivedAtMs={} text={}",
+                "Ambient transcript event id={} source={} final={} startedAtMs={} endedAtMs={} receivedAtMs={} text={}",
                 event.id,
+                event.source,
                 event.isFinal,
                 event.startedAtMs,
                 event.endedAtMs,
@@ -391,7 +393,7 @@ class DefaultAmbientTranscriptionService(
         }
     }
 
-    private fun LiveSpeechTranscriptEvent.toAmbientEvent(): AmbientTranscriptEvent {
+    private fun LiveSpeechTranscriptEvent.toAmbientEvent(source: AmbientTranscriptSource): AmbientTranscriptEvent {
         nextEventOrdinal += 1
         return AmbientTranscriptEvent(
             id = "ambient-$nextEventOrdinal",
@@ -400,6 +402,7 @@ class DefaultAmbientTranscriptionService(
             startedAtMs = startedAtMs,
             endedAtMs = endedAtMs,
             receivedAtMs = clock(),
+            source = source,
         )
     }
 

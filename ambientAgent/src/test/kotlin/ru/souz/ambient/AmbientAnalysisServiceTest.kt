@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.service.speech.ambient.AmbientTranscriptEvent
+import ru.souz.service.speech.ambient.AmbientTranscriptSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -61,7 +62,7 @@ class AmbientAnalysisServiceTest {
     }
 
     @Test
-    fun `semantic block service closes final utterance after default three second inactivity`() = runTest {
+    fun `semantic block service closes final utterance after default one second inactivity`() = runTest {
         val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
         val blockService = DefaultAmbientSemanticBlockService(
             transcriptEvents = transcriptEvents,
@@ -86,7 +87,7 @@ class AmbientAnalysisServiceTest {
                     endedAtMs = 200L,
                 )
             )
-            advanceTimeBy(2_999L)
+            advanceTimeBy(999L)
             assertEquals(emptyList(), emitted)
 
             advanceTimeBy(1L)
@@ -102,7 +103,7 @@ class AmbientAnalysisServiceTest {
     }
 
     @Test
-    fun `semantic block service closes contiguous batch windows at default three second boundary`() = runTest {
+    fun `semantic block service keeps contiguous batch fallback windows open beyond one second inactivity`() = runTest {
         val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
         val blockService = DefaultAmbientSemanticBlockService(
             transcriptEvents = transcriptEvents,
@@ -125,8 +126,12 @@ class AmbientAnalysisServiceTest {
                     isFinal = true,
                     startedAtMs = 1_000L,
                     endedAtMs = 4_000L,
+                    source = AmbientTranscriptSource.BATCH_FALLBACK,
                 )
             )
+            advanceTimeBy(2_900L)
+            runCurrent()
+            assertEquals(emptyList(), emitted)
 
             transcriptEvents.emit(
                 transcriptEvent(
@@ -135,11 +140,13 @@ class AmbientAnalysisServiceTest {
                     isFinal = true,
                     startedAtMs = 4_000L,
                     endedAtMs = 7_000L,
+                    source = AmbientTranscriptSource.BATCH_FALLBACK,
                 )
             )
+            advanceTimeBy(3_500L)
             advanceUntilIdle()
 
-            assertEquals("проверь календарь", emitted.single().text)
+            assertEquals("проверь календарь на завтра", emitted.single().text)
             assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, emitted.single().addressedness)
         } finally {
             collectJob.cancel()
@@ -444,6 +451,7 @@ class AmbientAnalysisServiceTest {
         startedAtMs: Long? = null,
         endedAtMs: Long? = null,
         receivedAtMs: Long = endedAtMs ?: startedAtMs ?: 1_000L,
+        source: AmbientTranscriptSource = AmbientTranscriptSource.LIVE,
     ): AmbientTranscriptEvent =
         AmbientTranscriptEvent(
             id = id,
@@ -452,6 +460,7 @@ class AmbientAnalysisServiceTest {
             startedAtMs = startedAtMs,
             endedAtMs = endedAtMs,
             receivedAtMs = receivedAtMs,
+            source = source,
         )
 
     private fun webSearchCapability(): AmbientCapability = AmbientCapability(

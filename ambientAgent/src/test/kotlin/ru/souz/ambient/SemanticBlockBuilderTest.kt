@@ -1,6 +1,7 @@
 package ru.souz.ambient
 
 import ru.souz.service.speech.ambient.AmbientTranscriptEvent
+import ru.souz.service.speech.ambient.AmbientTranscriptSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -93,6 +94,36 @@ class SemanticBlockBuilderTest {
     }
 
     @Test
+    fun `default builder keeps contiguous batch fallback windows together up to batch duration`() {
+        val builder = SemanticBlockBuilder(clock = { 20_000L })
+
+        assertEquals(
+            emptyList(),
+            builder.accept(
+                event(
+                    id = "e1",
+                    text = "надо поставить созвон",
+                    startedAtMs = 0,
+                    endedAtMs = 3_000,
+                    source = AmbientTranscriptSource.BATCH_FALLBACK,
+                )
+            ),
+        )
+        val closed = builder.accept(
+            event(
+                id = "e2",
+                text = "с командой завтра",
+                startedAtMs = 3_000,
+                endedAtMs = 6_000,
+                source = AmbientTranscriptSource.BATCH_FALLBACK,
+            )
+        )
+
+        assertEquals(emptyList(), closed)
+        assertEquals("надо поставить созвон с командой завтра", builder.flush()?.text)
+    }
+
+    @Test
     fun `flush closes open block with requested reason`() {
         val builder = SemanticBlockBuilder(clock = { 3_000L })
         builder.accept(event(id = "e1", text = "создай заметку", startedAtMs = 100, endedAtMs = 400))
@@ -181,6 +212,7 @@ class SemanticBlockBuilderTest {
         startedAtMs: Long? = null,
         endedAtMs: Long? = null,
         receivedAtMs: Long = endedAtMs ?: startedAtMs ?: 1_000L,
+        source: AmbientTranscriptSource = AmbientTranscriptSource.LIVE,
     ): AmbientTranscriptEvent = AmbientTranscriptEvent(
         id = id,
         text = text,
@@ -188,5 +220,6 @@ class SemanticBlockBuilderTest {
         startedAtMs = startedAtMs,
         endedAtMs = endedAtMs,
         receivedAtMs = receivedAtMs,
+        source = source,
     )
 }

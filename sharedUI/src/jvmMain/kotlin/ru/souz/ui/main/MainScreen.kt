@@ -916,6 +916,7 @@ private fun AmbientSuggestionCard(
                     fontWeight = FontWeight.Bold,
                 )
             }
+            AmbientSuggestionCountdown(suggestion = suggestion)
             AmbientIconTextButton(
                 text = "",
                 icon = Icons.Rounded.Close,
@@ -961,6 +962,52 @@ private fun AmbientSuggestionCard(
             )
         }
     }
+}
+
+@Composable
+private fun AmbientSuggestionCountdown(
+    suggestion: AmbientSuggestionUiModel,
+    modifier: Modifier = Modifier,
+) {
+    val nowMs by produceState(
+        initialValue = System.currentTimeMillis(),
+        suggestion.id,
+        suggestion.expiresAtMs,
+    ) {
+        while (value < suggestion.expiresAtMs) {
+            delay(100L)
+            value = System.currentTimeMillis()
+        }
+    }
+    val remainingFraction = ambientSuggestionRemainingFraction(
+        nowMs = nowMs,
+        createdAtMs = suggestion.createdAtMs,
+        expiresAtMs = suggestion.expiresAtMs,
+    )
+    Canvas(modifier = modifier.size(18.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        drawCircle(
+            color = Color(0x26FFFFFF),
+            style = Stroke(width = strokeWidth),
+        )
+        drawArc(
+            color = Color(0xFFFFC857),
+            startAngle = -90f,
+            sweepAngle = 360f * remainingFraction,
+            useCenter = false,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+    }
+}
+
+internal fun ambientSuggestionRemainingFraction(
+    nowMs: Long,
+    createdAtMs: Long,
+    expiresAtMs: Long,
+): Float {
+    val totalMs = expiresAtMs - createdAtMs
+    if (totalMs <= 0L) return 0f
+    return ((expiresAtMs - nowMs).toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
 }
 
 @Composable

@@ -7,7 +7,13 @@ data class AmbientTranscriptEvent(
     val startedAtMs: Long?,
     val endedAtMs: Long?,
     val receivedAtMs: Long,
+    val source: AmbientTranscriptSource = AmbientTranscriptSource.LIVE,
 )
+
+enum class AmbientTranscriptSource {
+    LIVE,
+    BATCH_FALLBACK,
+}
 
 data class AmbientTranscriptSnapshot(
     val finalEvents: List<AmbientTranscriptEvent>,

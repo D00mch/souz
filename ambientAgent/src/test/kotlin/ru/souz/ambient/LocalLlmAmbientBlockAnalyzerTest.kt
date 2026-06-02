@@ -135,7 +135,7 @@ class LocalLlmAmbientBlockAnalyzerTest {
         assertTrue(systemPrompt.contains("3"))
         assertTrue(systemPrompt.contains("цельн"))
         assertTrue(systemPrompt.contains("предлож"))
-        assertTrue(userPrompt.contains("example|heard"))
+        assertTrue(userPrompt.contains("capability|CALENDAR|heard="))
         assertTrue(systemPrompt.contains("\"type\":\"final\""))
         assertTrue(systemPrompt.contains("\"content\""))
         assertTrue(systemPrompt.contains("естественная команда"))

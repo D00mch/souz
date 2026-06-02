@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.service.speech.ambient.AmbientTranscriptEvent
+import ru.souz.service.speech.ambient.AmbientTranscriptSource
 
 interface AmbientSemanticBlockService {
     val blocks: Flow<AmbientSemanticBlock>
@@ -26,6 +27,7 @@ class DefaultAmbientSemanticBlockService(
     private val builder: SemanticBlockBuilder = SemanticBlockBuilder(),
     private val scope: CoroutineScope,
     private val inactivityFlushMs: Long = DEFAULT_INACTIVITY_FLUSH_MS,
+    private val batchFallbackInactivityFlushMs: Long = DEFAULT_BATCH_FALLBACK_INACTIVITY_FLUSH_MS,
 ) : AmbientSemanticBlockService {
     private val mutex = Mutex()
     private val closedBlocks = ArrayDeque<AmbientSemanticBlock>()
@@ -45,7 +47,7 @@ class DefaultAmbientSemanticBlockService(
                     val closed = mutex.withLock {
                         builder.accept(event).also {
                             if (event.isFinal && event.text.isNotBlank()) {
-                                scheduleInactivityFlushLocked()
+                                scheduleInactivityFlushLocked(event.source)
                             }
                         }
                     }
@@ -77,12 +79,16 @@ class DefaultAmbientSemanticBlockService(
         closedBlocks.clear()
     }
 
-    private fun scheduleInactivityFlushLocked() {
+    private fun scheduleInactivityFlushLocked(source: AmbientTranscriptSource) {
         inactivityJob?.cancel()
-        if (inactivityFlushMs <= 0L) return
+        val flushDelayMs = when (source) {
+            AmbientTranscriptSource.LIVE -> inactivityFlushMs
+            AmbientTranscriptSource.BATCH_FALLBACK -> batchFallbackInactivityFlushMs
+        }
+        if (flushDelayMs <= 0L) return
 
         inactivityJob = scope.launch {
-            delay(inactivityFlushMs)
+            delay(flushDelayMs)
             val inactiveBlock = mutex.withLock {
                 inactivityJob = null
                 builder.flush(AmbientBlockCloseReason.PAUSE)
@@ -103,6 +109,7 @@ class DefaultAmbientSemanticBlockService(
 
     private companion object {
         const val MAX_SNAPSHOT_BLOCKS = 100
-        const val DEFAULT_INACTIVITY_FLUSH_MS = 3_000L
+        const val DEFAULT_INACTIVITY_FLUSH_MS = 1_000L
+        const val DEFAULT_BATCH_FALLBACK_INACTIVITY_FLUSH_MS = 3_500L
     }
 }

@@ -33,6 +33,6 @@ class LocalChatAmbientLocalLlm(
     }
 
     private companion object {
-        const val AMBIENT_JSON_MAX_TOKENS = 256
+        const val AMBIENT_JSON_MAX_TOKENS = 96
     }
 }

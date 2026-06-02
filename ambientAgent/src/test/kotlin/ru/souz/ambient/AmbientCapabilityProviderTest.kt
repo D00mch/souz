@@ -84,7 +84,7 @@ class AmbientCapabilityProviderTest {
     }
 
     @Test
-    fun `manifest renderer keeps all ids in compact output`() = runTest {
+    fun `manifest renderer keeps categories instead of every tool id`() = runTest {
         val capabilities = List(40) { index ->
             AmbientCapability(
                 id = "tool:FILES:T$index",
@@ -98,9 +98,11 @@ class AmbientCapabilityProviderTest {
         val manifest = AmbientCapabilityManifestRenderer(maxChars = 1_800).render(capabilities)
 
         assertTrue(manifest.length <= 1_800)
-        capabilities.forEach { capability ->
-            assertTrue(manifest.contains(capability.id), "Missing ${capability.id}")
-        }
+        assertTrue(manifest.contains("capability|FILES|"))
+        assertTrue(manifest.contains("heard="))
+        assertTrue(manifest.contains("task="))
+        assertFalse(manifest.contains("tool:FILES:T0"))
+        assertFalse(manifest.contains("detail|"))
     }
 
     @Test
@@ -118,39 +120,51 @@ class AmbientCapabilityProviderTest {
 
         val manifest = AmbientCapabilityManifestRenderer().render(capabilities)
 
-        assertTrue(manifest.length <= 900)
+        assertTrue(manifest.length <= 1_800)
         assertTrue(manifest.lines().all { line -> line.isNotBlank() })
-        assertTrue(manifest.lines().all { line -> line.startsWith("tool|") || line.startsWith("detail|") })
+        assertTrue(manifest.lines().all { line -> line.startsWith("capability|") })
     }
 
     @Test
-    fun `manifest renderer adds heard to task examples for available action categories`() = runTest {
+    fun `manifest renderer adds heard to task examples for all present action categories`() = runTest {
+        val capabilities = ToolCategory.entries.map { category ->
+            capability(
+                id = "tool:${category.name}:Tool",
+                category = category.name,
+                name = "Tool",
+                description = "Tool in ${category.name}",
+            )
+        }
+        val manifest = AmbientCapabilityManifestRenderer(maxChars = 4_000).render(capabilities)
+
+        ToolCategory.entries.forEach { category ->
+            assertTrue(manifest.contains("capability|${category.name}|"), "Missing ${category.name}")
+        }
+        assertTrue(manifest.lines().all { line -> line.contains("heard=") && line.contains("task=") })
+        assertTrue(manifest.contains("какая погода в Москве"))
+        assertTrue(manifest.contains("сделай скриншот"))
+    }
+
+    @Test
+    fun `manifest renderer keeps custom few shot example for unknown category`() = runTest {
         val manifest = AmbientCapabilityManifestRenderer(maxChars = 1_500).render(
             listOf(
                 capability(
-                    id = "tool:CALENDAR:CalendarCreateEvent",
-                    category = "CALENDAR",
-                    name = "CalendarCreateEvent",
-                    description = "Create an event in macOS Calendar.",
-                ),
-                capability(
-                    id = "tool:WEB_SEARCH:InternetSearch",
-                    category = "WEB_SEARCH",
-                    name = "InternetSearch",
-                    description = "Short factual internet lookup for current facts and weather.",
+                    id = "tool:CUSTOM:CustomTool",
+                    category = "CUSTOM",
+                    name = "CustomTool",
+                    description = "Custom capability.",
+                    examples = listOf("сделай кастомную проверку"),
                 ),
             )
         )
 
-        assertTrue(manifest.contains("example|"))
-        assertTrue(manifest.contains("надо поставить в шесть встречу"))
-        assertTrue(manifest.contains("какая погода в Москве"))
-        assertTrue(manifest.contains("tool:CALENDAR:CalendarCreateEvent"))
-        assertTrue(manifest.contains("tool:WEB_SEARCH:InternetSearch"))
+        assertTrue(manifest.contains("capability|CUSTOM|"))
+        assertTrue(manifest.contains("heard=сделай кастомную проверку"))
     }
 
     @Test
-    fun `manifest renderer keeps tool ids before examples under tight budget`() = runTest {
+    fun `manifest renderer keeps priority categories under tight budget`() = runTest {
         val manifest = AmbientCapabilityManifestRenderer(maxChars = 320).render(
             listOf(
                 capability(
@@ -175,12 +189,13 @@ class AmbientCapabilityProviderTest {
         )
 
         val lines = manifest.lines()
-        assertTrue(lines.take(3).all { it.startsWith("tool|") })
-        assertTrue(manifest.contains("tool:WEB_SEARCH:InternetSearch"))
+        assertTrue(lines.all { it.startsWith("capability|") })
+        assertTrue(manifest.contains("capability|CALENDAR|"))
+        assertTrue(manifest.contains("capability|WEB_SEARCH|"))
     }
 
     @Test
-    fun `manifest renderer includes compact descriptions and tool few shot examples`() = runTest {
+    fun `manifest renderer includes category examples without compact descriptions`() = runTest {
         val manifest = AmbientCapabilityManifestRenderer(maxChars = 900).render(
             listOf(
                 capability(
@@ -193,9 +208,9 @@ class AmbientCapabilityProviderTest {
             )
         )
 
-        assertTrue(manifest.contains("detail|tool:CALENDAR:CalendarListEvents|"))
-        assertTrue(manifest.contains("List events from a specific calendar"))
-        assertTrue(manifest.contains("Какие встречи у меня сегодня?"))
+        assertTrue(manifest.contains("capability|CALENDAR|"))
+        assertTrue(manifest.contains("проверить календарь"))
+        assertFalse(manifest.contains("List events from a specific calendar"))
     }
 
     @Test
@@ -207,21 +222,20 @@ class AmbientCapabilityProviderTest {
             )
         )
 
-        assertEquals("tool|tool:FILES:FirstTool|FirstTool", manifest)
-        assertFalse(manifest.contains("Second"))
+        assertTrue(manifest.isBlank() || manifest.lines().all { it.startsWith("capability|") })
     }
 
     @Test
     fun `manifest renderer prioritizes common ambient action categories`() = runTest {
-        val manifest = AmbientCapabilityManifestRenderer(maxChars = 80).render(
+        val manifest = AmbientCapabilityManifestRenderer(maxChars = 120).render(
             listOf(
                 capability(id = "tool:FILES:ListFiles", category = "FILES", name = "ListFiles"),
                 capability(id = "tool:CALENDAR:CalendarListEvents", category = "CALENDAR", name = "CalendarListEvents"),
             )
         )
 
-        assertTrue(manifest.contains("tool:CALENDAR:CalendarListEvents"))
-        assertFalse(manifest.contains("tool:FILES:ListFiles"))
+        assertTrue(manifest.contains("capability|CALENDAR|"))
+        assertFalse(manifest.contains("capability|FILES|"))
     }
 
     @Test
