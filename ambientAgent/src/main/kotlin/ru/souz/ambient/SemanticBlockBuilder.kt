@@ -4,9 +4,9 @@ import ru.souz.service.speech.ambient.AmbientTranscriptEvent
 import java.util.Locale
 
 data class SemanticBlockBuilderConfig(
-    val pauseToCloseMs: Long = 1_500L,
-    val maxBlockDurationMs: Long = 25_000L,
-    val maxBlockChars: Int = 900,
+    val pauseToCloseMs: Long = 3_000L,
+    val maxBlockDurationMs: Long = 3_000L,
+    val maxBlockChars: Int = 1_800,
     val minUsefulChars: Int = 8,
 )
 
@@ -114,6 +114,17 @@ class SemanticBlockBuilder(
             "напомни мне",
             "создай",
             "найди",
+            "поищи",
+            "проверь",
+            "узнай",
+            "посмотри",
+            "посмотрел",
+            "хочу",
+            "хотел бы",
+            "хотела бы",
+            "какая погода",
+            "какой погода",
+            "погода в",
             "отправь",
             "запланируй",
             "надо",

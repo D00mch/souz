@@ -15,6 +15,11 @@ extern char *souz_macos_speech_recognize_wav(
     int32_t errorBufferSize
 );
 extern int32_t souz_macos_live_speech_is_supported(const char *locale);
+extern int32_t souz_macos_live_speech_prepare_assets(
+    const char *locale,
+    char *errorBuffer,
+    int32_t errorBufferSize
+);
 extern int64_t souz_macos_live_speech_start(
     const char *locale,
     char *errorBuffer,
@@ -141,6 +146,38 @@ Java_ru_souz_service_speech_MacOsSpeechBridge_liveIsSupportedNative(
     int32_t result = souz_macos_live_speech_is_supported(locale_utf);
     (*env)->ReleaseStringUTFChars(env, locale, locale_utf);
     return (jboolean)(result != 0);
+}
+
+JNIEXPORT void JNICALL
+Java_ru_souz_service_speech_MacOsSpeechBridge_livePrepareAssetsNative(
+    JNIEnv *env,
+    jobject thiz,
+    jstring locale
+) {
+    (void)thiz;
+
+    const char *locale_utf = (*env)->GetStringUTFChars(env, locale, NULL);
+    if (locale_utf == NULL) {
+        return;
+    }
+
+    char error_buffer[ERROR_BUFFER_SIZE];
+    error_buffer[0] = '\0';
+
+    int32_t ok = souz_macos_live_speech_prepare_assets(
+        locale_utf,
+        error_buffer,
+        ERROR_BUFFER_SIZE
+    );
+
+    (*env)->ReleaseStringUTFChars(env, locale, locale_utf);
+
+    if (ok == 0) {
+        throw_illegal_state(
+            env,
+            error_buffer[0] != '\0' ? error_buffer : "Local macOS live speech transcription failed to prepare assets."
+        );
+    }
 }
 
 JNIEXPORT jlong JNICALL

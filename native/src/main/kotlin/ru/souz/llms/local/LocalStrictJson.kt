@@ -133,7 +133,13 @@ class LocalStrictJsonParser {
         return when (type) {
             "final" -> parseFinal(node, requestModel, usage, finishReason, created)
             "tool_calls" -> parseToolCalls(node, requestModel, usage, created)
-            else -> LLMResponse.Chat.Error(-1, "Local provider JSON has unsupported type: $type")
+            else -> plainTextFinal(
+                text = trimmed,
+                requestModel = requestModel,
+                usage = usage,
+                finishReason = finishReason,
+                created = created,
+            )
         }
     }
 

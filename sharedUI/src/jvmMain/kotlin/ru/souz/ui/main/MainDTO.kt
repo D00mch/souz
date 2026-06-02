@@ -92,6 +92,24 @@ data class SelectionDialogCandidateUi(
     val preview: String?,
 )
 
+data class AmbientModeUiState(
+    val enabled: Boolean = false,
+    val starting: Boolean = false,
+    val listening: Boolean = false,
+    val analyzing: Boolean = false,
+    val errorMessage: String? = null,
+)
+
+data class AmbientSuggestionUiModel(
+    val id: String,
+    val title: String,
+    val suggestionText: String,
+    val taskText: String,
+    val risk: String,
+    val capabilityLabels: List<String>,
+    val status: String,
+)
+
 /**
  * State for the main screen that mirrors the floating glass panel experience.
  */
@@ -123,6 +141,8 @@ data class MainState(
     val pendingVoiceInputDraft: String? = null,
     val pendingVoiceInputDraftToken: Long = 0L,
     val chatSearch: ChatSearchState = ChatSearchState(),
+    val ambientMode: AmbientModeUiState = AmbientModeUiState(),
+    val ambientSuggestions: List<AmbientSuggestionUiModel> = emptyList(),
 ) : VMState {
 
     companion object {
@@ -161,6 +181,10 @@ sealed interface MainEvent : VMEvent {
     data object RejectToolPermission : MainEvent
     data class SelectApprovalCandidate(val candidateId: Long) : MainEvent
     data object CancelSelectionDialog : MainEvent
+    data object ToggleAmbientMode : MainEvent
+    data class AcceptAmbientSuggestion(val id: String) : MainEvent
+    data class RejectAmbientSuggestion(val id: String) : MainEvent
+    data class DismissAmbientSuggestion(val id: String) : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {

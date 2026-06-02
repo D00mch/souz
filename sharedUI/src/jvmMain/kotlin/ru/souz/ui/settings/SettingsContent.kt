@@ -59,6 +59,7 @@ import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import ru.souz.ui.main.RealLiquidGlassCard
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -266,6 +267,7 @@ private fun SettingsSectionScreen(
 fun ModelsSettingsContent(
     state: SettingsState,
     onModelChange: (LLMModel) -> Unit,
+    onAmbientAnalysisModelChange: (LLMModel) -> Unit,
     onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
     onVoiceRecognitionModelChange: (VoiceRecognitionModel) -> Unit,
     onTemperatureInput: (String) -> Unit,
@@ -287,6 +289,15 @@ fun ModelsSettingsContent(
                 availableModels = state.availableLlmModels,
                 onModelSelected = onModelChange,
             )
+
+            if (state.availableAmbientAnalysisModels.isNotEmpty()) {
+                ModelDropdown(
+                    label = Res.string.label_ambient_analysis_model,
+                    selectedModel = state.ambientAnalysisModel,
+                    availableModels = state.availableAmbientAnalysisModels,
+                    onModelSelected = onAmbientAnalysisModelChange,
+                )
+            }
 
             if (state.availableEmbeddingsModels.isNotEmpty()) {
                 EmbeddingsModelDropdown(
@@ -1899,6 +1910,7 @@ private fun AgentId.descriptionRes() = when (this) {
 
 @Composable
 fun ModelDropdown(
+    label: StringResource = Res.string.label_model,
     selectedModel: LLMModel,
     availableModels: List<LLMModel>,
     onModelSelected: (LLMModel) -> Unit,
@@ -1907,7 +1919,7 @@ fun ModelDropdown(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = stringResource(Res.string.label_model),
+            text = stringResource(label),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -2158,9 +2170,14 @@ private val PreviewSettingsState = SettingsState(
     useStreaming = true,
     safeModeEnabled = true,
     gigaModel = LLMModel.Max,
+    ambientAnalysisModel = LLMModel.LocalQwen3_4B_Instruct_2507,
     embeddingsModel = EmbeddingsModel.GigaEmbeddings,
     voiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
     availableLlmModels = LLMModel.entries.take(3),
+    availableAmbientAnalysisModels = listOf(
+        LLMModel.LocalQwen3_4B_Instruct_2507,
+        LLMModel.LocalGemma4_E2B_It,
+    ),
     availableEmbeddingsModels = EmbeddingsModel.entries.take(2),
     availableVoiceRecognitionModels = VoiceRecognitionModel.entries.take(3),
     systemPrompt = "Ты полезный ассистент. Отвечай кратко и по делу.",
@@ -2202,6 +2219,7 @@ private fun ModelsSettingsContentPreview() {
         ModelsSettingsContent(
             state = PreviewSettingsState,
             onModelChange = {},
+            onAmbientAnalysisModelChange = {},
             onEmbeddingsModelChange = {},
             onVoiceRecognitionModelChange = {},
             onTemperatureInput = {},

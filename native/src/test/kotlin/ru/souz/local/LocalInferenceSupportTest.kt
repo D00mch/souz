@@ -316,6 +316,21 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `strict json parser treats application json response as final content`() {
+        val parser = LocalStrictJsonParser()
+        val ambientJson = """{"type":"ambient_analysis","task_candidates":[]}"""
+
+        val result = parser.parse(
+            rawText = ambientJson,
+            requestModel = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(ambientJson, ok.choices.single().message.content)
+    }
+
+    @Test
     fun `strict json parser extracts final response from control tokens`() {
         val parser = LocalStrictJsonParser()
 

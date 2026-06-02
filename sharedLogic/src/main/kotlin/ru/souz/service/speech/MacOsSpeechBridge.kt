@@ -33,6 +33,8 @@ interface MacOsSpeechBridgeApi {
 
     fun liveIsSupported(locale: String): Boolean = false
 
+    fun livePrepareAssets(locale: String) = Unit
+
     fun liveStart(locale: String): Long =
         throw UnsupportedOperationException("Local macOS live speech transcription is not supported.")
 

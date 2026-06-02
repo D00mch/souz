@@ -90,6 +90,7 @@ private enum LiveSpeechBridgeError: Error {
 }
 
 private let liveStartTimeoutSeconds: Int = 30
+private let liveAssetInstallTimeoutSeconds: Int = 600
 private let liveFinishTimeoutSeconds: Int = 120
 private let livePcmSampleRateHz: Int32 = 16_000
 private let livePcmChannels: Int32 = 1
@@ -148,20 +149,20 @@ private final class LiveSpeechSession {
     private var closed = false
 
     static func isSupported(localeIdentifier: String) async -> Bool {
-        guard SpeechTranscriber.isAvailable else { return false }
-        let requestedLocale = Locale(identifier: localeIdentifier)
-        guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
+        guard let transcriber = try? await makeTranscriber(localeIdentifier: localeIdentifier) else {
             return false
         }
-
-        let transcriber = SpeechTranscriber(
-            locale: supportedLocale,
-            transcriptionOptions: [],
-            reportingOptions: [.volatileResults],
-            attributeOptions: [.audioTimeRange]
-        )
         let status = await AssetInventory.status(forModules: [transcriber])
         return status == .installed
+    }
+
+    static func prepareAssets(localeIdentifier: String) async throws {
+        let transcriber = try await makeTranscriber(localeIdentifier: localeIdentifier)
+        try await ensureAssetsInstalled(
+            for: transcriber,
+            localeIdentifier: localeIdentifier,
+            allowInstall: true
+        )
     }
 
     static func create(localeIdentifier: String) async throws -> LiveSpeechSession {
@@ -178,33 +179,12 @@ private final class LiveSpeechSession {
             throw LiveSpeechBridgeError.unavailable("Speech recognition authorization status is unsupported.")
         }
 
-        guard SpeechTranscriber.isAvailable else {
-            throw LiveSpeechBridgeError.unsupportedOS
-        }
-
-        let requestedLocale = Locale(identifier: localeIdentifier)
-        guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
-            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
-        }
-
-        let transcriber = SpeechTranscriber(
-            locale: supportedLocale,
-            transcriptionOptions: [],
-            reportingOptions: [.volatileResults],
-            attributeOptions: [.audioTimeRange]
+        let transcriber = try await makeTranscriber(localeIdentifier: localeIdentifier)
+        try await ensureAssetsInstalled(
+            for: transcriber,
+            localeIdentifier: localeIdentifier,
+            allowInstall: false
         )
-
-        let status = await AssetInventory.status(forModules: [transcriber])
-        switch status {
-        case .installed:
-            break
-        case .supported, .downloading:
-            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets are not installed for \(localeIdentifier).")
-        case .unsupported:
-            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
-        @unknown default:
-            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model asset status is unknown for \(localeIdentifier).")
-        }
 
         guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             throw LiveSpeechBridgeError.unavailable("No compatible SpeechAnalyzer audio format is available.")
@@ -235,6 +215,58 @@ private final class LiveSpeechSession {
         )
         session.startResultReader()
         return session
+    }
+
+    private static func makeTranscriber(localeIdentifier: String) async throws -> SpeechTranscriber {
+        guard SpeechTranscriber.isAvailable else {
+            throw LiveSpeechBridgeError.unsupportedOS
+        }
+
+        let requestedLocale = Locale(identifier: localeIdentifier)
+        guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
+            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
+        }
+
+        return SpeechTranscriber(
+            locale: supportedLocale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults],
+            attributeOptions: [.audioTimeRange]
+        )
+    }
+
+    private static func ensureAssetsInstalled(
+        for transcriber: SpeechTranscriber,
+        localeIdentifier: String,
+        allowInstall: Bool
+    ) async throws {
+        let status = await AssetInventory.status(forModules: [transcriber])
+        switch status {
+        case .installed:
+            return
+        case .supported, .downloading:
+            guard allowInstall else {
+                throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets are not installed for \(localeIdentifier).")
+            }
+        case .unsupported:
+            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
+        @unknown default:
+            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model asset status is unknown for \(localeIdentifier).")
+        }
+
+        guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else {
+            let updatedStatus = await AssetInventory.status(forModules: [transcriber])
+            if updatedStatus == .installed {
+                return
+            }
+            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets are not available for installation for \(localeIdentifier).")
+        }
+        try await request.downloadAndInstall()
+
+        let updatedStatus = await AssetInventory.status(forModules: [transcriber])
+        guard updatedStatus == .installed else {
+            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets failed to install for \(localeIdentifier).")
+        }
     }
 
     private init(
@@ -701,6 +733,40 @@ public func souz_macos_live_speech_is_supported(_ localePtr: UnsafePointer<CChar
     }
 #endif
 
+    return 0
+}
+
+@_cdecl("souz_macos_live_speech_prepare_assets")
+public func souz_macos_live_speech_prepare_assets(
+    _ localePtr: UnsafePointer<CChar>?,
+    _ errorBuffer: UnsafeMutablePointer<CChar>?,
+    _ errorBufferSize: Int32
+) -> Int32 {
+    guard let localePtr else {
+        writeError(
+            LiveSpeechBridgeError.unavailable("Missing locale.").message,
+            to: errorBuffer,
+            size: errorBufferSize
+        )
+        return 0
+    }
+
+#if compiler(>=6.2)
+    if #available(macOS 26.0, *) {
+        do {
+            let localeIdentifier = String(cString: localePtr)
+            try waitForLiveAsync(timeoutSeconds: liveAssetInstallTimeoutSeconds) {
+                try await LiveSpeechSession.prepareAssets(localeIdentifier: localeIdentifier)
+            }
+            return 1
+        } catch {
+            writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
+            return 0
+        }
+    }
+#endif
+
+    writeError(LiveSpeechBridgeError.unsupportedOS.message, to: errorBuffer, size: errorBufferSize)
     return 0
 }
 

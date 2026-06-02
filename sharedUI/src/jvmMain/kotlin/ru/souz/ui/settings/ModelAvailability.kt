@@ -27,6 +27,18 @@ fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): LLMModel
         ?: availableModels.first()
 }
 
+fun SettingsProvider.availableAmbientAnalysisModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
+    llmBuildProfile.availableModels.filter { model -> model.provider == LlmProvider.LOCAL }
+
+fun SettingsProvider.defaultAmbientAnalysisModel(llmBuildProfile: LlmBuildProfile): LLMModel? {
+    val availableModels = this.availableAmbientAnalysisModels(llmBuildProfile)
+    if (availableModels.isEmpty()) return null
+
+    return llmBuildProfile.defaultModelForProvider(LlmProvider.LOCAL)
+        ?.takeIf { model -> model in availableModels }
+        ?: availableModels.first()
+}
+
 fun SettingsProvider.availableEmbeddingsModels(llmBuildProfile: LlmBuildProfile): List<EmbeddingsModel> =
     when {
         gigaModel.provider == LlmProvider.LOCAL && LlmProvider.LOCAL in llmBuildProfile.availableProviders ->

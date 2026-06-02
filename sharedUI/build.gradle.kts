@@ -22,6 +22,7 @@ kotlin {
         }
 
         jvmMain.dependencies {
+            implementation(projects.ambientAgent)
             implementation(projects.sharedLogic)
             implementation(projects.agent)
             implementation(projects.llms)

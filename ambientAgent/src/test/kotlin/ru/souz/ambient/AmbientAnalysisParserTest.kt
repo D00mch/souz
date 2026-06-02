@@ -151,5 +151,72 @@ class AmbientAnalysisParserTest {
         assertFalse(result.extractedStatements.any { it.text.isBlank() })
     }
 
+    @Test
+    fun `empty title and suggestion text are preserved for controller fallback`() {
+        val result = parser().parse(
+            blockId = "b1",
+            raw = """
+                {
+                  "statements": [],
+                  "task_candidates": [
+                    {
+                      "title":"",
+                      "task_text":"Create calendar event",
+                      "suggestion_text":"",
+                      "confidence":0.9,
+                      "addressedness":"DIRECT_TO_SOUZ",
+                      "matched_capability_ids":["tool:CALENDAR:create_event"],
+                      "missing_slots":[],
+                      "risk":"MEDIUM",
+                      "requires_confirmation":true,
+                      "evidence_event_ids":["e1"],
+                      "reason":"direct request"
+                    }
+                  ]
+                }
+            """.trimIndent(),
+            blockAddressedness = AmbientAddressedness.DIRECT_TO_SOUZ,
+            allowedCapabilityIds = setOf("tool:CALENDAR:create_event"),
+            evidenceEventIds = listOf("e1"),
+        )
+
+        val candidate = result.taskCandidates.single()
+        assertEquals("", candidate.title)
+        assertEquals("Create calendar event", candidate.taskText)
+        assertEquals("", candidate.suggestionText)
+    }
+
+    @Test
+    fun `tool call shaped json task text is normalized before dispatch`() {
+        val result = parser().parse(
+            blockId = "b1",
+            raw = """
+                {
+                  "statements": [],
+                  "task_candidates": [
+                    {
+                      "title":"Погода",
+                      "task_text":"InternetSearch{query:\"Погода в Москве\"}",
+                      "suggestion_text":"Посмотреть погоду в Москве?",
+                      "confidence":0.9,
+                      "addressedness":"IMPLICIT_USER_INTENT",
+                      "matched_capability_ids":["tool:WEB_SEARCH:InternetSearch"],
+                      "missing_slots":[],
+                      "risk":"LOW",
+                      "requires_confirmation":true,
+                      "evidence_event_ids":["e1"],
+                      "reason":"weather lookup"
+                    }
+                  ]
+                }
+            """.trimIndent(),
+            blockAddressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
+            allowedCapabilityIds = setOf("tool:WEB_SEARCH:InternetSearch"),
+            evidenceEventIds = listOf("e1"),
+        )
+
+        assertEquals("Погода в Москве", result.taskCandidates.single().taskText)
+    }
+
     private fun parser(): AmbientAnalysisJsonParser = AmbientAnalysisJsonParser()
 }

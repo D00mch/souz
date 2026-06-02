@@ -51,12 +51,65 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
         if (!enabled) {
             throw LocalMacOsLiveSpeechUnsupportedException("Local macOS live speech transcription is unavailable on this host.")
         }
+        ensureAuthorization()
+        prepareAssets(locale)
         val sessionId = try {
             bridge.liveStart(locale)
         } catch (error: Throwable) {
             throw mapLiveBridgeError(error)
         }
         return BridgeLiveSpeechTranscriptionSession(bridge, sessionId)
+    }
+
+    private fun ensureAuthorization() {
+        when (authorizationStatus()) {
+            MacOsSpeechAuthorizationStatus.AUTHORIZED -> return
+            MacOsSpeechAuthorizationStatus.NOT_DETERMINED -> {
+                try {
+                    bridge.requestAuthorizationIfNeeded()
+                } catch (error: Throwable) {
+                    throw mapLiveBridgeError(error)
+                }
+            }
+
+            MacOsSpeechAuthorizationStatus.DENIED ->
+                throw LocalMacOsLiveSpeechPermissionDeniedException()
+
+            MacOsSpeechAuthorizationStatus.RESTRICTED ->
+                throw LocalMacOsLiveSpeechUnavailableException("Speech recognition is restricted on this device.")
+
+            MacOsSpeechAuthorizationStatus.UNSUPPORTED ->
+                throw LocalMacOsLiveSpeechUnavailableException("Speech recognition is unavailable on this device.")
+        }
+
+        when (authorizationStatus()) {
+            MacOsSpeechAuthorizationStatus.AUTHORIZED -> Unit
+            MacOsSpeechAuthorizationStatus.DENIED ->
+                throw LocalMacOsLiveSpeechPermissionDeniedException()
+
+            MacOsSpeechAuthorizationStatus.RESTRICTED ->
+                throw LocalMacOsLiveSpeechUnavailableException("Speech recognition is restricted on this device.")
+
+            MacOsSpeechAuthorizationStatus.UNSUPPORTED ->
+                throw LocalMacOsLiveSpeechUnavailableException("Speech recognition is unavailable on this device.")
+
+            MacOsSpeechAuthorizationStatus.NOT_DETERMINED ->
+                throw LocalMacOsLiveSpeechUnavailableException("Speech recognition authorization did not complete.")
+        }
+    }
+
+    private fun authorizationStatus(): MacOsSpeechAuthorizationStatus = try {
+        bridge.authorizationStatus()
+    } catch (error: Throwable) {
+        throw mapLiveBridgeError(error)
+    }
+
+    private fun prepareAssets(locale: String) {
+        try {
+            bridge.livePrepareAssets(locale)
+        } catch (error: Throwable) {
+            throw mapLiveBridgeError(error)
+        }
     }
 
     private class BridgeLiveSpeechTranscriptionSession(

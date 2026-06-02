@@ -34,6 +34,7 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     override var regionProfile: String
     override var activeAgentId: AgentId
     override var gigaModel: LLMModel
+    var ambientAnalysisModel: LLMModel
     var useFewShotExamples: Boolean
     override var useStreaming: Boolean
     var notificationSoundEnabled: Boolean
@@ -68,6 +69,10 @@ class SettingsProviderImpl(
             }
         }
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
+    private var _ambientAnalysisModelDelegate: String? by keyDelegate(
+        configKey = AMBIENT_ANALYSIS_MODEL,
+        envKey = AMBIENT_ANALYSIS_MODEL,
+    )
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
     private var _notificationSoundEnabledDelegate: String? by keyDelegate(
         configKey = NOTIFICATION_SOUND_ENABLED,
@@ -181,6 +186,17 @@ class SettingsProviderImpl(
             ?: defaultLlmModel()
         set(value) {
             _gigaModelDelegate = normalizeGigaModel(value).alias
+        }
+
+    override var ambientAnalysisModel: LLMModel
+        get() = _ambientAnalysisModelDelegate?.let { value ->
+            LLMModel.entries.firstOrNull { model ->
+                model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
+            }
+        }?.let(::normalizeAmbientAnalysisModel)
+            ?: defaultAmbientAnalysisModel()
+        set(value) {
+            _ambientAnalysisModelDelegate = normalizeAmbientAnalysisModel(value).alias
         }
 
     override var useFewShotExamples: Boolean
@@ -335,6 +351,16 @@ class SettingsProviderImpl(
         }
     }
 
+    private fun defaultAmbientAnalysisModel(): LLMModel =
+        localProviderAvailability.defaultGigaModel()
+            ?: LLMModel.LocalQwen3_4B_Instruct_2507
+
+    private fun normalizeAmbientAnalysisModel(model: LLMModel): LLMModel = when {
+        model.provider != LlmProvider.LOCAL -> defaultAmbientAnalysisModel()
+        model !in localProviderAvailability.availableGigaModels() -> defaultAmbientAnalysisModel()
+        else -> model
+    }
+
     private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
         gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->
             LocalEmbeddingProfiles.default().embeddingsModel
@@ -390,6 +416,7 @@ class SettingsProviderImpl(
         private const val ACTIVE_AGENT_ID = "ACTIVE_AGENT_ID"
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         private const val GIGA_MODEL = "GIGA_MODEL"
+        private const val AMBIENT_ANALYSIS_MODEL = "AMBIENT_ANALYSIS_MODEL"
         private const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
         private const val ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED"
         private const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"

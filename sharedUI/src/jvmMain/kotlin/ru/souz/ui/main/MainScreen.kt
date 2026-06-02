@@ -198,6 +198,10 @@ fun MainScreen(
         onUpdateChatSearchQuery = { viewModel.send(MainEvent.UpdateChatSearchQuery(it)) },
         onSelectNextChatSearchResult = { viewModel.send(MainEvent.SelectNextChatSearchResult) },
         onSelectPreviousChatSearchResult = { viewModel.send(MainEvent.SelectPreviousChatSearchResult) },
+        onToggleAmbientMode = { viewModel.send(MainEvent.ToggleAmbientMode) },
+        onAcceptAmbientSuggestion = { viewModel.send(MainEvent.AcceptAmbientSuggestion(it)) },
+        onRejectAmbientSuggestion = { viewModel.send(MainEvent.RejectAmbientSuggestion(it)) },
+        onDismissAmbientSuggestion = { viewModel.send(MainEvent.DismissAmbientSuggestion(it)) },
         searchProjectionProvider = { viewModel.chatSearchProjectionFor(it) },
     )
 }
@@ -240,6 +244,10 @@ fun MainScreenContent(
     onUpdateChatSearchQuery: (String) -> Unit = {},
     onSelectNextChatSearchResult: () -> Unit = {},
     onSelectPreviousChatSearchResult: () -> Unit = {},
+    onToggleAmbientMode: () -> Unit = {},
+    onAcceptAmbientSuggestion: (String) -> Unit = {},
+    onRejectAmbientSuggestion: (String) -> Unit = {},
+    onDismissAmbientSuggestion: (String) -> Unit = {},
     searchProjectionProvider: (String) -> ChatMessageSearchProjection? = { null },
 ) {
     val windowInfo = LocalWindowInfo.current
@@ -296,16 +304,11 @@ fun MainScreenContent(
                             .height(56.dp)
                             .zIndex(2f)
                     ) {
-                    Text(
-                        text = stringAppName,
+                    AmbientWindowTitle(
+                        title = stringAppName,
+                        ambientMode = state.ambientMode,
+                        onToggleAmbientMode = onToggleAmbientMode,
                         modifier = Modifier.align(Alignment.Center),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        style = TextStyle(
-                            color = Color(0x99FFFFFF),
-                            fontSize = 13.sp,
-                            letterSpacing = 0.65.sp,
-                            fontWeight = FontWeight.Medium
-                        )
                     )
 
                     Row(
@@ -464,6 +467,7 @@ fun MainScreenContent(
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
+                    ambientSuggestions = state.ambientSuggestions,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
                     onPickAttachments = onPickChatAttachments,
@@ -479,6 +483,9 @@ fun MainScreenContent(
                     onResolveToolModifyReview = onResolveToolModifyReview,
                     onShowSnack = onShowSnack,
                     onOpenPath = onOpenPath,
+                    onAcceptAmbientSuggestion = onAcceptAmbientSuggestion,
+                    onRejectAmbientSuggestion = onRejectAmbientSuggestion,
+                    onDismissAmbientSuggestion = onDismissAmbientSuggestion,
                     searchProjectionProvider = searchProjectionProvider,
                     modifier = Modifier
                         .weight(1f)
@@ -789,6 +796,242 @@ private fun chatMarkdownTypography(
 private enum class HeadingScale { LARGE, SMALL }
 
 @Composable
+private fun AmbientWindowTitle(
+    title: String,
+    ambientMode: AmbientModeUiState,
+    onToggleAmbientMode: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pulse = rememberInfiniteTransition()
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 0.58f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (ambientMode.analyzing) 780 else 1_200),
+            repeatMode = RepeatMode.Reverse,
+        )
+    )
+    val staticColor by animateColorAsState(
+        targetValue = when {
+            ambientMode.errorMessage != null -> Color(0xFFE87979)
+            ambientMode.starting -> Color(0xFFFFD166)
+            else -> Color(0x99FFFFFF)
+        }
+    )
+    val titleColor = when {
+        ambientMode.listening || ambientMode.analyzing -> Color(0xFFFFC857).copy(alpha = pulseAlpha)
+        else -> staticColor
+    }
+
+    Text(
+        text = title,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onToggleAmbientMode,
+            )
+            .pointerHoverIcon(PointerIcon.Hand)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        style = TextStyle(
+            color = titleColor,
+            fontSize = 13.sp,
+            letterSpacing = 0.65.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    )
+}
+
+@Composable
+private fun AmbientSuggestionShelf(
+    suggestions: List<AmbientSuggestionUiModel>,
+    onAccept: (String) -> Unit,
+    onReject: (String) -> Unit,
+    onDismiss: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primary = suggestions.firstOrNull()
+    AnimatedVisibility(
+        visible = primary != null,
+        enter = fadeIn(animationSpec = tween(durationMillis = 160)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+        modifier = modifier,
+    ) {
+        if (primary != null) {
+            AmbientSuggestionCard(
+                suggestion = primary,
+                extraCount = (suggestions.size - 1).coerceAtLeast(0),
+                onAccept = { onAccept(primary.id) },
+                onReject = { onReject(primary.id) },
+                onDismiss = { onDismiss(primary.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmbientSuggestionCard(
+    suggestion: AmbientSuggestionUiModel,
+    extraCount: Int,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = Modifier
+            .clip(shape)
+            .background(Color(0xF216181C))
+            .border(1.dp, Color(0x33FFC857), shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Rounded.AutoAwesome,
+                contentDescription = null,
+                tint = Color(0xFFFFC857),
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = suggestion.suggestionText,
+                color = Color(0xE6FFFFFF),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (extraCount > 0) {
+                Text(
+                    text = "+$extraCount",
+                    color = Color(0xFFFFC857),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            AmbientIconTextButton(
+                text = "",
+                icon = Icons.Rounded.Close,
+                tint = Color(0x99FFFFFF),
+                background = Color.Transparent,
+                onClick = onDismiss,
+                compact = true,
+            )
+        }
+
+        Text(
+            text = suggestion.taskText,
+            color = Color(0x99FFFFFF),
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AmbientSuggestionMeta(
+                risk = suggestion.risk,
+                capabilities = suggestion.capabilityLabels,
+                modifier = Modifier.weight(1f),
+            )
+            AmbientIconTextButton(
+                text = "Не сейчас",
+                icon = Icons.Rounded.Close,
+                tint = Color(0xB3FFFFFF),
+                background = Color(0x12FFFFFF),
+                onClick = onReject,
+            )
+            AmbientIconTextButton(
+                text = "Сделать",
+                icon = Icons.Rounded.Check,
+                tint = Color(0xFF18130A),
+                background = Color(0xFFFFC857),
+                onClick = onAccept,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmbientSuggestionMeta(
+    risk: String,
+    capabilities: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    val riskLabel = when (risk) {
+        "HIGH" -> "высокий риск"
+        "MEDIUM" -> "средний риск"
+        else -> null
+    }
+    val capabilityText = capabilities
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(", ")
+    val metaText = listOfNotNull(riskLabel, capabilityText).joinToString(" • ")
+    if (metaText.isBlank()) {
+        Spacer(modifier = modifier)
+        return
+    }
+    Text(
+        text = metaText,
+        color = if (risk == "HIGH") Color(0xFFFFB4A8) else Color(0x80FFFFFF),
+        fontSize = 11.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun AmbientIconTextButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    background: Color,
+    onClick: () -> Unit,
+    compact: Boolean = false,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        modifier = Modifier
+            .height(if (compact) 28.dp else 32.dp)
+            .clip(shape)
+            .background(background)
+            .clickable(onClick = onClick)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .padding(horizontal = if (compact) 6.dp else 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (text.isBlank()) 0.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(if (compact) 16.dp else 15.dp),
+        )
+        if (text.isNotBlank()) {
+            Text(
+                text = text,
+                color = tint,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
     searchState: ChatSearchState,
@@ -807,6 +1050,7 @@ fun ChatModeContent(
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
+    ambientSuggestions: List<AmbientSuggestionUiModel>,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
     onPickAttachments: () -> Unit,
@@ -822,6 +1066,9 @@ fun ChatModeContent(
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
     onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit,
+    onAcceptAmbientSuggestion: (String) -> Unit,
+    onRejectAmbientSuggestion: (String) -> Unit,
+    onDismissAmbientSuggestion: (String) -> Unit,
     searchProjectionProvider: (String) -> ChatMessageSearchProjection?,
     modifier: Modifier = Modifier
 ) {
@@ -956,6 +1203,16 @@ fun ChatModeContent(
                 }
             }
         }
+
+        AmbientSuggestionShelf(
+            suggestions = ambientSuggestions,
+            onAccept = onAcceptAmbientSuggestion,
+            onReject = onRejectAmbientSuggestion,
+            onDismiss = onDismissAmbientSuggestion,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 6.dp, end = 6.dp, top = 8.dp)
+        )
 
         ConnectionStatusNotification(
             isOnline = isOnline,

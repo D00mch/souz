@@ -118,6 +118,73 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
     }
 
     @Test
+    fun `start requests speech authorization when not determined`() = runTest {
+        val bridge = FakeMacOsSpeechBridge(
+            initialAuthorizationStatus = MacOsSpeechAuthorizationStatus.NOT_DETERMINED,
+        )
+        val provider = MacOsSpeechAnalyzerLiveTranscriptionProvider(
+            bridge = bridge,
+            isMacOsProvider = { true },
+        )
+
+        provider.start("en-US")
+
+        assertEquals(1, bridge.requestAuthorizationCalls)
+        assertEquals("en-US", bridge.livePrepareAssetsLocale)
+        assertEquals("en-US", bridge.liveStartLocale)
+    }
+
+    @Test
+    fun `start maps denied speech authorization before native live start`() = runTest {
+        val bridge = FakeMacOsSpeechBridge(
+            initialAuthorizationStatus = MacOsSpeechAuthorizationStatus.DENIED,
+        )
+        val provider = MacOsSpeechAnalyzerLiveTranscriptionProvider(
+            bridge = bridge,
+            isMacOsProvider = { true },
+        )
+
+        assertFailsWith<LocalMacOsLiveSpeechPermissionDeniedException> {
+            provider.start("en-US")
+        }
+        assertEquals(null, bridge.livePrepareAssetsLocale)
+        assertEquals(null, bridge.liveStartLocale)
+    }
+
+    @Test
+    fun `start prepares assets before native live start`() = runTest {
+        val bridge = FakeMacOsSpeechBridge()
+        val provider = MacOsSpeechAnalyzerLiveTranscriptionProvider(
+            bridge = bridge,
+            isMacOsProvider = { true },
+        )
+
+        provider.start("ru-RU")
+
+        assertEquals("ru-RU", bridge.livePrepareAssetsLocale)
+        assertEquals("ru-RU", bridge.liveStartLocale)
+    }
+
+    @Test
+    fun `start maps asset preparation errors before native live start`() = runTest {
+        val bridge = FakeMacOsSpeechBridge(
+            prepareAssetsError = IllegalStateException(
+                "LOCAL_MACOS_LIVE_STT:MODEL_UNAVAILABLE:SpeechTranscriber model assets are not installed."
+            ),
+        )
+        val provider = MacOsSpeechAnalyzerLiveTranscriptionProvider(
+            bridge = bridge,
+            isMacOsProvider = { true },
+        )
+
+        assertFailsWith<LocalMacOsLiveSpeechModelUnavailableException> {
+            provider.start("ru-RU")
+        }
+        assertEquals("ru-RU", bridge.livePrepareAssetsLocale)
+        assertEquals(null, bridge.liveStartLocale)
+    }
+
+    @Test
     fun `start creates native session`() = runTest {
         val bridge = FakeMacOsSpeechBridge()
         val provider = MacOsSpeechAnalyzerLiveTranscriptionProvider(
@@ -209,7 +276,10 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
         private val onLiveIsSupported: (String) -> Boolean = { true },
         private val pollRaw: String = "",
         private val finalizeRaw: String = "",
+        private val prepareAssetsError: Throwable? = null,
+        initialAuthorizationStatus: MacOsSpeechAuthorizationStatus = MacOsSpeechAuthorizationStatus.AUTHORIZED,
     ) : MacOsSpeechBridgeApi {
+        var livePrepareAssetsLocale: String? = null
         var liveStartLocale: String? = null
         var lastAcceptedSessionId: Long? = null
         var lastAcceptedAudio: ByteArray = byteArrayOf()
@@ -217,19 +287,31 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
         var lastChannels: Int? = null
         var lastBitsPerSample: Int? = null
         var liveCancelCalls: Int = 0
+        var requestAuthorizationCalls: Int = 0
+        private var authorizationStatus: MacOsSpeechAuthorizationStatus = initialAuthorizationStatus
 
         override fun hasSpeechRecognitionUsageDescription(): Boolean = true
 
         override fun authorizationStatus(): MacOsSpeechAuthorizationStatus =
-            MacOsSpeechAuthorizationStatus.AUTHORIZED
+            authorizationStatus
 
-        override fun requestAuthorizationIfNeeded() = Unit
+        override fun requestAuthorizationIfNeeded() {
+            requestAuthorizationCalls += 1
+            if (authorizationStatus == MacOsSpeechAuthorizationStatus.NOT_DETERMINED) {
+                authorizationStatus = MacOsSpeechAuthorizationStatus.AUTHORIZED
+            }
+        }
 
         override fun recognizeWav(path: String, locale: String): String = error("recognizeWav should not be called")
 
         override fun cancelRecognition() = Unit
 
         override fun liveIsSupported(locale: String): Boolean = onLiveIsSupported(locale)
+
+        override fun livePrepareAssets(locale: String) {
+            livePrepareAssetsLocale = locale
+            prepareAssetsError?.let { throw it }
+        }
 
         override fun liveStart(locale: String): Long {
             liveStartLocale = locale

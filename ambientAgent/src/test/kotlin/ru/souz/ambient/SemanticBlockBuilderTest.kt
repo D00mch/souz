@@ -77,6 +77,22 @@ class SemanticBlockBuilderTest {
     }
 
     @Test
+    fun `default builder groups speech into three second windows`() {
+        val builder = SemanticBlockBuilder(clock = { 20_000L })
+
+        builder.accept(event(id = "e1", text = "давай посмотрим календарь", startedAtMs = 0, endedAtMs = 3_000))
+        val closed = builder.accept(event(id = "e2", text = "а это уже следующее окно", startedAtMs = 3_000, endedAtMs = 6_000))
+
+        assertEquals(1, closed.size)
+        assertEquals(
+            "давай посмотрим календарь",
+            closed.single().text,
+        )
+        assertEquals(AmbientBlockCloseReason.MAX_DURATION, closed.single().closeReason)
+        assertEquals("а это уже следующее окно", builder.flush()?.text)
+    }
+
+    @Test
     fun `flush closes open block with requested reason`() {
         val builder = SemanticBlockBuilder(clock = { 3_000L })
         builder.accept(event(id = "e1", text = "создай заметку", startedAtMs = 100, endedAtMs = 400))
@@ -134,6 +150,28 @@ class SemanticBlockBuilderTest {
         assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, block?.addressedness)
         assertEquals(AmbientSpeakerRole.PROBABLY_USER, block?.speakerRole)
         assertTrue(block!!.text.contains("отправить отчет"))
+    }
+
+    @Test
+    fun `indirect weather help request is implicit user intent`() {
+        val builder = SemanticBlockBuilder(clock = { 2_000L })
+        builder.accept(event(id = "e1", text = "я хотел бы чтобы кто-то посмотрел погоду", receivedAtMs = 1_000))
+
+        val block = builder.flush()
+
+        assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, block?.addressedness)
+        assertEquals(AmbientSpeakerRole.PROBABLY_USER, block?.speakerRole)
+    }
+
+    @Test
+    fun `indirect weather question is implicit user intent`() {
+        val builder = SemanticBlockBuilder(clock = { 2_000L })
+        builder.accept(event(id = "e1", text = "интересно, какая погода в Москве", receivedAtMs = 1_000))
+
+        val block = builder.flush()
+
+        assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, block?.addressedness)
+        assertEquals(AmbientSpeakerRole.PROBABLY_USER, block?.speakerRole)
     }
 
     private fun event(

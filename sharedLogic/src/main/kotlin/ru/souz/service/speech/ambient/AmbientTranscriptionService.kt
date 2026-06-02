@@ -14,15 +14,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import ru.souz.service.speech.LiveSpeechTranscriptEvent
 import ru.souz.service.speech.LiveSpeechTranscriptionProvider
 import ru.souz.service.speech.LiveSpeechTranscriptionSession
+import ru.souz.service.speech.LocalMacOsSpeechPermissionDeniedException
+import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
+import ru.souz.service.speech.LocalMacOsLiveSpeechModelUnavailableException
+import ru.souz.service.speech.LocalMacOsLiveSpeechPermissionDeniedException
+import ru.souz.service.speech.LocalMacOsLiveSpeechUnavailableException
+import ru.souz.service.speech.LocalMacOsLiveSpeechUnsupportedException
+import ru.souz.service.speech.SpeechRecognitionProvider
+import java.io.ByteArrayOutputStream
 import kotlin.coroutines.cancellation.CancellationException
 
 sealed interface AmbientSpeechAvailability {
     data object Available : AmbientSpeechAvailability
     data object LiveBackendUnavailable : AmbientSpeechAvailability
     data object MicrophoneUnavailable : AmbientSpeechAvailability
+    data object SpeechRecognitionPermissionDenied : AmbientSpeechAvailability
     data object AlreadyRunning : AmbientSpeechAvailability
 }
 
@@ -56,11 +66,15 @@ interface AmbientTranscriptionService {
 
 class DefaultAmbientTranscriptionService(
     private val liveSpeechProvider: LiveSpeechTranscriptionProvider,
+    private val batchSpeechRecognitionProvider: SpeechRecognitionProvider? = null,
     private val audioSource: PcmAudioFrameSource,
     private val scope: CoroutineScope,
     private val buffer: AmbientTranscriptBuffer = AmbientTranscriptBuffer(),
+    private val batchWindowMillis: Long = 3_000,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val transcriptDiagnostics: (AmbientTranscriptEvent) -> Unit = {},
 ) : AmbientTranscriptionService {
+    private val logger = LoggerFactory.getLogger(DefaultAmbientTranscriptionService::class.java)
     private val mutex = Mutex()
     private val _state = MutableStateFlow<AmbientTranscriptionState>(AmbientTranscriptionState.Stopped)
     private val _snapshot = MutableStateFlow(buffer.snapshot())
@@ -90,14 +104,67 @@ class DefaultAmbientTranscriptionService(
             _state.value = AmbientTranscriptionState.Starting
         }
 
-        if (!isLiveBackendSupported(locale)) {
-            markStoppedFromStarting()
-            return AmbientSpeechAvailability.LiveBackendUnavailable
-        }
-
         if (!isExpectedPcmFormat()) {
             markStoppedFromStarting()
             return AmbientSpeechAvailability.MicrophoneUnavailable
+        }
+
+        val session = try {
+            liveSpeechProvider.start(locale)
+        } catch (error: Throwable) {
+            if (error is CancellationException) {
+                markStoppedFromStarting()
+                throw error
+            }
+            logger.warn(
+                "Ambient live transcription start failed for locale {}: {}",
+                locale,
+                error.message ?: error::class.simpleName,
+            )
+            when (error) {
+                is LocalMacOsLiveSpeechPermissionDeniedException -> {
+                    markStoppedFromStarting()
+                    return AmbientSpeechAvailability.SpeechRecognitionPermissionDenied
+                }
+
+                is LocalMacOsLiveSpeechUnsupportedException,
+                is LocalMacOsLiveSpeechModelUnavailableException,
+                is LocalMacOsLiveSpeechUnavailableException ->
+                    return startBatchFallback(locale)
+
+                else -> return startBatchFallback(locale)
+            }
+        }
+
+        val microphoneStarted = try {
+            audioSource.start()
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            false
+        }
+        if (!microphoneStarted) {
+            runCatching { session.cancel() }
+            markStoppedFromStarting()
+            return AmbientSpeechAvailability.MicrophoneUnavailable
+        }
+
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            runListeningLoop(session = session)
+        }
+        mutex.withLock {
+            activeSession = session
+            listeningJob = job
+            _state.value = AmbientTranscriptionState.Listening(locale)
+        }
+        job.start()
+        return AmbientSpeechAvailability.Available
+    }
+
+    private suspend fun startBatchFallback(locale: String): AmbientSpeechAvailability {
+        val batchProvider = batchSpeechRecognitionProvider
+        if (batchProvider == null || !batchProvider.enabled || !batchProvider.hasRequiredKey) {
+            markStoppedFromStarting()
+            return AmbientSpeechAvailability.LiveBackendUnavailable
         }
 
         val microphoneStarted = try {
@@ -111,23 +178,12 @@ class DefaultAmbientTranscriptionService(
             return AmbientSpeechAvailability.MicrophoneUnavailable
         }
 
-        val session = try {
-            liveSpeechProvider.start(locale)
-        } catch (error: Throwable) {
-            runCatching { audioSource.stop() }
-            if (error is CancellationException) {
-                markStoppedFromStarting()
-                throw error
-            }
-            markError(error)
-            return AmbientSpeechAvailability.LiveBackendUnavailable
-        }
-
+        logger.info("Starting ambient batch speech recognition fallback for locale {}", locale)
         val job = scope.launch(start = CoroutineStart.LAZY) {
-            runListeningLoop(session = session)
+            runBatchFallbackLoop(batchProvider, locale)
         }
         mutex.withLock {
-            activeSession = session
+            activeSession = null
             listeningJob = job
             _state.value = AmbientTranscriptionState.Listening(locale)
         }
@@ -205,6 +261,111 @@ class DefaultAmbientTranscriptionService(
         }
     }
 
+    private suspend fun runBatchFallbackLoop(
+        batchProvider: SpeechRecognitionProvider,
+        locale: String,
+    ) {
+        val currentJob = currentCoroutineContext()[Job]
+        var failure: Throwable? = null
+        val pendingAudio = ByteArrayOutputStream()
+        var pendingAudioStartedAtMs: Long? = null
+        var nextAudioStartedAtMs = clock()
+        try {
+            audioSource.frames().collect { chunk ->
+                if (chunk.isEmpty()) return@collect
+                if (pendingAudio.size() == 0) {
+                    pendingAudioStartedAtMs = nextAudioStartedAtMs
+                }
+                pendingAudio.write(chunk)
+                if (pendingAudio.size() >= batchWindowSizeBytes()) {
+                    nextAudioStartedAtMs = recognizeAndPublishBatch(
+                        batchProvider = batchProvider,
+                        locale = locale,
+                        pendingAudio = pendingAudio,
+                        startedAtMs = pendingAudioStartedAtMs ?: nextAudioStartedAtMs,
+                    )
+                    pendingAudioStartedAtMs = null
+                }
+            }
+            if (pendingAudio.size() > 0) {
+                recognizeAndPublishBatch(
+                    batchProvider = batchProvider,
+                    locale = locale,
+                    pendingAudio = pendingAudio,
+                    startedAtMs = pendingAudioStartedAtMs ?: nextAudioStartedAtMs,
+                )
+            }
+        } catch (error: CancellationException) {
+            // Normal stop path. Cleanup happens in finally.
+        } catch (error: Throwable) {
+            failure = when (error) {
+                is LocalMacOsSpeechPermissionDeniedException ->
+                    LocalMacOsLiveSpeechPermissionDeniedException()
+
+                else -> error
+            }
+        } finally {
+            runCatching { audioSource.stop() }
+            mutex.withLock {
+                if (currentJob == null || listeningJob == currentJob) {
+                    listeningJob = null
+                    activeSession = null
+                    _state.value = failure
+                        ?.let { AmbientTranscriptionState.Error(it.message ?: "Ambient transcription failed.") }
+                        ?: AmbientTranscriptionState.Stopped
+                }
+            }
+        }
+    }
+
+    private suspend fun recognizeAndPublishBatch(
+        batchProvider: SpeechRecognitionProvider,
+        locale: String,
+        pendingAudio: ByteArrayOutputStream,
+        startedAtMs: Long,
+    ): Long {
+        if (pendingAudio.size() <= 0) return startedAtMs
+
+        val audio = pendingAudio.toByteArray()
+        pendingAudio.reset()
+        val endedAtMs = startedAtMs + audioDurationMillis(audio.size)
+        val recognized = try {
+            batchProvider.recognize(audio).trim()
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            if (error.isNoSpeechDetected()) {
+                logger.debug("Ambient batch speech fallback skipped no-speech window for locale {}", locale)
+                return endedAtMs
+            }
+            throw error
+        }
+        if (recognized.isBlank()) return endedAtMs
+
+        logger.debug("Ambient batch speech fallback recognized {} chars for locale {}", recognized.length, locale)
+        logger.info(
+            "Ambient batch speech fallback recognized text locale={} startedAtMs={} endedAtMs={} text={}",
+            locale,
+            startedAtMs,
+            endedAtMs,
+            recognized,
+        )
+        publish(
+            listOf(
+                LiveSpeechTranscriptEvent(
+                    text = recognized,
+                    isFinal = true,
+                    startedAtMs = startedAtMs,
+                    endedAtMs = endedAtMs,
+                )
+            )
+        )
+        return endedAtMs
+    }
+
+    private fun Throwable.isNoSpeechDetected(): Boolean =
+        this is LocalMacOsSpeechUnavailableException &&
+            message?.contains("No speech detected", ignoreCase = true) == true
+
     private suspend fun publish(events: List<LiveSpeechTranscriptEvent>) {
         if (events.isEmpty()) return
         val ambientEvents = mutex.withLock {
@@ -216,6 +377,16 @@ class DefaultAmbientTranscriptionService(
             }
         }
         for (event in ambientEvents) {
+            logger.info(
+                "Ambient transcript event id={} final={} startedAtMs={} endedAtMs={} receivedAtMs={} text={}",
+                event.id,
+                event.isFinal,
+                event.startedAtMs,
+                event.endedAtMs,
+                event.receivedAtMs,
+                event.text,
+            )
+            transcriptDiagnostics(event)
             _transcriptEvents.tryEmit(event)
         }
     }
@@ -237,16 +408,32 @@ class DefaultAmbientTranscriptionService(
     }
 
     private suspend fun isLiveBackendSupported(locale: String): Boolean = try {
-        liveSpeechProvider.isSupported(locale)
+        liveSpeechProvider.isSupported(locale) ||
+            batchSpeechRecognitionProvider?.let { it.enabled && it.hasRequiredKey } == true
     } catch (error: Throwable) {
         if (error is CancellationException) throw error
-        false
+        batchSpeechRecognitionProvider?.let { it.enabled && it.hasRequiredKey } == true
     }
 
     private fun isExpectedPcmFormat(): Boolean =
         audioSource.sampleRateHz == EXPECTED_SAMPLE_RATE_HZ &&
             audioSource.channels == EXPECTED_CHANNELS &&
             audioSource.bitsPerSample == EXPECTED_BITS_PER_SAMPLE
+
+    private fun batchWindowSizeBytes(): Int {
+        val bytesPerSample = audioSource.bitsPerSample / 8
+        val bytesPerSecond = audioSource.sampleRateHz * audioSource.channels * bytesPerSample
+        val rawSize = bytesPerSecond * batchWindowMillis / 1_000
+        val blockAlign = audioSource.channels * bytesPerSample
+        return (rawSize - (rawSize % blockAlign)).coerceAtLeast(blockAlign.toLong()).toInt()
+    }
+
+    private fun audioDurationMillis(byteSize: Int): Long {
+        val bytesPerSample = audioSource.bitsPerSample / 8
+        val bytesPerSecond = audioSource.sampleRateHz * audioSource.channels * bytesPerSample
+        if (bytesPerSecond <= 0) return 0L
+        return byteSize * 1_000L / bytesPerSecond
+    }
 
     private suspend fun markStoppedFromStarting() {
         mutex.withLock {

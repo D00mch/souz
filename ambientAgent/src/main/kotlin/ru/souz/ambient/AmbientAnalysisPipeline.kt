@@ -1,6 +1,7 @@
 package ru.souz.ambient
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
@@ -25,14 +26,14 @@ class DefaultAmbientAnalysisPipeline(
     override suspend fun start() {
         mutex.withLock {
             if (job?.isActive == true) return
-            job = scope.launch {
-                blockService.start()
+            job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 blockService.blocks
                     .buffer(capacity = MAX_PENDING_BLOCKS, onBufferOverflow = BufferOverflow.DROP_OLDEST)
                     .collect { block ->
                         analysisService.analyzeBlock(block)
                     }
             }
+            blockService.start()
         }
     }
 

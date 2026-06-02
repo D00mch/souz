@@ -53,6 +53,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SettingsViewModelTest {
 
@@ -76,7 +77,11 @@ class SettingsViewModelTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
-        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
+        every { localProviderAvailability.isProviderAvailable() } returns true
+        every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
+        every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
+        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
         val supportsSalute = llmBuildProfile.supportsSaluteSpeechRecognition
@@ -100,6 +105,11 @@ class SettingsViewModelTest {
         every { settingsProvider.openaiKey } returns if (supportsSalute) "" else "openai-key"
         every { settingsProvider.saluteSpeechKey } returns if (supportsSalute) "salute-key" else ""
         every { settingsProvider.gigaModel } returns configuredModel
+        var ambientAnalysisModelValue = LLMModel.Max
+        every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
+        every { settingsProvider.ambientAnalysisModel = any() } answers {
+            ambientAnalysisModelValue = firstArg()
+        }
         every { settingsProvider.embeddingsModel } answers { embeddingsModelValue }
         every { settingsProvider.embeddingsModel = any() } answers { embeddingsModelValue = firstArg() }
         every { settingsProvider.voiceRecognitionModel } answers { voiceRecognitionModelValue }
@@ -156,6 +166,8 @@ class SettingsViewModelTest {
 
         val expectedLlmModel = settingsProvider.defaultLlmModel(llmBuildProfile)
         assertNotNull(expectedLlmModel, "Expected at least one available llm model")
+        val expectedAmbientAnalysisModel = settingsProvider.defaultAmbientAnalysisModel(llmBuildProfile)
+        assertNotNull(expectedAmbientAnalysisModel, "Expected at least one available ambient model")
         val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel(llmBuildProfile)
         assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
         val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel(llmBuildProfile)
@@ -163,6 +175,9 @@ class SettingsViewModelTest {
 
         val state = viewModel.uiState.value
         assertEquals(expectedLlmModel, state.gigaModel)
+        assertEquals(expectedAmbientAnalysisModel, state.ambientAnalysisModel)
+        assertEquals(expectedAmbientAnalysisModel, ambientAnalysisModelValue)
+        assertTrue(state.availableAmbientAnalysisModels.all { it.provider == LlmProvider.LOCAL })
         assertEquals(expectedEmbeddingsModel, state.embeddingsModel)
         assertEquals(expectedEmbeddingsModel, embeddingsModelValue)
         assertEquals(expectedVoiceRecognitionModel, state.voiceRecognitionModel)
@@ -174,12 +189,90 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `selecting ambient analysis model updates separate local setting without changing agent model`() = runTest(dispatcher) {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.regionProfile } returns REGION_RU
+        every { settingsProvider.regionProfile = any() } just runs
+        every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.gigaModel } returns LLMModel.QwenMax
+        var ambientAnalysisModelValue = LLMModel.LocalQwen3_4B_Instruct_2507
+        every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
+        every { settingsProvider.ambientAnalysisModel = any() } answers {
+            ambientAnalysisModelValue = firstArg()
+        }
+        every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
+        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
+        every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
+        every { settingsProvider.supportEmail } returns null
+        every { settingsProvider.mcpServersJson } returns null
+        every { settingsProvider.defaultCalendar } returns null
+        every { settingsProvider.useFewShotExamples } returns false
+        every { settingsProvider.useStreaming } returns false
+        every { settingsProvider.notificationSoundEnabled } returns true
+        every { settingsProvider.safeModeEnabled } returns true
+        every { settingsProvider.requestTimeoutMillis } returns 40_000L
+        every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
+        every { settingsProvider.temperature } returns 0.7f
+
+        val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
+        every { localProviderAvailability.isProviderAvailable() } returns true
+        every { localProviderAvailability.availableGigaModels() } returns listOf(
+            LLMModel.LocalQwen3_4B_Instruct_2507,
+            LLMModel.LocalGemma4_E2B_It,
+        )
+        every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
+        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+
+        val localModelStore = mockk<LocalModelStore>(relaxed = true)
+        every { localModelStore.isPresent(any()) } returns true
+        val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
+        val desktopInfoRepository = mockk<DesktopIndexRepository>(relaxed = true)
+        coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
+
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
+        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
+
+        val telegramService = mockk<TelegramUiService>(relaxed = true)
+        every { telegramService.isSupported() } returns true
+        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
+
+        val di = DI {
+            bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<DesktopIndexRepository> { desktopInfoRepository }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton { localModelStore }
+            bindSingleton { localLlamaRuntime }
+            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
+            bindSingleton<LLMChatAPI> { mockk(relaxed = true) }
+            bindSingleton<AgentFacade> { agentFacade }
+            bindSingleton<TelegramUiService> { telegramService }
+            bindSingleton<TelegramControlBot> { mockk(relaxed = true) }
+            bindSingleton<CalendarListProvider> { { emptyList() } }
+            bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
+        }
+
+        val viewModel = SettingsViewModel(di)
+        advanceUntilIdle()
+
+        viewModel.handleEvent(SettingsEvent.SelectAmbientAnalysisModel(LLMModel.LocalGemma4_E2B_It))
+        advanceUntilIdle()
+
+        assertEquals(LLMModel.LocalGemma4_E2B_It, ambientAnalysisModelValue)
+        assertEquals(LLMModel.LocalGemma4_E2B_It, viewModel.uiState.value.ambientAnalysisModel)
+        verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
+    }
+
+    @Test
     fun `selecting missing local model opens download prompt instead of switching immediately`() = runTest(dispatcher) {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
         every { settingsProvider.gigaModel } returns LLMModel.QwenMax
+        every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
         every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
@@ -257,6 +350,7 @@ class SettingsViewModelTest {
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
         every { settingsProvider.gigaModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
+        every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.embeddingsModel } returns LocalEmbeddingProfiles.default().embeddingsModel
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
         every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null

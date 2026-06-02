@@ -305,6 +305,7 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Модель</string>
+    <string name="label_ambient_analysis_model">Ambient модель</string>
     <string name="content_desc_select_agent">Выбрать агента</string>
     <string name="label_embeddings_model">Модель эмбеддингов</string>
     <string name="label_voice_recognition_model">Модель распознавания речи</string>

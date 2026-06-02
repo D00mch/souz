@@ -2,11 +2,14 @@ package ru.souz.ambient
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.service.speech.ambient.AmbientTranscriptEvent
 import kotlin.test.Test
@@ -55,6 +58,116 @@ class AmbientAnalysisServiceTest {
         advanceUntilIdle()
 
         assertEquals(emptyList(), blockService.snapshot())
+    }
+
+    @Test
+    fun `semantic block service closes final utterance after default three second inactivity`() = runTest {
+        val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
+        val blockService = DefaultAmbientSemanticBlockService(
+            transcriptEvents = transcriptEvents,
+            builder = SemanticBlockBuilder(
+                clock = { testScheduler.currentTime },
+                config = SemanticBlockBuilderConfig(minUsefulChars = 1),
+            ),
+            scope = this,
+        )
+        val emitted = mutableListOf<AmbientSemanticBlock>()
+        val collectJob = launch { blockService.blocks.take(1).toList(emitted) }
+        try {
+            blockService.start()
+            advanceUntilIdle()
+
+            transcriptEvents.emit(
+                transcriptEvent(
+                    id = "direct-1",
+                    text = "Союз, нужна помощь",
+                    isFinal = true,
+                    startedAtMs = 100L,
+                    endedAtMs = 200L,
+                )
+            )
+            advanceTimeBy(2_999L)
+            assertEquals(emptyList(), emitted)
+
+            advanceTimeBy(1L)
+            advanceUntilIdle()
+
+            assertEquals(1, emitted.size)
+            assertEquals("Союз, нужна помощь", emitted.single().text)
+            assertEquals(AmbientBlockCloseReason.PAUSE, emitted.single().closeReason)
+        } finally {
+            collectJob.cancel()
+            blockService.stop()
+        }
+    }
+
+    @Test
+    fun `semantic block service closes contiguous batch windows at default three second boundary`() = runTest {
+        val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
+        val blockService = DefaultAmbientSemanticBlockService(
+            transcriptEvents = transcriptEvents,
+            builder = SemanticBlockBuilder(
+                clock = { testScheduler.currentTime },
+                config = SemanticBlockBuilderConfig(minUsefulChars = 1),
+            ),
+            scope = this,
+        )
+        val emitted = mutableListOf<AmbientSemanticBlock>()
+        val collectJob = launch { blockService.blocks.take(1).toList(emitted) }
+        try {
+            blockService.start()
+            advanceUntilIdle()
+
+            transcriptEvents.emit(
+                transcriptEvent(
+                    id = "batch-1",
+                    text = "проверь календарь",
+                    isFinal = true,
+                    startedAtMs = 1_000L,
+                    endedAtMs = 4_000L,
+                )
+            )
+
+            transcriptEvents.emit(
+                transcriptEvent(
+                    id = "batch-2",
+                    text = "на завтра",
+                    isFinal = true,
+                    startedAtMs = 4_000L,
+                    endedAtMs = 7_000L,
+                )
+            )
+            advanceUntilIdle()
+
+            assertEquals("проверь календарь", emitted.single().text)
+            assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, emitted.single().addressedness)
+        } finally {
+            collectJob.cancel()
+            blockService.stop()
+        }
+    }
+
+    @Test
+    fun `default local analysis timeout waits ten seconds`() = runTest {
+        val service = DefaultAmbientAnalysisService(
+            analyzer = DelayedAnalyzer(delayMs = 60_000L),
+            capabilityProvider = StaticCapabilityProvider(),
+            scope = this,
+        )
+
+        val analysisJob = launch {
+            service.analyzeBlock(block("slow", AmbientAddressedness.IMPLICIT_USER_INTENT))
+        }
+        runCurrent()
+
+        advanceTimeBy(9_999L)
+        assertTrue(analysisJob.isActive)
+
+        advanceTimeBy(1L)
+        advanceUntilIdle()
+
+        assertTrue(analysisJob.isCompleted)
+        assertEquals("ambient analysis timed out", service.recentAnalyses().single().blockSummary)
     }
 
     @Test
@@ -191,12 +304,111 @@ class AmbientAnalysisServiceTest {
         assertTrue(service.recentAnalyses().isNotEmpty())
     }
 
+    @Test
+    fun `obvious weather request does not emit rule based candidate before local analysis`() = runTest {
+        val service = DefaultAmbientAnalysisService(
+            analyzer = DelayedAnalyzer(delayMs = 60_000L),
+            capabilityProvider = StaticCapabilityProvider(listOf(webSearchCapability())),
+            scope = this,
+            config = AmbientAnalysisServiceConfig(analysisTimeoutMs = 1_000L),
+        )
+        val emitted = mutableListOf<AmbientTaskCandidate>()
+        val collectJob = launch { service.taskCandidates.take(1).toList(emitted) }
+
+        val analysisJob = launch {
+            service.analyzeBlock(
+                block(
+                    id = "weather",
+                    addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
+                    text = "я хотел бы чтобы кто-то посмотрел погоду",
+                )
+            )
+        }
+        runCurrent()
+
+        assertEquals(emptyList(), emitted)
+        assertTrue(analysisJob.isActive)
+
+        advanceTimeBy(1_000L)
+        advanceUntilIdle()
+
+        assertTrue(analysisJob.isCompleted)
+        assertEquals(1, service.recentAnalyses().size)
+        assertEquals(emptyList(), service.recentAnalyses().single().taskCandidates)
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `calendar scheduling hint does not emit without model candidate`() = runTest {
+        val service = DefaultAmbientAnalysisService(
+            analyzer = DelayedAnalyzer(delayMs = 60_000L),
+            capabilityProvider = StaticCapabilityProvider(listOf(calendarCreateCapability())),
+            scope = this,
+            config = AmbientAnalysisServiceConfig(analysisTimeoutMs = 1_000L),
+        )
+        val emitted = mutableListOf<AmbientTaskCandidate>()
+        val collectJob = launch { service.taskCandidates.take(1).toList(emitted) }
+
+        val analysisJob = launch {
+            service.analyzeBlock(
+                block(
+                    id = "meeting",
+                    addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
+                    text = "надо не забыть поставить в шесть вечеру встречу с командой",
+                )
+            )
+        }
+        runCurrent()
+
+        assertEquals(emptyList(), emitted)
+
+        analysisJob.cancel()
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `model candidate is emitted after local analysis completes`() = runTest {
+        val service = DefaultAmbientAnalysisService(
+            analyzer = FakeAnalyzer(
+                AmbientAnalysisResult(
+                    blockId = "weather",
+                    blockSummary = null,
+                    extractedStatements = emptyList(),
+                    taskCandidates = listOf(
+                        candidate(
+                            blockId = "weather",
+                            addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
+                            confidence = 0.9,
+                        )
+                    ),
+                )
+            ),
+            capabilityProvider = StaticCapabilityProvider(),
+            scope = this,
+        )
+        val emitted = mutableListOf<AmbientTaskCandidate>()
+        val collectJob = launch { service.taskCandidates.take(1).toList(emitted) }
+
+        service.analyzeBlock(
+            block(
+                id = "weather",
+                addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
+                text = "интересно, какая погода в Москве",
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf("t-weather"), emitted.map { it.id })
+        collectJob.cancel()
+    }
+
     private fun block(
         id: String,
         addressedness: AmbientAddressedness,
+        text: String = "Союз, создай задачу",
     ): AmbientSemanticBlock = AmbientSemanticBlock(
         id = id,
-        text = "Союз, создай задачу",
+        text = text,
         eventIds = listOf("e1"),
         startedAtMs = 100,
         endedAtMs = 200,
@@ -225,15 +437,40 @@ class AmbientAnalysisServiceTest {
         reason = "test",
     )
 
-    private fun transcriptEvent(id: String, text: String, isFinal: Boolean): AmbientTranscriptEvent =
+    private fun transcriptEvent(
+        id: String,
+        text: String,
+        isFinal: Boolean,
+        startedAtMs: Long? = null,
+        endedAtMs: Long? = null,
+        receivedAtMs: Long = endedAtMs ?: startedAtMs ?: 1_000L,
+    ): AmbientTranscriptEvent =
         AmbientTranscriptEvent(
             id = id,
             text = text,
             isFinal = isFinal,
-            startedAtMs = null,
-            endedAtMs = null,
-            receivedAtMs = 1_000,
+            startedAtMs = startedAtMs,
+            endedAtMs = endedAtMs,
+            receivedAtMs = receivedAtMs,
         )
+
+    private fun webSearchCapability(): AmbientCapability = AmbientCapability(
+        id = "tool:WEB_SEARCH:InternetSearch",
+        kind = AmbientCapabilityKind.TOOL,
+        category = "WEB_SEARCH",
+        name = "InternetSearch",
+        description = "Short factual internet lookup for weather",
+        risk = AmbientCapabilityRisk.LOW,
+    )
+
+    private fun calendarCreateCapability(): AmbientCapability = AmbientCapability(
+        id = "tool:CALENDAR:CalendarCreateEvent",
+        kind = AmbientCapabilityKind.TOOL,
+        category = "CALENDAR",
+        name = "CalendarCreateEvent",
+        description = "Create an event in macOS Calendar.",
+        risk = AmbientCapabilityRisk.MEDIUM,
+    )
 
     private class FakeAnalyzer(
         private val result: AmbientAnalysisResult,
@@ -279,7 +516,22 @@ class AmbientAnalysisServiceTest {
         )
     }
 
-    private class StaticCapabilityProvider : AmbientCapabilityProvider {
-        override suspend fun capabilities(): List<AmbientCapability> = emptyList()
+    private class StaticCapabilityProvider(
+        private val capabilities: List<AmbientCapability> = emptyList(),
+    ) : AmbientCapabilityProvider {
+        override suspend fun capabilities(): List<AmbientCapability> = capabilities
+    }
+
+    private class DelayedAnalyzer(
+        private val delayMs: Long,
+    ) : AmbientBlockAnalyzer {
+        override suspend fun analyze(
+            block: AmbientSemanticBlock,
+            recentContext: List<AmbientSemanticBlock>,
+            capabilities: List<AmbientCapability>,
+        ): AmbientAnalysisResult {
+            delay(delayMs)
+            return AmbientAnalysisResult(block.id, null, emptyList(), emptyList())
+        }
     }
 }

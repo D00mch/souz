@@ -46,6 +46,11 @@ class MacOsSpeechBridge(
         }
     }
 
+    override fun livePrepareAssets(locale: String) {
+        loader.load()
+        livePrepareAssetsNative(locale)
+    }
+
     override fun liveStart(locale: String): Long {
         loader.load()
         return liveStartNative(locale)
@@ -88,6 +93,8 @@ class MacOsSpeechBridge(
     private external fun cancelRecognitionNative()
 
     private external fun liveIsSupportedNative(locale: String): Boolean
+
+    private external fun livePrepareAssetsNative(locale: String)
 
     private external fun liveStartNative(locale: String): Long
 

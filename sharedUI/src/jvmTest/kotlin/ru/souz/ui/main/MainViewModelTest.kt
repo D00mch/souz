@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.TestDispatcher
@@ -47,6 +48,10 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
+import ru.souz.ambient.AmbientAnalysisPipeline
+import ru.souz.ambient.AmbientSuggestionPipeline
+import ru.souz.ambient.AmbientSuggestionStore
+import ru.souz.ambient.InMemoryAmbientSuggestionStore
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.TokenLogging
@@ -65,6 +70,11 @@ import ru.souz.service.speech.MacOsSpeechAuthorizationStatus
 import ru.souz.service.speech.MacOsSpeechBridgeApi
 import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
+import ru.souz.service.speech.ambient.AmbientSpeechAvailability
+import ru.souz.service.speech.ambient.AmbientTranscriptEvent
+import ru.souz.service.speech.ambient.AmbientTranscriptSnapshot
+import ru.souz.service.speech.ambient.AmbientTranscriptionService
+import ru.souz.service.speech.ambient.AmbientTranscriptionState
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
@@ -1285,6 +1295,10 @@ class MainViewModelTest {
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { DesktopStructuredLogger() }
             bindSingleton<DesktopPermissionService> { desktopPermissionService }
+            bindSingleton<AmbientTranscriptionService> { TestAmbientTranscriptionService() }
+            bindSingleton<AmbientAnalysisPipeline> { TestAmbientAnalysisPipeline() }
+            bindSingleton<AmbientSuggestionStore> { InMemoryAmbientSuggestionStore() }
+            bindSingleton<AmbientSuggestionPipeline> { TestAmbientSuggestionPipeline() }
             bindSingleton {
                 MainUseCasesFactory(
                     instance(),
@@ -1347,6 +1361,41 @@ class MainViewModelTest {
             onCleared.isAccessible = true
             onCleared.invoke(viewModel)
         }
+    }
+
+    private class TestAmbientTranscriptionService : AmbientTranscriptionService {
+        private val mutableState = MutableStateFlow<AmbientTranscriptionState>(AmbientTranscriptionState.Stopped)
+        override val state = mutableState
+        override val transcriptEvents = emptyFlow<AmbientTranscriptEvent>()
+
+        override suspend fun availability(locale: String): AmbientSpeechAvailability =
+            AmbientSpeechAvailability.Available
+
+        override suspend fun start(locale: String): AmbientSpeechAvailability {
+            mutableState.value = AmbientTranscriptionState.Listening(locale)
+            return AmbientSpeechAvailability.Available
+        }
+
+        override suspend fun stop() {
+            mutableState.value = AmbientTranscriptionState.Stopped
+        }
+
+        override suspend fun clearTranscript() = Unit
+
+        override fun snapshot(): AmbientTranscriptSnapshot = AmbientTranscriptSnapshot(
+            finalEvents = emptyList(),
+            currentVolatile = null,
+        )
+    }
+
+    private class TestAmbientAnalysisPipeline : AmbientAnalysisPipeline {
+        override suspend fun start() = Unit
+        override suspend fun stop() = Unit
+    }
+
+    private class TestAmbientSuggestionPipeline : AmbientSuggestionPipeline {
+        override suspend fun start() = Unit
+        override suspend fun stop() = Unit
     }
 
     private class TestAudioRecorder : UiAudioRecorder {

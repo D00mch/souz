@@ -16,14 +16,20 @@ import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientCapabilityProvider
 import ru.souz.ambient.AmbientLocalLlm
 import ru.souz.ambient.AmbientSemanticBlockService
+import ru.souz.ambient.AmbientSuggestionController
+import ru.souz.ambient.AmbientSuggestionPipeline
+import ru.souz.ambient.AmbientSuggestionStore
 import ru.souz.ambient.CompositeAmbientCapabilityProvider
 import ru.souz.ambient.DefaultAmbientAnalysisService
 import ru.souz.ambient.DefaultAmbientAnalysisPipeline
 import ru.souz.ambient.DefaultAmbientSemanticBlockService
+import ru.souz.ambient.DefaultAmbientSuggestionPipeline
 import ru.souz.ambient.EmptyAmbientSkillCapabilityProvider
+import ru.souz.ambient.InMemoryAmbientSuggestionStore
 import ru.souz.ambient.LocalChatAmbientLocalLlm
 import ru.souz.ambient.LocalLlmAmbientBlockAnalyzer
 import ru.souz.ambient.SemanticBlockBuilder
+import ru.souz.ambient.selectAmbientLocalModel
 import ru.souz.paths.SouzPaths
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.spi.AgentDesktopInfoRepository
@@ -41,12 +47,12 @@ import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
+import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.service.keys.Keys
@@ -296,6 +302,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AmbientTranscriptionService> {
         DefaultAmbientTranscriptionService(
             liveSpeechProvider = instance(),
+            batchSpeechRecognitionProvider = instance(),
             audioSource = instance(),
             scope = instance(),
         )
@@ -321,12 +328,13 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton<AmbientLocalLlm> {
         val buildProfile = instance<LlmBuildProfile>()
+        val settingsProvider = instance<SettingsProvider>()
         LocalChatAmbientLocalLlm(instance<LocalChatAPI>()) {
-            when {
-                buildProfile.isModelAvailable(LLMModel.LocalGemma4_E4B_It) -> LLMModel.LocalGemma4_E4B_It
-                else -> buildProfile.defaultModelForProvider(LlmProvider.LOCAL)
-                    ?: LLMModel.LocalGemma4_E4B_It
-            }
+            selectAmbientLocalModel(
+                configuredModel = settingsProvider.ambientAnalysisModel,
+                isModelAvailable = buildProfile::isModelAvailable,
+                defaultLocalModel = { buildProfile.defaultModelForProvider(LlmProvider.LOCAL) },
+            )
         }
     }
     bindSingleton<AmbientBlockAnalyzer> { LocalLlmAmbientBlockAnalyzer(instance()) }
@@ -341,6 +349,15 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         DefaultAmbientAnalysisPipeline(
             blockService = instance(),
             analysisService = instance(),
+            scope = instance(),
+        )
+    }
+    bindSingleton<AmbientSuggestionStore> { InMemoryAmbientSuggestionStore() }
+    bindSingleton { AmbientSuggestionController(instance()) }
+    bindSingleton<AmbientSuggestionPipeline> {
+        DefaultAmbientSuggestionPipeline(
+            candidateFlow = instance<AmbientAnalysisService>().taskCandidates,
+            controller = instance(),
             scope = instance(),
         )
     }

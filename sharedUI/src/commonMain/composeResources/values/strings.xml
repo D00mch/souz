@@ -309,6 +309,7 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Model</string>
+    <string name="label_ambient_analysis_model">Ambient model</string>
     <string name="content_desc_select_agent">Select agent</string>
     <string name="label_embeddings_model">Embeddings model</string>
     <string name="label_voice_recognition_model">Voice recognition model</string>

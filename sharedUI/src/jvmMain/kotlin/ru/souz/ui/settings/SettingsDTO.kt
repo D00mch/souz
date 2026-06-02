@@ -76,9 +76,11 @@ data class SettingsState(
     val activeAgentId: AgentId = AgentId.default,
     val availableAgents: List<AgentId> = AgentId.entries,
     val gigaModel: LLMModel = LLMModel.Max,
+    val ambientAnalysisModel: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
     val availableLlmModels: List<LLMModel> = emptyList(),
+    val availableAmbientAnalysisModels: List<LLMModel> = emptyList(),
     val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),
     val availableVoiceRecognitionModels: List<VoiceRecognitionModel> = emptyList(),
     val systemPrompt: String = "",
@@ -151,6 +153,7 @@ sealed interface SettingsEvent : VMEvent {
     object ConfirmAgentSwitch : SettingsEvent
     object CancelAgentSwitch : SettingsEvent
     data class SelectModel(val model: LLMModel): SettingsEvent
+    data class SelectAmbientAnalysisModel(val model: LLMModel): SettingsEvent
     object ConfirmLocalModelDownload : SettingsEvent
     object CancelLocalModelDownload : SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent

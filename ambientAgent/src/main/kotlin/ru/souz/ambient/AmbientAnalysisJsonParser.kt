@@ -47,9 +47,12 @@ class AmbientAnalysisJsonParser {
                 }
 
                 val title = node.path("title").asText("").trim()
-                val taskText = node.path("task_text").asText("").trim()
                 val suggestionText = node.path("suggestion_text").asText("").trim()
-                if (title.isBlank() || taskText.isBlank() || suggestionText.isBlank()) {
+                val taskText = AmbientTaskTextSanitizer.normalize(
+                    taskText = node.path("task_text").asText(""),
+                    suggestionText = suggestionText,
+                )
+                if (taskText.isBlank()) {
                     return@mapIndexedNotNull null
                 }
 
