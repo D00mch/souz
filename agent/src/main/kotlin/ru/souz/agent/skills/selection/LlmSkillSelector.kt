@@ -24,6 +24,15 @@ class LlmSkillSelector(
             return SkillSelectionResult(emptyList(), "No skills available.")
         }
 
+        val explicitlyRequestedSkillIds = findExplicitlyRequestedSkillIds(input)
+        if (explicitlyRequestedSkillIds.isNotEmpty()) {
+            logExplicitSelection(input, explicitlyRequestedSkillIds)
+            return SkillSelectionResult(
+                selectedSkillIds = explicitlyRequestedSkillIds,
+                rationale = "User explicitly requested skill id(s): ${explicitlyRequestedSkillIds.joinToString { it.value }}",
+            )
+        }
+
         logAvailableSkills(input)
 
         val allowedIds = input.availableSkills.map { it.skillId.value }.toSet()
@@ -84,6 +93,44 @@ class LlmSkillSelector(
         """.trimIndent()
     }
 
+    private fun findExplicitlyRequestedSkillIds(input: SkillSelectionInput): List<SkillId> =
+        input.availableSkills
+            .filter { skill ->
+                listOf(skill.skillId.value, skill.manifest.name)
+                    .distinct()
+                    .any { alias -> input.userMessage.explicitlyRequestsSkillAlias(alias) }
+            }
+            .map { it.skillId }
+            .distinct()
+
+    private fun String.explicitlyRequestsSkillAlias(alias: String): Boolean {
+        if (alias.isBlank()) return false
+        val escaped = Regex.escape(alias)
+        val patterns = listOf(
+            Regex(
+                pattern = """\b(use|run|execute|invoke|call)\s+(?:the\s+)?(?:skill\s*(?:id)?\s*)?[`'"]?$escaped[`'"]?(?:\s+skill)?\b""",
+                option = RegexOption.IGNORE_CASE,
+            ),
+            Regex(
+                pattern = """\bskill\s*(?:id)?\s*[`'"]?$escaped[`'"]?.{0,80}\b(with|using|via)\s+[`'"]?RunSkillCommand[`'"]?""",
+                options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+            ),
+        )
+        return patterns.any { pattern ->
+            pattern.find(this)?.let { match -> !hasLocalNegationBefore(match.range.first) } == true
+        }
+    }
+
+    private fun String.hasLocalNegationBefore(matchStart: Int): Boolean {
+        val prefix = take(matchStart)
+            .takeLast(24)
+            .lowercase()
+        return prefix.contains("do not ") ||
+            prefix.contains("don't ") ||
+            prefix.contains("dont ") ||
+            prefix.contains("not ")
+    }
+
     private fun logNoAvailableSkills() {
         logger.info("Skill selector skipped: no available skills")
     }
@@ -93,6 +140,18 @@ class LlmSkillSelector(
             "Skill selector evaluating {} available skill(s): {}",
             input.availableSkills.size,
             input.availableSkills.map { it.skillId.value },
+        )
+    }
+
+    private fun logExplicitSelection(
+        input: SkillSelectionInput,
+        skillIds: List<SkillId>,
+    ) {
+        logger.info(
+            "Skill selector accepted explicit request for {} skill(s) out of {} available: {}",
+            skillIds.size,
+            input.availableSkills.size,
+            skillIds.map { it.value },
         )
     }
 

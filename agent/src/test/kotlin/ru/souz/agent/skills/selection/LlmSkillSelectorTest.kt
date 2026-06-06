@@ -82,6 +82,84 @@ class LlmSkillSelectorTest {
         assertEquals(listOf(SkillId("pdf")), result.selectedSkillIds)
     }
 
+    @Test
+    fun `selector accepts explicitly requested skill id without llm call`() = runTest {
+        val api = FailingChatApi()
+        val selector = LlmSkillSelector(
+            llmApi = api,
+            model = "selector-model",
+            jsonUtils = JsonUtils(restJsonMapper),
+        )
+
+        val result = selector.select(
+            SkillSelectionInput(
+                userMessage = """
+                    Use Skill ID `python-file-roundtrip` with `RunSkillCommand`, runtime `PYTHON`,
+                    scriptPath `scripts/main.py`.
+                """.trimIndent(),
+                availableSkills = listOf(
+                    skill(
+                        id = "python-file-roundtrip",
+                        description = "Write and read a small output file from an Android Python skill.",
+                    ),
+                ),
+            )
+        )
+
+        assertEquals(listOf(SkillId("python-file-roundtrip")), result.selectedSkillIds)
+        assertFalse(api.wasCalled)
+    }
+
+    @Test
+    fun `selector accepts explicit run request by skill id`() = runTest {
+        val api = FailingChatApi()
+        val selector = LlmSkillSelector(
+            llmApi = api,
+            model = "selector-model",
+            jsonUtils = JsonUtils(restJsonMapper),
+        )
+
+        val result = selector.select(
+            SkillSelectionInput(
+                userMessage = "Run python-echo-json skill with PYTHON runtime and no stdin",
+                availableSkills = listOf(
+                    skill(
+                        id = "python-echo-json",
+                        description = "Echo JSON stdin from an Android Python skill.",
+                    ),
+                ),
+            )
+        )
+
+        assertEquals(listOf(SkillId("python-echo-json")), result.selectedSkillIds)
+        assertFalse(api.wasCalled)
+    }
+
+    @Test
+    fun `selector does not auto-select negated explicit skill mention`() = runTest {
+        val selector = LlmSkillSelector(
+            llmApi = FixedResponseChatApi(
+                """{"selectedSkillIds":[],"rationale":"negated request"}"""
+            ),
+            model = "selector-model",
+            jsonUtils = JsonUtils(restJsonMapper),
+        )
+
+        val result = selector.select(
+            SkillSelectionInput(
+                userMessage = "Do not run python-echo-json skill; just explain what it is.",
+                availableSkills = listOf(
+                    skill(
+                        id = "python-echo-json",
+                        description = "Echo JSON stdin from an Android Python skill.",
+                    ),
+                ),
+            )
+        )
+
+        assertEquals(emptyList(), result.selectedSkillIds)
+    }
+
     private fun skill(
         id: String,
         description: String,
@@ -120,6 +198,34 @@ class LlmSkillSelectorTest {
         }
 
         fun requireLastRequest(): LLMRequest.Chat = checkNotNull(lastRequest)
+
+        override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = emptyFlow()
+
+        override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
+            error("Not used in this test")
+        }
+
+        override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
+            error("Not used in this test")
+        }
+
+        override suspend fun downloadFile(fileId: String): String? {
+            error("Not used in this test")
+        }
+
+        override suspend fun balance(): LLMResponse.Balance {
+            error("Not used in this test")
+        }
+    }
+
+    private class FailingChatApi : LLMChatAPI {
+        var wasCalled: Boolean = false
+            private set
+
+        override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+            wasCalled = true
+            error("LLM selector should not be called")
+        }
 
         override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = emptyFlow()
 
