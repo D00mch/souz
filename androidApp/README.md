@@ -58,7 +58,7 @@ Run Android instrumentation tests on a connected device or emulator:
 - Provider secrets stored with Android Keystore-backed encryption in app `SharedPreferences`.
 - Codex device-code account connection from the Settings screen.
 - Portable runtime tools scoped to Android app-private storage:
-  - file listing, search, create, modify, move, and delete
+  - file listing, reading, search, create, modify, move, and delete
   - image understanding through configured vision-capable providers
   - OpenAI image generation when OpenAI access is configured
   - web search, research, and web page text extraction

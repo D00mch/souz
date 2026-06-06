@@ -22,6 +22,7 @@ import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
+import ru.souz.tool.files.ToolReadFile
 import ru.souz.tool.files.ToolReadPdfPages
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
@@ -66,6 +67,7 @@ fun runtimeToolsDiModule(
     bindSingleton {
         RuntimeToolsFactory(
             toolListFiles = instance(),
+            toolReadFile = instance(),
             toolFindInFiles = instance(),
             toolNewFile = instance(),
             toolDeleteFile = instance(),
@@ -94,6 +96,7 @@ fun runtimeToolsDiModule(
 
 class RuntimeToolsFactory(
     private val toolListFiles: ToolListFiles,
+    private val toolReadFile: ToolReadFile,
     private val toolFindInFiles: ToolFindInFiles,
     private val toolNewFile: ToolNewFile,
     private val toolDeleteFile: ToolDeleteFile,
@@ -125,6 +128,7 @@ class RuntimeToolsFactory(
     private fun ToolCategory.tools(): List<LLMToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
             toolListFiles.toGiga(),
+            toolReadFile.toGiga(),
             toolFindInFiles.toGiga(),
             toolNewFile.toGiga(),
             toolDeleteFile.toGiga(),

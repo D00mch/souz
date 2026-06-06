@@ -26,6 +26,7 @@ import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
+import ru.souz.tool.files.ToolReadFile
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.skills.ToolRunSkillCommand
@@ -49,6 +50,7 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { FilesToolUtil(instance<ToolInvocationRuntimeSandboxResolver>()) }
 
     bindSingleton { ToolListFiles(instance()) }
+    bindSingleton { ToolReadFile(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }
     bindSingleton { ToolDeleteFile(instance(), instanceOrNull<ToolPermissionBroker>()) }
@@ -68,6 +70,7 @@ fun portableRuntimeToolsDiModule(
     bindSingleton {
         PortableRuntimeToolsFactory(
             toolListFiles = instance(),
+            toolReadFile = instance(),
             toolFindInFiles = instance(),
             toolNewFile = instance(),
             toolDeleteFile = instance(),
@@ -111,6 +114,7 @@ object RuntimePassThroughToolsFilter : AgentToolsFilter {
 
 class PortableRuntimeToolsFactory(
     private val toolListFiles: ToolListFiles,
+    private val toolReadFile: ToolReadFile,
     private val toolFindInFiles: ToolFindInFiles,
     private val toolNewFile: ToolNewFile,
     private val toolDeleteFile: ToolDeleteFile,
@@ -134,6 +138,7 @@ class PortableRuntimeToolsFactory(
     private fun ToolCategory.tools(): List<LLMToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
             toolListFiles.toGiga(),
+            toolReadFile.toGiga(),
             toolFindInFiles.toGiga(),
             toolNewFile.toGiga(),
             toolDeleteFile.toGiga(),
