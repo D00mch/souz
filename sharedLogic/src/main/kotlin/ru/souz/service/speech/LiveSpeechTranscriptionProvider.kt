@@ -1,5 +1,7 @@
 package ru.souz.service.speech
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Base64
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -37,7 +39,9 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
     override suspend fun isSupported(locale: String): Boolean {
         if (!enabled) return false
         return try {
-            bridge.liveIsSupported(locale)
+            withContext(Dispatchers.IO) {
+                bridge.liveIsSupported(locale)
+            }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             when (val mappedError = mapLiveBridgeError(error)) {
@@ -54,7 +58,9 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
         ensureAuthorization()
         prepareAssets(locale)
         val sessionId = try {
-            bridge.liveStart(locale)
+            withContext(Dispatchers.IO) {
+                bridge.liveStart(locale)
+            }
         } catch (error: Throwable) {
             throw mapLiveBridgeError(error)
         }
@@ -104,9 +110,11 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
         throw mapLiveBridgeError(error)
     }
 
-    private fun prepareAssets(locale: String) {
+    private suspend fun prepareAssets(locale: String) {
         try {
-            bridge.livePrepareAssets(locale)
+            withContext(Dispatchers.IO) {
+                bridge.livePrepareAssets(locale)
+            }
         } catch (error: Throwable) {
             throw mapLiveBridgeError(error)
         }
@@ -121,13 +129,15 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
         override suspend fun acceptPcm(audio: ByteArray) {
             ensureOpen()
             try {
-                bridge.liveAcceptPcm(
-                    sessionId = sessionId,
-                    audio = audio,
-                    sampleRateHz = 16_000,
-                    channels = 1,
-                    bitsPerSample = 16,
-                )
+                withContext(Dispatchers.IO) {
+                    bridge.liveAcceptPcm(
+                        sessionId = sessionId,
+                        audio = audio,
+                        sampleRateHz = 16_000,
+                        channels = 1,
+                        bitsPerSample = 16,
+                    )
+                }
             } catch (error: Throwable) {
                 throw mapLiveBridgeError(error)
             }
@@ -136,7 +146,9 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
         override suspend fun pollEvents(): List<LiveSpeechTranscriptEvent> {
             ensureOpen()
             val raw = try {
-                bridge.livePollEvents(sessionId)
+                withContext(Dispatchers.IO) {
+                    bridge.livePollEvents(sessionId)
+                }
             } catch (error: Throwable) {
                 throw mapLiveBridgeError(error)
             }
@@ -146,7 +158,9 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
         override suspend fun finalizeAndFinish(): List<LiveSpeechTranscriptEvent> {
             ensureOpen()
             val raw = try {
-                bridge.liveFinalizeAndFinish(sessionId)
+                withContext(Dispatchers.IO) {
+                    bridge.liveFinalizeAndFinish(sessionId)
+                }
             } catch (error: Throwable) {
                 throw mapLiveBridgeError(error)
             }
@@ -158,7 +172,9 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
             if (closed) return
             closed = true
             try {
-                bridge.liveCancel(sessionId)
+                withContext(Dispatchers.IO) {
+                    bridge.liveCancel(sessionId)
+                }
             } catch (error: Throwable) {
                 throw mapLiveBridgeError(error)
             }
@@ -238,7 +254,8 @@ internal fun mapLiveBridgeError(error: Throwable): Throwable {
     val message = error.message.orEmpty()
     return when {
         message.startsWith(MacOsLiveSpeechBridgeError.UNSUPPORTED_OS.prefix) ||
-            message.startsWith(MacOsLiveSpeechBridgeError.UNSUPPORTED_LOCALE.prefix) ->
+            message.startsWith(MacOsLiveSpeechBridgeError.UNSUPPORTED_LOCALE.prefix) ||
+            message.startsWith(MacOsLiveSpeechBridgeError.UNSUPPORTED_CONFIGURATION.prefix) ->
             LocalMacOsLiveSpeechUnsupportedException(message.liveBridgeMessage())
 
         message.startsWith(MacOsLiveSpeechBridgeError.MODEL_UNAVAILABLE.prefix) ->
@@ -257,11 +274,18 @@ internal fun mapLiveBridgeError(error: Throwable): Throwable {
     }
 }
 
-private fun String.liveBridgeMessage(): String =
-    split(':', limit = 3)
-        .getOrNull(2)
-        ?.ifBlank { null }
-        ?: "Local macOS live speech transcription is unavailable."
+private fun String.liveBridgeMessage(): String {
+    val parts = split(':', limit = 3)
+    val code = parts.getOrNull(1)?.ifBlank { null }
+    val payload = parts.getOrNull(2)?.ifBlank { null }
+
+    return when {
+        code != null && payload != null -> "$code: $payload"
+        payload != null -> payload
+        code != null -> code
+        else -> "Local macOS live speech transcription is unavailable."
+    }
+}
 
 sealed class LocalMacOsLiveSpeechException(message: String) : IllegalStateException(message)
 
@@ -281,6 +305,7 @@ class LocalMacOsLiveSpeechUnavailableException(message: String) :
 private enum class MacOsLiveSpeechBridgeError(val prefix: String) {
     UNSUPPORTED_OS("LOCAL_MACOS_LIVE_STT:UNSUPPORTED_OS"),
     UNSUPPORTED_LOCALE("LOCAL_MACOS_LIVE_STT:UNSUPPORTED_LOCALE"),
+    UNSUPPORTED_CONFIGURATION("LOCAL_MACOS_LIVE_STT:UNSUPPORTED_CONFIGURATION"),
     MODEL_UNAVAILABLE("LOCAL_MACOS_LIVE_STT:MODEL_UNAVAILABLE"),
     PERMISSION_DENIED("LOCAL_MACOS_LIVE_STT:PERMISSION_DENIED"),
     UNAVAILABLE("LOCAL_MACOS_LIVE_STT:UNAVAILABLE"),

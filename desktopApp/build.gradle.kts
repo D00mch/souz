@@ -268,10 +268,55 @@ compose.desktop {
 
 val releaseAppBundleDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$distributionPackageName.app")
 
+val syncReleaseAppRuntimeArtifacts by tasks.registering {
+    group = "distribution"
+    description = "Sync the current desktopApp jar and native speech bridge into the release app bundle."
+    dependsOn("jar")
+    mustRunAfter("createReleaseDistributable")
+
+    onlyIf {
+        System.getProperty("os.name", "").lowercase().contains("mac")
+    }
+
+    doLast {
+        val appBundle = releaseAppBundleDir.get().asFile
+        val appDir = appBundle.resolve("Contents/app")
+        check(appDir.exists()) { "Release app directory not found: $appDir" }
+
+        val appConfig = appDir.resolve("$distributionPackageName.cfg")
+        check(appConfig.exists()) { "Release app config not found: $appConfig" }
+
+        val classpathPrefix = "app.classpath=\$APPDIR/"
+        val desktopJarName = appConfig.readLines()
+            .asSequence()
+            .filter { it.startsWith(classpathPrefix) }
+            .map { it.removePrefix(classpathPrefix).trim() }
+            .firstOrNull { it.startsWith("desktopApp-") && it.endsWith(".jar") }
+            ?: error("desktopApp classpath jar not found in $appConfig")
+
+        copy {
+            from(tasks.named<Jar>("jar").flatMap { it.archiveFile })
+            into(appDir)
+            rename { desktopJarName }
+        }
+
+        copy {
+            from(sourceAppResourcesDir.file("darwin-arm64/libsouz_macos_speech_bridge.dylib"))
+            into(appDir.resolve("resources/darwin-arm64"))
+        }
+        copy {
+            from(sourceAppResourcesDir.file("darwin-x64/libsouz_macos_speech_bridge.dylib"))
+            into(appDir.resolve("resources/darwin-x64"))
+        }
+    }
+}
+
 val patchReleaseRuntimeInfoPlist by tasks.registering {
     group = "distribution"
     description = "Add privacy usage descriptions to the bundled Java runtime Info.plist for macOS TCC."
     dependsOn("createReleaseDistributable")
+    dependsOn(syncReleaseAppRuntimeArtifacts)
+    mustRunAfter(syncReleaseAppRuntimeArtifacts)
 
     onlyIf {
         System.getProperty("os.name", "").lowercase().contains("mac")
@@ -401,6 +446,7 @@ val resignReleaseAppForNotarization by tasks.registering {
 }
 
 tasks.matching { it.name == "createReleaseDistributable" }.configureEach {
+    finalizedBy(syncReleaseAppRuntimeArtifacts)
     finalizedBy(patchReleaseRuntimeInfoPlist)
 }
 

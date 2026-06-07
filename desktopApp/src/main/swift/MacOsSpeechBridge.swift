@@ -66,6 +66,7 @@ private final class RecognitionContext {
 private enum LiveSpeechBridgeError: Error {
     case unsupportedOS
     case unsupportedLocale(String)
+    case unsupportedConfiguration(String)
     case modelUnavailable(String)
     case permissionDenied
     case unavailable(String)
@@ -77,6 +78,8 @@ private enum LiveSpeechBridgeError: Error {
             return "LOCAL_MACOS_LIVE_STT:UNSUPPORTED_OS:SpeechAnalyzer requires macOS 26.0 or newer."
         case .unsupportedLocale(let locale):
             return "LOCAL_MACOS_LIVE_STT:UNSUPPORTED_LOCALE:\(locale)"
+        case .unsupportedConfiguration(let details):
+            return "LOCAL_MACOS_LIVE_STT:UNSUPPORTED_CONFIGURATION:\(details)"
         case .modelUnavailable(let details):
             return "LOCAL_MACOS_LIVE_STT:MODEL_UNAVAILABLE:\(details)"
         case .permissionDenied:
@@ -133,8 +136,32 @@ private final class LiveSpeechSessionRegistry {
 }
 
 @available(macOS 26.0, *)
+private enum LiveTranscriberModule {
+    case speech(String, SpeechTranscriber)
+    case dictation(String, DictationTranscriber)
+
+    var configurationName: String {
+        switch self {
+        case .speech(let name, _):
+            return name
+        case .dictation(let name, _):
+            return name
+        }
+    }
+
+    var modules: [any SpeechModule] {
+        switch self {
+        case .speech(_, let transcriber):
+            return [transcriber]
+        case .dictation(_, let transcriber):
+            return [transcriber]
+        }
+    }
+}
+
+@available(macOS 26.0, *)
 private final class LiveSpeechSession {
-    private let transcriber: SpeechTranscriber
+    private let transcriber: LiveTranscriberModule
     private let analyzer: SpeechAnalyzer
     private let inputBuilder: AsyncStream<AnalyzerInput>.Continuation
     private let analyzerFormat: AVAudioFormat
@@ -149,20 +176,11 @@ private final class LiveSpeechSession {
     private var closed = false
 
     static func isSupported(localeIdentifier: String) async -> Bool {
-        guard let transcriber = try? await makeTranscriber(localeIdentifier: localeIdentifier) else {
-            return false
-        }
-        let status = await AssetInventory.status(forModules: [transcriber])
-        return status == .installed
+        (try? await makeTranscriber(localeIdentifier: localeIdentifier, allowInstall: false)) != nil
     }
 
     static func prepareAssets(localeIdentifier: String) async throws {
-        let transcriber = try await makeTranscriber(localeIdentifier: localeIdentifier)
-        try await ensureAssetsInstalled(
-            for: transcriber,
-            localeIdentifier: localeIdentifier,
-            allowInstall: true
-        )
+        _ = try await makeTranscriber(localeIdentifier: localeIdentifier, allowInstall: true)
     }
 
     static func create(localeIdentifier: String) async throws -> LiveSpeechSession {
@@ -179,14 +197,9 @@ private final class LiveSpeechSession {
             throw LiveSpeechBridgeError.unavailable("Speech recognition authorization status is unsupported.")
         }
 
-        let transcriber = try await makeTranscriber(localeIdentifier: localeIdentifier)
-        try await ensureAssetsInstalled(
-            for: transcriber,
-            localeIdentifier: localeIdentifier,
-            allowInstall: false
-        )
+        let transcriber = try await makeTranscriber(localeIdentifier: localeIdentifier, allowInstall: true)
 
-        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: transcriber.modules) else {
             throw LiveSpeechBridgeError.unavailable("No compatible SpeechAnalyzer audio format is available.")
         }
         guard let sourceFormat = AVAudioFormat(
@@ -201,7 +214,7 @@ private final class LiveSpeechSession {
             throw LiveSpeechBridgeError.unavailable("Failed to create audio converter.")
         }
 
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let analyzer = SpeechAnalyzer(modules: transcriber.modules)
         let (inputSequence, inputBuilder) = AsyncStream.makeStream(of: AnalyzerInput.self)
         try await analyzer.start(inputSequence: inputSequence)
 
@@ -217,60 +230,121 @@ private final class LiveSpeechSession {
         return session
     }
 
-    private static func makeTranscriber(localeIdentifier: String) async throws -> SpeechTranscriber {
-        guard SpeechTranscriber.isAvailable else {
-            throw LiveSpeechBridgeError.unsupportedOS
+    private static func makeTranscriber(localeIdentifier: String, allowInstall: Bool) async throws -> LiveTranscriberModule {
+        let candidates = try await transcriberCandidates(localeIdentifier: localeIdentifier)
+        var unsupportedConfigurations: [String] = []
+        var unknownConfigurations: [String] = []
+
+        for candidate in candidates {
+            let status = await AssetInventory.status(forModules: candidate.modules)
+            switch status {
+            case .installed:
+                return candidate
+            case .supported, .downloading:
+                if allowInstall {
+                    try await ensureAssetsInstalled(
+                        for: candidate,
+                        localeIdentifier: localeIdentifier,
+                        allowInstall: true
+                    )
+                }
+                return candidate
+            case .unsupported:
+                unsupportedConfigurations.append("\(candidate.configurationName)=unsupported")
+            @unknown default:
+                unknownConfigurations.append("\(candidate.configurationName)=\(String(describing: status))")
+            }
         }
 
-        let requestedLocale = Locale(identifier: localeIdentifier)
-        guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) else {
-            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
-        }
-
-        return SpeechTranscriber(
-            locale: supportedLocale,
-            transcriptionOptions: [],
-            reportingOptions: [.volatileResults],
-            attributeOptions: [.audioTimeRange]
+        let details = (unsupportedConfigurations + unknownConfigurations).joined(separator: ", ")
+        throw LiveSpeechBridgeError.unsupportedConfiguration(
+            "\(localeIdentifier); no supported live transcriber configuration. \(details)"
         )
     }
 
+    private static func transcriberCandidates(localeIdentifier: String) async throws -> [LiveTranscriberModule] {
+        let requestedLocale = Locale(identifier: localeIdentifier)
+
+        var candidates: [LiveTranscriberModule] = []
+        if SpeechTranscriber.isAvailable,
+           let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale) {
+            candidates.append(
+                .speech(
+                    "SpeechTranscriber.progressiveTranscription",
+                    SpeechTranscriber(locale: supportedLocale, preset: .progressiveTranscription)
+                )
+            )
+        }
+        if let supportedLocale = await DictationTranscriber.supportedLocale(equivalentTo: requestedLocale) {
+            candidates.append(
+                .dictation(
+                    "DictationTranscriber.progressiveLongDictation",
+                    DictationTranscriber(locale: supportedLocale, preset: .progressiveLongDictation)
+                )
+            )
+        }
+
+        if candidates.isEmpty {
+            let speechLocales = SpeechTranscriber.isAvailable
+                ? await SpeechTranscriber.supportedLocales.map(\.identifier).sorted().joined(separator: ", ")
+                : ""
+            let dictationLocales = await DictationTranscriber.supportedLocales.map(\.identifier).sorted().joined(separator: ", ")
+            throw LiveSpeechBridgeError.unsupportedLocale(
+                "\(localeIdentifier); SpeechTranscriber.supported=[\(speechLocales)]; DictationTranscriber.supported=[\(dictationLocales)]"
+            )
+        }
+
+        return candidates
+    }
+
     private static func ensureAssetsInstalled(
-        for transcriber: SpeechTranscriber,
+        for transcriber: LiveTranscriberModule,
         localeIdentifier: String,
         allowInstall: Bool
     ) async throws {
-        let status = await AssetInventory.status(forModules: [transcriber])
+        let status = await AssetInventory.status(forModules: transcriber.modules)
         switch status {
         case .installed:
             return
         case .supported, .downloading:
             guard allowInstall else {
-                throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets are not installed for \(localeIdentifier).")
+                throw LiveSpeechBridgeError.modelUnavailable("Live transcriber model assets are not installed for \(localeIdentifier).")
             }
         case .unsupported:
-            throw LiveSpeechBridgeError.unsupportedLocale(localeIdentifier)
+            throw LiveSpeechBridgeError.unsupportedConfiguration(
+                "\(localeIdentifier); AssetInventory status is unsupported for current live transcriber configuration."
+            )
         @unknown default:
-            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model asset status is unknown for \(localeIdentifier).")
+            throw LiveSpeechBridgeError.modelUnavailable("Live transcriber model asset status is unknown for \(localeIdentifier).")
         }
 
-        guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else {
-            let updatedStatus = await AssetInventory.status(forModules: [transcriber])
-            if updatedStatus == .installed {
-                return
+        do {
+            guard let request = try await AssetInventory.assetInstallationRequest(supporting: transcriber.modules) else {
+                let updatedStatus = await AssetInventory.status(forModules: transcriber.modules)
+                if updatedStatus == .installed {
+                    return
+                }
+                throw LiveSpeechBridgeError.modelUnavailable("Live transcriber model assets are not available for installation for \(localeIdentifier).")
             }
-            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets are not available for installation for \(localeIdentifier).")
+            try await request.downloadAndInstall()
+        } catch let error as LiveSpeechBridgeError {
+            throw error
+        } catch {
+            throw LiveSpeechBridgeError.modelUnavailable(
+                "Failed to download live transcriber assets for \(localeIdentifier): \(error.localizedDescription)"
+            )
         }
-        try await request.downloadAndInstall()
 
-        let updatedStatus = await AssetInventory.status(forModules: [transcriber])
+        let updatedStatus = await AssetInventory.status(forModules: transcriber.modules)
         guard updatedStatus == .installed else {
-            throw LiveSpeechBridgeError.modelUnavailable("SpeechTranscriber model assets failed to install for \(localeIdentifier).")
+            throw LiveSpeechBridgeError.modelUnavailable(
+                "Live transcriber assets for \(localeIdentifier) were requested, but final status is \(String(describing: updatedStatus))."
+            )
         }
     }
 
     private init(
-        transcriber: SpeechTranscriber,
+        transcriber: LiveTranscriberModule,
         analyzer: SpeechAnalyzer,
         inputBuilder: AsyncStream<AnalyzerInput>.Continuation,
         analyzerFormat: AVAudioFormat,
@@ -324,43 +398,32 @@ private final class LiveSpeechSession {
     }
 
     private func startResultReader() {
-        resultTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                for try await result in self.transcriber.results {
-                    let text = String(result.text.characters)
-                    let timeRange = Self.audioTimeRange(from: result.text)
-                    self.enqueueEvent(text: text, isFinal: result.isFinal, timeRange: timeRange)
+        switch transcriber {
+        case .speech(_, let speechTranscriber):
+            resultTask = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    for try await result in speechTranscriber.results {
+                        let text = String(result.text.characters)
+                        self.enqueueEvent(text: text, isFinal: result.isFinal, timeRange: result.range)
+                    }
+                } catch {
+                    self.recordFailure("SpeechTranscriber failed: \(error.localizedDescription)")
                 }
-            } catch {
-                self.recordFailure("SpeechTranscriber failed: \(error.localizedDescription)")
+            }
+        case .dictation(_, let dictationTranscriber):
+            resultTask = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    for try await result in dictationTranscriber.results {
+                        let text = String(result.text.characters)
+                        self.enqueueEvent(text: text, isFinal: result.isFinal, timeRange: result.range)
+                    }
+                } catch {
+                    self.recordFailure("DictationTranscriber failed: \(error.localizedDescription)")
+                }
             }
         }
-    }
-
-    private static func audioTimeRange(from text: AttributedString) -> CMTimeRange? {
-        var startedAt: CMTime?
-        var endedAt: CMTime?
-
-        for run in text.runs {
-            guard let runRange = run.audioTimeRange, isUsable(range: runRange) else {
-                continue
-            }
-            let runStart = runRange.start
-            let runEnd = CMTimeRangeGetEnd(runRange)
-
-            if startedAt == nil || CMTimeCompare(runStart, startedAt!) < 0 {
-                startedAt = runStart
-            }
-            if endedAt == nil || CMTimeCompare(runEnd, endedAt!) > 0 {
-                endedAt = runEnd
-            }
-        }
-
-        guard let startedAt, let endedAt, CMTimeCompare(endedAt, startedAt) >= 0 else {
-            return nil
-        }
-        return CMTimeRangeFromTimeToTime(start: startedAt, end: endedAt)
     }
 
     private static func isUsable(range: CMTimeRange) -> Bool {
@@ -378,11 +441,12 @@ private final class LiveSpeechSession {
         lock.lock()
         defer { lock.unlock() }
 
+        let usableTimeRange = timeRange.flatMap { Self.isUsable(range: $0) ? $0 : nil }
         let event = LiveSpeechEvent(
             text: text,
             isFinal: isFinal,
-            startedAtMs: timeRange.flatMap { Self.milliseconds(from: $0.start) },
-            endedAtMs: timeRange.flatMap { Self.milliseconds(from: CMTimeRangeGetEnd($0)) }
+            startedAtMs: usableTimeRange.flatMap { Self.milliseconds(from: $0.start) },
+            endedAtMs: usableTimeRange.flatMap { Self.milliseconds(from: CMTimeRangeGetEnd($0)) }
         )
 
         queuedEvents.removeAll { !$0.isFinal }
@@ -789,7 +853,7 @@ public func souz_macos_live_speech_start(
     if #available(macOS 26.0, *) {
         do {
             let localeIdentifier = String(cString: localePtr)
-            let session = try waitForLiveAsync(timeoutSeconds: liveStartTimeoutSeconds) {
+            let session = try waitForLiveAsync(timeoutSeconds: liveAssetInstallTimeoutSeconds) {
                 try await LiveSpeechSession.create(localeIdentifier: localeIdentifier)
             }
             return LiveSpeechSessionRegistry.shared.register(session)

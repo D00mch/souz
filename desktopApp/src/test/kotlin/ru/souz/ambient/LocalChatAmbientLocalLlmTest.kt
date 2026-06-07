@@ -19,7 +19,7 @@ class LocalChatAmbientLocalLlmTest {
 
         llm.completeJson(systemPrompt = "system", userPrompt = "user")
 
-        assertEquals(256, api.lastRequest?.maxTokens)
+        assertEquals(96, api.lastRequest?.maxTokens)
         assertEquals("none", api.lastRequest?.functionCall)
         assertEquals(false, api.lastRequest?.stream)
     }

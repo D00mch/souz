@@ -17,17 +17,33 @@ class SemanticBlockBuilder(
     private val config: SemanticBlockBuilderConfig = SemanticBlockBuilderConfig(),
 ) {
     private var current: MutableList<AmbientTranscriptEvent> = mutableListOf()
+    private var currentLiveFullText: String? = null
+    private var lastClosedLiveFullText: String? = null
+    private var lastClosedLiveEndMs: Long? = null
     private var nextBlockOrdinal: Long = 0
 
     fun accept(event: AmbientTranscriptEvent): List<AmbientSemanticBlock> {
-        if (!event.isFinal || event.text.isBlank()) return emptyList()
+        val acceptedEvent = acceptedEvent(event) ?: return emptyList()
+        val liveFullText = event.text.trim().takeIf { acceptedEvent.source == AmbientTranscriptSource.LIVE }
+
+        if (
+            acceptedEvent.source == AmbientTranscriptSource.LIVE &&
+            current.size == 1 &&
+            current.single().source == AmbientTranscriptSource.LIVE &&
+            !current.single().isFinal
+        ) {
+            current[0] = acceptedEvent
+            currentLiveFullText = liveFullText
+            return emptyList()
+        }
 
         val closed = mutableListOf<AmbientSemanticBlock>()
-        val closeReason = closeReasonBeforeAdding(event)
+        val closeReason = closeReasonBeforeAdding(acceptedEvent)
         if (closeReason != null) {
             closeCurrent(closeReason)?.let { closed += it }
         }
-        current += event
+        current += acceptedEvent
+        currentLiveFullText = liveFullText
         return closed
     }
 
@@ -67,6 +83,8 @@ class SemanticBlockBuilder(
         if (current.isEmpty()) return null
         val events = current.toList()
         current = mutableListOf()
+        val liveFullText = currentLiveFullText
+        currentLiveFullText = null
 
         val text = events.joinToString(" ") { it.text.trim() }.trim()
         val addressedness = classifyAddressedness(text)
@@ -78,6 +96,10 @@ class SemanticBlockBuilder(
             return null
         }
 
+        if (liveFullText != null && events.all { it.source == AmbientTranscriptSource.LIVE }) {
+            lastClosedLiveFullText = liveFullText
+            lastClosedLiveEndMs = events.maxOfOrNull { it.eventEndMs() }
+        }
         nextBlockOrdinal += 1
         return AmbientSemanticBlock(
             id = "semantic-$nextBlockOrdinal",
@@ -118,7 +140,55 @@ class SemanticBlockBuilder(
         next.source == AmbientTranscriptSource.BATCH_FALLBACK ||
             current.any { it.source == AmbientTranscriptSource.BATCH_FALLBACK }
 
+    private fun acceptedEvent(event: AmbientTranscriptEvent): AmbientTranscriptEvent? {
+        if (event.text.isBlank()) return null
+        if (event.isFinal) {
+            return if (event.source == AmbientTranscriptSource.LIVE) liveDeltaEvent(event) else event
+        }
+        if (event.source != AmbientTranscriptSource.LIVE) return null
+        return liveDeltaEvent(event)
+    }
+
+    private fun liveDeltaEvent(event: AmbientTranscriptEvent): AmbientTranscriptEvent? {
+        val fullText = event.text.trim()
+        val (deltaText, trimmedPrevious) = liveDeltaText(
+            previous = lastClosedLiveFullText,
+            current = fullText,
+        )
+        if (deltaText.isBlank()) return null
+
+        val adjustedStartMs = if (trimmedPrevious) {
+            lastClosedLiveEndMs ?: event.startedAtMs
+        } else {
+            event.startedAtMs
+        }
+        return event.copy(
+            text = deltaText,
+            startedAtMs = adjustedStartMs,
+        )
+    }
+
+    private fun liveDeltaText(previous: String?, current: String): Pair<String, Boolean> {
+        val previousText = previous?.trim().orEmpty()
+        if (previousText.isBlank()) return current to false
+        if (current == previousText) return "" to true
+        if (current.startsWith(previousText)) {
+            return current.removePrefix(previousText).trimStart() to true
+        }
+
+        val previousTokens = previousText.split(WHITESPACE_REGEX).filter(String::isNotBlank)
+        val currentTokens = current.split(WHITESPACE_REGEX).filter(String::isNotBlank)
+        val maxOverlap = minOf(previousTokens.size, currentTokens.size)
+        for (overlap in maxOverlap downTo 1) {
+            if (previousTokens.takeLast(overlap) == currentTokens.take(overlap)) {
+                return currentTokens.drop(overlap).joinToString(" ") to true
+            }
+        }
+        return current to false
+    }
+
     private companion object {
+        val WHITESPACE_REGEX = Regex("\\s+")
         val DIRECT_MARKERS = listOf("souz", "souз", "союз", "ассистент")
         val IMPLICIT_INTENT_MARKERS = listOf(
             "напомни мне",

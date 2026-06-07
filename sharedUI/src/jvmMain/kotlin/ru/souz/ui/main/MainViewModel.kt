@@ -456,9 +456,11 @@ class MainViewModel(
     }
 
     private suspend fun startAmbientMode() {
+        ambientSuggestionStore.clear()
         setState {
             copy(
                 ambientMode = AmbientModeUiState(enabled = true, starting = true, analyzing = true),
+                ambientSuggestions = emptyList(),
             )
         }
 

@@ -68,7 +68,7 @@ class InMemoryAmbientSuggestionStore(
         _suggestions.update { current ->
             val expired = current.expirePending(now)
             if (expired.any { it.id == candidate.id && it.status in ACTIVE_STATUSES }) return@update expired
-            if (expired.any { it.isRecentDuplicateOf(normalizedTask, candidate.evidenceEventIds, now) }) {
+            if (expired.any { it.isRecentDuplicateOf(normalizedTask, now) }) {
                 return@update expired
             }
 
@@ -176,21 +176,50 @@ class InMemoryAmbientSuggestionStore(
 
     private fun AmbientSuggestion.isRecentDuplicateOf(
         normalizedTask: String,
-        evidenceEventIds: List<String>,
         now: Long,
     ): Boolean =
         now - createdAtMs <= config.dedupeCooldownMs &&
-            candidate.taskText.normalizedForDedupe() == normalizedTask &&
-            candidate.evidenceEventIds == evidenceEventIds
+            candidate.taskText.isDuplicateLike(normalizedTask)
 
     private fun String.normalizedForDedupe(): String =
         lowercase(Locale.ROOT).trim().replace(Regex("\\s+"), " ")
+
+    private fun String.isDuplicateLike(normalizedTask: String): Boolean {
+        val current = normalizedForDedupe()
+        if (current == normalizedTask) return true
+
+        val currentTokens = current.dedupePrefixTokens()
+        val nextTokens = normalizedTask.dedupePrefixTokens()
+        if (currentTokens.size < 3 || nextTokens.size < 3) return false
+
+        val commonPrefix = currentTokens
+            .zip(nextTokens)
+            .takeWhile { (left, right) -> left == right }
+            .count()
+        return commonPrefix >= 3 &&
+            commonPrefix.toDouble() / minOf(currentTokens.size, nextTokens.size) >= 0.6
+    }
+
+    private fun String.dedupePrefixTokens(): List<String> =
+        split(" ")
+            .map { token -> token.trim { !it.isLetterOrDigit() } }
+            .filter { token -> token.isNotBlank() && token !in WEAK_DEDUPE_TOKENS }
 
     private companion object {
         val ACTIVE_STATUSES = setOf(
             AmbientSuggestionStatus.PENDING,
             AmbientSuggestionStatus.ACCEPTED,
             AmbientSuggestionStatus.EXECUTING,
+        )
+        val WEAK_DEDUPE_TOKENS = setOf(
+            "мой",
+            "моя",
+            "мое",
+            "моё",
+            "мои",
+            "меня",
+            "мне",
+            "пожалуйста",
         )
     }
 }

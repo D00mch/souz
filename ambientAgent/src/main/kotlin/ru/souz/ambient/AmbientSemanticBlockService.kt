@@ -46,7 +46,7 @@ class DefaultAmbientSemanticBlockService(
                 transcriptEvents.collect { event ->
                     val closed = mutex.withLock {
                         builder.accept(event).also {
-                            if (event.isFinal && event.text.isNotBlank()) {
+                            if (event.text.isNotBlank() && (event.isFinal || event.source == AmbientTranscriptSource.LIVE)) {
                                 scheduleInactivityFlushLocked(event.source)
                             }
                         }

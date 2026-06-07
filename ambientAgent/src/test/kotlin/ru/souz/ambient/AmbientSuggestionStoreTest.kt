@@ -32,6 +32,39 @@ class AmbientSuggestionStoreTest {
     }
 
     @Test
+    fun `completed same task is ignored within cooldown even when evidence differs`() {
+        var now = 1_000L
+        val store = store(clock = { now })
+
+        store.addCandidate(candidate(id = "c1", taskText = "Создай задачу", evidence = listOf("e1")))
+        assertEquals("c1", store.accept("c1")?.id)
+        store.markExecuting("c1")
+        store.markCompleted("c1")
+
+        now = 2_000L
+        store.addCandidate(candidate(id = "c2", taskText = "  создай   задачу ", evidence = listOf("e2")))
+
+        assertEquals(listOf("c1"), store.suggestions.value.map { it.id })
+        assertEquals(AmbientSuggestionStatus.COMPLETED, store.suggestions.value.single().status)
+    }
+
+    @Test
+    fun `completed similar task is ignored within cooldown`() {
+        var now = 1_000L
+        val store = store(clock = { now })
+
+        store.addCandidate(candidate(id = "c1", taskText = "Проверь мой календарь на сегодня", evidence = listOf("e1")))
+        assertEquals("c1", store.accept("c1")?.id)
+        store.markExecuting("c1")
+        store.markCompleted("c1")
+
+        now = 2_000L
+        store.addCandidate(candidate(id = "c2", taskText = "Проверь мой календарь на 3 июня 2026", evidence = listOf("e2")))
+
+        assertEquals(listOf("c1"), store.suggestions.value.map { it.id })
+    }
+
+    @Test
     fun `same task after cooldown can be added`() {
         var now = 1_000L
         val store = store(clock = { now }, dedupeCooldownMs = 1_000L)

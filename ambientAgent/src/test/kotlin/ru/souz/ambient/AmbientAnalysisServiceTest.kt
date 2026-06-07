@@ -45,7 +45,7 @@ class AmbientAnalysisServiceTest {
     }
 
     @Test
-    fun `semantic block service ignores volatile transcript events`() = runTest {
+    fun `semantic block service ignores non-live volatile transcript events`() = runTest {
         val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
         val blockService = DefaultAmbientSemanticBlockService(
             transcriptEvents = transcriptEvents,
@@ -54,11 +54,61 @@ class AmbientAnalysisServiceTest {
         )
         blockService.start()
 
-        transcriptEvents.emit(transcriptEvent("v1", "draft", isFinal = false))
+        transcriptEvents.emit(
+            transcriptEvent(
+                "v1",
+                "draft",
+                isFinal = false,
+                source = AmbientTranscriptSource.BATCH_FALLBACK,
+            )
+        )
         blockService.stop()
         advanceUntilIdle()
 
         assertEquals(emptyList(), blockService.snapshot())
+    }
+
+    @Test
+    fun `semantic block service closes live volatile utterance after one second inactivity`() = runTest {
+        val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
+        val blockService = DefaultAmbientSemanticBlockService(
+            transcriptEvents = transcriptEvents,
+            builder = SemanticBlockBuilder(
+                clock = { testScheduler.currentTime },
+                config = SemanticBlockBuilderConfig(minUsefulChars = 1),
+            ),
+            scope = this,
+        )
+        val emitted = mutableListOf<AmbientSemanticBlock>()
+        val collectJob = launch { blockService.blocks.take(1).toList(emitted) }
+        try {
+            blockService.start()
+            advanceUntilIdle()
+
+            transcriptEvents.emit(
+                transcriptEvent(
+                    id = "live-1",
+                    text = "Найди заметку с долгами сколько мне должна Юля",
+                    isFinal = false,
+                    startedAtMs = 0L,
+                    endedAtMs = 12_840L,
+                    source = AmbientTranscriptSource.LIVE,
+                )
+            )
+            advanceTimeBy(999L)
+            assertEquals(emptyList(), emitted)
+
+            advanceTimeBy(1L)
+            advanceUntilIdle()
+
+            assertEquals(1, emitted.size)
+            assertEquals("Найди заметку с долгами сколько мне должна Юля", emitted.single().text)
+            assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, emitted.single().addressedness)
+            assertEquals(AmbientBlockCloseReason.PAUSE, emitted.single().closeReason)
+        } finally {
+            collectJob.cancel()
+            blockService.stop()
+        }
     }
 
     @Test
@@ -217,6 +267,7 @@ class AmbientAnalysisServiceTest {
         )
         val emitted = mutableListOf<AmbientTaskCandidate>()
         val collectJob = launch { service.taskCandidates.take(1).toList(emitted) }
+        runCurrent()
 
         service.analyzeBlock(block("b1", AmbientAddressedness.DIRECT_TO_SOUZ))
         advanceUntilIdle()
@@ -280,6 +331,32 @@ class AmbientAnalysisServiceTest {
         service.clear()
 
         assertEquals(emptyList(), service.recentAnalyses())
+    }
+
+    @Test
+    fun `cleared task candidate flow does not replay stale candidates to new collectors`() = runTest {
+        val service = DefaultAmbientAnalysisService(
+            analyzer = FakeAnalyzer(
+                AmbientAnalysisResult(
+                    blockId = "b1",
+                    blockSummary = null,
+                    extractedStatements = emptyList(),
+                    taskCandidates = listOf(candidate("b1", AmbientAddressedness.DIRECT_TO_SOUZ, confidence = 0.7)),
+                )
+            ),
+            capabilityProvider = StaticCapabilityProvider(),
+            scope = this,
+        )
+
+        service.analyzeBlock(block("b1", AmbientAddressedness.DIRECT_TO_SOUZ))
+        service.clear()
+
+        val emitted = mutableListOf<AmbientTaskCandidate>()
+        val collectJob = launch { service.taskCandidates.take(1).toList(emitted) }
+        runCurrent()
+
+        assertEquals(emptyList(), emitted)
+        collectJob.cancel()
     }
 
     @Test
@@ -395,6 +472,7 @@ class AmbientAnalysisServiceTest {
         )
         val emitted = mutableListOf<AmbientTaskCandidate>()
         val collectJob = launch { service.taskCandidates.take(1).toList(emitted) }
+        runCurrent()
 
         service.analyzeBlock(
             block(

@@ -29,8 +29,8 @@ class DefaultAmbientAnalysisService(
     private val recentAnalyses = ArrayDeque<AmbientAnalysisResult>()
     private val activeJobs = mutableSetOf<Job>()
     private val analysisLock = Mutex()
-    private val _analyses = MutableSharedFlow<AmbientAnalysisResult>(replay = 16, extraBufferCapacity = 16)
-    private val _taskCandidates = MutableSharedFlow<AmbientTaskCandidate>(replay = 16, extraBufferCapacity = 16)
+    private val _analyses = MutableSharedFlow<AmbientAnalysisResult>(extraBufferCapacity = 16)
+    private val _taskCandidates = MutableSharedFlow<AmbientTaskCandidate>(extraBufferCapacity = 16)
 
     override val analyses: Flow<AmbientAnalysisResult> = _analyses.asSharedFlow()
     override val taskCandidates: Flow<AmbientTaskCandidate> = _taskCandidates.asSharedFlow()

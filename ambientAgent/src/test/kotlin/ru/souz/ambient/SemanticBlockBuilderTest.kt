@@ -10,12 +10,73 @@ import kotlin.test.assertTrue
 class SemanticBlockBuilderTest {
 
     @Test
-    fun `ignores volatile and blank events`() {
+    fun `ignores batch volatile and blank events`() {
         val builder = SemanticBlockBuilder(clock = { 2_000L })
 
-        assertEquals(emptyList(), builder.accept(event(id = "v1", text = "draft", isFinal = false)))
+        assertEquals(
+            emptyList(),
+            builder.accept(
+                event(
+                    id = "v1",
+                    text = "draft",
+                    isFinal = false,
+                    source = AmbientTranscriptSource.BATCH_FALLBACK,
+                )
+            ),
+        )
         assertEquals(emptyList(), builder.accept(event(id = "f1", text = "   ", isFinal = true)))
         assertNull(builder.flush())
+    }
+
+    @Test
+    fun `live volatile events keep the latest hypothesis until flush`() {
+        val builder = SemanticBlockBuilder(
+            clock = { 2_000L },
+            config = SemanticBlockBuilderConfig(minUsefulChars = 1),
+        )
+
+        assertEquals(emptyList(), builder.accept(event(id = "v1", text = "Найди", isFinal = false)))
+        assertEquals(emptyList(), builder.accept(event(id = "v2", text = "Найди заметку", isFinal = false)))
+
+        val block = builder.flush(closeReason = AmbientBlockCloseReason.PAUSE)
+
+        assertEquals("Найди заметку", block?.text)
+        assertEquals(listOf("v2"), block?.eventIds)
+    }
+
+    @Test
+    fun `live cumulative hypotheses emit only new text after previous flush`() {
+        val builder = SemanticBlockBuilder(
+            clock = { 3_000L },
+            config = SemanticBlockBuilderConfig(minUsefulChars = 1),
+        )
+
+        builder.accept(
+            event(
+                id = "v1",
+                text = "Найди заметку с долгами сколько мне должна Юля",
+                isFinal = false,
+                startedAtMs = 0L,
+                endedAtMs = 12_840L,
+            )
+        )
+        val first = builder.flush(closeReason = AmbientBlockCloseReason.PAUSE)
+        builder.accept(
+            event(
+                id = "v2",
+                text = "Найди заметку с долгами сколько мне должна Юля поищи в заметках сколько мне должна Юля",
+                isFinal = false,
+                startedAtMs = 0L,
+                endedAtMs = 42_000L,
+            )
+        )
+
+        val second = builder.flush(closeReason = AmbientBlockCloseReason.PAUSE)
+
+        assertEquals("Найди заметку с долгами сколько мне должна Юля", first?.text)
+        assertEquals("поищи в заметках сколько мне должна Юля", second?.text)
+        assertEquals(12_840L, second?.startedAtMs)
+        assertEquals(42_000L, second?.endedAtMs)
     }
 
     @Test

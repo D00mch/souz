@@ -118,6 +118,31 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
     }
 
     @Test
+    fun `live bridge mapper preserves machine readable code and payload`() {
+        val error = mapLiveBridgeError(
+            IllegalStateException("LOCAL_MACOS_LIVE_STT:UNSUPPORTED_LOCALE:ru-RU")
+        )
+
+        assertTrue(error is LocalMacOsLiveSpeechUnsupportedException)
+        assertEquals("UNSUPPORTED_LOCALE: ru-RU", error.message)
+    }
+
+    @Test
+    fun `live bridge mapper treats unsupported configuration as unsupported live speech`() {
+        val error = mapLiveBridgeError(
+            IllegalStateException(
+                "LOCAL_MACOS_LIVE_STT:UNSUPPORTED_CONFIGURATION:ru-RU; AssetInventory status is unsupported"
+            )
+        )
+
+        assertTrue(error is LocalMacOsLiveSpeechUnsupportedException)
+        assertEquals(
+            "UNSUPPORTED_CONFIGURATION: ru-RU; AssetInventory status is unsupported",
+            error.message,
+        )
+    }
+
+    @Test
     fun `start requests speech authorization when not determined`() = runTest {
         val bridge = FakeMacOsSpeechBridge(
             initialAuthorizationStatus = MacOsSpeechAuthorizationStatus.NOT_DETERMINED,
