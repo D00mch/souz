@@ -47,7 +47,23 @@ class AmbientSuggestionControllerTest {
         val suggestion = controller.store.suggestions.value.single()
         assertEquals("fallback", suggestion.id)
         assertEquals("создай событие", suggestion.candidate.title)
-        assertEquals("Похоже, я могу помочь: создай событие", suggestion.candidate.suggestionText)
+        assertEquals("Помочь выполнить: «создай событие»?", suggestion.candidate.suggestionText)
+    }
+
+    @Test
+    fun `bad model suggestion text is replaced with deterministic offer`() {
+        val controller = controller()
+
+        controller.handleCandidate(
+            candidate(
+                id = "note-search",
+                taskText = "Найди заметку с долгами",
+                suggestionText = "Какую заметку надо открыть?",
+            )
+        )
+
+        val suggestion = controller.store.suggestions.value.single()
+        assertEquals("Помочь найти заметку с долгами?", suggestion.candidate.suggestionText)
     }
 
     @Test

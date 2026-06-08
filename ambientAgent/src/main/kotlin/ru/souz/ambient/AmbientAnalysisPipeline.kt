@@ -45,6 +45,6 @@ class DefaultAmbientAnalysisPipeline(
     }
 
     private companion object {
-        const val MAX_PENDING_BLOCKS = 3
+        const val MAX_PENDING_BLOCKS = 1
     }
 }

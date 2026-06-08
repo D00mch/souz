@@ -55,7 +55,6 @@ class LocalLlmAmbientBlockAnalyzerTest {
         val llm = CapturingAmbientLocalLlm(
             response = """
                 TASK: Узнать текущую погоду в Москве
-                SUGGEST: Посмотреть погоду в Москве?
             """.trimIndent(),
         )
         val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = llm, clock = { 1_000L })
@@ -71,7 +70,6 @@ class LocalLlmAmbientBlockAnalyzerTest {
 
         val candidate = result.taskCandidates.single()
         assertEquals("Узнать текущую погоду в Москве", candidate.taskText)
-        assertEquals("Посмотреть погоду в Москве?", candidate.suggestionText)
         assertEquals(emptyList(), candidate.matchedCapabilityIds)
         assertEquals(1.0, candidate.confidence)
     }
@@ -139,7 +137,10 @@ class LocalLlmAmbientBlockAnalyzerTest {
         assertTrue(systemPrompt.contains("\"type\":\"final\""))
         assertTrue(systemPrompt.contains("\"content\""))
         assertTrue(systemPrompt.contains("естественная команда"))
+        assertTrue(systemPrompt.contains("TASK:"))
+        assertTrue(systemPrompt.contains("EMPTY"))
         assertFalse(systemPrompt.contains("IDS:"))
+        assertFalse(systemPrompt.contains("SUGGEST"))
         assertFalse(systemPrompt.contains("CONFIDENCE"))
         assertFalse(systemPrompt.contains("RISK"))
     }

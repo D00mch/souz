@@ -238,9 +238,7 @@ class AmbientSuggestionController(
             candidate.copy(
                 title = candidate.title.trim().ifBlank { normalizedTask },
                 taskText = normalizedTask,
-                suggestionText = candidate.suggestionText.trim().ifBlank {
-                    "Похоже, я могу помочь: ${candidate.title.trim().ifBlank { normalizedTask }}"
-                },
+                suggestionText = AmbientSuggestionOfferText.format(normalizedTask),
                 requiresConfirmation = true,
             )
         )
@@ -258,6 +256,44 @@ class AmbientSuggestionController(
 
     private fun AmbientTaskCandidate.isDirectOrHighConfidence(): Boolean =
         addressedness == AmbientAddressedness.DIRECT_TO_SOUZ || confidence >= 0.85
+}
+
+private object AmbientSuggestionOfferText {
+    fun format(taskText: String): String {
+        val normalized = taskText
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .trimEnd('.', '?', '!', ' ')
+        if (normalized.isBlank()) return ""
+
+        val lower = normalized.lowercase(Locale.ROOT)
+        ACTION_REWRITES.firstOrNull { (prefix, _) -> lower.startsWith(prefix) }?.let { (prefix, replacement) ->
+            return "Помочь ${replacement}${normalized.drop(prefix.length)}?"
+        }
+        if (QUESTION_PREFIXES.any { prefix -> lower == prefix || lower.startsWith("$prefix ") }) {
+            return "Помочь узнать: «$normalized»?"
+        }
+        return "Помочь выполнить: «$normalized»?"
+    }
+
+    private val ACTION_REWRITES = listOf(
+        "найди " to "найти ",
+        "найти " to "найти ",
+        "поищи " to "найти ",
+    )
+    private val QUESTION_PREFIXES = setOf(
+        "какая",
+        "какой",
+        "какое",
+        "какие",
+        "где",
+        "когда",
+        "сколько",
+        "кто",
+        "что",
+        "как",
+        "почему",
+    )
 }
 
 interface AmbientSuggestionPipeline {
