@@ -208,6 +208,7 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
             toolCalculator.toGiga(),
         )
 
+        ToolCategory.SHELL -> listOf()
         ToolCategory.CHAT -> listOf()
         ToolCategory.HELP -> listOf()
 

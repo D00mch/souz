@@ -165,6 +165,7 @@ class PortableRuntimeToolsFactory(
         ToolCategory.CALENDAR,
         ToolCategory.MAIL,
         ToolCategory.TEXT_REPLACE,
+        ToolCategory.SHELL,
         ToolCategory.CHAT,
         ToolCategory.TELEGRAM,
         ToolCategory.DESKTOP,

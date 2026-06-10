@@ -18,12 +18,15 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.spi.CompositeAgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.agent.spi.SkillToolBindingTags
+import ru.souz.agent.spi.StaticAgentToolCatalog
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
 import ru.souz.android.python.ChaquopyPythonSkillRunner
 import ru.souz.android.settings.AndroidSettingsProvider
@@ -61,6 +64,8 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ImmediateToolPermissionBroker
+import ru.souz.tool.PortableRuntimeToolsFactory
+import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolsSettings
 import ru.souz.tool.ToolsSettingsState
@@ -68,6 +73,8 @@ import ru.souz.tool.ToolsSettingsStore
 import ru.souz.tool.UserMessageClassifier
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.portableRuntimeToolsDiModule
+import ru.souz.tool.shell.ToolRunShellCommand
+import ru.souz.tool.shell.toShellToolSetup
 import ru.souz.ui.host.ExternalLinkOpener
 import java.nio.file.Path
 
@@ -154,7 +161,24 @@ class AndroidAgentRuntime(
             }
             bindSingleton { ToolsSettings(instance(), instance()) }
 
-            import(portableRuntimeToolsDiModule())
+            import(portableRuntimeToolsDiModule(bindAgentToolCatalog = false))
+            bindSingleton {
+                ToolRunShellCommand(
+                    sandboxResolver = instance(),
+                    permissionBroker = instance(),
+                )
+            }
+            bindSingleton<AgentToolCatalog> {
+                val shellTool = instance<ToolRunShellCommand>()
+                CompositeAgentToolCatalog(
+                    instance<PortableRuntimeToolsFactory>(),
+                    StaticAgentToolCatalog(
+                        mapOf(
+                            ToolCategory.SHELL to mapOf(shellTool.name to shellTool.toShellToolSetup()),
+                        )
+                    ),
+                )
+            }
             bindSingleton<SkillRegistryRepository> {
                 FileSystemSkillRegistryRepository(
                     sandboxResolver = instance<ToolInvocationRuntimeSandboxResolver>(),

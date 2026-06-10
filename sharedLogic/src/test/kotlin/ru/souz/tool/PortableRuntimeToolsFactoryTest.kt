@@ -66,6 +66,7 @@ class PortableRuntimeToolsFactoryTest {
         assertTrue("GenerateImage" in tools.getValue(ToolCategory.IMAGE_GENERATION))
         assertTrue("InternetSearch" in tools.getValue(ToolCategory.WEB_SEARCH))
         assertTrue("Calculator" in tools.getValue(ToolCategory.CALCULATOR))
+        assertEquals(emptyMap(), tools.getValue(ToolCategory.SHELL))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.DATA_ANALYTICS))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.DESKTOP))
     }

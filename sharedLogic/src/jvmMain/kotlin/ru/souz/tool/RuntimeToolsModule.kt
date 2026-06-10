@@ -170,6 +170,7 @@ class RuntimeToolsFactory(
             toolCalculator.toGiga(),
         )
 
+        ToolCategory.SHELL,
         ToolCategory.BROWSER,
         ToolCategory.NOTES,
         ToolCategory.APPLICATIONS,

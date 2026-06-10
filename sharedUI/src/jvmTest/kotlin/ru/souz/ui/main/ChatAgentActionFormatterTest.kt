@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.jetbrains.compose.resources.getString
 import ru.souz.llms.LLMResponse
 import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.chat_action_run_bash_command
 import souz.sharedui.generated.resources.chat_action_internet_research
 import souz.sharedui.generated.resources.chat_action_web_search
 import kotlin.test.AfterTest
@@ -22,6 +23,7 @@ class ChatAgentActionFormatterTest {
         coEvery { getString(Res.string.chat_action_web_search) } returns "Ищу в интернете: %1\$s"
         coEvery { getString(Res.string.chat_action_internet_research) } returns
             "Провожу исследование в интернете: %1\$s"
+        coEvery { getString(Res.string.chat_action_run_bash_command) } returns "Запускаю команду: %1\$s"
     }
 
     @AfterTest
@@ -51,5 +53,17 @@ class ChatAgentActionFormatterTest {
         )
 
         assertEquals("Провожу исследование в интернете: сравнение MCP серверов", actual)
+    }
+
+    @Test
+    fun `formats android shell command action`() = runTest {
+        val actual = ChatAgentActionFormatter().format(
+            functionCall = LLMResponse.FunctionCall(
+                name = "RunShellCommand",
+                arguments = mapOf("script" to "pwd"),
+            )
+        )
+
+        assertEquals("Запускаю команду: pwd", actual)
     }
 }

@@ -147,6 +147,11 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
         )
 
+        ToolCategory.SHELL -> listOf(
+            WeightedRegex(Regex("shell|terminal|терминал|команд[ау]|выполни команд|запусти команд|run command|sh\\b"), 2.0),
+            WeightedRegex(Regex("ls -la|pwd|cat .*\\.|chmod|grep|sed|awk"), 1.5),
+        )
+
         ToolCategory.PRESENTATION -> listOf(
             WeightedRegex(Regex("презентац|слайд|pptx|powerpoint|keynote|выступлени|доклад|presentation|slide"), 1.5),
             WeightedRegex(Regex("создай презентац|сделай слайд|напиши презентац|слайды"), 2.0),
