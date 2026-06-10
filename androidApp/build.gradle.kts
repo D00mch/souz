@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
-private val chaquopyPythonVersion = "3.13"
+private val chaquopyPythonVersion = "3.11"
 private val disabledChaquopyBuildPythonPath =
     layout.buildDirectory.file("disabled-chaquopy-build-python/python").get().asFile.absolutePath
 
@@ -53,7 +53,7 @@ extensions.configure<ApplicationExtension>("android") {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
         }
     }
 

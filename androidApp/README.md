@@ -22,13 +22,13 @@ Build a debug APK:
 ./gradlew :androidApp:assembleDebug
 ```
 
-Default Android builds include Chaquopy Python 3.13 standard library support and app Python sources only, and do not require host Python. To also bundle document/data skill packages (`lxml`, `Pillow`, `XlsxWriter`, and `python-pptx`), build with:
+Default Android builds include Chaquopy Python 3.11 standard library support and app Python sources only, and do not require host Python. The Android APK targets `armeabi-v7a`, `arm64-v8a`, and `x86_64` native runtimes; devices that report both `armeabi-v7a` and legacy `armeabi` are covered by the `armeabi-v7a` build. To also bundle document/data skill packages (`lxml`, `Pillow`, `XlsxWriter`, and `python-pptx`), build with:
 
 ```bash
 ./gradlew :androidApp:assembleDebug -Psouz.android.bundlePythonRequirements=true
 ```
 
-When bundled packages are enabled, the build needs Python 3.13. You can point Chaquopy at an interpreter with `-Psouz.android.buildPython=/path/to/python3.13` or `SOUZ_ANDROID_BUILD_PYTHON`.
+When bundled packages are enabled, the build needs Python 3.11. You can point Chaquopy at an interpreter with `-Psouz.android.buildPython=/path/to/python3.11` or `SOUZ_ANDROID_BUILD_PYTHON`.
 
 Install it on the connected device or emulator:
 
@@ -66,7 +66,7 @@ Run Android instrumentation tests on a connected device or emulator:
 - ClawHub/OpenClaw-style skills stored in the app-private filesystem registry.
 - Skill command execution through the Android sandbox:
   - shell commands run with POSIX `/system/bin/sh`
-  - Python commands run through the embedded Chaquopy Python 3.13 service process
+  - Python commands run through the embedded Chaquopy Python 3.11 service process
 - Runtime state under app-private files, including `souz-home`, `souz-workspace`, and `souz-state`.
 
 Android skills can use the Python standard library plus pure-Python files vendored inside a skill bundle. Runtime `pip install` is intentionally unsupported. The optional bundled document/data packages (`lxml`, `Pillow`, `XlsxWriter`, and `python-pptx`) are available only when `souz.android.bundlePythonRequirements=true`.
