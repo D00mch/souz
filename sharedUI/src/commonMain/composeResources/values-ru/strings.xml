@@ -374,6 +374,7 @@
     <string name="voice_status_recording_started">Запись запущена</string>
     <string name="voice_status_processing_input">Обработка входа</string>
     <string name="voice_status_speech_not_recognized">Речь не распознана</string>
+    <string name="voice_error_microphone_busy_ambient">Микрофон занят ambient mode.</string>
     <string name="voice_error_empty_audio">Аудио не записалось. Удерживайте кнопку микрофона чуть дольше и попробуйте снова.</string>
     <string name="voice_error_microphone_unavailable">Не удалось запустить запись с микрофона. Разрешите доступ в Настройки macOS &gt; Конфиденциальность и безопасность &gt; Микрофон и перезапустите приложение.</string>
     <string name="voice_error_missing_key">Добавьте ключ API для выбранной модели распознавания речи в Настройки > Мои ключи, чтобы использовать голосовые команды</string>

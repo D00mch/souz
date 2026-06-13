@@ -1,38 +1,17 @@
 package ru.souz.ambient
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 
 data class AmbientSuggestion(
     val id: String,
     val candidate: AmbientTaskCandidate,
-    val status: AmbientSuggestionStatus,
     val createdAtMs: Long,
-    val updatedAtMs: Long,
     val expiresAtMs: Long,
-    val failureReason: String? = null,
 )
-
-enum class AmbientSuggestionStatus {
-    PENDING,
-    ACCEPTED,
-    REJECTED,
-    EXPIRED,
-    EXECUTING,
-    COMPLETED,
-    FAILED,
-}
 
 data class AmbientSuggestionStoreConfig(
     val maxPendingSuggestions: Int = 3,
@@ -41,14 +20,11 @@ data class AmbientSuggestionStoreConfig(
 )
 
 interface AmbientSuggestionStore {
-    val suggestions: StateFlow<List<AmbientSuggestion>>
+    val pending: StateFlow<List<AmbientSuggestion>>
 
-    fun addCandidate(candidate: AmbientTaskCandidate)
-    fun accept(id: String): AmbientSuggestion?
-    fun reject(id: String)
-    fun markExecuting(id: String)
-    fun markCompleted(id: String)
-    fun markFailed(id: String, reason: String?)
+    fun add(candidate: AmbientTaskCandidate)
+    fun consume(id: String): AmbientSuggestion?
+    fun dismiss(id: String)
     fun expireOld()
     fun clear()
 }
@@ -57,281 +33,83 @@ class InMemoryAmbientSuggestionStore(
     private val clock: () -> Long = System::currentTimeMillis,
     private val config: AmbientSuggestionStoreConfig = AmbientSuggestionStoreConfig(),
 ) : AmbientSuggestionStore {
-    private val _suggestions = MutableStateFlow<List<AmbientSuggestion>>(emptyList())
-    override val suggestions: StateFlow<List<AmbientSuggestion>> = _suggestions.asStateFlow()
+    private val _pending = MutableStateFlow<List<AmbientSuggestion>>(emptyList())
+    override val pending: StateFlow<List<AmbientSuggestion>> = _pending.asStateFlow()
+    private val recentFingerprints = ArrayDeque<RecentFingerprint>()
 
-    override fun addCandidate(candidate: AmbientTaskCandidate) {
+    override fun add(candidate: AmbientTaskCandidate) {
         val now = clock()
-        val normalizedTask = candidate.taskText.normalizedForDedupe()
-        if (normalizedTask.isBlank()) return
+        val fingerprint = candidate.taskText.normalizedForDedupe()
+        if (fingerprint.isBlank()) return
+        pruneFingerprints(now)
+        if (recentFingerprints.any { it.value == fingerprint }) return
 
-        _suggestions.update { current ->
-            val expired = current.expirePending(now)
-            if (expired.any { it.id == candidate.id && it.status in ACTIVE_STATUSES }) return@update expired
-            if (expired.any { it.isRecentDuplicateOf(normalizedTask, now) }) {
-                return@update expired
-            }
-
-            val suggestion = AmbientSuggestion(
-                id = candidate.id,
-                candidate = candidate,
-                status = AmbientSuggestionStatus.PENDING,
-                createdAtMs = now,
-                updatedAtMs = now,
-                expiresAtMs = now + config.ttlMs,
-            )
-
-            (expired + suggestion).trimPendingLimit()
+        val suggestion = AmbientSuggestion(
+            id = candidate.id,
+            candidate = candidate.copy(taskText = candidate.taskText.trim()),
+            createdAtMs = now,
+            expiresAtMs = now + config.ttlMs,
+        )
+        recentFingerprints.addLast(RecentFingerprint(fingerprint, now))
+        _pending.update { current ->
+            (current.removeExpired(now) + suggestion)
+                .takeLast(config.maxPendingSuggestions)
         }
     }
 
-    override fun accept(id: String): AmbientSuggestion? {
-        var accepted: AmbientSuggestion? = null
+    override fun consume(id: String): AmbientSuggestion? {
         val now = clock()
-        _suggestions.update { current ->
-            current.map { suggestion ->
-                if (suggestion.id == id && suggestion.status == AmbientSuggestionStatus.PENDING) {
-                    suggestion.copy(status = AmbientSuggestionStatus.ACCEPTED, updatedAtMs = now).also {
-                        accepted = it
-                    }
-                } else {
-                    suggestion
-                }
+        var consumed: AmbientSuggestion? = null
+        _pending.update { current ->
+            current.removeExpired(now).filterNot { suggestion ->
+                val match = suggestion.id == id
+                if (match) consumed = suggestion
+                match
             }
         }
-        return accepted
+        return consumed
     }
 
-    override fun reject(id: String) {
-        updateStatus(id, AmbientSuggestionStatus.REJECTED)
-    }
-
-    override fun markExecuting(id: String) {
-        updateStatus(id, AmbientSuggestionStatus.EXECUTING)
-    }
-
-    override fun markCompleted(id: String) {
-        updateStatus(id, AmbientSuggestionStatus.COMPLETED)
-    }
-
-    override fun markFailed(id: String, reason: String?) {
-        val now = clock()
-        _suggestions.update { current ->
-            current.map { suggestion ->
-                if (suggestion.id == id) {
-                    suggestion.copy(
-                        status = AmbientSuggestionStatus.FAILED,
-                        updatedAtMs = now,
-                        failureReason = reason?.take(240),
-                    )
-                } else {
-                    suggestion
-                }
-            }
-        }
+    override fun dismiss(id: String) {
+        _pending.update { current -> current.filterNot { it.id == id } }
     }
 
     override fun expireOld() {
         val now = clock()
-        _suggestions.update { current -> current.expirePending(now) }
+        pruneFingerprints(now)
+        _pending.update { current -> current.removeExpired(now) }
     }
 
     override fun clear() {
-        _suggestions.value = emptyList()
+        _pending.value = emptyList()
+        recentFingerprints.clear()
     }
 
-    private fun updateStatus(id: String, status: AmbientSuggestionStatus) {
-        val now = clock()
-        _suggestions.update { current ->
-            current.map { suggestion ->
-                if (suggestion.id == id) {
-                    suggestion.copy(status = status, updatedAtMs = now, failureReason = null)
-                } else {
-                    suggestion
-                }
-            }
+    private fun List<AmbientSuggestion>.removeExpired(now: Long): List<AmbientSuggestion> =
+        filter { it.expiresAtMs > now }
+
+    private fun pruneFingerprints(now: Long) {
+        val cutoff = now - config.dedupeCooldownMs
+        while (recentFingerprints.isNotEmpty() && recentFingerprints.first().createdAtMs <= cutoff) {
+            recentFingerprints.removeFirst()
+        }
+        while (recentFingerprints.size > MAX_RECENT_FINGERPRINTS) {
+            recentFingerprints.removeFirst()
         }
     }
-
-    private fun List<AmbientSuggestion>.expirePending(now: Long): List<AmbientSuggestion> =
-        map { suggestion ->
-            if (suggestion.status == AmbientSuggestionStatus.PENDING && now >= suggestion.expiresAtMs) {
-                suggestion.copy(status = AmbientSuggestionStatus.EXPIRED, updatedAtMs = now)
-            } else {
-                suggestion
-            }
-        }
-
-    private fun List<AmbientSuggestion>.trimPendingLimit(): List<AmbientSuggestion> {
-        val pending = filter { it.status == AmbientSuggestionStatus.PENDING }
-        val overflow = pending.size - config.maxPendingSuggestions
-        if (overflow <= 0) return this
-
-        val dropIds = pending
-            .sortedBy { it.createdAtMs }
-            .take(overflow)
-            .mapTo(mutableSetOf()) { it.id }
-        return filterNot { it.id in dropIds && it.status == AmbientSuggestionStatus.PENDING }
-    }
-
-    private fun AmbientSuggestion.isRecentDuplicateOf(
-        normalizedTask: String,
-        now: Long,
-    ): Boolean =
-        now - createdAtMs <= config.dedupeCooldownMs &&
-            candidate.taskText.isDuplicateLike(normalizedTask)
 
     private fun String.normalizedForDedupe(): String =
-        lowercase(Locale.ROOT).trim().replace(Regex("\\s+"), " ")
-
-    private fun String.isDuplicateLike(normalizedTask: String): Boolean {
-        val current = normalizedForDedupe()
-        if (current == normalizedTask) return true
-
-        val currentTokens = current.dedupePrefixTokens()
-        val nextTokens = normalizedTask.dedupePrefixTokens()
-        if (currentTokens.size < 3 || nextTokens.size < 3) return false
-
-        val commonPrefix = currentTokens
-            .zip(nextTokens)
-            .takeWhile { (left, right) -> left == right }
-            .count()
-        return commonPrefix >= 3 &&
-            commonPrefix.toDouble() / minOf(currentTokens.size, nextTokens.size) >= 0.6
-    }
-
-    private fun String.dedupePrefixTokens(): List<String> =
-        split(" ")
-            .map { token -> token.trim { !it.isLetterOrDigit() } }
-            .filter { token -> token.isNotBlank() && token !in WEAK_DEDUPE_TOKENS }
-
-    private companion object {
-        val ACTIVE_STATUSES = setOf(
-            AmbientSuggestionStatus.PENDING,
-            AmbientSuggestionStatus.ACCEPTED,
-            AmbientSuggestionStatus.EXECUTING,
-        )
-        val WEAK_DEDUPE_TOKENS = setOf(
-            "мой",
-            "моя",
-            "мое",
-            "моё",
-            "мои",
-            "меня",
-            "мне",
-            "пожалуйста",
-        )
-    }
-}
-
-class AmbientSuggestionController(
-    private val store: AmbientSuggestionStore,
-) {
-    fun handleCandidate(candidate: AmbientTaskCandidate): Boolean {
-        val normalizedTask = candidate.taskText.trim()
-        if (normalizedTask.isBlank()) return false
-        if (candidate.addressedness == AmbientAddressedness.BACKGROUND_OR_QUOTED) return false
-        if (candidate.confidence < candidate.addressedness.threshold()) return false
-        if (candidate.risk == AmbientTaskRisk.HIGH && !candidate.isDirectOrHighConfidence()) return false
-
-        store.addCandidate(
-            candidate.copy(
-                title = candidate.title.trim().ifBlank { normalizedTask },
-                taskText = normalizedTask,
-                suggestionText = AmbientSuggestionOfferText.format(normalizedTask),
-                requiresConfirmation = true,
-            )
-        )
-        return true
-    }
-
-    private fun AmbientAddressedness.threshold(): Double =
-        when (this) {
-            AmbientAddressedness.DIRECT_TO_SOUZ -> 0.65
-            AmbientAddressedness.IMPLICIT_USER_INTENT -> 0.75
-            AmbientAddressedness.AMBIENT_CONVERSATION,
-            AmbientAddressedness.UNKNOWN -> 0.85
-            AmbientAddressedness.BACKGROUND_OR_QUOTED -> 1.01
-        }
-
-    private fun AmbientTaskCandidate.isDirectOrHighConfidence(): Boolean =
-        addressedness == AmbientAddressedness.DIRECT_TO_SOUZ || confidence >= 0.85
-}
-
-private object AmbientSuggestionOfferText {
-    fun format(taskText: String): String {
-        val normalized = taskText
+        lowercase(Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N}\\s]+"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
-            .trimEnd('.', '?', '!', ' ')
-        if (normalized.isBlank()) return ""
 
-        val lower = normalized.lowercase(Locale.ROOT)
-        ACTION_REWRITES.firstOrNull { (prefix, _) -> lower.startsWith(prefix) }?.let { (prefix, replacement) ->
-            return "Помочь ${replacement}${normalized.drop(prefix.length)}?"
-        }
-        if (QUESTION_PREFIXES.any { prefix -> lower == prefix || lower.startsWith("$prefix ") }) {
-            return "Помочь узнать: «$normalized»?"
-        }
-        return "Помочь выполнить: «$normalized»?"
-    }
-
-    private val ACTION_REWRITES = listOf(
-        "найди " to "найти ",
-        "найти " to "найти ",
-        "поищи " to "найти ",
+    private data class RecentFingerprint(
+        val value: String,
+        val createdAtMs: Long,
     )
-    private val QUESTION_PREFIXES = setOf(
-        "какая",
-        "какой",
-        "какое",
-        "какие",
-        "где",
-        "когда",
-        "сколько",
-        "кто",
-        "что",
-        "как",
-        "почему",
-    )
-}
 
-interface AmbientSuggestionPipeline {
-    suspend fun start()
-    suspend fun stop()
-}
-
-class DefaultAmbientSuggestionPipeline(
-    private val candidateFlow: Flow<AmbientTaskCandidate>,
-    private val controller: AmbientSuggestionController,
-    private val scope: CoroutineScope,
-) : AmbientSuggestionPipeline {
-    private val mutex = Mutex()
-    private var job: Job? = null
-
-    override suspend fun start() {
-        mutex.withLock {
-            if (job?.isActive == true) return
-            job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                candidateFlow.collect { candidate ->
-                    controller.handleCandidate(candidate)
-                }
-            }
-        }
-    }
-
-    override suspend fun stop() {
-        val currentJob = mutex.withLock { job.also { job = null } }
-        currentJob?.cancelAndJoin()
+    private companion object {
+        const val MAX_RECENT_FINGERPRINTS = 32
     }
 }
-
-fun AmbientSuggestionPipeline(
-    candidateFlow: Flow<AmbientTaskCandidate>,
-    controller: AmbientSuggestionController,
-    scope: CoroutineScope,
-): AmbientSuggestionPipeline = DefaultAmbientSuggestionPipeline(
-    candidateFlow = candidateFlow,
-    controller = controller,
-    scope = scope,
-)

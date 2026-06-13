@@ -1,4 +1,4 @@
-package ru.souz.service.speech.ambient
+package ru.souz.ambient
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -10,12 +10,12 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
-import ru.souz.service.speech.LocalMacOsLiveSpeechPermissionDeniedException
-import ru.souz.service.speech.LocalMacOsLiveSpeechUnsupportedException
 import ru.souz.service.speech.LiveSpeechTranscriptEvent
 import ru.souz.service.speech.LiveSpeechTranscriptionProvider
 import ru.souz.service.speech.LiveSpeechTranscriptionSession
+import ru.souz.service.speech.LocalMacOsLiveSpeechPermissionDeniedException
+import ru.souz.service.speech.LocalMacOsLiveSpeechUnsupportedException
+import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
 import ru.souz.service.speech.SpeechRecognitionProvider
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -62,9 +62,7 @@ class DefaultAmbientTranscriptionServiceTest {
             batchWindowMillis = 2_000,
         )
         val emitted = mutableListOf<AmbientTranscriptEvent>()
-        val collectJob = launch {
-            service.transcriptEvents.take(1).toList(emitted)
-        }
+        val collectJob = launch { service.transcriptEvents.take(1).toList(emitted) }
 
         val result = service.start("ru-RU")
         advanceUntilIdle()
@@ -77,7 +75,6 @@ class DefaultAmbientTranscriptionServiceTest {
         assertEquals(listOf("помоги мне"), emitted.map { it.text })
         assertEquals(listOf(true), emitted.map { it.isFinal })
         assertEquals(listOf(AmbientTranscriptSource.BATCH_FALLBACK), emitted.map { it.source })
-        assertEquals(listOf("помоги мне"), service.snapshot().finalEvents.map { it.text })
         collectJob.cancel()
     }
 
@@ -96,16 +93,13 @@ class DefaultAmbientTranscriptionServiceTest {
             batchWindowMillis = 2_000,
         )
         val emitted = mutableListOf<AmbientTranscriptEvent>()
-        val collectJob = launch {
-            service.transcriptEvents.take(1).toList(emitted)
-        }
+        val collectJob = launch { service.transcriptEvents.take(1).toList(emitted) }
 
         assertEquals(AmbientSpeechAvailability.Available, service.start("ru-RU"))
         advanceUntilIdle()
 
         assertEquals(1, batchProvider.recognizeCalls)
         assertEquals(emptyList(), emitted)
-        assertEquals(emptyList(), service.snapshot().finalEvents)
         collectJob.cancel()
     }
 
@@ -136,16 +130,13 @@ class DefaultAmbientTranscriptionServiceTest {
             batchWindowMillis = 2_000,
         )
         val emitted = mutableListOf<AmbientTranscriptEvent>()
-        val collectJob = launch {
-            service.transcriptEvents.take(2).toList(emitted)
-        }
+        val collectJob = launch { service.transcriptEvents.take(2).toList(emitted) }
 
         assertEquals(AmbientSpeechAvailability.Available, service.start("ru-RU"))
         advanceUntilIdle()
 
         assertEquals(3, batchProvider.recognizeCalls)
         assertEquals(listOf("мне нужна помощь", "помоги разобраться"), emitted.map { it.text })
-        assertEquals(listOf("мне нужна помощь", "помоги разобраться"), service.snapshot().finalEvents.map { it.text })
         assertEquals(AmbientTranscriptionState.Stopped, service.state.value)
         collectJob.cancel()
     }
@@ -175,9 +166,7 @@ class DefaultAmbientTranscriptionServiceTest {
             batchWindowMillis = 2_000,
         )
         val emitted = mutableListOf<AmbientTranscriptEvent>()
-        val collectJob = launch {
-            service.transcriptEvents.take(2).toList(emitted)
-        }
+        val collectJob = launch { service.transcriptEvents.take(2).toList(emitted) }
 
         assertEquals(AmbientSpeechAvailability.Available, service.start("ru-RU"))
         advanceUntilIdle()
@@ -186,29 +175,6 @@ class DefaultAmbientTranscriptionServiceTest {
         assertEquals(listOf(1_000L, 3_000L), emitted.map { it.startedAtMs })
         assertEquals(listOf(3_000L, 5_000L), emitted.map { it.endedAtMs })
         collectJob.cancel()
-    }
-
-    @Test
-    fun `diagnostics receive full recognized transcript text`() = runTest {
-        val liveProvider = FakeLiveSpeechTranscriptionProvider(
-            startError = LocalMacOsLiveSpeechUnsupportedException("unsupported locale"),
-        )
-        val batchProvider = FakeSpeechRecognitionProvider(result = "надо проверить календарь завтра утром")
-        val audioSource = FakePcmAudioFrameSource(frames = flow { emit(ByteArray(64_000) { 1 }) })
-        val diagnosticEvents = mutableListOf<AmbientTranscriptEvent>()
-        val service = service(
-            liveProvider = liveProvider,
-            batchSpeechRecognitionProvider = batchProvider,
-            audioSource = audioSource,
-            scope = this,
-            batchWindowMillis = 2_000,
-            transcriptDiagnostics = { event -> diagnosticEvents += event },
-        )
-
-        assertEquals(AmbientSpeechAvailability.Available, service.start("ru-RU"))
-        advanceUntilIdle()
-
-        assertEquals(listOf("надо проверить календарь завтра утром"), diagnosticEvents.map { it.text })
     }
 
     @Test
@@ -228,25 +194,7 @@ class DefaultAmbientTranscriptionServiceTest {
     }
 
     @Test
-    fun `start returns microphone unavailable when pcm source cannot start`() = runTest {
-        val liveProvider = FakeLiveSpeechTranscriptionProvider(supported = true)
-        val audioSource = FakePcmAudioFrameSource(
-            startResult = false,
-            frames = flow { emit(byteArrayOf(1)) },
-        )
-        val service = service(liveProvider = liveProvider, audioSource = audioSource, scope = this)
-
-        val result = service.start("en-US")
-
-        assertEquals(AmbientSpeechAvailability.MicrophoneUnavailable, result)
-        assertEquals(AmbientTranscriptionState.Stopped, service.state.value)
-        assertEquals(1, audioSource.startCalls)
-        assertEquals(1, liveProvider.startCalls)
-        assertEquals(1, liveProvider.session.cancelCalls)
-    }
-
-    @Test
-    fun `service feeds pcm frames polls live events and stores transcript snapshot`() = runTest {
+    fun `service feeds pcm frames polls live events and emits transcript events`() = runTest {
         val session = FakeLiveSpeechTranscriptionSession(
             pollEvents = listOf(
                 listOf(LiveSpeechTranscriptEvent("draft", isFinal = false, startedAtMs = 10, endedAtMs = 20)),
@@ -259,9 +207,7 @@ class DefaultAmbientTranscriptionServiceTest {
         val audioSource = FakePcmAudioFrameSource(frames = flow { emit(byteArrayOf(1, 2, 3, 4)) })
         val service = service(liveProvider = liveProvider, audioSource = audioSource, scope = this)
         val emitted = mutableListOf<AmbientTranscriptEvent>()
-        val collectJob = launch {
-            service.transcriptEvents.take(2).toList(emitted)
-        }
+        val collectJob = launch { service.transcriptEvents.take(2).toList(emitted) }
 
         val result = service.start("en-US")
         advanceUntilIdle()
@@ -274,23 +220,8 @@ class DefaultAmbientTranscriptionServiceTest {
         assertEquals(listOf(false, true), emitted.map { it.isFinal })
         assertEquals(listOf(AmbientTranscriptSource.LIVE, AmbientTranscriptSource.LIVE), emitted.map { it.source })
         assertTrue(emitted.all { it.id.isNotBlank() })
-        assertEquals(listOf("final"), service.snapshot().finalEvents.map { it.text })
-        assertEquals(null, service.snapshot().currentVolatile)
         assertEquals(AmbientTranscriptionState.Stopped, service.state.value)
         collectJob.cancel()
-    }
-
-    @Test
-    fun `start reports already running while listener is active`() = runTest {
-        val session = FakeLiveSpeechTranscriptionSession()
-        val liveProvider = FakeLiveSpeechTranscriptionProvider(supported = true, session = session)
-        val audioSource = FakePcmAudioFrameSource(frames = flow { awaitCancellation() })
-        val service = service(liveProvider = liveProvider, audioSource = audioSource, scope = this)
-
-        assertEquals(AmbientSpeechAvailability.Available, service.start("en-US"))
-        assertEquals(AmbientSpeechAvailability.AlreadyRunning, service.start("en-US"))
-
-        service.stop()
     }
 
     @Test
@@ -311,38 +242,19 @@ class DefaultAmbientTranscriptionServiceTest {
         assertEquals(AmbientTranscriptionState.Stopped, service.state.value)
     }
 
-    @Test
-    fun `live session failure stops microphone and exposes error state`() = runTest {
-        val session = FakeLiveSpeechTranscriptionSession(acceptError = IllegalStateException("live failed"))
-        val liveProvider = FakeLiveSpeechTranscriptionProvider(supported = true, session = session)
-        val audioSource = FakePcmAudioFrameSource(frames = flow { emit(byteArrayOf(1, 2)) })
-        val service = service(liveProvider = liveProvider, audioSource = audioSource, scope = this)
-
-        assertEquals(AmbientSpeechAvailability.Available, service.start("en-US"))
-        advanceUntilIdle()
-
-        val state = assertIs<AmbientTranscriptionState.Error>(service.state.value)
-        assertEquals("live failed", state.message)
-        assertEquals(1, audioSource.stopCalls)
-        assertEquals(1, session.cancelCalls)
-    }
-
     private fun service(
         liveProvider: LiveSpeechTranscriptionProvider,
         audioSource: PcmAudioFrameSource,
         scope: CoroutineScope,
         batchSpeechRecognitionProvider: SpeechRecognitionProvider? = null,
         batchWindowMillis: Long = 3_000,
-        transcriptDiagnostics: (AmbientTranscriptEvent) -> Unit = {},
     ): DefaultAmbientTranscriptionService = DefaultAmbientTranscriptionService(
         liveSpeechProvider = liveProvider,
         batchSpeechRecognitionProvider = batchSpeechRecognitionProvider,
         audioSource = audioSource,
         scope = scope,
-        buffer = AmbientTranscriptBuffer(maxFinalEvents = 10, ttlMs = 10_000, clock = { 1_000L }),
         batchWindowMillis = batchWindowMillis,
         clock = { 1_000L },
-        transcriptDiagnostics = transcriptDiagnostics,
     )
 
     private class FakeLiveSpeechTranscriptionProvider(
@@ -383,7 +295,6 @@ class DefaultAmbientTranscriptionServiceTest {
     private class FakeLiveSpeechTranscriptionSession(
         private val pollEvents: List<List<LiveSpeechTranscriptEvent>> = emptyList(),
         private val finalizeEvents: List<LiveSpeechTranscriptEvent> = emptyList(),
-        private val acceptError: Throwable? = null,
     ) : LiveSpeechTranscriptionSession {
         val acceptedChunks: MutableList<ByteArray> = mutableListOf()
         var pollCalls: Int = 0
@@ -391,7 +302,6 @@ class DefaultAmbientTranscriptionServiceTest {
         var cancelCalls: Int = 0
 
         override suspend fun acceptPcm(audio: ByteArray) {
-            acceptError?.let { throw it }
             acceptedChunks += audio
         }
 

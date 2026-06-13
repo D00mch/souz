@@ -3,11 +3,9 @@ plugins {
 }
 
 dependencies {
-    implementation(projects.agent)
     implementation(projects.llms)
     implementation(projects.sharedLogic)
     implementation(libs.kotlinx.coroutines)
-    implementation(libs.jackson)
     implementation(libs.slfj)
 
     testImplementation(libs.kotlin.test)

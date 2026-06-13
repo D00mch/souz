@@ -58,6 +58,7 @@ class VoiceInputUseCase(
         scope: CoroutineScope,
         stateProvider: () -> MainState,
         onRecognizedText: suspend (String) -> Unit,
+        voiceInputStartBlocker: suspend () -> String? = { null },
     ) = coroutineScope {
         launch { audioRecorder.logState() }
 
@@ -72,7 +73,11 @@ class VoiceInputUseCase(
                     l.info(if (pressed) "onStart" else "onStop")
                     scope.launch {
                         when {
-                            pressed -> startRecording(scope, stateProvider().isListening)
+                            pressed -> startRecording(
+                                scope = scope,
+                                isListening = stateProvider().isListening,
+                                blockedReason = voiceInputStartBlocker(),
+                            )
                             else -> stopRecording(stateProvider().isListening)
                         }
                     }
@@ -170,8 +175,16 @@ class VoiceInputUseCase(
         }
     }
 
-    suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) {
+    suspend fun startRecording(
+        scope: CoroutineScope,
+        isListening: Boolean,
+        blockedReason: String? = null,
+    ) {
         if (isListening) return
+        if (!blockedReason.isNullOrBlank()) {
+            emitState { copy(isListening = false, statusMessage = blockedReason) }
+            return
+        }
         if (isRecognitionInProgress.get()) {
             val statusMsg = getString(Res.string.voice_status_processing_input)
             emitState { copy(statusMessage = statusMsg) }

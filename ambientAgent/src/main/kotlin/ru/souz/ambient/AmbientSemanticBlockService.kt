@@ -11,12 +11,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import ru.souz.service.speech.ambient.AmbientTranscriptEvent
-import ru.souz.service.speech.ambient.AmbientTranscriptSource
+import org.slf4j.LoggerFactory
 
 interface AmbientSemanticBlockService {
     val blocks: Flow<AmbientSemanticBlock>
-    fun snapshot(): List<AmbientSemanticBlock>
     suspend fun start()
     suspend fun stop()
     fun clear()
@@ -29,15 +27,13 @@ class DefaultAmbientSemanticBlockService(
     private val inactivityFlushMs: Long = DEFAULT_INACTIVITY_FLUSH_MS,
     private val batchFallbackInactivityFlushMs: Long = DEFAULT_BATCH_FALLBACK_INACTIVITY_FLUSH_MS,
 ) : AmbientSemanticBlockService {
+    private val logger = LoggerFactory.getLogger(DefaultAmbientSemanticBlockService::class.java)
     private val mutex = Mutex()
-    private val closedBlocks = ArrayDeque<AmbientSemanticBlock>()
     private val _blocks = MutableSharedFlow<AmbientSemanticBlock>(extraBufferCapacity = 16)
     private var job: Job? = null
     private var inactivityJob: Job? = null
 
     override val blocks: Flow<AmbientSemanticBlock> = _blocks.asSharedFlow()
-
-    override fun snapshot(): List<AmbientSemanticBlock> = closedBlocks.toList()
 
     override suspend fun start() {
         mutex.withLock {
@@ -76,7 +72,7 @@ class DefaultAmbientSemanticBlockService(
     }
 
     override fun clear() {
-        closedBlocks.clear()
+        builder.clear()
     }
 
     private fun scheduleInactivityFlushLocked(source: AmbientTranscriptSource) {
@@ -97,18 +93,17 @@ class DefaultAmbientSemanticBlockService(
         }
     }
 
-    private suspend fun publish(block: AmbientSemanticBlock) {
-        mutex.withLock {
-            closedBlocks.addLast(block)
-            while (closedBlocks.size > MAX_SNAPSHOT_BLOCKS) {
-                closedBlocks.removeFirst()
-            }
-            _blocks.tryEmit(block)
+    private fun publish(block: AmbientSemanticBlock) {
+        if (!_blocks.tryEmit(block)) {
+            logger.warn(
+                "Ambient semantic block dropped: blockId={} chars={}",
+                block.id,
+                block.text.length,
+            )
         }
     }
 
     private companion object {
-        const val MAX_SNAPSHOT_BLOCKS = 100
         const val DEFAULT_INACTIVITY_FLUSH_MS = 1_000L
         const val DEFAULT_BATCH_FALLBACK_INACTIVITY_FLUSH_MS = 3_500L
     }

@@ -3,116 +3,75 @@ package ru.souz.ambient
 import org.slf4j.LoggerFactory
 import kotlin.coroutines.cancellation.CancellationException
 
-sealed interface AmbientLocalAnalysisDiagnosticEvent {
-    data class Prompt(
-        val blockId: String,
-        val systemPrompt: String,
-        val userPrompt: String,
-    ) : AmbientLocalAnalysisDiagnosticEvent
-
-    data class RawOutput(
-        val blockId: String,
-        val raw: String,
-    ) : AmbientLocalAnalysisDiagnosticEvent
-}
-
 class LocalLlmAmbientBlockAnalyzer(
     private val localLlm: AmbientLocalLlm,
-    private val parser: AmbientAnalysisJsonParser = AmbientAnalysisJsonParser(),
-    private val textParser: AmbientAnalysisTextParser = AmbientAnalysisTextParser(),
-    private val manifestRenderer: AmbientCapabilityManifestRenderer = AmbientCapabilityManifestRenderer(),
-    private val clock: () -> Long = System::currentTimeMillis,
-    private val diagnostics: (AmbientLocalAnalysisDiagnosticEvent) -> Unit = {},
 ) : AmbientBlockAnalyzer {
-    override suspend fun analyze(
-        block: AmbientSemanticBlock,
-        recentContext: List<AmbientSemanticBlock>,
-        capabilities: List<AmbientCapability>,
-    ): AmbientAnalysisResult {
+    override suspend fun analyze(block: AmbientSemanticBlock): AmbientTaskCandidate? {
         val raw = try {
-            val systemPrompt = systemPrompt()
-            val userPrompt = userPrompt(block, recentContext.takeLast(1), capabilities)
-            logger.info(
-                "Ambient local analyzer prompt block={} systemPrompt={}",
-                block.id,
-                systemPrompt,
-            )
-            logger.info(
-                "Ambient local analyzer user prompt block={} userPrompt={}",
-                block.id,
-                userPrompt,
-            )
-            diagnostics(AmbientLocalAnalysisDiagnosticEvent.Prompt(block.id, systemPrompt, userPrompt))
-            localLlm.completeJson(
-                systemPrompt = systemPrompt,
-                userPrompt = userPrompt,
+            localLlm.complete(
+                systemPrompt = systemPrompt(),
+                userPrompt = userPrompt(block),
             )
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             logger.warn(
-                "Ambient local analyzer failed block={} error={}",
+                "Ambient local analysis failed: blockId={} error={}",
                 block.id,
                 error.message ?: error::class.simpleName,
-                error,
             )
-            return AmbientAnalysisResult(
-                blockId = block.id,
-                blockSummary = "local analyzer unavailable",
-                extractedStatements = emptyList(),
-                taskCandidates = emptyList(),
-                rawModelOutputPreview = error.message?.take(240),
-            )
+            return null
         }
 
-        logger.info("Ambient local analyzer raw output block={} raw={}", block.id, raw)
-        diagnostics(AmbientLocalAnalysisDiagnosticEvent.RawOutput(block.id, raw))
-        val allowedCapabilityIds = capabilities.mapTo(mutableSetOf()) { it.id }
-        val jsonResult = parser.parse(
-            blockId = block.id,
-            raw = raw,
-            blockAddressedness = block.addressedness,
-            allowedCapabilityIds = allowedCapabilityIds,
-            evidenceEventIds = block.eventIds,
-        )
-        if (jsonResult.taskCandidates.isNotEmpty() || jsonResult.extractedStatements.isNotEmpty()) {
-            return jsonResult
+        val task = parseTask(raw) ?: run {
+            logger.debug("Ambient analysis completed: blockId={} hasCandidate=false", block.id)
+            return null
         }
-        return textParser.parse(
-            blockId = block.id,
-            raw = raw,
-            blockAddressedness = block.addressedness,
-            allowedCapabilityIds = allowedCapabilityIds,
+        val candidate = AmbientTaskCandidate(
+            id = "task:${block.id}:1",
+            taskText = task,
+            addressedness = block.addressedness,
+            confidence = 1.0,
             evidenceEventIds = block.eventIds,
         )
+        logger.debug("Ambient analysis completed: blockId={} hasCandidate=true", block.id)
+        return candidate
     }
 
     private fun systemPrompt(): String =
         """
-        Ты ambient-анализатор Souz. Локальный runtime требует {"type":"final","content":"..."}.
-        speech - 3-секундное окно речи. Выделяй цельные мысли и предложи одну явную/неявную задачу; если задачи нет, верни EMPTY.
-        capabilities показывают, что умеет основной агент; используй их только как контекст.
-        Внутри content не возвращай названия tools, ids, функции, JSON-структуры, confidence, risk или вопрос для UI.
-        В content верни ровно EMPTY или одну строку:
-        TASK: естественная команда для основного агента
-        TASK примеры: какая погода в Москве; проверь календарь на завтра; напомни поставить встречу в 18:00.
+        You are a local ambient analyzer for Souz.
+        Input is a short speech block.
+        Return EMPTY if there is no clear user task.
+        Return TASK: <task> if the user likely wants Souz to help.
+        The task must be a short natural-language instruction for the main agent.
+        Do not output JSON.
+        Do not output markdown.
+        Do not output explanations.
+        Do not include tool ids, capability ids, function names, slots, or risk labels.
+        Ambient analysis only proposes a task; it never executes actions.
         """.trimIndent()
 
-    private fun userPrompt(
-        block: AmbientSemanticBlock,
-        recentContext: List<AmbientSemanticBlock>,
-        capabilities: List<AmbientCapability>,
-    ): String = buildString {
-        appendLine("addressedness: ${block.addressedness}")
-        appendLine("speech:")
-        appendLine(block.text.compact(MAX_BLOCK_TEXT_CHARS))
-        if (recentContext.isNotEmpty()) {
-            appendLine("context:")
-        }
-        recentContext.forEach { context ->
-            appendLine("- ${context.addressedness}: ${context.text.compact(MAX_CONTEXT_TEXT_CHARS)}")
-        }
-        appendLine("capabilities:")
-        appendLine(manifestRenderer.render(capabilities))
+    private fun userPrompt(block: AmbientSemanticBlock): String =
+        """
+        addressedness: ${block.addressedness}
+        speech:
+        ${block.text.compact(MAX_BLOCK_TEXT_CHARS)}
+        """.trimIndent()
+
+    private fun parseTask(raw: String): String? {
+        val normalized = raw.replace("\r\n", "\n").trim()
+        if (normalized.isBlank() || normalized.equals("EMPTY", ignoreCase = true)) return null
+        val lines = normalized.lines()
+        if (lines.any { it.trim().startsWith("```") }) return null
+        val taskLine = lines.singleOrNull { line ->
+            line.trimStart().startsWith("TASK:", ignoreCase = true)
+        } ?: return null
+        return taskLine
+            .substringAfter(':', missingDelimiterValue = "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(MAX_TASK_TEXT_CHARS)
+            .ifBlank { null }
     }
 
     private fun String.compact(limit: Int): String =
@@ -123,6 +82,6 @@ class LocalLlmAmbientBlockAnalyzer(
     private companion object {
         val logger = LoggerFactory.getLogger(LocalLlmAmbientBlockAnalyzer::class.java)
         const val MAX_BLOCK_TEXT_CHARS = 1_600
-        const val MAX_CONTEXT_TEXT_CHARS = 180
+        const val MAX_TASK_TEXT_CHARS = 240
     }
 }

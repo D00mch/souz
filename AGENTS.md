@@ -34,7 +34,7 @@ If you are not sure about something, left a note for other developers to review.
 - **Rich desktop host layer** in `:desktopApp`, wired through `:sharedUI` host ports: browser, calendar, mail, notes, desktop automation, TDLight Telegram, app launch, text/clipboard actions, audio, permissions, native keys, and desktop indexing.
 - **Two-mode internet search**: quick-answer web lookup for simple factual questions and multi-step research mode with LLM-built strategy, broader source coverage, cited long-form synthesis, and automatic `.md` export for oversized reports.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
-- **Ambient agent foundation** with local microphone transcription using live STT when available and batch fallback otherwise, an ephemeral transcript buffer, batch-aware semantic speech blocks, local-only structured block analysis, category-level tool capability manifests, and confirmed in-window suggestions that dispatch through the normal desktop agent voice path.
+- **Ambient agent foundation** with volatile in-memory microphone transcription using live STT when available and batch fallback otherwise, batch-aware semantic speech blocks, local-only `EMPTY`/`TASK:` analysis, bounded confirmed in-window suggestions, and dispatch through the normal desktop agent voice path only after user confirmation.
 
 ## Project Structure
 

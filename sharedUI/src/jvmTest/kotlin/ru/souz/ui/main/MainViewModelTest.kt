@@ -48,9 +48,14 @@ import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
-import ru.souz.ambient.AmbientAnalysisPipeline
-import ru.souz.ambient.AmbientSuggestionPipeline
+import ru.souz.ambient.AmbientBlockAnalyzer
+import ru.souz.ambient.AmbientSemanticBlock
+import ru.souz.ambient.AmbientSemanticBlockService
 import ru.souz.ambient.AmbientSuggestionStore
+import ru.souz.ambient.AmbientSpeechAvailability
+import ru.souz.ambient.AmbientTranscriptEvent
+import ru.souz.ambient.AmbientTranscriptionService
+import ru.souz.ambient.AmbientTranscriptionState
 import ru.souz.ambient.InMemoryAmbientSuggestionStore
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LlmBuildProfile
@@ -70,11 +75,6 @@ import ru.souz.service.speech.MacOsSpeechAuthorizationStatus
 import ru.souz.service.speech.MacOsSpeechBridgeApi
 import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
-import ru.souz.service.speech.ambient.AmbientSpeechAvailability
-import ru.souz.service.speech.ambient.AmbientTranscriptEvent
-import ru.souz.service.speech.ambient.AmbientTranscriptSnapshot
-import ru.souz.service.speech.ambient.AmbientTranscriptionService
-import ru.souz.service.speech.ambient.AmbientTranscriptionState
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
@@ -1295,10 +1295,11 @@ class MainViewModelTest {
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { DesktopStructuredLogger() }
             bindSingleton<DesktopPermissionService> { desktopPermissionService }
+            bindSingleton<kotlinx.coroutines.CoroutineScope> { TestScope(mainDispatcher) }
             bindSingleton<AmbientTranscriptionService> { TestAmbientTranscriptionService() }
-            bindSingleton<AmbientAnalysisPipeline> { TestAmbientAnalysisPipeline() }
             bindSingleton<AmbientSuggestionStore> { InMemoryAmbientSuggestionStore() }
-            bindSingleton<AmbientSuggestionPipeline> { TestAmbientSuggestionPipeline() }
+            bindSingleton<AmbientSemanticBlockService> { TestAmbientSemanticBlockService() }
+            bindSingleton<AmbientBlockAnalyzer> { TestAmbientBlockAnalyzer() }
             bindSingleton {
                 MainUseCasesFactory(
                     instance(),
@@ -1381,21 +1382,17 @@ class MainViewModelTest {
         }
 
         override suspend fun clearTranscript() = Unit
-
-        override fun snapshot(): AmbientTranscriptSnapshot = AmbientTranscriptSnapshot(
-            finalEvents = emptyList(),
-            currentVolatile = null,
-        )
     }
 
-    private class TestAmbientAnalysisPipeline : AmbientAnalysisPipeline {
+    private class TestAmbientSemanticBlockService : AmbientSemanticBlockService {
+        override val blocks = emptyFlow<AmbientSemanticBlock>()
         override suspend fun start() = Unit
         override suspend fun stop() = Unit
+        override fun clear() = Unit
     }
 
-    private class TestAmbientSuggestionPipeline : AmbientSuggestionPipeline {
-        override suspend fun start() = Unit
-        override suspend fun stop() = Unit
+    private class TestAmbientBlockAnalyzer : AmbientBlockAnalyzer {
+        override suspend fun analyze(block: AmbientSemanticBlock) = null
     }
 
     private class TestAudioRecorder : UiAudioRecorder {

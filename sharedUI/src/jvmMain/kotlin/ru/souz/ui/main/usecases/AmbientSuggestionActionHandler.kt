@@ -9,24 +9,21 @@ class AmbientSuggestionActionHandler(
     private val executor: suspend (AmbientTaskCandidate) -> Unit,
 ) {
     suspend fun accept(id: String): Boolean {
-        val suggestion = store.accept(id) ?: return false
-        store.markExecuting(id)
+        val suggestion = store.consume(id) ?: return false
         return try {
             executor(suggestion.candidate)
-            store.markCompleted(id)
             true
         } catch (error: Throwable) {
-            store.markFailed(id, error.message ?: error::class.simpleName)
             if (error is CancellationException) throw error
             false
         }
     }
 
     fun reject(id: String) {
-        store.reject(id)
+        store.dismiss(id)
     }
 
     fun dismiss(id: String) {
-        store.reject(id)
+        store.dismiss(id)
     }
 }

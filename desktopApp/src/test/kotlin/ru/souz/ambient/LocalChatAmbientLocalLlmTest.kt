@@ -13,11 +13,11 @@ import kotlin.test.assertEquals
 class LocalChatAmbientLocalLlmTest {
 
     @Test
-    fun `ambient local json request uses small completion budget`() = runTest {
+    fun `ambient local request uses small completion budget`() = runTest {
         val api = CapturingChatApi()
         val llm = LocalChatAmbientLocalLlm(api)
 
-        llm.completeJson(systemPrompt = "system", userPrompt = "user")
+        llm.complete(systemPrompt = "system", userPrompt = "user")
 
         assertEquals(96, api.lastRequest?.maxTokens)
         assertEquals("none", api.lastRequest?.functionCall)
@@ -25,11 +25,11 @@ class LocalChatAmbientLocalLlmTest {
     }
 
     @Test
-    fun `ambient local json request uses provided local model`() = runTest {
+    fun `ambient local request uses provided local model`() = runTest {
         val api = CapturingChatApi()
         val llm = LocalChatAmbientLocalLlm(api) { ru.souz.llms.LLMModel.LocalQwen3_4B_Instruct_2507 }
 
-        llm.completeJson(systemPrompt = "system", userPrompt = "user")
+        llm.complete(systemPrompt = "system", userPrompt = "user")
 
         assertEquals("local-qwen3-4b-instruct-2507", api.lastRequest?.model)
     }

@@ -1,7 +1,5 @@
 package ru.souz.ambient
 
-import ru.souz.service.speech.ambient.AmbientTranscriptEvent
-import ru.souz.service.speech.ambient.AmbientTranscriptSource
 import java.util.Locale
 
 data class SemanticBlockBuilderConfig(
@@ -50,6 +48,11 @@ class SemanticBlockBuilder(
     fun flush(
         closeReason: AmbientBlockCloseReason = AmbientBlockCloseReason.MANUAL_FLUSH,
     ): AmbientSemanticBlock? = closeCurrent(closeReason)
+
+    fun clear() {
+        current = mutableListOf()
+        currentLiveFullText = null
+    }
 
     private fun closeReasonBeforeAdding(next: AmbientTranscriptEvent): AmbientBlockCloseReason? {
         if (current.isEmpty()) return null

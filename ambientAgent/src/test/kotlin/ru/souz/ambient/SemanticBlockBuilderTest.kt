@@ -1,7 +1,5 @@
 package ru.souz.ambient
 
-import ru.souz.service.speech.ambient.AmbientTranscriptEvent
-import ru.souz.service.speech.ambient.AmbientTranscriptSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

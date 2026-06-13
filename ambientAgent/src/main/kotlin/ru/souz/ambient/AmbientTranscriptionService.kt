@@ -1,4 +1,4 @@
-package ru.souz.service.speech.ambient
+package ru.souz.ambient
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -18,15 +18,30 @@ import org.slf4j.LoggerFactory
 import ru.souz.service.speech.LiveSpeechTranscriptEvent
 import ru.souz.service.speech.LiveSpeechTranscriptionProvider
 import ru.souz.service.speech.LiveSpeechTranscriptionSession
-import ru.souz.service.speech.LocalMacOsSpeechPermissionDeniedException
-import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
 import ru.souz.service.speech.LocalMacOsLiveSpeechModelUnavailableException
 import ru.souz.service.speech.LocalMacOsLiveSpeechPermissionDeniedException
 import ru.souz.service.speech.LocalMacOsLiveSpeechUnavailableException
 import ru.souz.service.speech.LocalMacOsLiveSpeechUnsupportedException
+import ru.souz.service.speech.LocalMacOsSpeechPermissionDeniedException
+import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
 import ru.souz.service.speech.SpeechRecognitionProvider
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.cancellation.CancellationException
+
+data class AmbientTranscriptEvent(
+    val id: String,
+    val text: String,
+    val isFinal: Boolean,
+    val startedAtMs: Long?,
+    val endedAtMs: Long?,
+    val receivedAtMs: Long,
+    val source: AmbientTranscriptSource = AmbientTranscriptSource.LIVE,
+)
+
+enum class AmbientTranscriptSource {
+    LIVE,
+    BATCH_FALLBACK,
+}
 
 sealed interface AmbientSpeechAvailability {
     data object Available : AmbientSpeechAvailability
@@ -61,7 +76,6 @@ interface AmbientTranscriptionService {
     suspend fun start(locale: String): AmbientSpeechAvailability
     suspend fun stop()
     suspend fun clearTranscript()
-    fun snapshot(): AmbientTranscriptSnapshot
 }
 
 class DefaultAmbientTranscriptionService(
@@ -69,15 +83,12 @@ class DefaultAmbientTranscriptionService(
     private val batchSpeechRecognitionProvider: SpeechRecognitionProvider? = null,
     private val audioSource: PcmAudioFrameSource,
     private val scope: CoroutineScope,
-    private val buffer: AmbientTranscriptBuffer = AmbientTranscriptBuffer(),
     private val batchWindowMillis: Long = 3_000,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val transcriptDiagnostics: (AmbientTranscriptEvent) -> Unit = {},
 ) : AmbientTranscriptionService {
     private val logger = LoggerFactory.getLogger(DefaultAmbientTranscriptionService::class.java)
     private val mutex = Mutex()
     private val _state = MutableStateFlow<AmbientTranscriptionState>(AmbientTranscriptionState.Stopped)
-    private val _snapshot = MutableStateFlow(buffer.snapshot())
     private val _transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>(extraBufferCapacity = 64)
 
     private var listeningJob: Job? = null
@@ -117,7 +128,7 @@ class DefaultAmbientTranscriptionService(
                 throw error
             }
             logger.warn(
-                "Ambient live transcription start failed for locale {}: {}",
+                "Ambient live transcription start failed: locale={} error={}",
                 locale,
                 error.message ?: error::class.simpleName,
             )
@@ -178,7 +189,7 @@ class DefaultAmbientTranscriptionService(
             return AmbientSpeechAvailability.MicrophoneUnavailable
         }
 
-        logger.info("Starting ambient batch speech recognition fallback for locale {}", locale)
+        logger.info("Starting ambient batch speech recognition fallback: locale={}", locale)
         val job = scope.launch(start = CoroutineStart.LAZY) {
             runBatchFallbackLoop(batchProvider, locale)
         }
@@ -219,14 +230,7 @@ class DefaultAmbientTranscriptionService(
         }
     }
 
-    override suspend fun clearTranscript() {
-        mutex.withLock {
-            buffer.clear()
-            _snapshot.value = buffer.snapshot()
-        }
-    }
-
-    override fun snapshot(): AmbientTranscriptSnapshot = _snapshot.value
+    override suspend fun clearTranscript() = Unit
 
     private suspend fun runListeningLoop(session: LiveSpeechTranscriptionSession) {
         val currentJob = currentCoroutineContext()[Job]
@@ -334,20 +338,19 @@ class DefaultAmbientTranscriptionService(
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (error.isNoSpeechDetected()) {
-                logger.debug("Ambient batch speech fallback skipped no-speech window for locale {}", locale)
+                logger.debug("Ambient batch speech fallback skipped no-speech window: locale={}", locale)
                 return endedAtMs
             }
             throw error
         }
         if (recognized.isBlank()) return endedAtMs
 
-        logger.debug("Ambient batch speech fallback recognized {} chars for locale {}", recognized.length, locale)
-        logger.info(
-            "Ambient batch speech fallback recognized text locale={} startedAtMs={} endedAtMs={} text={}",
+        logger.debug(
+            "Ambient batch speech fallback recognized: locale={} startedAtMs={} endedAtMs={} chars={}",
             locale,
             startedAtMs,
             endedAtMs,
-            recognized,
+            recognized.length,
         )
         publish(
             events = listOf(
@@ -370,26 +373,25 @@ class DefaultAmbientTranscriptionService(
     private suspend fun publish(events: List<LiveSpeechTranscriptEvent>, source: AmbientTranscriptSource) {
         if (events.isEmpty()) return
         val ambientEvents = mutex.withLock {
-            events.map { event ->
-                event.toAmbientEvent(source).also { ambientEvent ->
-                    buffer.append(ambientEvent)
-                    _snapshot.value = buffer.snapshot()
-                }
-            }
+            events.map { event -> event.toAmbientEvent(source) }
         }
         for (event in ambientEvents) {
-            logger.info(
-                "Ambient transcript event id={} source={} final={} startedAtMs={} endedAtMs={} receivedAtMs={} text={}",
+            logger.debug(
+                "Ambient transcript event emitted: id={} source={} final={} chars={}",
                 event.id,
                 event.source,
                 event.isFinal,
-                event.startedAtMs,
-                event.endedAtMs,
-                event.receivedAtMs,
-                event.text,
+                event.text.length,
             )
-            transcriptDiagnostics(event)
-            _transcriptEvents.tryEmit(event)
+            if (!_transcriptEvents.tryEmit(event)) {
+                logger.warn(
+                    "Ambient transcript event dropped: id={} source={} final={} chars={}",
+                    event.id,
+                    event.source,
+                    event.isFinal,
+                    event.text.length,
+                )
+            }
         }
     }
 
@@ -443,12 +445,6 @@ class DefaultAmbientTranscriptionService(
             if (_state.value == AmbientTranscriptionState.Starting) {
                 _state.value = AmbientTranscriptionState.Stopped
             }
-        }
-    }
-
-    private suspend fun markError(error: Throwable) {
-        mutex.withLock {
-            _state.value = AmbientTranscriptionState.Error(error.message ?: "Ambient transcription failed.")
         }
     }
 

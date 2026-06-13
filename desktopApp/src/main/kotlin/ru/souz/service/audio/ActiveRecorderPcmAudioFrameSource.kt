@@ -2,7 +2,7 @@ package ru.souz.service.audio
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import ru.souz.service.speech.ambient.PcmAudioFrameSource
+import ru.souz.ambient.PcmAudioFrameSource
 import kotlin.coroutines.cancellation.CancellationException
 
 class ActiveRecorderPcmAudioFrameSource(

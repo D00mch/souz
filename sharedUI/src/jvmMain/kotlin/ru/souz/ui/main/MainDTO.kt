@@ -102,15 +102,17 @@ data class AmbientModeUiState(
 
 data class AmbientSuggestionUiModel(
     val id: String,
-    val title: String,
     val suggestionText: String,
     val taskText: String,
     val createdAtMs: Long,
     val expiresAtMs: Long,
-    val risk: String,
-    val capabilityLabels: List<String>,
-    val status: String,
-)
+) {
+    fun remainingFraction(nowMs: Long): Float {
+        val totalMs = expiresAtMs - createdAtMs
+        if (totalMs <= 0L) return 0f
+        return ((expiresAtMs - nowMs).toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
+    }
+}
 
 /**
  * State for the main screen that mirrors the floating glass panel experience.
@@ -145,6 +147,8 @@ data class MainState(
     val chatSearch: ChatSearchState = ChatSearchState(),
     val ambientMode: AmbientModeUiState = AmbientModeUiState(),
     val ambientSuggestions: List<AmbientSuggestionUiModel> = emptyList(),
+    val isSandboxed: Boolean = false,
+    val voiceInputDisabledReason: String? = null,
 ) : VMState {
 
     companion object {

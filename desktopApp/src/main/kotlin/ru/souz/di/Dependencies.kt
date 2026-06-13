@@ -9,25 +9,17 @@ import kotlinx.coroutines.SupervisorJob
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.souz.ambient.AgentToolAmbientCapabilityProvider
-import ru.souz.ambient.AmbientAnalysisPipeline
-import ru.souz.ambient.AmbientAnalysisService
 import ru.souz.ambient.AmbientBlockAnalyzer
-import ru.souz.ambient.AmbientCapabilityProvider
 import ru.souz.ambient.AmbientLocalLlm
 import ru.souz.ambient.AmbientSemanticBlockService
-import ru.souz.ambient.AmbientSuggestionController
-import ru.souz.ambient.AmbientSuggestionPipeline
 import ru.souz.ambient.AmbientSuggestionStore
-import ru.souz.ambient.CompositeAmbientCapabilityProvider
-import ru.souz.ambient.DefaultAmbientAnalysisService
-import ru.souz.ambient.DefaultAmbientAnalysisPipeline
+import ru.souz.ambient.AmbientTranscriptionService
+import ru.souz.ambient.DefaultAmbientTranscriptionService
 import ru.souz.ambient.DefaultAmbientSemanticBlockService
-import ru.souz.ambient.DefaultAmbientSuggestionPipeline
-import ru.souz.ambient.EmptyAmbientSkillCapabilityProvider
 import ru.souz.ambient.InMemoryAmbientSuggestionStore
 import ru.souz.ambient.LocalChatAmbientLocalLlm
 import ru.souz.ambient.LocalLlmAmbientBlockAnalyzer
+import ru.souz.ambient.PcmAudioFrameSource
 import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.ambient.selectAmbientLocalModel
 import ru.souz.paths.SouzPaths
@@ -99,9 +91,6 @@ import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
 import ru.souz.service.speech.OpenAISpeechRecognitionProvider
 import ru.souz.service.speech.SaluteSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
-import ru.souz.service.speech.ambient.AmbientTranscriptionService
-import ru.souz.service.speech.ambient.DefaultAmbientTranscriptionService
-import ru.souz.service.speech.ambient.PcmAudioFrameSource
 import ru.souz.service.telegram.TelegramChatSelectionBroker
 import ru.souz.service.telegram.TelegramContactSelectionBroker
 import ru.souz.tool.presentation.ToolPresentationCreate
@@ -315,17 +304,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             scope = instance(),
         )
     }
-    bindSingleton<AmbientCapabilityProvider> {
-        CompositeAmbientCapabilityProvider(
-            listOf(
-                AgentToolAmbientCapabilityProvider(
-                    toolCatalog = instance(),
-                    toolsFilter = instance(),
-                ),
-                EmptyAmbientSkillCapabilityProvider,
-            )
-        )
-    }
     bindSingleton<AmbientLocalLlm> {
         val buildProfile = instance<LlmBuildProfile>()
         val settingsProvider = instance<SettingsProvider>()
@@ -338,29 +316,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         }
     }
     bindSingleton<AmbientBlockAnalyzer> { LocalLlmAmbientBlockAnalyzer(instance()) }
-    bindSingleton<AmbientAnalysisService> {
-        DefaultAmbientAnalysisService(
-            analyzer = instance(),
-            capabilityProvider = instance(),
-            scope = instance(),
-        )
-    }
-    bindSingleton<AmbientAnalysisPipeline> {
-        DefaultAmbientAnalysisPipeline(
-            blockService = instance(),
-            analysisService = instance(),
-            scope = instance(),
-        )
-    }
     bindSingleton<AmbientSuggestionStore> { InMemoryAmbientSuggestionStore() }
-    bindSingleton { AmbientSuggestionController(instance()) }
-    bindSingleton<AmbientSuggestionPipeline> {
-        DefaultAmbientSuggestionPipeline(
-            candidateFlow = instance<AmbientAnalysisService>().taskCandidates,
-            controller = instance(),
-            scope = instance(),
-        )
-    }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }

@@ -10,7 +10,7 @@ class LocalChatAmbientLocalLlm(
     private val localChatAPI: LLMChatAPI,
     private val modelProvider: () -> LLMModel = { LLMModel.LocalGemma4_E4B_It },
 ) : AmbientLocalLlm {
-    override suspend fun completeJson(systemPrompt: String, userPrompt: String): String {
+    override suspend fun complete(systemPrompt: String, userPrompt: String): String {
         val model = modelProvider()
         val response = localChatAPI.message(
             LLMRequest.Chat(
@@ -23,7 +23,7 @@ class LocalChatAmbientLocalLlm(
                 functions = emptyList(),
                 temperature = 0.1f,
                 stream = false,
-                maxTokens = AMBIENT_JSON_MAX_TOKENS,
+                maxTokens = AMBIENT_MAX_TOKENS,
             )
         )
         return when (response) {
@@ -33,6 +33,6 @@ class LocalChatAmbientLocalLlm(
     }
 
     private companion object {
-        const val AMBIENT_JSON_MAX_TOKENS = 96
+        const val AMBIENT_MAX_TOKENS = 96
     }
 }

@@ -3,187 +3,77 @@ package ru.souz.ambient
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LocalLlmAmbientBlockAnalyzerTest {
 
     @Test
-    fun `calendar lookup candidate comes from local model json`() = runTest {
-        val llm = CapturingAmbientLocalLlm(
-            response = """
-                {
-                  "type":"ambient_analysis",
-                  "block_summary":"calendar lookup",
-                  "task_candidates":[
-                    {
-                      "title":"Проверить календарь",
-                      "task_text":"Проверь календарь на завтра",
-                      "suggestion_text":"Проверить календарь на завтра?",
-                      "confidence":0.88,
-                      "addressedness":"IMPLICIT_USER_INTENT",
-                      "matched_capability_ids":["tool:CALENDAR:CalendarListEvents"],
-                      "missing_slots":[],
-                      "risk":"LOW",
-                      "requires_confirmation":true,
-                      "evidence_event_ids":["e1"],
-                      "reason":"user wondered about tomorrow calendar"
-                    }
-                  ]
-                }
-            """.trimIndent(),
-        )
-        val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = llm, clock = { 1_000L })
+    fun `empty output returns no candidate`() = runTest {
+        val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = FakeAmbientLocalLlm("EMPTY"))
 
-        val result = analyzer.analyze(
-            block = block(
-                text = "интересно, надо проверить календарь на завтра",
-                addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
-            ),
-            recentContext = emptyList(),
-            capabilities = listOf(calendarListEventsCapability()),
-        )
+        val candidate = analyzer.analyze(block())
 
-        val candidate = result.taskCandidates.single()
-        assertEquals("Проверь календарь на завтра", candidate.taskText)
-        assertEquals(listOf("tool:CALENDAR:CalendarListEvents"), candidate.matchedCapabilityIds)
-        assertEquals(listOf("e1"), candidate.evidenceEventIds)
+        assertNull(candidate)
     }
 
     @Test
-    fun `task candidate can come from compact text protocol`() = runTest {
-        val llm = CapturingAmbientLocalLlm(
-            response = """
-                TASK: Узнать текущую погоду в Москве
-            """.trimIndent(),
-        )
-        val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = llm, clock = { 1_000L })
-
-        val result = analyzer.analyze(
-            block = block(
-                text = "интересно какая погода в Москве",
-                addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
-            ),
-            recentContext = emptyList(),
-            capabilities = listOf(webSearchCapability()),
-        )
-
-        val candidate = result.taskCandidates.single()
-        assertEquals("Узнать текущую погоду в Москве", candidate.taskText)
-        assertEquals(emptyList(), candidate.matchedCapabilityIds)
-        assertEquals(1.0, candidate.confidence)
-    }
-
-    @Test
-    fun `local analyzer prompt stays compact for small ambient models`() = runTest {
-        val llm = CapturingAmbientLocalLlm(
-            response = """{"type":"ambient_analysis","task_candidates":[]}""",
-        )
-        val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = llm, clock = { 1_000L })
-        val capabilities = List(40) { index ->
-            AmbientCapability(
-                id = "tool:FILES:VeryLongToolName$index",
-                kind = AmbientCapabilityKind.TOOL,
-                category = "FILES",
-                name = "VeryLongToolName$index",
-                description = "description ".repeat(80),
-                examples = listOf("example ".repeat(80)),
-            )
-        }
-
-        analyzer.analyze(
-            block = block(
-                text = "надо не забыть проверить календарь на завтра и посмотреть, что там с рабочими встречами",
-                addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
-            ),
-            recentContext = listOf(
-                block(id = "old", text = "старый контекст, который не должен попадать в prompt"),
-                block(id = "recent", text = "последняя фраза для короткого контекста"),
-            ),
-            capabilities = capabilities,
-        )
-
-        val promptChars = llm.lastSystemPrompt.orEmpty().length + llm.lastUserPrompt.orEmpty().length
-        val userPrompt = llm.lastUserPrompt.orEmpty()
-        assertTrue(promptChars <= 1_900, "Prompt length was $promptChars")
-        assertFalse(userPrompt.contains("description description description"))
-        assertFalse(userPrompt.contains("example example example"))
-        assertFalse(userPrompt.contains("старый контекст"))
-        assertTrue(userPrompt.contains("последняя фраза"))
-    }
-
-    @Test
-    fun `local analyzer prompt asks model to extract complete sentences from speech window`() = runTest {
-        val llm = CapturingAmbientLocalLlm(
-            response = """{"type":"ambient_analysis","task_candidates":[]}""",
-        )
-        val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = llm, clock = { 1_000L })
-
-        analyzer.analyze(
-            block = block(
-                text = "мы тут говорили про календарь и потом я сказал что надо проверить встречи завтра",
-                addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
-            ),
-            recentContext = emptyList(),
-            capabilities = listOf(calendarListEventsCapability()),
-        )
-
-        val systemPrompt = llm.lastSystemPrompt.orEmpty()
-        val userPrompt = llm.lastUserPrompt.orEmpty()
-        assertTrue(systemPrompt.contains("3"))
-        assertTrue(systemPrompt.contains("цельн"))
-        assertTrue(systemPrompt.contains("предлож"))
-        assertTrue(userPrompt.contains("capability|CALENDAR|heard="))
-        assertTrue(systemPrompt.contains("\"type\":\"final\""))
-        assertTrue(systemPrompt.contains("\"content\""))
-        assertTrue(systemPrompt.contains("естественная команда"))
-        assertTrue(systemPrompt.contains("TASK:"))
-        assertTrue(systemPrompt.contains("EMPTY"))
-        assertFalse(systemPrompt.contains("IDS:"))
-        assertFalse(systemPrompt.contains("SUGGEST"))
-        assertFalse(systemPrompt.contains("CONFIDENCE"))
-        assertFalse(systemPrompt.contains("RISK"))
-    }
-
-    @Test
-    fun `diagnostics receive full prompt and raw model output`() = runTest {
-        val rawOutput = """{"type":"ambient_analysis","task_candidates":[]}"""
-        val llm = CapturingAmbientLocalLlm(response = rawOutput)
-        val diagnosticEvents = mutableListOf<AmbientLocalAnalysisDiagnosticEvent>()
+    fun `task output returns one candidate`() = runTest {
         val analyzer = LocalLlmAmbientBlockAnalyzer(
-            localLlm = llm,
-            diagnostics = { event -> diagnosticEvents += event },
+            localLlm = FakeAmbientLocalLlm("TASK: Узнать текущую погоду в Москве"),
         )
 
-        analyzer.analyze(
-            block = block(
-                text = "надо проверить календарь завтра утром",
-                addressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
-            ),
-            recentContext = emptyList(),
-            capabilities = listOf(calendarListEventsCapability()),
+        val candidate = analyzer.analyze(block())
+
+        assertEquals("Узнать текущую погоду в Москве", candidate?.taskText)
+        assertEquals("task:b1:1", candidate?.id)
+        assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, candidate?.addressedness)
+        assertEquals(1.0, candidate?.confidence)
+        assertEquals(listOf("e1"), candidate?.evidenceEventIds)
+    }
+
+    @Test
+    fun `json output is ignored when it has no task protocol line`() = runTest {
+        val analyzer = LocalLlmAmbientBlockAnalyzer(
+            localLlm = FakeAmbientLocalLlm("""{"task_candidates":[{"task_text":"Проверь календарь"}]}"""),
         )
 
-        assertTrue(
-            diagnosticEvents
-                .filterIsInstance<AmbientLocalAnalysisDiagnosticEvent.Prompt>()
-                .single()
-                .userPrompt
-                .contains("надо проверить календарь завтра утром")
+        val candidate = analyzer.analyze(block())
+
+        assertNull(candidate)
+    }
+
+    @Test
+    fun `markdown and explanation output is ignored when it has no task protocol line`() = runTest {
+        val analyzer = LocalLlmAmbientBlockAnalyzer(
+            localLlm = FakeAmbientLocalLlm("Я думаю, задачи нет.\n```TASK: скрытая команда```"),
         )
-        assertEquals(
-            rawOutput,
-            diagnosticEvents
-                .filterIsInstance<AmbientLocalAnalysisDiagnosticEvent.RawOutput>()
-                .single()
-                .raw,
-        )
+
+        val candidate = analyzer.analyze(block())
+
+        assertNull(candidate)
+    }
+
+    @Test
+    fun `prompt is compact and contains no capability manifest`() = runTest {
+        val llm = FakeAmbientLocalLlm("EMPTY")
+        val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = llm)
+
+        analyzer.analyze(block(text = "надо проверить календарь завтра утром"))
+
+        val prompt = llm.lastSystemPrompt.orEmpty() + "\n" + llm.lastUserPrompt.orEmpty()
+        assertTrue(prompt.length < 1_200)
+        assertTrue(prompt.contains("TASK:"))
+        assertTrue(prompt.contains("EMPTY"))
+        assertTrue(prompt.contains("Do not output JSON"))
+        assertTrue(!prompt.contains("capability|"))
+        assertTrue(!prompt.contains("tool:"))
     }
 
     private fun block(
         id: String = "b1",
-        text: String,
-        addressedness: AmbientAddressedness = AmbientAddressedness.UNKNOWN,
+        text: String = "интересно какая погода в Москве",
+        addressedness: AmbientAddressedness = AmbientAddressedness.IMPLICIT_USER_INTENT,
     ): AmbientSemanticBlock = AmbientSemanticBlock(
         id = id,
         text = text,
@@ -196,31 +86,13 @@ class LocalLlmAmbientBlockAnalyzerTest {
         addressedness = addressedness,
     )
 
-    private fun calendarListEventsCapability(): AmbientCapability = AmbientCapability(
-        id = "tool:CALENDAR:CalendarListEvents",
-        kind = AmbientCapabilityKind.TOOL,
-        category = "CALENDAR",
-        name = "CalendarListEvents",
-        description = "List events from a calendar for a date.",
-        risk = AmbientCapabilityRisk.LOW,
-    )
-
-    private fun webSearchCapability(): AmbientCapability = AmbientCapability(
-        id = "tool:WEB_SEARCH:InternetSearch",
-        kind = AmbientCapabilityKind.TOOL,
-        category = "WEB_SEARCH",
-        name = "InternetSearch",
-        description = "Short factual internet lookup.",
-        risk = AmbientCapabilityRisk.LOW,
-    )
-
-    private class CapturingAmbientLocalLlm(
+    private class FakeAmbientLocalLlm(
         private val response: String,
     ) : AmbientLocalLlm {
         var lastSystemPrompt: String? = null
         var lastUserPrompt: String? = null
 
-        override suspend fun completeJson(systemPrompt: String, userPrompt: String): String {
+        override suspend fun complete(systemPrompt: String, userPrompt: String): String {
             lastSystemPrompt = systemPrompt
             lastUserPrompt = userPrompt
             return response

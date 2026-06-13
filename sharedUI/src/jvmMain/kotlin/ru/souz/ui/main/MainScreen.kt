@@ -66,14 +66,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import org.kodein.di.compose.localDI
 import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
@@ -127,84 +125,6 @@ enum class LiquidGlassPreset {
     Hero
 }
 
-
-@Composable
-fun MainScreen(
-    onOpenSettings: () -> Unit,
-    onOpenMemory: () -> Unit,
-    onCloseWindow: () -> Unit,
-    onMinimizeWindow: () -> Unit,
-    onToggleMaximizeWindow: () -> Unit,
-    onShowSnack: (String) -> Unit = {},
-    isOnline: Boolean = true,
-) {
-    val di = localDI()
-    val viewModel = viewModel { MainViewModel(di) }
-    val state by viewModel.uiState.collectAsState()
-
-    LaunchedEffect(viewModel) {
-        viewModel.effects.collect { effect ->
-            when (effect) {
-                MainEffect.Hide -> onCloseWindow()
-                is MainEffect.ShowError -> onShowSnack(effect.message)
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.send(MainEvent.RefreshSettings)
-    }
-
-    MainScreenContent(
-        state = state,
-        isOnline = isOnline,
-        onStartListening = { viewModel.send(MainEvent.StartListening) },
-        onStopListening = { viewModel.send(MainEvent.StopListening) },
-        onClose = onCloseWindow,
-        onMinimize = onMinimizeWindow,
-        onToggleMaximize = onToggleMaximizeWindow,
-        onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
-        onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
-        onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
-        onOpenSettings = onOpenSettings,
-        onOpenMemory = onOpenMemory,
-        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
-        onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
-        onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
-        onShowSnack = onShowSnack,
-        onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
-        onConfirmLocalModelDownload = { viewModel.send(MainEvent.ConfirmLocalModelDownload) },
-        onCancelLocalModelDownload = { viewModel.send(MainEvent.CancelLocalModelDownload) },
-        onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
-        onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
-        onAttachDroppedTransferable = { viewModel.onAttachDroppedTransferable(it) },
-        onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
-        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
-        onClearContext = { viewModel.send(MainEvent.UserPressStop) },
-        onConsumePendingVoiceInputDraft = { token ->
-            viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
-        },
-        onToggleToolModifyReviewSelection = { messageId, itemId ->
-            viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
-        },
-        onResolveToolModifyReview = { messageId, action ->
-            viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
-        },
-        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
-        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
-        onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
-        onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
-        onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
-        onUpdateChatSearchQuery = { viewModel.send(MainEvent.UpdateChatSearchQuery(it)) },
-        onSelectNextChatSearchResult = { viewModel.send(MainEvent.SelectNextChatSearchResult) },
-        onSelectPreviousChatSearchResult = { viewModel.send(MainEvent.SelectPreviousChatSearchResult) },
-        onToggleAmbientMode = { viewModel.send(MainEvent.ToggleAmbientMode) },
-        onAcceptAmbientSuggestion = { viewModel.send(MainEvent.AcceptAmbientSuggestion(it)) },
-        onRejectAmbientSuggestion = { viewModel.send(MainEvent.RejectAmbientSuggestion(it)) },
-        onDismissAmbientSuggestion = { viewModel.send(MainEvent.DismissAmbientSuggestion(it)) },
-        searchProjectionProvider = { viewModel.chatSearchProjectionFor(it) },
-    )
-}
 
 @Composable
 fun MainScreenContent(
@@ -467,6 +387,8 @@ fun MainScreenContent(
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
+                    isSandboxed = state.isSandboxed,
+                    voiceInputDisabledReason = state.voiceInputDisabledReason,
                     ambientSuggestions = state.ambientSuggestions,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
@@ -941,11 +863,7 @@ private fun AmbientSuggestionCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AmbientSuggestionMeta(
-                risk = suggestion.risk,
-                capabilities = suggestion.capabilityLabels,
-                modifier = Modifier.weight(1f),
-            )
+            Spacer(modifier = Modifier.weight(1f))
             AmbientIconTextButton(
                 text = "Не сейчас",
                 icon = Icons.Rounded.Close,
@@ -979,11 +897,7 @@ private fun AmbientSuggestionCountdown(
             value = System.currentTimeMillis()
         }
     }
-    val remainingFraction = ambientSuggestionRemainingFraction(
-        nowMs = nowMs,
-        createdAtMs = suggestion.createdAtMs,
-        expiresAtMs = suggestion.expiresAtMs,
-    )
+    val remainingFraction = suggestion.remainingFraction(nowMs)
     Canvas(modifier = modifier.size(18.dp)) {
         val strokeWidth = 2.dp.toPx()
         drawCircle(
@@ -998,45 +912,6 @@ private fun AmbientSuggestionCountdown(
             style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
         )
     }
-}
-
-internal fun ambientSuggestionRemainingFraction(
-    nowMs: Long,
-    createdAtMs: Long,
-    expiresAtMs: Long,
-): Float {
-    val totalMs = expiresAtMs - createdAtMs
-    if (totalMs <= 0L) return 0f
-    return ((expiresAtMs - nowMs).toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
-}
-
-@Composable
-private fun AmbientSuggestionMeta(
-    risk: String,
-    capabilities: List<String>,
-    modifier: Modifier = Modifier,
-) {
-    val riskLabel = when (risk) {
-        "HIGH" -> "высокий риск"
-        "MEDIUM" -> "средний риск"
-        else -> null
-    }
-    val capabilityText = capabilities
-        .takeIf { it.isNotEmpty() }
-        ?.joinToString(", ")
-    val metaText = listOfNotNull(riskLabel, capabilityText).joinToString(" • ")
-    if (metaText.isBlank()) {
-        Spacer(modifier = modifier)
-        return
-    }
-    Text(
-        text = metaText,
-        color = if (risk == "HIGH") Color(0xFFFFB4A8) else Color(0x80FFFFFF),
-        fontSize = 11.sp,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier,
-    )
 }
 
 @Composable
@@ -1097,6 +972,8 @@ fun ChatModeContent(
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
+    isSandboxed: Boolean,
+    voiceInputDisabledReason: String?,
     ambientSuggestions: List<AmbientSuggestionUiModel>,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
@@ -1284,10 +1161,12 @@ fun ChatModeContent(
             isProcessing = isProcessing,
             isListening = isListening,
             speakingMessageId = speakingMessageId,
+            voiceInputDisabledReason = voiceInputDisabledReason,
             onStartListening = onStartListening,
             onStopListening = onStopListening,
             onStopSpeaking = onStopSpeech,
             enabled = !isProcessing && !isAwaitingToolReview,
+            isSandboxed = isSandboxed,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
             availableModelAliases = availableModelAliases,
