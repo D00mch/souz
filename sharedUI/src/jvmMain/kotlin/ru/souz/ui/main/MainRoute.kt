@@ -18,7 +18,7 @@ fun MainScreen(
     isOnline: Boolean = true,
 ) {
     val di = localDI()
-    val viewModel = viewModel { MainViewModel(di) }
+    val viewModel = viewModel { createMainViewModel(di) }
     val state by viewModel.uiState.collectAsState()
 
     LaunchedEffect(viewModel) {
@@ -56,7 +56,7 @@ fun MainScreen(
         onCancelLocalModelDownload = { viewModel.send(MainEvent.CancelLocalModelDownload) },
         onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
         onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
-        onAttachDroppedTransferable = { viewModel.onAttachDroppedTransferable(it) },
+        onAttachDroppedTransferable = { viewModel.onAttachDroppedPayload(it) },
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },

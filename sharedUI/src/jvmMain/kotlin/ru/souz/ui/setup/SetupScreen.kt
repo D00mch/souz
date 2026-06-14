@@ -54,7 +54,7 @@ import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.settings.CodexOAuthUiState
 import ru.souz.ui.settings.SettingsUiColors

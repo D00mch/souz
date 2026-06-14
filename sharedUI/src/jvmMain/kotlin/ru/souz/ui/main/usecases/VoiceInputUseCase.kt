@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.llms.giga.MissingVoiceKeyException
@@ -28,14 +29,13 @@ import ru.souz.service.speech.LocalMacOsSpeechPermissionDeniedException
 import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.service.speech.VoiceRecognitionUnavailableException
-import ru.souz.ui.host.DesktopPermissionService
+import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiAudioRecordingState
 import ru.souz.ui.main.MainState
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 import org.jetbrains.compose.resources.getString
-import java.util.concurrent.atomic.AtomicBoolean
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceInputUseCase(
@@ -44,21 +44,21 @@ class VoiceInputUseCase(
     private val chatUseCase: ChatUseCase,
     private val speechUseCase: SpeechUseCase,
     private val permissionsUseCase: PermissionsUseCase,
-    private val desktopPermissionService: DesktopPermissionService,
-) {
+    private val permissionPromptService: PermissionPromptService,
+) : VoiceInputController {
     private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
     private var lastRecognizedAtMs: Long = 0L
-    private val isRecognitionInProgress = AtomicBoolean(false)
+    private val recognitionMutex = Mutex()
 
     private val _outputs = Channel<MainUseCaseOutput>()
-    val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
+    override val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
 
-    suspend fun initialize(
+    override suspend fun initialize(
         scope: CoroutineScope,
         stateProvider: () -> MainState,
         onRecognizedText: suspend (String) -> Unit,
-        voiceInputStartBlocker: suspend () -> String? = { null },
+        voiceInputStartBlocker: suspend () -> String?,
     ) = coroutineScope {
         launch { audioRecorder.logState() }
 
@@ -68,12 +68,12 @@ class VoiceInputUseCase(
         }
 
         val hotkeyRegistration = if (nativeHookRegistered) {
-            desktopPermissionService.registerVoiceInputHotkey(
+            permissionPromptService.registerVoiceInputHotkey(
                 onPressed = { pressed ->
                     l.info(if (pressed) "onStart" else "onStop")
                     scope.launch {
                         when {
-                            pressed -> startRecording(
+                            pressed -> startRecordingInternal(
                                 scope = scope,
                                 isListening = stateProvider().isListening,
                                 blockedReason = voiceInputStartBlocker(),
@@ -102,7 +102,7 @@ class VoiceInputUseCase(
                         emitVoiceCaptureTooShort()
                         return@mapLatest ""
                     }
-                    if (!isRecognitionInProgress.compareAndSet(false, true)) {
+                    if (!recognitionMutex.tryLock()) {
                         l.debug("Skipping recognition request because previous one is still in progress")
                         return@mapLatest ""
                     }
@@ -111,7 +111,7 @@ class VoiceInputUseCase(
                         l.debug("[Sending PCM audio data: ${audioData.size} bytes]")
                         speechRecognitionProvider.recognize(audioData)
                     } finally {
-                        isRecognitionInProgress.set(false)
+                        recognitionMutex.unlock()
                     }
                 }
 
@@ -175,7 +175,11 @@ class VoiceInputUseCase(
         }
     }
 
-    suspend fun startRecording(
+    override suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) {
+        startRecordingInternal(scope, isListening, blockedReason = null)
+    }
+
+    private suspend fun startRecordingInternal(
         scope: CoroutineScope,
         isListening: Boolean,
         blockedReason: String? = null,
@@ -185,7 +189,7 @@ class VoiceInputUseCase(
             emitState { copy(isListening = false, statusMessage = blockedReason) }
             return
         }
-        if (isRecognitionInProgress.get()) {
+        if (recognitionMutex.isLocked) {
             val statusMsg = getString(Res.string.voice_status_processing_input)
             emitState { copy(statusMessage = statusMsg) }
             return
@@ -221,7 +225,7 @@ class VoiceInputUseCase(
         }
     }
 
-    suspend fun stopRecording(isListening: Boolean) {
+    override suspend fun stopRecording(isListening: Boolean) {
         if (!isListening) return
 
         audioRecorder.stop()

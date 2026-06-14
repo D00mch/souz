@@ -29,7 +29,7 @@ import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.AppTheme
 import ru.souz.ui.graphlog.GraphSessionsScreen
 import ru.souz.ui.graphlog.GraphVisualizationScreen
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.common.applyMinWindowSize
 import souz.sharedui.generated.resources.Res

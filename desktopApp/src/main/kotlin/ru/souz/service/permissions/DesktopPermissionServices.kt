@@ -3,11 +3,11 @@ package ru.souz.service.permissions
 import com.github.kwhat.jnativehook.GlobalScreen
 import org.slf4j.LoggerFactory
 import ru.souz.service.keys.HotkeyListener
-import ru.souz.ui.host.DesktopPermissionService
+import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.host.VoiceInputHotkeyRegistration
 import java.awt.GraphicsEnvironment
 
-class MacDesktopPermissionService : DesktopPermissionService {
+class MacDesktopPermissionService : PermissionPromptService {
     private val l = LoggerFactory.getLogger(MacDesktopPermissionService::class.java)
 
     override val isSandboxed: Boolean

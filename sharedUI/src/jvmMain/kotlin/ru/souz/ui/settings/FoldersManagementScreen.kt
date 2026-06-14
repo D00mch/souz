@@ -1,6 +1,5 @@
 package ru.souz.ui.settings
 
-import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +24,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,9 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
-import ru.souz.ui.AppTheme
 import ru.souz.ui.glassColors
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import org.jetbrains.compose.resources.stringResource
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -283,27 +280,6 @@ private fun ForbiddenFolderCard(
                 contentDescription = stringResource(Res.string.tooltip_remove_folder),
                 tint = Color.White.copy(alpha = 0.78f),
                 modifier = Modifier.size(16.dp)
-            )
-        }
-    }
-}
-
-@Preview
-@Composable
-private fun FoldersManagementScreenPreview() {
-    AppTheme {
-        Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0B0E11)) {
-            FoldersManagementScreen(
-                state = FoldersManagementState(
-                    forbiddenFolders = listOf(
-                        ForbiddenFolderItem(title = "System", path = "/System"),
-                        ForbiddenFolderItem(title = "Applications", path = "/Applications"),
-                        ForbiddenFolderItem(title = "Library", path = "/Library"),
-                    )
-                ),
-                onBrowseFolder = {},
-                onRemoveFolder = {},
-                onClose = {}
             )
         }
     }

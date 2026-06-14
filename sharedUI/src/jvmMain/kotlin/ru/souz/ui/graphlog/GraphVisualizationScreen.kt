@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.sp
 import ru.souz.agent.session.GraphSession
 import ru.souz.agent.session.GraphStepRecord
 import ru.souz.ui.glassColors
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import kotlin.math.roundToInt
 import com.fasterxml.jackson.databind.ObjectMapper

@@ -8,6 +8,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.test.invoke
@@ -602,6 +604,56 @@ class ToolTest {
         } finally {
             tempDir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun `test ToolModifyFile staged review preserves invocation sandbox metadata`() = runTest {
+        val defaultHome = createTempDirectory("souz-default-home-")
+        val scopedHome = createTempDirectory("souz-scoped-home-")
+        val defaultFile = File(defaultHome, "edit.txt").apply { writeText("default\n") }
+        val scopedFile = File(scopedHome, "edit.txt").apply { writeText("scoped\n") }
+
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.forbiddenFolders } returns emptyList()
+        every { settingsProvider.safeModeEnabled } returns true
+        val filesToolUtil = FilesToolUtil(
+            RuntimeSandboxFactory { scope ->
+                LocalRuntimeSandbox(
+                    scope = scope,
+                    settingsProvider = settingsProvider,
+                    homePath = if (scope.userId == "scoped-user") {
+                        scopedHome.toPath()
+                    } else {
+                        defaultHome.toPath()
+                    },
+                    stateRoot = createTempDirectory(prefix = "souz-scoped-state-").toPath(),
+                )
+            },
+            scopeResolver = { meta -> SandboxScope(userId = meta.userId) },
+        )
+        val permissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, filesToolUtil)
+        val tool = ToolModifyFile(filesToolUtil, permissionBroker)
+        val scopedMeta = ToolInvocationMeta(userId = "scoped-user", conversationId = "conversation-1")
+
+        val result = tool.suspendInvoke(
+            ToolModifyFile.Input(
+                path = "~/edit.txt",
+                oldString = "scoped",
+                newString = "SCOPED",
+            ),
+            scopedMeta,
+        )
+        val stagedId = permissionBroker.snapshotPendingReview()?.items?.singleOrNull()?.id
+            ?: error("Expected staged review item")
+        val applyResult = permissionBroker.applySelection(
+            selectedIds = setOf(stagedId),
+            action = ToolModifySelectionAction.APPLY_SELECTED,
+        )
+
+        assertEquals("Staged, not yet applied", result)
+        assertEquals(ToolModifyApplyStatus.APPLIED, applyResult.items.single().status)
+        assertEquals("default\n", defaultFile.readText())
+        assertEquals("SCOPED\n", scopedFile.readText())
     }
 
     @Test

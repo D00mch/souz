@@ -2,7 +2,6 @@ package ru.souz.ui.settings
 
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
 import io.mockk.unmockkAll
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
@@ -39,9 +38,6 @@ class ModelAvailabilityTest {
 
     @Test
     fun `available voice recognition models include local macos without api key on supported host`() {
-        mockkObject(LocalMacOsSpeechHost)
-        every { LocalMacOsSpeechHost.isCurrentHost() } returns true
-
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN
 
@@ -49,15 +45,15 @@ class ModelAvailabilityTest {
 
         assertEquals(
             listOf(VoiceRecognitionModel.LocalMacOsStt),
-            settingsProvider.availableVoiceRecognitionModels(llmBuildProfile),
+            settingsProvider.availableVoiceRecognitionModels(
+                llmBuildProfile = llmBuildProfile,
+                localMacOsSpeechAvailable = true,
+            ),
         )
     }
 
     @Test
     fun `available voice recognition models hide local macos on unsupported host`() {
-        mockkObject(LocalMacOsSpeechHost)
-        every { LocalMacOsSpeechHost.isCurrentHost() } returns false
-
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN
 

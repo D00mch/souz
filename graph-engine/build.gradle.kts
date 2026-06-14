@@ -5,7 +5,7 @@ plugins {
 dependencies {
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
-    implementation(libs.logback)
+    implementation(libs.slf4j.api)
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit5)

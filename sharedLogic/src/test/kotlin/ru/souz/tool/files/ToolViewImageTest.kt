@@ -18,6 +18,7 @@ import ru.souz.llms.runtime.VisionInput
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -120,7 +121,7 @@ class ToolViewImageTest {
         every { fileSystem.runtimePaths } returns runtimePaths
         every { fileSystem.resolveExistingFile("/sandbox/cat.png") } returns sandboxPath
         every { fileSystem.localPathOrNull(sandboxPath) } returns null
-        every { fileSystem.readBytes(sandboxPath) } returns imageBytes
+        every { fileSystem.openInputStream(sandboxPath) } answers { ByteArrayInputStream(imageBytes) }
 
         val sandbox = mockk<RuntimeSandbox>(relaxed = true)
         every { sandbox.fileSystem } returns fileSystem

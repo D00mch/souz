@@ -6,19 +6,18 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.tunnel.AiTunnelChatAPI
-import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.qwen.QwenChatAPI
-import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.codex.CodexChatAPI
+import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.runtime.LLMFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 class LLMFactoryEmbeddingsTest {
 
@@ -27,12 +26,7 @@ class LLMFactoryEmbeddingsTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
 
-        val restApi = mockk<GigaRestChatAPI>()
-        val qwenApi = mockk<QwenChatAPI>()
         val aiTunnelApi = mockk<AiTunnelChatAPI>()
-        val anthropicApi = mockk<AnthropicChatAPI>()
-        val openAiApi = mockk<OpenAIChatAPI>()
-        val localApi = mockk<LocalChatAPI>()
 
         val requestSlot = slot<LLMRequest.Embeddings>()
         coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
@@ -43,13 +37,7 @@ class LLMFactoryEmbeddingsTest {
 
         val factory = LLMFactory(
             settingsProvider = settingsProvider,
-            restApi = restApi,
-            qwenApi = qwenApi,
-            aiTunnelApi = aiTunnelApi,
-            anthropicApi = anthropicApi,
-            openAiApi = openAiApi,
-            localApi = localApi,
-            codexApi = mockk<CodexChatAPI>(),
+            apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
         )
 
         factory.embeddings(
@@ -66,12 +54,7 @@ class LLMFactoryEmbeddingsTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
 
-        val restApi = mockk<GigaRestChatAPI>()
-        val qwenApi = mockk<QwenChatAPI>()
         val aiTunnelApi = mockk<AiTunnelChatAPI>()
-        val anthropicApi = mockk<AnthropicChatAPI>()
-        val openAiApi = mockk<OpenAIChatAPI>()
-        val localApi = mockk<LocalChatAPI>()
 
         val requestSlot = slot<LLMRequest.Embeddings>()
         coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
@@ -82,13 +65,7 @@ class LLMFactoryEmbeddingsTest {
 
         val factory = LLMFactory(
             settingsProvider = settingsProvider,
-            restApi = restApi,
-            qwenApi = qwenApi,
-            aiTunnelApi = aiTunnelApi,
-            anthropicApi = anthropicApi,
-            openAiApi = openAiApi,
-            localApi = localApi,
-            codexApi = mockk<CodexChatAPI>(),
+            apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
         )
 
         factory.embeddings(
@@ -99,5 +76,54 @@ class LLMFactoryEmbeddingsTest {
         )
 
         assertEquals(EmbeddingsModel.QwenEmbeddings.alias, requestSlot.captured.model)
+    }
+
+    @Test
+    fun `message routes to selected chat provider`() = runTest {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
+
+        val openAiApi = mockk<OpenAIChatAPI>()
+        val request = LLMRequest.Chat(
+            model = LLMModel.OpenAIGpt5Nano.alias,
+            messages = emptyList(),
+        )
+        coEvery { openAiApi.message(request) } returns LLMResponse.Chat.Ok(
+            choices = emptyList(),
+            created = 1L,
+            model = LLMModel.OpenAIGpt5Nano.alias,
+            usage = LLMResponse.Usage(0, 0, 0, 0),
+        )
+
+        val factory = LLMFactory(
+            settingsProvider = settingsProvider,
+            apisByProvider = mapOf(LlmProvider.OPENAI to openAiApi),
+        )
+
+        val response = factory.message(request)
+
+        assertIs<LLMResponse.Chat.Ok>(response)
+        assertEquals(LLMModel.OpenAIGpt5Nano.alias, response.model)
+    }
+
+    @Test
+    fun `message returns unsupported error for missing selected provider`() = runTest {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.gigaModel } returns LLMModel.QwenFlash
+
+        val factory = LLMFactory(
+            settingsProvider = settingsProvider,
+            apisByProvider = emptyMap<LlmProvider, LLMChatAPI>(),
+        )
+
+        val response = factory.message(
+            LLMRequest.Chat(
+                model = LLMModel.QwenFlash.alias,
+                messages = emptyList(),
+            )
+        )
+
+        val error = assertIs<LLMResponse.Chat.Error>(response)
+        assertEquals(-1, error.status)
     }
 }

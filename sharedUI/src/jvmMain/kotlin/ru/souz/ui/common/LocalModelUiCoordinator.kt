@@ -9,34 +9,36 @@ import kotlinx.coroutines.launch
 import org.slf4j.Logger
 import ru.souz.llms.LLMModel
 import ru.souz.llms.local.LocalLlamaRuntime
-import ru.souz.llms.local.LocalModelDownloadPrompt
-import ru.souz.llms.local.LocalModelDownloadState
+import ru.souz.llms.local.LocalModelDownloadProgress
+import ru.souz.llms.local.LocalModelDownloadPrompt as NativeLocalModelDownloadPrompt
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
-import ru.souz.ui.host.DesktopIndexRepository
+import ru.souz.ui.host.BackgroundIndexRefresher
 
 class LocalModelUiCoordinator(
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher,
     private val modelStore: LocalModelStore,
     private val localLlamaRuntime: LocalLlamaRuntime,
-    private val desktopIndexRepository: DesktopIndexRepository,
+    private val desktopIndexRepository: BackgroundIndexRefresher,
     private val logger: Logger,
 ) {
     suspend fun startDownload(
         currentJob: Job?,
-        prompt: LocalModelDownloadPrompt?,
-        updateDownloadState: suspend (LocalModelDownloadState?) -> Unit,
-        onSuccess: suspend (LocalModelDownloadPrompt) -> Unit,
+        prompt: LocalModelDownloadPromptUi?,
+        updateDownloadState: suspend (LocalModelDownloadStateUi?) -> Unit,
+        onSuccess: suspend (LocalModelDownloadPromptUi) -> Unit,
         onError: suspend (Throwable) -> Unit,
     ): Job? {
         val currentPrompt = prompt ?: return currentJob
+        val profile = LocalModelProfiles.forAlias(currentPrompt.model.alias)
+            ?: error("Local model profile not found: ${currentPrompt.model.alias}")
         currentJob?.cancelAndJoin()
         return scope.launch(dispatcher) {
-            updateDownloadState(LocalModelDownloadState(currentPrompt))
+            updateDownloadState(LocalModelDownloadStateUi(currentPrompt))
             runCatching {
-                modelStore.downloadRequiredAssets(currentPrompt.profile) { progress ->
-                    updateDownloadState(LocalModelDownloadState(currentPrompt, progress))
+                modelStore.downloadRequiredAssets(profile) { progress ->
+                    updateDownloadState(LocalModelDownloadStateUi(currentPrompt, progress.toUi()))
                 }
             }.onSuccess {
                 onSuccess(currentPrompt)
@@ -88,3 +90,31 @@ class LocalModelUiCoordinator(
         }
     }
 }
+
+fun NativeLocalModelDownloadPrompt.toUi(): LocalModelDownloadPromptUi =
+    LocalModelDownloadPromptUi(
+        model = model,
+        profileId = profile.id,
+        profileDisplayName = profile.displayName,
+        downloads = downloads.map { profile ->
+            LocalModelDownloadItemUi(
+                id = profile.id,
+                displayName = profile.displayName,
+                huggingFaceRepoId = profile.huggingFaceRepoId,
+                quantization = profile.quantization,
+                license = profile.licenseRequirements.summary,
+                requiresManualLicenseAcceptance = profile.licenseRequirements.requiresManualAcceptance,
+                downloadUrl = profile.downloadUrl,
+                targetPath = targetPath(profile),
+            )
+        },
+    )
+
+private fun LocalModelDownloadProgress.toUi(): LocalModelDownloadProgressUi =
+    LocalModelDownloadProgressUi(
+        bytesDownloaded = bytesDownloaded,
+        totalBytes = totalBytes,
+        activeProfileName = activeProfileName,
+        completedProfiles = completedProfiles,
+        totalProfiles = totalProfiles,
+    )

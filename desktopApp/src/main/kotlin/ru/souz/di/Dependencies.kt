@@ -79,7 +79,6 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.ui.main.usecases.MainUseCasesFactory
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.service.speech.AiTunnelSpeechRecognitionProvider
@@ -124,8 +123,8 @@ import ru.souz.memory.MemoryService
 import ru.souz.memory.MemoryWriter
 import ru.souz.memory.SqliteMemoryRepository
 import ru.souz.ui.host.CalendarListProvider
-import ru.souz.ui.host.DesktopIndexRepository
-import ru.souz.ui.host.DesktopPermissionService
+import ru.souz.ui.host.BackgroundIndexRefresher
+import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.host.TelegramControlBot
 import ru.souz.ui.host.TelegramUiService
 import ru.souz.ui.host.UiAudioRecorder
@@ -142,7 +141,7 @@ private object DiTags {
 val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     import(runtimeCoreDiModule())
     import(runtimeLlmDiModule(logObjectMapperTag = DiTags.TAG_LOG))
-    import(sharedUiDiModule())
+    import(sharedUiDiModule(), allowOverride = true)
 
     // utils
     bindSingleton(tag = DiTags.TAG_LOG) {
@@ -151,12 +150,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
     bindSingleton { Say() }
-    bindSingleton<UiSpeechPlayer> { instance<Say>() }
+    bindSingleton<UiSpeechPlayer>(overrides = true) { instance<Say>() }
     bindSingleton<ActiveSoundRecorder> { ActiveSoundRecorderImpl() }
     bindSingleton { InMemoryAudioRecorder(instance()) }
-    bindSingleton<UiAudioRecorder> { instance<InMemoryAudioRecorder>() }
+    bindSingleton<UiAudioRecorder>(overrides = true) { instance<InMemoryAudioRecorder>() }
     bindSingleton<PcmAudioFrameSource> { ActiveRecorderPcmAudioFrameSource(instance()) }
-    bindSingleton<DesktopPermissionService> { MacDesktopPermissionService() }
+    bindSingleton<PermissionPromptService>(overrides = true) { MacDesktopPermissionService() }
 
     // DB
     bindSingleton<CoroutineScope> {
@@ -177,7 +176,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { MemoryCaptureService(instance(), instance()) }
     bindSingleton<ConversationMemoryRuntime> { DesktopConversationMemoryRuntime(instance(), instance()) }
     bindSingleton<AgentDesktopInfoRepository> { instance<DesktopInfoRepository>() }
-    bindSingleton<DesktopIndexRepository> { instance<DesktopInfoRepository>() }
+    bindSingleton<BackgroundIndexRefresher>(overrides = true) { instance<DesktopInfoRepository>() }
     bindSingleton<ToolAvailabilityPolicy> { DesktopToolAvailabilityPolicy(instance()) }
     bindSingleton { ToolsSettings(instance(), instance(), instance()) }
     bindSingleton<AgentToolsFilter> { instance<ToolsSettings>() }
@@ -231,7 +230,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolCalendarCreateEvent(instance()) }
     bindSingleton { ToolCalendarDeleteEvent(instance()) }
     bindSingleton { ToolCalendarListCalendars(instance()) }
-    bindSingleton<CalendarListProvider> {
+    bindSingleton<CalendarListProvider>(overrides = true) {
         {
             ToolRunBashCommand.sh(CalendarAppleScriptCommands.listCalendarsCommand(""))
                 .lines()
@@ -288,7 +287,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { AiTunnelVoiceAPI(instance()) }
     bindSingleton { MacOsSpeechBridge() }
     bindSingleton<LiveSpeechTranscriptionProvider> { MacOsSpeechAnalyzerLiveTranscriptionProvider(instance()) }
-    bindSingleton<AmbientTranscriptionService> {
+    bindSingleton<AmbientTranscriptionService>(overrides = true) {
         DefaultAmbientTranscriptionService(
             liveSpeechProvider = instance(),
             batchSpeechRecognitionProvider = instance(),
@@ -297,7 +296,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         )
     }
     bindSingleton { SemanticBlockBuilder() }
-    bindSingleton<AmbientSemanticBlockService> {
+    bindSingleton<AmbientSemanticBlockService>(overrides = true) {
         DefaultAmbientSemanticBlockService(
             transcriptEvents = instance<AmbientTranscriptionService>().transcriptEvents,
             builder = instance(),
@@ -315,8 +314,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             )
         }
     }
-    bindSingleton<AmbientBlockAnalyzer> { LocalLlmAmbientBlockAnalyzer(instance()) }
-    bindSingleton<AmbientSuggestionStore> { InMemoryAmbientSuggestionStore() }
+    bindSingleton<AmbientBlockAnalyzer>(overrides = true) { LocalLlmAmbientBlockAnalyzer(instance()) }
+    bindSingleton<AmbientSuggestionStore>(overrides = true) { InMemoryAmbientSuggestionStore() }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }

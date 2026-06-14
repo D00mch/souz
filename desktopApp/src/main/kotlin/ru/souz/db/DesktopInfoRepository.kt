@@ -9,7 +9,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalModelStore
-import ru.souz.ui.host.DesktopIndexRepository
+import ru.souz.ui.host.BackgroundIndexRefresher
 import java.time.LocalDate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -25,7 +25,7 @@ class DesktopInfoRepository(
     private val extractor: DesktopDataExtractor,
     private val settingsProvider: SettingsProvider,
     private val localModelStore: LocalModelStore = LocalModelStore(),
-) : AgentDesktopInfoRepository, DesktopIndexRepository {
+) : AgentDesktopInfoRepository, BackgroundIndexRefresher {
     private val l = LoggerFactory.getLogger(DesktopInfoRepository::class.java)
     private val refreshMutex = Mutex()
 

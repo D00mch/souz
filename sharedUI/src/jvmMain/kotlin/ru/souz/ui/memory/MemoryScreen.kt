@@ -18,7 +18,7 @@ import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.glassColors
-import ru.souz.ui.main.RealLiquidGlassCard
+import ru.souz.ui.common.RealLiquidGlassCard
 import souz.sharedui.generated.resources.*
 
 @Composable

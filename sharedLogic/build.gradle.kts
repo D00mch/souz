@@ -1,5 +1,6 @@
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.androidKotlinMultiplatformLibrary)
 }
 
 fun skikoAwtRuntimeModule(): String {
@@ -25,39 +26,75 @@ val dockerCli = providers.environmentVariable("SOUZ_DOCKER_CLI")
         }
     )
 
-dependencies {
-    implementation(projects.agent)
-    implementation(projects.llms)
-    implementation(projects.native)
-    implementation(kotlin("stdlib"))
-    implementation(kotlin("reflect"))
-    implementation(libs.kotlinx.coroutines)
-    implementation(libs.jackson)
-    implementation(libs.ktor.serializationJackson)
-    implementation(libs.bundles.ktorClient)
-    implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
-    implementation(libs.commons.csv)
-    implementation(libs.tika.core)
-    implementation(libs.tika.parsersStandardPackage)
-    implementation(libs.java.diffUtils)
-    implementation(libs.bundles.letsPlot)
-    implementation(libs.poi)
-    implementation(libs.poi.ooxml)
-    implementation(libs.jsoup)
-    implementation(libs.lucene.core)
-    implementation(libs.slfj)
-    implementation(libs.logback)
-    implementation(libs.log4j.to.slf4j)
-    implementation("org.jetbrains.skiko:skiko-awt:0.9.22.2")
-    runtimeOnly(skikoAwtRuntimeModule())
+kotlin {
+    jvm()
+    androidLibrary {
+        namespace = "ru.souz.sharedlogic"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+    }
 
-    testImplementation(libs.kotlin.test)
-    testImplementation(libs.kotlin.testJunit5)
-    testImplementation(libs.kotlinx.coroutinesTest)
-    testImplementation(libs.mockk)
+    sourceSets {
+        val commonMain by getting
+        val commonJvmMain by creating {
+            dependsOn(commonMain)
+            dependencies {
+                implementation(projects.agent)
+                implementation(projects.llms)
+                implementation(kotlin("stdlib"))
+                implementation(kotlin("reflect"))
+                implementation(libs.kotlinx.coroutines)
+                implementation(libs.jackson)
+                implementation(libs.ktor.serializationJackson)
+                implementation(libs.bundles.ktorClient)
+                implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
+                implementation(libs.java.diffUtils)
+                implementation(libs.jsoup)
+                implementation(libs.slf4j.api)
+            }
+        }
+
+        val androidMain by getting {
+            dependsOn(commonJvmMain)
+            dependencies {
+            }
+        }
+
+        val jvmMain by getting {
+            dependsOn(commonJvmMain)
+            kotlin.srcDir("src/jvmMain/kotlin")
+            resources.srcDir("src/jvmMain/resources")
+            dependencies {
+                implementation(projects.native)
+                implementation(libs.commons.csv)
+                implementation(libs.tika.core)
+                implementation(libs.tika.parsersStandardPackage)
+                implementation(libs.bundles.letsPlot)
+                implementation(libs.poi)
+                implementation(libs.poi.ooxml)
+                implementation(libs.lucene.core)
+                implementation(libs.logback)
+                implementation(libs.slfj)
+                implementation(libs.log4j.to.slf4j)
+                implementation("org.jetbrains.skiko:skiko-awt:0.9.22.2")
+                runtimeOnly(skikoAwtRuntimeModule())
+            }
+        }
+
+        val jvmTest by getting {
+            kotlin.srcDir("src/test/kotlin")
+            resources.srcDir("src/test/resources")
+            dependencies {
+                implementation(libs.kotlin.test)
+                implementation(libs.kotlin.testJunit5)
+                implementation(libs.kotlinx.coroutinesTest)
+                implementation(libs.mockk)
+            }
+        }
+    }
 }
 
-tasks.test {
+tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }
 

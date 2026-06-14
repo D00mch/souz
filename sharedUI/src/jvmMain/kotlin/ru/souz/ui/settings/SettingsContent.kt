@@ -58,8 +58,18 @@ import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
-import ru.souz.ui.main.RealLiquidGlassCard
 import org.jetbrains.compose.resources.StringResource
+import ru.souz.ui.common.RealLiquidGlassCard
+import ru.souz.ui.sharedsettings.SharedApiKeyFieldUi
+import ru.souz.ui.sharedsettings.SharedAuthAccountUiState
+import ru.souz.ui.sharedsettings.SharedBalanceItemUi
+import ru.souz.ui.sharedsettings.SharedKeysSettingsContent
+import ru.souz.ui.sharedsettings.SharedKeysSettingsUiState
+import ru.souz.ui.sharedsettings.SharedModelOptionUi
+import ru.souz.ui.sharedsettings.SharedModelsSettingsContent
+import ru.souz.ui.sharedsettings.SharedModelsSettingsUiState
+import ru.souz.ui.sharedsettings.SharedProviderLinkUi
+import ru.souz.ui.sharedsettings.SharedSettingsEvent
 import org.jetbrains.compose.resources.stringResource
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -278,16 +288,33 @@ fun ModelsSettingsContent(
     onRefreshBalance: () -> Unit,
     onClose: () -> Unit
 ) {
+    val sharedState = state.toSharedModelsSettingsUiState()
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_models),
         subtitle = stringResource(Res.string.settings_models_subtitle),
         onClose = onClose
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
-            ModelDropdown(
-                selectedModel = state.gigaModel,
-                availableModels = state.availableLlmModels,
-                onModelSelected = onModelChange,
+            SharedModelsSettingsContent(
+                state = sharedState,
+                onEvent = { event ->
+                    when (event) {
+                        is SharedSettingsEvent.SelectChatModel ->
+                            state.availableLlmModels.firstOrNull { it.alias == event.id }?.let(onModelChange)
+                        is SharedSettingsEvent.SelectEmbeddingsModel ->
+                            state.availableEmbeddingsModels.firstOrNull { it.alias == event.id }?.let(onEmbeddingsModelChange)
+                        is SharedSettingsEvent.SelectVoiceModel ->
+                            state.availableVoiceRecognitionModels.firstOrNull { it.alias == event.id }?.let(onVoiceRecognitionModelChange)
+                        is SharedSettingsEvent.TemperatureChanged -> onTemperatureInput(event.value)
+                        is SharedSettingsEvent.TimeoutChanged -> onRequestTimeoutMillisChange(event.value)
+                        is SharedSettingsEvent.ContextSizeChanged -> onContextSizeInput(event.value)
+                        is SharedSettingsEvent.SystemPromptChanged -> onSystemPromptChange(event.value)
+                        SharedSettingsEvent.ResetSystemPrompt -> onSystemPromptReset()
+                        SharedSettingsEvent.RefreshBalance -> onRefreshBalance()
+                        else -> Unit
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
             )
 
             if (state.availableAmbientAnalysisModels.isNotEmpty()) {
@@ -298,126 +325,7 @@ fun ModelsSettingsContent(
                     onModelSelected = onAmbientAnalysisModelChange,
                 )
             }
-
-            if (state.availableEmbeddingsModels.isNotEmpty()) {
-                EmbeddingsModelDropdown(
-                    selectedModel = state.embeddingsModel,
-                    availableModels = state.availableEmbeddingsModels,
-                    onModelSelected = onEmbeddingsModelChange,
-                )
-            }
-
-            if (state.availableVoiceRecognitionModels.isNotEmpty()) {
-                VoiceRecognitionModelDropdown(
-                    selectedModel = state.voiceRecognitionModel,
-                    availableModels = state.availableVoiceRecognitionModels,
-                    onModelSelected = onVoiceRecognitionModelChange,
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)
-                ) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_temperature),
-                        value = state.temperatureInput,
-                        onValueChange = onTemperatureInput,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)
-                ) {
-                    LabeledTextField(
-                        label = stringResource(Res.string.label_timeout),
-                        value = state.requestTimeoutInput,
-                        onValueChange = onRequestTimeoutMillisChange,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
-                LabeledTextField(
-                    label = stringResource(Res.string.label_context_size),
-                    value = state.contextSizeInput,
-                    onValueChange = onContextSizeInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
         }
-
-        SettingsGroupDivider()
-
-        Column(
-            verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)
-        ) {
-            val resetButtonInteraction = remember { MutableInteractionSource() }
-            val isResetHovered by resetButtonInteraction.collectIsHoveredAsState()
-            val resetButtonScale by animateFloatAsState(
-                targetValue = if (isResetHovered) 1.05f else 1f,
-                animationSpec = tween(durationMillis = 150),
-                label = "resetButtonScale"
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                 Text(
-                    text = stringResource(Res.string.label_system_prompt),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = SettingsStrongTextColor
-                )
-                TextButton(
-                    onClick = onSystemPromptReset,
-                    modifier = Modifier.graphicsLayer {
-                        scaleX = resetButtonScale
-                        scaleY = resetButtonScale
-                    },
-                    interactionSource = resetButtonInteraction,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = SettingsAccent,
-                        containerColor = SettingsAccentBackground,
-                        disabledContentColor = Color.White.copy(alpha = 0.3f),
-                        disabledContainerColor = Color.Transparent
-                    )
-                ) {
-                    Text(
-                        text = stringResource(Res.string.button_reset),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                }
-            }
-
-            LabeledTextField(
-                label = "",
-                value = state.systemPrompt,
-                onValueChange = onSystemPromptChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(150.dp),
-                singleLine = false,
-            )
-        }
-
-        TokensBalanceSection(
-            isLoading = state.isBalanceLoading,
-            balance = state.balance,
-            error = state.balanceError,
-            onRefreshBalance = onRefreshBalance,
-        )
     }
 }
 
@@ -558,137 +466,196 @@ fun KeysSettingsContent(
     onDisconnectCodex: () -> Unit,
     onClose: () -> Unit
 ) {
-    val supportsSaluteSpeech = ApiKeyField.SALUTE_SPEECH in state.availableApiKeyFields
-    val supportsVoiceRecognition = state.supportsVoiceRecognitionApiKeys
-    val keysHintChat = if (ApiKeyField.GIGA_CHAT in state.availableApiKeyFields) {
-        Res.string.keys_hint_chat_ru_build
-    } else {
-        Res.string.keys_hint_chat_en_build
-    }
-    val keysHintVoice = if (supportsVoiceRecognition) {
-        Res.string.keys_hint_voice_required
-    } else {
-        Res.string.keys_hint_voice_unavailable
-    }
+    val clipboardManager = LocalClipboardManager.current
+    val sharedState = state.toSharedKeysSettingsUiState()
     SettingsSectionScreen(
         title = stringResource(Res.string.settings_section_keys),
         subtitle = stringResource(Res.string.settings_keys_subtitle),
         onClose = onClose
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = SettingsFieldBackground,
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, SettingsDefaultBorder),
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = stringResource(Res.string.keys_configured_count).format(state.configuredKeysCount),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = SettingsStrongTextColor
-                    )
-                    Text(
-                        text = stringResource(keysHintChat),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SettingsHintColor
-                    )
-                    Text(
-                        text = stringResource(keysHintVoice),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SettingsHintColor
-                    )
+        SharedKeysSettingsContent(
+            state = sharedState,
+            onEvent = { event ->
+                when (event) {
+                    is SharedSettingsEvent.ApiKeyChanged -> when (runCatching { ApiKeyField.valueOf(event.id) }.getOrNull()) {
+                        ApiKeyField.GIGA_CHAT -> onGigaChatKeyInput(event.value)
+                        ApiKeyField.QWEN_CHAT -> onQwenChatKeyInput(event.value)
+                        ApiKeyField.AI_TUNNEL -> onAiTunnelKeyInput(event.value)
+                        ApiKeyField.ANTHROPIC -> onAnthropicKeyInput(event.value)
+                        ApiKeyField.OPENAI -> onOpenAiKeyInput(event.value)
+                        ApiKeyField.SALUTE_SPEECH -> onSaluteSpeechKeyInput(event.value)
+                        ApiKeyField.CODEX,
+                        null -> Unit
+                    }
+                    is SharedSettingsEvent.OpenProviderLink ->
+                        runCatching { ApiKeyProvider.valueOf(event.id) }.getOrNull()?.let(onOpenProviderLink)
+                    is SharedSettingsEvent.StartAuth -> if (event.id == ApiKeyProvider.CODEX.name) onStartCodexOAuth()
+                    is SharedSettingsEvent.DisconnectAuth -> if (event.id == ApiKeyProvider.CODEX.name) onDisconnectCodex()
+                    is SharedSettingsEvent.CopyAuthCode -> clipboardManager.setText(AnnotatedString(event.code))
+                    else -> Unit
                 }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun SettingsState.toSharedModelsSettingsUiState(): SharedModelsSettingsUiState =
+    SharedModelsSettingsUiState(
+        title = stringResource(Res.string.settings_section_models),
+        subtitle = stringResource(Res.string.settings_models_subtitle),
+        chatModelLabel = stringResource(Res.string.label_model),
+        selectedChatModelId = gigaModel.alias,
+        chatModelOptions = availableLlmModels.map { it.toSharedOption(includeAlias = true) },
+        embeddingsModelLabel = stringResource(Res.string.label_embeddings_model),
+        selectedEmbeddingsModelId = embeddingsModel.alias,
+        embeddingsModelOptions = availableEmbeddingsModels.map { it.toSharedOption() },
+        voiceModelLabel = stringResource(Res.string.label_voice_recognition_model),
+        selectedVoiceModelId = voiceRecognitionModel.alias,
+        voiceModelOptions = availableVoiceRecognitionModels.map { it.toSharedOption() },
+        temperatureLabel = stringResource(Res.string.label_temperature),
+        temperatureInput = temperatureInput,
+        timeoutLabel = stringResource(Res.string.label_timeout),
+        timeoutInput = requestTimeoutInput,
+        contextSizeLabel = stringResource(Res.string.label_context_size),
+        contextSizeInput = contextSizeInput,
+        systemPromptLabel = stringResource(Res.string.label_system_prompt),
+        systemPrompt = systemPrompt,
+        resetSystemPromptLabel = stringResource(Res.string.button_reset),
+        balanceTitle = stringResource(Res.string.label_tokens_balance),
+        refreshBalanceLabel = "Refresh",
+        isBalanceLoading = isBalanceLoading,
+        balance = balance.map { SharedBalanceItemUi(label = it.usage, value = it.value.toString()) },
+        balanceError = balanceError,
+        showBalance = true,
+    )
+
+@Composable
+private fun SettingsState.toSharedKeysSettingsUiState(): SharedKeysSettingsUiState {
+    val keysHintChat = if (ApiKeyField.GIGA_CHAT in availableApiKeyFields) {
+        Res.string.keys_hint_chat_ru_build
+    } else {
+        Res.string.keys_hint_chat_en_build
+    }
+    val keysHintVoice = if (supportsVoiceRecognitionApiKeys) {
+        Res.string.keys_hint_voice_required
+    } else {
+        Res.string.keys_hint_voice_unavailable
+    }
+
+    return SharedKeysSettingsUiState(
+        title = stringResource(Res.string.settings_section_keys),
+        subtitle = stringResource(Res.string.settings_keys_subtitle),
+        configuredCountText = stringResource(Res.string.keys_configured_count).format(configuredKeysCount),
+        chatHint = stringResource(keysHintChat),
+        voiceHint = stringResource(keysHintVoice),
+        keyFields = buildList {
+            if (ApiKeyField.GIGA_CHAT in availableApiKeyFields) {
+                add(SharedApiKeyFieldUi(ApiKeyField.GIGA_CHAT.name, stringResource(Res.string.label_key_gigachat), gigaChatKey))
             }
-
-
-            if (ApiKeyField.GIGA_CHAT in state.availableApiKeyFields) {
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_gigachat),
-                    value = state.gigaChatKey,
-                    onValueChange = onGigaChatKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            if (ApiKeyField.QWEN_CHAT in availableApiKeyFields) {
+                add(SharedApiKeyFieldUi(ApiKeyField.QWEN_CHAT.name, stringResource(Res.string.label_key_qwen), qwenChatKey))
             }
-
-            if (ApiKeyField.QWEN_CHAT in state.availableApiKeyFields) {
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_qwen),
-                    value = state.qwenChatKey,
-                    onValueChange = onQwenChatKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            if (ApiKeyField.AI_TUNNEL in availableApiKeyFields) {
+                add(SharedApiKeyFieldUi(ApiKeyField.AI_TUNNEL.name, stringResource(Res.string.label_key_aitunnel), aiTunnelKey))
             }
-
-            if (ApiKeyField.AI_TUNNEL in state.availableApiKeyFields) {
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_aitunnel),
-                    value = state.aiTunnelKey,
-                    onValueChange = onAiTunnelKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            if (ApiKeyField.ANTHROPIC in availableApiKeyFields) {
+                add(SharedApiKeyFieldUi(ApiKeyField.ANTHROPIC.name, stringResource(Res.string.label_key_anthropic), anthropicKey))
             }
-
-            if (ApiKeyField.ANTHROPIC in state.availableApiKeyFields) {
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_anthropic),
-                    value = state.anthropicKey,
-                    onValueChange = onAnthropicKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            if (ApiKeyField.OPENAI in availableApiKeyFields) {
+                add(SharedApiKeyFieldUi(ApiKeyField.OPENAI.name, stringResource(Res.string.label_key_openai), openaiKey))
             }
-
-            if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
-                LabeledTextField(
-                    label = stringResource(Res.string.label_key_openai),
-                    value = state.openaiKey,
-                    onValueChange = onOpenAiKeyInput,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            if (ApiKeyField.SALUTE_SPEECH in availableApiKeyFields) {
+                add(SharedApiKeyFieldUi(ApiKeyField.SALUTE_SPEECH.name, stringResource(Res.string.label_key_salutespeech), saluteSpeechKey))
             }
-
-            if (ApiKeyField.CODEX in state.availableApiKeyFields) {
-                CodexOAuthButton(
-                    connected = state.codexConnected,
-                    oauthState = state.codexOAuthState,
-                    onConnect = onStartCodexOAuth,
-                    onDisconnect = onDisconnectCodex,
-                    onOpenProviderLink = onOpenProviderLink,
-                )
+        },
+        authAccounts = buildList {
+            if (ApiKeyField.CODEX in availableApiKeyFields) {
+                add(toSharedCodexAuthState())
             }
-        }
+        },
+        providerLinksTitle = stringResource(Res.string.header_where_to_get_keys),
+        providerLinks = availableApiKeyProviders.map { it.toSharedProviderLink() },
+    )
+}
 
-        if (supportsSaluteSpeech) {
-            SettingsGroupDivider()
-
-            LabeledTextField(
-                label = stringResource(Res.string.label_key_salutespeech),
-                value = state.saluteSpeechKey,
-                onValueChange = onSaluteSpeechKeyInput,
-                modifier = Modifier.fillMaxWidth()
+@Composable
+private fun SettingsState.toSharedCodexAuthState(): SharedAuthAccountUiState {
+    val id = ApiKeyProvider.CODEX.name
+    val title = stringResource(Res.string.provider_codex_title)
+    val description = stringResource(Res.string.provider_codex_desc)
+    val connectLabel = stringResource(Res.string.label_codex_connect)
+    val disconnectLabel = stringResource(Res.string.label_codex_disconnect)
+    return when (val oauthState = codexOAuthState) {
+        is CodexOAuthUiState.AwaitingUserCode -> SharedAuthAccountUiState.AwaitingUserCode(
+            id = id,
+            title = title,
+            description = description,
+            connectLabel = connectLabel,
+            disconnectLabel = disconnectLabel,
+            userCode = oauthState.userCode,
+            authUrl = ApiKeyProvider.CODEX.url,
+            copyLabel = stringResource(Res.string.label_copy),
+            pollingLabel = stringResource(Res.string.label_codex_polling),
+        )
+        is CodexOAuthUiState.Error -> SharedAuthAccountUiState.Error(
+            id = id,
+            title = title,
+            description = description,
+            connectLabel = connectLabel,
+            disconnectLabel = disconnectLabel,
+            message = oauthState.message,
+        )
+        else -> if (codexConnected) {
+            SharedAuthAccountUiState.Connected(
+                id = id,
+                title = title,
+                description = description,
+                connectLabel = connectLabel,
+                disconnectLabel = disconnectLabel,
+                connectedLabel = stringResource(Res.string.label_codex_connected),
             )
-        }
-
-        SettingsGroupDivider()
-
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = stringResource(Res.string.header_where_to_get_keys),
-                style = MaterialTheme.typography.titleMedium,
-                color = SettingsStrongTextColor
+        } else {
+            SharedAuthAccountUiState.Idle(
+                id = id,
+                title = title,
+                description = description,
+                connectLabel = connectLabel,
+                disconnectLabel = disconnectLabel,
             )
-            state.availableApiKeyProviders.forEach { provider ->
-                ProviderLinkCard(
-                    provider = provider,
-                    onOpen = { onOpenProviderLink(provider) }
-                )
-            }
         }
     }
 }
+
+@Composable
+private fun ApiKeyProvider.toSharedProviderLink(): SharedProviderLinkUi =
+    SharedProviderLinkUi(
+        id = name,
+        title = stringResource(title),
+        url = url,
+        description = stringResource(description),
+        details = stringResource(details),
+    )
+
+private fun LLMModel.toSharedOption(includeAlias: Boolean): SharedModelOptionUi =
+    SharedModelOptionUi(
+        id = alias,
+        label = displayName,
+        detail = alias.takeIf { includeAlias },
+    )
+
+private fun EmbeddingsModel.toSharedOption(): SharedModelOptionUi =
+    SharedModelOptionUi(
+        id = alias,
+        label = displayName,
+    )
+
+private fun VoiceRecognitionModel.toSharedOption(): SharedModelOptionUi =
+    SharedModelOptionUi(
+        id = alias,
+        label = displayName,
+    )
 
 @Composable
 private fun ProviderLinkCard(

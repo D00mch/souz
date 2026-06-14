@@ -31,8 +31,13 @@ fun agentDiModule(
     apiClassifierTag: Any? = null,
     localClassifierTag: Any? = null,
     skillCommandToolTag: Any? = null,
+    graphSessionRepositoryTag: Any? = null,
 ): DI.Module = DI.Module("agent") {
-    bindSingleton { GraphSessionRepository() }
+    bindSingleton {
+        graphSessionRepositoryTag
+            ?.let { tag -> instance<GraphSessionRepository>(tag = tag) }
+            ?: GraphSessionRepository()
+    }
     bindSingleton {
         GraphSessionService(
             repository = instance(),
