@@ -339,8 +339,22 @@
     <!-- Graph Sessions -->
     <string name="graph_sessions_title">Graph Session History</string>
     <string name="graph_sessions_count_format">%d sessions</string>
+    <string name="action_open_graph_sessions">Open graph sessions</string>
+    <string name="action_refresh">Refresh</string>
     <string name="action_close">Close</string>
     <string name="graph_sessions_empty">No saved sessions.\nSend a request to the agent to create the first session.</string>
+    <string name="graph_session_opening">Opening session...</string>
+    <string name="graph_visualization_title">Session Visualization</string>
+    <string name="graph_select_node">Select a node</string>
+    <string name="graph_subgraphs">Subgraphs</string>
+    <string name="graph_executions_format">%d executions</string>
+    <string name="graph_execution_format">Execution #%d</string>
+    <string name="graph_input">Input</string>
+    <string name="graph_output">Output</string>
+    <string name="graph_saved_to_history">Saved to history</string>
+    <string name="graph_active_tools_changed">Active tools changed</string>
+    <string name="graph_categories">Categories</string>
+    <string name="graph_no_categories">-</string>
     <string name="status_in_progress">in progress</string>
     <string name="graph_steps_count">%d steps</string>
     <string name="duration_suffix_s">s</string>

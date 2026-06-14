@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -101,6 +102,7 @@ import ru.souz.ui.settings.SettingsEvent
 import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
 import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.action_open_graph_sessions
 import souz.sharedui.generated.resources.chat_input_placeholder
 import souz.sharedui.generated.resources.chat_search_placeholder
 import souz.sharedui.generated.resources.dialog_cancel
@@ -133,8 +135,12 @@ fun SouzAndroidSharedUiApp(di: DI) {
             ) {
                 var route by remember { mutableStateOf(AndroidRoute.Chat) }
                 when (route) {
-                    AndroidRoute.Chat -> AndroidChatRoute(onOpenSettings = { route = AndroidRoute.Settings })
+                    AndroidRoute.Chat -> AndroidChatRoute(
+                        onOpenSettings = { route = AndroidRoute.Settings },
+                        onOpenGraphSessions = { route = AndroidRoute.GraphSessions },
+                    )
                     AndroidRoute.Settings -> AndroidSettingsRoute(onBack = { route = AndroidRoute.Chat })
+                    AndroidRoute.GraphSessions -> AndroidGraphSessionsRoute(onBack = { route = AndroidRoute.Chat })
                 }
             }
         }
@@ -144,11 +150,13 @@ fun SouzAndroidSharedUiApp(di: DI) {
 private enum class AndroidRoute {
     Chat,
     Settings,
+    GraphSessions,
 }
 
 @Composable
 private fun AndroidChatRoute(
     onOpenSettings: () -> Unit,
+    onOpenGraphSessions: () -> Unit,
 ) {
     val di = localDI()
     val viewModel = viewModel { createMainViewModel(di) }
@@ -172,6 +180,7 @@ private fun AndroidChatRoute(
         state = state,
         snackbarHostState = snackbarHostState,
         onOpenSettings = onOpenSettings,
+        onOpenGraphSessions = onOpenGraphSessions,
         onNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
         onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
         onDismissNewConversation = { viewModel.send(MainEvent.DismissNewConversationDialog) },
@@ -210,6 +219,7 @@ private fun AndroidChatScreen(
     state: MainState,
     snackbarHostState: SnackbarHostState,
     onOpenSettings: () -> Unit,
+    onOpenGraphSessions: () -> Unit,
     onNewConversation: () -> Unit,
     onConfirmNewConversation: () -> Unit,
     onDismissNewConversation: () -> Unit,
@@ -317,6 +327,12 @@ private fun AndroidChatScreen(
                         }
                         IconButton(onClick = onNewConversation) {
                             Icon(Icons.Rounded.Add, contentDescription = null)
+                        }
+                        IconButton(onClick = onOpenGraphSessions) {
+                            Icon(
+                                imageVector = Icons.Rounded.AccountTree,
+                                contentDescription = stringResource(Res.string.action_open_graph_sessions),
+                            )
                         }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Rounded.Settings, contentDescription = null)

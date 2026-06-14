@@ -335,8 +335,22 @@
     <!-- Graph Sessions -->
     <string name="graph_sessions_title">История сессий графа</string>
     <string name="graph_sessions_count_format">%d сессий</string>
+    <string name="action_open_graph_sessions">Открыть сессии графа</string>
+    <string name="action_refresh">Обновить</string>
     <string name="action_close">Закрыть</string>
     <string name="graph_sessions_empty">Нет сохранённых сессий.\nОтправьте запрос агенту, чтобы создать первую сессию.</string>
+    <string name="graph_session_opening">Открытие сессии...</string>
+    <string name="graph_visualization_title">Визуализация сессии</string>
+    <string name="graph_select_node">Выберите узел</string>
+    <string name="graph_subgraphs">Подграфы</string>
+    <string name="graph_executions_format">%d выполнений</string>
+    <string name="graph_execution_format">Выполнение #%d</string>
+    <string name="graph_input">Вход</string>
+    <string name="graph_output">Выход</string>
+    <string name="graph_saved_to_history">Сохранено в историю</string>
+    <string name="graph_active_tools_changed">Активные инструменты изменены</string>
+    <string name="graph_categories">Категории</string>
+    <string name="graph_no_categories">-</string>
     <string name="status_in_progress">в процессе</string>
     <string name="graph_steps_count">%d шагов</string>
     <string name="duration_suffix_s">с</string>
