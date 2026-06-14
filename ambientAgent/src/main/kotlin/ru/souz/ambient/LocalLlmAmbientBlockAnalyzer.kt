@@ -22,7 +22,7 @@ class LocalLlmAmbientBlockAnalyzer(
             return null
         }
 
-        val task = parseTask(raw) ?: run {
+        val task = parseTask(raw) ?: fallbackTask(raw, block) ?: run {
             logger.debug("Ambient analysis completed: blockId={} hasCandidate=false", block.id)
             return null
         }
@@ -43,6 +43,8 @@ class LocalLlmAmbientBlockAnalyzer(
         Input is a short speech block.
         Return EMPTY if there is no clear user task.
         Return TASK: <task> if the user likely wants Souz to help.
+        Input may be Russian.
+        Imperative requests like "создай", "найди", "открой", "покажи", "напиши", or "проверь" are tasks even without a wake word.
         The task must be a short natural-language instruction for the main agent.
         Do not output JSON.
         Do not output markdown.
@@ -74,6 +76,21 @@ class LocalLlmAmbientBlockAnalyzer(
             .ifBlank { null }
     }
 
+    private fun fallbackTask(raw: String, block: AmbientSemanticBlock): String? {
+        val normalized = raw.replace("\r\n", "\n").trim()
+        if (normalized.isNotBlank() && !normalized.equals("EMPTY", ignoreCase = true)) return null
+        if (
+            block.addressedness != AmbientAddressedness.DIRECT_TO_SOUZ &&
+            block.addressedness != AmbientAddressedness.IMPLICIT_USER_INTENT
+        ) {
+            return null
+        }
+        return block.text
+            .compact(MAX_TASK_TEXT_CHARS)
+            .ifBlank { null }
+            ?.takeIf { it.length >= MIN_FALLBACK_TASK_CHARS }
+    }
+
     private fun String.compact(limit: Int): String =
         replace(Regex("\\s+"), " ").trim().let { normalized ->
             if (normalized.length <= limit) normalized else normalized.take(limit)
@@ -83,5 +100,6 @@ class LocalLlmAmbientBlockAnalyzer(
         val logger = LoggerFactory.getLogger(LocalLlmAmbientBlockAnalyzer::class.java)
         const val MAX_BLOCK_TEXT_CHARS = 1_600
         const val MAX_TASK_TEXT_CHARS = 240
+        const val MIN_FALLBACK_TASK_CHARS = 8
     }
 }

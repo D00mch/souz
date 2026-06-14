@@ -243,6 +243,17 @@ class SemanticBlockBuilderTest {
     }
 
     @Test
+    fun `imperative app commands are implicit user intent`() {
+        val builder = SemanticBlockBuilder(clock = { 2_000L })
+        builder.accept(event(id = "e1", text = "открой настройки приложения", receivedAtMs = 1_000))
+
+        val block = builder.flush()
+
+        assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, block?.addressedness)
+        assertEquals(AmbientSpeakerRole.PROBABLY_USER, block?.speakerRole)
+    }
+
+    @Test
     fun `indirect weather help request is implicit user intent`() {
         val builder = SemanticBlockBuilder(clock = { 2_000L })
         builder.accept(event(id = "e1", text = "я хотел бы чтобы кто-то посмотрел погоду", receivedAtMs = 1_000))

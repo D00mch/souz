@@ -2,6 +2,8 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.JavaExec
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 fun tdlightNativeClassifier(): String {
     val osName = System.getProperty("os.name", "").lowercase()
@@ -54,6 +56,9 @@ val macNotarizationTeamId = providers.gradleProperty("mac.notarization.teamId").
 val sourceAppResourcesDir = layout.projectDirectory.dir("src/main/resources")
 val sourceNativeResourcesDir = rootProject.layout.projectDirectory.dir("native/src/main/resources")
 val preparedAppResourcesDir = layout.buildDirectory.dir("generated/souz-app-resources")
+val desktopRuntimeJavaLauncher = extensions.getByType<JavaToolchainService>().launcherFor {
+    languageVersion.set(JavaLanguageVersion.of(21))
+}
 
 val prepareMacAppResources by tasks.registering(Sync::class) {
     group = "distribution"
@@ -159,6 +164,7 @@ val includeAllMacNativeResources: Boolean =
 compose.desktop {
     application {
         mainClass = "ru.souz.MainKt"
+        javaHome = desktopRuntimeJavaLauncher.get().metadata.installationPath.asFile.absolutePath
 
         val isArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
         val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
@@ -443,9 +449,36 @@ val resignReleaseAppForNotarization by tasks.registering {
     }
 }
 
+val adHocSignReleaseAppBundle by tasks.registering {
+    group = "distribution"
+    description = "Ad-hoc sign the local release app bundle after post-processing."
+    dependsOn(patchReleaseRuntimeInfoPlist)
+    mustRunAfter(patchReleaseRuntimeInfoPlist)
+
+    onlyIf {
+        !macSigningEnabled.get() &&
+            System.getProperty("os.name", "").lowercase().contains("mac")
+    }
+
+    doLast {
+        val appBundle = releaseAppBundleDir.get().asFile
+        check(appBundle.exists()) { "Release app bundle not found: $appBundle" }
+
+        providers.exec {
+            commandLine("codesign", "--force", "--deep", "--sign", "-", appBundle.absolutePath)
+        }.result.get().assertNormalExitValue()
+
+        providers.exec {
+            commandLine("codesign", "--verify", "--deep", "--strict", appBundle.absolutePath)
+        }.result.get().assertNormalExitValue()
+    }
+}
+
 tasks.matching { it.name == "createReleaseDistributable" }.configureEach {
     finalizedBy(syncReleaseAppRuntimeArtifacts)
     finalizedBy(patchReleaseRuntimeInfoPlist)
+    finalizedBy(adHocSignReleaseAppBundle)
+    finalizedBy(resignReleaseAppForNotarization)
 }
 
 tasks.matching { it.name == "packageReleaseDmg" || it.name == "notarizeReleaseDmg" }.configureEach {

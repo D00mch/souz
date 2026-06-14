@@ -12,9 +12,26 @@ class LocalLlmAmbientBlockAnalyzerTest {
     fun `empty output returns no candidate`() = runTest {
         val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = FakeAmbientLocalLlm("EMPTY"))
 
-        val candidate = analyzer.analyze(block())
+        val candidate = analyzer.analyze(
+            block(
+                text = "обсуждаем погоду в Москве",
+                addressedness = AmbientAddressedness.UNKNOWN,
+            ),
+        )
 
         assertNull(candidate)
+    }
+
+    @Test
+    fun `empty output falls back to block text for explicit user intent`() = runTest {
+        val analyzer = LocalLlmAmbientBlockAnalyzer(localLlm = FakeAmbientLocalLlm("EMPTY"))
+
+        val candidate = analyzer.analyze(block(text = "открой настройки приложения"))
+
+        assertEquals("открой настройки приложения", candidate?.taskText)
+        assertEquals("task:b1:1", candidate?.id)
+        assertEquals(AmbientAddressedness.IMPLICIT_USER_INTENT, candidate?.addressedness)
+        assertEquals(listOf("e1"), candidate?.evidenceEventIds)
     }
 
     @Test
