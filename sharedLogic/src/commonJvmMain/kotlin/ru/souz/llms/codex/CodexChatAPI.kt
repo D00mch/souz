@@ -11,6 +11,7 @@ import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -121,12 +122,8 @@ class CodexChatAPI(
                                         send(result)
                                     }
                                     "response.failed", "response.incomplete" -> {
-                                        val errorNode = node["response"]?.get("error") ?: node["error"]
-                                        val err = when {
-                                            errorNode == null -> null
-                                            errorNode.isTextual -> errorNode.asText()
-                                            else -> errorNode.toString()
-                                        }
+                                        val err = node["response"]?.get("error")?.asText()
+                                            ?: node["error"]?.asText()
                                             ?: "Stream error: $eventType"
                                         send(LLMResponse.Chat.Error(-1, err))
                                     }
@@ -181,23 +178,19 @@ class CodexChatAPI(
         }}")
 
         val tools: List<Map<String, Any>>? = body.functions.takeIf { it.isNotEmpty() }?.map { fn ->
-            val properties = fn.parameters.properties.mapValues { (_, prop) ->
-                buildMap {
-                    put("type", prop.type)
-                    if (!prop.description.isNullOrBlank()) put("description", prop.description)
-                    if (!prop.enum.isNullOrEmpty()) put("enum", prop.enum)
-                    if (prop.type == "array") {
-                        put("items", emptyMap<String, Any>())
-                    }
-                }
-            }
             mapOf(
                 "type" to "function",
                 "name" to fn.name,
                 "description" to fn.description,
                 "parameters" to mapOf(
                     "type" to fn.parameters.type,
-                    "properties" to properties,
+                    "properties" to fn.parameters.properties.mapValues { (_, prop) ->
+                        buildMap {
+                            put("type", prop.type)
+                            if (!prop.description.isNullOrBlank()) put("description", prop.description)
+                            if (!prop.enum.isNullOrEmpty()) put("enum", prop.enum)
+                        }
+                    },
                     "required" to fn.parameters.required,
                 )
             )
