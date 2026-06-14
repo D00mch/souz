@@ -589,6 +589,7 @@ private class FakeSettingsProvider : SettingsProvider {
     override var regionProfile: String = "ru"
     override var activeAgentId: AgentId = AgentId.default
     override var gigaModel: LLMModel = LLMModel.Max
+    override var ambientAnalysisModel: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507
     override var useFewShotExamples: Boolean = false
     override var useStreaming: Boolean = false
     override var notificationSoundEnabled: Boolean = true
