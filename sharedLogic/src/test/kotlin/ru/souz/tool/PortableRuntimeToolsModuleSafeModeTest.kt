@@ -10,7 +10,12 @@ import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.runtime.GeneratedImage
+import ru.souz.llms.runtime.ImageGenerationGateway
+import ru.souz.llms.runtime.VisionGateway
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
@@ -19,6 +24,7 @@ import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
+import ru.souz.tool.files.ToolReadFile
 import kotlin.io.path.exists
 import kotlin.io.path.notExists
 import kotlin.io.path.readText
@@ -125,6 +131,17 @@ class PortableRuntimeToolsModuleSafeModeTest {
         assertNotNull(directDI.instance<ToolModifyFile>())
     }
 
+    @Test
+    fun `ReadFile is exposed through portable DI catalog`() {
+        val home = createTempDirectory("portable-read-home-")
+        val stateRoot = createTempDirectory("portable-read-state-")
+        val directDI = createDirectDI(home, stateRoot, safeModeEnabled = true, bindBrokers = false)
+        val catalog = directDI.instance<AgentToolCatalog>()
+
+        assertNotNull(directDI.instance<ToolReadFile>())
+        assertTrue("ReadFile" in catalog.toolsByCategory.getValue(ToolCategory.FILES))
+    }
+
     private fun createDirectDI(
         home: Path,
         stateRoot: Path,
@@ -136,6 +153,17 @@ class PortableRuntimeToolsModuleSafeModeTest {
         every { settingsProvider.safeModeEnabled } returns safeModeEnabled
 
         bindSingleton<SettingsProvider> { settingsProvider }
+        bindSingleton<LLMChatAPI> { mockk(relaxed = true) }
+        bindSingleton<VisionGateway> { VisionGateway { "ok" } }
+        bindSingleton<ImageGenerationGateway> {
+            ImageGenerationGateway {
+                GeneratedImage(
+                    bytes = ByteArray(0),
+                    mimeType = "image/png",
+                    provider = "test",
+                )
+            }
+        }
         bindSingleton<RuntimeSandboxFactory> {
             RuntimeSandboxFactory { scope ->
                 LocalRuntimeSandbox(

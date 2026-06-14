@@ -19,7 +19,7 @@ jobs:
           cache: gradle
 
       - name: Assemble
-        run: ./gradlew assemble
+        run: ./gradlew assemble --stacktrace --console=plain
 
       - name: Run test suite
-        run: ./gradlew test :sharedLogic:allTests :sharedUI:allTests --console=plain
+        run: ./gradlew test :sharedLogic:allTests :sharedUI:allTests --stacktrace --console=plain

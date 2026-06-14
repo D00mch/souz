@@ -37,27 +37,34 @@ import kotlin.io.path.name
 class AndroidRuntimeSandboxFactory(
     private val context: Context,
     private val settingsProvider: SettingsProvider,
+    private val pythonCommandRunner: AndroidPythonCommandRunner? = null,
 ) : RuntimeSandboxFactory {
     override fun create(scope: SandboxScope): RuntimeSandbox =
-        AndroidRuntimeSandbox(context.applicationContext, settingsProvider, scope)
+        AndroidRuntimeSandbox(context.applicationContext, settingsProvider, scope, pythonCommandRunner)
 }
 
 class AndroidRuntimeSandbox(
     context: Context,
     settingsProvider: SettingsProvider,
     override val scope: SandboxScope = SandboxScope(userId = "android-user"),
+    pythonCommandRunner: AndroidPythonCommandRunner? = null,
 ) : RuntimeSandbox {
     override val mode: SandboxMode = SandboxMode.ANDROID
     override val fileSystem: SandboxFileSystem = AndroidSandboxFileSystem(context, settingsProvider)
     override val runtimePaths: SandboxRuntimePaths = fileSystem.runtimePaths
-    override val commandExecutor: SandboxCommandExecutor = AndroidSkillCommandExecutor(fileSystem)
+    override val commandExecutor: SandboxCommandExecutor = AndroidSkillCommandExecutor(fileSystem, pythonCommandRunner)
 }
 
 class AndroidSkillCommandExecutor(
     private val fileSystem: SandboxFileSystem,
+    private val pythonCommandRunner: AndroidPythonCommandRunner? = null,
 ) : SandboxCommandExecutor {
     override suspend fun execute(request: SandboxCommandRequest): SandboxCommandResult {
-        if (request.runtime == SandboxCommandRuntime.PYTHON || request.runtime == SandboxCommandRuntime.NODE) {
+        if (request.runtime == SandboxCommandRuntime.PYTHON) {
+            return pythonCommandRunner?.execute(request, fileSystem)
+                ?: unavailableRuntime(request.runtime)
+        }
+        if (request.runtime == SandboxCommandRuntime.NODE) {
             return unavailableRuntime(request.runtime)
         }
 
@@ -117,8 +124,8 @@ class AndroidSkillCommandExecutor(
                 "sh",
             ) + args)
 
-        SandboxCommandRuntime.PYTHON,
         SandboxCommandRuntime.NODE -> error("Unsupported Android runtime reached process command creation: $runtime")
+        SandboxCommandRuntime.PYTHON -> error("Unsupported Android runtime reached process command creation: $runtime")
     }
 
     private fun inlineShellCompatibility(script: String): String =

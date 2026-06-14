@@ -161,6 +161,12 @@ fun CodeBlockWithCopy(
     language: String?,
     style: TextStyle,
     renderedCode: AnnotatedString = AnnotatedString(code),
+    containerColor: Color = Color.Black.copy(alpha = 0.4f),
+    headerColor: Color = Color(0xFF2A2A2A),
+    borderColor: Color = Color.White.copy(alpha = 0.1f),
+    languageColor: Color = Color.White.copy(alpha = 0.7f),
+    copyButtonColor: Color = Color.White.copy(alpha = 0.15f),
+    copyIconColor: Color = Color.White,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val displayLang = if (!language.isNullOrBlank()) language.uppercase() else "CODE"
@@ -178,15 +184,15 @@ fun CodeBlockWithCopy(
             .fillMaxWidth()
             .padding(vertical = 8.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(Color.Black.copy(alpha = 0.4f))
-            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(8.dp)),
+            .background(containerColor)
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp)),
     ) {
         Column {
             DisableSelection {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF2A2A2A))
+                        .background(headerColor)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
@@ -194,7 +200,7 @@ fun CodeBlockWithCopy(
                     Text(
                         text = displayLang,
                         style = TextStyle(
-                            color = Color.White.copy(0.7f),
+                            color = languageColor,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -205,7 +211,7 @@ fun CodeBlockWithCopy(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(0.15f))
+                            .background(copyButtonColor)
                             .clickable {
                                 clipboardManager.setText(AnnotatedString(code))
                                 copied = true
@@ -216,7 +222,7 @@ fun CodeBlockWithCopy(
                         Icon(
                             imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                             contentDescription = if (copied) "Copied" else "Copy code",
-                            tint = Color.White,
+                            tint = copyIconColor,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

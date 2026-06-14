@@ -42,6 +42,7 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
     private val settingsProvider: SettingsProvider by di.instance()
 
     private val toolListFiles: ToolListFiles by di.instance()
+    private val toolReadFile: ToolReadFile by di.instance()
     private val toolFindInFiles: ToolFindInFiles by di.instance()
     private val toolNewFile: ToolNewFile by di.instance()
     private val toolDeleteFile: ToolDeleteFile by di.instance()
@@ -117,6 +118,7 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
     private fun ToolCategory.tools(): List<LLMToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
             toolListFiles.toGiga(),
+            toolReadFile.toGiga(),
             toolFindInFiles.toGiga(),
             toolNewFile.toGiga(),
             toolDeleteFile.toGiga(),

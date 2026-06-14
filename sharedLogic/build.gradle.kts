@@ -88,6 +88,7 @@ kotlin {
                 implementation(libs.kotlin.test)
                 implementation(libs.kotlin.testJunit5)
                 implementation(libs.kotlinx.coroutinesTest)
+                implementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
                 implementation(libs.mockk)
             }
         }
