@@ -55,6 +55,7 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
         if (!enabled) {
             throw LocalMacOsLiveSpeechUnsupportedException("Local macOS live speech transcription is unavailable on this host.")
         }
+        ensureSpeechUsageDescription()
         ensureAuthorization()
         prepareAssets(locale)
         val sessionId = try {
@@ -65,6 +66,20 @@ class MacOsSpeechAnalyzerLiveTranscriptionProvider(
             throw mapLiveBridgeError(error)
         }
         return BridgeLiveSpeechTranscriptionSession(bridge, sessionId)
+    }
+
+    private fun ensureSpeechUsageDescription() {
+        val hasUsageDescription = try {
+            bridge.hasSpeechRecognitionUsageDescription()
+        } catch (error: Throwable) {
+            throw mapLiveBridgeError(error)
+        }
+
+        if (!hasUsageDescription) {
+            throw LocalMacOsLiveSpeechUnavailableException(
+                "Local macOS speech recognition requires a macOS app bundle with NSSpeechRecognitionUsageDescription."
+            )
+        }
     }
 
     private fun ensureAuthorization() {

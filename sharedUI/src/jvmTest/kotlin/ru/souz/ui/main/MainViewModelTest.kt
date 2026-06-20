@@ -2,6 +2,7 @@
 
 package ru.souz.ui.main
 
+import androidx.lifecycle.viewModelScope
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
@@ -12,13 +13,19 @@ import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.unmockkObject
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.TestDispatcher
@@ -54,13 +61,11 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentSideEffect
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientSemanticBlock
-import ru.souz.ambient.AmbientSemanticBlockService
-import ru.souz.ambient.AmbientSuggestionStore
 import ru.souz.ambient.AmbientSpeechAvailability
 import ru.souz.ambient.AmbientTranscriptEvent
 import ru.souz.ambient.AmbientTranscriptionService
 import ru.souz.ambient.AmbientTranscriptionState
-import ru.souz.ambient.InMemoryAmbientSuggestionStore
+import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.TokenLogging
@@ -87,6 +92,8 @@ import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.ui.BaseViewModel
 import ru.souz.di.sharedUiMainViewModelUseCasesDiModule
+import ru.souz.ui.common.LocalModelDownloadPromptUi
+import ru.souz.ui.common.LocalModelDownloadStateUi
 import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.main.mainViewModelDiScope
 import ru.souz.ui.main.usecases.FinderPathExtractor
@@ -819,6 +826,138 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `toggle ambient with missing analysis model shows error and does not start listening`() = runTest(mainDispatcher) {
+        val ambientModel = LLMModel.LocalQwen3_4B_Instruct_2507
+        val localModelUiHost = TestLocalModelUiHost(missingModels = setOf(ambientModel))
+        val ambientTranscriptionService = TestAmbientTranscriptionService()
+        val harness = createHarness(
+            qwenChatKey = "qwen-key",
+            ambientAnalysisModel = ambientModel,
+            localModelUiHostOverride = localModelUiHost,
+            ambientTranscriptionService = ambientTranscriptionService,
+        )
+        val effectSignal = CompletableDeferred<MainEffect>()
+        val effectJob = launch {
+            harness.viewModel.effects.collect { effect ->
+                if (!effectSignal.isCompleted) effectSignal.complete(effect)
+            }
+        }
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            localModelUiHost.clearCounters()
+
+            viewModel.handleEvent(MainEvent.ToggleAmbientMode)
+
+            val effect = awaitDeferred(effectSignal)
+            advanceUntilIdle()
+
+            assertTrue(effect is MainEffect.ShowError)
+            assertTrue(effect.message.contains("ambient", ignoreCase = true))
+            assertEquals(1, localModelUiHost.downloadPromptCalls)
+            assertEquals(listOf(ambientModel), localModelUiHost.downloadPromptModels)
+            assertEquals(0, ambientTranscriptionService.startCalls)
+            assertFalse(viewModel.uiState.value.ambientMode.enabled)
+            assertNull(viewModel.uiState.value.localModelDownloadPrompt)
+        } finally {
+            effectJob.cancel()
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `toggle ambient starts listening when analysis model is available`() = runTest(mainDispatcher) {
+        val ambientModel = LLMModel.LocalQwen3_4B_Instruct_2507
+        val localModelUiHost = TestLocalModelUiHost()
+        val ambientTranscriptionService = TestAmbientTranscriptionService()
+        val harness = createHarness(
+            qwenChatKey = "qwen-key",
+            ambientAnalysisModel = ambientModel,
+            localModelUiHostOverride = localModelUiHost,
+            ambientTranscriptionService = ambientTranscriptionService,
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            localModelUiHost.clearCounters()
+
+            viewModel.handleEvent(MainEvent.ToggleAmbientMode)
+
+            awaitState(viewModel) { it.ambientMode.listening }
+
+            assertEquals(1, localModelUiHost.downloadPromptCalls)
+            assertEquals(listOf(ambientModel), localModelUiHost.downloadPromptModels)
+            assertEquals(1, localModelUiHost.schedulePreloadCalls)
+            assertEquals(1, ambientTranscriptionService.startCalls)
+            assertNull(viewModel.uiState.value.localModelDownloadPrompt)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `toggle ambient stops active listener without checking missing analysis model`() = runTest(mainDispatcher) {
+        val ambientModel = LLMModel.LocalQwen3_4B_Instruct_2507
+        val localModelUiHost = TestLocalModelUiHost()
+        val ambientTranscriptionService = TestAmbientTranscriptionService()
+        val harness = createHarness(
+            qwenChatKey = "qwen-key",
+            ambientAnalysisModel = ambientModel,
+            localModelUiHostOverride = localModelUiHost,
+            ambientTranscriptionService = ambientTranscriptionService,
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            localModelUiHost.clearCounters()
+
+            viewModel.handleEvent(MainEvent.ToggleAmbientMode)
+            awaitState(viewModel) { it.ambientMode.listening }
+
+            localModelUiHost.missingModels = setOf(ambientModel)
+            viewModel.handleEvent(MainEvent.ToggleAmbientMode)
+            awaitState(viewModel) { !it.ambientMode.enabled }
+
+            assertEquals(1, localModelUiHost.downloadPromptCalls)
+            assertEquals(1, ambientTranscriptionService.startCalls)
+            assertEquals(1, ambientTranscriptionService.stopCalls)
+            assertNull(viewModel.uiState.value.localModelDownloadPrompt)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `onCleared stops ambient listener through app scope when viewmodel scope is cancelled`() = runTest(mainDispatcher) {
+        val ambientModel = LLMModel.LocalQwen3_4B_Instruct_2507
+        val localModelUiHost = TestLocalModelUiHost()
+        val ambientTranscriptionService = TestAmbientTranscriptionService()
+        val harness = createHarness(
+            qwenChatKey = "qwen-key",
+            ambientAnalysisModel = ambientModel,
+            localModelUiHostOverride = localModelUiHost,
+            ambientTranscriptionService = ambientTranscriptionService,
+        )
+
+        val viewModel = harness.viewModel
+        advanceUntilIdle()
+
+        viewModel.handleEvent(MainEvent.ToggleAmbientMode)
+        awaitState(viewModel) { it.ambientMode.listening }
+
+        viewModel.viewModelScope.cancel()
+        harness.clear()
+        advanceUntilIdle()
+
+        assertEquals(1, ambientTranscriptionService.startCalls)
+        assertEquals(1, ambientTranscriptionService.stopCalls)
+        assertEquals(1, ambientTranscriptionService.clearCalls)
+    }
+
+    @Test
     fun `pick attachments adds files to state`() = runTest(mainDispatcher) {
         val harness = createHarness()
         val tempFile = File.createTempFile("souz-attachment", ".txt").apply {
@@ -1170,12 +1309,11 @@ class MainViewModelTest {
         error("Timed out waiting for expected MainState")
     }
 
-    private suspend fun TestScope.awaitDeferred(signal: CompletableDeferred<Unit>) {
+    private suspend fun <T> TestScope.awaitDeferred(signal: CompletableDeferred<T>): T {
         val deadlineMs = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadlineMs) {
             if (signal.isCompleted) {
-                signal.await()
-                return
+                return signal.await()
             }
             runCurrent()
             withContext(Dispatchers.Default) { yield() }
@@ -1227,9 +1365,12 @@ class MainViewModelTest {
         safeModeEnabled: Boolean = false,
         qwenChatKey: String = "",
         configuredModel: LLMModel = LLMModel.Max,
+        ambientAnalysisModel: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507,
         localAvailableModel: LLMModel? = null,
         localModelDownloaded: Boolean = true,
         localEmbeddingsDownloaded: Boolean = localModelDownloaded,
+        localModelUiHostOverride: LocalModelUiHost? = null,
+        ambientTranscriptionService: TestAmbientTranscriptionService = TestAmbientTranscriptionService(),
         speechRecognitionProviderOverride: SpeechRecognitionProvider? = null,
         recognizeBehavior: suspend (ByteArray) -> LLMResponse.RecognizeResponse = {
             LLMResponse.RecognizeResponse()
@@ -1250,6 +1391,11 @@ class MainViewModelTest {
         var gigaModelState = configuredModel
         every { settingsProvider.gigaModel } answers { gigaModelState }
         every { settingsProvider.gigaModel = any() } answers { gigaModelState = firstArg() }
+        var ambientAnalysisModelState = ambientAnalysisModel
+        every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelState }
+        every { settingsProvider.ambientAnalysisModel = any() } answers {
+            ambientAnalysisModelState = firstArg()
+        }
         every { settingsProvider.contextSize } returns 16_000
         every { settingsProvider.useStreaming } returns false
         every { settingsProvider.regionProfile } returns "ru"
@@ -1335,7 +1481,8 @@ class MainViewModelTest {
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<LocalModelUiHost> {
-                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
+                localModelUiHostOverride
+                    ?: DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
             }
             bindSingleton<PathOpener> { NoopPathOpener }
             bindSingleton<ChatCommandInputSource> { DesktopChatCommandInputSource(telegramBotController) }
@@ -1354,9 +1501,8 @@ class MainViewModelTest {
             bindSingleton { DesktopStructuredLogger() }
             bindSingleton<PermissionPromptService> { desktopPermissionService }
             bindSingleton<kotlinx.coroutines.CoroutineScope> { TestScope(mainDispatcher) }
-            bindSingleton<AmbientTranscriptionService> { TestAmbientTranscriptionService() }
-            bindSingleton<AmbientSuggestionStore> { InMemoryAmbientSuggestionStore() }
-            bindSingleton<AmbientSemanticBlockService> { TestAmbientSemanticBlockService() }
+            bindSingleton<AmbientTranscriptionService> { ambientTranscriptionService }
+            bindSingleton { SemanticBlockBuilder() }
             bindSingleton<AmbientBlockAnalyzer> { TestAmbientBlockAnalyzer() }
             bind<VoiceInputController>(overrides = true) with scoped(mainViewModelDiScope).singleton {
                 VoiceInputUseCase(
@@ -1418,6 +1564,9 @@ class MainViewModelTest {
 
     private class TestAmbientTranscriptionService : AmbientTranscriptionService {
         private val mutableState = MutableStateFlow<AmbientTranscriptionState>(AmbientTranscriptionState.Stopped)
+        var startCalls: Int = 0
+        var stopCalls: Int = 0
+        var clearCalls: Int = 0
         override val state = mutableState
         override val transcriptEvents = emptyFlow<AmbientTranscriptEvent>()
 
@@ -1425,22 +1574,80 @@ class MainViewModelTest {
             AmbientSpeechAvailability.Available
 
         override suspend fun start(locale: String): AmbientSpeechAvailability {
+            startCalls += 1
             mutableState.value = AmbientTranscriptionState.Listening(locale)
             return AmbientSpeechAvailability.Available
         }
 
         override suspend fun stop() {
+            stopCalls += 1
             mutableState.value = AmbientTranscriptionState.Stopped
         }
 
-        override suspend fun clearTranscript() = Unit
+        override suspend fun clearTranscript() {
+            clearCalls += 1
+        }
     }
 
-    private class TestAmbientSemanticBlockService : AmbientSemanticBlockService {
-        override val blocks = emptyFlow<AmbientSemanticBlock>()
-        override suspend fun start() = Unit
-        override suspend fun stop() = Unit
-        override fun clear() = Unit
+    private class TestLocalModelUiHost(
+        var missingModels: Set<LLMModel> = emptySet(),
+    ) : LocalModelUiHost {
+        var downloadPromptCalls: Int = 0
+        val downloadPromptModels: MutableList<LLMModel> = mutableListOf()
+        var schedulePreloadCalls: Int = 0
+
+        override suspend fun downloadPromptFor(model: LLMModel): LocalModelDownloadPromptUi? {
+            downloadPromptCalls += 1
+            downloadPromptModels += model
+            return if (model in missingModels) {
+                LocalModelDownloadPromptUi(
+                    model = model,
+                    profileId = "test-profile",
+                    profileDisplayName = model.displayName,
+                    downloads = emptyList(),
+                )
+            } else {
+                null
+            }
+        }
+
+        override suspend fun startDownload(
+            scope: CoroutineScope,
+            dispatcher: CoroutineDispatcher,
+            currentJob: Job?,
+            prompt: LocalModelDownloadPromptUi?,
+            updateDownloadState: suspend (LocalModelDownloadStateUi?) -> Unit,
+            onSuccess: suspend (LocalModelDownloadPromptUi) -> Unit,
+            onError: suspend (Throwable) -> Unit,
+        ): Job? = currentJob
+
+        override suspend fun cancelDownload(
+            currentJob: Job?,
+            hasActiveDownload: Boolean,
+            clearDownloadState: suspend () -> Unit,
+            onCancelled: suspend () -> Unit,
+        ): Job? {
+            clearDownloadState()
+            return null
+        }
+
+        override fun rebuildIndex(scope: CoroutineScope, dispatcher: CoroutineDispatcher) = Unit
+
+        override fun schedulePreload(
+            scope: CoroutineScope,
+            dispatcher: CoroutineDispatcher,
+            currentJob: Job?,
+            model: LLMModel,
+        ): Job? {
+            schedulePreloadCalls += 1
+            return currentJob
+        }
+
+        fun clearCounters() {
+            downloadPromptCalls = 0
+            downloadPromptModels.clear()
+            schedulePreloadCalls = 0
+        }
     }
 
     private class TestAmbientBlockAnalyzer : AmbientBlockAnalyzer {

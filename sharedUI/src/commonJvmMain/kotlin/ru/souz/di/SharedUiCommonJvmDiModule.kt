@@ -11,14 +11,12 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientSemanticBlock
-import ru.souz.ambient.AmbientSemanticBlockService
 import ru.souz.ambient.AmbientSpeechAvailability
-import ru.souz.ambient.AmbientSuggestionStore
 import ru.souz.ambient.AmbientTaskCandidate
 import ru.souz.ambient.AmbientTranscriptEvent
 import ru.souz.ambient.AmbientTranscriptionService
 import ru.souz.ambient.AmbientTranscriptionState
-import ru.souz.ambient.InMemoryAmbientSuggestionStore
+import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.ui.common.FileSystemPathMetadataProvider
@@ -90,9 +88,8 @@ fun sharedUiCommonJvmDiModule(): DI.Module = DI.Module("sharedUiCommonJvm") {
     bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
     bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
     bindSingleton<AmbientTranscriptionService> { NoopAmbientTranscriptionService }
-    bindSingleton<AmbientSemanticBlockService> { NoopAmbientSemanticBlockService }
     bindSingleton<AmbientBlockAnalyzer> { NoopAmbientBlockAnalyzer }
-    bindSingleton<AmbientSuggestionStore> { InMemoryAmbientSuggestionStore() }
+    bindSingleton { SemanticBlockBuilder() }
     bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { FinderPathExtractor(instance(), instance()) }
@@ -153,14 +150,6 @@ private object NoopAmbientTranscriptionService : AmbientTranscriptionService {
 
     override suspend fun stop() = Unit
     override suspend fun clearTranscript() = Unit
-}
-
-private object NoopAmbientSemanticBlockService : AmbientSemanticBlockService {
-    override val blocks = MutableSharedFlow<AmbientSemanticBlock>()
-
-    override suspend fun start() = Unit
-    override suspend fun stop() = Unit
-    override fun clear() = Unit
 }
 
 private object NoopAmbientBlockAnalyzer : AmbientBlockAnalyzer {

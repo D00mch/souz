@@ -937,13 +937,20 @@ public func souz_macos_live_speech_finalize_and_finish(
     if #available(macOS 26.0, *) {
         do {
             let session = try LiveSpeechSessionRegistry.shared.session(sessionId)
-            defer { LiveSpeechSessionRegistry.shared.remove(sessionId) }
-            let events = try waitForLiveAsync(timeoutSeconds: liveFinishTimeoutSeconds) {
-                try await session.finalizeAndFinish()
+            do {
+                let events = try waitForLiveAsync(timeoutSeconds: liveFinishTimeoutSeconds) {
+                    try await session.finalizeAndFinish()
+                }
+                LiveSpeechSessionRegistry.shared.remove(sessionId)
+                return strdup(events)
+            } catch {
+                try? waitForLiveAsync(timeoutSeconds: liveStartTimeoutSeconds) {
+                    await session.cancel()
+                }
+                LiveSpeechSessionRegistry.shared.remove(sessionId)
+                throw error
             }
-            return strdup(events)
         } catch {
-            LiveSpeechSessionRegistry.shared.remove(sessionId)
             writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
             return nil
         }
@@ -964,11 +971,16 @@ public func souz_macos_live_speech_cancel(
     if #available(macOS 26.0, *) {
         do {
             let session = try LiveSpeechSessionRegistry.shared.session(sessionId)
-            LiveSpeechSessionRegistry.shared.remove(sessionId)
-            try waitForLiveAsync(timeoutSeconds: liveStartTimeoutSeconds) {
-                await session.cancel()
+            do {
+                try waitForLiveAsync(timeoutSeconds: liveStartTimeoutSeconds) {
+                    await session.cancel()
+                }
+                LiveSpeechSessionRegistry.shared.remove(sessionId)
+                return 1
+            } catch {
+                LiveSpeechSessionRegistry.shared.remove(sessionId)
+                throw error
             }
-            return 1
         } catch {
             writeError(liveSpeechErrorMessage(error), to: errorBuffer, size: errorBufferSize)
             return 0
@@ -1037,7 +1049,7 @@ private func waitForLiveAsync<T>(
     let semaphore = DispatchSemaphore(value: 0)
     let box = AsyncResultBox<T>()
 
-    Task {
+    let task = Task {
         do {
             box.set(.success(try await operation()))
         } catch {
@@ -1047,6 +1059,7 @@ private func waitForLiveAsync<T>(
     }
 
     guard semaphore.wait(timeout: .now() + .seconds(timeoutSeconds)) == .success else {
+        task.cancel()
         throw LiveSpeechBridgeError.unavailable("Live speech transcription timed out.")
     }
     guard let result = box.get() else {

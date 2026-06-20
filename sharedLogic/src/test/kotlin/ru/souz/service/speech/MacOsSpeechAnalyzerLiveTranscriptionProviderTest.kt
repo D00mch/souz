@@ -160,6 +160,31 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
     }
 
     @Test
+    fun `start fails before authorization when speech usage description is missing`() = runTest {
+        val bridge = FakeMacOsSpeechBridge(
+            hasSpeechRecognitionUsageDescription = false,
+            initialAuthorizationStatus = MacOsSpeechAuthorizationStatus.NOT_DETERMINED,
+        )
+        val provider = MacOsSpeechAnalyzerLiveTranscriptionProvider(
+            bridge = bridge,
+            isMacOsProvider = { true },
+        )
+
+        val error = assertFailsWith<LocalMacOsLiveSpeechUnavailableException> {
+            provider.start("en-US")
+        }
+
+        assertEquals(
+            "Local macOS speech recognition requires a macOS app bundle with NSSpeechRecognitionUsageDescription.",
+            error.message,
+        )
+        assertEquals(0, bridge.authorizationStatusCalls)
+        assertEquals(0, bridge.requestAuthorizationCalls)
+        assertEquals(null, bridge.livePrepareAssetsLocale)
+        assertEquals(null, bridge.liveStartLocale)
+    }
+
+    @Test
     fun `start maps denied speech authorization before native live start`() = runTest {
         val bridge = FakeMacOsSpeechBridge(
             initialAuthorizationStatus = MacOsSpeechAuthorizationStatus.DENIED,
@@ -302,6 +327,7 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
         private val pollRaw: String = "",
         private val finalizeRaw: String = "",
         private val prepareAssetsError: Throwable? = null,
+        private val hasSpeechRecognitionUsageDescription: Boolean = true,
         initialAuthorizationStatus: MacOsSpeechAuthorizationStatus = MacOsSpeechAuthorizationStatus.AUTHORIZED,
     ) : MacOsSpeechBridgeApi {
         var livePrepareAssetsLocale: String? = null
@@ -313,12 +339,15 @@ class MacOsSpeechAnalyzerLiveTranscriptionProviderTest {
         var lastBitsPerSample: Int? = null
         var liveCancelCalls: Int = 0
         var requestAuthorizationCalls: Int = 0
+        var authorizationStatusCalls: Int = 0
         private var authorizationStatus: MacOsSpeechAuthorizationStatus = initialAuthorizationStatus
 
-        override fun hasSpeechRecognitionUsageDescription(): Boolean = true
+        override fun hasSpeechRecognitionUsageDescription(): Boolean = hasSpeechRecognitionUsageDescription
 
-        override fun authorizationStatus(): MacOsSpeechAuthorizationStatus =
-            authorizationStatus
+        override fun authorizationStatus(): MacOsSpeechAuthorizationStatus {
+            authorizationStatusCalls += 1
+            return authorizationStatus
+        }
 
         override fun requestAuthorizationIfNeeded() {
             requestAuthorizationCalls += 1

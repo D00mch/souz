@@ -72,6 +72,7 @@ import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
+import ru.souz.ambient.AmbientModeState
 import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
@@ -719,7 +720,7 @@ private fun formatTimestamp(timestamp: Long): String =
 @Composable
 private fun AmbientWindowTitle(
     title: String,
-    ambientMode: AmbientModeUiState,
+    ambientMode: AmbientModeState,
     onToggleAmbientMode: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -801,6 +802,9 @@ private fun AmbientSuggestionCard(
     onDismiss: () -> Unit,
 ) {
     val shape = RoundedCornerShape(8.dp)
+    val suggestionPrompt = stringResource(Res.string.ambient_suggestion_prompt).format(suggestion.taskText)
+    val rejectText = stringResource(Res.string.ambient_suggestion_reject)
+    val acceptText = stringResource(Res.string.ambient_suggestion_accept)
     Column(
         modifier = Modifier
             .clip(shape)
@@ -821,7 +825,7 @@ private fun AmbientSuggestionCard(
                 modifier = Modifier.size(16.dp),
             )
             Text(
-                text = suggestion.suggestionText,
+                text = suggestionPrompt,
                 color = Color(0xE6FFFFFF),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -864,14 +868,14 @@ private fun AmbientSuggestionCard(
         ) {
             Spacer(modifier = Modifier.weight(1f))
             AmbientIconTextButton(
-                text = "Не сейчас",
+                text = rejectText,
                 icon = Icons.Rounded.Close,
                 tint = Color(0xB3FFFFFF),
                 background = Color(0x12FFFFFF),
                 onClick = onReject,
             )
             AmbientIconTextButton(
-                text = "Сделать",
+                text = acceptText,
                 icon = Icons.Rounded.Check,
                 tint = Color(0xFF18130A),
                 background = Color(0xFFFFC857),

@@ -3,6 +3,8 @@ package ru.souz.ambient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.take
@@ -21,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -242,6 +245,34 @@ class DefaultAmbientTranscriptionServiceTest {
         assertEquals(AmbientTranscriptionState.Stopped, service.state.value)
     }
 
+    @Test
+    fun `stop during live start invalidates start before microphone is opened`() = runTest {
+        val startEntered = CompletableDeferred<Unit>()
+        val releaseStart = CompletableDeferred<Unit>()
+        val session = FakeLiveSpeechTranscriptionSession()
+        val liveProvider = FakeLiveSpeechTranscriptionProvider(
+            supported = true,
+            session = session,
+            onStart = {
+                startEntered.complete(Unit)
+                releaseStart.await()
+            },
+        )
+        val audioSource = FakePcmAudioFrameSource(frames = flow { awaitCancellation() })
+        val service = service(liveProvider = liveProvider, audioSource = audioSource, scope = this)
+
+        val startResult = async { service.start("en-US") }
+        startEntered.await()
+
+        service.stop()
+        releaseStart.complete(Unit)
+
+        assertNotEquals(AmbientSpeechAvailability.Available, startResult.await())
+        assertEquals(0, audioSource.startCalls)
+        assertEquals(1, session.cancelCalls)
+        assertEquals(AmbientTranscriptionState.Stopped, service.state.value)
+    }
+
     private fun service(
         liveProvider: LiveSpeechTranscriptionProvider,
         audioSource: PcmAudioFrameSource,
@@ -261,6 +292,7 @@ class DefaultAmbientTranscriptionServiceTest {
         private val supported: Boolean = true,
         val session: FakeLiveSpeechTranscriptionSession = FakeLiveSpeechTranscriptionSession(),
         private val startError: Throwable? = null,
+        private val onStart: suspend () -> Unit = {},
     ) : LiveSpeechTranscriptionProvider {
         var startCalls: Int = 0
 
@@ -271,6 +303,7 @@ class DefaultAmbientTranscriptionServiceTest {
 
         override suspend fun start(locale: String): LiveSpeechTranscriptionSession {
             startCalls += 1
+            onStart()
             startError?.let { throw it }
             return session
         }

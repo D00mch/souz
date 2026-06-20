@@ -52,6 +52,18 @@ class SemanticBlockBuilder(
     fun clear() {
         current = mutableListOf()
         currentLiveFullText = null
+        lastClosedLiveFullText = null
+        lastClosedLiveEndMs = null
+    }
+
+    fun discardOpenAsLiveBaseline() {
+        if (current.isEmpty()) return
+        if (current.all { it.source == AmbientTranscriptSource.LIVE }) {
+            lastClosedLiveFullText = currentLiveFullText ?: current.joinToString(" ") { it.text.trim() }.trim()
+            lastClosedLiveEndMs = current.maxOfOrNull { it.eventEndMs() }
+        }
+        current = mutableListOf()
+        currentLiveFullText = null
     }
 
     private fun closeReasonBeforeAdding(next: AmbientTranscriptEvent): AmbientBlockCloseReason? {

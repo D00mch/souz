@@ -78,6 +78,41 @@ class SemanticBlockBuilderTest {
     }
 
     @Test
+    fun `clear resets live cumulative dedupe state`() {
+        val builder = SemanticBlockBuilder(
+            clock = { 3_000L },
+            config = SemanticBlockBuilderConfig(minUsefulChars = 1),
+        )
+
+        builder.accept(
+            event(
+                id = "v1",
+                text = "Найди заметку с долгами",
+                isFinal = false,
+                startedAtMs = 0L,
+                endedAtMs = 2_000L,
+            )
+        )
+        builder.flush(closeReason = AmbientBlockCloseReason.STOPPED)
+
+        builder.clear()
+        builder.accept(
+            event(
+                id = "v2",
+                text = "Найди заметку с долгами и добавь новую строку",
+                isFinal = false,
+                startedAtMs = 10_000L,
+                endedAtMs = 13_000L,
+            )
+        )
+
+        val block = builder.flush(closeReason = AmbientBlockCloseReason.STOPPED)
+
+        assertEquals("Найди заметку с долгами и добавь новую строку", block?.text)
+        assertEquals(10_000L, block?.startedAtMs)
+    }
+
+    @Test
     fun `repeated identical final text is preserved`() {
         val builder = SemanticBlockBuilder(clock = { 5_000L })
 

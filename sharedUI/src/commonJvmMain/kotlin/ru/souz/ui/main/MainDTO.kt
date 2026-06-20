@@ -1,6 +1,7 @@
 package ru.souz.ui.main
 
 import ru.souz.agent.state.AgentContext
+import ru.souz.ambient.AmbientModeState
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
@@ -92,17 +93,8 @@ data class SelectionDialogCandidateUi(
     val preview: String?,
 )
 
-data class AmbientModeUiState(
-    val enabled: Boolean = false,
-    val starting: Boolean = false,
-    val listening: Boolean = false,
-    val analyzing: Boolean = false,
-    val errorMessage: String? = null,
-)
-
 data class AmbientSuggestionUiModel(
     val id: String,
-    val suggestionText: String,
     val taskText: String,
     val createdAtMs: Long,
     val expiresAtMs: Long,
@@ -145,7 +137,7 @@ data class MainState(
     val pendingVoiceInputDraft: String? = null,
     val pendingVoiceInputDraftToken: Long = 0L,
     val chatSearch: ChatSearchState = ChatSearchState(),
-    val ambientMode: AmbientModeUiState = AmbientModeUiState(),
+    val ambientMode: AmbientModeState = AmbientModeState(),
     val ambientSuggestions: List<AmbientSuggestionUiModel> = emptyList(),
     val isSandboxed: Boolean = false,
     val voiceInputDisabledReason: String? = null,

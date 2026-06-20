@@ -1,18 +1,51 @@
 plugins {
-    alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.androidKotlinMultiplatformLibrary)
 }
 
-dependencies {
-    implementation(projects.llms)
-    implementation(projects.sharedLogic)
-    implementation(libs.kotlinx.coroutines)
-    implementation(libs.slfj)
+kotlin {
+    jvm()
+    androidLibrary {
+        namespace = "ru.souz.ambientagent"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+    }
 
-    testImplementation(libs.kotlin.test)
-    testImplementation(libs.kotlin.testJunit5)
-    testImplementation(libs.kotlinx.coroutinesTest)
+    sourceSets {
+        val commonMain by getting
+        val commonJvmMain by creating {
+            dependsOn(commonMain)
+            kotlin.srcDir("src/commonJvmMain/kotlin")
+            dependencies {
+                implementation(kotlin("stdlib"))
+                implementation(libs.kotlinx.coroutines)
+                implementation(libs.slf4j.api)
+            }
+        }
+
+        val androidMain by getting {
+            dependsOn(commonJvmMain)
+        }
+
+        val jvmMain by getting {
+            dependsOn(commonJvmMain)
+            kotlin.srcDir("src/jvmMain/kotlin")
+            dependencies {
+                implementation(projects.sharedLogic)
+            }
+        }
+
+        val jvmTest by getting {
+            kotlin.srcDir("src/test/kotlin")
+            dependencies {
+                implementation(libs.kotlin.test)
+                implementation(libs.kotlin.testJunit5)
+                implementation(libs.kotlinx.coroutinesTest)
+            }
+        }
+    }
 }
 
-tasks.test {
+tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }

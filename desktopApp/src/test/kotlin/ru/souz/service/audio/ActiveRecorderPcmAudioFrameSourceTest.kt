@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -50,6 +51,31 @@ class ActiveRecorderPcmAudioFrameSourceTest {
 
         assertEquals(1, recorder.startCalls)
         assertEquals(1, recorder.stopCalls)
+    }
+
+    @Test
+    fun `active sound recorder avoids tryLock and JVM concurrency primitives`() {
+        val source = activeSoundRecorderSource()
+        val forbiddenTokens = listOf(
+            "tryLock(",
+            "ReentrantLock",
+            "Atomic",
+            "@Volatile",
+            "synchronized(",
+        )
+
+        forbiddenTokens.forEach { token ->
+            assertFalse(source.contains(token), "ActiveSoundRecorderImpl must not use $token")
+        }
+    }
+
+    private fun activeSoundRecorderSource(): String {
+        val candidates = listOf(
+            File("desktopApp/src/main/kotlin/ru/souz/service/audio/ActiveSoundRecorder.kt"),
+            File("src/main/kotlin/ru/souz/service/audio/ActiveSoundRecorder.kt"),
+        )
+        return candidates.firstOrNull { it.isFile }?.readText()
+            ?: error("ActiveSoundRecorder.kt source was not found")
     }
 
     private class FakeActiveSoundRecorder(

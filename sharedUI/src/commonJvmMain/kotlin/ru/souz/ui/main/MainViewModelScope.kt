@@ -14,6 +14,7 @@ import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.ToolModifyReviewUseCase
 import ru.souz.ui.main.usecases.VoiceInputController
+import ru.souz.ambient.SemanticBlockBuilder
 
 class MainViewModelScope(
     val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -39,9 +40,8 @@ fun createMainViewModel(
         permissionPromptService = direct.instance(),
         appScope = direct.instance(),
         ambientTranscriptionService = direct.instance(),
-        ambientSemanticBlockService = direct.instance(),
         ambientBlockAnalyzer = direct.instance(),
-        ambientSuggestionStore = direct.instance(),
+        ambientSemanticBlockBuilder = direct.instance<SemanticBlockBuilder>(),
         chatUseCase = scopedDirect.instance<ChatUseCase>(),
         toolModifyReviewUseCase = scopedDirect.instance<ToolModifyReviewUseCase>(),
         voiceInputUseCase = scopedDirect.instance<VoiceInputController>(),

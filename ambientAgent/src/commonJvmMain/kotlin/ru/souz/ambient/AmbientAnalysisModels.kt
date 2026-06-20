@@ -16,6 +16,19 @@ data class AmbientTaskCandidate(
     val evidenceEventIds: List<String>,
 )
 
+data class AmbientSuggestion(
+    val id: String,
+    val candidate: AmbientTaskCandidate,
+    val createdAtMs: Long,
+    val expiresAtMs: Long,
+)
+
+data class AmbientSuggestionConfig(
+    val maxPendingSuggestions: Int = 3,
+    val ttlMs: Long = 10_000L,
+    val dedupeCooldownMs: Long = 2 * 60 * 1_000L,
+)
+
 data class AmbientModeState(
     val enabled: Boolean = false,
     val starting: Boolean = false,

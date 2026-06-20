@@ -11,16 +11,11 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientLocalLlm
-import ru.souz.ambient.AmbientSemanticBlockService
-import ru.souz.ambient.AmbientSuggestionStore
 import ru.souz.ambient.AmbientTranscriptionService
 import ru.souz.ambient.DefaultAmbientTranscriptionService
-import ru.souz.ambient.DefaultAmbientSemanticBlockService
-import ru.souz.ambient.InMemoryAmbientSuggestionStore
 import ru.souz.ambient.LocalChatAmbientLocalLlm
 import ru.souz.ambient.LocalLlmAmbientBlockAnalyzer
 import ru.souz.ambient.PcmAudioFrameSource
-import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.ambient.selectAmbientLocalModel
 import ru.souz.paths.SouzPaths
 import ru.souz.agent.agentDiModule
@@ -295,14 +290,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             scope = instance(),
         )
     }
-    bindSingleton { SemanticBlockBuilder() }
-    bindSingleton<AmbientSemanticBlockService>(overrides = true) {
-        DefaultAmbientSemanticBlockService(
-            transcriptEvents = instance<AmbientTranscriptionService>().transcriptEvents,
-            builder = instance(),
-            scope = instance(),
-        )
-    }
     bindSingleton<AmbientLocalLlm> {
         val buildProfile = instance<LlmBuildProfile>()
         val settingsProvider = instance<SettingsProvider>()
@@ -315,7 +302,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
         }
     }
     bindSingleton<AmbientBlockAnalyzer>(overrides = true) { LocalLlmAmbientBlockAnalyzer(instance()) }
-    bindSingleton<AmbientSuggestionStore>(overrides = true) { InMemoryAmbientSuggestionStore() }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }

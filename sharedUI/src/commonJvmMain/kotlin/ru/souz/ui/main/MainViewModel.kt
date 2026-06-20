@@ -21,10 +21,10 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientModeState
-import ru.souz.ambient.AmbientSemanticBlockService
 import ru.souz.ambient.AmbientSuggestion
-import ru.souz.ambient.AmbientSuggestionStore
+import ru.souz.ambient.AmbientSpeechAvailability
 import ru.souz.ambient.AmbientTranscriptionService
+import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
@@ -33,7 +33,6 @@ import ru.souz.ui.main.search.ChatMessageSearchProjection
 import ru.souz.ui.main.search.ChatSearchEngine
 import ru.souz.ui.main.search.ChatSearchState
 import ru.souz.ui.main.usecases.AmbientModeController
-import ru.souz.ui.main.usecases.AmbientSuggestionActionHandler
 import ru.souz.ui.main.usecases.ChatAttachmentsUseCase
 import ru.souz.ui.main.usecases.ChatUseCase
 import ru.souz.ui.main.usecases.MainUseCaseOutput
@@ -71,9 +70,8 @@ class MainViewModel(
     private val permissionPromptService: PermissionPromptService,
     private val appScope: CoroutineScope,
     private val ambientTranscriptionService: AmbientTranscriptionService,
-    private val ambientSemanticBlockService: AmbientSemanticBlockService,
     private val ambientBlockAnalyzer: AmbientBlockAnalyzer,
-    private val ambientSuggestionStore: AmbientSuggestionStore,
+    private val ambientSemanticBlockBuilder: SemanticBlockBuilder,
     private val chatUseCase: ChatUseCase,
     private val toolModifyReviewUseCase: ToolModifyReviewUseCase,
     private val voiceInputUseCase: VoiceInputController,
@@ -86,19 +84,6 @@ class MainViewModel(
     private val l = LoggerFactory.getLogger(MainViewModel::class.java)
 
     private var lastAppliedAgentId = agentFacade.activeAgentId.value
-    private val ambientSuggestionActionHandler by lazy(kotlin.LazyThreadSafetyMode.NONE) {
-        AmbientSuggestionActionHandler(
-            store = ambientSuggestionStore,
-            executor = { candidate ->
-                chatUseCase.sendChatMessage(
-                    scope = viewModelScope,
-                    isVoice = true,
-                    chatMessage = candidate.taskText,
-                    requestSource = ChatRequestSource.AMBIENT_AGENT,
-                )
-            },
-        )
-    }
     private val chatSearchEngine = ChatSearchEngine()
     private var chatSearchProjections: Map<String, ChatMessageSearchProjection> = emptyMap()
     private var startTips: List<String> = emptyList()
@@ -107,13 +92,20 @@ class MainViewModel(
     private var ambientModelPreloadJob: Job? = null
     private val ambientModeController by lazy(kotlin.LazyThreadSafetyMode.NONE) {
         AmbientModeController(
-            appScope = appScope,
+            scope = viewModelScope,
             transcription = ambientTranscriptionService,
-            semanticBlocks = ambientSemanticBlockService,
+            blockBuilder = ambientSemanticBlockBuilder,
             analyzer = ambientBlockAnalyzer,
-            suggestionStore = ambientSuggestionStore,
-            actionHandler = ambientSuggestionActionHandler,
+            executeCandidate = { candidate ->
+                chatUseCase.sendChatMessage(
+                    scope = viewModelScope,
+                    isVoice = true,
+                    chatMessage = candidate.taskText,
+                    requestSource = ChatRequestSource.AMBIENT_AGENT,
+                )
+            },
             localeProvider = ::ambientLocale,
+            failureMessageProvider = ::ambientStartFailureMessage,
             onStartRequested = ::scheduleAmbientModelPreload,
         )
     }
@@ -326,17 +318,19 @@ class MainViewModel(
                     selectedCandidateId = null,
                 )
 
-            MainEvent.ToggleAmbientMode -> ambientModeController.toggle()
+            MainEvent.ToggleAmbientMode -> toggleAmbientMode()
 
             is MainEvent.AcceptAmbientSuggestion -> vmLaunch {
                 ambientModeController.acceptSuggestion(event.id)
             }
 
-            is MainEvent.RejectAmbientSuggestion ->
+            is MainEvent.RejectAmbientSuggestion -> vmLaunch {
                 ambientModeController.rejectSuggestion(event.id)
+            }
 
-            is MainEvent.DismissAmbientSuggestion ->
+            is MainEvent.DismissAmbientSuggestion -> vmLaunch {
                 ambientModeController.dismissSuggestion(event.id)
+            }
         }
     }
 
@@ -386,7 +380,7 @@ class MainViewModel(
             }
             setState {
                 copy(
-                    ambientMode = mode.toUiState(),
+                    ambientMode = mode,
                     voiceInputDisabledReason = voiceDisabledReason,
                     statusMessage = mode.errorMessage ?: statusMessage,
                 )
@@ -413,23 +407,28 @@ class MainViewModel(
     private fun AmbientSuggestion.toUiModel(): AmbientSuggestionUiModel =
         AmbientSuggestionUiModel(
             id = id,
-            suggestionText = "Помочь: «${candidate.taskText}»?",
             taskText = candidate.taskText,
             createdAtMs = createdAtMs,
             expiresAtMs = expiresAtMs,
         )
 
-    private fun AmbientModeState.toUiState(): AmbientModeUiState =
-        AmbientModeUiState(
-            enabled = enabled,
-            starting = starting,
-            listening = listening,
-            analyzing = analyzing,
-            errorMessage = errorMessage,
-        )
-
     private fun AmbientModeState.isVoiceInputBlocked(): Boolean =
         enabled || starting || listening
+
+    private suspend fun ambientStartFailureMessage(availability: AmbientSpeechAvailability): String =
+        when (availability) {
+            AmbientSpeechAvailability.LiveBackendUnavailable ->
+                getString(Res.string.ambient_error_stt_unavailable)
+
+            AmbientSpeechAvailability.MicrophoneUnavailable ->
+                getString(Res.string.ambient_error_microphone_unavailable)
+
+            AmbientSpeechAvailability.SpeechRecognitionPermissionDenied ->
+                getString(Res.string.ambient_error_speech_permission_denied)
+
+            AmbientSpeechAvailability.Available,
+            AmbientSpeechAvailability.AlreadyRunning -> ""
+        }
 
     private suspend fun ambientVoiceInputBlockReason(): String? =
         if (ambientModeController.isMicrophoneBusyForVoiceInput) {
@@ -437,6 +436,21 @@ class MainViewModel(
         } else {
             null
         }
+
+    private suspend fun toggleAmbientMode() {
+        if (ambientModeController.modeState.value.isVoiceInputBlocked()) {
+            ambientModeController.toggle()
+            return
+        }
+
+        val downloadPrompt = localModelUiHost.downloadPromptFor(settingsProvider.ambientAnalysisModel)
+        if (downloadPrompt != null) {
+            send(MainEffect.ShowError(getString(Res.string.ambient_error_missing_analysis_model)))
+            return
+        }
+
+        ambientModeController.toggle()
+    }
 
     private fun scheduleAmbientModelPreload() {
         ambientModelPreloadJob = localModelUiHost.schedulePreload(
@@ -753,7 +767,7 @@ class MainViewModel(
         val pendingToolPermissionRequestId = currentState.toolPermissionDialog?.requestId
         val pendingSelectionSourceId = currentState.selectionDialog?.sourceId
         val pendingSelectionRequestId = currentState.selectionDialog?.requestId
-        ambientModeController.stopAsync(clearSuggestions = true)
+        ambientModeController.stopAsync(cleanupScope = appScope, clearSuggestions = true)
         appScope.launch {
             permissionsUseCase.rejectPendingPermissionRequest(pendingToolPermissionRequestId)
         }
