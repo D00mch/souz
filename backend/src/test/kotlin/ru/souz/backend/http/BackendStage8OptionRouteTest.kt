@@ -21,11 +21,14 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -36,6 +39,7 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.session.AgentConversationSession
+import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.model.Option
@@ -72,10 +76,7 @@ class BackendStage8OptionRouteTest {
             setBody("""{"content":"need option"}""")
         }
         val payload = stage8Json.readTree(response.bodyAsText())
-        val storedExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
-        val storedOption = runBlocking {
-            context.optionRepository.listByExecution("user-a", chat.id, storedExecution.id).single()
-        }
+        val (storedExecution, storedOption) = awaitWaitingOption(context, "user-a", chat.id)
         val replayResponse = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=0") {
             trustedHeaders("user-a")
         }
@@ -114,10 +115,7 @@ class BackendStage8OptionRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
         }
-        val waitingExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
-        val option = runBlocking {
-            context.optionRepository.listByExecution("user-a", chat.id, waitingExecution.id).single()
-        }
+        val (waitingExecution, option) = awaitWaitingOption(context, "user-a", chat.id)
         val beforeAnswerEvents = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=0") {
             trustedHeaders("user-a")
         }
@@ -139,15 +137,19 @@ class BackendStage8OptionRouteTest {
             )
         }
         val answerPayload = stage8Json.readTree(answerResponse.bodyAsText())
+        val storedExecution = awaitExecutionStatus(
+            context = context,
+            userId = "user-a",
+            chatId = chat.id,
+            executionId = waitingExecution.id,
+            status = AgentExecutionStatus.COMPLETED,
+        )
+        val visibleMessages = awaitVisibleMessages(context, "user-a", chat.id, expectedSize = 2)
         val replayAfterAnswer = client.get("${BackendHttpRoutes.chatEvents(chat.id)}?afterSeq=$beforeAnswerSeq") {
             trustedHeaders("user-a")
         }
         val replayAfterAnswerPayload = stage8Json.readTree(replayAfterAnswer.bodyAsText())
         val answeredOption = runBlocking { assertNotNull(context.optionRepository.get("user-a", option.id)) }
-        val storedExecution = runBlocking {
-            assertNotNull(context.executionRepository.getByChat("user-a", chat.id, waitingExecution.id))
-        }
-        val visibleMessages = runBlocking { context.messageRepository.list("user-a", chat.id) }
 
         assertEquals(HttpStatusCode.OK, answerResponse.status)
         assertEquals(option.id.toString(), answerPayload["option"]["id"].asText())
@@ -189,10 +191,7 @@ class BackendStage8OptionRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
         }
-        val waitingExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
-        val option = runBlocking {
-            context.optionRepository.listByExecution("user-a", chat.id, waitingExecution.id).single()
-        }
+        val (waitingExecution, option) = awaitWaitingOption(context, "user-a", chat.id)
 
         assertEquals(5, waitingExecution.usage?.totalTokens)
 
@@ -201,12 +200,16 @@ class BackendStage8OptionRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"selectedOptionIds":["a"]}""")
         }
-        val completedExecution = runBlocking {
-            context.executionRepository.getByChat("user-a", chat.id, waitingExecution.id)
-        }
+        val completedExecution = awaitExecutionStatus(
+            context = context,
+            userId = "user-a",
+            chatId = chat.id,
+            executionId = waitingExecution.id,
+            status = AgentExecutionStatus.COMPLETED,
+        )
 
-        assertEquals(12, completedExecution?.usage?.totalTokens)
-        assertEquals(7, completedExecution?.usage?.completionTokens)
+        assertEquals(12, completedExecution.usage?.totalTokens)
+        assertEquals(7, completedExecution.usage?.completionTokens)
     }
 
     @Test
@@ -224,10 +227,7 @@ class BackendStage8OptionRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
         }
-        val option = runBlocking {
-            val execution = context.executionRepository.listByChat("user-a", chat.id).single()
-            context.optionRepository.listByExecution("user-a", chat.id, execution.id).single()
-        }
+        val option = awaitWaitingOption(context, "user-a", chat.id).option
 
         client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-a")
@@ -260,10 +260,7 @@ class BackendStage8OptionRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"need option"}""")
         }
-        val option = runBlocking {
-            val execution = context.executionRepository.listByChat("user-a", chat.id).single()
-            context.optionRepository.listByExecution("user-a", chat.id, execution.id).single()
-        }
+        val option = awaitWaitingOption(context, "user-a", chat.id).option
 
         val foreignResponse = client.post(BackendHttpRoutes.optionAnswer(option.id)) {
             trustedHeaders("user-b")
@@ -440,6 +437,64 @@ private fun stage8RouteTestContext(runner: BackendConversationTurnRunner): Route
         ),
         turnRunner = runner,
     )
+
+private data class WaitingOptionFixture(
+    val execution: AgentExecution,
+    val option: Option,
+)
+
+private fun awaitWaitingOption(
+    context: RouteTestContext,
+    userId: String,
+    chatId: UUID,
+): WaitingOptionFixture = runBlocking {
+    eventually("waiting option for chat $chatId") {
+        val execution = context.executionRepository.listByChat(userId, chatId).singleOrNull()
+            ?: return@eventually null
+        val option = context.optionRepository.listByExecution(userId, chatId, execution.id).singleOrNull()
+            ?: return@eventually null
+        WaitingOptionFixture(execution = execution, option = option)
+    }
+}
+
+private fun awaitExecutionStatus(
+    context: RouteTestContext,
+    userId: String,
+    chatId: UUID,
+    executionId: UUID,
+    status: AgentExecutionStatus,
+): AgentExecution = runBlocking {
+    eventually("execution $executionId to reach $status") {
+        context.executionRepository.getByChat(userId, chatId, executionId)
+            ?.takeIf { it.status == status }
+    }
+}
+
+private fun awaitVisibleMessages(
+    context: RouteTestContext,
+    userId: String,
+    chatId: UUID,
+    expectedSize: Int,
+): List<ChatMessage> = runBlocking {
+    eventually("$expectedSize visible messages for chat $chatId") {
+        context.messageRepository.list(userId, chatId)
+            .takeIf { it.size >= expectedSize }
+    }
+}
+
+private suspend fun <T : Any> eventually(
+    description: String,
+    block: suspend () -> T?,
+): T {
+    val timeout = TimeSource.Monotonic.markNow() + 2.seconds
+    while (true) {
+        block()?.let { return it }
+        if (timeout.hasPassedNow()) {
+            throw AssertionError("Timed out waiting for $description.")
+        }
+        delay(10)
+    }
+}
 
 private suspend fun DefaultClientWebSocketSession.receiveEvent(): JsonNode =
     stage8Json.readTree((incoming.receive() as Frame.Text).readText())
