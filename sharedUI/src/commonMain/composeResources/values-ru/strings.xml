@@ -305,6 +305,7 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Модель</string>
+    <string name="label_ambient_analysis_model">Ambient модель</string>
     <string name="content_desc_select_agent">Выбрать агента</string>
     <string name="label_embeddings_model">Модель эмбеддингов</string>
     <string name="label_voice_recognition_model">Модель распознавания речи</string>
@@ -373,6 +374,14 @@
     <string name="voice_status_recording_started">Запись запущена</string>
     <string name="voice_status_processing_input">Обработка входа</string>
     <string name="voice_status_speech_not_recognized">Речь не распознана</string>
+    <string name="voice_error_microphone_busy_ambient">Микрофон занят ambient mode.</string>
+    <string name="ambient_error_missing_analysis_model">Сначала скачайте ambient модель в настройках.</string>
+    <string name="ambient_error_stt_unavailable">Ambient распознавание речи недоступно.</string>
+    <string name="ambient_error_microphone_unavailable">Микрофон недоступен для ambient mode.</string>
+    <string name="ambient_error_speech_permission_denied">Нет разрешения macOS Speech Recognition.</string>
+    <string name="ambient_suggestion_prompt">Помочь: «%s»?</string>
+    <string name="ambient_suggestion_reject">Не сейчас</string>
+    <string name="ambient_suggestion_accept">Сделать</string>
     <string name="voice_error_empty_audio">Аудио не записалось. Удерживайте кнопку микрофона чуть дольше и попробуйте снова.</string>
     <string name="voice_error_microphone_unavailable">Не удалось запустить запись с микрофона. Разрешите доступ в Настройки macOS &gt; Конфиденциальность и безопасность &gt; Микрофон и перезапустите приложение.</string>
     <string name="voice_error_missing_key">Добавьте ключ API для выбранной модели распознавания речи в Настройки > Мои ключи, чтобы использовать голосовые команды</string>

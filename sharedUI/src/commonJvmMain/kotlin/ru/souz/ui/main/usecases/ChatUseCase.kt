@@ -93,7 +93,11 @@ class ChatUseCase internal constructor(
         try {
             emitRequestStarted(session)
             session.sideEffectsJob = subscribeOnTaskSideEffects(scope, session.pendingBotMessage)
-            l.info("About to execute agent with user input {}", userText)
+            l.info(
+                "About to execute agent request: source={} chars={}",
+                requestSource,
+                userText.length,
+            )
 
             val response = executeAgentRequest(session, userText)
             val completedResponse = buildCompletedResponse(session, response, onResult)

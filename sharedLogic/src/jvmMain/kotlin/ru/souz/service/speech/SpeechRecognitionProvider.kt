@@ -77,6 +77,7 @@ class MacOsSpeechRecognitionProvider(
     private val settingsProvider: SettingsProvider,
     private val bridge: MacOsSpeechBridgeApi,
     private val isMacOsProvider: () -> Boolean = LocalMacOsSpeechHost::isCurrentHost,
+    private val liveSpeechProvider: LiveSpeechTranscriptionProvider? = null,
 ) : SpeechRecognitionProvider {
     override val enabled: Boolean
         get() = isMacOsProvider()
@@ -92,6 +93,108 @@ class MacOsSpeechRecognitionProvider(
         val locale = localeFor(settingsProvider.regionProfile)
         ensureSpeechUsageDescription(locale)
         ensureAuthorization(locale)
+
+        val liveProvider = currentLiveSpeechProvider()
+        if (isLiveSupportedForPushToTalk(liveProvider, locale)) {
+            try {
+                return@withContext recognizeWithLiveProvider(liveProvider, locale, audio).trim()
+            } catch (error: LocalMacOsLiveSpeechUnsupportedException) {
+                // Use the legacy local batch backend when the live backend is unavailable before transcription.
+            } catch (error: LocalMacOsLiveSpeechModelUnavailableException) {
+                // Use the legacy local batch backend when the live model is unavailable before transcription.
+            } catch (error: LocalMacOsLiveSpeechPermissionDeniedException) {
+                throw LocalMacOsSpeechPermissionDeniedException()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                throw mapLiveRecognitionError(error, locale)
+            }
+        }
+
+        recognizeWithLegacyBatch(locale, audio).trim()
+    }
+
+    /**
+     * Checks only whether the local macOS SpeechAnalyzer live backend is available for this locale.
+     * It does not imply that an ambient listener, VAD, or backpressure policy is implemented.
+     */
+    suspend fun supportsAmbientLiveTranscription(locale: String): Boolean = withContext(Dispatchers.IO) {
+        enabled && currentLiveSpeechProvider().isSupported(locale)
+    }
+
+    private fun currentLiveSpeechProvider(): LiveSpeechTranscriptionProvider =
+        liveSpeechProvider ?: MacOsSpeechAnalyzerLiveTranscriptionProvider(bridge, isMacOsProvider)
+
+    private suspend fun isLiveSupportedForPushToTalk(
+        liveProvider: LiveSpeechTranscriptionProvider,
+        locale: String,
+    ): Boolean = try {
+        liveProvider.isSupported(locale)
+    } catch (error: LocalMacOsLiveSpeechPermissionDeniedException) {
+        throw LocalMacOsSpeechPermissionDeniedException()
+    } catch (error: LocalMacOsLiveSpeechException) {
+        false
+    } catch (error: CancellationException) {
+        throw error
+    }
+
+    private suspend fun recognizeWithLiveProvider(
+        liveProvider: LiveSpeechTranscriptionProvider,
+        locale: String,
+        audio: ByteArray,
+    ): String {
+        var session: LiveSpeechTranscriptionSession? = null
+        var finalized = false
+        val events = mutableListOf<LiveSpeechTranscriptEvent>()
+        try {
+            session = liveProvider.start(locale)
+            try {
+                for (chunk in audio.pcmLiveChunks()) {
+                    session.acceptPcm(chunk)
+                    events += session.pollEvents()
+                }
+                events += session.finalizeAndFinish()
+                finalized = true
+            } catch (error: LocalMacOsLiveSpeechUnsupportedException) {
+                throw LocalMacOsLiveSpeechUnavailableException(
+                    error.message ?: "Local macOS live speech transcription failed."
+                )
+            } catch (error: LocalMacOsLiveSpeechModelUnavailableException) {
+                throw LocalMacOsLiveSpeechUnavailableException(
+                    error.message ?: "Local macOS live speech transcription model became unavailable."
+                )
+            }
+        } finally {
+            if (!finalized) {
+                runCatching { session?.cancel() }
+            }
+        }
+
+        val finalEvents = events.filter { it.isFinal }
+        return if (finalEvents.isNotEmpty()) {
+            finalEvents.joinToString(separator = "") { it.text }
+        } else {
+            events.lastOrNull { !it.isFinal }?.text.orEmpty()
+        }
+    }
+
+    private fun ByteArray.pcmLiveChunks(): Sequence<ByteArray> = sequence {
+        val bytesPerSecond = LOCAL_MACOS_PCM_SAMPLE_RATE_HZ *
+            LOCAL_MACOS_PCM_CHANNELS *
+            LOCAL_MACOS_PCM_BYTES_PER_SAMPLE
+        val chunkSize = (bytesPerSecond / 5).let { size ->
+            size - (size % LOCAL_MACOS_PCM_BYTES_PER_SAMPLE)
+        }
+
+        var offset = 0
+        while (offset < size) {
+            val end = minOf(size, offset + chunkSize)
+            yield(copyOfRange(offset, end))
+            offset = end
+        }
+    }
+
+    private suspend fun recognizeWithLegacyBatch(locale: String, audio: ByteArray): String {
         val maxBytes = LOCAL_MACOS_PCM_SAMPLE_RATE_HZ *
             LOCAL_MACOS_PCM_BYTES_PER_SAMPLE *
             LOCAL_MACOS_PCM_CHANNELS *
@@ -101,7 +204,7 @@ class MacOsSpeechRecognitionProvider(
         }
         val wavPath = MacOsSpeechWavWriter.writePcmToTempWav(audio)
         try {
-            recognizeWavCancellable(wavPath, locale)
+            return recognizeWavCancellable(wavPath, locale)
         } catch (error: Throwable) {
             throw if (error is CancellationException) error else mapBridgeError(error, locale)
         } finally {
@@ -227,6 +330,21 @@ class MacOsSpeechRecognitionProvider(
             else -> LocalMacOsSpeechUnavailableException(
                 message.ifBlank { "Local macOS speech recognition is unavailable." }
             )
+        }
+    }
+
+    private fun mapLiveRecognitionError(error: Throwable, locale: String): Throwable {
+        if (error is CancellationException) return error
+        return when (val mappedError = mapLiveBridgeError(error)) {
+            is LocalMacOsLiveSpeechPermissionDeniedException -> LocalMacOsSpeechPermissionDeniedException()
+            is LocalMacOsLiveSpeechUnsupportedException -> mappedError
+            is LocalMacOsLiveSpeechModelUnavailableException -> mappedError
+            is LocalMacOsLiveSpeechUnavailableException ->
+                LocalMacOsSpeechUnavailableException(
+                    mappedError.message ?: "Local macOS live speech transcription is unavailable."
+                )
+
+            else -> mapBridgeError(error, locale)
         }
     }
 }

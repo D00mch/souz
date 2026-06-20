@@ -11,7 +11,7 @@ ui/main/
 ```
 
 Notes:
-- `MainViewModel`, `MainDTO`, `MainUseCasesFactory`, `ChatUseCase`, shared DTOs, chat search, attachment orchestration, path extraction, speech queue state, permission orchestration, and tool-modify review logic live in `sharedUI/src/commonJvmMain/kotlin/ru/souz/ui/main`.
+- `MainViewModel`, `MainDTO`, `ChatUseCase`, shared DTOs, chat search, attachment orchestration, path extraction, speech queue state, permission orchestration, and tool-modify review logic live in `sharedUI/src/commonJvmMain/kotlin/ru/souz/ui/main`.
 - Data flow is unidirectional: `MainScreen` sends `MainEvent` -> `MainViewModel` delegates to use cases -> use cases emit `MainUseCaseOutput` reducers/effects -> `MainState` updates.
 - Tool/file approval flows are split by responsibility: `PermissionsUseCase` handles generic tool and selection approvals, while `ToolModifyReviewUseCase` owns deferred file-modification review state.
 - Desktop speech recognition providers live in `:sharedLogic` under `ru.souz.service.speech`; `VoiceInputUseCase` stays in `jvmMain` and implements the common `VoiceInputController` port.

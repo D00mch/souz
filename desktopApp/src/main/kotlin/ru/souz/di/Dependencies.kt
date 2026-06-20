@@ -9,6 +9,14 @@ import kotlinx.coroutines.SupervisorJob
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.ambient.AmbientBlockAnalyzer
+import ru.souz.ambient.AmbientLocalLlm
+import ru.souz.ambient.AmbientTranscriptionService
+import ru.souz.ambient.DefaultAmbientTranscriptionService
+import ru.souz.ambient.LocalChatAmbientLocalLlm
+import ru.souz.ambient.LocalLlmAmbientBlockAnalyzer
+import ru.souz.ambient.PcmAudioFrameSource
+import ru.souz.ambient.selectAmbientLocalModel
 import ru.souz.paths.SouzPaths
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.spi.AgentDesktopInfoRepository
@@ -19,16 +27,21 @@ import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.service.audio.ActiveSoundRecorderImpl
+import ru.souz.service.audio.ActiveRecorderPcmAudioFrameSource
+import ru.souz.service.audio.ActiveSoundRecorder
 import ru.souz.service.audio.InMemoryAudioRecorder
 import ru.souz.service.audio.Say
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopDataExtractor
 import ru.souz.db.DesktopInfoRepository
+import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.local.LocalChatAPI
 import ru.souz.service.keys.Keys
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
@@ -64,6 +77,8 @@ import ru.souz.tool.math.ToolCalculator
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.service.speech.AiTunnelSpeechRecognitionProvider
+import ru.souz.service.speech.LiveSpeechTranscriptionProvider
+import ru.souz.service.speech.MacOsSpeechAnalyzerLiveTranscriptionProvider
 import ru.souz.service.speech.MacOsSpeechBridge
 import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
@@ -131,8 +146,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton { Say() }
     bindSingleton<UiSpeechPlayer>(overrides = true) { instance<Say>() }
-    bindSingleton { InMemoryAudioRecorder(ActiveSoundRecorderImpl()) }
+    bindSingleton<ActiveSoundRecorder> { ActiveSoundRecorderImpl() }
+    bindSingleton { InMemoryAudioRecorder(instance()) }
     bindSingleton<UiAudioRecorder>(overrides = true) { instance<InMemoryAudioRecorder>() }
+    bindSingleton<PcmAudioFrameSource> { ActiveRecorderPcmAudioFrameSource(instance()) }
     bindSingleton<PermissionPromptService>(overrides = true) { MacDesktopPermissionService() }
 
     // DB
@@ -264,10 +281,31 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { OpenAIVoiceAPI(instance()) }
     bindSingleton { AiTunnelVoiceAPI(instance()) }
     bindSingleton { MacOsSpeechBridge() }
+    bindSingleton<LiveSpeechTranscriptionProvider> { MacOsSpeechAnalyzerLiveTranscriptionProvider(instance()) }
+    bindSingleton<AmbientTranscriptionService>(overrides = true) {
+        DefaultAmbientTranscriptionService(
+            liveSpeechProvider = instance(),
+            batchSpeechRecognitionProvider = instance(),
+            audioSource = instance(),
+            scope = instance(),
+        )
+    }
+    bindSingleton<AmbientLocalLlm> {
+        val buildProfile = instance<LlmBuildProfile>()
+        val settingsProvider = instance<SettingsProvider>()
+        LocalChatAmbientLocalLlm(instance<LocalChatAPI>()) {
+            selectAmbientLocalModel(
+                configuredModel = settingsProvider.ambientAnalysisModel,
+                isModelAvailable = buildProfile::isModelAvailable,
+                defaultLocalModel = { buildProfile.defaultModelForProvider(LlmProvider.LOCAL) },
+            )
+        }
+    }
+    bindSingleton<AmbientBlockAnalyzer>(overrides = true) { LocalLlmAmbientBlockAnalyzer(instance()) }
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
-    bindSingleton { MacOsSpeechRecognitionProvider(instance(), instance()) }
+    bindSingleton { MacOsSpeechRecognitionProvider(instance(), instance(), liveSpeechProvider = instance()) }
     bindSingleton<SpeechRecognitionProvider> {
         ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance(), instance())
     }

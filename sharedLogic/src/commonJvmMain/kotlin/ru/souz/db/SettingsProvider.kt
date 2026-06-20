@@ -28,6 +28,7 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     override var regionProfile: String
     override var activeAgentId: AgentId
     override var gigaModel: LLMModel
+    var ambientAnalysisModel: LLMModel
     var useFewShotExamples: Boolean
     override var useStreaming: Boolean
     var notificationSoundEnabled: Boolean

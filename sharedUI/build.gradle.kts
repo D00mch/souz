@@ -20,6 +20,7 @@ kotlin {
             kotlin.srcDir("src/commonJvmMain/kotlin")
             resources.srcDir("src/commonJvmMain/resources")
             dependencies {
+                implementation(projects.ambientAgent)
                 implementation(projects.sharedLogic)
                 implementation(projects.agent)
                 implementation(projects.llms)

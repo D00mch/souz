@@ -214,6 +214,7 @@ fun SettingsScreenMain(
                         SettingsSection.MODELS -> ModelsSettingsContent(
                             state = state,
                             onModelChange = { viewModel.send(SettingsEvent.SelectModel(it)) },
+                            onAmbientAnalysisModelChange = { viewModel.send(SettingsEvent.SelectAmbientAnalysisModel(it)) },
                             onEmbeddingsModelChange = { viewModel.send(SettingsEvent.SelectEmbeddingsModel(it)) },
                             onVoiceRecognitionModelChange = { viewModel.send(SettingsEvent.SelectVoiceRecognitionModel(it)) },
                             onTemperatureInput = { viewModel.send(SettingsEvent.InputTemperature(it)) },
@@ -325,6 +326,7 @@ fun SettingsScreenPreview() {
                     ModelsSettingsContent(
                         state = previewState,
                         onModelChange = {},
+                        onAmbientAnalysisModelChange = {},
                         onEmbeddingsModelChange = {},
                         onVoiceRecognitionModelChange = {},
                         onTemperatureInput = {},

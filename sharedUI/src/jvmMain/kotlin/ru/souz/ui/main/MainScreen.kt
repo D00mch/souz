@@ -66,14 +66,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import org.kodein.di.compose.localDI
+import ru.souz.ambient.AmbientModeState
 import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.*
@@ -123,80 +122,6 @@ private enum class MacTrafficKind {
 }
 
 @Composable
-fun MainScreen(
-    onOpenSettings: () -> Unit,
-    onOpenMemory: () -> Unit,
-    onCloseWindow: () -> Unit,
-    onMinimizeWindow: () -> Unit,
-    onToggleMaximizeWindow: () -> Unit,
-    onShowSnack: (String) -> Unit = {},
-    isOnline: Boolean = true,
-) {
-    val di = localDI()
-    val viewModel = viewModel { createMainViewModel(di) }
-    val state by viewModel.uiState.collectAsState()
-
-    LaunchedEffect(viewModel) {
-        viewModel.effects.collect { effect ->
-            when (effect) {
-                MainEffect.Hide -> onCloseWindow()
-                is MainEffect.ShowError -> onShowSnack(effect.message)
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.send(MainEvent.RefreshSettings)
-    }
-
-    MainScreenContent(
-        state = state,
-        isOnline = isOnline,
-        onStartListening = { viewModel.send(MainEvent.StartListening) },
-        onStopListening = { viewModel.send(MainEvent.StopListening) },
-        onClose = onCloseWindow,
-        onMinimize = onMinimizeWindow,
-        onToggleMaximize = onToggleMaximizeWindow,
-        onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
-        onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
-        onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
-        onOpenSettings = onOpenSettings,
-        onOpenMemory = onOpenMemory,
-        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
-        onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
-        onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
-        onShowSnack = onShowSnack,
-        onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
-        onConfirmLocalModelDownload = { viewModel.send(MainEvent.ConfirmLocalModelDownload) },
-        onCancelLocalModelDownload = { viewModel.send(MainEvent.CancelLocalModelDownload) },
-        onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
-        onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
-        onAttachDroppedTransferable = { viewModel.onAttachDroppedPayload(it) },
-        onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
-        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
-        onClearContext = { viewModel.send(MainEvent.UserPressStop) },
-        onConsumePendingVoiceInputDraft = { token ->
-            viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
-        },
-        onToggleToolModifyReviewSelection = { messageId, itemId ->
-            viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
-        },
-        onResolveToolModifyReview = { messageId, action ->
-            viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
-        },
-        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
-        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
-        onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
-        onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
-        onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
-        onUpdateChatSearchQuery = { viewModel.send(MainEvent.UpdateChatSearchQuery(it)) },
-        onSelectNextChatSearchResult = { viewModel.send(MainEvent.SelectNextChatSearchResult) },
-        onSelectPreviousChatSearchResult = { viewModel.send(MainEvent.SelectPreviousChatSearchResult) },
-        searchProjectionProvider = { viewModel.chatSearchProjectionFor(it) },
-    )
-}
-
-@Composable
 fun MainScreenContent(
     state: MainState,
     isOnline: Boolean,
@@ -234,6 +159,10 @@ fun MainScreenContent(
     onUpdateChatSearchQuery: (String) -> Unit = {},
     onSelectNextChatSearchResult: () -> Unit = {},
     onSelectPreviousChatSearchResult: () -> Unit = {},
+    onToggleAmbientMode: () -> Unit = {},
+    onAcceptAmbientSuggestion: (String) -> Unit = {},
+    onRejectAmbientSuggestion: (String) -> Unit = {},
+    onDismissAmbientSuggestion: (String) -> Unit = {},
     searchProjectionProvider: (String) -> ChatMessageSearchProjection? = { null },
 ) {
     val windowInfo = LocalWindowInfo.current
@@ -290,16 +219,11 @@ fun MainScreenContent(
                             .height(56.dp)
                             .zIndex(2f)
                     ) {
-                    Text(
-                        text = stringAppName,
+                    AmbientWindowTitle(
+                        title = stringAppName,
+                        ambientMode = state.ambientMode,
+                        onToggleAmbientMode = onToggleAmbientMode,
                         modifier = Modifier.align(Alignment.Center),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        style = TextStyle(
-                            color = Color(0x99FFFFFF),
-                            fontSize = 13.sp,
-                            letterSpacing = 0.65.sp,
-                            fontWeight = FontWeight.Medium
-                        )
                     )
 
                     Row(
@@ -458,6 +382,9 @@ fun MainScreenContent(
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
+                    isSandboxed = state.isSandboxed,
+                    voiceInputDisabledReason = state.voiceInputDisabledReason,
+                    ambientSuggestions = state.ambientSuggestions,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
                     onPickAttachments = onPickChatAttachments,
@@ -473,6 +400,9 @@ fun MainScreenContent(
                     onResolveToolModifyReview = onResolveToolModifyReview,
                     onShowSnack = onShowSnack,
                     onOpenPath = onOpenPath,
+                    onAcceptAmbientSuggestion = onAcceptAmbientSuggestion,
+                    onRejectAmbientSuggestion = onRejectAmbientSuggestion,
+                    onDismissAmbientSuggestion = onDismissAmbientSuggestion,
                     searchProjectionProvider = searchProjectionProvider,
                     modifier = Modifier
                         .weight(1f)
@@ -788,6 +718,245 @@ private fun formatTimestamp(timestamp: Long): String =
     timestampFormatter.format(java.util.Date(timestamp))
 
 @Composable
+private fun AmbientWindowTitle(
+    title: String,
+    ambientMode: AmbientModeState,
+    onToggleAmbientMode: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pulse = rememberInfiniteTransition()
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 0.58f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (ambientMode.analyzing) 780 else 1_200),
+            repeatMode = RepeatMode.Reverse,
+        )
+    )
+    val staticColor by animateColorAsState(
+        targetValue = when {
+            ambientMode.errorMessage != null -> Color(0xFFE87979)
+            ambientMode.starting -> Color(0xFFFFD166)
+            else -> Color(0x99FFFFFF)
+        }
+    )
+    val titleColor = when {
+        ambientMode.listening || ambientMode.analyzing -> Color(0xFFFFC857).copy(alpha = pulseAlpha)
+        else -> staticColor
+    }
+
+    Text(
+        text = title,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onToggleAmbientMode,
+            )
+            .pointerHoverIcon(PointerIcon.Hand)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        style = TextStyle(
+            color = titleColor,
+            fontSize = 13.sp,
+            letterSpacing = 0.65.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    )
+}
+
+@Composable
+private fun AmbientSuggestionShelf(
+    suggestions: List<AmbientSuggestionUiModel>,
+    onAccept: (String) -> Unit,
+    onReject: (String) -> Unit,
+    onDismiss: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primary = suggestions.firstOrNull()
+    AnimatedVisibility(
+        visible = primary != null,
+        enter = fadeIn(animationSpec = tween(durationMillis = 160)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+        modifier = modifier,
+    ) {
+        if (primary != null) {
+            AmbientSuggestionCard(
+                suggestion = primary,
+                extraCount = (suggestions.size - 1).coerceAtLeast(0),
+                onAccept = { onAccept(primary.id) },
+                onReject = { onReject(primary.id) },
+                onDismiss = { onDismiss(primary.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmbientSuggestionCard(
+    suggestion: AmbientSuggestionUiModel,
+    extraCount: Int,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    val suggestionPrompt = stringResource(Res.string.ambient_suggestion_prompt).format(suggestion.taskText)
+    val rejectText = stringResource(Res.string.ambient_suggestion_reject)
+    val acceptText = stringResource(Res.string.ambient_suggestion_accept)
+    Column(
+        modifier = Modifier
+            .clip(shape)
+            .background(Color(0xF216181C))
+            .border(1.dp, Color(0x33FFC857), shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Rounded.AutoAwesome,
+                contentDescription = null,
+                tint = Color(0xFFFFC857),
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = suggestionPrompt,
+                color = Color(0xE6FFFFFF),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (extraCount > 0) {
+                Text(
+                    text = "+$extraCount",
+                    color = Color(0xFFFFC857),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            AmbientSuggestionCountdown(suggestion = suggestion)
+            AmbientIconTextButton(
+                text = "",
+                icon = Icons.Rounded.Close,
+                tint = Color(0x99FFFFFF),
+                background = Color.Transparent,
+                onClick = onDismiss,
+                compact = true,
+            )
+        }
+
+        Text(
+            text = suggestion.taskText,
+            color = Color(0x99FFFFFF),
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+            AmbientIconTextButton(
+                text = rejectText,
+                icon = Icons.Rounded.Close,
+                tint = Color(0xB3FFFFFF),
+                background = Color(0x12FFFFFF),
+                onClick = onReject,
+            )
+            AmbientIconTextButton(
+                text = acceptText,
+                icon = Icons.Rounded.Check,
+                tint = Color(0xFF18130A),
+                background = Color(0xFFFFC857),
+                onClick = onAccept,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmbientSuggestionCountdown(
+    suggestion: AmbientSuggestionUiModel,
+    modifier: Modifier = Modifier,
+) {
+    val nowMs by produceState(
+        initialValue = System.currentTimeMillis(),
+        suggestion.id,
+        suggestion.expiresAtMs,
+    ) {
+        while (value < suggestion.expiresAtMs) {
+            delay(100L)
+            value = System.currentTimeMillis()
+        }
+    }
+    val remainingFraction = suggestion.remainingFraction(nowMs)
+    Canvas(modifier = modifier.size(18.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        drawCircle(
+            color = Color(0x26FFFFFF),
+            style = Stroke(width = strokeWidth),
+        )
+        drawArc(
+            color = Color(0xFFFFC857),
+            startAngle = -90f,
+            sweepAngle = 360f * remainingFraction,
+            useCenter = false,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
+private fun AmbientIconTextButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    background: Color,
+    onClick: () -> Unit,
+    compact: Boolean = false,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        modifier = Modifier
+            .height(if (compact) 28.dp else 32.dp)
+            .clip(shape)
+            .background(background)
+            .clickable(onClick = onClick)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .padding(horizontal = if (compact) 6.dp else 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (text.isBlank()) 0.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(if (compact) 16.dp else 15.dp),
+        )
+        if (text.isNotBlank()) {
+            Text(
+                text = text,
+                color = tint,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
 fun ChatModeContent(
     messages: List<ChatMessage>,
     searchState: ChatSearchState,
@@ -806,6 +975,9 @@ fun ChatModeContent(
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
+    isSandboxed: Boolean,
+    voiceInputDisabledReason: String?,
+    ambientSuggestions: List<AmbientSuggestionUiModel>,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
     onPickAttachments: () -> Unit,
@@ -821,6 +993,9 @@ fun ChatModeContent(
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
     onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit,
+    onAcceptAmbientSuggestion: (String) -> Unit,
+    onRejectAmbientSuggestion: (String) -> Unit,
+    onDismissAmbientSuggestion: (String) -> Unit,
     searchProjectionProvider: (String) -> ChatMessageSearchProjection?,
     modifier: Modifier = Modifier
 ) {
@@ -955,6 +1130,16 @@ fun ChatModeContent(
             }
         }
 
+        AmbientSuggestionShelf(
+            suggestions = ambientSuggestions,
+            onAccept = onAcceptAmbientSuggestion,
+            onReject = onRejectAmbientSuggestion,
+            onDismiss = onDismissAmbientSuggestion,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 6.dp, end = 6.dp, top = 8.dp)
+        )
+
         ConnectionStatusNotification(
             isOnline = isOnline,
             modifier = Modifier
@@ -978,10 +1163,12 @@ fun ChatModeContent(
             isProcessing = isProcessing,
             isListening = isListening,
             speakingMessageId = speakingMessageId,
+            voiceInputDisabledReason = voiceInputDisabledReason,
             onStartListening = onStartListening,
             onStopListening = onStopListening,
             onStopSpeaking = onStopSpeech,
             enabled = !isProcessing && !isAwaitingToolReview,
+            isSandboxed = isSandboxed,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
             availableModelAliases = availableModelAliases,

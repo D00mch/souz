@@ -100,6 +100,15 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
             chatModelAlias = value.alias
         }
 
+    override var ambientAnalysisModel: LLMModel
+        get() = string(AMBIENT_ANALYSIS_MODEL)
+            ?.let(::modelFromAlias)
+            ?.takeIf { it.provider == LlmProvider.LOCAL }
+            ?: defaultAmbientAnalysisModel()
+        set(value) {
+            putString(AMBIENT_ANALYSIS_MODEL, value.takeIf { it.provider == LlmProvider.LOCAL }?.alias)
+        }
+
     var chatModelAlias: String
         get() = string(CHAT_MODEL_ALIAS)?.takeIf { it.isNotBlank() } ?: defaultLlmModel().alias
         set(value) = putString(CHAT_MODEL_ALIAS, value.ifBlank { defaultLlmModel().alias })
@@ -188,6 +197,9 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
             ?: LLMModel.OpenAIGpt5Nano
     }
 
+    private fun defaultAmbientAnalysisModel(): LLMModel =
+        LLMModel.LocalQwen3_4B_Instruct_2507
+
     private fun hasConfiguredAccess(provider: LlmProvider): Boolean = when (provider) {
         LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
         LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
@@ -264,6 +276,7 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         const val ACTIVE_AGENT_ID = "ACTIVE_AGENT_ID"
         const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         const val CHAT_MODEL_ALIAS = "CHAT_MODEL_ALIAS"
+        const val AMBIENT_ANALYSIS_MODEL = "AMBIENT_ANALYSIS_MODEL"
         const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
         const val ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED"
         const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"

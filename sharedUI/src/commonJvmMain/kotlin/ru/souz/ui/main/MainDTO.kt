@@ -1,6 +1,7 @@
 package ru.souz.ui.main
 
 import ru.souz.agent.state.AgentContext
+import ru.souz.ambient.AmbientModeState
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
@@ -92,6 +93,19 @@ data class SelectionDialogCandidateUi(
     val preview: String?,
 )
 
+data class AmbientSuggestionUiModel(
+    val id: String,
+    val taskText: String,
+    val createdAtMs: Long,
+    val expiresAtMs: Long,
+) {
+    fun remainingFraction(nowMs: Long): Float {
+        val totalMs = expiresAtMs - createdAtMs
+        if (totalMs <= 0L) return 0f
+        return ((expiresAtMs - nowMs).toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
+    }
+}
+
 /**
  * State for the main screen that mirrors the floating glass panel experience.
  */
@@ -123,6 +137,10 @@ data class MainState(
     val pendingVoiceInputDraft: String? = null,
     val pendingVoiceInputDraftToken: Long = 0L,
     val chatSearch: ChatSearchState = ChatSearchState(),
+    val ambientMode: AmbientModeState = AmbientModeState(),
+    val ambientSuggestions: List<AmbientSuggestionUiModel> = emptyList(),
+    val isSandboxed: Boolean = false,
+    val voiceInputDisabledReason: String? = null,
 ) : VMState {
 
     companion object {
@@ -161,6 +179,10 @@ sealed interface MainEvent : VMEvent {
     data object RejectToolPermission : MainEvent
     data class SelectApprovalCandidate(val candidateId: Long) : MainEvent
     data object CancelSelectionDialog : MainEvent
+    data object ToggleAmbientMode : MainEvent
+    data class AcceptAmbientSuggestion(val id: String) : MainEvent
+    data class RejectAmbientSuggestion(val id: String) : MainEvent
+    data class DismissAmbientSuggestion(val id: String) : MainEvent
 }
 
 sealed interface MainEffect : VMSideEffect {

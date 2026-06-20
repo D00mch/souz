@@ -99,10 +99,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.delay
 import kotlin.math.max
-import org.kodein.di.compose.localDI
-import org.kodein.di.instance
 import ru.souz.llms.LLMModel
-import ru.souz.ui.host.PermissionPromptService
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -174,10 +171,12 @@ internal fun ChatInputWithQuickSettings(
     isProcessing: Boolean,
     isListening: Boolean,
     speakingMessageId: String?,
+    voiceInputDisabledReason: String?,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeaking: () -> Unit,
     enabled: Boolean,
+    isSandboxed: Boolean,
     focusRequester: FocusRequester,
     selectedModel: String,
     availableModelAliases: List<String>,
@@ -192,14 +191,11 @@ internal fun ChatInputWithQuickSettings(
     val hasAttachments = attachedFiles.isNotEmpty()
     val hasSendPayload = (hasText || hasAttachments) && enabled
     val canSendOrCancel = hasSendPayload || isProcessing
-    val canToggleMic = enabled || isListening || speakingMessageId != null
+    val canToggleMic = (enabled && voiceInputDisabledReason == null) || isListening || speakingMessageId != null
     val containerShape = RoundedCornerShape(16.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
     var isContextDropdownOpen by remember { mutableStateOf(false) }
     val windowInfo = LocalWindowInfo.current
-    val di = localDI()
-    val permissionPromptService: PermissionPromptService by di.instance()
-    val isSandboxed = remember(permissionPromptService) { permissionPromptService.isSandboxed }
 
     LaunchedEffect(scrollCloseSignal, windowInfo.containerSize) {
         isModelDropdownOpen = false
@@ -361,6 +357,7 @@ internal fun ChatInputWithQuickSettings(
                         isListening = isListening,
                         speakingMessageId = speakingMessageId,
                         enabled = canToggleMic,
+                        disabledReason = voiceInputDisabledReason,
                         onPressStart = onStartListening,
                         onPressEnd = onStopListening,
                         onStopSpeaking = onStopSpeaking,
@@ -733,6 +730,7 @@ private fun VoiceToggleButton(
     isListening: Boolean,
     speakingMessageId: String?,
     enabled: Boolean,
+    disabledReason: String?,
     onPressStart: () -> Unit,
     onPressEnd: () -> Unit,
     onStopSpeaking: () -> Unit,
@@ -795,12 +793,11 @@ private fun VoiceToggleButton(
         ),
         label = "voicePulseProgress"
     )
-    val tooltipText = if (isSpeaking) {
-        stringResource(Res.string.tooltip_stop_speech)
-    } else if (isSandboxed) {
-        stringResource(Res.string.tooltip_hold_mic_button)
-    } else {
-        stringResource(Res.string.tooltip_hold_option)
+    val tooltipText = when {
+        isSpeaking -> stringResource(Res.string.tooltip_stop_speech)
+        disabledReason != null -> disabledReason
+        isSandboxed -> stringResource(Res.string.tooltip_hold_mic_button)
+        else -> stringResource(Res.string.tooltip_hold_option)
     }
 
     Box(modifier = Modifier.size(VoiceButtonSize)) {
@@ -837,7 +834,7 @@ private fun VoiceToggleButton(
                             onClick = onStopSpeaking
                         )
                     } else {
-                        Modifier.pointerInput(enabled) {
+                        Modifier.pointerInput(enabled, disabledReason) {
                             detectTapGestures(
                                 onPress = {
                                     if (!enabled) return@detectTapGestures

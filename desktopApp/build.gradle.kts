@@ -2,6 +2,8 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.JavaExec
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 fun tdlightNativeClassifier(): String {
     val osName = System.getProperty("os.name", "").lowercase()
@@ -54,6 +56,9 @@ val macNotarizationTeamId = providers.gradleProperty("mac.notarization.teamId").
 val sourceAppResourcesDir = layout.projectDirectory.dir("src/main/resources")
 val sourceNativeResourcesDir = rootProject.layout.projectDirectory.dir("native/src/main/resources")
 val preparedAppResourcesDir = layout.buildDirectory.dir("generated/souz-app-resources")
+val desktopRuntimeJavaLauncher = extensions.getByType<JavaToolchainService>().launcherFor {
+    languageVersion.set(JavaLanguageVersion.of(21))
+}
 
 val prepareMacAppResources by tasks.registering(Sync::class) {
     group = "distribution"
@@ -92,6 +97,7 @@ val prepareMacAppResources by tasks.registering(Sync::class) {
 }
 
 dependencies {
+    implementation(projects.ambientAgent)
     implementation(projects.sharedLogic)
     implementation(projects.sharedUI)
     implementation(projects.agent)
@@ -158,6 +164,7 @@ val includeAllMacNativeResources: Boolean =
 compose.desktop {
     application {
         mainClass = "ru.souz.MainKt"
+        javaHome = desktopRuntimeJavaLauncher.get().metadata.installationPath.asFile.absolutePath
 
         val isArm64 = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
         val nativeResourceDir = if (isArm64) "darwin-arm64" else "darwin-x64"
@@ -267,10 +274,80 @@ compose.desktop {
 
 val releaseAppBundleDir = layout.buildDirectory.dir("compose/binaries/main-release/app/$distributionPackageName.app")
 
+val syncReleaseAppRuntimeArtifacts by tasks.registering {
+    group = "distribution"
+    description = "Sync the current desktopApp jar and native speech bridge into the release app bundle."
+    dependsOn("jar")
+    mustRunAfter("createReleaseDistributable")
+
+    onlyIf {
+        System.getProperty("os.name", "").lowercase().contains("mac")
+    }
+
+    doLast {
+        val appBundle = releaseAppBundleDir.get().asFile
+        val appDir = appBundle.resolve("Contents/app")
+        check(appDir.exists()) { "Release app directory not found: $appDir" }
+
+        val appConfig = appDir.resolve("$distributionPackageName.cfg")
+        check(appConfig.exists()) { "Release app config not found: $appConfig" }
+
+        val classpathPrefix = "app.classpath=\$APPDIR/"
+        val desktopJarName = appConfig.readLines()
+            .asSequence()
+            .filter { it.startsWith(classpathPrefix) }
+            .map { it.removePrefix(classpathPrefix).trim() }
+            .firstOrNull { it.startsWith("desktopApp-") && it.endsWith(".jar") }
+            ?: error("desktopApp classpath jar not found in $appConfig")
+
+        copy {
+            from(tasks.named<Jar>("jar").flatMap { it.archiveFile })
+            into(appDir)
+            rename { desktopJarName }
+        }
+
+        copy {
+            from(sourceAppResourcesDir.file("darwin-arm64/libsouz_macos_speech_bridge.dylib"))
+            into(appDir.resolve("resources/darwin-arm64"))
+        }
+        copy {
+            from(sourceAppResourcesDir.file("darwin-x64/libsouz_macos_speech_bridge.dylib"))
+            into(appDir.resolve("resources/darwin-x64"))
+        }
+    }
+}
+
+val patchReleaseRuntimeInfoPlist by tasks.registering {
+    group = "distribution"
+    description = "Add privacy usage descriptions to the bundled Java runtime Info.plist for macOS TCC."
+    dependsOn("createReleaseDistributable")
+    dependsOn(syncReleaseAppRuntimeArtifacts)
+    mustRunAfter(syncReleaseAppRuntimeArtifacts)
+
+    onlyIf {
+        System.getProperty("os.name", "").lowercase().contains("mac")
+    }
+
+    doLast {
+        val appBundle = releaseAppBundleDir.get().asFile
+        val runtimeInfoPlist = appBundle.resolve("Contents/runtime/Contents/Info.plist")
+        check(runtimeInfoPlist.exists()) { "Runtime Info.plist not found: $runtimeInfoPlist" }
+
+        fun replacePlistString(key: String, value: String) {
+            providers.exec {
+                commandLine("plutil", "-replace", key, "-string", value, runtimeInfoPlist.absolutePath)
+            }.result.get()
+        }
+
+        replacePlistString("NSMicrophoneUsageDescription", "Needed for voice capture.")
+        replacePlistString("NSSpeechRecognitionUsageDescription", "Needed for local speech transcription.")
+    }
+}
+
 val resignReleaseAppForNotarization by tasks.registering {
     group = "distribution"
     description = "Re-sign bundled native libraries in the release app before DMG packaging/notarization."
-    dependsOn("createReleaseDistributable")
+    dependsOn(patchReleaseRuntimeInfoPlist)
 
     onlyIf {
         macSigningEnabled.get() &&
@@ -372,11 +449,43 @@ val resignReleaseAppForNotarization by tasks.registering {
     }
 }
 
+val adHocSignReleaseAppBundle by tasks.registering {
+    group = "distribution"
+    description = "Ad-hoc sign the local release app bundle after post-processing."
+    dependsOn(patchReleaseRuntimeInfoPlist)
+    mustRunAfter(patchReleaseRuntimeInfoPlist)
+
+    onlyIf {
+        !macSigningEnabled.get() &&
+            System.getProperty("os.name", "").lowercase().contains("mac")
+    }
+
+    doLast {
+        val appBundle = releaseAppBundleDir.get().asFile
+        check(appBundle.exists()) { "Release app bundle not found: $appBundle" }
+
+        providers.exec {
+            commandLine("codesign", "--force", "--deep", "--sign", "-", appBundle.absolutePath)
+        }.result.get().assertNormalExitValue()
+
+        providers.exec {
+            commandLine("codesign", "--verify", "--deep", "--strict", appBundle.absolutePath)
+        }.result.get().assertNormalExitValue()
+    }
+}
+
+tasks.matching { it.name == "createReleaseDistributable" }.configureEach {
+    finalizedBy(syncReleaseAppRuntimeArtifacts)
+    finalizedBy(patchReleaseRuntimeInfoPlist)
+    finalizedBy(adHocSignReleaseAppBundle)
+    finalizedBy(resignReleaseAppForNotarization)
+}
+
 tasks.matching { it.name == "packageReleaseDmg" || it.name == "notarizeReleaseDmg" }.configureEach {
+    dependsOn(patchReleaseRuntimeInfoPlist)
     dependsOn(resignReleaseAppForNotarization)
 }
 
 tasks.matching { it.name == "prepareAppResources" || it.name == "createReleaseDistributable" || it.name == "notarizeReleaseDmg" }.configureEach {
     dependsOn(prepareMacAppResources)
 }
-

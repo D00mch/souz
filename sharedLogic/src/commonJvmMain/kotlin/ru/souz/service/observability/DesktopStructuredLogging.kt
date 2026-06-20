@@ -68,6 +68,7 @@ object DesktopStructuredLoggingSession {
 enum class ChatRequestSource(val wireName: String) {
     CHAT_UI("chat_ui"),
     VOICE_INPUT("voice_input"),
+    AMBIENT_AGENT("ambient_agent"),
     TELEGRAM_BOT("telegram_bot"),
 }
 

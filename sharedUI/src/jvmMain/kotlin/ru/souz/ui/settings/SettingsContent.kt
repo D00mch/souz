@@ -58,6 +58,7 @@ import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
+import org.jetbrains.compose.resources.StringResource
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.sharedsettings.SharedApiKeyFieldUi
 import ru.souz.ui.sharedsettings.SharedAuthAccountUiState
@@ -276,6 +277,7 @@ private fun SettingsSectionScreen(
 fun ModelsSettingsContent(
     state: SettingsState,
     onModelChange: (LLMModel) -> Unit,
+    onAmbientAnalysisModelChange: (LLMModel) -> Unit,
     onEmbeddingsModelChange: (EmbeddingsModel) -> Unit,
     onVoiceRecognitionModelChange: (VoiceRecognitionModel) -> Unit,
     onTemperatureInput: (String) -> Unit,
@@ -292,27 +294,38 @@ fun ModelsSettingsContent(
         subtitle = stringResource(Res.string.settings_models_subtitle),
         onClose = onClose
     ) {
-        SharedModelsSettingsContent(
-            state = sharedState,
-            onEvent = { event ->
-                when (event) {
-                    is SharedSettingsEvent.SelectChatModel ->
-                        state.availableLlmModels.firstOrNull { it.alias == event.id }?.let(onModelChange)
-                    is SharedSettingsEvent.SelectEmbeddingsModel ->
-                        state.availableEmbeddingsModels.firstOrNull { it.alias == event.id }?.let(onEmbeddingsModelChange)
-                    is SharedSettingsEvent.SelectVoiceModel ->
-                        state.availableVoiceRecognitionModels.firstOrNull { it.alias == event.id }?.let(onVoiceRecognitionModelChange)
-                    is SharedSettingsEvent.TemperatureChanged -> onTemperatureInput(event.value)
-                    is SharedSettingsEvent.TimeoutChanged -> onRequestTimeoutMillisChange(event.value)
-                    is SharedSettingsEvent.ContextSizeChanged -> onContextSizeInput(event.value)
-                    is SharedSettingsEvent.SystemPromptChanged -> onSystemPromptChange(event.value)
-                    SharedSettingsEvent.ResetSystemPrompt -> onSystemPromptReset()
-                    SharedSettingsEvent.RefreshBalance -> onRefreshBalance()
-                    else -> Unit
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.elementSpacing)) {
+            SharedModelsSettingsContent(
+                state = sharedState,
+                onEvent = { event ->
+                    when (event) {
+                        is SharedSettingsEvent.SelectChatModel ->
+                            state.availableLlmModels.firstOrNull { it.alias == event.id }?.let(onModelChange)
+                        is SharedSettingsEvent.SelectEmbeddingsModel ->
+                            state.availableEmbeddingsModels.firstOrNull { it.alias == event.id }?.let(onEmbeddingsModelChange)
+                        is SharedSettingsEvent.SelectVoiceModel ->
+                            state.availableVoiceRecognitionModels.firstOrNull { it.alias == event.id }?.let(onVoiceRecognitionModelChange)
+                        is SharedSettingsEvent.TemperatureChanged -> onTemperatureInput(event.value)
+                        is SharedSettingsEvent.TimeoutChanged -> onRequestTimeoutMillisChange(event.value)
+                        is SharedSettingsEvent.ContextSizeChanged -> onContextSizeInput(event.value)
+                        is SharedSettingsEvent.SystemPromptChanged -> onSystemPromptChange(event.value)
+                        SharedSettingsEvent.ResetSystemPrompt -> onSystemPromptReset()
+                        SharedSettingsEvent.RefreshBalance -> onRefreshBalance()
+                        else -> Unit
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            if (state.availableAmbientAnalysisModels.isNotEmpty()) {
+                ModelDropdown(
+                    label = Res.string.label_ambient_analysis_model,
+                    selectedModel = state.ambientAnalysisModel,
+                    availableModels = state.availableAmbientAnalysisModels,
+                    onModelSelected = onAmbientAnalysisModelChange,
+                )
+            }
+        }
     }
 }
 
@@ -1864,6 +1877,7 @@ private fun AgentId.descriptionRes() = when (this) {
 
 @Composable
 fun ModelDropdown(
+    label: StringResource = Res.string.label_model,
     selectedModel: LLMModel,
     availableModels: List<LLMModel>,
     onModelSelected: (LLMModel) -> Unit,
@@ -1872,7 +1886,7 @@ fun ModelDropdown(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = stringResource(Res.string.label_model),
+            text = stringResource(label),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -2123,9 +2137,14 @@ private val PreviewSettingsState = SettingsState(
     useStreaming = true,
     safeModeEnabled = true,
     gigaModel = LLMModel.Max,
+    ambientAnalysisModel = LLMModel.LocalQwen3_4B_Instruct_2507,
     embeddingsModel = EmbeddingsModel.GigaEmbeddings,
     voiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
     availableLlmModels = LLMModel.entries.take(3),
+    availableAmbientAnalysisModels = listOf(
+        LLMModel.LocalQwen3_4B_Instruct_2507,
+        LLMModel.LocalGemma4_E2B_It,
+    ),
     availableEmbeddingsModels = EmbeddingsModel.entries.take(2),
     availableVoiceRecognitionModels = VoiceRecognitionModel.entries.take(3),
     systemPrompt = "Ты полезный ассистент. Отвечай кратко и по делу.",
@@ -2167,6 +2186,7 @@ private fun ModelsSettingsContentPreview() {
         ModelsSettingsContent(
             state = PreviewSettingsState,
             onModelChange = {},
+            onAmbientAnalysisModelChange = {},
             onEmbeddingsModelChange = {},
             onVoiceRecognitionModelChange = {},
             onTemperatureInput = {},

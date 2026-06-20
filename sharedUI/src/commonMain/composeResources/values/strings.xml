@@ -309,6 +309,7 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Model</string>
+    <string name="label_ambient_analysis_model">Ambient model</string>
     <string name="content_desc_select_agent">Select agent</string>
     <string name="label_embeddings_model">Embeddings model</string>
     <string name="label_voice_recognition_model">Voice recognition model</string>
@@ -377,6 +378,14 @@
     <string name="voice_status_recording_started">Recording started</string>
     <string name="voice_status_processing_input">Processing input</string>
     <string name="voice_status_speech_not_recognized">Speech not recognized</string>
+    <string name="voice_error_microphone_busy_ambient">Microphone is used by ambient mode.</string>
+    <string name="ambient_error_missing_analysis_model">Download the ambient model in Settings before starting ambient mode.</string>
+    <string name="ambient_error_stt_unavailable">Ambient speech recognition is unavailable.</string>
+    <string name="ambient_error_microphone_unavailable">Microphone is unavailable for ambient mode.</string>
+    <string name="ambient_error_speech_permission_denied">macOS Speech Recognition permission is missing.</string>
+    <string name="ambient_suggestion_prompt">Help with “%s”?</string>
+    <string name="ambient_suggestion_reject">Not now</string>
+    <string name="ambient_suggestion_accept">Do it</string>
     <string name="voice_error_empty_audio">No audio was captured. Hold the microphone button a bit longer and try again.</string>
     <string name="voice_error_microphone_unavailable">Microphone capture failed. Allow access in macOS Settings &gt; Privacy &amp; Security &gt; Microphone, then restart the app.</string>
     <string name="voice_error_missing_key">Add the API key for the selected voice recognition model in Settings > My Keys to use voice commands</string>

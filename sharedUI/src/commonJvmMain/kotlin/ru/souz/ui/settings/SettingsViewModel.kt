@@ -66,6 +66,7 @@ class SettingsViewModel(
     private var codexOAuthJob: Job? = null
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private var pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
 
     init {
         viewModelScope.launch {
@@ -221,6 +222,7 @@ class SettingsViewModel(
                 if (event.model !in currentState.availableLlmModels) return
                 val downloadPrompt = localModelUiHost.downloadPromptFor(event.model)
                 if (downloadPrompt != null) {
+                    pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
                     setState {
                         copy(
                             localModelDownloadPrompt = downloadPrompt,
@@ -230,6 +232,21 @@ class SettingsViewModel(
                     return
                 }
                 applySelectedModel(event.model)
+            }
+            is SelectAmbientAnalysisModel -> {
+                if (event.model !in currentState.availableAmbientAnalysisModels) return
+                val downloadPrompt = localModelUiHost.downloadPromptFor(event.model)
+                if (downloadPrompt != null) {
+                    pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AMBIENT_ANALYSIS
+                    setState {
+                        copy(
+                            localModelDownloadPrompt = downloadPrompt,
+                            localModelDownloadState = null,
+                        )
+                    }
+                    return
+                }
+                applySelectedAmbientAnalysisModel(event.model)
             }
             ConfirmLocalModelDownload -> confirmLocalModelDownload()
             CancelLocalModelDownload -> cancelLocalModelDownload()
@@ -439,6 +456,23 @@ class SettingsViewModel(
         )
     }
 
+    private suspend fun applySelectedAmbientAnalysisModel(model: LLMModel) {
+        keysProvider.ambientAnalysisModel = model
+        val effectiveModel = keysProvider.ambientAnalysisModel
+        setState {
+            copy(
+                ambientAnalysisModel = effectiveModel,
+                localModelDownloadPrompt = null,
+            )
+        }
+        localModelPreloadJob = localModelUiHost.schedulePreload(
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            currentJob = localModelPreloadJob,
+            model = effectiveModel,
+        )
+    }
+
     private suspend fun confirmLocalModelDownload() {
         localModelDownloadJob = localModelUiHost.startDownload(
             scope = viewModelScope,
@@ -454,7 +488,11 @@ class SettingsViewModel(
                 }
             },
             onSuccess = { prompt ->
-                applySelectedModel(prompt.model)
+                when (pendingLocalModelSelectionTarget) {
+                    LocalModelSelectionTarget.AGENT -> applySelectedModel(prompt.model)
+                    LocalModelSelectionTarget.AMBIENT_ANALYSIS -> applySelectedAmbientAnalysisModel(prompt.model)
+                }
+                pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
                 setState { copy(localModelDownloadState = null) }
             },
             onError = { error ->
@@ -506,6 +544,15 @@ class SettingsViewModel(
             configured = configuredLlmModel,
             available = availableLlmModels,
         ) { keysProvider.defaultLlmModel(llmBuildProfile) }
+        val availableAmbientAnalysisModels = keysProvider.availableAmbientAnalysisModels(llmBuildProfile)
+        val configuredAmbientAnalysisModel = keysProvider.ambientAnalysisModel
+        val selectedAmbientAnalysisModel = pickConfiguredOrDefault(
+            configured = configuredAmbientAnalysisModel,
+            available = availableAmbientAnalysisModels,
+        ) { keysProvider.defaultAmbientAnalysisModel(llmBuildProfile) }
+        if (selectedAmbientAnalysisModel != configuredAmbientAnalysisModel) {
+            keysProvider.ambientAnalysisModel = selectedAmbientAnalysisModel
+        }
         val downloadPrompt = localModelUiHost.downloadPromptFor(selectedLlmModel)
         val selectedPrompt = if (downloadPrompt == null) {
             agentFacade.setModel(selectedLlmModel)
@@ -581,10 +628,12 @@ class SettingsViewModel(
                 activeAgentId = activeAgentId,
                 availableAgents = availableAgents,
                 gigaModel = selectedLlmModel,
+                ambientAnalysisModel = selectedAmbientAnalysisModel,
                 embeddingsModel = selectedEmbeddingsModel,
                 voiceRecognitionModel = selectedVoiceRecognitionModel,
                 localModelDownloadPrompt = downloadPrompt,
                 availableLlmModels = availableLlmModels,
+                availableAmbientAnalysisModels = availableAmbientAnalysisModels,
                 availableEmbeddingsModels = availableEmbeddingsModels,
                 availableVoiceRecognitionModels = availableVoiceRecognitionModels,
                 requestTimeoutMillis = keysProvider.requestTimeoutMillis,
@@ -1024,6 +1073,11 @@ class SettingsViewModel(
         MCP_SERVERS_JSON,
         SUPPORT_EMAIL,
         SYSTEM_PROMPT,
+    }
+
+    private enum class LocalModelSelectionTarget {
+        AGENT,
+        AMBIENT_ANALYSIS,
     }
 
     companion object {

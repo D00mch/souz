@@ -7,6 +7,16 @@ import org.kodein.di.instance
 import org.kodein.di.scoped
 import org.kodein.di.singleton
 import org.kodein.di.with
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import ru.souz.ambient.AmbientBlockAnalyzer
+import ru.souz.ambient.AmbientSemanticBlock
+import ru.souz.ambient.AmbientSpeechAvailability
+import ru.souz.ambient.AmbientTaskCandidate
+import ru.souz.ambient.AmbientTranscriptEvent
+import ru.souz.ambient.AmbientTranscriptionService
+import ru.souz.ambient.AmbientTranscriptionState
+import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.ui.common.FileSystemPathMetadataProvider
@@ -77,6 +87,9 @@ fun sharedUiCommonJvmDiModule(): DI.Module = DI.Module("sharedUiCommonJvm") {
     bindSingleton<SupportLogService> { NoopSupportLogService }
     bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
     bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+    bindSingleton<AmbientTranscriptionService> { NoopAmbientTranscriptionService }
+    bindSingleton<AmbientBlockAnalyzer> { NoopAmbientBlockAnalyzer }
+    bindSingleton { SemanticBlockBuilder() }
     bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { FinderPathExtractor(instance(), instance()) }
@@ -123,4 +136,22 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
     bind<VoiceInputController>() with scoped(mainViewModelDiScope).singleton {
         NoopVoiceInputController
     }
+}
+
+private object NoopAmbientTranscriptionService : AmbientTranscriptionService {
+    override val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
+    override val state = MutableStateFlow<AmbientTranscriptionState>(AmbientTranscriptionState.Stopped)
+
+    override suspend fun availability(locale: String): AmbientSpeechAvailability =
+        AmbientSpeechAvailability.LiveBackendUnavailable
+
+    override suspend fun start(locale: String): AmbientSpeechAvailability =
+        AmbientSpeechAvailability.LiveBackendUnavailable
+
+    override suspend fun stop() = Unit
+    override suspend fun clearTranscript() = Unit
+}
+
+private object NoopAmbientBlockAnalyzer : AmbientBlockAnalyzer {
+    override suspend fun analyze(block: AmbientSemanticBlock): AmbientTaskCandidate? = null
 }
