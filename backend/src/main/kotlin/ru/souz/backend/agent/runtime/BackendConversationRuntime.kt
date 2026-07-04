@@ -26,6 +26,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.MemorySurface
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.LocalRegexClassifier
 
@@ -93,6 +94,7 @@ internal class BackendConversationRuntime(
             input = request.prompt,
             eventSink = eventSink,
         )
+        result.captureCompletedTurn()
         val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
         val nextSession = AgentConversationSession(
             activeAgentId = nextAgentId,
@@ -130,7 +132,7 @@ class BackendConversationRuntimeFactory(
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCommandTool: LLMToolSetup? = null,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
-    private val executionScope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
+    private val captureScope: kotlinx.coroutines.CoroutineScope,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -180,7 +182,8 @@ class BackendConversationRuntimeFactory(
             localClassifier = LocalRegexClassifier,
             skillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository,
             memoryRuntime = memoryRuntime,
-            captureScope = executionScope,
+            captureScope = captureScope,
+            memorySurface = MemorySurface.BACKEND,
         ).create()
         return BackendConversationRuntime(
             key = key,

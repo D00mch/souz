@@ -531,8 +531,8 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        chatUseCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
         chatUseCase.clearConversationContext()
+        finishCurrentConversationAndCleanupMemory(ChatConversationCloseReason.NEW_CONVERSATION)
 
         setStateAndRefreshChatSearch {
             copy(
@@ -713,8 +713,8 @@ class MainViewModel(
 
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = chatUseCase.snapshotContext()
-        chatUseCase.finishCurrentConversation(ChatConversationCloseReason.CLEAR_CONTEXT)
         chatUseCase.clearConversationContext()
+        finishCurrentConversationAndCleanupMemory(ChatConversationCloseReason.CLEAR_CONTEXT)
 
         when (currentState.userExpectCloseOnX) {
             false -> {
@@ -761,6 +761,16 @@ class MainViewModel(
                 send(MainEffect.Hide)
             }
         }
+    }
+
+    private suspend fun finishCurrentConversationAndCleanupMemory(reason: ChatConversationCloseReason): String? {
+        val conversationId = chatUseCase.finishCurrentConversation(reason)
+        if (conversationId != null) {
+            viewModelScope.launch {
+                chatUseCase.cleanupConversationMemory(conversationId)
+            }
+        }
+        return conversationId
     }
 
     override fun onCleared() {

@@ -1,12 +1,14 @@
 package ru.souz.memory
 
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -200,6 +202,91 @@ class MemoryRulesTest {
         assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(second.id)?.status)
     }
 
+    @Test
+    fun `update fact recalculates retention when scope changes`() = runTest {
+        val fixture = memoryFixture()
+        val fact = fixture.memoryService.createManualFact(
+            CreateMemoryFactInput(
+                scope = globalMemoryScope(),
+                kind = MemoryFactKind.SEMANTIC,
+                title = "Task context",
+                body = "Current task uses Kotlin.",
+            )
+        )
+
+        val sessionFact = fixture.memoryService.updateFact(
+            factId = fact.id,
+            patch = MemoryFactPatch(scope = MemoryScope.session(MemorySessionId("chat-1"))),
+        )
+        val projectFact = fixture.memoryService.updateFact(
+            factId = fact.id,
+            patch = MemoryFactPatch(scope = MemoryScope.project(ProjectId("souz"))),
+        )
+
+        assertEquals(MemoryRetention.SESSION_LIFETIME, sessionFact.retention)
+        assertEquals(MemoryRetention.DURABLE, projectFact.retention)
+    }
+
+    @Test
+    fun `retrieveMemory rethrows lexical search cancellation`() = runTest {
+        val repository = InMemoryMemoryRepository(
+            lexicalFailure = CancellationException("cancelled"),
+        )
+        val memoryService = MemoryService(repository, FakeEmbeddingClient())
+
+        assertFailsWith<CancellationException> {
+            memoryService.retrieveMemory(
+                MemoryRetrievalRequest(
+                    context = legacyMemoryContext(),
+                    query = "kotlin",
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `closed session scope blocks late capture writes`() = runTest {
+        val sessionScope = MemoryScope.session(MemorySessionId("chat-1"))
+        val fixture = memoryFixture(
+            writer = FixedWriter(
+                MemoryFactCandidate(
+                    shouldSave = true,
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Current task",
+                    body = "Current task uses Kotlin.",
+                    requestedScope = RequestedMemoryScope.SESSION,
+                    canonicalKey = "session.task.current",
+                    confidence = 0.9f,
+                    evidenceText = "Current task uses Kotlin.",
+                )
+            )
+        )
+        val context = MemoryContext(
+            ownerId = MemoryOwnerId(LEGACY_OWNER_ID),
+            surface = MemorySurface.DESKTOP,
+            conversationId = ConversationId("chat-1"),
+            sessionId = MemorySessionId("chat-1"),
+            projectId = null,
+        )
+
+        fixture.memoryService.closeScopeForCapture(context.ownerId, sessionScope)
+        val created = fixture.captureService.captureAfterTurn(
+            MemoryCaptureInput(
+                context = context,
+                scopes = listOf(sessionScope),
+                primaryScope = sessionScope,
+                userMessage = "remember this task",
+                assistantMessage = "ok",
+                conversationId = "chat-1",
+                userMessageId = "u-1",
+                assistantMessageId = "a-1",
+            )
+        )
+
+        assertTrue(created.isEmpty())
+        assertTrue(fixture.repository.listFacts(MemoryFactFilter(scope = sessionScope)).isEmpty())
+    }
+
     private data class Fixture(
         val repository: InMemoryMemoryRepository,
         val memoryService: MemoryService,
@@ -278,9 +365,11 @@ class MemoryRulesTest {
         override suspend fun embedDocument(text: String): FloatArray = floatArrayOf(1f)
     }
 
-    private class InMemoryMemoryRepository : MemoryRepository {
+    private class InMemoryMemoryRepository(
+        private val lexicalFailure: Throwable? = null,
+    ) : MemoryRepository {
         private val facts = linkedMapOf<String, MemoryFact>()
-        private val tombstones = mutableListOf<Pair<MemoryScope, String?>>()
+        private val tombstones = mutableListOf<Tombstone>()
         private var nextId = 0
 
         override suspend fun insertSourceEvent(input: NewMemorySourceEvent): String = "source-${nextId++}"
@@ -304,6 +393,7 @@ class MemoryRulesTest {
                 body = input.body,
                 canonicalKey = input.canonicalKey,
                 status = input.status,
+                retention = input.retention,
                 confidence = input.confidence,
                 importance = input.importance,
                 pinned = input.pinned,
@@ -348,18 +438,32 @@ class MemoryRulesTest {
             facts.values.firstOrNull { it.ownerId == ownerId && it.scope == scope && it.canonicalKey == canonicalKey && it.status == MemoryFactStatus.ACTIVE }
 
         override suspend fun lexicalSearchFacts(ownerId: MemoryOwnerId, scopes: List<MemoryScope>, query: String, limit: Int): List<MemoryFactSearchHit> =
-            facts.values
+            lexicalFailure?.let { throw it } ?: facts.values
                 .filter { it.ownerId == ownerId && it.scope in scopes && it.status == MemoryFactStatus.ACTIVE && it.body.contains(query, ignoreCase = true) }
                 .take(limit)
                 .map { MemoryFactSearchHit(it, 0.5f) }
 
-        override suspend fun replaceEmbedding(factId: String, model: String, embedding: FloatArray) = Unit
+        override suspend fun replaceEmbedding(factId: String, model: String, embedding: FloatArray, contentHash: String?) = Unit
         override suspend fun searchFacts(ownerId: MemoryOwnerId, scopes: List<MemoryScope>, model: String, queryEmbedding: FloatArray, limit: Int): List<MemoryFactSearchHit> = emptyList()
         override suspend fun getFactsWithoutEmbedding(scopes: List<MemoryScope>, model: String, expectedDimension: Int?, limit: Int): List<MemoryFact> = emptyList()
         override suspend fun createTombstone(ownerId: MemoryOwnerId, scope: MemoryScope, canonicalKey: String?, subjectKey: String?, reason: String) {
-            tombstones += scope to canonicalKey
+            tombstones += Tombstone(ownerId, scope, canonicalKey, subjectKey)
         }
         override suspend fun hasTombstone(ownerId: MemoryOwnerId, scopes: List<MemoryScope>, canonicalKey: String?, subjectKey: String?): Boolean =
-            tombstones.any { (scope, key) -> scope in scopes && key == canonicalKey }
+            tombstones.any { tombstone ->
+                tombstone.ownerId == ownerId &&
+                    tombstone.scope in scopes &&
+                    (
+                        canonicalKey != null && tombstone.canonicalKey == canonicalKey ||
+                            subjectKey != null && tombstone.subjectKey == subjectKey
+                    )
+            }
+
+        private data class Tombstone(
+            val ownerId: MemoryOwnerId,
+            val scope: MemoryScope,
+            val canonicalKey: String?,
+            val subjectKey: String?,
+        )
     }
 }

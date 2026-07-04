@@ -1218,6 +1218,7 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
         skillRegistryRepository = TestSkillRegistryRepository,
+        captureScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)
     val requestFactory = AgentExecutionRequestFactory(

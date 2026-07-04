@@ -19,12 +19,13 @@ import ru.souz.llms.LocalUserId
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.MemorySurface
 import ru.souz.memory.MemoryPromptFact
 import ru.souz.memory.MemoryPromptAugmentationResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class AgentExecutorMemoryTest {
     @Test
@@ -65,12 +66,16 @@ class AgentExecutorMemoryTest {
             )
         }
         runCurrent()
+        assertFalse(memoryRuntime.captureStarted.isCompleted)
+        result.captureCompletedTurn()
+        runCurrent()
         val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
 
         assertEquals("assistant response", result.output)
         assertEquals("conversation-1", captured.conversationId)
         assertEquals("conversation-1", captured.context.conversationId?.value)
         assertEquals("conversation-1", captured.context.sessionId?.value)
+        assertEquals(MemorySurface.DESKTOP, captured.context.surface)
         assertEquals(LocalUserId.default(), captured.context.ownerId.value)
         assertEquals("user-message-1", captured.userMessageId)
         assertEquals("assistant-message-1", captured.assistantMessageId)
@@ -83,6 +88,33 @@ class AgentExecutorMemoryTest {
     }
 
     @Test
+    fun `capture uses configured memory surface`() = runTest {
+        val memoryRuntime = RecordingMemoryRuntime()
+
+        val result = executor(memoryRuntime = memoryRuntime, memorySurface = MemorySurface.BACKEND).execute(
+            agentId = AgentId.GRAPH,
+            context = baseContext(
+                toolInvocationMeta = ToolInvocationMeta(
+                    userId = "backend-user",
+                    conversationId = "chat-42",
+                    requestId = "request-42",
+                )
+            ),
+            input = "hello",
+        )
+        runCurrent()
+        assertFalse(memoryRuntime.captureStarted.isCompleted)
+        result.captureCompletedTurn()
+        runCurrent()
+
+        val captured = withTimeout(1_000) { memoryRuntime.captureStarted.await() }
+        assertEquals(MemorySurface.BACKEND, captured.context.surface)
+        assertEquals("backend-user", captured.context.ownerId.value)
+        assertEquals("chat-42", captured.context.conversationId?.value)
+        assertEquals("chat-42", captured.context.sessionId?.value)
+    }
+
+    @Test
     fun `capture failure does not fail execution`() = runTest {
         val memoryRuntime = RecordingMemoryRuntime(captureFailure = IllegalStateException("capture failed"))
 
@@ -91,6 +123,7 @@ class AgentExecutorMemoryTest {
             context = baseContext(),
             input = "hello",
         )
+        result.captureCompletedTurn()
         runCurrent()
 
         assertEquals("assistant response", result.output)
@@ -100,10 +133,12 @@ class AgentExecutorMemoryTest {
     private fun TestScope.executor(
         agent: CapturingAgent = CapturingAgent(output = "assistant response"),
         memoryRuntime: RecordingMemoryRuntime,
+        memorySurface: MemorySurface = MemorySurface.DESKTOP,
     ): AgentExecutor = AgentExecutor(
         agentProvider = { agent },
         memoryRuntime = memoryRuntime,
         captureScope = backgroundScope,
+        memorySurface = memorySurface,
     )
 
     private fun baseContext(

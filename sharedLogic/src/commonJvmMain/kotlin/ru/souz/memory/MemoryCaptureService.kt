@@ -72,8 +72,16 @@ class MemoryCaptureService(
                     memoryService.deleteSourceEventIfUnused(sourceEventId)
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
-            runCatching { memoryService.deleteSourceEventIfUnused(sourceEventId) }
+            try {
+                memoryService.deleteSourceEventIfUnused(sourceEventId)
+            } catch (cleanupCancellation: CancellationException) {
+                throw cleanupCancellation
+            } catch (_: Exception) {
+                // Best-effort cleanup; keep the original capture failure visible.
+            }
             throw error
         }
     }

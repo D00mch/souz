@@ -116,33 +116,38 @@ class MemoryService(
         val cleanBody = MemorySanitizer.redact(input.body.trim())
         val cleanEvidence = MemorySanitizer.redact(input.evidenceText.trim())
         val canonicalKey = controlledCanonicalKey(input.canonicalKey)
+        if (isScopeClosedForCapture(input.ownerId, scope)) return null
         val existing = canonicalKey?.let { repo.findActiveFactByCanonicalKey(input.ownerId, scope, it) }
         if (repo.hasTombstone(input.ownerId, listOf(scope), canonicalKey, cleanTitle.normalizedSubjectKey())) {
             return null
         }
-        return createFact(
-            input = NewMemoryFact(
-                ownerId = input.ownerId,
-                scope = scope,
-                kind = input.kind,
-                title = cleanTitle,
-                body = cleanBody,
-                canonicalKey = canonicalKey,
-                status = MemoryFactStatus.ACTIVE,
-                retention = retentionForScope(scope),
-                confidence = input.confidence,
-                importance = input.importance,
-                pinned = input.pinned,
-                createdBy = "writer",
-                supersedesFactId = existing?.id,
-            ),
-            evidence = listOf(
-                MemoryEvidenceRef(
-                    sourceEventId = input.sourceEventId,
-                    evidenceText = cleanEvidence,
-                )
-            ),
-        )
+        return try {
+            createFact(
+                input = NewMemoryFact(
+                    ownerId = input.ownerId,
+                    scope = scope,
+                    kind = input.kind,
+                    title = cleanTitle,
+                    body = cleanBody,
+                    canonicalKey = canonicalKey,
+                    status = MemoryFactStatus.ACTIVE,
+                    retention = retentionForScope(scope),
+                    confidence = input.confidence,
+                    importance = input.importance,
+                    pinned = input.pinned,
+                    createdBy = "writer",
+                    supersedesFactId = existing?.id,
+                ),
+                evidence = listOf(
+                    MemoryEvidenceRef(
+                        sourceEventId = input.sourceEventId,
+                        evidenceText = cleanEvidence,
+                    )
+                ),
+            )
+        } catch (_: MemoryScopeClosedForCaptureException) {
+            null
+        }
     }
 
     suspend fun saveRedactedSourceEvent(input: MemoryCaptureInput, redactedText: String): String =
@@ -193,6 +198,23 @@ class MemoryService(
 
     suspend fun deleteFactsByScope(ownerId: MemoryOwnerId, scope: MemoryScope) =
         repo.deleteFactsByScope(ownerId, scope)
+
+    suspend fun closeScopeForCapture(ownerId: MemoryOwnerId, scope: MemoryScope) =
+        repo.createTombstone(
+            ownerId = ownerId,
+            scope = scope.normalized(),
+            canonicalKey = null,
+            subjectKey = MEMORY_SCOPE_CLOSED_SUBJECT_KEY,
+            reason = "scope_closed",
+        )
+
+    suspend fun isScopeClosedForCapture(ownerId: MemoryOwnerId, scope: MemoryScope): Boolean =
+        repo.hasTombstone(
+            ownerId = ownerId,
+            scopes = listOf(scope.normalized()),
+            canonicalKey = null,
+            subjectKey = MEMORY_SCOPE_CLOSED_SUBJECT_KEY,
+        )
 
     suspend fun deleteSourceEventIfUnused(sourceEventId: String) = repo.deleteSourceEventIfUnused(sourceEventId)
 
@@ -266,9 +288,13 @@ class MemoryService(
         if (scopes.isEmpty()) return MemorySelection(emptyList(), MemoryRetrievalTrace())
         val trimmedQuery = query.trim()
         val exact = exactCandidates(context.ownerId, scopes, trimmedQuery, 20)
-        val lexical = runCatching {
+        val lexical = try {
             repo.lexicalSearchFacts(context.ownerId, scopes, trimmedQuery, 40)
-        }.getOrDefault(emptyList())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            emptyList()
+        }
         val dense = denseCandidates(context.ownerId, scopes, trimmedQuery, 40)
         val priority = priorityCandidates(context.ownerId, scopes, trimmedQuery, 20)
 
@@ -327,12 +353,14 @@ class MemoryService(
         val nextTitle = patch.title?.trim()?.ifBlank { title } ?: title
         val nextBody = patch.body?.trim()?.ifBlank { body } ?: body
         val nextKind = patch.kind ?: kind
+        val nextScope = patch.scope ?: scope
         return copy(
-            scope = patch.scope ?: scope,
+            scope = nextScope,
             kind = nextKind,
             title = nextTitle,
             body = nextBody,
             canonicalKey = nextCanonicalKey,
+            retention = if (patch.scope != null) retentionForScope(nextScope) else retention,
             confidence = patch.confidence ?: confidence,
             importance = patch.importance ?: importance,
             pinned = patch.pinned ?: pinned,
@@ -352,7 +380,12 @@ class MemoryService(
     private suspend fun enqueueAndTryEmbedding(fact: MemoryFact) {
         repo.enqueueEmbeddingJob(fact.id, fact.ownerId, embedder.model, fact.contentHash)
         try {
-            repo.replaceEmbedding(fact.id, embedder.model, embedder.embedDocument(fact.embeddingText()))
+            repo.replaceEmbedding(
+                factId = fact.id,
+                model = embedder.model,
+                embedding = embedder.embedDocument(fact.embeddingText()),
+                contentHash = fact.contentHash,
+            )
             repo.markEmbeddingJobCompleted(fact.id, embedder.model, fact.contentHash)
         } catch (e: CancellationException) {
             throw e
@@ -562,8 +595,16 @@ class MemoryService(
 
     private suspend fun <T> withSourceEventCleanup(sourceEventId: String, block: suspend () -> T): T = try {
         block()
+    } catch (error: CancellationException) {
+        throw error
     } catch (error: Exception) {
-        runCatching { repo.deleteSourceEventIfUnused(sourceEventId) }
+        try {
+            repo.deleteSourceEventIfUnused(sourceEventId)
+        } catch (cleanupCancellation: CancellationException) {
+            throw cleanupCancellation
+        } catch (_: Exception) {
+            // Best-effort cleanup; keep the original write failure visible.
+        }
         throw error
     }
 

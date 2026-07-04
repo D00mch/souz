@@ -5,6 +5,9 @@ import java.io.File
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -44,6 +47,7 @@ class BackendConversationRuntimeSettingsTest {
             systemPrompt = "backend test prompt",
             toolCatalog = BackendNoopAgentToolCatalog,
             skillRegistryRepository = UnusedSkillRegistryRepository,
+            captureScope = backgroundScope,
         )
         val request = turnRequest().copy(requestTimeoutMillis = 45_000L)
 
@@ -154,6 +158,7 @@ private fun runtimeFactory(
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,
+        captureScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
 
 private fun conversationKey(): AgentConversationKey =

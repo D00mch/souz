@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.state.AgentContext
 import ru.souz.db.SettingsProvider
@@ -101,7 +102,7 @@ class ChatUseCase internal constructor(
             )
 
             val response = executeAgentRequest(session, userText)
-            val completedResponse = buildCompletedResponse(session, response, onResult)
+            val completedResponse = buildCompletedResponse(session, response.output, onResult)
                 ?: return
 
             handleRequestSuccess(
@@ -110,6 +111,7 @@ class ChatUseCase internal constructor(
                 response = completedResponse,
                 onResult = onResult,
             )
+            response.captureCompletedTurn()
         } catch (e: CancellationException) {
             session.requestStatus = ChatRequestStatus.CANCELLED
             session.requestErrorType = requestErrorType(e)
@@ -169,11 +171,16 @@ class ChatUseCase internal constructor(
         agentFacade.clearContext()
     }
 
-    fun finishCurrentConversation(reason: ChatConversationCloseReason) {
-        val conversationId = observabilityTracker.finishCurrentConversation(reason)
-        if (conversationId != null && reason in CLEANUP_REASONS) {
-            memoryConversationCleanup.cleanupConversation(conversationId)
-        }
+    suspend fun finishCurrentConversation(reason: ChatConversationCloseReason): String? {
+        return closeCurrentConversation(reason)
+    }
+
+    private fun closeCurrentConversation(reason: ChatConversationCloseReason): String? {
+        return observabilityTracker.finishCurrentConversation(reason)
+    }
+
+    suspend fun cleanupConversationMemory(conversationId: String) {
+        memoryConversationCleanup.cleanupConversation(conversationId)
     }
 
     fun setContext(ctx: AgentContext<String>) {
@@ -191,7 +198,7 @@ class ChatUseCase internal constructor(
     }
 
     fun onCleared() {
-        finishCurrentConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
+        closeCurrentConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
         cancelActiveJob()
         toolModifyReviewUseCase.clearPendingReviewBlocking(discardBrokerState = true)
@@ -345,12 +352,12 @@ class ChatUseCase internal constructor(
     private suspend fun executeAgentRequest(
         session: ChatRequestSession,
         userText: String,
-    ): String = withContext(
+    ): AgentExecutionResult = withContext(
         ioDispatcher +
             session.requestContext.asCoroutineContext() +
             tokenLogging.requestContextElement(session.requestContext.requestId)
     ) {
-        agentFacade.execute(
+        agentFacade.executeForResult(
             input = userText,
             toolInvocationMetaOverride = executionMeta(session),
         )
@@ -621,10 +628,6 @@ class ChatUseCase internal constructor(
     private companion object {
         const val CODE_BLOCK = "```"
         const val MAX_AGENT_ACTIONS = 8
-        val CLEANUP_REASONS = setOf(
-            ChatConversationCloseReason.NEW_CONVERSATION,
-            ChatConversationCloseReason.CLEAR_CONTEXT,
-        )
     }
 
     private data class ActiveRequestMessages(

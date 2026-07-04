@@ -14,6 +14,13 @@ data class MemoryScope(
     companion object
 }
 
+const val MEMORY_SCOPE_CLOSED_SUBJECT_KEY: String = "__scope_closed__"
+
+class MemoryScopeClosedForCaptureException(
+    val ownerId: MemoryOwnerId,
+    val scope: MemoryScope,
+) : IllegalStateException("Memory scope is closed for capture: ${ownerId.value}:${scope.type}:${scope.id}")
+
 fun globalMemoryScope(): MemoryScope = MemoryScope(type = "global", id = "global")
 
 fun MemoryScope.Companion.project(projectId: ProjectId): MemoryScope =

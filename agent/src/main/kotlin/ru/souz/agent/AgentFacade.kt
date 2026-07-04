@@ -104,6 +104,15 @@ class AgentFacade internal constructor(
         input: String,
         toolInvocationMetaOverride: ToolInvocationMeta? = null,
     ): String {
+        val result = executeForResult(input, toolInvocationMetaOverride)
+        result.captureCompletedTurn()
+        return result.output
+    }
+
+    suspend fun executeForResult(
+        input: String,
+        toolInvocationMetaOverride: ToolInvocationMeta? = null,
+    ): AgentExecutionResult {
         cancelActiveJob()
         sessionService.startTask(input)
         return try {
@@ -120,7 +129,7 @@ class AgentFacade internal constructor(
                 sessionService.onStep(step, node, from, to)
             }
             _currentContext.emit(result.context.copy(toolInvocationMeta = baseContext.toolInvocationMeta))
-            result.output
+            result
         } finally {
             runCatching { sessionService.finishTask() }
                 .onFailure { e -> l.warn("sessionService fail", e) }

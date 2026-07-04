@@ -202,17 +202,17 @@
 
     <!-- Memory Screen -->
     <string name="memory_title">Memory</string>
-    <string name="memory_subtitle">Manage saved facts and inspect their evidence</string>
+    <string name="memory_subtitle">Saved facts and context</string>
     <string name="memory_create">Create fact</string>
     <string name="memory_loading">Loading memory...</string>
     <string name="memory_empty">No memory facts yet.</string>
     <string name="memory_section_pinned">Pinned</string>
     <string name="memory_section_other">Other facts</string>
-    <string name="memory_filter_query">Search</string>
+    <string name="memory_filter_query">Search facts...</string>
     <string name="memory_filter_status">Status</string>
     <string name="memory_filter_kind">Kind</string>
     <string name="memory_filter_scope">Scope</string>
-    <string name="memory_filter_kind_all">All kinds</string>
+    <string name="memory_filter_kind_all">All</string>
     <string name="memory_scope_all">All scopes</string>
     <string name="memory_scope_global">Global</string>
     <string name="memory_filter_status_active">Active</string>
@@ -224,7 +224,7 @@
     <string name="memory_action_unpin">Unpin</string>
     <string name="memory_action_retire">Retire</string>
     <string name="memory_action_delete">Delete</string>
-    <string name="memory_details_title">Fact details</string>
+    <string name="memory_details_title">Details</string>
     <string name="memory_details_loading">Loading details...</string>
     <string name="memory_details_select">Select a fact to view details.</string>
     <string name="memory_details_evidence">Evidence</string>
@@ -258,6 +258,26 @@
     <string name="memory_kind_project_rule">Project Rule</string>
     <string name="memory_kind_episode_note">Episode Note</string>
     <string name="memory_kind_project_decision">Project Decision</string>
+    <string name="memory_dreamer_title">Dreamer</string>
+    <string name="memory_dreamer_mode_off">Off</string>
+    <string name="memory_dreamer_mode_local">Local</string>
+    <string name="memory_dreamer_mode_cloud">Cloud</string>
+    <string name="memory_dreamer_pending_blocked">Pending %1$d · Blocked %2$d</string>
+    <string name="memory_dreamer_run">Run</string>
+    <string name="memory_dreamer_running">Running</string>
+    <string name="memory_dreamer_attempted">Attempted %1$s</string>
+    <string name="memory_dreamer_completed">Completed %1$s</string>
+    <string name="memory_dreamer_error">Error %1$s</string>
+    <string name="memory_dreamer_blocked">Blocked %1$s</string>
+    <string name="memory_dreamer_block_disabled">disabled</string>
+    <string name="memory_dreamer_block_budget">cloud budget</string>
+    <string name="memory_dreamer_block_model">model unavailable</string>
+    <string name="memory_dreamer_block_pending">no pending work</string>
+    <string name="memory_dreamer_block_actions">no deterministic actions</string>
+    <string name="memory_dreamer_cloud_tokens">Cloud %1$d/%2$s tokens</string>
+    <string name="memory_dreamer_cloud_calls">%1$d/%2$s calls</string>
+    <string name="memory_dreamer_tokens_per_day">Tokens/day</string>
+    <string name="memory_dreamer_calls_per_day">Calls/day</string>
     <string name="memory_created_by_manual">Manual</string>
     <string name="memory_created_by_auto">Auto</string>
     <string name="memory_created_by_system">System</string>

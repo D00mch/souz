@@ -182,7 +182,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { MemoryCaptureService(instance(), instance()) }
     bindSingleton<MemoryConversationCleanup>(overrides = true) {
         MemoryServiceConversationCleanup(
-            scope = instance(),
             memoryService = instance(),
             ownerProvider = instance(),
         )

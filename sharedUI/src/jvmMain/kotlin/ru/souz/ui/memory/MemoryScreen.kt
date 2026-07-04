@@ -1,26 +1,93 @@
 package ru.souz.ui.memory
 
-import androidx.compose.foundation.*
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.*
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.*
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
+import ru.souz.memory.MemoryMaintenanceBlockReason
 import ru.souz.memory.MemoryMaintenanceMode
 import ru.souz.ui.common.DraggableWindowArea
-import ru.souz.ui.glassColors
+import ru.souz.ui.common.LiquidGlassPreset
 import ru.souz.ui.common.RealLiquidGlassCard
-import souz.sharedui.generated.resources.*
+import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.button_close
+import souz.sharedui.generated.resources.memory_create
+import souz.sharedui.generated.resources.memory_dreamer_attempted
+import souz.sharedui.generated.resources.memory_dreamer_block_actions
+import souz.sharedui.generated.resources.memory_dreamer_block_budget
+import souz.sharedui.generated.resources.memory_dreamer_block_disabled
+import souz.sharedui.generated.resources.memory_dreamer_block_model
+import souz.sharedui.generated.resources.memory_dreamer_block_pending
+import souz.sharedui.generated.resources.memory_dreamer_completed
+import souz.sharedui.generated.resources.memory_dreamer_error
+import souz.sharedui.generated.resources.memory_dreamer_mode_cloud
+import souz.sharedui.generated.resources.memory_dreamer_mode_local
+import souz.sharedui.generated.resources.memory_dreamer_mode_off
+import souz.sharedui.generated.resources.memory_dreamer_pending_blocked
+import souz.sharedui.generated.resources.memory_dreamer_run
+import souz.sharedui.generated.resources.memory_dreamer_running
+import souz.sharedui.generated.resources.memory_dreamer_title
+import souz.sharedui.generated.resources.memory_subtitle
+import souz.sharedui.generated.resources.memory_title
 
 @Composable
 fun MemoryScreen(
@@ -56,9 +123,8 @@ fun MemoryScreen(
     onAction: (MemoryAction) -> Unit,
     onClose: () -> Unit,
 ) {
-    val windowInfo = LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
     val focusRequester = remember { FocusRequester() }
+    val isFocused = LocalWindowInfo.current.isWindowFocused
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -87,116 +153,320 @@ fun MemoryScreen(
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
             isWindowFocused = isFocused,
+            preset = LiquidGlassPreset.Hero,
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 DraggableWindowArea {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = stringResource(Res.string.memory_title),
-                                style = MaterialTheme.typography.headlineLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.glassColors.textPrimary,
-                            )
-                            Text(
-                                text = stringResource(Res.string.memory_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.7f),
-                            )
-                        }
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            TextButton(onClick = { onAction(MemoryAction.OpenCreateDialog) }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Add,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.glassColors.textPrimary,
-                                )
-                                Text(
-                                    text = stringResource(Res.string.memory_create),
-                                    color = MaterialTheme.glassColors.textPrimary,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                            }
-                            IconButton(onClick = onClose) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = stringResource(Res.string.button_close),
-                                    tint = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.8f),
-                                )
-                            }
-                        }
-                    }
+                    MemoryHeader(
+                        onCreate = { onAction(MemoryAction.OpenCreateDialog) },
+                        onClose = onClose,
+                    )
                 }
 
-                MemoryFilters(
-                    filters = state.filters,
-                    onFiltersChange = { onAction(MemoryAction.ChangeFilters(it)) },
-                )
-
-                MemoryMaintenanceControls(
-                    state = state.maintenance,
-                    onAction = onAction,
-                )
-
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    MemoryFilters(
+                        filters = state.filters,
+                        visibleCount = state.facts.size,
+                        onFiltersChange = { onAction(MemoryAction.ChangeFilters(it)) },
+                    )
+
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxHeight(),
+                            .fillMaxWidth(),
                     ) {
                         MemoryFactsContent(
                             state = state,
                             onAction = onAction,
                         )
-                    }
 
-                    if (state.detailsFactId != null || state.selectedFact != null || state.isDetailsLoading) {
-                        Box(
-                            modifier = Modifier
-                                .width(360.dp)
-                                .fillMaxHeight(),
-                        ) {
+                        if (state.detailsFactId != null || state.selectedFact != null || state.isDetailsLoading) {
                             MemoryFactDetailsPanel(
                                 state = state,
                                 onAction = onAction,
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .width(296.dp)
+                                    .fillMaxHeight(),
                             )
                         }
                     }
                 }
-            }
 
-            state.editor?.let { editor ->
-                MemoryFactEditorDialog(
-                    editor = editor,
-                    isSaving = state.isSaving,
-                    onDismiss = { onAction(MemoryAction.CloseDialog) },
-                    onSave = { onAction(MemoryAction.SaveFact(it)) },
+                MemoryDreamerFooter(
+                    state = state.maintenance,
+                    onAction = onAction,
                 )
             }
+        }
 
-            state.confirm?.let { confirmAction ->
-                MemoryConfirmDialog(
-                    action = confirmAction,
-                    factTitle = state.factTitle(confirmAction.factId),
-                    onConfirm = { onAction(MemoryAction.ConfirmAction) },
-                    onDismiss = { onAction(MemoryAction.CancelConfirmAction) },
+        state.editor?.let { editor ->
+            MemoryFactEditorDialog(
+                editor = editor,
+                isSaving = state.isSaving,
+                onDismiss = { onAction(MemoryAction.CloseDialog) },
+                onSave = { onAction(MemoryAction.SaveFact(it)) },
+            )
+        }
+
+        state.confirm?.let { confirmAction ->
+            MemoryConfirmDialog(
+                action = confirmAction,
+                factTitle = state.factTitle(confirmAction.factId),
+                onConfirm = { onAction(MemoryAction.ConfirmAction) },
+                onDismiss = { onAction(MemoryAction.CancelConfirmAction) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemoryHeader(
+    onCreate: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(78.dp)
+                .padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Psychology,
+                    contentDescription = null,
+                    tint = MemoryUiColors.Accent,
+                    modifier = Modifier.size(18.dp),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = stringResource(Res.string.memory_title),
+                        color = MemoryUiColors.TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = stringResource(Res.string.memory_subtitle),
+                        color = MemoryUiColors.TextPrimary.copy(alpha = 0.35f),
+                        fontSize = 11.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AccentGhostButton(
+                    text = stringResource(Res.string.memory_create),
+                    onClick = onCreate,
+                )
+                IconButton(onClick = onClose, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = stringResource(Res.string.button_close),
+                        tint = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+        HorizontalDivider(color = MemoryUiColors.Divider)
+    }
+}
+
+@Composable
+private fun AccentGhostButton(
+    text: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = MemoryUiColors.Accent.copy(alpha = 0.12f),
+        contentColor = MemoryUiColors.Accent,
+        border = BorderStroke(1.dp, MemoryUiColors.Accent.copy(alpha = 0.25f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(13.dp))
+            Text(text = text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun MemoryDreamerFooter(
+    state: MemoryMaintenanceUiState,
+    onAction: (MemoryAction) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column {
+        HorizontalDivider(color = MemoryUiColors.Divider.copy(alpha = 0.85f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box {
+                DreamerFooterButton(
+                    state = state,
+                    onClick = { expanded = true },
+                )
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier
+                        .width(296.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MemoryUiColors.Popover)
+                        .border(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                ) {
+                    DreamerPopover(
+                        state = state,
+                        onAction = onAction,
+                    )
+                }
+            }
+            MemoryDreamerStatusText(state)
+        }
+    }
+}
+
+@Composable
+private fun DreamerFooterButton(
+    state: MemoryMaintenanceUiState,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .padding(horizontal = 4.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .background(dreamerDotColor(state), RoundedCornerShape(999.dp)),
+        )
+        Text(
+            text = "${stringResource(Res.string.memory_dreamer_title)} · ${dreamerModeLabel(state.mode)}",
+            color = MemoryUiColors.TextPrimary.copy(alpha = if (hovered) 0.6f else 0.4f),
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Icon(
+            imageVector = Icons.Rounded.Settings,
+            contentDescription = null,
+            tint = MemoryUiColors.TextPrimary.copy(alpha = if (hovered) 0.55f else 0.32f),
+            modifier = Modifier.size(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun DreamerPopover(
+    state: MemoryMaintenanceUiState,
+    onAction: (MemoryAction) -> Unit,
+) {
+    Column(
+        modifier = Modifier.padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.memory_dreamer_title),
+                color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = stringResource(
+                    Res.string.memory_dreamer_pending_blocked,
+                    state.pendingClusters,
+                    state.blockedClusters,
+                ),
+                color = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                fontSize = 11.sp,
+            )
+        }
+
+        MemoryModeSegments(
+            selected = state.mode,
+            onSelected = { onAction(MemoryAction.SelectDreamerMode(it)) },
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MemoryDreamerStatusText(state, modifier = Modifier.weight(1f))
+            Button(
+                onClick = { onAction(MemoryAction.RunDreamerNow) },
+                enabled = state.canRunNow,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MemoryUiColors.Accent,
+                    contentColor = MemoryUiColors.Screen,
+                    disabledContainerColor = MemoryUiColors.TextPrimary.copy(alpha = 0.08f),
+                    disabledContentColor = MemoryUiColors.TextPrimary.copy(alpha = 0.28f),
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(5.dp))
+                Text(stringResource(Res.string.memory_dreamer_run), fontSize = 11.5.sp)
+            }
+        }
+
+        if (state.isRunningNow) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Schedule,
+                    contentDescription = null,
+                    tint = MemoryUiColors.Warning,
+                    modifier = Modifier.size(13.dp),
+                )
+                Text(
+                    text = stringResource(Res.string.memory_dreamer_running),
+                    color = MemoryUiColors.Warning,
+                    fontSize = 11.5.sp,
                 )
             }
         }
@@ -204,99 +474,101 @@ fun MemoryScreen(
 }
 
 @Composable
-private fun MemoryMaintenanceControls(
-    state: MemoryMaintenanceUiState,
-    onAction: (MemoryAction) -> Unit,
+private fun MemoryModeSegments(
+    selected: MemoryMaintenanceMode,
+    onSelected: (MemoryMaintenanceMode) -> Unit,
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
-        contentColor = MaterialTheme.glassColors.textPrimary,
-        shape = MaterialTheme.shapes.small,
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(34.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MemoryUiColors.TextPrimary.copy(alpha = 0.05f))
+            .padding(2.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        listOf(
+            MemoryMaintenanceMode.OFF to stringResource(Res.string.memory_dreamer_mode_off),
+            MemoryMaintenanceMode.LOCAL_ONLY to stringResource(Res.string.memory_dreamer_mode_local),
+            MemoryMaintenanceMode.LOCAL_THEN_CLOUD to stringResource(Res.string.memory_dreamer_mode_cloud),
+        ).forEach { (mode, label) ->
+            val active = selected == mode
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (active) MemoryUiColors.TextPrimary.copy(alpha = 0.1f) else MemoryUiColors.Transparent)
+                    .clickable { onSelected(mode) },
+                contentAlignment = Alignment.Center,
             ) {
-                Text("Dreamer", fontWeight = FontWeight.SemiBold)
-                Switch(
-                    checked = state.isEnabled,
-                    onCheckedChange = { onAction(MemoryAction.SetDreamerEnabled(it)) },
-                )
-                SingleChoiceSegmentedButtonRow {
-                    listOf(
-                        MemoryMaintenanceMode.OFF to "Off",
-                        MemoryMaintenanceMode.LOCAL_ONLY to "Local",
-                        MemoryMaintenanceMode.LOCAL_THEN_CLOUD to "Cloud",
-                    ).forEachIndexed { index, (mode, label) ->
-                        SegmentedButton(
-                            selected = state.mode == mode,
-                            onClick = { onAction(MemoryAction.SelectDreamerMode(mode)) },
-                            shape = SegmentedButtonDefaults.itemShape(index, 3),
-                            enabled = mode != MemoryMaintenanceMode.LOCAL_THEN_CLOUD || state.isEnabled,
-                        ) {
-                            Text(label)
-                        }
-                    }
-                }
                 Text(
-                    text = "Pending ${state.pendingClusters} · Blocked ${state.blockedClusters}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.72f),
-                    modifier = Modifier.weight(1f),
+                    text = label,
+                    color = MemoryUiColors.TextPrimary.copy(alpha = if (active) 0.8f else 0.3f),
+                    fontSize = 11.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                 )
-                Button(
-                    onClick = { onAction(MemoryAction.RunDreamerNow) },
-                    enabled = state.isEnabled && !state.isRunningNow,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(if (state.isRunningNow) "Running" else "Run")
-                }
-            }
-            val statusText = buildList {
-                state.lastErrorCode?.let { add("Error $it") }
-                state.blockedReason?.let { add("Blocked ${it.name.lowercase().replace('_', ' ')}") }
-                if (state.mode == MemoryMaintenanceMode.LOCAL_THEN_CLOUD) {
-                    add("Cloud ${state.tokensUsedToday}/${state.dailyCloudTokenLimitInput} tokens")
-                    add("${state.cloudCallsToday}/${state.maxCloudCallsPerDayInput} calls")
-                }
-            }.joinToString(" · ")
-            if (statusText.isNotBlank()) {
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.glassColors.textPrimary.copy(alpha = 0.72f),
-                )
-            }
-            if (state.mode == MemoryMaintenanceMode.LOCAL_THEN_CLOUD) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = state.dailyCloudTokenLimitInput,
-                        onValueChange = { onAction(MemoryAction.SetDailyTokenLimit(it)) },
-                        label = { Text("Tokens/day") },
-                        modifier = Modifier.width(124.dp),
-                        singleLine = true,
-                        colors = memoryTextFieldColors(),
-                    )
-                    OutlinedTextField(
-                        value = state.maxCloudCallsPerDayInput,
-                        onValueChange = { onAction(MemoryAction.SetDailyCallLimit(it)) },
-                        label = { Text("Calls/day") },
-                        modifier = Modifier.width(116.dp),
-                        singleLine = true,
-                        colors = memoryTextFieldColors(),
-                    )
-                }
             }
         }
     }
 }
+
+@Composable
+private fun MemoryDreamerStatusText(
+    state: MemoryMaintenanceUiState,
+    modifier: Modifier = Modifier,
+) {
+    val status = dreamerStatusText(state)
+    Text(
+        text = status,
+        modifier = modifier,
+        color = MemoryUiColors.TextPrimary.copy(alpha = 0.32f),
+        fontSize = 11.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun dreamerStatusText(state: MemoryMaintenanceUiState): String {
+    val blockedReason = state.blockedReason
+    return when {
+        state.isRunningNow -> stringResource(Res.string.memory_dreamer_running)
+        state.lastErrorCode != null -> stringResource(Res.string.memory_dreamer_error, state.lastErrorCode)
+        blockedReason != null -> dreamerBlockReasonLabel(blockedReason)
+        state.lastCompletedAt != null -> stringResource(Res.string.memory_dreamer_completed, state.lastCompletedAt.toString())
+        state.lastAttemptedAt != null -> stringResource(Res.string.memory_dreamer_attempted, state.lastAttemptedAt.toString())
+        else -> stringResource(
+            Res.string.memory_dreamer_pending_blocked,
+            state.pendingClusters,
+            state.blockedClusters,
+        )
+    }
+}
+
+@Composable
+private fun dreamerModeLabel(mode: MemoryMaintenanceMode): String = when (mode) {
+    MemoryMaintenanceMode.OFF -> stringResource(Res.string.memory_dreamer_mode_off)
+    MemoryMaintenanceMode.LOCAL_ONLY -> stringResource(Res.string.memory_dreamer_mode_local)
+    MemoryMaintenanceMode.LOCAL_THEN_CLOUD -> stringResource(Res.string.memory_dreamer_mode_cloud)
+}
+
+private fun dreamerDotColor(state: MemoryMaintenanceUiState) = when {
+    state.isRunningNow -> MemoryUiColors.Warning
+    state.mode == MemoryMaintenanceMode.OFF -> MemoryUiColors.TextPrimary.copy(alpha = 0.25f)
+    else -> MemoryUiColors.Accent
+}
+
+@Composable
+private fun dreamerBlockReasonLabel(reason: MemoryMaintenanceBlockReason): String =
+    when (reason) {
+        MemoryMaintenanceBlockReason.DREAMER_DISABLED -> stringResource(Res.string.memory_dreamer_block_disabled)
+        MemoryMaintenanceBlockReason.LOCAL_MODEL_UNAVAILABLE,
+        MemoryMaintenanceBlockReason.CLOUD_MODEL_UNAVAILABLE -> stringResource(Res.string.memory_dreamer_block_model)
+        MemoryMaintenanceBlockReason.DAILY_TOKEN_LIMIT,
+        MemoryMaintenanceBlockReason.DAILY_CALL_LIMIT,
+        MemoryMaintenanceBlockReason.PER_RUN_TOKEN_LIMIT,
+        MemoryMaintenanceBlockReason.MAX_CALLS_PER_RUN,
+        MemoryMaintenanceBlockReason.MAX_CLUSTERS_PER_RUN -> stringResource(Res.string.memory_dreamer_block_budget)
+        MemoryMaintenanceBlockReason.NO_PENDING_CLUSTERS -> stringResource(Res.string.memory_dreamer_block_pending)
+        MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS -> stringResource(Res.string.memory_dreamer_block_actions)
+    }

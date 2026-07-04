@@ -113,6 +113,9 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
             attachmentMetadataProvider = instance(),
         )
     }
+    bind<ChatObservabilityTracker>() with scoped(mainViewModelDiScope).singleton {
+        ChatObservabilityTracker(log = instance())
+    }
     bind<ChatUseCase>() with scoped(mainViewModelDiScope).singleton {
         ChatUseCase(
             agentFacade = instance(),
@@ -121,7 +124,7 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
             finderPathExtractor = instance(),
             chatAttachmentsUseCase = instance(),
             toolModifyReviewUseCase = instance(),
-            observabilityTracker = ChatObservabilityTracker(log = instance()),
+            observabilityTracker = instance(),
             log = instance(),
             tokenLogging = instance(),
             memoryConversationCleanup = instance(),

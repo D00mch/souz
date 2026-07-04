@@ -51,7 +51,7 @@ interface MemoryRepository {
         ownerId: MemoryOwnerId,
         scope: MemoryScope,
         canonicalKey: String,
-    ): MemoryFact? = findActiveFactBySlotKey(scope, canonicalKey)
+    ): MemoryFact?
 
     suspend fun lexicalSearchFacts(
         ownerId: MemoryOwnerId,
@@ -64,6 +64,7 @@ interface MemoryRepository {
         factId: String,
         model: String,
         embedding: FloatArray,
+        contentHash: String? = null,
     )
 
     suspend fun searchFacts(

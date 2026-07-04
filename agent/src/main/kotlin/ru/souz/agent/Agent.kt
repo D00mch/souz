@@ -20,4 +20,5 @@ interface Agent {
 data class AgentExecutionResult(
     val output: String,
     val context: AgentContext<String>,
+    val captureCompletedTurn: () -> Unit = {},
 )

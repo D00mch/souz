@@ -41,6 +41,9 @@ data class MemoryMaintenanceUiState(
     val maxCloudCallsPerDayInput: String = "0",
     val maxTokensPerRunInput: String = "2000",
     val maxClustersPerRunInput: String = "10",
+    val maxLlmCallsPerRun: Int = 3,
+    val maxFactsPerCluster: Int = 12,
+    val maxEvidenceExcerptsPerCluster: Int = 16,
     val runWhenIdle: Boolean = true,
     val tokensUsedToday: Int = 0,
     val cloudCallsToday: Int = 0,
@@ -58,6 +61,7 @@ data class MemoryMaintenanceUiState(
     val fieldError: String? = null,
 ) {
     val isEnabled: Boolean get() = mode != MemoryMaintenanceMode.OFF
+    val canRunNow: Boolean get() = isEnabled && !isRunningNow && pendingClusters > 0 && blockedReason == null
 }
 
 data class MemoryFiltersUi(
@@ -213,14 +217,18 @@ fun List<MemoryFact>.sortedForUi(): List<MemoryFact> =
     sortedWith(compareByDescending<MemoryFact> { it.pinned }.thenByDescending { it.updatedAt })
 
 fun MemoryMaintenanceStatus.toUiState(isRunningNow: Boolean = false): MemoryMaintenanceUiState =
+    normalizedPreferences().let { normalized ->
     MemoryMaintenanceUiState(
-        mode = preferences.mode,
-        lastEnabledMode = preferences.lastEnabledMode,
-        dailyCloudTokenLimitInput = preferences.dailyCloudTokenLimit.toString(),
-        maxCloudCallsPerDayInput = preferences.maxCloudCallsPerDay.toString(),
-        maxTokensPerRunInput = preferences.maxTokensPerRun.toString(),
-        maxClustersPerRunInput = preferences.maxClustersPerRun.toString(),
-        runWhenIdle = preferences.runWhenIdle,
+        mode = normalized.mode,
+        lastEnabledMode = normalized.lastEnabledMode,
+        dailyCloudTokenLimitInput = normalized.dailyCloudTokenLimit.toString(),
+        maxCloudCallsPerDayInput = normalized.maxCloudCallsPerDay.toString(),
+        maxTokensPerRunInput = normalized.maxTokensPerRun.toString(),
+        maxClustersPerRunInput = normalized.maxClustersPerRun.toString(),
+        maxLlmCallsPerRun = normalized.maxLlmCallsPerRun,
+        maxFactsPerCluster = normalized.maxFactsPerCluster,
+        maxEvidenceExcerptsPerCluster = normalized.maxEvidenceExcerptsPerCluster,
+        runWhenIdle = normalized.runWhenIdle,
         tokensUsedToday = cloudTokensUsedToday,
         cloudCallsToday = cloudCallsUsedToday,
         usageIsEstimated = usageIsEstimated,
@@ -235,6 +243,20 @@ fun MemoryMaintenanceStatus.toUiState(isRunningNow: Boolean = false): MemoryMain
         isRunningNow = isRunningNow,
         lastErrorCode = lastErrorCode,
     )
+}
+
+private fun MemoryMaintenanceStatus.normalizedPreferences(): MemoryMaintenancePreferences {
+    fun normalizeMode(mode: MemoryMaintenanceMode): MemoryMaintenanceMode = when (mode) {
+        MemoryMaintenanceMode.OFF -> MemoryMaintenanceMode.OFF
+        MemoryMaintenanceMode.LOCAL_ONLY,
+        MemoryMaintenanceMode.LOCAL_THEN_CLOUD -> MemoryMaintenanceMode.LOCAL_ONLY
+    }
+    val mode = normalizeMode(preferences.mode)
+    val lastEnabledMode = normalizeMode(preferences.lastEnabledMode)
+        .takeIf { it != MemoryMaintenanceMode.OFF }
+        ?: MemoryMaintenanceMode.LOCAL_ONLY
+    return preferences.copy(mode = mode, lastEnabledMode = lastEnabledMode)
+}
 
 fun MemoryMaintenanceUiState.toPreferences(): MemoryMaintenancePreferences? {
     val dailyLimit = dailyCloudTokenLimitInput.toIntOrNull()?.coerceIn(0, 1_000_000) ?: return null
@@ -248,6 +270,9 @@ fun MemoryMaintenanceUiState.toPreferences(): MemoryMaintenancePreferences? {
         maxCloudCallsPerDay = callLimit,
         maxTokensPerRun = maxTokens,
         maxClustersPerRun = maxClusters,
+        maxLlmCallsPerRun = maxLlmCallsPerRun,
+        maxFactsPerCluster = maxFactsPerCluster,
+        maxEvidenceExcerptsPerCluster = maxEvidenceExcerptsPerCluster,
         runWhenIdle = runWhenIdle,
     )
 }

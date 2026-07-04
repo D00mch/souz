@@ -1,6 +1,7 @@
 package ru.souz.agent
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.CoroutineScope
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -94,7 +95,7 @@ fun agentDiModule(
         AgentExecutor(
             agentProvider = { instance<GraphBasedAgent>() },
             memoryRuntime = instance<ConversationMemoryRuntime>(),
-            captureScope = instance<kotlinx.coroutines.CoroutineScope>(),
+            captureScope = instance<CoroutineScope>(),
         )
     }
     bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }

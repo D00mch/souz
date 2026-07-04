@@ -58,6 +58,7 @@ import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentSideEffect
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientSemanticBlock
@@ -77,6 +78,9 @@ import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
 import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.service.observability.ChatConversationCloseReason
+import ru.souz.service.observability.ChatConversationMetrics
+import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.speech.LocalMacOsSpeechAudioTooLongException
 import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
@@ -100,6 +104,8 @@ import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.DesktopAttachmentMetadataProvider
 import ru.souz.ui.main.usecases.DesktopDroppedFilePathExtractor
 import ru.souz.ui.main.usecases.DesktopPathPicker
+import ru.souz.ui.main.usecases.MemoryConversationCleanup
+import ru.souz.ui.main.usecases.NoopMemoryConversationCleanup
 import ru.souz.ui.main.usecases.VoiceInputController
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.ui.common.FinderService
@@ -1165,6 +1171,171 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `confirmed new conversation cleans discarded chat memory`() = runTest(mainDispatcher) {
+        val cleanup = RecordingMemoryConversationCleanup()
+        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
+        val harness = createHarness(
+            memoryConversationCleanup = cleanup,
+            conversationFinishedEvents = finishedConversations,
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("remember this only for this chat"))
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
+            }
+
+            viewModel.handleEvent(MainEvent.RequestNewConversation)
+            awaitState(viewModel) { it.showNewChatDialog }
+            viewModel.handleEvent(MainEvent.ConfirmNewConversation)
+            awaitState(viewModel) { it.chatMessages.isEmpty() && !it.showNewChatDialog }
+
+            assertEquals(1, cleanup.cleanedConversationIds.size)
+            assertTrue(cleanup.cleanedConversationIds.single().isNotBlank())
+            assertEquals(cleanup.cleanedConversationIds.single(), finishedConversations.single().first)
+            assertEquals(ChatConversationCloseReason.NEW_CONVERSATION, finishedConversations.single().third)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `clear context cleans discarded chat memory`() = runTest(mainDispatcher) {
+        val cleanup = RecordingMemoryConversationCleanup()
+        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
+        val harness = createHarness(
+            memoryConversationCleanup = cleanup,
+            conversationFinishedEvents = finishedConversations,
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("remember this only for this chat"))
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
+            }
+
+            viewModel.handleEvent(MainEvent.ClearContext)
+            awaitState(viewModel) { it.chatMessages.isEmpty() && it.userExpectCloseOnX }
+            advanceUntilIdle()
+
+            assertEquals(1, cleanup.cleanedConversationIds.size)
+            assertTrue(cleanup.cleanedConversationIds.single().isNotBlank())
+            assertEquals(cleanup.cleanedConversationIds.single(), finishedConversations.single().first)
+            assertEquals(ChatConversationCloseReason.CLEAR_CONTEXT, finishedConversations.single().third)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `confirmed new conversation resets ui before memory cleanup completes`() = runTest(mainDispatcher) {
+        val cleanup = BlockingMemoryConversationCleanup()
+        val harness = createHarness(memoryConversationCleanup = cleanup)
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("remember this only for this chat"))
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
+            }
+
+            viewModel.handleEvent(MainEvent.RequestNewConversation)
+            awaitState(viewModel) { it.showNewChatDialog }
+            viewModel.handleEvent(MainEvent.ConfirmNewConversation)
+
+            val resetState = awaitState(viewModel) { it.chatMessages.isEmpty() && !it.showNewChatDialog }
+            assertTrue(resetState.chatMessages.isEmpty())
+            assertTrue(cleanup.cleanedConversationIds.isEmpty())
+
+            cleanup.release.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(1, cleanup.cleanedConversationIds.size)
+        } finally {
+            cleanup.release.complete(Unit)
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `confirmed new conversation rejects late response and memory capture`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        var captureCalls = 0
+        val cleanup = RecordingMemoryConversationCleanup()
+        val harness = createHarness(
+            executeBehavior = { response.await() },
+            onCancelActiveJob = { /* Simulate non-cooperative agent completion. */ },
+            memoryConversationCleanup = cleanup,
+            captureCompletedTurn = { captureCalls += 1 },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("old request"))
+            awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "old request" } }
+
+            viewModel.handleEvent(MainEvent.RequestNewConversation)
+            awaitState(viewModel) { it.showNewChatDialog }
+            viewModel.handleEvent(MainEvent.ConfirmNewConversation)
+            awaitState(viewModel) { it.chatMessages.isEmpty() && !it.showNewChatDialog && !it.isProcessing }
+
+            response.complete("late answer")
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.chatMessages.any { it.text == "late answer" })
+            assertEquals(0, captureCalls)
+            assertEquals(1, cleanup.cleanedConversationIds.size)
+        } finally {
+            response.completeExceptionally(CancellationException("cleanup"))
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `clear context rejects late response and memory capture`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        var captureCalls = 0
+        val cleanup = RecordingMemoryConversationCleanup()
+        val harness = createHarness(
+            executeBehavior = { response.await() },
+            onCancelActiveJob = { /* Simulate non-cooperative agent completion. */ },
+            memoryConversationCleanup = cleanup,
+            captureCompletedTurn = { captureCalls += 1 },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("old request"))
+            awaitState(viewModel) { it.isProcessing && it.chatMessages.any { msg -> msg.text == "old request" } }
+
+            viewModel.handleEvent(MainEvent.ClearContext)
+            awaitState(viewModel) { it.chatMessages.isEmpty() && it.userExpectCloseOnX && !it.isProcessing }
+
+            response.complete("late answer")
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.chatMessages.any { it.text == "late answer" })
+            assertEquals(0, captureCalls)
+            assertEquals(1, cleanup.cleanedConversationIds.size)
+        } finally {
+            response.completeExceptionally(CancellationException("cleanup"))
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `stale response clears staged edit broker state`() = runTest(mainDispatcher) {
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
@@ -1375,14 +1546,21 @@ class MainViewModelTest {
         recognizeBehavior: suspend (ByteArray) -> LLMResponse.RecognizeResponse = {
             LLMResponse.RecognizeResponse()
         },
+        memoryConversationCleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
+        captureCompletedTurn: () -> Unit = {},
+        conversationFinishedEvents: MutableList<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>? = null,
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         val sideEffects = MutableSharedFlow<AgentSideEffect>()
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
-        coEvery { agentFacade.execute(any(), any()) } coAnswers {
-            executeBehavior.invoke(firstArg())
+        coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
+            AgentExecutionResult(
+                output = executeBehavior.invoke(firstArg()),
+                context = agentFacade.currentContext.value,
+                captureCompletedTurn = captureCompletedTurn,
+            )
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
@@ -1499,6 +1677,16 @@ class MainViewModelTest {
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }
             bindSingleton { DesktopStructuredLogger() }
+            conversationFinishedEvents?.let { finishedEvents ->
+                bind<ChatObservabilityTracker>(overrides = true) with scoped(mainViewModelDiScope).singleton {
+                    ChatObservabilityTracker(
+                        onConversationFinished = { conversationId, metrics, reason ->
+                            finishedEvents += Triple(conversationId, metrics, reason)
+                        },
+                    )
+                }
+            }
+            bindSingleton<MemoryConversationCleanup> { memoryConversationCleanup }
             bindSingleton<PermissionPromptService> { desktopPermissionService }
             bindSingleton<kotlinx.coroutines.CoroutineScope> { TestScope(mainDispatcher) }
             bindSingleton<AmbientTranscriptionService> { ambientTranscriptionService }
@@ -1559,6 +1747,26 @@ class MainViewModelTest {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")
             onCleared.isAccessible = true
             onCleared.invoke(viewModel)
+        }
+    }
+
+    private class RecordingMemoryConversationCleanup : MemoryConversationCleanup {
+        val cleanedConversationIds = mutableListOf<String>()
+
+        override suspend fun cleanupConversation(conversationId: String) {
+            cleanedConversationIds += conversationId
+        }
+    }
+
+    private class BlockingMemoryConversationCleanup : MemoryConversationCleanup {
+        val started = CompletableDeferred<String>()
+        val release = CompletableDeferred<Unit>()
+        val cleanedConversationIds = mutableListOf<String>()
+
+        override suspend fun cleanupConversation(conversationId: String) {
+            started.complete(conversationId)
+            release.await()
+            cleanedConversationIds += conversationId
         }
     }
 

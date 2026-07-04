@@ -14,6 +14,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+internal suspend fun initializeSqliteMemoryRepository(
+    dbPath: Path,
+    legacyOwnerMigrationTarget: MemoryOwnerId? = null,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
+    SqliteMemoryRepository(dbPath, legacyOwnerMigrationTarget, ioDispatcher).initialize()
+}
+
 class SqliteMemoryRepository(
     private val dbPath: Path,
     private val legacyOwnerMigrationTarget: MemoryOwnerId? = null,
@@ -21,6 +29,10 @@ class SqliteMemoryRepository(
 ) : MemoryRepository {
     private val initMutex = Mutex()
     private var initialized = false
+
+    internal suspend fun initialize() {
+        ensureInitialized()
+    }
 
     override suspend fun insertSourceEvent(input: NewMemorySourceEvent): String = withConnection { connection ->
         val id = UUID.randomUUID().toString()
@@ -53,6 +65,10 @@ class SqliteMemoryRepository(
     ): String = withConnection { connection ->
         val id = UUID.randomUUID().toString()
         connection.inTransaction {
+            val scope = input.scope.normalized()
+            if (input.createdBy == "writer" && isScopeClosedForCapture(input.ownerId, scope)) {
+                throw MemoryScopeClosedForCaptureException(input.ownerId, scope)
+            }
             val canonicalKey = controlledCanonicalKey(input.canonicalKey)
             if (canonicalKey != null && input.status == MemoryFactStatus.ACTIVE) {
                 prepareStatement(
@@ -65,8 +81,8 @@ class SqliteMemoryRepository(
                     statement.setString(1, MemoryFactStatus.RETIRED.name)
                     statement.setString(2, Instant.now().toString())
                     statement.setString(3, input.ownerId.value)
-                    statement.setString(4, input.scope.type)
-                    statement.setString(5, input.scope.id)
+                    statement.setString(4, scope.type)
+                    statement.setString(5, scope.id)
                     statement.setString(6, canonicalKey)
                     statement.setString(7, MemoryFactStatus.ACTIVE.name)
                     statement.executeUpdate()
@@ -84,8 +100,8 @@ class SqliteMemoryRepository(
             ).use { statement ->
                 statement.setString(1, id)
                 statement.setString(2, input.ownerId.value)
-                statement.setString(3, input.scope.type)
-                statement.setString(4, input.scope.id)
+                statement.setString(3, scope.type)
+                statement.setString(4, scope.id)
                 statement.setString(5, input.kind.name)
                 statement.setString(6, input.title)
                 statement.setString(7, input.body)
@@ -124,7 +140,7 @@ class SqliteMemoryRepository(
                     statement.executeBatch()
                 }
             }
-            upsertEmbedding(id, embedding, embeddingModel)
+            upsertEmbedding(id, embedding, embeddingModel, input.contentHash)
         }
         id
     }
@@ -319,7 +335,7 @@ class SqliteMemoryRepository(
             if (updatedRows == 0) {
                 error("Memory fact was modified concurrently: ${fact.id}")
             }
-            upsertEmbedding(fact.id, embedding, embeddingModel)
+            upsertEmbedding(fact.id, embedding, embeddingModel, fact.contentHash)
         }
         fact
     }
@@ -368,10 +384,11 @@ class SqliteMemoryRepository(
         if (scopes.isEmpty()) return emptyList()
         return withConnection { connection ->
             val scopeClause = scopes.joinToString(" or ") { "(f.scope_type = ? and f.scope_id = ?)" }
+            val staleClause = "e.fact_id is null or e.content_hash is null or e.content_hash != f.content_hash"
             val dimensionClause = if (expectedDimension != null) {
-                "and (e.fact_id is null or e.dimension != ?)"
+                "and ($staleClause or e.dimension != ?)"
             } else {
-                "and e.fact_id is null"
+                "and ($staleClause)"
             }
             connection.prepareStatement(
                 """
@@ -670,7 +687,8 @@ class SqliteMemoryRepository(
         factId: String,
         model: String,
         embedding: FloatArray,
-    ) = withConnection { it.upsertEmbedding(factId, embedding, model) }
+        contentHash: String?,
+    ) = withConnection { it.upsertEmbedding(factId, embedding, model, contentHash) }
 
     override suspend fun searchFacts(
         ownerId: MemoryOwnerId,
@@ -693,6 +711,7 @@ class SqliteMemoryRepository(
                   and f.owner_id = ?
                   and e.embedding_model = ?
                   and e.dimension = ?
+                  and e.content_hash = f.content_hash
                   and ($scopeClause)
                 """.trimIndent()
             ).use { statement ->
@@ -796,8 +815,10 @@ class SqliteMemoryRepository(
         if (legacyOwnerMigrationTarget != null) {
             applyMigration(connection, 3, "desktop_legacy_owner_migration", emptyList())
         }
-        val version = if (legacyOwnerMigrationTarget == null) 2 else 3
-        connection.createStatement().use { statement -> statement.execute("pragma user_version = $version") }
+        applyMigration(connection, 4, "legacy_canonical_key_normalization", MIGRATION_V4)
+        applyMigration(connection, 5, "embedding_content_hash", emptyList())
+        adoptSingleExistingOwner(connection, legacyOwnerMigrationTarget)
+        connection.createStatement().use { statement -> statement.execute("pragma user_version = 5") }
     }
 
     private fun applyMigration(
@@ -817,6 +838,12 @@ class SqliteMemoryRepository(
         if (version == 3) {
             migrateLegacyOwner(connection, legacyOwnerMigrationTarget)
         }
+        if (version == 4) {
+            normalizeLegacyCanonicalKeys(connection)
+        }
+        if (version == 5) {
+            ensureEmbeddingContentHashColumns(connection)
+        }
         statements.forEach { sql ->
             connection.createStatement().use { statement -> statement.execute(sql) }
         }
@@ -834,14 +861,7 @@ class SqliteMemoryRepository(
     private fun migrateLegacyOwner(connection: Connection, targetOwnerId: MemoryOwnerId?) {
         val target = targetOwnerId?.value?.trim()?.takeIf(String::isNotBlank) ?: return
         if (target == LEGACY_OWNER_ID) return
-        listOf(
-            "memory_source_events",
-            "memory_facts",
-            "memory_index_jobs",
-            "memory_operation_log",
-            "memory_tombstones",
-            "memory_maintenance_jobs",
-        ).forEach { table ->
+        OWNER_TABLES.forEach { table ->
             connection.prepareStatement("update $table set owner_id = ? where owner_id = ?").use { statement ->
                 statement.setString(1, target)
                 statement.setString(2, LEGACY_OWNER_ID)
@@ -849,6 +869,113 @@ class SqliteMemoryRepository(
             }
         }
     }
+
+    private fun adoptSingleExistingOwner(connection: Connection, targetOwnerId: MemoryOwnerId?) {
+        val target = targetOwnerId?.value?.trim()?.takeIf(String::isNotBlank) ?: return
+        val existingOwners = connection.distinctOwnerIds()
+        if (existingOwners.size != 1) return
+        val existing = existingOwners.single()
+        if (existing == target) return
+        OWNER_TABLES.forEach { table ->
+            connection.prepareStatement("update $table set owner_id = ? where owner_id = ?").use { statement ->
+                statement.setString(1, target)
+                statement.setString(2, existing)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    private fun Connection.distinctOwnerIds(): Set<String> {
+        val unionSql = OWNER_TABLES.joinToString("\nunion\n") { table ->
+            "select owner_id from $table where owner_id is not null and trim(owner_id) != ''"
+        }
+        return prepareStatement(unionSql).use { statement ->
+            statement.executeQuery().use { rs ->
+                buildSet {
+                    while (rs.next()) {
+                        add(rs.getString("owner_id"))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun normalizeLegacyCanonicalKeys(connection: Connection) {
+        val rows = connection.prepareStatement(
+            """
+            select id, owner_id, scope_type, scope_id, kind, title, body, slot_key, status
+            from memory_facts
+            where slot_key is not null
+            order by updated_at desc, id asc
+            """.trimIndent()
+        ).use { statement ->
+            statement.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        add(
+                            LegacyCanonicalKeyRow(
+                                id = rs.getString("id"),
+                                ownerId = rs.getString("owner_id") ?: LEGACY_OWNER_ID,
+                                scopeType = rs.getString("scope_type"),
+                                scopeId = rs.getString("scope_id"),
+                                kind = MemoryFactKind.valueOf(rs.getString("kind")),
+                                title = rs.getString("title"),
+                                body = rs.getString("body"),
+                                slotKey = rs.getString("slot_key"),
+                                status = rs.getString("status"),
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        rows.forEach { row ->
+            val canonicalKey = normalizeCanonicalKey(row.slotKey)
+                ?.takeUnless { key ->
+                    row.status == MemoryFactStatus.ACTIVE.name &&
+                        connection.hasActiveCanonicalKeyConflict(row, key)
+                }
+            connection.prepareStatement(
+                """
+                update memory_facts
+                set canonical_key = ?,
+                    content_hash = ?
+                where id = ?
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, canonicalKey)
+                statement.setString(2, stableMemoryContentHash(row.title, row.body, row.kind, canonicalKey))
+                statement.setString(3, row.id)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    private fun Connection.hasActiveCanonicalKeyConflict(
+        row: LegacyCanonicalKeyRow,
+        canonicalKey: String,
+    ): Boolean =
+        prepareStatement(
+            """
+            select 1 from memory_facts
+            where id != ?
+              and owner_id = ?
+              and scope_type = ?
+              and scope_id = ?
+              and canonical_key = ?
+              and status = ?
+            limit 1
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, row.id)
+            statement.setString(2, row.ownerId)
+            statement.setString(3, row.scopeType)
+            statement.setString(4, row.scopeId)
+            statement.setString(5, canonicalKey)
+            statement.setString(6, MemoryFactStatus.ACTIVE.name)
+            statement.executeQuery().use { it.next() }
+        }
 
     private fun ensureTypedMemoryColumns(connection: Connection) {
         connection.addColumnIfMissing("memory_source_events", "owner_id", "text not null default '$LEGACY_OWNER_ID'")
@@ -869,6 +996,10 @@ class SqliteMemoryRepository(
             statement.execute("update memory_facts set last_observed_at = updated_at where last_observed_at is null")
             statement.execute("update memory_fact_embeddings set created_at = updated_at where created_at is null")
         }
+    }
+
+    private fun ensureEmbeddingContentHashColumns(connection: Connection) {
+        connection.addColumnIfMissing("memory_fact_embeddings", "content_hash", "text")
     }
 
     private fun Connection.addColumnIfMissing(table: String, column: String, definition: String) {
@@ -900,7 +1031,7 @@ class SqliteMemoryRepository(
             title = getString("title"),
             body = getString("body"),
             slotKey = getNullableString("slot_key"),
-            canonicalKey = getNullableString("canonical_key") ?: getNullableString("slot_key"),
+            canonicalKey = getNullableString("canonical_key"),
             status = MemoryFactStatus.valueOf(getString("status")),
             validity = enumValueOrDefault(getStringOrDefault("validity", MemoryFactValidity.VALID.name), MemoryFactValidity.VALID),
             retention = enumValueOrDefault(getStringOrDefault("retention", MemoryRetention.DURABLE.name), MemoryRetention.DURABLE),
@@ -1047,18 +1178,21 @@ class SqliteMemoryRepository(
         factId: String,
         embedding: FloatArray?,
         model: String?,
+        contentHash: String?,
     ) {
         if (embedding == null || model == null) return
         if (embedding.isEmpty()) error("Cannot save empty embedding (zero dimension)")
+        val embeddingContentHash = contentHash ?: currentFactContentHash(factId) ?: return
         prepareStatement(
             """
             insert into memory_fact_embeddings(
-                fact_id, embedding_model, embedding_blob, dimension, updated_at
-            ) values (?, ?, ?, ?, ?)
+                fact_id, embedding_model, embedding_blob, dimension, content_hash, updated_at
+            ) values (?, ?, ?, ?, ?, ?)
             on conflict(fact_id) do update set
                 embedding_model = excluded.embedding_model,
                 embedding_blob = excluded.embedding_blob,
                 dimension = excluded.dimension,
+                content_hash = excluded.content_hash,
                 updated_at = excluded.updated_at
             """.trimIndent()
         ).use { statement ->
@@ -1066,14 +1200,53 @@ class SqliteMemoryRepository(
             statement.setString(2, model)
             statement.setBytes(3, embedding.toBlob())
             statement.setInt(4, embedding.size)
-            statement.setString(5, Instant.now().toString())
+            statement.setString(5, embeddingContentHash)
+            statement.setString(6, Instant.now().toString())
             statement.executeUpdate()
         }
     }
 
+    private fun Connection.currentFactContentHash(factId: String): String? =
+        prepareStatement("select content_hash from memory_facts where id = ?").use { statement ->
+            statement.setString(1, factId)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.getString("content_hash") else null
+            }
+        }
+
+    private fun Connection.isScopeClosedForCapture(ownerId: MemoryOwnerId, scope: MemoryScope): Boolean =
+        prepareStatement(
+            """
+            select 1 from memory_tombstones
+            where owner_id = ?
+              and scope_type = ?
+              and scope_id = ?
+              and subject_key = ?
+            limit 1
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, ownerId.value)
+            statement.setString(2, scope.type)
+            statement.setString(3, scope.id)
+            statement.setString(4, MEMORY_SCOPE_CLOSED_SUBJECT_KEY)
+            statement.executeQuery().use { it.next() }
+        }
+
     private data class FactEmbeddingRow(
         val fact: MemoryFact,
         val embedding: FloatArray,
+    )
+
+    private data class LegacyCanonicalKeyRow(
+        val id: String,
+        val ownerId: String,
+        val scopeType: String,
+        val scopeId: String,
+        val kind: MemoryFactKind,
+        val title: String,
+        val body: String,
+        val slotKey: String,
+        val status: String,
     )
 
     private companion object {
@@ -1247,6 +1420,17 @@ class SqliteMemoryRepository(
             )
             """.trimIndent(),
             "create index if not exists memory_budget_period_idx on memory_budget_reservations(period_key, status)",
+        )
+        private val MIGRATION_V4 = listOf(
+            "drop index if exists memory_active_slot_unique",
+        )
+        private val OWNER_TABLES = listOf(
+            "memory_source_events",
+            "memory_facts",
+            "memory_index_jobs",
+            "memory_operation_log",
+            "memory_tombstones",
+            "memory_maintenance_jobs",
         )
     }
 }

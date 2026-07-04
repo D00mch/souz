@@ -13,6 +13,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MemoryCoreTest {
@@ -307,6 +308,121 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `single existing desktop owner is adopted when configured owner changes`() = runTest {
+        val dbPath = Files.createTempDirectory("souz-memory-owner-adoption-test-").resolve("memory.db")
+        val oldOwner = MemoryOwnerId("desktop-owner-old")
+        val newOwner = MemoryOwnerId("desktop-owner-new")
+        val oldRepository = SqliteMemoryRepository(dbPath, legacyOwnerMigrationTarget = oldOwner)
+        val oldService = MemoryService(oldRepository, FakeEmbeddingClient())
+        val fact = oldService.createManualFact(
+            CreateMemoryFactInput(
+                ownerId = oldOwner,
+                scope = globalScope(),
+                kind = MemoryFactKind.PREFERENCE,
+                title = "Language",
+                body = "User prefers Kotlin.",
+                canonicalKey = "user.preference.language",
+            )
+        )
+
+        val adoptedRepository = SqliteMemoryRepository(dbPath, legacyOwnerMigrationTarget = newOwner)
+
+        assertEquals(listOf(fact.id), adoptedRepository.listFacts(MemoryFactFilter(ownerId = newOwner)).map { it.id })
+        assertEquals(0, countRows(dbPath, "memory_facts", "owner_id = 'desktop-owner-old'"))
+        assertEquals(0, countRows(dbPath, "memory_source_events", "owner_id = 'desktop-owner-old'"))
+        assertEquals(0, countRows(dbPath, "memory_index_jobs", "owner_id = 'desktop-owner-old'"))
+    }
+
+    @Test
+    fun `legacy slot key migration normalizes key and replacement supersedes migrated fact`() = runTest {
+        val dbPath = Files.createTempDirectory("souz-memory-slot-key-test-").resolve("memory.db")
+        seedLegacySlotKeyMemoryDb(
+            dbPath = dbPath,
+            factId = "fact-legacy-project",
+            scope = projectScope(),
+            slotKey = "project_decision_memory_storage_target",
+        )
+        val owner = MemoryOwnerId("desktop-owner")
+        val repository = SqliteMemoryRepository(dbPath, legacyOwnerMigrationTarget = owner)
+        val memoryService = MemoryService(repository, FakeEmbeddingClient())
+
+        assertEquals("project.decision.memory.storage.target", repository.getFact("fact-legacy-project")?.canonicalKey)
+
+        val sourceId = repository.insertSourceEvent(
+            NewMemorySourceEvent(
+                ownerId = owner,
+                scope = projectScope(),
+                sourceType = "turn",
+                sourceRef = "assistant-2",
+                text = "Use SQLite for desktop memory storage.",
+            )
+        )
+        val replacement = memoryService.createCapturedFact(
+            CreateCapturedFactInput(
+                ownerId = owner,
+                scope = projectScope(),
+                kind = MemoryFactKind.PROJECT_DECISION,
+                title = "Memory storage target",
+                body = "Use SQLite for desktop memory storage.",
+                canonicalKey = "project.decision.memory.storage.target",
+                confidence = 0.95f,
+                evidenceText = "Use SQLite for desktop memory storage.",
+                sourceEventId = sourceId,
+            )
+        )
+
+        assertEquals("fact-legacy-project", replacement.supersedesFactId)
+        assertEquals(MemoryFactStatus.RETIRED, repository.getFact("fact-legacy-project")?.status)
+        assertEquals(MemoryFactStatus.ACTIVE, repository.getFact(replacement.id)?.status)
+    }
+
+    @Test
+    fun `invalid legacy slot key migrates to null canonical key`() = runTest {
+        val dbPath = Files.createTempDirectory("souz-memory-invalid-slot-key-test-").resolve("memory.db")
+        seedLegacySlotKeyMemoryDb(
+            dbPath = dbPath,
+            factId = "fact-invalid-key",
+            scope = globalScope(),
+            slotKey = "free form key",
+        )
+        val repository = SqliteMemoryRepository(dbPath)
+
+        assertNull(repository.getFact("fact-invalid-key")?.canonicalKey)
+    }
+
+    @Test
+    fun `owner scoped canonical keys do not conflict through legacy slot index`() = runTest {
+        val dbPath = Files.createTempDirectory("souz-memory-owner-key-test-").resolve("memory.db")
+        val repository = SqliteMemoryRepository(dbPath)
+        val memoryService = MemoryService(repository, FakeEmbeddingClient())
+
+        val first = memoryService.createManualFact(
+            CreateMemoryFactInput(
+                ownerId = MemoryOwnerId("owner-1"),
+                scope = globalScope(),
+                kind = MemoryFactKind.PREFERENCE,
+                title = "Language",
+                body = "User prefers Kotlin.",
+                canonicalKey = "user.preference.language",
+            )
+        )
+        val second = memoryService.createManualFact(
+            CreateMemoryFactInput(
+                ownerId = MemoryOwnerId("owner-2"),
+                scope = globalScope(),
+                kind = MemoryFactKind.PREFERENCE,
+                title = "Language",
+                body = "User prefers Kotlin.",
+                canonicalKey = "user.preference.language",
+            )
+        )
+
+        assertEquals(0, countRows(dbPath, "sqlite_master", "type = 'index' and name = 'memory_active_slot_unique'"))
+        assertEquals(MemoryFactStatus.ACTIVE, repository.getFact(first.id)?.status)
+        assertEquals(MemoryFactStatus.ACTIVE, repository.getFact(second.id)?.status)
+    }
+
+    @Test
     fun `manual fact under desktop owner is retrieved by current owner`() = runTest {
         val owner = MemoryOwnerId("desktop-owner")
         val fixture = createFixture(owner = owner)
@@ -531,18 +647,90 @@ class MemoryCoreTest {
     }
 
     @Test
-    fun `maintenance run marks pending jobs as done`() = runTest {
+    fun `closed session scope rejects late writer insert in repository transaction`() = runTest {
+        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
+        val scope = MemoryScope.session(MemorySessionId("chat-42"))
+
+        fixture.memoryService.closeScopeForCapture(fixture.owner, scope)
+
+        assertFailsWith<MemoryScopeClosedForCaptureException> {
+            fixture.repository.insertFact(
+                NewMemoryFact(
+                    ownerId = fixture.owner,
+                    scope = scope,
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Late session note",
+                    body = "This should not be stored after cleanup.",
+                    slotKey = null,
+                    status = MemoryFactStatus.ACTIVE,
+                    confidence = 1f,
+                    pinned = false,
+                    createdBy = "writer",
+                    supersedesFactId = null,
+                ),
+                evidence = emptyList(),
+            )
+        }
+    }
+
+    @Test
+    fun `maintenance archives legacy chat facts and completes legacy job`() = runTest {
         val dbPath = Files.createTempDirectory("souz-memory-maintenance-test-").resolve("memory.db")
         seedLegacyV1MemoryDb(dbPath)
+        val repository = SqliteMemoryRepository(dbPath)
+        repository.listFacts(MemoryFactFilter())
+        val controller = DesktopMemoryMaintenanceController(dbPath, InMemoryMemoryMaintenanceSettingsStore())
+        controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY))
+
+        val beforeRun = controller.status()
+        assertEquals(1, beforeRun.pendingClusters)
+        assertNull(beforeRun.blockedReason)
+
+        val status = controller.runNow()
+
+        assertEquals(0, status.pendingClusters)
+        assertEquals(0, status.blockedClusters)
+        assertEquals(MemoryMaintenanceBlockReason.NO_PENDING_CLUSTERS, status.blockedReason)
+        assertEquals(MemoryFactStatus.RETIRED, repository.getFact("fact-legacy-chat")?.status)
+        assertEquals(0, countRows(dbPath, "memory_maintenance_jobs", "status = 'PENDING'"))
+        assertEquals(1, countRows(dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
+        assertEquals(0, countRows(dbPath, "memory_maintenance_jobs", "status = 'BLOCKED'"))
+        assertEquals(1, countRows(dbPath, "memory_operation_log", "type = 'MAINTENANCE'"))
+        assertNotNull(status.lastAttemptedAt)
+        assertNotNull(status.lastCompletedAt)
+    }
+
+    @Test
+    fun `maintenance blocks unsupported jobs without completion`() = runTest {
+        val dbPath = Files.createTempDirectory("souz-memory-maintenance-unsupported-test-").resolve("memory.db")
         SqliteMemoryRepository(dbPath).listFacts(MemoryFactFilter())
+        seedUnsupportedMaintenanceJob(dbPath)
         val controller = DesktopMemoryMaintenanceController(dbPath, InMemoryMemoryMaintenanceSettingsStore())
         controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY))
 
         val status = controller.runNow()
 
         assertEquals(0, status.pendingClusters)
-        assertEquals(1, countRows(dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
-        assertNotNull(status.lastCompletedAt)
+        assertEquals(1, status.blockedClusters)
+        assertEquals(MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS, status.blockedReason)
+        assertEquals(1, countRows(dbPath, "memory_maintenance_jobs", "status = 'BLOCKED'"))
+        assertEquals(0, countRows(dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
+        assertNotNull(status.lastAttemptedAt)
+        assertNull(status.lastCompletedAt)
+    }
+
+    @Test
+    fun `maintenance status initializes sqlite schema before repository use`() = runTest {
+        val dbPath = Files.createTempDirectory("souz-memory-maintenance-init-test-").resolve("memory.db")
+        val controller = DesktopMemoryMaintenanceController(dbPath, InMemoryMemoryMaintenanceSettingsStore())
+
+        val status = controller.status()
+
+        assertEquals(0, status.pendingClusters)
+        assertEquals(0, status.blockedClusters)
+        assertEquals(MemoryMaintenanceBlockReason.DREAMER_DISABLED, status.blockedReason)
+        assertNull(status.lastErrorCode)
+        assertEquals(1, countRows(dbPath, "schema_migrations", "version = 1"))
     }
 
     @Test
@@ -578,6 +766,38 @@ class MemoryCoreTest {
             embedding = floatArrayOf(1f, 0f),
         )
 
+        val hits = fixture.repository.searchFacts(
+            scopes = listOf(globalScope()),
+            model = fixture.embedder.model,
+            queryEmbedding = queryEmbedding,
+            limit = 5,
+        )
+        val missing = fixture.repository.getFactsWithoutEmbedding(
+            scopes = listOf(globalScope()),
+            model = fixture.embedder.model,
+            expectedDimension = queryEmbedding.size,
+            limit = 5,
+        )
+
+        assertTrue(hits.none { it.fact.id == fact.id })
+        assertEquals(listOf(fact.id), missing.map { it.id })
+    }
+
+    @Test
+    fun `stale embedding content hash is ignored and treated as missing`() = runTest {
+        val fixture = createFixture()
+        val fact = fixture.createManual(
+            title = "SQLite memory",
+            body = "SQLite desktop memory Kotlin.",
+        )
+        fixture.embedder.mode = FakeEmbeddingClient.Mode.THROW_ON_DOCUMENT
+
+        fixture.memoryService.updateFact(
+            factId = fact.id,
+            patch = MemoryFactPatch(body = "Rust desktop memory."),
+        )
+
+        val queryEmbedding = fixture.embedder.embedQuery("sqlite kotlin desktop")
         val hits = fixture.repository.searchFacts(
             scopes = listOf(globalScope()),
             model = fixture.embedder.model,
@@ -742,8 +962,13 @@ class MemoryCoreTest {
         assertEquals("Use SQLite for desktop memory storage.", currentFact.body)
 
         fixture.embedder.mode = FakeEmbeddingClient.Mode.NORMAL
-        val hits = fixture.search(projectScope(), "sqlite storage")
-        assertEquals(listOf(fact.id), hits.map { it.fact.id })
+        val missing = fixture.repository.getFactsWithoutEmbedding(
+            scopes = listOf(projectScope()),
+            model = fixture.embedder.model,
+            expectedDimension = fixture.embedder.embedQuery("sqlite storage").size,
+            limit = 5,
+        )
+        assertEquals(listOf(fact.id), missing.map { it.id })
     }
 
     @Test
@@ -1018,6 +1243,133 @@ class MemoryCoreTest {
                 """.trimIndent(),
             ).forEach { sql ->
                 connection.createStatement().use { statement -> statement.execute(sql) }
+            }
+        }
+    }
+
+    private fun seedUnsupportedMaintenanceJob(dbPath: Path) {
+        Class.forName("org.sqlite.JDBC")
+        DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+            connection.prepareStatement(
+                """
+                insert into memory_maintenance_jobs(
+                    cluster_key,
+                    owner_id,
+                    status,
+                    priority,
+                    latest_dirty_at,
+                    reasons,
+                    next_attempt_at,
+                    created_at,
+                    updated_at
+                ) values (
+                    'semantic-cluster:desktop-owner:unsupported',
+                    'desktop-owner',
+                    'PENDING',
+                    10,
+                    '2026-05-24T10:15:30Z',
+                    'semantic_merge_required',
+                    '2026-05-24T10:15:30Z',
+                    '2026-05-24T10:15:30Z',
+                    '2026-05-24T10:15:30Z'
+                )
+                """.trimIndent()
+            ).use { it.executeUpdate() }
+        }
+    }
+
+    private fun seedLegacySlotKeyMemoryDb(
+        dbPath: Path,
+        factId: String,
+        scope: MemoryScope,
+        slotKey: String,
+    ) {
+        Class.forName("org.sqlite.JDBC")
+        DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+            listOf(
+                """
+                create table memory_source_events (
+                    id text primary key,
+                    scope_type text not null,
+                    scope_id text not null,
+                    source_type text not null,
+                    source_ref text,
+                    text text not null,
+                    metadata_json text not null default '{}',
+                    created_at text not null
+                )
+                """.trimIndent(),
+                """
+                create table memory_facts (
+                    id text primary key,
+                    scope_type text not null,
+                    scope_id text not null,
+                    kind text not null,
+                    title text not null,
+                    body text not null,
+                    slot_key text,
+                    status text not null,
+                    confidence real not null,
+                    pinned integer not null,
+                    created_by text not null,
+                    created_at text not null,
+                    updated_at text not null,
+                    supersedes_fact_id text
+                )
+                """.trimIndent(),
+                """
+                create table memory_fact_evidence (
+                    fact_id text not null,
+                    source_event_id text not null,
+                    evidence_text text,
+                    primary key (fact_id, source_event_id)
+                )
+                """.trimIndent(),
+                """
+                create table memory_fact_embeddings (
+                    fact_id text primary key,
+                    embedding_model text not null,
+                    embedding_blob blob not null,
+                    dimension integer not null,
+                    updated_at text not null
+                )
+                """.trimIndent(),
+            ).forEach { sql ->
+                connection.createStatement().use { statement -> statement.execute(sql) }
+            }
+            connection.prepareStatement(
+                """
+                insert into memory_source_events(
+                    id, scope_type, scope_id, source_type, source_ref, text, metadata_json, created_at
+                ) values (?, ?, ?, 'turn', 'legacy', 'Legacy memory.', '{}', '2026-05-24T10:15:30Z')
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, "source-$factId")
+                statement.setString(2, scope.type)
+                statement.setString(3, scope.id)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                """
+                insert into memory_facts(
+                    id, scope_type, scope_id, kind, title, body, slot_key, status, confidence, pinned,
+                    created_by, created_at, updated_at, supersedes_fact_id
+                ) values (?, ?, ?, 'PROJECT_DECISION', 'Memory storage target', 'Use Postgres for memory storage.',
+                    ?, 'ACTIVE', 1.0, 0, 'writer', '2026-05-24T10:15:30Z', '2026-05-24T11:15:30Z', null)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, factId)
+                statement.setString(2, scope.type)
+                statement.setString(3, scope.id)
+                statement.setString(4, slotKey)
+                statement.executeUpdate()
+            }
+            connection.prepareStatement(
+                "insert into memory_fact_evidence(fact_id, source_event_id, evidence_text) values (?, ?, 'Legacy memory.')"
+            ).use { statement ->
+                statement.setString(1, factId)
+                statement.setString(2, "source-$factId")
+                statement.executeUpdate()
             }
         }
     }

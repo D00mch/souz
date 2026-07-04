@@ -81,6 +81,7 @@ enum class ChatRequestStatus(val wireName: String) {
 enum class ChatConversationCloseReason(val wireName: String) {
     NEW_CONVERSATION("new_conversation"),
     CLEAR_CONTEXT("clear_context"),
+    DELETED("deleted"),
     VIEW_MODEL_CLEARED("view_model_cleared"),
 }
 

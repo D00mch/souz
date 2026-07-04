@@ -1,5 +1,6 @@
 package ru.souz.ui.memory
 
+import kotlinx.coroutines.CancellationException
 import org.kodein.di.DI
 import org.kodein.di.DIAware
 import org.kodein.di.direct
@@ -60,7 +61,7 @@ class MemoryViewModel(
 
     private suspend fun loadFacts() {
         setState { copy(isLoading = true, error = null) }
-        runCatching {
+        catchingNonCancellation(onCancellation = { setState { copy(isLoading = false) } }) {
             memoryService.listFacts(currentState.filters.toDomainFilter(ownerProvider.currentOwnerId()))
         }.onSuccess { facts ->
             setState {
@@ -77,7 +78,7 @@ class MemoryViewModel(
     }
 
     private suspend fun refreshMaintenanceStatus() {
-        runCatching {
+        catchingNonCancellation {
             maintenanceController.status()
         }.onSuccess { status ->
             setState { copy(maintenance = status.toUiState()) }
@@ -93,7 +94,7 @@ class MemoryViewModel(
 
     private suspend fun openEditDialog(factId: String) {
         setState { copy(error = null) }
-        runCatching {
+        catchingNonCancellation {
             memoryService.getFactDetails(factId)?.toEditorState()
                 ?: error("Memory fact not found: $factId")
         }.onSuccess { editor ->
@@ -110,7 +111,7 @@ class MemoryViewModel(
         }
 
         setState { copy(isSaving = true, error = null) }
-        runCatching {
+        catchingNonCancellation(onCancellation = { setState { copy(isSaving = false) } }) {
             if (input.factId == null) {
                 memoryService.createManualFact(input.toCreateInput(ownerProvider.currentOwnerId()))
             } else {
@@ -135,7 +136,17 @@ class MemoryViewModel(
                 error = null,
             )
         }
-        runCatching {
+        catchingNonCancellation(
+            onCancellation = {
+                setState {
+                    copy(
+                        detailsFactId = null,
+                        selectedFact = null,
+                        isDetailsLoading = false,
+                    )
+                }
+            }
+        ) {
             memoryService.getFactDetails(factId)
                 ?: error("Memory fact not found: $factId")
         }.onSuccess { details ->
@@ -171,7 +182,7 @@ class MemoryViewModel(
         factId: String,
         pinned: Boolean,
     ) {
-        runCatching {
+        catchingNonCancellation {
             memoryService.updateFact(factId, patch = ru.souz.memory.MemoryFactPatch(pinned = pinned))
         }.onSuccess {
             loadFacts()
@@ -197,7 +208,7 @@ class MemoryViewModel(
         val action = currentState.confirm ?: return
         setState { copy(confirm = null, error = null) }
 
-        runCatching {
+        catchingNonCancellation {
             when (action.kind) {
                 PendingMemoryConfirm.Kind.Delete -> memoryService.deleteFact(action.factId)
                 PendingMemoryConfirm.Kind.Retire -> memoryService.retireFact(action.factId)
@@ -254,7 +265,11 @@ class MemoryViewModel(
     }
 
     private suspend fun selectDreamerMode(mode: MemoryMaintenanceMode) {
-        val normalized = if (mode == MemoryMaintenanceMode.OFF) MemoryMaintenanceMode.OFF else mode
+        val normalized = when (mode) {
+            MemoryMaintenanceMode.OFF -> MemoryMaintenanceMode.OFF
+            MemoryMaintenanceMode.LOCAL_ONLY,
+            MemoryMaintenanceMode.LOCAL_THEN_CLOUD -> MemoryMaintenanceMode.LOCAL_ONLY
+        }
         saveMaintenance(
             currentState.maintenance.copy(
                 mode = normalized,
@@ -274,7 +289,7 @@ class MemoryViewModel(
             setState { copy(maintenance = next.copy(fieldError = "Invalid Dreamer limits")) }
             return
         }
-        runCatching {
+        catchingNonCancellation {
             maintenanceController.savePreferences(preferences)
         }.onSuccess { status ->
             setState { copy(maintenance = status.toUiState()) }
@@ -284,9 +299,17 @@ class MemoryViewModel(
     }
 
     private suspend fun runDreamerNow() {
-        if (currentState.maintenance.mode == MemoryMaintenanceMode.OFF) return
+        if (!currentState.maintenance.canRunNow) return
+        val preferences = currentState.maintenance.toPreferences()
+        if (preferences == null) {
+            setState { copy(maintenance = maintenance.copy(fieldError = "Invalid Dreamer limits")) }
+            return
+        }
         setState { copy(maintenance = maintenance.copy(isRunningNow = true)) }
-        runCatching {
+        catchingNonCancellation(
+            onCancellation = { setState { copy(maintenance = maintenance.copy(isRunningNow = false)) } }
+        ) {
+            maintenanceController.savePreferences(preferences)
             maintenanceController.runNow()
         }.onSuccess { status ->
             setState { copy(maintenance = status.toUiState(isRunningNow = false)) }
@@ -295,4 +318,17 @@ class MemoryViewModel(
             setState { copy(maintenance = maintenance.copy(isRunningNow = false)) }
         }
     }
+
+    private suspend inline fun <T> catchingNonCancellation(
+        noinline onCancellation: suspend () -> Unit = {},
+        block: suspend () -> T,
+    ): Result<T> =
+        try {
+            Result.success(block())
+        } catch (error: CancellationException) {
+            onCancellation()
+            throw error
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
 }

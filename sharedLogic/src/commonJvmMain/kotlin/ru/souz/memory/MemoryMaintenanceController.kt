@@ -18,6 +18,7 @@ enum class MemoryMaintenanceBlockReason {
     MAX_CALLS_PER_RUN,
     MAX_CLUSTERS_PER_RUN,
     NO_PENDING_CLUSTERS,
+    NO_DETERMINISTIC_ACTIONS,
 }
 
 data class MemoryMaintenanceStatus(

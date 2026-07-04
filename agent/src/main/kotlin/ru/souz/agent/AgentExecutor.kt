@@ -8,8 +8,8 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 import ru.souz.memory.CompletedTurnMemoryInput
-import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.ConversationId
+import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.MemoryContext
 import ru.souz.memory.MemoryOwnerId
 import ru.souz.memory.MemorySessionId
@@ -20,6 +20,7 @@ class AgentExecutor internal constructor(
     private val agentProvider: (AgentId) -> TraceableAgent,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
+    private val memorySurface: MemorySurface = MemorySurface.DESKTOP,
     val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutor::class.java)
@@ -57,9 +58,9 @@ class AgentExecutor internal constructor(
         )
 
         val result = agentById(agentId).executeWithTrace(seed, onStep)
-
-        captureCompletedTurn(seed, input, result.output)
-        return result
+        return result.copy(
+            captureCompletedTurn = { captureCompletedTurn(seed, input, result.output) },
+        )
     }
 
     private fun captureCompletedTurn(
@@ -73,7 +74,7 @@ class AgentExecutor internal constructor(
                     CompletedTurnMemoryInput(
                         context = MemoryContext(
                             ownerId = MemoryOwnerId(ctx.toolInvocationMeta.userId),
-                            surface = MemorySurface.DESKTOP,
+                            surface = memorySurface,
                             conversationId = ctx.toolInvocationMeta.conversationId?.let(::ConversationId),
                             sessionId = ctx.toolInvocationMeta.conversationId?.let(::MemorySessionId),
                             projectId = null,
@@ -86,10 +87,10 @@ class AgentExecutor internal constructor(
                         assistantMessage = assistantMessage,
                     )
                 )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn("Memory capture failed: {}", e.message)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logger.warn("Memory capture failed: {}", error.message)
             }
         }
     }

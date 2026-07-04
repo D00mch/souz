@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -37,6 +38,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -293,7 +295,152 @@ class MemoryViewModelTest {
     }
 
     @Test
-    fun `dreamer mode is saved and run now delegates to maintenance controller`() = runTest(dispatcher) {
+    fun `load facts rethrows cancellation without setting error`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } throws CancellationException("cancelled")
+
+        val viewModel = createViewModel(service)
+
+        assertFailsWith<CancellationException> {
+            viewModel.handleEvent(MemoryAction.Load)
+        }
+
+        val state = viewModel.uiState.value
+        assertNull(state.error)
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun `dreamer run now delegates only when maintenance is runnable`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                pendingClusters = 1,
+                blockedReason = null,
+            )
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+        viewModel.onAction(MemoryAction.RunDreamerNow)
+        advanceUntilIdle()
+
+        assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, viewModel.uiState.value.maintenance.mode)
+        assertEquals(1, controller.runNowCount)
+        assertEquals(Instant.parse("2026-05-24T12:00:00Z"), viewModel.uiState.value.maintenance.lastAttemptedAt)
+        assertEquals(MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS, viewModel.uiState.value.maintenance.blockedReason)
+        assertNull(viewModel.uiState.value.maintenance.lastCompletedAt)
+    }
+
+    @Test
+    fun `dreamer run now saves valid edited limits before running`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(
+                    mode = MemoryMaintenanceMode.LOCAL_ONLY,
+                    dailyCloudTokenLimit = 100,
+                    maxCloudCallsPerDay = 2,
+                ),
+                pendingClusters = 1,
+                blockedReason = null,
+            )
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+        viewModel.onAction(MemoryAction.SetDailyTokenLimit("250"))
+        viewModel.onAction(MemoryAction.SetDailyCallLimit("4"))
+        advanceUntilIdle()
+        viewModel.onAction(MemoryAction.RunDreamerNow)
+        advanceUntilIdle()
+
+        assertEquals(250, controller.savedPreferences?.dailyCloudTokenLimit)
+        assertEquals(4, controller.savedPreferences?.maxCloudCallsPerDay)
+        assertEquals(1, controller.runNowCount)
+    }
+
+    @Test
+    fun `dreamer run now rethrows cancellation without setting error`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                pendingClusters = 1,
+                blockedReason = null,
+            ),
+            runFailure = CancellationException("cancelled"),
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.handleEvent(MemoryAction.Load)
+        advanceUntilIdle()
+
+        assertFailsWith<CancellationException> {
+            viewModel.handleEvent(MemoryAction.RunDreamerNow)
+        }
+
+        assertNull(viewModel.uiState.value.error)
+        assertFalse(viewModel.uiState.value.maintenance.isRunningNow)
+    }
+
+    @Test
+    fun `dreamer run now is ignored when deterministic work is unavailable`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                pendingClusters = 1,
+                blockedReason = MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS,
+            )
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+        viewModel.onAction(MemoryAction.RunDreamerNow)
+        advanceUntilIdle()
+
+        assertEquals(0, controller.runNowCount)
+        assertFalse(viewModel.uiState.value.maintenance.canRunNow)
+    }
+
+    @Test
+    fun `dreamer settings preserve hidden advanced limits`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(
+                    mode = MemoryMaintenanceMode.OFF,
+                    maxLlmCallsPerRun = 7,
+                    maxFactsPerCluster = 23,
+                    maxEvidenceExcerptsPerCluster = 5,
+                ),
+                blockedReason = MemoryMaintenanceBlockReason.DREAMER_DISABLED,
+            )
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+        viewModel.onAction(MemoryAction.SetDreamerEnabled(true))
+        advanceUntilIdle()
+
+        assertEquals(7, controller.savedPreferences?.maxLlmCallsPerRun)
+        assertEquals(23, controller.savedPreferences?.maxFactsPerCluster)
+        assertEquals(5, controller.savedPreferences?.maxEvidenceExcerptsPerCluster)
+    }
+
+    @Test
+    fun `cloud dreamer mode is not saved while worker is deterministic only`() = runTest(dispatcher) {
         val service = mockk<MemoryService>()
         coEvery { service.listFacts(any()) } returns emptyList()
         val controller = FakeMaintenanceController()
@@ -301,14 +448,33 @@ class MemoryViewModelTest {
         val viewModel = createViewModel(service, controller)
         viewModel.onAction(MemoryAction.Load)
         advanceUntilIdle()
-        viewModel.onAction(MemoryAction.SelectDreamerMode(MemoryMaintenanceMode.LOCAL_ONLY))
-        advanceUntilIdle()
-        viewModel.onAction(MemoryAction.RunDreamerNow)
+        viewModel.onAction(MemoryAction.SelectDreamerMode(MemoryMaintenanceMode.LOCAL_THEN_CLOUD))
         advanceUntilIdle()
 
         assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, controller.savedPreferences?.mode)
+    }
+
+    @Test
+    fun `saved cloud dreamer mode is normalized for deterministic ui`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(
+                    mode = MemoryMaintenanceMode.LOCAL_THEN_CLOUD,
+                    lastEnabledMode = MemoryMaintenanceMode.LOCAL_THEN_CLOUD,
+                ),
+                pendingClusters = 1,
+                blockedReason = null,
+            )
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+
         assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, viewModel.uiState.value.maintenance.mode)
-        assertEquals(1, controller.runNowCount)
+        assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, viewModel.uiState.value.maintenance.lastEnabledMode)
     }
 
     @Test
@@ -391,15 +557,18 @@ class MemoryViewModelTest {
         supersedesFactId = null,
     )
 
-    private class FakeMaintenanceController : MemoryMaintenanceController {
+    private class FakeMaintenanceController(
+        initialStatus: MemoryMaintenanceStatus = MemoryMaintenanceStatus(
+            preferences = MemoryMaintenancePreferences(),
+            blockedReason = MemoryMaintenanceBlockReason.DREAMER_DISABLED,
+        ),
+        private val runFailure: Throwable? = null,
+    ) : MemoryMaintenanceController {
         var savedPreferences: MemoryMaintenancePreferences? = null
             private set
         var runNowCount: Int = 0
             private set
-        private var currentStatus = MemoryMaintenanceStatus(
-            preferences = MemoryMaintenancePreferences(),
-            blockedReason = MemoryMaintenanceBlockReason.DREAMER_DISABLED,
-        )
+        private var currentStatus = initialStatus
 
         override suspend fun status(): MemoryMaintenanceStatus = currentStatus
 
@@ -409,6 +578,8 @@ class MemoryViewModelTest {
                 preferences = preferences,
                 blockedReason = if (preferences.mode == MemoryMaintenanceMode.OFF) {
                     MemoryMaintenanceBlockReason.DREAMER_DISABLED
+                } else if (currentStatus.pendingClusters > 0) {
+                    null
                 } else {
                     MemoryMaintenanceBlockReason.NO_PENDING_CLUSTERS
                 },
@@ -417,8 +588,13 @@ class MemoryViewModelTest {
         }
 
         override suspend fun runNow(): MemoryMaintenanceStatus {
+            runFailure?.let { throw it }
             runNowCount += 1
-            currentStatus = currentStatus.copy(lastAttemptedAt = Instant.parse("2026-05-24T12:00:00Z"))
+            currentStatus = currentStatus.copy(
+                lastAttemptedAt = Instant.parse("2026-05-24T12:00:00Z"),
+                lastCompletedAt = null,
+                blockedReason = MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS,
+            )
             return currentStatus
         }
     }
