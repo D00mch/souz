@@ -123,12 +123,23 @@ Analyze the completed turn and extract only durable, reusable memory facts.
 Create a memory fact only when the information will likely help in future conversations.
 
 Good memory facts:
-- stable user preferences
-- project rules
-- implementation decisions
-- durable workflow instructions
-- reusable procedures
-- long-term project context
+- stable statements the user makes about themselves are durable memory facts.
+- stable statements the user makes about their projects, roles, responsibilities, ownership, or long-term work context are durable memory facts.
+- stable user preferences.
+- project rules.
+- implementation decisions.
+- durable workflow instructions.
+- reusable procedures.
+- long-term project context.
+
+A durable fact can appear as background context for the current task; save it when it will likely help future conversations.
+
+Do not save transient current-task requests, search results, tool outputs, news, or assistant conclusions.
+
+Scope selection:
+- Use requestedScope GLOBAL for durable facts about the user, their identity, roles, responsibilities, ownership, or long-term projects.
+- Use requestedScope SESSION only for facts that are useful only in the current conversation.
+- Use requestedScope PROJECT only for project rules or decisions when PROJECT is available.
 
 Keep each fact concise.
 Prefer a short title and one short body sentence.
