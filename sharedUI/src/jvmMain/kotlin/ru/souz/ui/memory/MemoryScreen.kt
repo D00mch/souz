@@ -65,7 +65,6 @@ import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.memory.MemoryMaintenanceBlockReason
 import ru.souz.memory.MemoryMaintenanceMode
-import ru.souz.memory.toSupportedMaintenanceMode
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.common.LiquidGlassPreset
 import ru.souz.ui.common.RealLiquidGlassCard
@@ -476,7 +475,6 @@ private fun MemoryModeSegments(
     selected: MemoryMaintenanceMode,
     onSelected: (MemoryMaintenanceMode) -> Unit,
 ) {
-    val normalizedSelected = selected.toSupportedMaintenanceMode()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -489,7 +487,7 @@ private fun MemoryModeSegments(
             MemoryMaintenanceMode.OFF to stringResource(Res.string.memory_dreamer_mode_off),
             MemoryMaintenanceMode.LOCAL_ONLY to stringResource(Res.string.memory_dreamer_mode_local),
         ).forEach { (mode, label) ->
-            val active = normalizedSelected == mode
+            val active = selected == mode
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -547,7 +545,6 @@ private fun dreamerStatusText(state: MemoryMaintenanceUiState): String {
 private fun dreamerModeLabel(mode: MemoryMaintenanceMode): String = when (mode) {
     MemoryMaintenanceMode.OFF -> stringResource(Res.string.memory_dreamer_mode_off)
     MemoryMaintenanceMode.LOCAL_ONLY -> stringResource(Res.string.memory_dreamer_mode_local)
-    MemoryMaintenanceMode.LOCAL_THEN_CLOUD -> stringResource(Res.string.memory_dreamer_mode_local)
 }
 
 private fun dreamerDotColor(state: MemoryMaintenanceUiState) = when {

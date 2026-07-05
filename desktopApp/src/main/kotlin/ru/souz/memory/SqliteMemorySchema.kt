@@ -411,22 +411,6 @@ internal class SqliteMemorySchema(
             where scope_type in ('chat', 'thread')
             group by owner_id, scope_id
             """.trimIndent(),
-            """
-            create table if not exists memory_budget_reservations (
-                request_id text primary key,
-                period_key text not null,
-                estimated_input_tokens integer not null,
-                reserved_output_tokens integer not null,
-                actual_input_tokens integer,
-                actual_output_tokens integer,
-                call_count integer not null default 1,
-                status text not null,
-                is_estimated integer not null default 0,
-                created_at text not null,
-                updated_at text not null
-            )
-            """.trimIndent(),
-            "create index if not exists memory_budget_period_idx on memory_budget_reservations(period_key, status)",
         )
         private val MIGRATION_V4 = listOf(
             "drop index if exists memory_active_slot_unique",

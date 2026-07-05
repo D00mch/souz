@@ -431,44 +431,6 @@ class MemoryViewModelTest {
     }
 
     @Test
-    fun `cloud dreamer mode is not saved while worker is deterministic only`() = runTest(dispatcher) {
-        val service = mockk<MemoryService>()
-        coEvery { service.listFacts(any()) } returns emptyList()
-        val controller = FakeMaintenanceController()
-
-        val viewModel = createViewModel(service, controller)
-        viewModel.onAction(MemoryAction.Load)
-        advanceUntilIdle()
-        viewModel.onAction(MemoryAction.SelectDreamerMode(MemoryMaintenanceMode.LOCAL_THEN_CLOUD))
-        advanceUntilIdle()
-
-        assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, controller.savedPreferences?.mode)
-    }
-
-    @Test
-    fun `saved cloud dreamer mode is normalized for deterministic ui`() = runTest(dispatcher) {
-        val service = mockk<MemoryService>()
-        coEvery { service.listFacts(any()) } returns emptyList()
-        val controller = FakeMaintenanceController(
-            initialStatus = MemoryMaintenanceStatus(
-                preferences = MemoryMaintenancePreferences(
-                    mode = MemoryMaintenanceMode.LOCAL_THEN_CLOUD,
-                    lastEnabledMode = MemoryMaintenanceMode.LOCAL_THEN_CLOUD,
-                ),
-                pendingClusters = 1,
-                blockedReason = null,
-            )
-        )
-
-        val viewModel = createViewModel(service, controller)
-        viewModel.onAction(MemoryAction.Load)
-        advanceUntilIdle()
-
-        assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, viewModel.uiState.value.maintenance.mode)
-        assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, viewModel.uiState.value.maintenance.lastEnabledMode)
-    }
-
-    @Test
     fun `invalid canonical key is rejected before save`() = runTest(dispatcher) {
         val service = mockk<MemoryService>(relaxed = true)
         val viewModel = createViewModel(service)

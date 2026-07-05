@@ -117,7 +117,6 @@ enum class MemorySensitivity {
 enum class MemoryMaintenanceMode {
     OFF,
     LOCAL_ONLY,
-    LOCAL_THEN_CLOUD,
 }
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -127,20 +126,10 @@ data class MemoryMaintenancePreferences(
     val maxClustersPerRun: Int = 10,
 )
 
-fun MemoryMaintenanceMode.toSupportedMaintenanceMode(): MemoryMaintenanceMode = when (this) {
-    MemoryMaintenanceMode.OFF -> MemoryMaintenanceMode.OFF
-    MemoryMaintenanceMode.LOCAL_ONLY,
-    MemoryMaintenanceMode.LOCAL_THEN_CLOUD -> MemoryMaintenanceMode.LOCAL_ONLY
-}
-
 fun MemoryMaintenancePreferences.normalizedForSupportedMaintenance(): MemoryMaintenancePreferences {
-    val normalizedMode = mode.toSupportedMaintenanceMode()
-    val normalizedLastEnabledMode = lastEnabledMode.toSupportedMaintenanceMode()
-        .takeIf { it != MemoryMaintenanceMode.OFF }
-        ?: MemoryMaintenanceMode.LOCAL_ONLY
     return copy(
-        mode = normalizedMode,
-        lastEnabledMode = normalizedLastEnabledMode,
+        lastEnabledMode = lastEnabledMode.takeIf { it != MemoryMaintenanceMode.OFF }
+            ?: MemoryMaintenanceMode.LOCAL_ONLY,
         maxClustersPerRun = maxClustersPerRun.coerceIn(1, 1_000),
     )
 }
@@ -156,15 +145,6 @@ enum class MemoryOperationType {
     DEMOTE,
     FORGET,
     MAINTENANCE,
-}
-
-enum class MemoryTokenUsageCategory {
-    MEMORY_CAPTURE,
-    MEMORY_QUERY_EMBEDDING,
-    MEMORY_DOCUMENT_EMBEDDING,
-    MEMORY_RETRIEVAL_RERANK,
-    MEMORY_MAINTENANCE_LOCAL,
-    MEMORY_MAINTENANCE_CLOUD,
 }
 
 data class MemorySourceEvent(

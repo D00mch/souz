@@ -74,9 +74,7 @@ data class MemoryRetrievalRequest(
 data class MemoryRetrievalTrace(
     val candidateCountBySource: Map<String, Int> = emptyMap(),
     val selectedFactIds: List<String> = emptyList(),
-    val semanticRerankerUsed: Boolean = false,
     val promptTokenEstimate: Int = 0,
-    val exclusionReasons: Map<String, Int> = emptyMap(),
 )
 
 data class MemoryRetrievalResult(

@@ -54,7 +54,7 @@ fun buildExplicitRememberCandidate(input: MemoryCaptureInput): MemoryFactCandida
         kind = inferExplicitMemoryKind(body),
         title = body.substringBefore('\n').substringBefore('.').trim().take(96).ifBlank { "Remembered note" },
         body = body,
-        requestedScope = defaultRequestedScope(inferExplicitMemoryKind(body)),
+        requestedScope = explicitRememberScope(inferExplicitMemoryKind(body), input.context),
         canonicalKey = body.toMemoryCanonicalKeyOrNull(),
         confidence = 0.75f,
         evidenceText = input.userMessage.trim().take(240),
@@ -73,6 +73,14 @@ private fun inferExplicitMemoryKind(text: String): MemoryFactKind {
         else -> MemoryFactKind.SEMANTIC
     }
 }
+
+private fun explicitRememberScope(kind: MemoryFactKind, context: MemoryContext): RequestedMemoryScope =
+    if ((kind == MemoryFactKind.PROJECT_RULE || kind == MemoryFactKind.PROJECT_DECISION) && context.projectId != null) {
+        RequestedMemoryScope.PROJECT
+    } else {
+        RequestedMemoryScope.GLOBAL
+    }
+
 
 private fun String.removeExplicitRememberMarkers(): String {
     val normalized = trim()

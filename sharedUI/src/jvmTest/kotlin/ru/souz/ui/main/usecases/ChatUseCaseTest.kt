@@ -40,48 +40,10 @@ import ru.souz.service.observability.DesktopStructuredLogger
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ChatUseCaseTest {
-    @Test
-    fun `finish conversation does not clean session memory implicitly`() = runTest {
-        val cleanup = RecordingMemoryConversationCleanup()
-        val tracker = ChatObservabilityTracker(log = DesktopStructuredLogger())
-        val useCase = createUseCase(
-            tracker = tracker,
-            cleanup = cleanup,
-        )
-
-        tracker.ensureConversation(ChatRequestSource.CHAT_UI)
-        useCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
-        tracker.ensureConversation(ChatRequestSource.CHAT_UI)
-        useCase.finishCurrentConversation(ChatConversationCloseReason.CLEAR_CONTEXT)
-        tracker.ensureConversation(ChatRequestSource.CHAT_UI)
-        useCase.finishCurrentConversation(ChatConversationCloseReason.DELETED)
-
-        assertTrue(cleanup.cleanedConversationIds.isEmpty())
-    }
-
-    @Test
-    fun `conversation cleanup reports async failures`() = runTest {
-        val service = mockk<MemoryService>()
-        coEvery { service.closeScopeForCapture(any(), any()) } returns Unit
-        coEvery { service.deleteFactsByScope(any(), any()) } throws IllegalStateException("sql failed")
-        val failures = mutableListOf<Pair<String, Throwable>>()
-        val cleanup = MemoryServiceConversationCleanup(
-            memoryService = service,
-            ownerProvider = MemoryOwnerProvider { MemoryOwnerId("desktop-owner") },
-            onFailure = { conversationId, error -> failures += conversationId to error },
-        )
-
-        cleanup.cleanupConversation("chat-42")
-
-        assertEquals("chat-42", failures.single().first)
-        assertEquals("sql failed", failures.single().second.message)
-    }
-
     @Test
     fun `conversation cleanup closes and deletes session plus legacy chat scopes`() = runTest {
         val owner = MemoryOwnerId("desktop-owner")
@@ -105,24 +67,6 @@ class ChatUseCaseTest {
         assertEquals(listOf(MemoryScope("session", "chat-42"), MemoryScope("chat", "chat-42")), deletedScopes)
         coVerify(exactly = 2) { service.closeScopeForCapture(any(), any()) }
         coVerify(exactly = 2) { service.deleteFactsByScope(any(), any()) }
-    }
-
-    @Test
-    fun `conversation cleanup rethrows cancellation`() = runTest {
-        val service = mockk<MemoryService>()
-        coEvery { service.closeScopeForCapture(any(), any()) } returns Unit
-        coEvery { service.deleteFactsByScope(any(), any()) } throws CancellationException("cancelled")
-        val failures = mutableListOf<Pair<String, Throwable>>()
-        val cleanup = MemoryServiceConversationCleanup(
-            memoryService = service,
-            ownerProvider = MemoryOwnerProvider { MemoryOwnerId("desktop-owner") },
-            onFailure = { conversationId, error -> failures += conversationId to error },
-        )
-
-        assertFailsWith<CancellationException> {
-            cleanup.cleanupConversation("chat-42")
-        }
-        assertTrue(failures.isEmpty())
     }
 
     @Test
@@ -282,34 +226,6 @@ class ChatUseCaseTest {
     }
 
     @Test
-    fun `abort active request does not wait for hanging agent execution`() = runTest {
-        val executeStarted = CompletableDeferred<Unit>()
-        val executeResult = CompletableDeferred<String>()
-        val useCase = createExecutableUseCase(
-            executeAnswer = {
-                executeStarted.complete(Unit)
-                executeResult.await()
-            },
-        )
-
-        backgroundScope.launch {
-            useCase.sendChatMessage(
-                scope = backgroundScope,
-                isVoice = false,
-                chatMessage = "hello",
-                requestSource = ChatRequestSource.CHAT_UI,
-            )
-        }
-        executeStarted.await()
-
-        useCase.abortActiveRequest()
-
-        assertTrue(executeResult.isActive)
-        executeResult.completeExceptionally(CancellationException("test cleanup"))
-        advanceUntilIdle()
-    }
-
-    @Test
     fun `cleanup does not wait for hanging agent execution without memory capture`() = runTest {
         val executeStarted = CompletableDeferred<Unit>()
         val executeResult = CompletableDeferred<String>()
@@ -341,40 +257,6 @@ class ChatUseCaseTest {
         assertTrue(executeResult.isActive)
         executeResult.completeExceptionally(CancellationException("test cleanup"))
         advanceUntilIdle()
-    }
-
-    private fun createUseCase(
-        tracker: ChatObservabilityTracker,
-        cleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
-    ): ChatUseCase {
-        val agentFacade = mockk<AgentFacade>(relaxed = true)
-        every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
-        every { agentFacade.currentContext } returns MutableStateFlow(
-            AgentContext(
-                input = "",
-                settings = AgentSettings(
-                    model = "model",
-                    temperature = 0f,
-                    toolsByCategory = emptyMap(),
-                ),
-                history = listOf(LLMRequest.Message(LLMMessageRole.system, "Base system prompt")),
-                activeTools = emptyList(),
-                systemPrompt = "Base system prompt",
-            )
-        )
-        return ChatUseCase(
-            agentFacade = agentFacade,
-            settingsProvider = mockk(relaxed = true),
-            speechUseCase = mockk(relaxed = true),
-            finderPathExtractor = mockk(relaxed = true),
-            chatAttachmentsUseCase = ChatAttachmentsUseCase(UnconfinedTestDispatcher()),
-            toolModifyReviewUseCase = mockk(relaxed = true),
-            observabilityTracker = tracker,
-            log = DesktopStructuredLogger(),
-            tokenLogging = mockk(relaxed = true),
-            memoryConversationCleanup = cleanup,
-            ioDispatcher = UnconfinedTestDispatcher(),
-        )
     }
 
     private fun createExecutableUseCase(

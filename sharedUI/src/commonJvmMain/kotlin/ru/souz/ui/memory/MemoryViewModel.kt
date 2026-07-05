@@ -12,7 +12,6 @@ import ru.souz.memory.MemoryMaintenanceMode
 import ru.souz.memory.NoopMemoryMaintenanceController
 import ru.souz.memory.MemoryOwnerProvider
 import ru.souz.memory.MemoryService
-import ru.souz.memory.toSupportedMaintenanceMode
 import ru.souz.memory.normalizeCanonicalKey
 import ru.souz.ui.BaseViewModel
 
@@ -250,13 +249,12 @@ class MemoryViewModel(
     }
 
     private suspend fun selectDreamerMode(mode: MemoryMaintenanceMode) {
-        val normalized = mode.toSupportedMaintenanceMode()
         val current = currentState.maintenance
         saveMaintenance(
             current.copy(
                 preferences = current.preferences.copy(
-                    mode = normalized,
-                    lastEnabledMode = normalized.takeIf { it != MemoryMaintenanceMode.OFF }
+                    mode = mode,
+                    lastEnabledMode = mode.takeIf { it != MemoryMaintenanceMode.OFF }
                         ?: current.lastEnabledMode,
                 ),
             )
