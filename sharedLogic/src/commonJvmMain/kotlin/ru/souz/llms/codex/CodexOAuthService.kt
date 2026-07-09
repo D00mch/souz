@@ -13,13 +13,11 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +28,6 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.restJsonMapper
 import java.util.Base64
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 sealed interface CodexOAuthState {
@@ -41,7 +38,12 @@ sealed interface CodexOAuthState {
     data class Error(val message: String) : CodexOAuthState
 }
 
-class CodexOAuthService(private val settingsProvider: SettingsProvider) {
+class CodexOAuthService(
+    private val settingsProvider: SettingsProvider,
+    private val client: HttpClient = defaultHttpClient(),
+    private val pollDelay: suspend (Long) -> Unit = { delay(it.seconds) },
+    private val maxPollAttempts: Int = MAX_POLL_ATTEMPTS,
+) {
 
     private val l = LoggerFactory.getLogger(CodexOAuthService::class.java)
 
@@ -50,19 +52,6 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
 
     private val refreshMutex = Mutex()
     private var flowJob: Job? = null
-
-    private val client = HttpClient(CIO) {
-        install(HttpTimeout) { requestTimeoutMillis = 30_000 }
-        install(ContentNegotiation) {
-            jackson { disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
-        }
-        install(Logging) {
-            logger = object : Logger {
-                override fun log(message: String) = l.debug(message)
-            }
-            level = LogLevel.INFO
-        }
-    }
 
     suspend fun startDeviceFlow() {
         _oauthState.value = CodexOAuthState.Idle
@@ -92,17 +81,37 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
             _oauthState.value = CodexOAuthState.AwaitingUserCode(userCode = userCode)
 
             // Step 2 & 3: poll until authorized
-            delay(intervalSeconds.seconds)
+            pollDelay(intervalSeconds)
             var attempts = 0
-            while (attempts < MAX_POLL_ATTEMPTS) {
+            while (attempts < maxPollAttempts) {
                 attempts++
-                val pollResponse = client.post(TOKEN_POLL_URL) {
-                    contentType(ContentType.Application.Json)
-                    setBody(mapOf("device_auth_id" to deviceAuthId, "user_code" to userCode))
+                val pollBody = try {
+                    val pollResponse = client.post(TOKEN_POLL_URL) {
+                        contentType(ContentType.Application.Json)
+                        setBody(mapOf("device_auth_id" to deviceAuthId, "user_code" to userCode))
+                    }
+                    if (pollResponse.status.isSuccess()) {
+                        pollResponse.bodyAsText()
+                    } else {
+                        null
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    l.warn("Codex OAuth poll attempt $attempts failed", e)
+                    if (attempts < maxPollAttempts) {
+                        pollDelay(intervalSeconds)
+                    }
+                    continue
                 }
-                if (pollResponse.status.isSuccess()) {
-                    val pollBody = pollResponse.bodyAsText()
-                    val pollData = restJsonMapper.readValue<Map<String, Any>>(pollBody)
+                if (pollBody != null) {
+                    val pollData = try {
+                        restJsonMapper.readValue<Map<String, Any>>(pollBody)
+                    } catch (e: Exception) {
+                        l.warn("Codex OAuth malformed polling response", e)
+                        _oauthState.value = CodexOAuthState.Error("Malformed authorization polling response")
+                        return
+                    }
                     val authCode = pollData["authorization_code"] as? String
                         ?: run { _oauthState.value = CodexOAuthState.Error("Missing authorization_code"); return }
                     val codeVerifier = pollData["code_verifier"] as? String
@@ -111,7 +120,9 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
                     return
                 }
                 // Keep AwaitingUserCode state so the code stays visible while polling
-                delay(intervalSeconds.seconds)
+                if (attempts < maxPollAttempts) {
+                    pollDelay(intervalSeconds)
+                }
             }
             _oauthState.value = CodexOAuthState.Error("Timed out waiting for authorization")
         } catch (e: CancellationException) {
@@ -119,7 +130,7 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
             throw e
         } catch (e: Exception) {
             l.error("Codex OAuth flow error", e)
-            _oauthState.value = CodexOAuthState.Error(e.message ?: "Unknown error")
+            _oauthState.value = CodexOAuthState.Error(e.codexOAuthMessage())
         }
     }
 
@@ -188,12 +199,16 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
             _oauthState.value = CodexOAuthState.Error("Token exchange failed: ${response.status} $text")
             return
         }
-        val accountId = parseAndStoreTokens(response.bodyAsText())
-        _oauthState.value = CodexOAuthState.Success(accountId = accountId ?: "")
+        val tokens = parseAndStoreTokens(response.bodyAsText())
+            ?: run {
+                _oauthState.value = CodexOAuthState.Error("Malformed token exchange response")
+                return
+            }
+        _oauthState.value = CodexOAuthState.Success(accountId = tokens.accountId ?: "")
     }
 
-    /** Parses token response, persists to SettingsProvider, returns accountId. */
-    private fun parseAndStoreTokens(responseBody: String): String? {
+    /** Parses token response and persists it to SettingsProvider. */
+    private fun parseAndStoreTokens(responseBody: String): StoredCodexTokens? {
         val data = runCatching { restJsonMapper.readValue<Map<String, Any>>(responseBody) }.getOrNull()
             ?: return null
         val accessToken = data["access_token"] as? String ?: return null
@@ -208,8 +223,10 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
         settingsProvider.codexRefreshToken = refreshToken
         settingsProvider.codexAccountId = accountId
         settingsProvider.codexExpiresAt = System.currentTimeMillis() / 1000 + expiresIn
-        return accountId
+        return StoredCodexTokens(accountId = accountId)
     }
+
+    private data class StoredCodexTokens(val accountId: String?)
 
     private fun extractAccountId(jwt: String): String? {
         return try {
@@ -229,6 +246,11 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
     private fun String.urlEncode(): String =
         java.net.URLEncoder.encode(this, "UTF-8")
 
+    private fun Throwable.codexOAuthMessage(): String =
+        message?.takeIf { it.isNotBlank() }
+            ?: this::class.simpleName
+            ?: "Unknown error"
+
     companion object {
         const val CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
         private const val ISSUER = "https://auth.openai.com"
@@ -239,5 +261,20 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
         private const val VERIFY_URL = "https://auth.openai.com/codex/device"
         private const val MAX_POLL_ATTEMPTS = 60
         private const val REFRESH_BUFFER_SECONDS = 300L
+
+        private fun defaultHttpClient(): HttpClient = HttpClient(CIO) {
+            install(HttpTimeout) { requestTimeoutMillis = 30_000 }
+            install(ContentNegotiation) {
+                jackson { disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
+            }
+            install(Logging) {
+                logger = object : Logger {
+                    override fun log(message: String) = LoggerFactory
+                        .getLogger(CodexOAuthService::class.java)
+                        .debug(message)
+                }
+                level = LogLevel.INFO
+            }
+        }
     }
 }

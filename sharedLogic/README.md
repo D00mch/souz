@@ -11,6 +11,8 @@ The full JVM implementation lives under `src/jvmMain`: provider clients, shared 
 - `local`: default when `SOUZ_SANDBOX_MODE` is unset.
 - `docker`: uses `DockerRuntimeSandbox` and the `souz-runtime-sandbox:latest` image.
 
+Android does not use `SOUZ_SANDBOX_MODE`. Its runtime sandbox stays inside app-private storage, maps `BASH` skill execution to POSIX `/system/bin/sh`, and delegates `PYTHON` skill execution to the Android app's embedded Chaquopy Python 3.11 runtime in a private killable service process. Android Python skills can use the standard library and pure-Python files vendored in the skill bundle; runtime pip installs are intentionally unsupported.
+
 Local mode is enough for normal development:
 
 ```zsh

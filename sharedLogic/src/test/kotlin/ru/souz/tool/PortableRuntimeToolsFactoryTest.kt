@@ -15,6 +15,7 @@ import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
+import ru.souz.tool.files.ToolReadFile
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.web.ToolInternetResearch
@@ -35,6 +36,7 @@ class PortableRuntimeToolsFactoryTest {
 
         val factory = PortableRuntimeToolsFactory(
             toolListFiles = ToolListFiles(filesToolUtil),
+            toolReadFile = ToolReadFile(filesToolUtil),
             toolFindInFiles = ToolFindInFiles(filesToolUtil),
             toolNewFile = ToolNewFile(filesToolUtil),
             toolDeleteFile = ToolDeleteFile(filesToolUtil),
@@ -59,6 +61,7 @@ class PortableRuntimeToolsFactoryTest {
         val tools = factory.toolsByCategory
 
         assertTrue("ListFiles" in tools.getValue(ToolCategory.FILES))
+        assertTrue("ReadFile" in tools.getValue(ToolCategory.FILES))
         assertTrue("ViewImage" in tools.getValue(ToolCategory.IMAGE))
         assertTrue("GenerateImage" in tools.getValue(ToolCategory.IMAGE_GENERATION))
         assertTrue("InternetSearch" in tools.getValue(ToolCategory.WEB_SEARCH))

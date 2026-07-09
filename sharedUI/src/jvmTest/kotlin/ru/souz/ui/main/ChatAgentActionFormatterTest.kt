@@ -52,4 +52,5 @@ class ChatAgentActionFormatterTest {
 
         assertEquals("Провожу исследование в интернете: сравнение MCP серверов", actual)
     }
+
 }
