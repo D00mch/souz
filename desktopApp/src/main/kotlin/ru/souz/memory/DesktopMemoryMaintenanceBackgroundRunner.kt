@@ -37,12 +37,11 @@ class DesktopMemoryMaintenanceBackgroundRunner(
     suspend fun tick(): MemoryMaintenanceStatus? {
         val status = controller.status()
         if (!status.canRunInBackground()) return null
-        return controller.runNow()
+        return controller.runDue()
     }
 
     private fun MemoryMaintenanceStatus.canRunInBackground(): Boolean {
-        val mode = preferences.normalizedForSupportedMaintenance().mode
-        return mode != MemoryMaintenanceMode.OFF &&
+        return preferences.mode != MemoryMaintenanceMode.OFF &&
             pendingClusters > 0 &&
             workerState != MemoryMaintenanceWorkerState.RUNNING &&
             !isAppBusy()

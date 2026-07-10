@@ -55,11 +55,6 @@ interface MemoryRepository {
 
     suspend fun deleteSourceEventIfUnused(sourceEventId: String)
 
-    suspend fun findActiveFactBySlotKey(
-        scope: MemoryScope,
-        slotKey: String,
-    ): MemoryFact?
-
     suspend fun findActiveFactByCanonicalKey(
         ownerId: MemoryOwnerId,
         scope: MemoryScope,
@@ -88,13 +83,6 @@ interface MemoryRepository {
         limit: Int,
     ): List<MemoryFactSearchHit>
 
-    suspend fun getFactsWithoutEmbedding(
-        scopes: List<MemoryScope>,
-        model: String,
-        expectedDimension: Int? = null,
-        limit: Int,
-    ): List<MemoryFact>
-
     suspend fun enqueueEmbeddingJob(
         factId: String,
         ownerId: MemoryOwnerId,
@@ -113,13 +101,6 @@ interface MemoryRepository {
         model: String,
         contentHash: String,
         errorCode: String,
-    ) = Unit
-
-    suspend fun recordOperation(
-        factId: String?,
-        ownerId: MemoryOwnerId,
-        type: MemoryOperationType,
-        reason: String,
     ) = Unit
 
     suspend fun recordRetrieval(factIds: List<String>) = Unit

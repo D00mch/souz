@@ -58,6 +58,7 @@ class LocalLlamaRuntime(
             requestModel = body.model,
             usage = nativeResult.toUsage(),
             nativeFinishReason = nativeResult.finishReason,
+            allowRawOutput = body.prefersPlainTextLocalOutput(),
         )
     }
 
@@ -73,6 +74,7 @@ class LocalLlamaRuntime(
                     requestModel = body.model,
                     usage = result.toUsage(),
                     nativeFinishReason = result.finishReason,
+                    allowRawOutput = body.prefersPlainTextLocalOutput(),
                 )
             }.getOrElse { error ->
                 LLMResponse.Chat.Error(

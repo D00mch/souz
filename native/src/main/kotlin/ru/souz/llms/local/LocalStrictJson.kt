@@ -66,9 +66,13 @@ class LocalStrictJsonParser {
         usage: LLMResponse.Usage,
         nativeFinishReason: String = "stop",
         created: Long = System.currentTimeMillis(),
+        allowRawOutput: Boolean = false,
     ): LLMResponse.Chat {
         val finishReason = nativeFinishReason.toFinishReason()
-        val trimmed = normalizeRawText(rawText)
+        val trimmed = if (allowRawOutput) rawText.trim() else normalizeRawText(rawText)
+        if (allowRawOutput) {
+            return plainTextFinal(trimmed, requestModel, usage, finishReason, created)
+        }
         val node = runCatching { restJsonMapper.readTree(trimmed) }
             .getOrElse { error ->
                 tryRecoverMalformedToolCalls(trimmed)?.let { recovered ->

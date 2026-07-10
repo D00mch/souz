@@ -43,6 +43,17 @@ enum class RequestedMemoryScope {
 
 const val LEGACY_OWNER_ID: String = "local-legacy-owner"
 
+enum class CompletedTurnEvidenceKind {
+    TOOL_OUTPUT,
+    ASSISTANT_SYNTHESIS,
+}
+
+data class CompletedTurnEvidence(
+    val kind: CompletedTurnEvidenceKind,
+    val sourceName: String? = null,
+    val text: String,
+)
+
 /**
  * Completed conversation turn passed to memory capture after the assistant responds.
  */
@@ -53,6 +64,7 @@ data class CompletedTurnMemoryInput(
     val assistantMessageId: String?,
     val userMessage: String,
     val assistantMessage: String,
+    val evidence: List<CompletedTurnEvidence> = emptyList(),
 )
 
 /**

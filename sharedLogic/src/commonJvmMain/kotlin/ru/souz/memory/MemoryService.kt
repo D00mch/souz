@@ -200,7 +200,6 @@ class MemoryService(
         if (normalizedPatch.affectsEmbedding()) {
             enqueueAndTryEmbedding(saved)
         }
-        repo.recordOperation(saved.id, saved.ownerId, MemoryOperationType.UPDATE, "manual_update")
         return saved
     }
 
@@ -319,7 +318,7 @@ class MemoryService(
         )
         val selected = fused
             .asSequence()
-            .filter { it.fact.status == MemoryFactStatus.ACTIVE && it.fact.validity != MemoryFactValidity.CONTRADICTED }
+            .filter { it.fact.status == MemoryFactStatus.ACTIVE }
             .filter { it.fact.retention != MemoryRetention.SESSION_LIFETIME || it.fact.scope.normalized() in normalizedScopes }
             .sortedWith(compareByDescending<FusedCandidate> { heuristicScore(it, context) }.thenByDescending { it.fact.updatedAt })
             .distinctBy { it.fact.canonicalKey ?: it.fact.contentHash }
@@ -350,7 +349,6 @@ class MemoryService(
             evidence = evidence,
         )
         val fact = repo.getFact(factId) ?: error("Memory fact not found after insert: $factId")
-        repo.recordOperation(fact.id, fact.ownerId, MemoryOperationType.CREATE, fact.createdBy)
         enqueueAndTryEmbedding(fact)
         return repo.getFact(factId) ?: fact
     }
@@ -377,7 +375,6 @@ class MemoryService(
             confidence = patch.confidence ?: confidence,
             importance = patch.importance ?: importance,
             pinned = patch.pinned ?: pinned,
-            version = version + 1,
             contentHash = stableMemoryContentHash(nextTitle, nextBody, nextKind, nextCanonicalKey),
             updatedAt = java.time.Instant.now(),
         )
@@ -417,10 +414,8 @@ class MemoryService(
         val match = confidentForgetMatch(context.ownerId, scopes, query) ?: return 0
         if (hardDelete) {
             repo.deleteFact(match.id)
-            repo.recordOperation(match.id, match.ownerId, MemoryOperationType.DELETE, "explicit_delete")
         } else {
             repo.retireFact(match.id)
-            repo.recordOperation(match.id, match.ownerId, MemoryOperationType.FORGET, "explicit_forget")
             repo.createTombstone(
                 ownerId = match.ownerId,
                 scope = match.scope,
@@ -570,7 +565,6 @@ class MemoryService(
         if (fact.pinned) score += 0.03
         if (fact.scope.type == "project" && context.projectId?.value == fact.scope.id) score += 0.06
         if (fact.scope.type == "session" && context.sessionId?.value == fact.scope.id) score += 0.04
-        if (fact.validity == MemoryFactValidity.UNCERTAIN) score -= 0.08
         return score
     }
 

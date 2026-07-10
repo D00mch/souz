@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Schedule
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,7 +73,6 @@ import ru.souz.ui.common.RealLiquidGlassCard
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.button_close
 import souz.sharedui.generated.resources.memory_create
-import souz.sharedui.generated.resources.memory_dreamer_attempted
 import souz.sharedui.generated.resources.memory_dreamer_block_actions
 import souz.sharedui.generated.resources.memory_dreamer_block_disabled
 import souz.sharedui.generated.resources.memory_dreamer_block_pending
@@ -79,7 +80,10 @@ import souz.sharedui.generated.resources.memory_dreamer_completed
 import souz.sharedui.generated.resources.memory_dreamer_error
 import souz.sharedui.generated.resources.memory_dreamer_mode_local
 import souz.sharedui.generated.resources.memory_dreamer_mode_off
+import souz.sharedui.generated.resources.memory_dreamer_model_auto
+import souz.sharedui.generated.resources.memory_dreamer_no_changes
 import souz.sharedui.generated.resources.memory_dreamer_pending_blocked
+import souz.sharedui.generated.resources.memory_dreamer_retry
 import souz.sharedui.generated.resources.memory_dreamer_run
 import souz.sharedui.generated.resources.memory_dreamer_running
 import souz.sharedui.generated.resources.memory_dreamer_title
@@ -325,7 +329,6 @@ private fun MemoryDreamerFooter(
                 .fillMaxWidth()
                 .height(48.dp)
                 .padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {
@@ -336,11 +339,12 @@ private fun MemoryDreamerFooter(
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
-                    modifier = Modifier
-                        .width(296.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MemoryUiColors.Popover)
-                        .border(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
+                    modifier = Modifier.width(320.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    containerColor = MemoryUiColors.Popover,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f)),
                 ) {
                     DreamerPopover(
                         state = state,
@@ -348,7 +352,6 @@ private fun MemoryDreamerFooter(
                     )
                 }
             }
-            MemoryDreamerStatusText(state)
         }
     }
 }
@@ -425,6 +428,11 @@ private fun DreamerPopover(
             onSelected = { onAction(MemoryAction.SelectDreamerMode(it)) },
         )
 
+        DreamerModelSelector(
+            state = state,
+            onSelected = { onAction(MemoryAction.SelectDreamerModel(it)) },
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -466,6 +474,70 @@ private fun DreamerPopover(
                     fontSize = 11.5.sp,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DreamerModelSelector(
+    state: MemoryMaintenanceUiState,
+    onSelected: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Surface(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            color = MemoryUiColors.TextPrimary.copy(alpha = 0.05f),
+            contentColor = MemoryUiColors.TextPrimary.copy(alpha = 0.7f),
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = state.selectedModel?.displayName
+                        ?: stringResource(Res.string.memory_dreamer_model_auto),
+                    modifier = Modifier.weight(1f),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.width(296.dp),
+            shape = RoundedCornerShape(8.dp),
+            containerColor = MemoryUiColors.Popover,
+            tonalElevation = 0.dp,
+            border = BorderStroke(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f)),
+        ) {
+            listOf(null to stringResource(Res.string.memory_dreamer_model_auto))
+                .plus(state.availableModels.map { it.alias to it.displayName })
+                .forEach { (alias, label) ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelected(alias)
+                        },
+                    )
+                }
         }
     }
 }
@@ -526,14 +598,22 @@ private fun MemoryDreamerStatusText(
 
 @Composable
 private fun dreamerStatusText(state: MemoryMaintenanceUiState): String {
-    val blockedReason = state.blockedReason
-    return when {
-        state.isRunningNow -> stringResource(Res.string.memory_dreamer_running)
-        state.lastErrorCode != null -> stringResource(Res.string.memory_dreamer_error, state.lastErrorCode)
-        blockedReason != null -> dreamerBlockReasonLabel(blockedReason)
-        state.lastCompletedAt != null -> stringResource(Res.string.memory_dreamer_completed, state.lastCompletedAt.toString())
-        state.lastAttemptedAt != null -> stringResource(Res.string.memory_dreamer_attempted, state.lastAttemptedAt.toString())
-        else -> stringResource(
+    return when (state.runOutcome) {
+        MemoryMaintenanceRunOutcome.RUNNING -> stringResource(Res.string.memory_dreamer_running)
+        MemoryMaintenanceRunOutcome.ERROR -> stringResource(Res.string.memory_dreamer_error, state.lastErrorCode.orEmpty())
+        MemoryMaintenanceRunOutcome.RETRY_SCHEDULED -> stringResource(
+            Res.string.memory_dreamer_retry,
+            state.lastAttemptedAt?.maintenanceLabel().orEmpty(),
+        )
+        MemoryMaintenanceRunOutcome.COMPLETED -> stringResource(
+            Res.string.memory_dreamer_completed,
+            state.lastCompletedAt?.maintenanceLabel().orEmpty(),
+        )
+        MemoryMaintenanceRunOutcome.NO_CHANGES -> stringResource(
+            Res.string.memory_dreamer_no_changes,
+            state.lastAttemptedAt?.maintenanceLabel().orEmpty(),
+        )
+        MemoryMaintenanceRunOutcome.IDLE -> state.blockedReason?.let { dreamerBlockReasonLabel(it) } ?: stringResource(
             Res.string.memory_dreamer_pending_blocked,
             state.pendingClusters,
             state.blockedClusters,

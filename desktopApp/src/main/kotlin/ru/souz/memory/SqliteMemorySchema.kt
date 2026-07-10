@@ -208,19 +208,14 @@ internal class SqliteMemorySchema(
         connection.addColumnIfMissing("memory_source_events", "owner_id", "text not null default '$LEGACY_OWNER_ID'")
         connection.addColumnIfMissing("memory_facts", "owner_id", "text not null default '$LEGACY_OWNER_ID'")
         connection.addColumnIfMissing("memory_facts", "canonical_key", "text")
-        connection.addColumnIfMissing("memory_facts", "validity", "text not null default '${MemoryFactValidity.VALID.name}'")
         connection.addColumnIfMissing("memory_facts", "retention", "text not null default '${MemoryRetention.DURABLE.name}'")
-        connection.addColumnIfMissing("memory_facts", "sensitivity", "text not null default '${MemorySensitivity.NORMAL.name}'")
         connection.addColumnIfMissing("memory_facts", "importance", "real not null default 1.0")
-        connection.addColumnIfMissing("memory_facts", "version", "integer not null default 1")
         connection.addColumnIfMissing("memory_facts", "content_hash", "text")
-        connection.addColumnIfMissing("memory_facts", "last_observed_at", "text")
         connection.addColumnIfMissing("memory_fact_embeddings", "content_hash", "text")
         connection.addColumnIfMissing("memory_fact_embeddings", "created_at", "text")
         connection.createStatement().use { statement ->
             statement.execute("update memory_facts set canonical_key = slot_key where canonical_key is null and slot_key is not null")
             statement.execute("update memory_facts set content_hash = lower(hex(randomblob(16))) where content_hash is null")
-            statement.execute("update memory_facts set last_observed_at = updated_at where last_observed_at is null")
             statement.execute("update memory_fact_embeddings set created_at = updated_at where created_at is null")
         }
     }
@@ -335,25 +330,12 @@ internal class SqliteMemorySchema(
                 attempt_count integer not null default 0,
                 next_attempt_at text not null,
                 last_error_code text,
-                lease_owner text,
-                lease_expires_at text,
                 created_at text not null,
                 updated_at text not null,
                 primary key (fact_id, embedding_model, content_hash)
             )
             """.trimIndent(),
             "create index if not exists memory_index_jobs_status_idx on memory_index_jobs(status, next_attempt_at)",
-            """
-            create table if not exists memory_operation_log (
-                id text primary key,
-                fact_id text,
-                owner_id text not null,
-                type text not null,
-                reason text not null,
-                created_at text not null
-            )
-            """.trimIndent(),
-            "create index if not exists memory_operation_log_owner_idx on memory_operation_log(owner_id, created_at desc)",
             """
             create table if not exists memory_tombstones (
                 id text primary key,
@@ -376,8 +358,6 @@ internal class SqliteMemorySchema(
                 priority integer not null default 0,
                 latest_dirty_at text not null,
                 reasons text not null default '',
-                lease_owner text,
-                lease_expires_at text,
                 attempt_count integer not null default 0,
                 next_attempt_at text not null,
                 created_at text not null,
@@ -433,7 +413,6 @@ internal class SqliteMemorySchema(
             "memory_facts",
             "memory_fact_supersedes",
             "memory_index_jobs",
-            "memory_operation_log",
             "memory_tombstones",
             "memory_maintenance_jobs",
         )

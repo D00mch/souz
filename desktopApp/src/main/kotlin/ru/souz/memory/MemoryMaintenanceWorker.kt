@@ -1,18 +1,14 @@
 package ru.souz.memory
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
-
-data class MemoryMaintenanceRunResult(
-    val processedJobs: Int,
-    val inspectedJobs: Int = processedJobs,
-    val blockedJobs: Int = 0,
-)
 
 private data class MaintenanceJob(
     val clusterKey: String,
@@ -20,16 +16,7 @@ private data class MaintenanceJob(
     val latestDirtyAt: String,
     val createdAt: String,
     val reasons: String,
-)
-
-private data class DreamerRegion(
-    val factIds: List<String>,
-    val facts: List<MemoryFactDetails>,
-)
-
-private data class InsertedDreamerFact(
-    val id: String,
-    val contentHash: String,
+    val attemptCount: Int,
 )
 
 class MemoryMaintenanceWorker(
@@ -38,18 +25,16 @@ class MemoryMaintenanceWorker(
     private val qualityGate: MemoryConsolidationQualityGate = DefaultMemoryConsolidationQualityGate,
     private val embeddingModel: String? = null,
 ) {
-    suspend fun runOnce(preferences: MemoryMaintenancePreferences): MemoryMaintenanceRunResult {
-        val normalizedPreferences = preferences.normalizedForSupportedMaintenance()
-        if (normalizedPreferences.mode == MemoryMaintenanceMode.OFF) {
-            return MemoryMaintenanceRunResult(processedJobs = 0)
+    suspend fun runOnce(preferences: MemoryMaintenancePreferences, ignoreBackoff: Boolean = false): Int {
+        if (preferences.mode == MemoryMaintenanceMode.OFF) {
+            return 0
         }
         initializeSqliteMemoryRepository(dbPath)
-        val jobs = pendingJobs(normalizedPreferences.maxClustersPerRun)
+        val jobs = pendingJobs(MAX_CLUSTERS_PER_RUN, ignoreBackoff)
         if (jobs.isEmpty()) {
-            return MemoryMaintenanceRunResult(processedJobs = 0)
+            return 0
         }
         var processed = 0
-        var blocked = 0
         jobs.forEach { job ->
             when {
                 job.isLegacyChatMigration() -> {
@@ -58,30 +43,32 @@ class MemoryMaintenanceWorker(
                     }
                 }
                 job.isDreamerRegionRewrite() -> {
-                    val result = processDreamerRegionRewrite(job)
-                    processed += result.processedJobs
-                    blocked += result.blockedJobs
+                    processed += processDreamerRegionRewrite(job, preferences)
                 }
                 else -> {
-                    blocked += withConnection { connection ->
+                    withConnection { connection ->
                         connection.inTransaction { blockUnsupportedJob(job, Instant.now().toString()) }
                     }
                 }
             }
         }
-        return MemoryMaintenanceRunResult(processedJobs = processed, inspectedJobs = jobs.size, blockedJobs = blocked)
+        return processed
     }
 
-    private suspend fun pendingJobs(limit: Int): List<MaintenanceJob> = withConnection { connection ->
+    private suspend fun pendingJobs(limit: Int, ignoreBackoff: Boolean): List<MaintenanceJob> = withConnection { connection ->
+        val dueCondition = if (ignoreBackoff) "" else "and next_attempt_at <= ?"
         connection.prepareStatement(
             """
-            select cluster_key, owner_id, latest_dirty_at, created_at, reasons from memory_maintenance_jobs
-            where status = 'PENDING'
+            select cluster_key, owner_id, latest_dirty_at, created_at, reasons, attempt_count
+            from memory_maintenance_jobs
+            where status = 'PENDING' $dueCondition
             order by priority desc, latest_dirty_at desc
             limit ?
             """.trimIndent()
         ).use { statement ->
-            statement.setInt(1, limit)
+            var index = 1
+            if (!ignoreBackoff) statement.setString(index++, Instant.now().toString())
+            statement.setInt(index, limit)
             statement.executeQuery().use { rs ->
                 buildList {
                     while (rs.next()) {
@@ -92,6 +79,7 @@ class MemoryMaintenanceWorker(
                                 latestDirtyAt = rs.getString("latest_dirty_at"),
                                 createdAt = rs.getString("created_at"),
                                 reasons = rs.getString("reasons").orEmpty(),
+                                attemptCount = rs.getInt("attempt_count"),
                             )
                         )
                     }
@@ -105,84 +93,128 @@ class MemoryMaintenanceWorker(
         DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use(block)
     }
 
-    private suspend fun processDreamerRegionRewrite(job: MaintenanceJob): MemoryMaintenanceRunResult {
-        val parsed = parseDreamerRegionMaintenanceClusterKey(job.clusterKey)
+    private suspend fun processDreamerRegionRewrite(
+        job: MaintenanceJob,
+        preferences: MemoryMaintenancePreferences,
+    ): Int {
+        val target = parseDreamerRegionMaintenanceClusterKey(job.clusterKey)
             ?: return blockJobResult(job)
         if (consolidator === NoopMemoryConsolidator) {
             return blockJobResult(job)
         }
-        val (ownerId, scope) = parsed
+        val ownerId = target.ownerId
+        val scope = target.scope
         if (scope.type !in DREAMER_DURABLE_SCOPE_TYPES) {
             return blockJobResult(job)
         }
-        val region = loadDreamerRegion(ownerId, scope, job)
-        if (region.facts.size < 2) {
-            withConnection { connection ->
-                connection.inTransaction {
-                    completeJob(
-                        job,
-                        "done:${job.clusterKey}:$MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE:insufficient_facts",
-                        Instant.now().toString(),
-                    )
-                }
-            }
-            return MemoryMaintenanceRunResult(processedJobs = 0, inspectedJobs = 1)
-        }
+        val region = target.anchorFactId
+            ?.let { anchorFactId -> loadDreamerNeighborhood(ownerId, scope, anchorFactId) }
+            ?: loadDreamerRegion(ownerId, scope, job)
+        if (region.size < 2) return completeWithoutReplacement(job)
 
         val input = MemoryConsolidationInput(
             ownerId = ownerId,
             scope = scope,
-            facts = region.facts,
+            facts = region,
+            modelAlias = preferences.modelAlias,
         )
-        val candidates = consolidator.consolidate(input).mapNotNull { it.normalizedCandidate() }
-        if (candidates.isEmpty()) {
-            withConnection { connection ->
-                connection.inTransaction {
-                    completeJob(
-                        job,
-                        "done:${job.clusterKey}:$MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE:no_replacements",
-                        Instant.now().toString(),
-                    )
-                }
-            }
-            return MemoryMaintenanceRunResult(processedJobs = 0, inspectedJobs = 1)
+        val candidates = try {
+            consolidator.consolidate(input).mapNotNull { it.normalizedCandidate() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return deferJobResult(job)
         }
+        if (candidates.isEmpty()) return completeWithoutReplacement(job)
         val evaluation = qualityGate.evaluate(input, candidates)
-        if (!evaluation.accepted) {
-            withConnection { connection ->
-                connection.inTransaction {
-                    completeJob(
-                        job,
-                        "done:${job.clusterKey}:$MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE:quality_rejected:${evaluation.reason}:reward=${evaluation.rewardScore}",
-                        Instant.now().toString(),
-                    )
-                }
-            }
-            return MemoryMaintenanceRunResult(processedJobs = 0, inspectedJobs = 1)
+        if (!evaluation.accepted) return completeWithoutReplacement(job)
+        val regionFactIds = region.map { it.fact.id }
+        if (hasExternalCanonicalConflict(ownerId, scope, regionFactIds, candidates)) {
+            return completeWithoutReplacement(job)
         }
+        val evidenceTextBySourceEventId = region
+            .flatMap { it.evidence }
+            .mapNotNull { detail -> detail.evidence.evidenceText?.let { detail.sourceEvent.id to it } }
+            .toMap()
 
         val inserted = withConnection { connection ->
             connection.inTransaction {
-                commitDreamerReplacement(job, ownerId, scope, region, candidates, Instant.now().toString())
+                commitDreamerReplacement(
+                    job,
+                    ownerId,
+                    scope,
+                    candidates,
+                    evidenceTextBySourceEventId,
+                    Instant.now().toString(),
+                )
             }
         }
-        return MemoryMaintenanceRunResult(processedJobs = if (inserted > 0) 1 else 0, inspectedJobs = 1)
+        return if (inserted > 0) 1 else 0
     }
 
-    private suspend fun blockJobResult(job: MaintenanceJob): MemoryMaintenanceRunResult =
+    private suspend fun blockJobResult(job: MaintenanceJob): Int =
         withConnection { connection ->
-            MemoryMaintenanceRunResult(
-                processedJobs = 0,
-                inspectedJobs = 1,
-                blockedJobs = connection.inTransaction { blockUnsupportedJob(job, Instant.now().toString()) },
-            )
+            connection.inTransaction { blockUnsupportedJob(job, Instant.now().toString()) }
+            0
         }
+
+    private suspend fun deferJobResult(job: MaintenanceJob): Int =
+        withConnection { connection ->
+            connection.inTransaction {
+                deferJob(job, Instant.now())
+            }
+            0
+        }
+
+    private suspend fun completeWithoutReplacement(job: MaintenanceJob): Int {
+        withConnection { connection ->
+            connection.inTransaction {
+                completeJob(job, Instant.now().toString())
+            }
+        }
+        return 0
+    }
+
+    private suspend fun hasExternalCanonicalConflict(
+        ownerId: MemoryOwnerId,
+        scope: MemoryScope,
+        sourceFactIds: List<String>,
+        candidates: List<MemoryConsolidationCandidate>,
+    ): Boolean {
+        val canonicalKeys = candidates.mapNotNull { it.canonicalKey }.distinct()
+        if (canonicalKeys.isEmpty()) return false
+        return withConnection { connection ->
+            val keyPlaceholders = List(canonicalKeys.size) { "?" }.joinToString(", ")
+            val sourcePlaceholders = List(sourceFactIds.size) { "?" }.joinToString(", ")
+            connection.prepareStatement(
+                """
+                select 1 from memory_facts
+                where owner_id = ?
+                  and scope_type = ?
+                  and scope_id = ?
+                  and status = ?
+                  and canonical_key in ($keyPlaceholders)
+                  and id not in ($sourcePlaceholders)
+                limit 1
+                """.trimIndent()
+            ).use { statement ->
+                var index = 1
+                statement.setString(index++, ownerId.value)
+                statement.setString(index++, scope.type)
+                statement.setString(index++, scope.id)
+                statement.setString(index++, MemoryFactStatus.ACTIVE.name)
+                canonicalKeys.forEach { statement.setString(index++, it) }
+                sourceFactIds.forEach { statement.setString(index++, it) }
+                statement.executeQuery().use { it.next() }
+            }
+        }
+    }
 
     private suspend fun loadDreamerRegion(
         ownerId: MemoryOwnerId,
         scope: MemoryScope,
         job: MaintenanceJob,
-    ): DreamerRegion {
+    ): List<MemoryFactDetails> {
         val factIds = withConnection { connection ->
             connection.prepareStatement(
                 """
@@ -223,8 +255,114 @@ class MemoryMaintenanceWorker(
             }
         }
         val repository = SqliteMemoryRepository(dbPath)
-        val facts = factIds.mapNotNull { factId -> repository.getFactDetails(factId) }
-        return DreamerRegion(factIds = factIds, facts = facts)
+        return factIds.mapNotNull { factId -> repository.getFactDetails(factId) }
+    }
+
+    private suspend fun loadDreamerNeighborhood(
+        ownerId: MemoryOwnerId,
+        scope: MemoryScope,
+        anchorFactId: String,
+    ): List<MemoryFactDetails> {
+        val repository = SqliteMemoryRepository(dbPath)
+        val anchor = repository.getFactDetails(anchorFactId)
+            ?.takeIf { details ->
+                details.fact.ownerId == ownerId &&
+                    details.fact.scope.normalized() == scope &&
+                    details.fact.status == MemoryFactStatus.ACTIVE &&
+                    details.fact.retention == MemoryRetention.DURABLE
+            }
+            ?: return emptyList()
+        val nearestIds = embeddingModel
+            ?.let { model -> loadNearestFactIds(ownerId, scope, anchor.fact, model) }
+            .orEmpty()
+        val fallbackIds = loadRecentFactIds(ownerId, scope, anchorFactId, NEIGHBORHOOD_FACT_LIMIT * 2)
+        val neighborIds = (nearestIds + fallbackIds)
+            .distinct()
+            .filterNot { it == anchorFactId }
+            .take(NEIGHBORHOOD_FACT_LIMIT - 1)
+        return listOf(anchor) + neighborIds.mapNotNull { repository.getFactDetails(it) }
+    }
+
+    private suspend fun loadNearestFactIds(
+        ownerId: MemoryOwnerId,
+        scope: MemoryScope,
+        anchor: MemoryFact,
+        model: String,
+    ): List<String> = withConnection { connection ->
+        val anchorEmbedding = connection.prepareStatement(
+            """
+            select e.embedding_blob, e.dimension
+            from memory_fact_embeddings e
+            join memory_facts f on f.id = e.fact_id
+            where f.id = ? and e.embedding_model = ? and e.content_hash = f.content_hash
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, anchor.id)
+            statement.setString(2, model)
+            statement.executeQuery().use { rs ->
+                if (rs.next()) rs.getBytes("embedding_blob").toFloatArray() to rs.getInt("dimension") else null
+            }
+        } ?: return@withConnection emptyList()
+
+        connection.prepareStatement(
+            """
+            select f.id, e.embedding_blob
+            from memory_facts f
+            join memory_fact_embeddings e on e.fact_id = f.id
+            where f.id != ?
+              and f.owner_id = ?
+              and f.scope_type = ?
+              and f.scope_id = ?
+              and f.status = ?
+              and f.retention = ?
+              and e.embedding_model = ?
+              and e.dimension = ?
+              and e.content_hash = f.content_hash
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, anchor.id)
+            statement.setString(2, ownerId.value)
+            statement.setString(3, scope.type)
+            statement.setString(4, scope.id)
+            statement.setString(5, MemoryFactStatus.ACTIVE.name)
+            statement.setString(6, MemoryRetention.DURABLE.name)
+            statement.setString(7, model)
+            statement.setInt(8, anchorEmbedding.second)
+            statement.executeQuery().use { rs ->
+                buildList {
+                    while (rs.next()) {
+                        add(rs.getString("id") to cosineSimilarity(anchorEmbedding.first, rs.getBytes("embedding_blob").toFloatArray()))
+                    }
+                }.sortedByDescending { it.second }
+                    .take(NEIGHBORHOOD_FACT_LIMIT - 1)
+                    .map { it.first }
+            }
+        }
+    }
+
+    private suspend fun loadRecentFactIds(
+        ownerId: MemoryOwnerId,
+        scope: MemoryScope,
+        anchorFactId: String,
+        limit: Int,
+    ): List<String> = withConnection { connection ->
+        connection.prepareStatement(
+            """
+            select id from memory_facts
+            where id != ? and owner_id = ? and scope_type = ? and scope_id = ? and status = ? and retention = ?
+            order by updated_at desc
+            limit ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, anchorFactId)
+            statement.setString(2, ownerId.value)
+            statement.setString(3, scope.type)
+            statement.setString(4, scope.id)
+            statement.setString(5, MemoryFactStatus.ACTIVE.name)
+            statement.setString(6, MemoryRetention.DURABLE.name)
+            statement.setInt(7, limit)
+            statement.executeQuery().use { rs -> buildList { while (rs.next()) add(rs.getString("id")) } }
+        }
     }
 
     private fun MemoryConsolidationCandidate.normalizedCandidate(): MemoryConsolidationCandidate? {
@@ -239,6 +377,7 @@ class MemoryMaintenanceWorker(
                 canonicalKey = normalizeCanonicalKey(canonicalKey),
                 confidence = confidence.coerceIn(0f, 1f),
                 importance = importance.coerceIn(0f, 1f),
+                sourceFactIds = sourceFactIds.distinct(),
                 evidenceSourceEventIds = evidenceSourceEventIds.distinct(),
             )
         }
@@ -248,49 +387,41 @@ class MemoryMaintenanceWorker(
         job: MaintenanceJob,
         ownerId: MemoryOwnerId,
         scope: MemoryScope,
-        region: DreamerRegion,
         candidates: List<MemoryConsolidationCandidate>,
+        evidenceTextBySourceEventId: Map<String, String>,
         now: String,
     ): Int {
+        val replacedFactIds = candidates.flatMap { it.sourceFactIds }.distinct()
         val jobUpdated = completeJob(
             job = job,
-            reason = "done:${job.clusterKey}:$MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE:replacements=${candidates.size}:retired=${region.factIds.size}",
             now = now,
         )
         if (jobUpdated == 0) return 0
-        retireFacts(region.factIds, now)
-        val sourceEventIds = region.facts
-            .flatMap { details -> details.evidence.map { it.sourceEvent.id } }
-            .distinct()
+        retireFacts(replacedFactIds, now)
         val insertedFacts = candidates.map { candidate ->
             insertDreamerFact(
                 ownerId = ownerId,
                 scope = scope,
                 candidate = candidate,
-                fallbackSourceEventIds = sourceEventIds,
-                supersedesFactId = region.factIds.firstOrNull(),
+                supersedesFactId = candidate.sourceFactIds.firstOrNull(),
+                evidenceTextBySourceEventId = evidenceTextBySourceEventId,
                 now = now,
             )
         }
-        insertedFacts.forEach { fact ->
+        insertedFacts.zip(candidates).forEach { (fact, candidate) ->
             insertSupersedes(
-                replacementFactId = fact.id,
-                supersededFactIds = region.factIds,
+                replacementFactId = fact.first,
+                supersededFactIds = candidate.sourceFactIds,
                 ownerId = ownerId,
                 now = now,
             )
             enqueueEmbeddingJob(
-                factId = fact.id,
+                factId = fact.first,
                 ownerId = ownerId,
-                contentHash = fact.contentHash,
+                contentHash = fact.second,
                 now = now,
             )
         }
-        recordMaintenanceOperation(
-            ownerId = ownerId.value,
-            reason = "done:${job.clusterKey}:$MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE:inserted=${insertedFacts.size}",
-            now = now,
-        )
         return insertedFacts.size
     }
 
@@ -319,22 +450,19 @@ class MemoryMaintenanceWorker(
         ownerId: MemoryOwnerId,
         scope: MemoryScope,
         candidate: MemoryConsolidationCandidate,
-        fallbackSourceEventIds: List<String>,
         supersedesFactId: String?,
+        evidenceTextBySourceEventId: Map<String, String>,
         now: String,
-    ): InsertedDreamerFact {
-        candidate.canonicalKey?.let { canonicalKey ->
-            retireCanonicalConflicts(ownerId, scope, canonicalKey, now)
-        }
+    ): Pair<String, String> {
         val factId = UUID.randomUUID().toString()
         val contentHash = stableMemoryContentHash(candidate.title, candidate.body, candidate.kind, candidate.canonicalKey)
         prepareStatement(
             """
             insert into memory_facts(
                 id, owner_id, scope_type, scope_id, kind, title, body, slot_key, canonical_key, status,
-                validity, retention, sensitivity, confidence, importance, pinned, created_by, version,
-                content_hash, created_at, updated_at, last_observed_at, supersedes_fact_id
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                retention, confidence, importance, pinned, created_by, content_hash, created_at, updated_at,
+                supersedes_fact_id
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, factId)
@@ -347,27 +475,19 @@ class MemoryMaintenanceWorker(
             statement.setString(8, candidate.canonicalKey)
             statement.setString(9, candidate.canonicalKey)
             statement.setString(10, MemoryFactStatus.ACTIVE.name)
-            statement.setString(11, MemoryFactValidity.VALID.name)
-            statement.setString(12, retentionForScope(scope).name)
-            statement.setString(13, MemorySensitivity.NORMAL.name)
-            statement.setFloat(14, candidate.confidence)
-            statement.setFloat(15, candidate.importance)
-            statement.setInt(16, 0)
-            statement.setString(17, "dreamer")
-            statement.setLong(18, 1L)
-            statement.setString(19, contentHash)
-            statement.setString(20, now)
-            statement.setString(21, now)
-            statement.setString(22, now)
-            statement.setString(23, supersedesFactId)
+            statement.setString(11, retentionForScope(scope).name)
+            statement.setFloat(12, candidate.confidence)
+            statement.setFloat(13, candidate.importance)
+            statement.setInt(14, 0)
+            statement.setString(15, "dreamer")
+            statement.setString(16, contentHash)
+            statement.setString(17, now)
+            statement.setString(18, now)
+            statement.setString(19, supersedesFactId)
             statement.executeUpdate()
         }
-        val evidenceSourceEventIds = candidate.evidenceSourceEventIds
-            .filter { it in fallbackSourceEventIds }
-            .ifEmpty { fallbackSourceEventIds }
-            .distinct()
-        insertEvidence(factId, evidenceSourceEventIds)
-        return InsertedDreamerFact(id = factId, contentHash = contentHash)
+        insertEvidence(factId, candidate.evidenceSourceEventIds.distinct(), evidenceTextBySourceEventId)
+        return factId to contentHash
     }
 
     private fun Connection.insertSupersedes(
@@ -425,46 +545,22 @@ class MemoryMaintenanceWorker(
         }
     }
 
-    private fun Connection.retireCanonicalConflicts(
-        ownerId: MemoryOwnerId,
-        scope: MemoryScope,
-        canonicalKey: String,
-        now: String,
+    private fun Connection.insertEvidence(
+        factId: String,
+        sourceEventIds: List<String>,
+        evidenceTextBySourceEventId: Map<String, String>,
     ) {
-        prepareStatement(
-            """
-            update memory_facts
-            set status = ?,
-                updated_at = ?
-            where owner_id = ?
-              and scope_type = ?
-              and scope_id = ?
-              and canonical_key = ?
-              and status = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, MemoryFactStatus.RETIRED.name)
-            statement.setString(2, now)
-            statement.setString(3, ownerId.value)
-            statement.setString(4, scope.type)
-            statement.setString(5, scope.id)
-            statement.setString(6, canonicalKey)
-            statement.setString(7, MemoryFactStatus.ACTIVE.name)
-            statement.executeUpdate()
-        }
-    }
-
-    private fun Connection.insertEvidence(factId: String, sourceEventIds: List<String>) {
         if (sourceEventIds.isEmpty()) return
         prepareStatement(
             """
             insert or ignore into memory_fact_evidence(fact_id, source_event_id, evidence_text)
-            values (?, ?, null)
+            values (?, ?, ?)
             """.trimIndent()
         ).use { statement ->
             sourceEventIds.forEach { sourceEventId ->
                 statement.setString(1, factId)
                 statement.setString(2, sourceEventId)
+                statement.setString(3, evidenceTextBySourceEventId.getValue(sourceEventId))
                 statement.addBatch()
             }
             statement.executeBatch()
@@ -473,32 +569,41 @@ class MemoryMaintenanceWorker(
 
     private fun Connection.completeJob(
         job: MaintenanceJob,
-        reason: String,
         now: String,
     ): Int {
-        val updated = prepareStatement(
+        return prepareStatement(
             """
             update memory_maintenance_jobs
             set status = 'DONE',
                 attempt_count = attempt_count + 1,
-                lease_owner = null,
-                lease_expires_at = null,
                 updated_at = ?
-            where cluster_key = ? and status = 'PENDING'
+            where cluster_key = ? and status = 'PENDING' and latest_dirty_at = ?
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, now)
             statement.setString(2, job.clusterKey)
+            statement.setString(3, job.latestDirtyAt)
             statement.executeUpdate()
         }
-        if (updated > 0) {
-            recordMaintenanceOperation(
-                ownerId = job.ownerId,
-                reason = reason,
-                now = now,
-            )
+    }
+
+    private fun Connection.deferJob(job: MaintenanceJob, now: Instant): Int {
+        val nextAttemptAt = now.plus(job.retryDelayMinutes(), ChronoUnit.MINUTES).toString()
+        return prepareStatement(
+            """
+            update memory_maintenance_jobs
+            set attempt_count = attempt_count + 1,
+                next_attempt_at = ?,
+                updated_at = ?
+            where cluster_key = ? and status = 'PENDING' and latest_dirty_at = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, nextAttemptAt)
+            statement.setString(2, now.toString())
+            statement.setString(3, job.clusterKey)
+            statement.setString(4, job.latestDirtyAt)
+            statement.executeUpdate()
         }
-        return updated
     }
 
     private fun Connection.processLegacyChatMigration(
@@ -511,14 +616,13 @@ class MemoryMaintenanceWorker(
             update memory_maintenance_jobs
             set status = 'DONE',
                 attempt_count = attempt_count + 1,
-                lease_owner = null,
-                lease_expires_at = null,
                 updated_at = ?
-            where cluster_key = ? and status = 'PENDING'
+            where cluster_key = ? and status = 'PENDING' and latest_dirty_at = ?
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, now)
             statement.setString(2, job.clusterKey)
+            statement.setString(3, job.latestDirtyAt)
             statement.executeUpdate()
         }
         if (jobUpdated == 0) return 0
@@ -562,11 +666,6 @@ class MemoryMaintenanceWorker(
             statement.executeBatch()
         }
 
-        recordMaintenanceOperation(
-            ownerId = job.ownerId,
-            reason = "done:${job.clusterKey}:$MEMORY_MAINTENANCE_REASON_LEGACY_CHAT_MIGRATION:retired=${factIds.size}",
-            now = now,
-        )
         return 1
     }
 
@@ -580,15 +679,13 @@ class MemoryMaintenanceWorker(
             update memory_maintenance_jobs
             set status = 'BLOCKED',
                 attempt_count = attempt_count + 1,
-                lease_owner = null,
-                lease_expires_at = null,
                 reasons = case
                     when instr(reasons, ?) > 0 then reasons
                     when trim(reasons) = '' then ?
                     else reasons || ',' || ?
                 end,
                 updated_at = ?
-            where cluster_key = ? and status = 'PENDING'
+            where cluster_key = ? and status = 'PENDING' and latest_dirty_at = ?
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, blockReason)
@@ -596,36 +693,10 @@ class MemoryMaintenanceWorker(
             statement.setString(3, blockReason)
             statement.setString(4, now)
             statement.setString(5, job.clusterKey)
+            statement.setString(6, job.latestDirtyAt)
             statement.executeUpdate()
-        }
-        if (updated > 0) {
-            recordMaintenanceOperation(
-                ownerId = job.ownerId,
-                reason = "blocked:${job.clusterKey}:$blockReason",
-                now = now,
-            )
         }
         return updated
-    }
-
-    private fun Connection.recordMaintenanceOperation(
-        ownerId: String,
-        reason: String,
-        now: String,
-    ) {
-        prepareStatement(
-            """
-            insert into memory_operation_log(id, fact_id, owner_id, type, reason, created_at)
-            values (?, null, ?, ?, ?, ?)
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, UUID.randomUUID().toString())
-            statement.setString(2, ownerId)
-            statement.setString(3, MemoryOperationType.MAINTENANCE.name)
-            statement.setString(4, reason)
-            statement.setString(5, now)
-            statement.executeUpdate()
-        }
     }
 
     private fun MaintenanceJob.isLegacyChatMigration(): Boolean =
@@ -644,6 +715,12 @@ class MemoryMaintenanceWorker(
         return raw.substringAfter(':', missingDelimiterValue = "").takeIf(String::isNotBlank)
     }
 
+    private fun MaintenanceJob.retryDelayMinutes(): Long = when (attemptCount) {
+        0 -> 5
+        1 -> 30
+        else -> 120
+    }
+
     private inline fun <T> Connection.inTransaction(block: Connection.() -> T): T {
         autoCommit = false
         return try {
@@ -656,6 +733,8 @@ class MemoryMaintenanceWorker(
 
     private companion object {
         const val DREAMER_REGION_FACT_LIMIT = 24
+        const val NEIGHBORHOOD_FACT_LIMIT = 8
+        const val MAX_CLUSTERS_PER_RUN = 10
         val DREAMER_DURABLE_SCOPE_TYPES = setOf("global", "project")
     }
 }

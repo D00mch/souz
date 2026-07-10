@@ -14,8 +14,8 @@ import ru.souz.memory.MemoryMaintenanceStatus
 import ru.souz.memory.MemoryMaintenanceWorkerState
 import ru.souz.memory.MemoryOwnerId
 import ru.souz.memory.MemoryScope
-import ru.souz.memory.normalizedForSupportedMaintenance
 import ru.souz.memory.normalizeCanonicalKey
+import ru.souz.llms.LLMModel
 import java.time.Instant
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
@@ -45,11 +45,30 @@ data class MemoryMaintenanceUiState(
     val lastCompletedAt: Instant? = null,
     val isRunningNow: Boolean = false,
     val lastErrorCode: String? = null,
+    val availableModels: List<LLMModel> = emptyList(),
 ) {
     val mode: MemoryMaintenanceMode get() = preferences.mode
-    val lastEnabledMode: MemoryMaintenanceMode get() = preferences.lastEnabledMode
     val isEnabled: Boolean get() = mode != MemoryMaintenanceMode.OFF
     val canRunNow: Boolean get() = isEnabled && !isRunningNow && pendingClusters > 0 && blockedReason == null
+    val selectedModel: LLMModel? get() = availableModels.firstOrNull { it.alias == preferences.modelAlias }
+    val runOutcome: MemoryMaintenanceRunOutcome
+        get() = when {
+            isRunningNow -> MemoryMaintenanceRunOutcome.RUNNING
+            lastErrorCode != null -> MemoryMaintenanceRunOutcome.ERROR
+            lastAttemptedAt == null -> MemoryMaintenanceRunOutcome.IDLE
+            lastCompletedAt?.isBefore(lastAttemptedAt) == false -> MemoryMaintenanceRunOutcome.COMPLETED
+            pendingClusters > 0 -> MemoryMaintenanceRunOutcome.RETRY_SCHEDULED
+            else -> MemoryMaintenanceRunOutcome.NO_CHANGES
+        }
+}
+
+enum class MemoryMaintenanceRunOutcome {
+    IDLE,
+    RUNNING,
+    ERROR,
+    RETRY_SCHEDULED,
+    COMPLETED,
+    NO_CHANGES,
 }
 
 data class MemoryFiltersUi(
@@ -113,6 +132,7 @@ sealed interface MemoryAction : VMEvent {
     data object CloseDialog : MemoryAction
     data object ClearError : MemoryAction
     data class SelectDreamerMode(val mode: MemoryMaintenanceMode) : MemoryAction
+    data class SelectDreamerModel(val modelAlias: String?) : MemoryAction
     data object RunDreamerNow : MemoryAction
     data object RefreshDreamerStatus : MemoryAction
 }
@@ -199,19 +219,18 @@ fun List<MemoryFact>.sortedForUi(): List<MemoryFact> =
     sortedWith(compareByDescending<MemoryFact> { it.pinned }.thenByDescending { it.updatedAt })
 
 fun MemoryMaintenanceStatus.toUiState(isRunningNow: Boolean = false): MemoryMaintenanceUiState =
-    preferences.normalizedForSupportedMaintenance().let { normalized ->
-        MemoryMaintenanceUiState(
-            preferences = normalized,
-            pendingClusters = pendingClusters,
-            blockedClusters = blockedClusters,
-            workerState = workerState,
-            blockedReason = blockedReason,
-            lastAttemptedAt = lastAttemptedAt,
-            lastCompletedAt = lastCompletedAt,
-            isRunningNow = isRunningNow,
-            lastErrorCode = lastErrorCode,
-        )
-    }
+    MemoryMaintenanceUiState(
+        preferences = preferences,
+        pendingClusters = pendingClusters,
+        blockedClusters = blockedClusters,
+        workerState = workerState,
+        blockedReason = blockedReason,
+        lastAttemptedAt = lastAttemptedAt,
+        lastCompletedAt = lastCompletedAt,
+        isRunningNow = isRunningNow,
+        lastErrorCode = lastErrorCode,
+        availableModels = availableModels,
+    )
 
 fun MemoryMaintenanceUiState.toPreferences(): MemoryMaintenancePreferences =
-    preferences.normalizedForSupportedMaintenance()
+    preferences

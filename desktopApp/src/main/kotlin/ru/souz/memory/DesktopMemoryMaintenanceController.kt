@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import ru.souz.db.ConfigStore
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.LLMModel
 import java.nio.file.Path
 import java.sql.DriverManager
 import java.time.Instant
@@ -29,6 +30,7 @@ class DesktopMemoryMaintenanceController(
     private val dbPath: Path,
     private val settingsStore: MemoryMaintenanceSettingsStore = ConfigStoreMemoryMaintenanceSettingsStore,
     private val worker: MemoryMaintenanceWorker = MemoryMaintenanceWorker(dbPath),
+    private val availableModels: () -> List<LLMModel> = { emptyList() },
 ) : MemoryMaintenanceController {
     private val runMutex = Mutex()
 
@@ -38,12 +40,19 @@ class DesktopMemoryMaintenanceController(
     }
 
     override suspend fun savePreferences(preferences: MemoryMaintenancePreferences): MemoryMaintenanceStatus {
-        val normalized = preferences.normalizedForSupportedMaintenance()
+        val normalized = preferences.withAvailableModel()
         settingsStore.put(PREFERENCES_KEY, restJsonMapper.writeValueAsString(normalized))
+        if (normalized.mode == MemoryMaintenanceMode.OFF) {
+            settingsStore.put(LAST_ERROR_CODE_KEY, "")
+        }
         return statusOrError(normalized)
     }
 
-    override suspend fun runNow(): MemoryMaintenanceStatus {
+    override suspend fun runNow(): MemoryMaintenanceStatus = run(ignoreBackoff = true)
+
+    override suspend fun runDue(): MemoryMaintenanceStatus = run(ignoreBackoff = false)
+
+    private suspend fun run(ignoreBackoff: Boolean): MemoryMaintenanceStatus {
         val preferences = loadPreferences()
         val now = Instant.now()
         if (!runMutex.tryLock()) {
@@ -54,13 +63,10 @@ class DesktopMemoryMaintenanceController(
             if (preferences.mode == MemoryMaintenanceMode.OFF) {
                 statusOrError(preferences, attemptedAt = now)
             } else {
-                val run = worker.runOnce(preferences)
+                val processedJobs = worker.runOnce(preferences, ignoreBackoff)
                 settingsStore.put(LAST_ERROR_CODE_KEY, "")
-                if (run.processedJobs > 0) {
+                if (processedJobs > 0) {
                     settingsStore.put(LAST_COMPLETED_AT_KEY, Instant.now().toString())
-                    settingsStore.put(LAST_NO_ACTION_AT_KEY, "")
-                } else if (run.inspectedJobs > 0 || run.blockedJobs > 0) {
-                    settingsStore.put(LAST_NO_ACTION_AT_KEY, now.toString())
                 }
                 statusOrError(preferences, attemptedAt = now)
             }
@@ -78,7 +84,6 @@ class DesktopMemoryMaintenanceController(
         settingsStore.get(PREFERENCES_KEY)
             ?.takeIf(String::isNotBlank)
             ?.let { raw -> runCatching { restJsonMapper.readValue<MemoryMaintenancePreferences>(raw) }.getOrNull() }
-            ?.normalizedForSupportedMaintenance()
             ?: MemoryMaintenancePreferences()
 
     private suspend fun statusFor(
@@ -101,6 +106,7 @@ class DesktopMemoryMaintenanceController(
             lastAttemptedAt = attemptedAt,
             lastCompletedAt = readInstant(LAST_COMPLETED_AT_KEY),
             lastErrorCode = readString(LAST_ERROR_CODE_KEY),
+            availableModels = availableModels.safeValue(),
             blockedReason = if (disabled) {
                 MemoryMaintenanceBlockReason.DREAMER_DISABLED
             } else if (pendingClusters > 0) {
@@ -124,7 +130,17 @@ class DesktopMemoryMaintenanceController(
             lastAttemptedAt = attemptedAt,
             lastCompletedAt = readInstant(LAST_COMPLETED_AT_KEY),
             lastErrorCode = error.errorCode(),
+            availableModels = availableModels.safeValue(),
         )
+
+    private fun MemoryMaintenancePreferences.withAvailableModel(): MemoryMaintenancePreferences {
+        val models = availableModels.safeValue()
+        if (models.isEmpty() || modelAlias == null) return this
+        return copy(modelAlias = modelAlias.takeIf { alias -> models.any { it.alias == alias } })
+    }
+
+    private fun (() -> List<LLMModel>).safeValue(): List<LLMModel> =
+        runCatching { invoke() }.getOrDefault(emptyList())
 
     private suspend fun statusOrError(
         preferences: MemoryMaintenancePreferences,
@@ -173,6 +189,5 @@ class DesktopMemoryMaintenanceController(
         const val LAST_ATTEMPTED_AT_KEY = "MEMORY_MAINTENANCE_LAST_ATTEMPTED_AT"
         const val LAST_COMPLETED_AT_KEY = "MEMORY_MAINTENANCE_LAST_COMPLETED_AT"
         const val LAST_ERROR_CODE_KEY = "MEMORY_MAINTENANCE_LAST_ERROR_CODE"
-        const val LAST_NO_ACTION_AT_KEY = "MEMORY_MAINTENANCE_LAST_NO_ACTION_AT"
     }
 }

@@ -261,11 +261,13 @@
     <string name="memory_dreamer_title">Dreamer</string>
     <string name="memory_dreamer_mode_off">Off</string>
     <string name="memory_dreamer_mode_local">Local</string>
+    <string name="memory_dreamer_model_auto">Auto model</string>
     <string name="memory_dreamer_pending_blocked">Pending %1$d · Blocked %2$d</string>
     <string name="memory_dreamer_run">Run</string>
     <string name="memory_dreamer_running">Running</string>
-    <string name="memory_dreamer_attempted">Attempted %1$s</string>
-    <string name="memory_dreamer_completed">Completed %1$s</string>
+    <string name="memory_dreamer_completed">Done · %1$s</string>
+    <string name="memory_dreamer_retry">Retry scheduled · %1$s</string>
+    <string name="memory_dreamer_no_changes">No changes · %1$s</string>
     <string name="memory_dreamer_error">Error %1$s</string>
     <string name="memory_dreamer_block_disabled">disabled</string>
     <string name="memory_dreamer_block_pending">no pending work</string>

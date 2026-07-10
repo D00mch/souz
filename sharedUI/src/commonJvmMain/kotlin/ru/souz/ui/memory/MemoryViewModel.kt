@@ -47,6 +47,7 @@ class MemoryViewModel(
             MemoryAction.CloseDialog -> setState { copy(editor = null) }
             MemoryAction.ClearError -> setState { copy(error = null) }
             is MemoryAction.SelectDreamerMode -> selectDreamerMode(event.mode)
+            is MemoryAction.SelectDreamerModel -> selectDreamerModel(event.modelAlias)
             MemoryAction.RunDreamerNow -> runDreamerNow()
         }
     }
@@ -254,9 +255,16 @@ class MemoryViewModel(
             current.copy(
                 preferences = current.preferences.copy(
                     mode = mode,
-                    lastEnabledMode = mode.takeIf { it != MemoryMaintenanceMode.OFF }
-                        ?: current.lastEnabledMode,
                 ),
+            )
+        )
+    }
+
+    private suspend fun selectDreamerModel(modelAlias: String?) {
+        val current = currentState.maintenance
+        saveMaintenance(
+            current.copy(
+                preferences = current.preferences.copy(modelAlias = modelAlias),
             )
         )
     }

@@ -94,24 +94,10 @@ enum class MemoryFactStatus {
     RETIRED,
 }
 
-enum class MemoryFactValidity {
-    VALID,
-    UNCERTAIN,
-    CONTRADICTED,
-}
-
 enum class MemoryRetention {
     DURABLE,
     CHAT_LIFETIME,
     SESSION_LIFETIME,
-    TTL,
-}
-
-enum class MemorySensitivity {
-    NORMAL,
-    PERSONAL,
-    SENSITIVE,
-    SECRET_REFERENCE_ONLY,
 }
 
 enum class MemoryMaintenanceMode {
@@ -122,30 +108,8 @@ enum class MemoryMaintenanceMode {
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MemoryMaintenancePreferences(
     val mode: MemoryMaintenanceMode = MemoryMaintenanceMode.OFF,
-    val lastEnabledMode: MemoryMaintenanceMode = MemoryMaintenanceMode.LOCAL_ONLY,
-    val maxClustersPerRun: Int = 10,
+    val modelAlias: String? = null,
 )
-
-fun MemoryMaintenancePreferences.normalizedForSupportedMaintenance(): MemoryMaintenancePreferences {
-    return copy(
-        lastEnabledMode = lastEnabledMode.takeIf { it != MemoryMaintenanceMode.OFF }
-            ?: MemoryMaintenanceMode.LOCAL_ONLY,
-        maxClustersPerRun = maxClustersPerRun.coerceIn(1, 1_000),
-    )
-}
-
-enum class MemoryOperationType {
-    CAPTURE,
-    CREATE,
-    UPDATE,
-    MERGE,
-    RETIRE,
-    DELETE,
-    PROMOTE,
-    DEMOTE,
-    FORGET,
-    MAINTENANCE,
-}
 
 data class MemorySourceEvent(
     val id: String,
@@ -169,18 +133,14 @@ data class MemoryFact(
     val slotKey: String? = null,
     val canonicalKey: String? = slotKey,
     val status: MemoryFactStatus,
-    val validity: MemoryFactValidity = MemoryFactValidity.VALID,
     val retention: MemoryRetention = MemoryRetention.DURABLE,
-    val sensitivity: MemorySensitivity = MemorySensitivity.NORMAL,
     val confidence: Float,
     val importance: Float = confidence.coerceIn(0f, 1f),
     val pinned: Boolean,
     val createdBy: String,
-    val version: Long = 1L,
     val contentHash: String = stableMemoryContentHash(title, body, kind, canonicalKey),
     val createdAt: Instant,
     val updatedAt: Instant,
-    val lastObservedAt: Instant = updatedAt,
     val supersedesFactId: String?,
 )
 
@@ -236,18 +196,14 @@ data class NewMemoryFact(
     val slotKey: String? = null,
     val canonicalKey: String? = slotKey,
     val status: MemoryFactStatus,
-    val validity: MemoryFactValidity = MemoryFactValidity.VALID,
     val retention: MemoryRetention = MemoryRetention.DURABLE,
-    val sensitivity: MemorySensitivity = MemorySensitivity.NORMAL,
     val confidence: Float,
     val importance: Float = confidence.coerceIn(0f, 1f),
     val pinned: Boolean,
     val createdBy: String,
-    val version: Long = 1L,
     val contentHash: String = stableMemoryContentHash(title, body, kind, canonicalKey),
     val createdAt: Instant = Instant.now(),
     val updatedAt: Instant = createdAt,
-    val lastObservedAt: Instant = updatedAt,
     val supersedesFactId: String?,
 )
 
@@ -315,6 +271,7 @@ data class MemoryCaptureInput(
     val primaryScope: MemoryScope = scopes.firstOrNull() ?: globalMemoryScope(),
     val userMessage: String,
     val assistantMessage: String,
+    val evidence: List<CompletedTurnEvidence> = emptyList(),
     val conversationId: String?,
     val userMessageId: String?,
     val assistantMessageId: String?,

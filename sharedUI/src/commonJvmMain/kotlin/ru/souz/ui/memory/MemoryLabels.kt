@@ -77,6 +77,8 @@ internal fun Instant.memoryLabel(): String = MEMORY_TIME_FORMATTER.format(this)
 
 internal fun Instant.shortMemoryLabel(): String = MEMORY_DATE_FORMATTER.format(this)
 
+internal fun Instant.maintenanceLabel(): String = MEMORY_MAINTENANCE_TIME_FORMATTER.format(this)
+
 internal fun String.preview(maxLength: Int = 180): String =
     trim().let { text ->
         if (text.length <= maxLength) text else text.take(maxLength).trimEnd() + "..."
@@ -100,5 +102,10 @@ private val MEMORY_TIME_FORMATTER: DateTimeFormatter =
 
 private val MEMORY_DATE_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("dd.MM.yyyy")
+        .withLocale(Locale.getDefault())
+        .withZone(ZoneId.systemDefault())
+
+private val MEMORY_MAINTENANCE_TIME_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("dd.MM HH:mm")
         .withLocale(Locale.getDefault())
         .withZone(ZoneId.systemDefault())

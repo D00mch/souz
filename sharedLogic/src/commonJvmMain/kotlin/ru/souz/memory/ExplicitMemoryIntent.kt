@@ -51,35 +51,15 @@ fun buildExplicitRememberCandidate(input: MemoryCaptureInput): MemoryFactCandida
         ?: return null
     return MemoryFactCandidate(
         shouldSave = true,
-        kind = inferExplicitMemoryKind(body),
+        kind = MemoryFactKind.SEMANTIC,
         title = body.substringBefore('\n').substringBefore('.').trim().take(96).ifBlank { "Remembered note" },
         body = body,
-        requestedScope = explicitRememberScope(inferExplicitMemoryKind(body), input.context),
-        canonicalKey = body.toMemoryCanonicalKeyOrNull(),
+        requestedScope = RequestedMemoryScope.GLOBAL,
+        canonicalKey = null,
         confidence = 0.75f,
         evidenceText = input.userMessage.trim().take(240),
     )
 }
-
-private fun inferExplicitMemoryKind(text: String): MemoryFactKind {
-    val normalized = text.lowercase()
-    return when {
-        listOf("prefer", "предпоч", "хочу", "please use", "используй").any(normalized::contains) ->
-            MemoryFactKind.PREFERENCE
-        listOf("always", "всегда", "rule", "правило", "policy").any(normalized::contains) ->
-            MemoryFactKind.PROJECT_RULE
-        listOf("procedure", "workflow", "процед", "шаг").any(normalized::contains) ->
-            MemoryFactKind.PROCEDURE
-        else -> MemoryFactKind.SEMANTIC
-    }
-}
-
-private fun explicitRememberScope(kind: MemoryFactKind, context: MemoryContext): RequestedMemoryScope =
-    if ((kind == MemoryFactKind.PROJECT_RULE || kind == MemoryFactKind.PROJECT_DECISION) && context.projectId != null) {
-        RequestedMemoryScope.PROJECT
-    } else {
-        RequestedMemoryScope.GLOBAL
-    }
 
 
 private fun String.removeExplicitRememberMarkers(): String {
@@ -103,17 +83,6 @@ private fun String.removeExplicitRememberMarkers(): String {
     return normalized.removeRange(start, start + marker.length)
         .trim()
         .trimStart(':', '-', ',', ' ')
-}
-
-private fun String.toMemoryCanonicalKeyOrNull(): String? {
-    val normalized = lowercase()
-    return when {
-        listOf("kotlin", "python", "язык программ").any(normalized::contains) ->
-            normalizeCanonicalKey("user.preference.code_language")
-        listOf("prefer", "предпоч", "ответ", "response", "language", "язык").any(normalized::contains) ->
-            normalizeCanonicalKey("user.preference.response_language")
-        else -> null
-    }
 }
 
 private fun String.isExplicitForgetIntent(): Boolean {

@@ -30,11 +30,28 @@ class DesktopConversationMemoryRuntimeTest {
                 assistantMessageId = "assistant-1",
                 userMessage = "remember this",
                 assistantMessage = "ok",
+                evidence = listOf(
+                    CompletedTurnEvidence(
+                        kind = CompletedTurnEvidenceKind.TOOL_OUTPUT,
+                        sourceName = "ToolTelegramGetHistory",
+                        text = "Tool output with next steps.",
+                    )
+                ),
             )
         )
 
         assertEquals("chat-42", inputSlot.captured.context.conversationId?.value)
         assertEquals("chat-42", inputSlot.captured.context.sessionId?.value)
+        assertEquals(
+            listOf(
+                CompletedTurnEvidence(
+                    kind = CompletedTurnEvidenceKind.TOOL_OUTPUT,
+                    sourceName = "ToolTelegramGetHistory",
+                    text = "Tool output with next steps.",
+                )
+            ),
+            inputSlot.captured.evidence,
+        )
         assertEquals(
             listOf("global", "session"),
             inputSlot.captured.scopes.map { it.type },

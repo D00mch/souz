@@ -2,9 +2,11 @@ package ru.souz.memory
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 class MemoryCaptureService(
     private val memoryService: MemoryService,
@@ -27,16 +29,20 @@ class MemoryCaptureService(
 
         val isExplicitPositive = intent == ExplicitMemoryIntent.REMEMBER_SIGNAL
         val candidates = extractCandidates(input, isExplicitPositive)
-        val validCandidates = candidates.filter { candidate -> isValidCandidate(candidate, isExplicitPositive) }
         val allowedScopes = (input.scopes + input.context.allowedRetrievalScopes())
             .map { it.normalized() }
             .toSet()
-        val processedCandidates = validCandidates
+        val processedCandidates = candidates
+            .filter { candidate -> isValidCandidate(candidate, isExplicitPositive) }
             .mapNotNull { candidate ->
                 val legacyScope = candidate.scope?.normalized()?.takeIf { it in allowedScopes }
                 val targetScope = legacyScope
                     ?: input.context.resolveRequestedScope(candidate.requestedScope, candidate.kind)?.normalized()
-                if (targetScope != null && targetScope in allowedScopes) {
+                if (
+                    targetScope != null &&
+                    targetScope in allowedScopes &&
+                    isGroundedCandidate(input, candidate, targetScope)
+                ) {
                     candidate to targetScope
                 } else {
                     null
@@ -50,14 +56,12 @@ class MemoryCaptureService(
         if (processedCandidates.isEmpty()) return@withLock emptyList()
 
         val created = mutableListOf<MemoryFact>()
-        val sourceEventIds = mutableListOf<String>()
+        val sourceEventId = memoryService.saveRedactedSourceEvent(
+            input = input,
+            redactedText = input.toTurnSourceText(),
+        )
         try {
             processedCandidates.forEach { (candidate, targetScope) ->
-                val sourceEventId = memoryService.saveRedactedSourceEvent(
-                    input = input,
-                    redactedText = MemorySanitizer.redact(candidate.evidenceText).trim(),
-                )
-                sourceEventIds += sourceEventId
                 val fact = memoryService.tryCreateCapturedFact(
                     CreateCapturedFactInput(
                         ownerId = input.context.ownerId,
@@ -74,22 +78,17 @@ class MemoryCaptureService(
                 )
                 if (fact != null) {
                     created += fact
-                } else {
-                    cleanupSourceEvent(sourceEventId)
                 }
             }
+            if (created.isEmpty()) cleanupSourceEvent(sourceEventId)
             created
         } catch (error: CancellationException) {
-            cleanupSourceEvents(sourceEventIds)
+            cleanupSourceEvent(sourceEventId)
             throw error
         } catch (error: Exception) {
-            cleanupSourceEvents(sourceEventIds)
+            cleanupSourceEvent(sourceEventId)
             throw error
         }
-    }
-
-    private suspend fun cleanupSourceEvents(sourceEventIds: List<String>) {
-        sourceEventIds.distinct().forEach { sourceEventId -> cleanupSourceEvent(sourceEventId) }
     }
 
     private suspend fun cleanupSourceEvent(sourceEventId: String) {
@@ -108,13 +107,28 @@ class MemoryCaptureService(
     ): List<MemoryFactCandidate> {
         val fallback = if (explicitRemember) buildExplicitRememberCandidate(input) else null
         val writerCandidates = try {
-            writer.extractCandidates(input)
+            extractWriterCandidatesWithRetry(input)
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
-            emptyList()
+        } catch (error: Exception) {
+            return fallback?.let(::listOf) ?: throw error.asMemoryWriterException()
         }
-        return listOfNotNull(fallback) + writerCandidates
+        return writerCandidates.ifEmpty { listOfNotNull(fallback) }
+    }
+
+    private suspend fun extractWriterCandidatesWithRetry(input: MemoryCaptureInput): List<MemoryFactCandidate> {
+        var lastFailure: Exception? = null
+        repeat(WRITER_ATTEMPTS) { attempt ->
+            try {
+                return writer.extractCandidates(input)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                lastFailure = error
+                WRITER_RETRY_DELAYS_MS.getOrNull(attempt)?.let { delay(it) }
+            }
+        }
+        throw lastFailure?.asMemoryWriterException() ?: MemoryWriterException("Memory writer failed")
     }
 
     private fun isValidCandidate(
@@ -132,5 +146,67 @@ class MemoryCaptureService(
             !MemorySanitizer.looksSecret(candidate.title) &&
             !MemorySanitizer.looksSecret(candidate.body) &&
             !MemorySanitizer.looksSecret(evidence)
+    }
+
+    private fun isGroundedCandidate(
+        input: MemoryCaptureInput,
+        candidate: MemoryFactCandidate,
+        targetScope: MemoryScope,
+    ): Boolean {
+        val evidence = candidate.evidenceText.normalizedEvidenceText()
+        if (evidence.isBlank()) return false
+        val allowAssistantSynthesis = candidate.kind == MemoryFactKind.EPISODE_NOTE &&
+            targetScope.normalized().type == "session"
+        val allowedEvidence = buildList {
+            add(input.userMessage)
+            input.evidence.forEach { item ->
+                when (item.kind) {
+                    CompletedTurnEvidenceKind.TOOL_OUTPUT -> add(item.text)
+                    CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS -> if (allowAssistantSynthesis) add(item.text)
+                }
+            }
+        }
+        return allowedEvidence.any { source -> source.normalizedEvidenceText().contains(evidence) }
+    }
+
+    private fun MemoryCaptureInput.toTurnSourceText(): String {
+        val sections = buildList {
+            add("[USER]\n${MemorySanitizer.redact(userMessage.trim())}")
+            evidence.take(MAX_TURN_EVIDENCE_SNIPPETS).forEach { item ->
+                val source = item.sourceName
+                    ?.let(MemorySanitizer::redact)
+                    ?.replace('\n', ' ')
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { " source=$it" }
+                    .orEmpty()
+                add("[${item.kind.name}$source]\n${MemorySanitizer.redact(item.text.trim())}")
+            }
+        }
+        return sections.joinToString("\n\n").trimMiddle(MAX_TURN_SOURCE_CHARS)
+    }
+
+    private fun String.normalizedEvidenceText(): String =
+        MemorySanitizer.redact(trim())
+            .lowercase(Locale.ROOT)
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
+    private fun String.trimMiddle(maxChars: Int): String {
+        if (length <= maxChars) return this
+        val marker = "\n...[truncated]...\n"
+        val keep = (maxChars - marker.length).coerceAtLeast(0)
+        val head = keep / 2
+        return take(head) + marker + takeLast(keep - head)
+    }
+
+    private fun Exception.asMemoryWriterException(): MemoryWriterException =
+        this as? MemoryWriterException ?: MemoryWriterException("Memory writer failed", this)
+
+    private companion object {
+        const val WRITER_ATTEMPTS = 3
+        val WRITER_RETRY_DELAYS_MS = longArrayOf(250L, 1_000L)
+        const val MAX_TURN_EVIDENCE_SNIPPETS = 16
+        const val MAX_TURN_SOURCE_CHARS = 24_000
     }
 }

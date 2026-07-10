@@ -18,6 +18,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ru.souz.ui.main.usecases.MemoryServiceConversationCleanup
+import ru.souz.llms.LLMModel
 
 class MemoryCoreTest {
     @Test
@@ -148,7 +149,10 @@ class MemoryCoreTest {
             )
         )
 
-        val created = fixture.capture(scopes = listOf(globalScope(), projectScope()))
+        val created = fixture.capture(
+            userMessage = "Before implementing the feature, write tests first.",
+            scopes = listOf(globalScope(), projectScope()),
+        )
         val details = fixture.repository.getFactDetails(created.single().id)
 
         assertNotNull(details)
@@ -173,6 +177,139 @@ class MemoryCoreTest {
         )
 
         assertTrue(remembered.any { it.title == "User prefers Kotlin" && it.createdBy == "writer" })
+    }
+
+    @Test
+    fun `capture stores one grounded turn event for multiple facts`() = runTest {
+        val fixture = createFixture(
+            writer = FixedWriter(
+                candidate(
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Project ownership",
+                    body = "The user owns project Alpha.",
+                    requestedScope = RequestedMemoryScope.GLOBAL,
+                    evidenceText = "I own project Alpha.",
+                ),
+                candidate(
+                    kind = MemoryFactKind.PROJECT_DECISION,
+                    title = "Project storage",
+                    body = "Project Alpha uses SQLite.",
+                    scope = projectScope(),
+                    evidenceText = "Project Alpha uses SQLite.",
+                ),
+            )
+        )
+        val input = memoryCapture(
+            userMessage = "I own project Alpha.",
+            primaryScope = projectScope(),
+            scopes = listOf(globalScope(), projectScope()),
+        ).copy(
+            evidence = listOf(
+                CompletedTurnEvidence(
+                    kind = CompletedTurnEvidenceKind.TOOL_OUTPUT,
+                    sourceName = "ProjectInspector",
+                    text = "Project Alpha uses SQLite.",
+                )
+            )
+        )
+
+        val created = fixture.captureService.captureAfterTurn(input)
+        val details = created.map { fixture.repository.getFactDetails(it.id) ?: error("missing details") }
+
+        assertEquals(2, created.size)
+        assertEquals(1, details.flatMap { it.evidence }.map { it.sourceEvent.id }.distinct().size)
+        val sourceText = details.first().evidence.single().sourceEvent.text
+        assertTrue(sourceText.contains("[USER]"))
+        assertTrue(sourceText.contains("I own project Alpha."))
+        assertTrue(sourceText.contains("[TOOL_OUTPUT source=ProjectInspector]"))
+        assertTrue(sourceText.contains("Project Alpha uses SQLite."))
+        assertEquals(
+            setOf("I own project Alpha.", "Project Alpha uses SQLite."),
+            details.map { it.evidence.single().evidence.evidenceText }.toSet(),
+        )
+        assertEquals(1, countRows(fixture.dbPath, "memory_source_events", "source_type = 'turn'"))
+    }
+
+    @Test
+    fun `capture grounds durable facts in user or tool evidence and synthesis only in session episodes`() = runTest {
+        val sessionScope = MemoryScope.session(MemorySessionId("chat-1"))
+        val fixture = createFixture(
+            writer = FixedWriter(
+                candidate(
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Assistant claim",
+                    body = "Assistant-only global claim.",
+                    requestedScope = RequestedMemoryScope.GLOBAL,
+                    evidenceText = "Assistant-only global claim.",
+                ),
+                candidate(
+                    kind = MemoryFactKind.EPISODE_NOTE,
+                    title = "Working state",
+                    body = "Assistant-only working state.",
+                    scope = sessionScope,
+                    evidenceText = "Assistant-only working state.",
+                ),
+                candidate(
+                    kind = MemoryFactKind.SEMANTIC,
+                    title = "Fabricated claim",
+                    body = "This was never observed.",
+                    requestedScope = RequestedMemoryScope.GLOBAL,
+                    evidenceText = "This was never observed.",
+                ),
+            )
+        )
+        val input = memoryCapture(
+            userMessage = "Continue the task.",
+            primaryScope = sessionScope,
+            scopes = listOf(globalScope(), sessionScope),
+        ).copy(
+            evidence = listOf(
+                CompletedTurnEvidence(CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS, text = "Assistant-only global claim."),
+                CompletedTurnEvidence(CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS, text = "Assistant-only working state."),
+            )
+        )
+
+        val created = fixture.captureService.captureAfterTurn(input)
+
+        assertEquals(listOf("Working state"), created.map { it.title })
+        assertEquals(sessionScope, created.single().scope)
+        assertEquals(MemoryFactKind.EPISODE_NOTE, created.single().kind)
+    }
+
+    @Test
+    fun `capture retries writer and avoids explicit fallback duplication`() = runTest {
+        val candidate = candidate(
+            kind = MemoryFactKind.SEMANTIC,
+            title = "Concise replies",
+            body = "The user prefers concise replies.",
+            requestedScope = RequestedMemoryScope.GLOBAL,
+            evidenceText = "I prefer concise replies.",
+        )
+        val retryingWriter = FlakyWriter(2, candidate)
+        val retryFixture = createFixture(writer = retryingWriter)
+
+        val retried = retryFixture.capture(userMessage = "I prefer concise replies.")
+
+        assertEquals(3, retryingWriter.callCount)
+        assertEquals(listOf("Concise replies"), retried.map { it.title })
+
+        val explicitWriter = FixedWriter(candidate.copy(evidenceText = "Remember that I prefer concise replies."))
+        val explicitFixture = createFixture(writer = explicitWriter)
+        val explicit = explicitFixture.capture(userMessage = "Remember that I prefer concise replies.")
+
+        assertEquals(1, explicit.size)
+        assertEquals("Concise replies", explicit.single().title)
+    }
+
+    @Test
+    fun `capture propagates implicit writer failure after three attempts`() = runTest {
+        val writer = FlakyWriter(failures = Int.MAX_VALUE)
+        val fixture = createFixture(writer = writer)
+
+        assertFailsWith<MemoryWriterException> {
+            fixture.capture(userMessage = "I prefer concise replies.")
+        }
+        assertEquals(3, writer.callCount)
     }
 
     @Test
@@ -251,7 +388,11 @@ class MemoryCoreTest {
             )
         )
 
-        val chatFact = fixture.capture(primaryScope = chatScope("chat-2"), scopes = listOf(chatScope("chat-2"))).single()
+        val chatFact = fixture.capture(
+            userMessage = "Use Postgres in this chat only.",
+            primaryScope = chatScope("chat-2"),
+            scopes = listOf(chatScope("chat-2")),
+        ).single()
 
         assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(projectFact.id)?.status)
         assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(chatFact.id)?.status)
@@ -612,6 +753,20 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `disabling dreamer clears stale maintenance error`() = runTest {
+        val dbPath = Files.createTempDirectory("souz-memory-disabled-test-").resolve("memory.db")
+        val settings = InMemoryMemoryMaintenanceSettingsStore().apply {
+            put("MEMORY_MAINTENANCE_LAST_ERROR_CODE", "IllegalStateException")
+        }
+        val controller = DesktopMemoryMaintenanceController(dbPath, settings)
+
+        val status = controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.OFF))
+
+        assertNull(status.lastErrorCode)
+        assertEquals(MemoryMaintenanceBlockReason.DREAMER_DISABLED, status.blockedReason)
+    }
+
+    @Test
     fun `maintenance archives legacy chat facts and completes legacy job`() = runTest {
         val dbPath = Files.createTempDirectory("souz-memory-maintenance-test-").resolve("memory.db")
         seedLegacyV1MemoryDb(dbPath)
@@ -633,7 +788,6 @@ class MemoryCoreTest {
         assertEquals(0, countRows(dbPath, "memory_maintenance_jobs", "status = 'PENDING'"))
         assertEquals(1, countRows(dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
         assertEquals(0, countRows(dbPath, "memory_maintenance_jobs", "status = 'BLOCKED'"))
-        assertEquals(1, countRows(dbPath, "memory_operation_log", "type = 'MAINTENANCE'"))
         assertNotNull(status.lastAttemptedAt)
         assertNotNull(status.lastCompletedAt)
     }
@@ -685,12 +839,137 @@ class MemoryCoreTest {
         assertEquals("Memory rollout boundary", replacement.title)
         assertEquals("dreamer", replacement.createdBy)
         assertEquals(sourceEventIds.toSet(), replacementDetails?.evidence?.map { it.sourceEvent.id }?.toSet())
+        assertTrue(replacementDetails?.evidence?.all { !it.evidence.evidenceText.isNullOrBlank() } == true)
         assertEquals(
             setOf(first.id, second.id),
             dreamerSupersededFactIds(fixture.dbPath, replacement.id),
         )
         assertEquals(1, countRows(fixture.dbPath, "memory_index_jobs", "fact_id = '${replacement.id}'"))
         assertEquals(1, countRows(fixture.dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
+    }
+
+    @Test
+    fun `dreamer rejects replacement backed by only one source fact`() = runTest {
+        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
+        val first = fixture.createManual(title = "First", body = "First durable project fact.", scope = projectScope())
+        val second = fixture.createManual(title = "Second", body = "Second durable project fact.", scope = projectScope())
+        val firstSource = fixture.repository.getFactDetails(first.id)?.evidence?.single()?.sourceEvent?.id
+            ?: error("missing source")
+        val controller = DesktopMemoryMaintenanceController(
+            dbPath = fixture.dbPath,
+            settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
+            worker = MemoryMaintenanceWorker(
+                dbPath = fixture.dbPath,
+                consolidator = FixedCandidatesMemoryConsolidator(
+                    MemoryConsolidationCandidate(
+                        kind = MemoryFactKind.PROJECT_DECISION,
+                        title = "Partial replacement",
+                        body = "First project fact.",
+                        canonicalKey = null,
+                        confidence = 0.9f,
+                        sourceFactIds = listOf(first.id),
+                        evidenceSourceEventIds = listOf(firstSource),
+                    )
+                ),
+            ),
+        )
+        controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY))
+
+        controller.runNow()
+
+        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(first.id)?.status)
+        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(second.id)?.status)
+        assertEquals(0, countRows(fixture.dbPath, "memory_facts", "created_by = 'dreamer'"))
+    }
+
+    @Test
+    fun `dreamer replaces duplicate subset and preserves unrelated region facts`() = runTest {
+        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
+        val scope = projectScope()
+        val first = fixture.createManual(title = "Same target", body = "The project targets desktop users.", scope = scope)
+        val second = fixture.createManual(title = "Desktop target", body = "Desktop users are the project target.", scope = scope)
+        val unrelated = fixture.createManual(title = "Storage", body = "The project stores data in SQLite.", scope = scope)
+        val sources = listOf(first, second).map { fact ->
+            fixture.repository.getFactDetails(fact.id)?.evidence?.single()?.sourceEvent?.id
+                ?: error("missing source")
+        }
+        val controller = DesktopMemoryMaintenanceController(
+            dbPath = fixture.dbPath,
+            settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
+            worker = MemoryMaintenanceWorker(
+                dbPath = fixture.dbPath,
+                consolidator = FixedCandidatesMemoryConsolidator(
+                    MemoryConsolidationCandidate(
+                        kind = MemoryFactKind.PROJECT_DECISION,
+                        title = "Desktop target",
+                        body = "The project targets desktop users.",
+                        canonicalKey = null,
+                        confidence = 0.9f,
+                        sourceFactIds = listOf(first.id, second.id),
+                        evidenceSourceEventIds = sources,
+                    )
+                ),
+            ),
+        )
+        controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY))
+
+        controller.runNow()
+
+        assertEquals(MemoryFactStatus.RETIRED, fixture.repository.getFact(first.id)?.status)
+        assertEquals(MemoryFactStatus.RETIRED, fixture.repository.getFact(second.id)?.status)
+        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(unrelated.id)?.status)
+        assertEquals(1, countRows(fixture.dbPath, "memory_facts", "created_by = 'dreamer' and status = 'ACTIVE'"))
+    }
+
+    @Test
+    fun `dreamer defers failed job and succeeds on a later retry`() = runTest {
+        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
+        val first = fixture.createManual(title = "First", body = "First durable project fact.", scope = projectScope())
+        val second = fixture.createManual(title = "Second", body = "Second durable project fact.", scope = projectScope())
+        val consolidator = FailingOnceMemoryConsolidator()
+        val settings = InMemoryMemoryMaintenanceSettingsStore().apply {
+            put("MEMORY_MAINTENANCE_LAST_ERROR_CODE", "IllegalStateException")
+        }
+        val controller = DesktopMemoryMaintenanceController(
+            dbPath = fixture.dbPath,
+            settingsStore = settings,
+            worker = MemoryMaintenanceWorker(fixture.dbPath, consolidator),
+        )
+        controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY))
+
+        val deferred = controller.runNow()
+
+        assertNull(deferred.lastErrorCode)
+        assertEquals(1, countRows(fixture.dbPath, "memory_maintenance_jobs", "status = 'PENDING' and attempt_count = 1"))
+        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(first.id)?.status)
+        assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(second.id)?.status)
+
+        val completed = controller.runNow()
+
+        assertNull(completed.lastErrorCode)
+        assertEquals(2, consolidator.callCount)
+        assertEquals(1, countRows(fixture.dbPath, "memory_facts", "created_by = 'dreamer' and status = 'ACTIVE'"))
+        assertEquals(1, countRows(fixture.dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
+    }
+
+    @Test
+    fun `background dreamer respects retry backoff`() = runTest {
+        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
+        fixture.createManual(title = "First", body = "First durable project fact.", scope = projectScope())
+        fixture.createManual(title = "Second", body = "Second durable project fact.", scope = projectScope())
+        val consolidator = FailingOnceMemoryConsolidator()
+        val controller = DesktopMemoryMaintenanceController(
+            dbPath = fixture.dbPath,
+            settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
+            worker = MemoryMaintenanceWorker(fixture.dbPath, consolidator),
+        )
+        controller.savePreferences(MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY))
+        controller.runNow()
+
+        DesktopMemoryMaintenanceBackgroundRunner(controller, this).tick()
+
+        assertEquals(1, consolidator.callCount)
+        assertEquals(1, countRows(fixture.dbPath, "memory_maintenance_jobs", "status = 'PENDING' and attempt_count = 1"))
     }
 
     @Test
@@ -746,16 +1025,20 @@ class MemoryCoreTest {
         assertEquals(MemoryFactStatus.ACTIVE, fixture.repository.getFact(second.id)?.status)
         assertEquals(0, countRows(fixture.dbPath, "memory_facts", "created_by = 'dreamer'"))
         assertEquals(1, countRows(fixture.dbPath, "memory_maintenance_jobs", "status = 'DONE'"))
-        assertEquals(1, countRows(fixture.dbPath, "memory_operation_log", "reason like '%quality_rejected%'"))
     }
 
     @Test
-    fun `retrieving durable facts queues dreamer region but session facts do not`() = runTest {
+    fun `retrieving durable facts queues dreamer neighborhood but session facts do not`() = runTest {
         val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
         val projectFact = fixture.createManual(
             scope = projectScope(),
             title = "Dreamer retrieval candidate",
             body = "Dreamer should revisit retrieved durable project facts.",
+        )
+        fixture.createManual(
+            scope = projectScope(),
+            title = "Related project fact",
+            body = "Dreamer needs at least two durable facts to compare.",
         )
         val sessionFact = fixture.createManual(
             scope = MemoryScope.session(MemorySessionId("chat-1")),
@@ -782,6 +1065,63 @@ class MemoryCoreTest {
                 "cluster_key like '%session%'",
             )
         )
+    }
+
+    @Test
+    fun `dreamer loads bounded semantic neighborhood around retrieved anchor`() = runTest {
+        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
+        val scope = projectScope()
+        val anchor = fixture.createManual("Career target", "Work at an AI lab.", scope)
+        val duplicate = fixture.createManual("AI lab career", "The career target is an AI lab.", scope)
+        val unrelated = (1..9).map { index ->
+            fixture.createManual("Unrelated $index", "Independent fact $index.", scope)
+        }
+        fixture.repository.replaceEmbedding(
+            anchor.id,
+            fixture.embedder.model,
+            floatArrayOf(1f, 0f),
+            anchor.contentHash,
+        )
+        fixture.repository.replaceEmbedding(
+            duplicate.id,
+            fixture.embedder.model,
+            floatArrayOf(0.99f, 0.01f),
+            duplicate.contentHash,
+        )
+        unrelated.forEachIndexed { index, fact ->
+            fixture.repository.replaceEmbedding(
+                fact.id,
+                fixture.embedder.model,
+                floatArrayOf(0f, 1f + index),
+                fact.contentHash,
+            )
+        }
+        clearMaintenanceJobs(fixture.dbPath)
+        fixture.repository.recordRetrieval(listOf(anchor.id))
+        val consolidator = RecordingMemoryConsolidator()
+        val controller = DesktopMemoryMaintenanceController(
+            dbPath = fixture.dbPath,
+            settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
+            worker = MemoryMaintenanceWorker(
+                fixture.dbPath,
+                consolidator,
+                embeddingModel = fixture.embedder.model,
+            ),
+        )
+        controller.savePreferences(
+            MemoryMaintenancePreferences(
+                mode = MemoryMaintenanceMode.LOCAL_ONLY,
+                modelAlias = LLMModel.LocalGemma4_E2B_It.alias,
+            )
+        )
+
+        controller.runNow()
+
+        val input = consolidator.inputs.single()
+        assertEquals(8, input.facts.size)
+        assertEquals(anchor.id, input.facts.first().fact.id)
+        assertTrue(input.facts.any { it.fact.id == duplicate.id })
+        assertEquals(LLMModel.LocalGemma4_E2B_It.alias, input.modelAlias)
     }
 
     @Test
@@ -834,7 +1174,7 @@ class MemoryCoreTest {
     }
 
     @Test
-    fun `mismatched embedding dimension is ignored and treated as missing`() = runTest {
+    fun `mismatched embedding dimension is ignored`() = runTest {
         val fixture = createFixture()
         val fact = fixture.createManual(
             title = "SQLite memory",
@@ -854,19 +1194,11 @@ class MemoryCoreTest {
             queryEmbedding = queryEmbedding,
             limit = 5,
         )
-        val missing = fixture.repository.getFactsWithoutEmbedding(
-            scopes = listOf(globalScope()),
-            model = fixture.embedder.model,
-            expectedDimension = queryEmbedding.size,
-            limit = 5,
-        )
-
         assertTrue(hits.none { it.fact.id == fact.id })
-        assertEquals(listOf(fact.id), missing.map { it.id })
     }
 
     @Test
-    fun `stale embedding content hash is ignored and treated as missing`() = runTest {
+    fun `stale embedding content hash is ignored`() = runTest {
         val fixture = createFixture()
         val fact = fixture.createManual(
             title = "SQLite memory",
@@ -886,15 +1218,7 @@ class MemoryCoreTest {
             queryEmbedding = queryEmbedding,
             limit = 5,
         )
-        val missing = fixture.repository.getFactsWithoutEmbedding(
-            scopes = listOf(globalScope()),
-            model = fixture.embedder.model,
-            expectedDimension = queryEmbedding.size,
-            limit = 5,
-        )
-
         assertTrue(hits.none { it.fact.id == fact.id })
-        assertEquals(listOf(fact.id), missing.map { it.id })
     }
 
     @Test
@@ -953,7 +1277,7 @@ class MemoryCoreTest {
         )
         fixture.embedder.mode = FakeEmbeddingClient.Mode.THROW_ON_DOCUMENT
 
-        val created = fixture.capture()
+        val created = fixture.capture(userMessage = "Before implementing the feature, write tests first.")
 
         assertEquals(1, created.size)
         assertEquals(1, fixture.countRows("memory_source_events"))
@@ -1150,6 +1474,13 @@ class MemoryCoreTest {
             connection.createStatement().use { statement ->
                 statement.executeUpdate("delete from memory_maintenance_jobs")
             }
+        }
+    }
+
+    private fun executeSql(dbPath: Path, sql: String) {
+        Class.forName("org.sqlite.JDBC")
+        DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+            connection.createStatement().use { statement -> statement.executeUpdate(sql) }
         }
     }
 
@@ -1389,6 +1720,23 @@ class MemoryCoreTest {
             candidates.toList()
     }
 
+    private class FlakyWriter(
+        private var failures: Int,
+        private vararg val candidates: MemoryFactCandidate,
+    ) : MemoryWriter {
+        var callCount: Int = 0
+            private set
+
+        override suspend fun extractCandidates(input: MemoryCaptureInput): List<MemoryFactCandidate> {
+            callCount++
+            if (failures > 0) {
+                failures--
+                throw MemoryWriterException("writer unavailable")
+            }
+            return candidates.toList()
+        }
+    }
+
     private class BlockingWriter(
         private vararg val candidates: MemoryFactCandidate,
     ) : MemoryWriter {
@@ -1414,9 +1762,33 @@ class MemoryCoreTest {
                     canonicalKey = "project.decision.memory.rollout.boundary",
                     confidence = 0.9f,
                     importance = 0.9f,
+                    sourceFactIds = input.facts.map { it.fact.id },
                     evidenceSourceEventIds = sourceEventIds,
                 )
             )
+    }
+
+    private class FailingOnceMemoryConsolidator : MemoryConsolidator {
+        var callCount: Int = 0
+            private set
+
+        override suspend fun consolidate(input: MemoryConsolidationInput): List<MemoryConsolidationCandidate> {
+            callCount++
+            if (callCount == 1) throw MemoryConsolidationException("temporary failure")
+            return listOf(
+                MemoryConsolidationCandidate(
+                    kind = MemoryFactKind.PROJECT_DECISION,
+                    title = "Combined",
+                    body = "Compact project facts.",
+                    canonicalKey = null,
+                    confidence = 0.9f,
+                    sourceFactIds = input.facts.map { it.fact.id },
+                    evidenceSourceEventIds = input.facts.flatMap { details ->
+                        details.evidence.map { it.sourceEvent.id }
+                    },
+                )
+            )
+        }
     }
 
     private class FixedCandidatesMemoryConsolidator(
@@ -1424,6 +1796,15 @@ class MemoryCoreTest {
     ) : MemoryConsolidator {
         override suspend fun consolidate(input: MemoryConsolidationInput): List<MemoryConsolidationCandidate> =
             candidates.toList()
+    }
+
+    private class RecordingMemoryConsolidator : MemoryConsolidator {
+        val inputs = mutableListOf<MemoryConsolidationInput>()
+
+        override suspend fun consolidate(input: MemoryConsolidationInput): List<MemoryConsolidationCandidate> {
+            inputs += input
+            return emptyList()
+        }
     }
 
     private class ReplacementWriter(private val scope: MemoryScope) : MemoryWriter {

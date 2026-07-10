@@ -191,6 +191,11 @@ enum class VoiceRecognitionModel(
 }
 
 object LLMRequest {
+    enum class LocalOutputFormat {
+        ENVELOPE,
+        RAW,
+    }
+
     data class Chat(
         val model: String = LLMModel.Max.alias,
         val messages: List<Message>,
@@ -201,6 +206,9 @@ object LLMRequest {
         val stream: Boolean = false,
         val maxTokens: Int = DEFAULT_MAX_TOKENS,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
+        @get:JsonIgnore
+        @field:JsonIgnore
+        val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
     ) {
         /**
          * OpenAI expects function to provide call IDs, but Giga and Qwen does not.

@@ -33,6 +33,7 @@ import ru.souz.memory.MemoryMaintenanceStatus
 import ru.souz.memory.MemoryScope
 import ru.souz.memory.MemoryService
 import ru.souz.memory.MemorySourceEvent
+import ru.souz.llms.LLMModel
 import java.time.Instant
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -336,28 +337,54 @@ class MemoryViewModelTest {
     }
 
     @Test
-    fun `dreamer run now preserves loaded max clusters before running`() = runTest(dispatcher) {
+    fun `dreamer run outcome does not report stale completion after retry`() {
+        val attemptedAt = Instant.parse("2026-07-10T20:04:06Z")
+        val staleCompletion = Instant.parse("2026-06-22T09:20:07Z")
+
+        val retry = MemoryMaintenanceUiState(
+            preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+            pendingClusters = 1,
+            blockedReason = null,
+            lastAttemptedAt = attemptedAt,
+            lastCompletedAt = staleCompletion,
+        )
+        val completed = retry.copy(
+            pendingClusters = 0,
+            lastCompletedAt = attemptedAt.plusSeconds(1),
+        )
+        val unchanged = retry.copy(pendingClusters = 0)
+
+        assertEquals(MemoryMaintenanceRunOutcome.RETRY_SCHEDULED, retry.runOutcome)
+        assertEquals(MemoryMaintenanceRunOutcome.COMPLETED, completed.runOutcome)
+        assertEquals(MemoryMaintenanceRunOutcome.NO_CHANGES, unchanged.runOutcome)
+    }
+
+    @Test
+    fun `dreamer model selection is persisted`() = runTest(dispatcher) {
         val service = mockk<MemoryService>()
         coEvery { service.listFacts(any()) } returns emptyList()
         val controller = FakeMaintenanceController(
             initialStatus = MemoryMaintenanceStatus(
-                preferences = MemoryMaintenancePreferences(
-                    mode = MemoryMaintenanceMode.LOCAL_ONLY,
-                    maxClustersPerRun = 4,
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                availableModels = listOf(
+                    LLMModel.LocalQwen3_4B_Instruct_2507,
+                    LLMModel.LocalGemma4_E2B_It,
                 ),
-                pendingClusters = 1,
-                blockedReason = null,
+                blockedReason = MemoryMaintenanceBlockReason.NO_PENDING_CLUSTERS,
             )
         )
-
         val viewModel = createViewModel(service, controller)
         viewModel.onAction(MemoryAction.Load)
         advanceUntilIdle()
-        viewModel.onAction(MemoryAction.RunDreamerNow)
+
+        viewModel.onAction(MemoryAction.SelectDreamerModel(LLMModel.LocalGemma4_E2B_It.alias))
         advanceUntilIdle()
 
-        assertEquals(4, controller.savedPreferences?.maxClustersPerRun)
-        assertEquals(1, controller.runNowCount)
+        assertEquals(LLMModel.LocalGemma4_E2B_It.alias, controller.savedPreferences?.modelAlias)
+        assertEquals(
+            listOf(LLMModel.LocalQwen3_4B_Instruct_2507, LLMModel.LocalGemma4_E2B_It),
+            viewModel.uiState.value.maintenance.availableModels,
+        )
     }
 
     @Test
@@ -405,29 +432,6 @@ class MemoryViewModelTest {
 
         assertEquals(0, controller.runNowCount)
         assertFalse(viewModel.uiState.value.maintenance.canRunNow)
-    }
-
-    @Test
-    fun `dreamer settings preserve max clusters limit`() = runTest(dispatcher) {
-        val service = mockk<MemoryService>()
-        coEvery { service.listFacts(any()) } returns emptyList()
-        val controller = FakeMaintenanceController(
-            initialStatus = MemoryMaintenanceStatus(
-                preferences = MemoryMaintenancePreferences(
-                    mode = MemoryMaintenanceMode.OFF,
-                    maxClustersPerRun = 4,
-                ),
-                blockedReason = MemoryMaintenanceBlockReason.DREAMER_DISABLED,
-            )
-        )
-
-        val viewModel = createViewModel(service, controller)
-        viewModel.onAction(MemoryAction.Load)
-        advanceUntilIdle()
-        viewModel.onAction(MemoryAction.SelectDreamerMode(MemoryMaintenanceMode.LOCAL_ONLY))
-        advanceUntilIdle()
-
-        assertEquals(4, controller.savedPreferences?.maxClustersPerRun)
     }
 
     @Test

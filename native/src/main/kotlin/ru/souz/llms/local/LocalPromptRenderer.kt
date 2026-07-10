@@ -8,6 +8,7 @@ import ru.souz.llms.restJsonMapper
 private const val CLASSIFICATION_RESPONSE_FORMAT_MARKER = "CATEGORY1,CATEGORY2 0-100"
 
 internal fun LLMRequest.Chat.prefersPlainTextLocalOutput(): Boolean {
+    if (localOutputFormat == LLMRequest.LocalOutputFormat.RAW) return true
     if (functions.isNotEmpty()) return false
 
     return messages.any { message ->

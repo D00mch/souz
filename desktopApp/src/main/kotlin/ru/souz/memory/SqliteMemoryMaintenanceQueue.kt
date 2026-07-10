@@ -5,6 +5,7 @@ import java.sql.ResultSet
 import java.time.Instant
 
 internal fun Connection.enqueueDreamerRegionIfNeeded(
+    factId: String,
     ownerId: MemoryOwnerId,
     scope: MemoryScope,
     status: MemoryFactStatus,
@@ -14,6 +15,7 @@ internal fun Connection.enqueueDreamerRegionIfNeeded(
 ) {
     if (status != MemoryFactStatus.ACTIVE || createdBy == "dreamer") return
     if (retention != MemoryRetention.DURABLE || scope.type !in DREAMER_DURABLE_SCOPE_TYPES) return
+    if (countActiveDurableFacts(ownerId, scope) < 2) return
     val now = Instant.now().toString()
     prepareStatement(
         """
@@ -38,13 +40,12 @@ internal fun Connection.enqueueDreamerRegionIfNeeded(
                 when trim(memory_maintenance_jobs.reasons) = '' then excluded.reasons
                 else memory_maintenance_jobs.reasons || ',' || excluded.reasons
             end,
+            attempt_count = 0,
             next_attempt_at = excluded.next_attempt_at,
-            lease_owner = null,
-            lease_expires_at = null,
             updated_at = excluded.updated_at
         """.trimIndent()
     ).use { statement ->
-        statement.setString(1, dreamerRegionMaintenanceClusterKey(ownerId, scope))
+        statement.setString(1, dreamerRegionMaintenanceClusterKey(ownerId, scope, factId))
         statement.setString(2, ownerId.value)
         statement.setInt(3, dreamerPriority(scope))
         statement.setString(4, dirtyAt.toString())
@@ -56,6 +57,21 @@ internal fun Connection.enqueueDreamerRegionIfNeeded(
     }
 }
 
+private fun Connection.countActiveDurableFacts(ownerId: MemoryOwnerId, scope: MemoryScope): Int =
+    prepareStatement(
+        """
+        select count(*) from memory_facts
+        where owner_id = ? and scope_type = ? and scope_id = ? and status = ? and retention = ?
+        """.trimIndent()
+    ).use { statement ->
+        statement.setString(1, ownerId.value)
+        statement.setString(2, scope.type)
+        statement.setString(3, scope.id)
+        statement.setString(4, MemoryFactStatus.ACTIVE.name)
+        statement.setString(5, MemoryRetention.DURABLE.name)
+        statement.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else 0 }
+    }
+
 internal fun Connection.enqueueDreamerRegionsForRetrievedFacts(
     factIds: List<String>,
     retrievedAt: Instant,
@@ -63,7 +79,7 @@ internal fun Connection.enqueueDreamerRegionsForRetrievedFacts(
     if (factIds.isEmpty()) return
     prepareStatement(
         """
-        select owner_id, scope_type, scope_id, status, retention, created_by
+        select id, owner_id, scope_type, scope_id, status, retention, created_by
         from memory_facts
         where id in (${placeholders(factIds.size)})
         """.trimIndent()
@@ -72,6 +88,7 @@ internal fun Connection.enqueueDreamerRegionsForRetrievedFacts(
         statement.executeQuery().use { rs ->
             while (rs.next()) {
                 enqueueDreamerRegionIfNeeded(
+                    factId = rs.getString("id"),
                     ownerId = MemoryOwnerId(rs.getString("owner_id") ?: LEGACY_OWNER_ID),
                     scope = MemoryScope(
                         type = rs.getString("scope_type"),

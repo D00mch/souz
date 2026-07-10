@@ -79,9 +79,9 @@ class SqliteMemoryRepository(
                 """
                 insert into memory_facts(
                     id, owner_id, scope_type, scope_id, kind, title, body, slot_key, canonical_key, status,
-                    validity, retention, sensitivity, confidence, importance, pinned, created_by, version,
-                    content_hash, created_at, updated_at, last_observed_at, supersedes_fact_id
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    retention, confidence, importance, pinned, created_by, content_hash, created_at, updated_at,
+                    supersedes_fact_id
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, id)
@@ -94,19 +94,15 @@ class SqliteMemoryRepository(
                 statement.setString(8, canonicalKey)
                 statement.setString(9, canonicalKey)
                 statement.setString(10, input.status.name)
-                statement.setString(11, input.validity.name)
-                statement.setString(12, input.retention.name)
-                statement.setString(13, input.sensitivity.name)
-                statement.setFloat(14, input.confidence)
-                statement.setFloat(15, input.importance)
-                statement.setInt(16, if (input.pinned) 1 else 0)
-                statement.setString(17, input.createdBy)
-                statement.setLong(18, input.version)
-                statement.setString(19, input.contentHash)
-                statement.setString(20, input.createdAt.toString())
-                statement.setString(21, input.updatedAt.toString())
-                statement.setString(22, input.lastObservedAt.toString())
-                statement.setString(23, input.supersedesFactId)
+                statement.setString(11, input.retention.name)
+                statement.setFloat(12, input.confidence)
+                statement.setFloat(13, input.importance)
+                statement.setInt(14, if (input.pinned) 1 else 0)
+                statement.setString(15, input.createdBy)
+                statement.setString(16, input.contentHash)
+                statement.setString(17, input.createdAt.toString())
+                statement.setString(18, input.updatedAt.toString())
+                statement.setString(19, input.supersedesFactId)
                 statement.executeUpdate()
             }
             if (evidence.isNotEmpty()) {
@@ -128,6 +124,7 @@ class SqliteMemoryRepository(
             }
             upsertEmbedding(id, embedding, embeddingModel, input.contentHash)
             enqueueDreamerRegionIfNeeded(
+                factId = id,
                 ownerId = input.ownerId,
                 scope = scope,
                 status = input.status,
@@ -300,15 +297,11 @@ class SqliteMemoryRepository(
                     body = ?,
                     slot_key = ?,
                     canonical_key = ?,
-                    validity = ?,
                     retention = ?,
-                    sensitivity = ?,
                     confidence = ?,
                     importance = ?,
                     pinned = ?,
-                    version = ?,
                     content_hash = ?,
-                    last_observed_at = ?,
                     updated_at = ?,
                     supersedes_fact_id = ?
                 where id = ? and updated_at = ?
@@ -322,19 +315,15 @@ class SqliteMemoryRepository(
                 statement.setString(6, fact.body)
                 statement.setString(7, canonicalKey)
                 statement.setString(8, canonicalKey)
-                statement.setString(9, fact.validity.name)
-                statement.setString(10, fact.retention.name)
-                statement.setString(11, fact.sensitivity.name)
-                statement.setFloat(12, fact.confidence)
-                statement.setFloat(13, fact.importance)
-                statement.setInt(14, if (fact.pinned) 1 else 0)
-                statement.setLong(15, fact.version)
-                statement.setString(16, fact.contentHash)
-                statement.setString(17, fact.lastObservedAt.toString())
-                statement.setString(18, fact.updatedAt.toString())
-                statement.setString(19, fact.supersedesFactId)
-                statement.setString(20, fact.id)
-                statement.setString(21, expectedUpdatedAt.toString())
+                statement.setString(9, fact.retention.name)
+                statement.setFloat(10, fact.confidence)
+                statement.setFloat(11, fact.importance)
+                statement.setInt(12, if (fact.pinned) 1 else 0)
+                statement.setString(13, fact.contentHash)
+                statement.setString(14, fact.updatedAt.toString())
+                statement.setString(15, fact.supersedesFactId)
+                statement.setString(16, fact.id)
+                statement.setString(17, expectedUpdatedAt.toString())
                 statement.executeUpdate()
             }
             if (updatedRows == 0) {
@@ -342,6 +331,7 @@ class SqliteMemoryRepository(
             }
             upsertEmbedding(fact.id, embedding, embeddingModel, fact.contentHash)
             enqueueDreamerRegionIfNeeded(
+                factId = fact.id,
                 ownerId = fact.ownerId,
                 scope = scope,
                 status = fact.status,
@@ -391,52 +381,6 @@ class SqliteMemoryRepository(
 
     override suspend fun deleteSourceEventIfUnused(sourceEventId: String) =
         withConnection { it.deleteSourceEventIfUnused(sourceEventId) }
-
-    override suspend fun getFactsWithoutEmbedding(
-        scopes: List<MemoryScope>,
-        model: String,
-        expectedDimension: Int?,
-        limit: Int,
-    ): List<MemoryFact> {
-        if (scopes.isEmpty()) return emptyList()
-        return withConnection { connection ->
-            val candidateScopes = scopes.compatibilityScopes()
-            val scopeClause = candidateScopes.joinToString(" or ") { "(f.scope_type = ? and f.scope_id = ?)" }
-            val staleClause = "e.fact_id is null or e.content_hash is null or e.content_hash != f.content_hash"
-            val dimensionClause = if (expectedDimension != null) {
-                "and ($staleClause or e.dimension != ?)"
-            } else {
-                "and ($staleClause)"
-            }
-            connection.prepareStatement(
-                """
-                select f.* from memory_facts f
-                left join memory_fact_embeddings e on e.fact_id = f.id and e.embedding_model = ?
-                where f.status = ?
-                  $dimensionClause
-                  and ($scopeClause)
-                limit ?
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, model)
-                statement.setString(2, MemoryFactStatus.ACTIVE.name)
-                var index = 3
-                expectedDimension?.let { statement.setInt(index++, it) }
-                candidateScopes.forEach { scope ->
-                    statement.setString(index++, scope.type)
-                    statement.setString(index++, scope.id)
-                }
-                statement.setInt(index++, limit)
-                statement.executeQuery().use { rs ->
-                    buildList {
-                        while (rs.next()) {
-                            add(rs.toFact())
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     override suspend fun enqueueEmbeddingJob(
         factId: String,
@@ -505,29 +449,6 @@ class SqliteMemoryRepository(
             statement.setString(5, factId)
             statement.setString(6, model)
             statement.setString(7, contentHash)
-            statement.executeUpdate()
-            Unit
-        }
-    }
-
-    override suspend fun recordOperation(
-        factId: String?,
-        ownerId: MemoryOwnerId,
-        type: MemoryOperationType,
-        reason: String,
-    ) = withConnection { connection ->
-        connection.prepareStatement(
-            """
-            insert into memory_operation_log(id, fact_id, owner_id, type, reason, created_at)
-            values (?, ?, ?, ?, ?, ?)
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, UUID.randomUUID().toString())
-            statement.setString(2, factId)
-            statement.setString(3, ownerId.value)
-            statement.setString(4, type.name)
-            statement.setString(5, reason.take(120))
-            statement.setString(6, Instant.now().toString())
             statement.executeUpdate()
             Unit
         }
@@ -622,11 +543,6 @@ class SqliteMemoryRepository(
             }
         }
     }
-
-    override suspend fun findActiveFactBySlotKey(
-        scope: MemoryScope,
-        slotKey: String,
-    ): MemoryFact? = findActiveFactByCanonicalKey(MemoryOwnerId(LEGACY_OWNER_ID), scope, slotKey)
 
     override suspend fun findActiveFactByCanonicalKey(
         ownerId: MemoryOwnerId,
@@ -846,14 +762,11 @@ class SqliteMemoryRepository(
             slotKey = getNullableString("slot_key"),
             canonicalKey = getNullableString("canonical_key"),
             status = MemoryFactStatus.valueOf(getString("status")),
-            validity = enumValueOrDefault(getStringOrDefault("validity", MemoryFactValidity.VALID.name), MemoryFactValidity.VALID),
             retention = enumValueOrDefault(getStringOrDefault("retention", MemoryRetention.DURABLE.name), MemoryRetention.DURABLE),
-            sensitivity = enumValueOrDefault(getStringOrDefault("sensitivity", MemorySensitivity.NORMAL.name), MemorySensitivity.NORMAL),
             confidence = getFloat("confidence"),
             importance = getFloatOrDefault("importance", getFloat("confidence")),
             pinned = getInt("pinned") != 0,
             createdBy = getString("created_by"),
-            version = getLongOrDefault("version", 1L),
             contentHash = getStringOrDefault(
                 "content_hash",
                 stableMemoryContentHash(
@@ -865,7 +778,6 @@ class SqliteMemoryRepository(
             ),
             createdAt = Instant.parse(getString("created_at")),
             updatedAt = Instant.parse(getString("updated_at")),
-            lastObservedAt = Instant.parse(getStringOrDefault("last_observed_at", getString("updated_at"))),
             supersedesFactId = getNullableString("supersedes_fact_id"),
         )
 
@@ -885,9 +797,6 @@ class SqliteMemoryRepository(
 
     private fun ResultSet.getFloatOrDefault(name: String, default: Float): Float =
         if (hasColumn(name)) getFloat(name) else default
-
-    private fun ResultSet.getLongOrDefault(name: String, default: Long): Long =
-        if (hasColumn(name)) getLong(name) else default
 
     private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String, default: T): T =
         enumValues<T>().firstOrNull { it.name == value } ?: default

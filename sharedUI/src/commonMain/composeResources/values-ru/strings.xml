@@ -258,11 +258,13 @@
     <string name="memory_dreamer_title">Dreamer</string>
     <string name="memory_dreamer_mode_off">Выкл</string>
     <string name="memory_dreamer_mode_local">Локально</string>
+    <string name="memory_dreamer_model_auto">Автовыбор модели</string>
     <string name="memory_dreamer_pending_blocked">Ожидают %1$d · Блок %2$d</string>
     <string name="memory_dreamer_run">Запустить</string>
     <string name="memory_dreamer_running">Запуск</string>
-    <string name="memory_dreamer_attempted">Попытка %1$s</string>
-    <string name="memory_dreamer_completed">Выполнено %1$s</string>
+    <string name="memory_dreamer_completed">Готово · %1$s</string>
+    <string name="memory_dreamer_retry">Повтор · %1$s</string>
+    <string name="memory_dreamer_no_changes">Без изменений · %1$s</string>
     <string name="memory_dreamer_error">Ошибка %1$s</string>
     <string name="memory_dreamer_block_disabled">выключен</string>
     <string name="memory_dreamer_block_pending">нет задач</string>

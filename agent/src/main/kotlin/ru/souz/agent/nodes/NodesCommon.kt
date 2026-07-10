@@ -23,7 +23,7 @@ import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.ConversationId
 import ru.souz.memory.MemoryContext
 import ru.souz.memory.MemoryOwnerId
-import ru.souz.memory.MemoryPromptFact
+
 import ru.souz.memory.MemoryRetrievalRequest
 import ru.souz.memory.MemorySessionId
 import ru.souz.memory.NoopConversationMemoryRuntime

@@ -57,6 +57,7 @@ class DesktopConversationMemoryRuntime(
                 scopes = context.allowedRetrievalScopes(),
                 userMessage = input.userMessage,
                 assistantMessage = input.assistantMessage,
+                evidence = input.evidence,
                 conversationId = input.conversationId,
                 userMessageId = input.userMessageId,
                 assistantMessageId = input.assistantMessageId,

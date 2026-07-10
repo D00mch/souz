@@ -3,27 +3,45 @@ package ru.souz.memory
 import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Instant
 import java.util.Base64
+import ru.souz.llms.LLMModel
 
 const val MEMORY_MAINTENANCE_REASON_DREAMER_REGION_REWRITE = "dreamer_region_rewrite"
 const val MEMORY_MAINTENANCE_REASON_LEGACY_CHAT_MIGRATION = "legacy_chat_fact_migration"
 
-fun dreamerRegionMaintenanceClusterKey(ownerId: MemoryOwnerId, scope: MemoryScope): String {
+data class DreamerMaintenanceTarget(
+    val ownerId: MemoryOwnerId,
+    val scope: MemoryScope,
+    val anchorFactId: String? = null,
+)
+
+fun dreamerRegionMaintenanceClusterKey(
+    ownerId: MemoryOwnerId,
+    scope: MemoryScope,
+    anchorFactId: String? = null,
+): String {
     val normalized = scope.normalized()
     return listOf(
         DREAMER_REGION_CLUSTER_PREFIX,
         ownerId.value.toBase64Url(),
         normalized.type.toBase64Url(),
         normalized.id.toBase64Url(),
-    ).joinToString(":")
+    ).let { parts ->
+        anchorFactId?.let { parts + it.toBase64Url() } ?: parts
+    }.joinToString(":")
 }
 
-fun parseDreamerRegionMaintenanceClusterKey(clusterKey: String): Pair<MemoryOwnerId, MemoryScope>? {
+fun parseDreamerRegionMaintenanceClusterKey(clusterKey: String): DreamerMaintenanceTarget? {
     val parts = clusterKey.split(':')
-    if (parts.size != 4 || parts.first() != DREAMER_REGION_CLUSTER_PREFIX) return null
+    if (parts.size !in 4..5 || parts.first() != DREAMER_REGION_CLUSTER_PREFIX) return null
     val owner = parts[1].fromBase64Url() ?: return null
     val type = parts[2].fromBase64Url() ?: return null
     val id = parts[3].fromBase64Url() ?: return null
-    return MemoryOwnerId(owner) to MemoryScope(type, id).normalized()
+    val anchorFactId = parts.getOrNull(4)?.fromBase64Url() ?: if (parts.size == 5) return null else null
+    return DreamerMaintenanceTarget(
+        ownerId = MemoryOwnerId(owner),
+        scope = MemoryScope(type, id).normalized(),
+        anchorFactId = anchorFactId,
+    )
 }
 
 enum class MemoryMaintenanceWorkerState {
@@ -47,6 +65,7 @@ data class MemoryMaintenanceStatus(
     val lastCompletedAt: Instant? = null,
     val blockedReason: MemoryMaintenanceBlockReason? = null,
     val lastErrorCode: String? = null,
+    val availableModels: List<LLMModel> = emptyList(),
 )
 
 interface MemoryMaintenanceController {
@@ -55,6 +74,8 @@ interface MemoryMaintenanceController {
     suspend fun savePreferences(preferences: MemoryMaintenancePreferences): MemoryMaintenanceStatus
 
     suspend fun runNow(): MemoryMaintenanceStatus
+
+    suspend fun runDue(): MemoryMaintenanceStatus = runNow()
 }
 
 object NoopMemoryMaintenanceController : MemoryMaintenanceController {
@@ -62,10 +83,9 @@ object NoopMemoryMaintenanceController : MemoryMaintenanceController {
         MemoryMaintenanceStatus(blockedReason = MemoryMaintenanceBlockReason.DREAMER_DISABLED)
 
     override suspend fun savePreferences(preferences: MemoryMaintenancePreferences): MemoryMaintenanceStatus {
-        val normalized = preferences.normalizedForSupportedMaintenance()
         return MemoryMaintenanceStatus(
-            preferences = normalized,
-            blockedReason = if (normalized.mode == MemoryMaintenanceMode.OFF) {
+            preferences = preferences,
+            blockedReason = if (preferences.mode == MemoryMaintenanceMode.OFF) {
                 MemoryMaintenanceBlockReason.DREAMER_DISABLED
             } else {
                 MemoryMaintenanceBlockReason.NO_PENDING_CLUSTERS

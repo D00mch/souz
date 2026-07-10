@@ -43,6 +43,9 @@ import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.local.LocalModelProfiles
+import ru.souz.llms.local.LocalModelStore
+import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.keys.Keys
 import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
@@ -183,7 +186,18 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton<EmbeddingClient> { LlmEmbeddingClient(instance(), instance()) }
     bindSingleton<MemoryWriter> { LlmMemoryWriter(instance(), instance()) }
-    bindSingleton<MemoryConsolidator> { LlmMemoryConsolidator(instance<LocalChatAPI>(), instance()) }
+    bindSingleton<MemoryConsolidator> {
+        val availability = instance<LocalProviderAvailability>()
+        val modelStore = instance<LocalModelStore>()
+        LlmMemoryConsolidator(instance<LocalChatAPI>(), instance()) {
+            LocalModelProfiles.all
+                .lastOrNull { profile -> profile.gigaModel in availability.availableGigaModels() && modelStore.isPresent(profile) }
+                ?.gigaModel
+                ?.alias
+                ?: availability.defaultGigaModel()?.alias
+                ?: LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias
+        }
+    }
     bindSingleton { MemoryService(instance(), instance()) }
     bindSingleton { MemoryCaptureService(instance(), instance()) }
     bindSingleton<MemoryConversationCleanup>(overrides = true) {
@@ -194,6 +208,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton<MemoryMaintenanceController> {
         val dbPath = instance<SouzPaths>().stateRoot.resolve("memory.db")
+        val availability = instance<LocalProviderAvailability>()
+        val modelStore = instance<LocalModelStore>()
         DesktopMemoryMaintenanceController(
             dbPath = dbPath,
             worker = MemoryMaintenanceWorker(
@@ -201,6 +217,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
                 consolidator = instance(),
                 embeddingModel = instance<EmbeddingClient>().model,
             ),
+            availableModels = {
+                val available = availability.availableGigaModels().toSet()
+                LocalModelProfiles.all
+                    .filter { profile -> profile.gigaModel in available && modelStore.isPresent(profile) }
+                    .map { it.gigaModel }
+            },
         )
     }
     bindSingleton {
