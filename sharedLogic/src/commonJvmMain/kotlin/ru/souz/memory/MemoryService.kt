@@ -595,10 +595,10 @@ class MemoryService(
     private fun String.normalizedSubjectKey(): String? =
         lowercase().normalizedTerms().filter { it.length >= 3 }.take(6).joinToString(".").ifBlank { null }
 
-    private fun String.removeForgetMarkers(): String =
-        replace(Regex("""(?i)\b(forget|delete from memory|delete this memory|remember no longer)\b"""), " ")
-            .replace(Regex("""(?i)\b(забудь|удали из памяти|полностью удали|больше не считай)\b"""), " ")
-            .trim()
+    private fun String.removeForgetMarkers(): String {
+        val command = FORGET_COMMAND.find(this) ?: return trim()
+        return substring(command.range.last + 1).trim()
+    }
 
     private suspend fun <T> withSourceEventCleanup(sourceEventId: String, block: suspend () -> T): T = try {
         block()
@@ -636,3 +636,7 @@ class MemoryService(
         appendLine("scope=${scope.type}:${scope.id}")
     }
 }
+
+private val FORGET_COMMAND = Regex(
+    """(?iuU)\b(?:forget(?:\s+about)?(?:\s+(?:that|what|this|it|everything|all\s+this))?|delete\s+(?:from\s+memory|this\s+memory)|remember\s+no\s+longer|забудь(?:,\s*что|\s+что|\s+(?:это|вс[её](?:\s+это)?|об\s+этом))?|удали\s+из\s+памяти|полностью\s+удали|больше\s+не\s+считай)\b[\s,:;-]*"""
+)

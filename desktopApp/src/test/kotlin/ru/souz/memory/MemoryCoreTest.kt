@@ -455,6 +455,24 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `explicit forget strips command connectors before exact matching`() = runTest {
+        val fixture = createFixture()
+        val requests = listOf(
+            "I prefer Kotlin" to "forget that I prefer Kotlin",
+            "Career goal" to "forget about Career goal",
+            "Моя карьерная цель" to "забудь, что Моя карьерная цель",
+            "Rule that matters" to "forget that Rule that matters",
+        )
+
+        requests.forEach { (title, request) ->
+            val fact = fixture.createManual(title = title)
+
+            assertEquals(1, fixture.memoryService.forgetFromText(legacyMemoryContext(), request), request)
+            assertEquals(MemoryFactStatus.RETIRED, fixture.repository.getFact(fact.id)?.status, request)
+        }
+    }
+
+    @Test
     fun `migration queues legacy chat facts and excludes them from global retrieval`() = runTest {
         val dbPath = Files.createTempDirectory("souz-memory-v1-test-").resolve("memory.db")
         seedLegacyV1MemoryDb(dbPath)
