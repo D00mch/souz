@@ -944,7 +944,7 @@ class SettingsViewModel(
 
         when (currentState.gigaModel.provider) {
             LlmProvider.GIGA -> {
-                if (currentState.gigaChatKey.isBlank()) {
+                if (!keysProvider.hasKey(LlmProvider.GIGA)) {
                     val errorMsg = getString(Res.string.error_gigachat_key_missing)
                     setState {
                         copy(

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +27,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -90,8 +93,16 @@ data class SharedApiKeyFieldUi(
     val id: String,
     val label: String,
     val value: String,
-    val isSecret: Boolean = true,
+    val mode: SharedApiKeyFieldMode = SharedApiKeyFieldMode.EDITABLE_HIDDEN,
 )
+
+enum class SharedApiKeyFieldMode {
+    STORED_HIDDEN,
+    REVEALING,
+    EDITABLE_HIDDEN,
+    EDITABLE_REVEALED,
+    REVEAL_FAILED,
+}
 
 data class SharedProviderLinkUi(
     val id: String,
@@ -180,6 +191,7 @@ sealed interface SharedSettingsEvent {
     data object ResetSystemPrompt : SharedSettingsEvent
     data object RefreshBalance : SharedSettingsEvent
     data class ApiKeyChanged(val id: String, val value: String) : SharedSettingsEvent
+    data class ApiKeyVisibilityToggled(val id: String) : SharedSettingsEvent
     data class OpenProviderLink(val id: String) : SharedSettingsEvent
     data class StartAuth(val id: String) : SharedSettingsEvent
     data class DisconnectAuth(val id: String) : SharedSettingsEvent
@@ -394,12 +406,40 @@ fun SharedKeysSettingsContent(
         }
 
         state.keyFields.forEach { field ->
+            val isEditable = field.mode == SharedApiKeyFieldMode.EDITABLE_HIDDEN ||
+                field.mode == SharedApiKeyFieldMode.EDITABLE_REVEALED
             LabeledTextField(
                 label = field.label,
                 value = field.value,
-                onValueChange = { onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, it)) },
+                onValueChange = { value ->
+                    if (isEditable) onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, value))
+                },
                 modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (field.isSecret) PasswordVisualTransformation() else VisualTransformation.None,
+                visualTransformation = if (field.mode == SharedApiKeyFieldMode.EDITABLE_HIDDEN) {
+                    PasswordVisualTransformation()
+                } else {
+                    VisualTransformation.None
+                },
+                readOnly = !isEditable,
+                trailingContent = {
+                    if (field.mode == SharedApiKeyFieldMode.REVEALING) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        val revealed = field.mode == SharedApiKeyFieldMode.EDITABLE_REVEALED
+                        IconButton(onClick = {
+                            onEvent(SharedSettingsEvent.ApiKeyVisibilityToggled(field.id))
+                        }) {
+                            Icon(
+                                imageVector = if (revealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (revealed) "Hide API key" else "Show API key",
+                                tint = SharedTextMuted,
+                            )
+                        }
+                    }
+                },
             )
         }
 

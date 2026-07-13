@@ -60,12 +60,6 @@ enum class SettingsSection(val title: StringResource, val icon: String? = null) 
 }
 
 data class SettingsState(
-    val gigaChatKey: String = "",
-    val qwenChatKey: String = "",
-    val aiTunnelKey: String = "",
-    val anthropicKey: String = "",
-    val openaiKey: String = "",
-    val saluteSpeechKey: String = "",
     val apiKeyFields: Map<ApiKeyField, ApiKeyFieldState> = emptyMap(),
     val isClosing: Boolean = false,
     val codexConnected: Boolean = false,
