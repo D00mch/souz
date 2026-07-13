@@ -3,6 +3,7 @@ package ru.souz.ui.settings
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.unmockkAll
+import io.mockk.verify
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
 import ru.souz.llms.LLMModel
@@ -20,6 +21,22 @@ class ModelAvailabilityTest {
     @AfterTest
     fun tearDown() {
         unmockkAll()
+    }
+
+    @Test
+    fun `available llm models query configured state once per provider`() {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.regionProfile } returns REGION_EN
+        every { settingsProvider.qwenChatKey } returns "qwen-key"
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+
+        val models = settingsProvider.availableLlmModels(llmBuildProfile)
+
+        assertEquals(
+            llmBuildProfile.availableModels.filter { it.provider == LlmProvider.QWEN },
+            models,
+        )
+        verify(exactly = 1) { settingsProvider.qwenChatKey }
     }
 
     @Test

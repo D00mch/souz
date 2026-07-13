@@ -9,15 +9,21 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 
-fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
-    llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
+fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> {
+    val models = llmBuildProfile.availableModels
+    val configuredProviders = models
+        .mapTo(linkedSetOf()) { it.provider }
+        .filterTo(linkedSetOf(), this::hasKey)
+    return models.filter { it.provider in configuredProviders }
+}
 
 fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): LLMModel? {
     val availableModels = this.availableLlmModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
+    val availableProviders = availableModels.mapTo(linkedSetOf()) { it.provider }
     val preferredProvider = llmBuildProfile.providerPriorities()
-        .firstOrNull(this::hasKey)
+        .firstOrNull { it in availableProviders }
 
     return preferredProvider
         ?.let(llmBuildProfile::defaultModelForProvider)
@@ -37,17 +43,22 @@ fun SettingsProvider.defaultAmbientAnalysisModel(llmBuildProfile: LlmBuildProfil
         ?: availableModels.first()
 }
 
-fun SettingsProvider.availableEmbeddingsModels(llmBuildProfile: LlmBuildProfile): List<EmbeddingsModel> =
-    when {
+fun SettingsProvider.availableEmbeddingsModels(llmBuildProfile: LlmBuildProfile): List<EmbeddingsModel> {
+    return when {
         gigaModel.provider == LlmProvider.LOCAL && LlmProvider.LOCAL in llmBuildProfile.availableProviders ->
             listOf(EmbeddingsModel.LocalEmbeddingGemma300M)
 
-        else -> EmbeddingsModel.entries.filter { model ->
-            model.provider != LlmProvider.LOCAL &&
-                this.hasKey(model.provider) &&
-                model.provider in llmBuildProfile.availableProviders
+        else -> {
+            val models = EmbeddingsModel.entries.filter { model ->
+                model.provider != LlmProvider.LOCAL && model.provider in llmBuildProfile.availableProviders
+            }
+            val configuredProviders = models
+                .mapTo(linkedSetOf()) { it.provider }
+                .filterTo(linkedSetOf(), this::hasKey)
+            models.filter { it.provider in configuredProviders }
         }
     }
+}
 
 fun SettingsProvider.defaultEmbeddingsModel(llmBuildProfile: LlmBuildProfile): EmbeddingsModel? {
     if (gigaModel.provider == LlmProvider.LOCAL && LlmProvider.LOCAL in llmBuildProfile.availableProviders) {
@@ -67,11 +78,17 @@ fun SettingsProvider.defaultEmbeddingsModel(llmBuildProfile: LlmBuildProfile): E
 fun SettingsProvider.availableVoiceRecognitionModels(
     llmBuildProfile: LlmBuildProfile,
     localMacOsSpeechAvailable: Boolean = false,
-): List<VoiceRecognitionModel> =
-    VoiceRecognitionModel.entries.filter { model ->
-        model.provider.isEnabledInCurrentEnvironment(llmBuildProfile, localMacOsSpeechAvailable) &&
-            (model.provider == VoiceRecognitionProvider.LOCAL_MACOS || this.hasKey(model.provider))
+): List<VoiceRecognitionModel> {
+    val models = VoiceRecognitionModel.entries.filter { model ->
+        model.provider.isEnabledInCurrentEnvironment(llmBuildProfile, localMacOsSpeechAvailable)
     }
+    val configuredProviders = models
+        .mapTo(linkedSetOf()) { it.provider }
+        .filterTo(linkedSetOf()) { provider ->
+            provider == VoiceRecognitionProvider.LOCAL_MACOS || this.hasKey(provider)
+        }
+    return models.filter { it.provider in configuredProviders }
+}
 
 fun SettingsProvider.defaultVoiceRecognitionModel(
     llmBuildProfile: LlmBuildProfile,
