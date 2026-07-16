@@ -26,7 +26,6 @@ import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.db.SettingsProvider
-import ru.souz.db.ProviderKeyPresence
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
@@ -66,7 +65,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -90,12 +88,8 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `init normalizes unavailable llm, embeddings, and voice models to available providers`() = runTest(dispatcher) {
-        val settingsProvider = mockk<SettingsProvider>(
-            relaxed = true,
-            moreInterfaces = arrayOf(ProviderKeyPresence::class),
-        )
-        val keyPresence = settingsProvider as ProviderKeyPresence
+    fun `route refresh normalizes unavailable llm embeddings and voice models without eager init reads`() = runTest(dispatcher) {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
@@ -106,10 +100,10 @@ class SettingsViewModelTest {
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
         val supportsSalute = llmBuildProfile.supportsSaluteSpeechRecognition
-        every { keyPresence.hasKey(any<LlmProvider>()) } answers {
+        every { settingsProvider.hasKey(any<LlmProvider>()) } answers {
             firstArg<LlmProvider>() == LlmProvider.QWEN
         }
-        every { keyPresence.hasKey(any<VoiceRecognitionProvider>()) } answers {
+        every { settingsProvider.hasKey(any<VoiceRecognitionProvider>()) } answers {
             val provider = firstArg<VoiceRecognitionProvider>()
             if (supportsSalute) {
                 provider == VoiceRecognitionProvider.SALUTE_SPEECH
@@ -202,9 +196,11 @@ class SettingsViewModelTest {
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
 
-        val viewModel = SettingsViewModel(di, secretDispatcher = dispatcher)
+        val viewModel = SettingsViewModel(di, settingsDispatcher = dispatcher)
         advanceUntilIdle()
-
+        assertEquals(TelegramAuthStepUi.PHONE, viewModel.uiState.value.telegramAuthStep)
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
         val expectedLlmModel = settingsProvider.defaultLlmModel(llmBuildProfile)
         assertNotNull(expectedLlmModel, "Expected at least one available llm model")
         val expectedAmbientAnalysisModel = settingsProvider.defaultAmbientAnalysisModel(llmBuildProfile)
@@ -245,7 +241,7 @@ class SettingsViewModelTest {
         )
         verify(exactly = 1) { settingsProvider.qwenChatKey }
 
-        viewModel.handleEvent(SettingsEvent.InputQwenChatKey("updated-qwen-key"))
+        viewModel.handleEvent(SettingsEvent.InputApiKey(ApiKeyField.QWEN_CHAT, "updated-qwen-key"))
         advanceTimeBy(401)
         advanceUntilIdle()
 
@@ -265,7 +261,7 @@ class SettingsViewModelTest {
         viewModel.handleEvent(SettingsEvent.ToggleApiKeyVisibility(ApiKeyField.QWEN_CHAT))
         advanceUntilIdle()
 
-        assertIs<ApiKeyFieldState.RevealFailed>(
+        assertIs<ApiKeyFieldState.StoredHidden>(
             viewModel.uiState.value.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT),
         )
         verify(exactly = 2) { settingsProvider.qwenChatKey }
@@ -276,7 +272,6 @@ class SettingsViewModelTest {
         assertIs<ApiKeyFieldState.StoredHidden>(
             viewModel.uiState.value.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT),
         )
-        assertFalse(viewModel.uiState.value.isClosing)
     }
 
     @Test
@@ -285,6 +280,8 @@ class SettingsViewModelTest {
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
+        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
         every { settingsProvider.gigaModel } returns LLMModel.QwenMax
         var ambientAnalysisModelValue = LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
@@ -356,7 +353,8 @@ class SettingsViewModelTest {
 
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
-
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
         viewModel.handleEvent(SettingsEvent.SelectAmbientAnalysisModel(LLMModel.LocalGemma4_E2B_It))
         advanceUntilIdle()
 
@@ -371,6 +369,8 @@ class SettingsViewModelTest {
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
+        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
         every { settingsProvider.gigaModel } returns LLMModel.QwenMax
         every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
@@ -438,7 +438,8 @@ class SettingsViewModelTest {
 
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
-
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
         viewModel.handleEvent(SettingsEvent.SelectModel(LLMModel.LocalQwen3_4B_Instruct_2507))
         advanceUntilIdle()
 
@@ -453,11 +454,13 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `init opens download prompt when persisted local model misses linked embeddings`() = runTest(dispatcher) {
+    fun `route refresh opens download prompt when persisted local model misses linked embeddings`() = runTest(dispatcher) {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
+        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
         every { settingsProvider.gigaModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.embeddingsModel } returns LocalEmbeddingProfiles.default().embeddingsModel
@@ -539,7 +542,8 @@ class SettingsViewModelTest {
 
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
-
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
         val state = viewModel.uiState.value
         assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
         assertEquals(listOf(LocalEmbeddingProfiles.default().id), state.localModelDownloadPrompt?.downloads?.map { it.id })

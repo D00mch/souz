@@ -306,6 +306,8 @@
     <string name="button_sending_logs">Sending logs...</string>
     <string name="snack_logs_path_copied">Path to logs copied</string>
     <string name="error_failed_open_privacy_policy">Failed to open privacy policy</string>
+    <string name="error_failed_reveal_api_key">Failed to reveal API key</string>
+    <string name="error_failed_save_api_key">Failed to save API key</string>
     
     <!-- Calendars -->
     <string name="label_default_calendar">Default calendar</string>

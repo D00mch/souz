@@ -51,10 +51,15 @@ fun SettingsScreen(
         viewModel.effects.collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> onClose()
+                SettingsEffect.OpenTools -> onOpenTools()
                 SettingsEffect.NotifyOnSystemPrompt -> onShowSnack(getString(Res.string.snack_saved_system_prompt))
                 is SettingsEffect.ShowSnackbar -> onShowSnack(effect.message)
             }
         }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.send(SettingsEvent.RefreshFromProvider)
     }
 
     val focusRequester = remember { FocusRequester() }
@@ -111,7 +116,7 @@ fun SettingsScreen(
                     state = state,
                     viewModel = viewModel,
                     onClose = { viewModel.send(SettingsEvent.GoToMain) },
-                    onOpenTools = onOpenTools,
+                    onOpenTools = { viewModel.send(SettingsEvent.OpenTools) },
                     onShowSnack = onShowSnack
                 )
             }
@@ -233,12 +238,7 @@ fun SettingsScreenMain(
                         )
                         SettingsSection.KEYS -> KeysSettingsContent(
                             state = state,
-                            onGigaChatKeyInput = { viewModel.send(SettingsEvent.InputGigaChatKey(it)) },
-                            onQwenChatKeyInput = { viewModel.send(SettingsEvent.InputQwenChatKey(it)) },
-                            onAiTunnelKeyInput = { viewModel.send(SettingsEvent.InputAiTunnelKey(it)) },
-                            onAnthropicKeyInput = { viewModel.send(SettingsEvent.InputAnthropicKey(it)) },
-                            onOpenAiKeyInput = { viewModel.send(SettingsEvent.InputOpenAiKey(it)) },
-                            onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
+                            onApiKeyInput = { field, value -> viewModel.send(SettingsEvent.InputApiKey(field, value)) },
                             onApiKeyVisibilityToggle = { viewModel.send(SettingsEvent.ToggleApiKeyVisibility(it)) },
                             onOpenProviderLink = { viewModel.send(SettingsEvent.OpenProviderLink(it)) },
                             onStartCodexOAuth = { viewModel.send(SettingsEvent.StartCodexOAuth) },

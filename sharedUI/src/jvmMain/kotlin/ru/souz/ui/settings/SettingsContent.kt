@@ -61,6 +61,7 @@ import ru.souz.ui.glassColors
 import org.jetbrains.compose.resources.StringResource
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.sharedsettings.SharedAuthAccountUiState
+import ru.souz.ui.sharedsettings.SharedApiKeyFieldUi
 import ru.souz.ui.sharedsettings.SharedBalanceItemUi
 import ru.souz.ui.sharedsettings.SharedKeysSettingsContent
 import ru.souz.ui.sharedsettings.SharedKeysSettingsUiState
@@ -454,12 +455,7 @@ fun GeneralSettingsContent(
 @Composable
 fun KeysSettingsContent(
     state: SettingsState,
-    onGigaChatKeyInput: (String) -> Unit,
-    onQwenChatKeyInput: (String) -> Unit,
-    onAiTunnelKeyInput: (String) -> Unit,
-    onAnthropicKeyInput: (String) -> Unit,
-    onOpenAiKeyInput: (String) -> Unit,
-    onSaluteSpeechKeyInput: (String) -> Unit,
+    onApiKeyInput: (ApiKeyField, String) -> Unit,
     onApiKeyVisibilityToggle: (ApiKeyField) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onStartCodexOAuth: () -> Unit,
@@ -477,16 +473,10 @@ fun KeysSettingsContent(
             state = sharedState,
             onEvent = { event ->
                 when (event) {
-                    is SharedSettingsEvent.ApiKeyChanged -> when (runCatching { ApiKeyField.valueOf(event.id) }.getOrNull()) {
-                        ApiKeyField.GIGA_CHAT -> onGigaChatKeyInput(event.value)
-                        ApiKeyField.QWEN_CHAT -> onQwenChatKeyInput(event.value)
-                        ApiKeyField.AI_TUNNEL -> onAiTunnelKeyInput(event.value)
-                        ApiKeyField.ANTHROPIC -> onAnthropicKeyInput(event.value)
-                        ApiKeyField.OPENAI -> onOpenAiKeyInput(event.value)
-                        ApiKeyField.SALUTE_SPEECH -> onSaluteSpeechKeyInput(event.value)
-                        ApiKeyField.CODEX,
-                        null -> Unit
-                    }
+                    is SharedSettingsEvent.ApiKeyChanged ->
+                        runCatching { ApiKeyField.valueOf(event.id) }.getOrNull()
+                            ?.takeUnless { it == ApiKeyField.CODEX }
+                            ?.let { onApiKeyInput(it, event.value) }
                     is SharedSettingsEvent.ApiKeyVisibilityToggled ->
                         runCatching { ApiKeyField.valueOf(event.id) }.getOrNull()?.let(onApiKeyVisibilityToggle)
                     is SharedSettingsEvent.OpenProviderLink ->
@@ -545,6 +535,14 @@ private fun SettingsState.toSharedKeysSettingsUiState(): SharedKeysSettingsUiSta
     } else {
         Res.string.keys_hint_voice_unavailable
     }
+    val keyLabels = listOf(
+        ApiKeyField.GIGA_CHAT to stringResource(Res.string.label_key_gigachat),
+        ApiKeyField.QWEN_CHAT to stringResource(Res.string.label_key_qwen),
+        ApiKeyField.AI_TUNNEL to stringResource(Res.string.label_key_aitunnel),
+        ApiKeyField.ANTHROPIC to stringResource(Res.string.label_key_anthropic),
+        ApiKeyField.OPENAI to stringResource(Res.string.label_key_openai),
+        ApiKeyField.SALUTE_SPEECH to stringResource(Res.string.label_key_salutespeech),
+    )
 
     return SharedKeysSettingsUiState(
         title = stringResource(Res.string.settings_section_keys),
@@ -552,37 +550,10 @@ private fun SettingsState.toSharedKeysSettingsUiState(): SharedKeysSettingsUiSta
         configuredCountText = stringResource(Res.string.keys_configured_count).format(configuredKeysCount),
         chatHint = stringResource(keysHintChat),
         voiceHint = stringResource(keysHintVoice),
-        keyFields = buildList {
-            if (ApiKeyField.GIGA_CHAT in availableApiKeyFields) {
-                apiKeyFields[ApiKeyField.GIGA_CHAT]?.let {
-                    add(it.toSharedField(ApiKeyField.GIGA_CHAT.name, stringResource(Res.string.label_key_gigachat)))
-                }
-            }
-            if (ApiKeyField.QWEN_CHAT in availableApiKeyFields) {
-                apiKeyFields[ApiKeyField.QWEN_CHAT]?.let {
-                    add(it.toSharedField(ApiKeyField.QWEN_CHAT.name, stringResource(Res.string.label_key_qwen)))
-                }
-            }
-            if (ApiKeyField.AI_TUNNEL in availableApiKeyFields) {
-                apiKeyFields[ApiKeyField.AI_TUNNEL]?.let {
-                    add(it.toSharedField(ApiKeyField.AI_TUNNEL.name, stringResource(Res.string.label_key_aitunnel)))
-                }
-            }
-            if (ApiKeyField.ANTHROPIC in availableApiKeyFields) {
-                apiKeyFields[ApiKeyField.ANTHROPIC]?.let {
-                    add(it.toSharedField(ApiKeyField.ANTHROPIC.name, stringResource(Res.string.label_key_anthropic)))
-                }
-            }
-            if (ApiKeyField.OPENAI in availableApiKeyFields) {
-                apiKeyFields[ApiKeyField.OPENAI]?.let {
-                    add(it.toSharedField(ApiKeyField.OPENAI.name, stringResource(Res.string.label_key_openai)))
-                }
-            }
-            if (ApiKeyField.SALUTE_SPEECH in availableApiKeyFields) {
-                apiKeyFields[ApiKeyField.SALUTE_SPEECH]?.let {
-                    add(it.toSharedField(ApiKeyField.SALUTE_SPEECH.name, stringResource(Res.string.label_key_salutespeech)))
-                }
-            }
+        keyFields = keyLabels.mapNotNull { (field, label) ->
+            apiKeyFields[field]
+                ?.takeIf { field in availableApiKeyFields }
+                ?.let { SharedApiKeyFieldUi(field.name, label, it) }
         },
         authAccounts = buildList {
             if (ApiKeyField.CODEX in availableApiKeyFields) {
@@ -2241,12 +2212,7 @@ private fun KeysSettingsContentPreview() {
     SettingsSectionPreviewContainer {
         KeysSettingsContent(
             state = PreviewSettingsState,
-            onGigaChatKeyInput = {},
-            onQwenChatKeyInput = {},
-            onAiTunnelKeyInput = {},
-            onAnthropicKeyInput = {},
-            onOpenAiKeyInput = {},
-            onSaluteSpeechKeyInput = {},
+            onApiKeyInput = { _, _ -> },
             onApiKeyVisibilityToggle = {},
             onOpenProviderLink = {},
             onStartCodexOAuth = {},

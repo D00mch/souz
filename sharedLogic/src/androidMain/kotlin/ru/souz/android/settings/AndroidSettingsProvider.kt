@@ -7,7 +7,6 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import ru.souz.agent.AgentId
 import ru.souz.db.SettingsProvider
-import ru.souz.db.ProviderKeyPresence
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
@@ -21,7 +20,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class AndroidSettingsProvider(context: Context) : SettingsProvider, ProviderKeyPresence {
+class AndroidSettingsProvider(context: Context) : SettingsProvider {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val secretCodec = AndroidSecretCodec()
@@ -74,19 +73,19 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider, ProviderKeyP
         set(value) = putSecretString(SALUTE_SPEECH_KEY, value)
 
     override fun hasKey(provider: LlmProvider): Boolean = when (provider) {
-        LlmProvider.GIGA -> prefs.contains(GIGA_CHAT_KEY)
-        LlmProvider.QWEN -> prefs.contains(QWEN_CHAT_KEY)
-        LlmProvider.AI_TUNNEL -> prefs.contains(AI_TUNNEL_KEY)
-        LlmProvider.ANTHROPIC -> prefs.contains(ANTHROPIC_KEY)
-        LlmProvider.OPENAI -> prefs.contains(OPENAI_KEY)
+        LlmProvider.GIGA -> hasSecret(GIGA_CHAT_KEY)
+        LlmProvider.QWEN -> hasSecret(QWEN_CHAT_KEY)
+        LlmProvider.AI_TUNNEL -> hasSecret(AI_TUNNEL_KEY)
+        LlmProvider.ANTHROPIC -> hasSecret(ANTHROPIC_KEY)
+        LlmProvider.OPENAI -> hasSecret(OPENAI_KEY)
         LlmProvider.LOCAL -> true
-        LlmProvider.CODEX -> prefs.contains(CODEX_ACCESS_TOKEN)
+        LlmProvider.CODEX -> hasSecret(CODEX_ACCESS_TOKEN)
     }
 
     override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-        VoiceRecognitionProvider.SALUTE_SPEECH -> prefs.contains(SALUTE_SPEECH_KEY)
-        VoiceRecognitionProvider.AI_TUNNEL -> prefs.contains(AI_TUNNEL_KEY)
-        VoiceRecognitionProvider.OPENAI -> prefs.contains(OPENAI_KEY)
+        VoiceRecognitionProvider.SALUTE_SPEECH -> hasSecret(SALUTE_SPEECH_KEY)
+        VoiceRecognitionProvider.AI_TUNNEL -> hasSecret(AI_TUNNEL_KEY)
+        VoiceRecognitionProvider.OPENAI -> hasSecret(OPENAI_KEY)
         VoiceRecognitionProvider.LOCAL_MACOS -> true
     }
 
@@ -237,6 +236,8 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider, ProviderKeyP
 
     private fun secretString(key: String): String? =
         prefs.getString(key, null)?.let(secretCodec::decrypt)
+
+    private fun hasSecret(key: String): Boolean = !prefs.getString(key, null).isNullOrBlank()
 
     private fun boolean(key: String, default: Boolean): Boolean =
         prefs.getString(key, null)?.toBooleanStrictOrNull() ?: default

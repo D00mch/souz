@@ -79,11 +79,10 @@ import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.settings.SettingsEffect
 import ru.souz.ui.settings.SettingsEvent
 import ru.souz.ui.settings.ApiKeyFieldState
+import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
-import ru.souz.ui.settings.toSharedField
 import ru.souz.ui.common.ApiKeyField
-import ru.souz.ui.sharedsettings.SharedApiKeyFieldMode
 
 @Composable
 fun SouzAndroidSharedUiApp(di: DI) {
@@ -557,10 +556,15 @@ private fun AndroidSettingsRoute(
         viewModel.effects.collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> onBack()
+                SettingsEffect.OpenTools -> Unit
                 SettingsEffect.NotifyOnSystemPrompt -> Unit
                 is SettingsEffect.ShowSnackbar -> snackbarHostState.showSnackbar(effect.message)
             }
         }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.send(SettingsEvent.RefreshFromProvider)
     }
 
     AndroidSettingsScreen(
@@ -625,59 +629,16 @@ private fun AndroidSettingsScreen(
 
             Spacer(Modifier.height(8.dp))
             Text("API keys", style = MaterialTheme.typography.titleMedium)
-            state.apiKeyFields[ApiKeyField.GIGA_CHAT]?.let { fieldState ->
-                AndroidKeyField(
-                    label = "GigaChat",
-                    state = fieldState,
-                    field = ApiKeyField.GIGA_CHAT,
-                    onValueChange = { onEvent(SettingsEvent.InputGigaChatKey(it)) },
-                    onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
-                )
-            }
-            state.apiKeyFields[ApiKeyField.QWEN_CHAT]?.let { fieldState ->
-                AndroidKeyField(
-                    label = "Qwen",
-                    state = fieldState,
-                    field = ApiKeyField.QWEN_CHAT,
-                    onValueChange = { onEvent(SettingsEvent.InputQwenChatKey(it)) },
-                    onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
-                )
-            }
-            state.apiKeyFields[ApiKeyField.AI_TUNNEL]?.let { fieldState ->
-                AndroidKeyField(
-                    label = "AI Tunnel",
-                    state = fieldState,
-                    field = ApiKeyField.AI_TUNNEL,
-                    onValueChange = { onEvent(SettingsEvent.InputAiTunnelKey(it)) },
-                    onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
-                )
-            }
-            state.apiKeyFields[ApiKeyField.ANTHROPIC]?.let { fieldState ->
-                AndroidKeyField(
-                    label = "Anthropic",
-                    state = fieldState,
-                    field = ApiKeyField.ANTHROPIC,
-                    onValueChange = { onEvent(SettingsEvent.InputAnthropicKey(it)) },
-                    onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
-                )
-            }
-            state.apiKeyFields[ApiKeyField.OPENAI]?.let { fieldState ->
-                AndroidKeyField(
-                    label = "OpenAI",
-                    state = fieldState,
-                    field = ApiKeyField.OPENAI,
-                    onValueChange = { onEvent(SettingsEvent.InputOpenAiKey(it)) },
-                    onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
-                )
-            }
-            state.apiKeyFields[ApiKeyField.SALUTE_SPEECH]?.let { fieldState ->
-                AndroidKeyField(
-                    label = "SaluteSpeech",
-                    state = fieldState,
-                    field = ApiKeyField.SALUTE_SPEECH,
-                    onValueChange = { onEvent(SettingsEvent.InputSaluteSpeechKey(it)) },
-                    onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
-                )
+            AndroidApiKeyFields.forEach { (field, label) ->
+                state.apiKeyFields[field]?.let { fieldState ->
+                    AndroidKeyField(
+                        label = label,
+                        state = fieldState,
+                        field = field,
+                        onValueChange = { value -> onEvent(SettingsEvent.InputApiKey(field, value)) },
+                        onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
+                    )
+                }
             }
 
             OutlinedTextField(
@@ -706,29 +667,26 @@ private fun AndroidKeyField(
     onValueChange: (String) -> Unit,
     onToggleVisibility: (ApiKeyField) -> Unit,
 ) {
-    val ui = state.toSharedField(field.name, label)
-    val isEditable = ui.mode == SharedApiKeyFieldMode.EDITABLE_HIDDEN ||
-        ui.mode == SharedApiKeyFieldMode.EDITABLE_REVEALED
+    val editable = state as? ApiKeyFieldState.Editable
     OutlinedTextField(
-        value = ui.value,
+        value = editable?.value ?: HIDDEN_API_KEY_MASK,
         onValueChange = onValueChange,
         label = { Text(label) },
         modifier = Modifier.fillMaxWidth(),
-        visualTransformation = if (ui.mode == SharedApiKeyFieldMode.EDITABLE_HIDDEN) {
+        visualTransformation = if (editable?.revealed == false) {
             PasswordVisualTransformation()
         } else {
             VisualTransformation.None
         },
-        readOnly = !isEditable,
+        readOnly = editable == null,
         trailingIcon = {
-            if (ui.mode == SharedApiKeyFieldMode.REVEALING) {
+            if (state == ApiKeyFieldState.Revealing) {
                 CircularProgressIndicator(modifier = Modifier.width(20.dp), strokeWidth = 2.dp)
             } else {
-                val revealed = ui.mode == SharedApiKeyFieldMode.EDITABLE_REVEALED
                 IconButton(onClick = { onToggleVisibility(field) }) {
                     Icon(
-                        imageVector = if (revealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (revealed) "Hide API key" else "Show API key",
+                        imageVector = if (editable?.revealed == true) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (editable?.revealed == true) "Hide API key" else "Show API key",
                     )
                 }
             }
@@ -736,3 +694,12 @@ private fun AndroidKeyField(
         singleLine = true,
     )
 }
+
+private val AndroidApiKeyFields = listOf(
+    ApiKeyField.GIGA_CHAT to "GigaChat",
+    ApiKeyField.QWEN_CHAT to "Qwen",
+    ApiKeyField.AI_TUNNEL to "AI Tunnel",
+    ApiKeyField.ANTHROPIC to "Anthropic",
+    ApiKeyField.OPENAI to "OpenAI",
+    ApiKeyField.SALUTE_SPEECH to "SaluteSpeech",
+)

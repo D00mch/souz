@@ -41,15 +41,6 @@ enum class TelegramAuthStepUi {
     ERROR,
 }
 
-sealed interface ApiKeyFieldState {
-    data object StoredHidden : ApiKeyFieldState
-    data object Revealing : ApiKeyFieldState
-    data class Editable(val value: String, val revealed: Boolean) : ApiKeyFieldState
-    data object RevealFailed : ApiKeyFieldState
-}
-
-
-
 enum class SettingsSection(val title: StringResource, val icon: String? = null) {
     MODELS(Res.string.settings_section_models),
     GENERAL(Res.string.settings_section_general),
@@ -61,7 +52,6 @@ enum class SettingsSection(val title: StringResource, val icon: String? = null) 
 
 data class SettingsState(
     val apiKeyFields: Map<ApiKeyField, ApiKeyFieldState> = emptyMap(),
-    val isClosing: Boolean = false,
     val codexConnected: Boolean = false,
     val codexOAuthState: CodexOAuthUiState = CodexOAuthUiState.Idle,
     val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
@@ -133,13 +123,9 @@ data class SettingsState(
 
 sealed interface SettingsEvent : VMEvent {
     object GoToMain : SettingsEvent
+    object OpenTools : SettingsEvent
     object RefreshFromProvider : SettingsEvent
-    data class InputGigaChatKey(val key: String): SettingsEvent
-    data class InputQwenChatKey(val key: String): SettingsEvent
-    data class InputAiTunnelKey(val key: String): SettingsEvent
-    data class InputAnthropicKey(val key: String): SettingsEvent
-    data class InputOpenAiKey(val key: String): SettingsEvent
-    data class InputSaluteSpeechKey(val key: String): SettingsEvent
+    data class InputApiKey(val field: ApiKeyField, val value: String): SettingsEvent
     data class ToggleApiKeyVisibility(val field: ApiKeyField) : SettingsEvent
     object StartCodexOAuth : SettingsEvent
     object CancelCodexOAuth : SettingsEvent
@@ -199,6 +185,7 @@ sealed interface SettingsEvent : VMEvent {
 
 sealed interface SettingsEffect : VMSideEffect {
     object CloseScreen: SettingsEffect
+    object OpenTools: SettingsEffect
     object NotifyOnSystemPrompt: SettingsEffect
     data class ShowSnackbar(val message: String): SettingsEffect
 }

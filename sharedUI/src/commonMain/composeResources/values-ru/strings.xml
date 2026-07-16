@@ -302,6 +302,8 @@
     <string name="button_sending_logs">Отправка логов...</string>
     <string name="snack_logs_path_copied">Путь к логам скопирован</string>
     <string name="error_failed_open_privacy_policy">Не удалось открыть политику конфиденциальности</string>
+    <string name="error_failed_reveal_api_key">Не удалось показать API-ключ</string>
+    <string name="error_failed_save_api_key">Не удалось сохранить API-ключ</string>
     
     <!-- Calendars -->
     <string name="label_default_calendar">Календарь по умолчанию</string>

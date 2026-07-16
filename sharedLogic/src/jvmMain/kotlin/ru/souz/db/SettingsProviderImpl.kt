@@ -19,7 +19,7 @@ import kotlin.reflect.KProperty
 class SettingsProviderImpl(
     private val configStore: ConfigStore,
     private val localProviderAvailability: LocalProviderAvailability = defaultLocalProviderAvailability(),
-) : SettingsProvider, ProviderKeyPresence {
+) : SettingsProvider {
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _appLanguageDelegate: String?

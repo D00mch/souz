@@ -7,7 +7,6 @@ import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.security.RequestIdentity
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.db.SettingsProvider
-import ru.souz.db.hasKey
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider

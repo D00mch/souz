@@ -48,6 +48,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.souz.ui.components.LabeledTextField
+import ru.souz.ui.settings.ApiKeyFieldState
+import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 
 data class SharedModelOptionUi(
     val id: String,
@@ -92,17 +94,8 @@ data class SharedModelsSettingsUiState(
 data class SharedApiKeyFieldUi(
     val id: String,
     val label: String,
-    val value: String,
-    val mode: SharedApiKeyFieldMode = SharedApiKeyFieldMode.EDITABLE_HIDDEN,
+    val state: ApiKeyFieldState,
 )
-
-enum class SharedApiKeyFieldMode {
-    STORED_HIDDEN,
-    REVEALING,
-    EDITABLE_HIDDEN,
-    EDITABLE_REVEALED,
-    REVEAL_FAILED,
-}
 
 data class SharedProviderLinkUi(
     val id: String,
@@ -406,35 +399,33 @@ fun SharedKeysSettingsContent(
         }
 
         state.keyFields.forEach { field ->
-            val isEditable = field.mode == SharedApiKeyFieldMode.EDITABLE_HIDDEN ||
-                field.mode == SharedApiKeyFieldMode.EDITABLE_REVEALED
+            val editable = field.state as? ApiKeyFieldState.Editable
             LabeledTextField(
                 label = field.label,
-                value = field.value,
+                value = editable?.value ?: HIDDEN_API_KEY_MASK,
                 onValueChange = { value ->
-                    if (isEditable) onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, value))
+                    if (editable != null) onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, value))
                 },
                 modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (field.mode == SharedApiKeyFieldMode.EDITABLE_HIDDEN) {
+                visualTransformation = if (editable?.revealed == false) {
                     PasswordVisualTransformation()
                 } else {
                     VisualTransformation.None
                 },
-                readOnly = !isEditable,
+                readOnly = editable == null,
                 trailingContent = {
-                    if (field.mode == SharedApiKeyFieldMode.REVEALING) {
+                    if (field.state == ApiKeyFieldState.Revealing) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
                             strokeWidth = 2.dp,
                         )
                     } else {
-                        val revealed = field.mode == SharedApiKeyFieldMode.EDITABLE_REVEALED
                         IconButton(onClick = {
                             onEvent(SharedSettingsEvent.ApiKeyVisibilityToggled(field.id))
                         }) {
                             Icon(
-                                imageVector = if (revealed) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (revealed) "Hide API key" else "Show API key",
+                                imageVector = if (editable?.revealed == true) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (editable?.revealed == true) "Hide API key" else "Show API key",
                                 tint = SharedTextMuted,
                             )
                         }
