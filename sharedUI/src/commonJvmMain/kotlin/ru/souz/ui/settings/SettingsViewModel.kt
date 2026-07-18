@@ -1,6 +1,8 @@
 package ru.souz.ui.settings
 
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -21,11 +23,12 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.codex.CodexOAuthState
 import ru.souz.ui.BaseViewModel
+import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
-import ru.souz.ui.common.usecases.ApiKeyValues
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.ExternalLinkOpener
 import ru.souz.ui.host.LocalModelUiHost
@@ -42,6 +45,7 @@ import org.jetbrains.compose.resources.getString
 
 class SettingsViewModel(
     override val di: DI,
+    private val settingsDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
 ) : BaseViewModel<SettingsState, SettingsEvent, SettingsEffect>(), DIAware {
 
     private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
@@ -58,8 +62,8 @@ class SettingsViewModel(
     private val settingsHostPreferences: SettingsHostPreferences by di.instance()
     private val externalLinkOpener: ExternalLinkOpener by di.instance()
     private val speechPlayer: UiSpeechPlayer by di.instance()
-    private val pendingKeyDrafts = mutableMapOf<DeferredSettingsKey, String>()
-    private val pendingKeySaveJobs = mutableMapOf<DeferredSettingsKey, Job>()
+    private val pendingKeyDrafts = mutableMapOf<ApiKeyField, String>()
+    private val pendingKeySaveJobs = mutableMapOf<ApiKeyField, Job>()
     private val pendingTextSettingDrafts = mutableMapOf<DeferredTextSetting, String>()
     private val pendingTextSettingSaveJobs = mutableMapOf<DeferredTextSetting, Job>()
     private val codexOAuthService: CodexOAuthService by di.instance()
@@ -69,20 +73,17 @@ class SettingsViewModel(
     private var pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(settingsDispatcher) {
+            val host = telegramSettingsHost
+            val isSupported = host.isSupported()
+            val isBotActive = host.isControlBotActive()
             setState {
                 copy(
-                    isTelegramSupported = telegramSettingsHost.isSupported(),
-                    isTelegramBotActive = telegramSettingsHost.isControlBotActive(),
+                    isTelegramSupported = isSupported,
+                    isTelegramBotActive = isBotActive,
                 )
             }
-            refreshFromProvider()
-            fetchBalance()
-            fetchCalendars()
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            telegramSettingsHost.authState.collectLatest { auth ->
+            host.authState.collectLatest { auth ->
                 setState {
                     copy(
                         telegramAuthStep = when (auth.step) {
@@ -112,15 +113,7 @@ class SettingsViewModel(
     override suspend fun handleEvent(event: SettingsEvent) {
         l.debug("handleEvent: {}", event)
         when(event) {
-            is InputGigaChatKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.GIGA_CHAT, event.key)
-            }
-            is InputQwenChatKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.QWEN_CHAT, event.key)
-            }
-            is InputSaluteSpeechKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.SALUTE_SPEECH, event.key)
-            }
+            is InputApiKey -> handleDeferredKeyInput(event.field, event.value)
             is OpenProviderLink -> {
                 externalLinkOpener.open(event.provider.url)
                     .onFailure { error ->
@@ -158,15 +151,7 @@ class SettingsViewModel(
                     fetchBalance()
                 }
             }
-            is InputAiTunnelKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.AI_TUNNEL, event.key)
-            }
-            is InputAnthropicKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.ANTHROPIC, event.key)
-            }
-            is InputOpenAiKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.OPENAI, event.key)
-            }
+            is ToggleApiKeyVisibility -> toggleApiKeyVisibility(event.field)
             StartCodexOAuth -> {
                 codexOAuthJob?.cancel()
                 codexOAuthJob = viewModelScope.launch {
@@ -332,6 +317,8 @@ class SettingsViewModel(
                 flushPendingTextSettingSaves()
                 flushPendingKeySaves()
                 refreshFromProvider()
+                fetchBalance()
+                fetchCalendars()
             }
             ChooseVoice -> {
                 runCatching { speechPlayer.chooseVoice() }
@@ -347,10 +334,9 @@ class SettingsViewModel(
             OpenPrivacyPolicy -> openPrivacyPolicy()
             RefreshBalance -> fetchBalance()
             GoToMain -> {
-                flushPendingTextSettingSaves()
-                flushPendingKeySaves()
-                send(SettingsEffect.CloseScreen)
+                leaveSettings(SettingsEffect.CloseScreen)
             }
+            OpenTools -> leaveSettings(SettingsEffect.OpenTools)
             is SelectDefaultCalendar -> {
                 keysProvider.defaultCalendar = event.name
                 setState { copy(defaultCalendar = event.name) }
@@ -426,6 +412,7 @@ class SettingsViewModel(
 
     override suspend fun handleSideEffect(effect: SettingsEffect) = when (effect) {
         SettingsEffect.CloseScreen,
+        SettingsEffect.OpenTools,
         SettingsEffect.NotifyOnSystemPrompt,
         is SettingsEffect.ShowSnackbar -> l.debug("ignore effect: {}", effect)
     }
@@ -525,18 +512,22 @@ class SettingsViewModel(
         )
     }
 
-    private suspend fun refreshFromProvider() {
+    private suspend fun refreshFromProvider() = withContext(settingsDispatcher) {
         val voiceSpeed = settingsHostPreferences.voiceSpeed
-        val gigaChatKey = pendingKeyDrafts[DeferredSettingsKey.GIGA_CHAT] ?: keysProvider.gigaChatKey.orEmpty()
-        val qwenChatKey = pendingKeyDrafts[DeferredSettingsKey.QWEN_CHAT] ?: keysProvider.qwenChatKey.orEmpty()
-        val aiTunnelKey = pendingKeyDrafts[DeferredSettingsKey.AI_TUNNEL] ?: keysProvider.aiTunnelKey.orEmpty()
-        val anthropicKey = pendingKeyDrafts[DeferredSettingsKey.ANTHROPIC] ?: keysProvider.anthropicKey.orEmpty()
-        val openAiKey = pendingKeyDrafts[DeferredSettingsKey.OPENAI] ?: keysProvider.openaiKey.orEmpty()
-        val saluteSpeechKey = pendingKeyDrafts[DeferredSettingsKey.SALUTE_SPEECH] ?: (keysProvider.saluteSpeechKey ?: "")
         val mcpServersJson = pendingTextSettingDrafts[DeferredTextSetting.MCP_SERVERS_JSON] ?: (keysProvider.mcpServersJson ?: "")
         val supportEmail = pendingTextSettingDrafts[DeferredTextSetting.SUPPORT_EMAIL]
             ?: (keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL)
         val apiKeyAvailability = apiKeyAvailabilityUseCase.availability()
+        val apiKeyFields = apiKeyAvailability.fields
+            .asSequence()
+            .filterNot { it == ApiKeyField.CODEX }
+            .associateWith { field ->
+                when (val current = currentState.apiKeyFields[field]) {
+                    is ApiKeyFieldState.Editable,
+                    ApiKeyFieldState.Revealing -> current
+                    else -> initialApiKeyState(field)
+                }
+            }
 
         val availableLlmModels = keysProvider.availableLlmModels(llmBuildProfile)
         val configuredLlmModel = keysProvider.gigaModel
@@ -592,27 +583,16 @@ class SettingsViewModel(
             keysProvider.voiceRecognitionModel = selectedVoiceRecognitionModel
         }
 
-        val codexConnected = !keysProvider.codexAccessToken.isNullOrBlank()
-        val configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(
-            values = ApiKeyValues(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openaiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
-                codexConnected = codexConnected,
-            ),
+        val codexConnected = keysProvider.hasKey(LlmProvider.CODEX)
+        val configuredKeysCount = configuredKeysCount(
+            apiKeyFields,
+            codexConnected,
+            apiKeyAvailability.fields,
         )
 
         setState {
             copy(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openaiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
+                apiKeyFields = apiKeyFields,
                 codexConnected = codexConnected,
                 availableApiKeyFields = apiKeyAvailability.fields,
                 availableApiKeyProviders = apiKeyAvailability.providers,
@@ -651,7 +631,8 @@ class SettingsViewModel(
         }
     }
 
-    private suspend fun handleDeferredKeyInput(field: DeferredSettingsKey, value: String) {
+    private suspend fun handleDeferredKeyInput(field: ApiKeyField, value: String) {
+        if (currentState.apiKeyFields[field] !is ApiKeyFieldState.Editable) return
         pendingKeyDrafts[field] = value
         setDeferredKeyState(field, value)
         pendingKeySaveJobs.remove(field)?.cancel()
@@ -662,27 +643,23 @@ class SettingsViewModel(
         }
     }
 
-    private suspend fun setDeferredKeyState(field: DeferredSettingsKey, value: String) {
+    private suspend fun setDeferredKeyState(field: ApiKeyField, value: String) {
         setState {
-            val updated = when (field) {
-                DeferredSettingsKey.GIGA_CHAT -> copy(gigaChatKey = value)
-                DeferredSettingsKey.QWEN_CHAT -> copy(qwenChatKey = value)
-                DeferredSettingsKey.AI_TUNNEL -> copy(aiTunnelKey = value)
-                DeferredSettingsKey.ANTHROPIC -> copy(anthropicKey = value)
-                DeferredSettingsKey.OPENAI -> copy(openaiKey = value)
-                DeferredSettingsKey.SALUTE_SPEECH -> copy(saluteSpeechKey = value)
-            }
-            updated.copy(
-                configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(updated.toApiKeyValues()),
+            val current = apiKeyFields[field] as? ApiKeyFieldState.Editable
+                ?: return@setState this
+            val updatedFields = apiKeyFields + (
+                field to current.copy(value = value)
+            )
+            copy(
+                apiKeyFields = updatedFields,
+                configuredKeysCount = configuredKeysCount(updatedFields, codexConnected),
             )
         }
     }
 
-    private suspend fun persistDeferredKeySave(field: DeferredSettingsKey) {
+    private suspend fun persistDeferredKeySave(field: ApiKeyField) {
         val value = pendingKeyDrafts[field] ?: return
-        withContext(Dispatchers.IO) {
-            applyDeferredKeyToProvider(field, value)
-        }
+        if (!persistApiKey(field, value)) return
         if (pendingKeyDrafts[field] == value) {
             pendingKeyDrafts.remove(field)
         }
@@ -705,26 +682,124 @@ class SettingsViewModel(
         val draftsToPersist = pendingKeyDrafts.toMap()
         if (draftsToPersist.isEmpty()) return
 
-        withContext(Dispatchers.IO) {
-            draftsToPersist.forEach { (field, value) ->
-                applyDeferredKeyToProvider(field, value)
+        draftsToPersist
+            .filter { (field, value) -> persistApiKey(field, value) }
+            .forEach { (field, value) ->
+                if (pendingKeyDrafts[field] == value) {
+                    pendingKeyDrafts.remove(field)
+                }
             }
-        }
+    }
 
-        draftsToPersist.forEach { (field, value) ->
-            if (pendingKeyDrafts[field] == value) {
-                pendingKeyDrafts.remove(field)
+    private suspend fun toggleApiKeyVisibility(field: ApiKeyField) {
+        if (field == ApiKeyField.CODEX || field !in currentState.availableApiKeyFields) return
+        when (val state = currentState.apiKeyFields[field] ?: initialApiKeyState(field)) {
+            ApiKeyFieldState.StoredHidden -> revealApiKey(field)
+
+            ApiKeyFieldState.Revealing -> Unit
+
+            is ApiKeyFieldState.Editable -> {
+                if (state.revealed) {
+                    flushPendingKeySave(field)
+                    updateApiKeyField(field, initialApiKeyState(field))
+                } else {
+                    updateApiKeyField(field, state.copy(revealed = true))
+                }
             }
-        }
-
-        if (draftsToPersist.keys.any { it.requiresRefreshAfterSave }) {
-            flushPendingSystemPromptSave()
-            refreshFromProvider()
-        }
-        if (draftsToPersist.keys.any { it.requiresBalanceRefreshAfterSave }) {
-            fetchBalance()
         }
     }
+
+    private suspend fun revealApiKey(field: ApiKeyField) {
+        updateApiKeyField(field, ApiKeyFieldState.Revealing)
+        try {
+            updateApiKeyField(
+                field,
+                ApiKeyFieldState.Editable(value = readApiKey(field), revealed = true),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            l.warn("Failed to reveal API key for {}", field, error)
+            updateApiKeyField(field, ApiKeyFieldState.Editable("", revealed = true))
+            send(SettingsEffect.ShowSnackbar(getString(Res.string.error_failed_reveal_api_key)))
+        }
+    }
+
+    private suspend fun flushPendingKeySave(field: ApiKeyField) {
+        pendingKeySaveJobs.remove(field)?.cancelAndJoin()
+        persistDeferredKeySave(field)
+    }
+
+    private suspend fun persistApiKey(field: ApiKeyField, value: String): Boolean = try {
+        withContext(settingsDispatcher) {
+            val storedValue = value.takeUnless(String::isBlank)
+            when (field) {
+                ApiKeyField.GIGA_CHAT -> keysProvider.gigaChatKey = storedValue
+                ApiKeyField.QWEN_CHAT -> keysProvider.qwenChatKey = storedValue
+                ApiKeyField.AI_TUNNEL -> keysProvider.aiTunnelKey = storedValue
+                ApiKeyField.ANTHROPIC -> keysProvider.anthropicKey = storedValue
+                ApiKeyField.OPENAI -> keysProvider.openaiKey = storedValue
+                ApiKeyField.SALUTE_SPEECH -> keysProvider.saluteSpeechKey = storedValue
+                ApiKeyField.CODEX -> error("Codex credentials are OAuth-controlled")
+            }
+        }
+        true
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        l.warn("Failed to persist API key for {}", field, error)
+        send(SettingsEffect.ShowSnackbar(getString(Res.string.error_failed_save_api_key)))
+        false
+    }
+
+    private suspend fun readApiKey(field: ApiKeyField): String = withContext(settingsDispatcher) {
+        when (field) {
+            ApiKeyField.GIGA_CHAT -> keysProvider.gigaChatKey
+            ApiKeyField.QWEN_CHAT -> keysProvider.qwenChatKey
+            ApiKeyField.AI_TUNNEL -> keysProvider.aiTunnelKey
+            ApiKeyField.ANTHROPIC -> keysProvider.anthropicKey
+            ApiKeyField.OPENAI -> keysProvider.openaiKey
+            ApiKeyField.SALUTE_SPEECH -> keysProvider.saluteSpeechKey
+            ApiKeyField.CODEX -> error("Codex credentials are OAuth-controlled")
+        } ?: error("Configured API key could not be read")
+    }
+
+    private fun initialApiKeyState(field: ApiKeyField): ApiKeyFieldState =
+        if (hasApiKey(field)) ApiKeyFieldState.StoredHidden else ApiKeyFieldState.Editable("", false)
+
+    private fun hasApiKey(field: ApiKeyField): Boolean = when (field) {
+        ApiKeyField.GIGA_CHAT -> keysProvider.hasKey(LlmProvider.GIGA)
+        ApiKeyField.QWEN_CHAT -> keysProvider.hasKey(LlmProvider.QWEN)
+        ApiKeyField.AI_TUNNEL -> keysProvider.hasKey(LlmProvider.AI_TUNNEL)
+        ApiKeyField.ANTHROPIC -> keysProvider.hasKey(LlmProvider.ANTHROPIC)
+        ApiKeyField.OPENAI -> keysProvider.hasKey(LlmProvider.OPENAI)
+        ApiKeyField.SALUTE_SPEECH -> keysProvider.hasKey(VoiceRecognitionProvider.SALUTE_SPEECH)
+        ApiKeyField.CODEX -> keysProvider.hasKey(LlmProvider.CODEX)
+    }
+
+    private suspend fun leaveSettings(effect: SettingsEffect) {
+        setState { copy(apiKeyFields = apiKeyFields.mapValues { (_, state) -> state.concealed() }) }
+        flushPendingKeySaves()
+        flushPendingTextSettingSaves()
+        send(effect)
+    }
+
+    private suspend fun updateApiKeyField(field: ApiKeyField, state: ApiKeyFieldState) {
+        setState {
+            val updatedFields = apiKeyFields + (field to state)
+            copy(
+                apiKeyFields = updatedFields,
+                configuredKeysCount = configuredKeysCount(updatedFields, codexConnected),
+            )
+        }
+    }
+
+    private fun configuredKeysCount(
+        fields: Map<ApiKeyField, ApiKeyFieldState>,
+        codexConnected: Boolean,
+        availableFields: Set<ApiKeyField> = currentState.availableApiKeyFields,
+    ): Int = fields.values.count(ApiKeyFieldState::isConfigured) +
+        if (codexConnected && ApiKeyField.CODEX in availableFields) 1 else 0
 
     private suspend fun handleDeferredTextSettingInput(field: DeferredTextSetting, value: String) {
         pendingTextSettingDrafts[field] = value
@@ -774,7 +849,12 @@ class SettingsViewModel(
         jobs.forEach { it.cancelAndJoin() }
 
         val fieldsToPersist = pendingTextSettingDrafts.keys.toList()
-        fieldsToPersist.forEach { field -> persistDeferredTextSettingSave(field) }
+        fieldsToPersist.forEach { field ->
+            runCatching { persistDeferredTextSettingSave(field) }.onFailure { error ->
+                if (error is CancellationException) throw error
+                l.warn("Failed to save $field", error)
+            }
+        }
     }
 
     private suspend fun flushPendingSystemPromptSave() {
@@ -790,26 +870,6 @@ class SettingsViewModel(
         pendingTextSettingSaveJobs.remove(DeferredTextSetting.SYSTEM_PROMPT)?.cancelAndJoin()
         pendingTextSettingDrafts.remove(DeferredTextSetting.SYSTEM_PROMPT)
     }
-
-    private fun applyDeferredKeyToProvider(field: DeferredSettingsKey, value: String) {
-        when (field) {
-            DeferredSettingsKey.GIGA_CHAT -> keysProvider.gigaChatKey = value
-            DeferredSettingsKey.QWEN_CHAT -> keysProvider.qwenChatKey = value
-            DeferredSettingsKey.AI_TUNNEL -> keysProvider.aiTunnelKey = value
-            DeferredSettingsKey.ANTHROPIC -> keysProvider.anthropicKey = value
-            DeferredSettingsKey.OPENAI -> keysProvider.openaiKey = value
-            DeferredSettingsKey.SALUTE_SPEECH -> keysProvider.saluteSpeechKey = value
-        }
-    }
-
-    private fun SettingsState.toApiKeyValues(): ApiKeyValues = ApiKeyValues(
-        gigaChatKey = gigaChatKey,
-        qwenChatKey = qwenChatKey,
-        aiTunnelKey = aiTunnelKey,
-        anthropicKey = anthropicKey,
-        openaiKey = openaiKey,
-        saluteSpeechKey = saluteSpeechKey,
-    )
 
     private fun <T> pickConfiguredOrDefault(
         configured: T,
@@ -896,7 +956,7 @@ class SettingsViewModel(
 
         when (currentState.gigaModel.provider) {
             LlmProvider.GIGA -> {
-                if (currentState.gigaChatKey.isBlank()) {
+                if (!keysProvider.hasKey(LlmProvider.GIGA)) {
                     val errorMsg = getString(Res.string.error_gigachat_key_missing)
                     setState {
                         copy(
@@ -1054,21 +1114,6 @@ class SettingsViewModel(
         localModelPreloadJob?.cancel()
     }
 
-    private enum class DeferredSettingsKey {
-        GIGA_CHAT,
-        QWEN_CHAT,
-        AI_TUNNEL,
-        ANTHROPIC,
-        OPENAI,
-        SALUTE_SPEECH;
-
-        val requiresRefreshAfterSave: Boolean
-            get() = this != SALUTE_SPEECH
-
-        val requiresBalanceRefreshAfterSave: Boolean
-            get() = this == GIGA_CHAT || this == QWEN_CHAT
-    }
-
     private enum class DeferredTextSetting {
         MCP_SERVERS_JSON,
         SUPPORT_EMAIL,
@@ -1093,3 +1138,25 @@ private fun CodexOAuthState.toUiState(): CodexOAuthUiState = when (this) {
     is CodexOAuthState.Success -> CodexOAuthUiState.Done
     is CodexOAuthState.Error -> CodexOAuthUiState.Error(message)
 }
+
+private fun ApiKeyFieldState.isConfigured(): Boolean = when (this) {
+    ApiKeyFieldState.StoredHidden,
+    ApiKeyFieldState.Revealing -> true
+    is ApiKeyFieldState.Editable -> value.isNotBlank()
+}
+
+private fun ApiKeyFieldState.concealed(): ApiKeyFieldState = when (this) {
+    ApiKeyFieldState.StoredHidden -> this
+    ApiKeyFieldState.Revealing -> ApiKeyFieldState.StoredHidden
+    is ApiKeyFieldState.Editable -> if (value.isBlank()) {
+        copy(revealed = false)
+    } else {
+        ApiKeyFieldState.StoredHidden
+    }
+}
+
+private val ApiKeyField.requiresRefreshAfterSave: Boolean
+    get() = this != ApiKeyField.SALUTE_SPEECH && this != ApiKeyField.CODEX
+
+private val ApiKeyField.requiresBalanceRefreshAfterSave: Boolean
+    get() = this == ApiKeyField.GIGA_CHAT || this == ApiKeyField.QWEN_CHAT

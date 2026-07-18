@@ -26,7 +26,7 @@ class ModelAvailabilityTest {
     fun `default voice recognition model skips codex and uses openai for en profile`() {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN
-        every { settingsProvider.openaiKey } returns "openai-key"
+        every { settingsProvider.hasKey(ru.souz.llms.VoiceRecognitionProvider.OPENAI) } returns true
 
         val llmBuildProfile = LlmBuildProfile(settingsProvider)
 

@@ -20,6 +20,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -29,6 +31,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -74,8 +78,11 @@ import ru.souz.ui.main.ToolModifyReviewUi
 import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.settings.SettingsEffect
 import ru.souz.ui.settings.SettingsEvent
+import ru.souz.ui.settings.ApiKeyFieldState
+import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
+import ru.souz.ui.common.ApiKeyField
 
 @Composable
 fun SouzAndroidSharedUiApp(di: DI) {
@@ -549,20 +556,21 @@ private fun AndroidSettingsRoute(
         viewModel.effects.collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> onBack()
+                SettingsEffect.OpenTools -> Unit
                 SettingsEffect.NotifyOnSystemPrompt -> Unit
                 is SettingsEffect.ShowSnackbar -> snackbarHostState.showSnackbar(effect.message)
             }
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel) {
         viewModel.send(SettingsEvent.RefreshFromProvider)
     }
 
     AndroidSettingsScreen(
         state = state,
         snackbarHostState = snackbarHostState,
-        onBack = onBack,
+        onBack = { viewModel.send(SettingsEvent.GoToMain) },
         onEvent = viewModel::send,
     )
 }
@@ -621,12 +629,17 @@ private fun AndroidSettingsScreen(
 
             Spacer(Modifier.height(8.dp))
             Text("API keys", style = MaterialTheme.typography.titleMedium)
-            AndroidKeyField("GigaChat", state.gigaChatKey) { onEvent(SettingsEvent.InputGigaChatKey(it)) }
-            AndroidKeyField("Qwen", state.qwenChatKey) { onEvent(SettingsEvent.InputQwenChatKey(it)) }
-            AndroidKeyField("AI Tunnel", state.aiTunnelKey) { onEvent(SettingsEvent.InputAiTunnelKey(it)) }
-            AndroidKeyField("Anthropic", state.anthropicKey) { onEvent(SettingsEvent.InputAnthropicKey(it)) }
-            AndroidKeyField("OpenAI", state.openaiKey) { onEvent(SettingsEvent.InputOpenAiKey(it)) }
-            AndroidKeyField("SaluteSpeech", state.saluteSpeechKey) { onEvent(SettingsEvent.InputSaluteSpeechKey(it)) }
+            AndroidApiKeyFields.forEach { (field, label) ->
+                state.apiKeyFields[field]?.let { fieldState ->
+                    AndroidKeyField(
+                        label = label,
+                        state = fieldState,
+                        field = field,
+                        onValueChange = { value -> onEvent(SettingsEvent.InputApiKey(field, value)) },
+                        onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
+                    )
+                }
+            }
 
             OutlinedTextField(
                 value = state.systemPrompt,
@@ -649,15 +662,44 @@ private fun AndroidSettingsScreen(
 @Composable
 private fun AndroidKeyField(
     label: String,
-    value: String,
+    state: ApiKeyFieldState,
+    field: ApiKeyField,
     onValueChange: (String) -> Unit,
+    onToggleVisibility: (ApiKeyField) -> Unit,
 ) {
+    val editable = state as? ApiKeyFieldState.Editable
     OutlinedTextField(
-        value = value,
+        value = editable?.value ?: HIDDEN_API_KEY_MASK,
         onValueChange = onValueChange,
         label = { Text(label) },
         modifier = Modifier.fillMaxWidth(),
-        visualTransformation = PasswordVisualTransformation(),
+        visualTransformation = if (editable?.revealed == false) {
+            PasswordVisualTransformation()
+        } else {
+            VisualTransformation.None
+        },
+        readOnly = editable == null,
+        trailingIcon = {
+            if (state == ApiKeyFieldState.Revealing) {
+                CircularProgressIndicator(modifier = Modifier.width(20.dp), strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = { onToggleVisibility(field) }) {
+                    Icon(
+                        imageVector = if (editable?.revealed == true) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = if (editable?.revealed == true) "Hide API key" else "Show API key",
+                    )
+                }
+            }
+        },
         singleLine = true,
     )
 }
+
+private val AndroidApiKeyFields = listOf(
+    ApiKeyField.GIGA_CHAT to "GigaChat",
+    ApiKeyField.QWEN_CHAT to "Qwen",
+    ApiKeyField.AI_TUNNEL to "AI Tunnel",
+    ApiKeyField.ANTHROPIC to "Anthropic",
+    ApiKeyField.OPENAI to "OpenAI",
+    ApiKeyField.SALUTE_SPEECH to "SaluteSpeech",
+)

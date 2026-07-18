@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 
 interface VMState
 interface VMEvent
@@ -33,8 +34,7 @@ abstract class BaseViewModel<STATE : VMState, EVENT : VMEvent, EFFECT : VMSideEf
     protected suspend fun send(effect: EFFECT) = _effects.emit(effect)
 
     protected suspend fun setState(reduce: STATE.() -> STATE) {
-        val newState = currentState.reduce()
-        _uiState.emit(newState)
+        _uiState.update(reduce)
     }
 
     abstract fun initialState(): STATE

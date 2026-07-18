@@ -22,7 +22,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.flow.debounce
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.souz.agent.session.GraphSessionRepository
@@ -49,19 +48,20 @@ fun SettingsScreen(
     val sessionRepository: GraphSessionRepository by di.instance()
 
     LaunchedEffect(viewModel) {
-        @Suppress("OPT_IN_USAGE")
-        viewModel.effects.debounce(2000).collect { effect ->
+        viewModel.effects.collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> onClose()
+                SettingsEffect.OpenTools -> onOpenTools()
                 SettingsEffect.NotifyOnSystemPrompt -> onShowSnack(getString(Res.string.snack_saved_system_prompt))
                 is SettingsEffect.ShowSnackbar -> onShowSnack(effect.message)
             }
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel) {
         viewModel.send(SettingsEvent.RefreshFromProvider)
     }
+
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(state.currentScreen) {
         focusRequester.requestFocus()
@@ -98,7 +98,7 @@ fun SettingsScreen(
                         return@onPreviewKeyEvent true
                     }
                     when (state.currentScreen) {
-                        SettingsSubScreen.MAIN -> onClose()
+                        SettingsSubScreen.MAIN -> viewModel.send(SettingsEvent.GoToMain)
                         SettingsSubScreen.VISUALIZATION -> viewModel.send(SettingsEvent.BackToSessions)
                         SettingsSubScreen.SESSIONS,
                         SettingsSubScreen.FOLDERS,
@@ -115,8 +115,8 @@ fun SettingsScreen(
                 SettingsScreenMain(
                     state = state,
                     viewModel = viewModel,
-                    onClose = onClose,
-                    onOpenTools = onOpenTools,
+                    onClose = { viewModel.send(SettingsEvent.GoToMain) },
+                    onOpenTools = { viewModel.send(SettingsEvent.OpenTools) },
                     onShowSnack = onShowSnack
                 )
             }
@@ -152,7 +152,7 @@ fun SettingsScreen(
                 TelegramSettingsScreen(
                     state = state,
                     onClose = { viewModel.send(SettingsEvent.BackToSettings) },
-                    onStartWork = onClose,
+                    onStartWork = { viewModel.send(SettingsEvent.GoToMain) },
                     onCreateControlBot = { viewModel.send(SettingsEvent.CreateControlBot) },
                     onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
                     onConfirmDisconnectControlBot = { viewModel.send(SettingsEvent.ConfirmDisconnectTelegramBot) },
@@ -238,12 +238,8 @@ fun SettingsScreenMain(
                         )
                         SettingsSection.KEYS -> KeysSettingsContent(
                             state = state,
-                            onGigaChatKeyInput = { viewModel.send(SettingsEvent.InputGigaChatKey(it)) },
-                            onQwenChatKeyInput = { viewModel.send(SettingsEvent.InputQwenChatKey(it)) },
-                            onAiTunnelKeyInput = { viewModel.send(SettingsEvent.InputAiTunnelKey(it)) },
-                            onAnthropicKeyInput = { viewModel.send(SettingsEvent.InputAnthropicKey(it)) },
-                            onOpenAiKeyInput = { viewModel.send(SettingsEvent.InputOpenAiKey(it)) },
-                            onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
+                            onApiKeyInput = { field, value -> viewModel.send(SettingsEvent.InputApiKey(field, value)) },
+                            onApiKeyVisibilityToggle = { viewModel.send(SettingsEvent.ToggleApiKeyVisibility(it)) },
                             onOpenProviderLink = { viewModel.send(SettingsEvent.OpenProviderLink(it)) },
                             onStartCodexOAuth = { viewModel.send(SettingsEvent.StartCodexOAuth) },
                             onDisconnectCodex = { viewModel.send(SettingsEvent.DisconnectCodex) },

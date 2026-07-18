@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +27,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -45,6 +48,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.souz.ui.components.LabeledTextField
+import ru.souz.ui.settings.ApiKeyFieldState
+import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 
 data class SharedModelOptionUi(
     val id: String,
@@ -89,8 +94,7 @@ data class SharedModelsSettingsUiState(
 data class SharedApiKeyFieldUi(
     val id: String,
     val label: String,
-    val value: String,
-    val isSecret: Boolean = true,
+    val state: ApiKeyFieldState,
 )
 
 data class SharedProviderLinkUi(
@@ -180,6 +184,7 @@ sealed interface SharedSettingsEvent {
     data object ResetSystemPrompt : SharedSettingsEvent
     data object RefreshBalance : SharedSettingsEvent
     data class ApiKeyChanged(val id: String, val value: String) : SharedSettingsEvent
+    data class ApiKeyVisibilityToggled(val id: String) : SharedSettingsEvent
     data class OpenProviderLink(val id: String) : SharedSettingsEvent
     data class StartAuth(val id: String) : SharedSettingsEvent
     data class DisconnectAuth(val id: String) : SharedSettingsEvent
@@ -394,12 +399,38 @@ fun SharedKeysSettingsContent(
         }
 
         state.keyFields.forEach { field ->
+            val editable = field.state as? ApiKeyFieldState.Editable
             LabeledTextField(
                 label = field.label,
-                value = field.value,
-                onValueChange = { onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, it)) },
+                value = editable?.value ?: HIDDEN_API_KEY_MASK,
+                onValueChange = { value ->
+                    if (editable != null) onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, value))
+                },
                 modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (field.isSecret) PasswordVisualTransformation() else VisualTransformation.None,
+                visualTransformation = if (editable?.revealed == false) {
+                    PasswordVisualTransformation()
+                } else {
+                    VisualTransformation.None
+                },
+                readOnly = editable == null,
+                trailingContent = {
+                    if (field.state == ApiKeyFieldState.Revealing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        IconButton(onClick = {
+                            onEvent(SharedSettingsEvent.ApiKeyVisibilityToggled(field.id))
+                        }) {
+                            Icon(
+                                imageVector = if (editable?.revealed == true) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (editable?.revealed == true) "Hide API key" else "Show API key",
+                                tint = SharedTextMuted,
+                            )
+                        }
+                    }
+                },
             )
         }
 

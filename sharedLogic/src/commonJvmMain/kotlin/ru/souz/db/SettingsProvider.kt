@@ -46,21 +46,21 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var voiceRecognitionModel: VoiceRecognitionModel
     var mcpServersJson: String?
     var mcpServersFile: String?
-}
 
-fun SettingsProvider.hasKey(provider: LlmProvider): Boolean = when (provider) {
-    LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-    LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-    LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-    LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-    LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-    LlmProvider.LOCAL -> true
-    LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
-}
+    fun hasKey(provider: LlmProvider): Boolean = when (provider) {
+        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
+        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
+        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
+        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
+        LlmProvider.LOCAL -> true
+        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
+    }
 
-fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-    VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
-    VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-    VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
-    VoiceRecognitionProvider.LOCAL_MACOS -> true
+    fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
+        VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
+        VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+        VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
+        VoiceRecognitionProvider.LOCAL_MACOS -> true
+    }
 }

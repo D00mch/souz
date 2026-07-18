@@ -50,6 +50,8 @@ fun LabeledTextField(
     isError: Boolean = false,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     height: Dp? = null,
+    readOnly: Boolean = false,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val textColor = if (isError) MaterialTheme.colorScheme.error else LabeledFieldTextColor
@@ -100,14 +102,17 @@ fun LabeledTextField(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
-                            horizontal = 12.dp,
-                            vertical = if (singleLine) 0.dp else 10.dp,
+                            start = 12.dp,
+                            end = if (trailingContent == null) 12.dp else 48.dp,
+                            top = if (singleLine) 0.dp else 10.dp,
+                            bottom = if (singleLine) 0.dp else 10.dp,
                         ),
                 )
             }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
+                readOnly = readOnly,
                 singleLine = singleLine,
                 visualTransformation = visualTransformation,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -120,10 +125,22 @@ fun LabeledTextField(
                     .fillMaxWidth()
                     .onFocusChanged { isFocused = it.isFocused }
                     .padding(
-                        horizontal = 12.dp,
-                        vertical = if (singleLine) 0.dp else 10.dp,
+                        start = 12.dp,
+                        end = if (trailingContent == null) 12.dp else 48.dp,
+                        top = if (singleLine) 0.dp else 10.dp,
+                        bottom = if (singleLine) 0.dp else 10.dp,
                     ),
             )
+            trailingContent?.let { content ->
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    content()
+                }
+            }
         }
     }
 }

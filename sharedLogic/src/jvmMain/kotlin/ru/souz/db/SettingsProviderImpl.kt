@@ -7,6 +7,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.local.LocalBridgeLoader
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalHostInfoProvider
@@ -117,6 +118,24 @@ class SettingsProviderImpl(
         get() = _codexExpiresAtDelegate?.toLongOrNull()
         set(value) { _codexExpiresAtDelegate = value?.toString() }
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
+
+    override fun hasKey(provider: LlmProvider): Boolean = when (provider) {
+        LlmProvider.GIGA -> hasConfiguredValue(GIGA_CHAT_KEY, "GIGA_KEY")
+        LlmProvider.QWEN -> hasConfiguredValue(QWEN_CHAT_KEY, "QWEN_KEY")
+        LlmProvider.AI_TUNNEL -> hasConfiguredValue(AI_TUNNEL_KEY, "AITUNNEL_KEY")
+        LlmProvider.ANTHROPIC -> hasConfiguredValue(ANTHROPIC_KEY, "ANTHROPIC_API_KEY")
+        LlmProvider.OPENAI -> hasConfiguredValue(OPENAI_KEY, "OPENAI_API_KEY")
+        LlmProvider.LOCAL -> true
+        LlmProvider.CODEX -> hasConfiguredValue(CODEX_ACCESS_TOKEN, CODEX_ACCESS_TOKEN)
+    }
+
+    override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
+        VoiceRecognitionProvider.SALUTE_SPEECH -> hasConfiguredValue(SALUTE_SPEECH_KEY, "VOICE_KEY")
+        VoiceRecognitionProvider.AI_TUNNEL -> hasConfiguredValue(AI_TUNNEL_KEY, "AITUNNEL_KEY")
+        VoiceRecognitionProvider.OPENAI -> hasConfiguredValue(OPENAI_KEY, "OPENAI_API_KEY")
+        VoiceRecognitionProvider.LOCAL_MACOS -> true
+    }
+
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
     override var regionProfile: String
@@ -296,7 +315,7 @@ class SettingsProviderImpl(
             .firstNotNullOfOrNull { provider ->
                 when (provider) {
                     LlmProvider.LOCAL -> availableLocalDefault
-                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(it.provider) }
+                    else -> defaults[provider]?.takeIf { hasKey(it.provider) }
                 }
             }
             ?: availableLocalDefault
@@ -328,15 +347,10 @@ class SettingsProviderImpl(
         else -> null
     }
 
-    private fun hasConfiguredAccess(provider: LlmProvider): Boolean = when (provider) {
-        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-        LlmProvider.LOCAL -> localProviderAvailability.isProviderAvailable()
-        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
-    }
+    private fun hasConfiguredValue(configKey: String, envKey: String, sysPropKey: String = envKey): Boolean =
+        configStore.contains(configKey) ||
+            !System.getenv(envKey).isNullOrBlank() ||
+            !System.getProperty(sysPropKey).isNullOrBlank()
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {

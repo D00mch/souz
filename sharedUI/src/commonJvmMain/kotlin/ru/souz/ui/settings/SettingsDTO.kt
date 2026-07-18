@@ -41,8 +41,6 @@ enum class TelegramAuthStepUi {
     ERROR,
 }
 
-
-
 enum class SettingsSection(val title: StringResource, val icon: String? = null) {
     MODELS(Res.string.settings_section_models),
     GENERAL(Res.string.settings_section_general),
@@ -53,12 +51,7 @@ enum class SettingsSection(val title: StringResource, val icon: String? = null) 
 }
 
 data class SettingsState(
-    val gigaChatKey: String = "",
-    val qwenChatKey: String = "",
-    val aiTunnelKey: String = "",
-    val anthropicKey: String = "",
-    val openaiKey: String = "",
-    val saluteSpeechKey: String = "",
+    val apiKeyFields: Map<ApiKeyField, ApiKeyFieldState> = emptyMap(),
     val codexConnected: Boolean = false,
     val codexOAuthState: CodexOAuthUiState = CodexOAuthUiState.Idle,
     val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
@@ -130,13 +123,10 @@ data class SettingsState(
 
 sealed interface SettingsEvent : VMEvent {
     object GoToMain : SettingsEvent
+    object OpenTools : SettingsEvent
     object RefreshFromProvider : SettingsEvent
-    data class InputGigaChatKey(val key: String): SettingsEvent
-    data class InputQwenChatKey(val key: String): SettingsEvent
-    data class InputAiTunnelKey(val key: String): SettingsEvent
-    data class InputAnthropicKey(val key: String): SettingsEvent
-    data class InputOpenAiKey(val key: String): SettingsEvent
-    data class InputSaluteSpeechKey(val key: String): SettingsEvent
+    data class InputApiKey(val field: ApiKeyField, val value: String): SettingsEvent
+    data class ToggleApiKeyVisibility(val field: ApiKeyField) : SettingsEvent
     object StartCodexOAuth : SettingsEvent
     object CancelCodexOAuth : SettingsEvent
     object DisconnectCodex : SettingsEvent
@@ -195,6 +185,7 @@ sealed interface SettingsEvent : VMEvent {
 
 sealed interface SettingsEffect : VMSideEffect {
     object CloseScreen: SettingsEffect
+    object OpenTools: SettingsEffect
     object NotifyOnSystemPrompt: SettingsEffect
     data class ShowSnackbar(val message: String): SettingsEffect
 }

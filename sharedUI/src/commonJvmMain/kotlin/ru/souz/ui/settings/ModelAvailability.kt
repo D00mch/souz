@@ -1,7 +1,6 @@
 package ru.souz.ui.settings
 
 import ru.souz.db.SettingsProvider
-import ru.souz.db.hasKey
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
@@ -16,8 +15,9 @@ fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): LLMModel
     val availableModels = this.availableLlmModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
+    val availableProviders = availableModels.mapTo(linkedSetOf()) { it.provider }
     val preferredProvider = llmBuildProfile.providerPriorities()
-        .firstOrNull(this::hasKey)
+        .firstOrNull { it in availableProviders }
 
     return preferredProvider
         ?.let(llmBuildProfile::defaultModelForProvider)

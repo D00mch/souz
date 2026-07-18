@@ -1,5 +1,7 @@
 package ru.souz.db
 
+import io.mockk.mockk
+import ru.souz.llms.LlmProvider
 import ru.souz.service.mcp.OAUTH_STORE_PREFIX
 import java.util.UUID
 import java.util.prefs.Preferences
@@ -7,9 +9,11 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SecretPrefsCodecTest {
 
@@ -97,6 +101,29 @@ class SecretPrefsCodecTest {
 
         assertNull(decoded)
     }
+
+    @Test
+    fun `raw presence check does not migrate or decrypt a sensitive value`() =
+        withStoredPreference(ConfigStore.TG_BOT_TOKEN) { key ->
+            val legacy = "legacy-secret"
+            prefs.put(key, legacy)
+
+            assertTrue(ConfigStore.contains(key))
+            assertEquals(legacy, prefs.get(key, null))
+
+            ConfigStore.rm(key)
+            assertFalse(ConfigStore.contains(key))
+        }
+
+    @Test
+    fun `desktop provider presence accepts malformed encrypted payload without decrypting it`() =
+        withStoredPreference(SettingsProviderImpl.AI_TUNNEL_KEY) { key ->
+            prefs.put(key, "enc:v1:malformed")
+            val provider = SettingsProviderImpl(ConfigStore, mockk(relaxed = true))
+
+            assertTrue(provider.hasKey(LlmProvider.AI_TUNNEL))
+            assertEquals("enc:v1:malformed", prefs.get(key, null))
+        }
 
     private fun withStoredPreference(key: String, block: (String) -> Unit) {
         val previousValue = prefs.get(key, null)
