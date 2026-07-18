@@ -1241,6 +1241,20 @@ private fun ChatBubble(
 ) {
     val hoverInteractionSource = remember { MutableInteractionSource() }
     val isHovered by hoverInteractionSource.collectIsHoveredAsState()
+    val scope = rememberCoroutineScope()
+    var copied by remember(message.id) { mutableStateOf(false) }
+    var copyNonce by remember(message.id) { mutableStateOf(0) }
+    val onCopied: () -> Unit = {
+        copied = true
+        val clickId = copyNonce + 1
+        copyNonce = clickId
+        scope.launch {
+            delay(2000)
+            if (copyNonce == clickId) {
+                copied = false
+            }
+        }
+    }
 
     var shouldReveal by remember(message.id) { mutableStateOf(false) }
     LaunchedEffect(message.id) { shouldReveal = true }
@@ -1366,41 +1380,38 @@ private fun ChatBubble(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(22.dp),
+                        .height(24.dp),
                     contentAlignment = Alignment.CenterEnd
                 ) {
-                    Text(
-                        text = formatTimestamp(message.timestamp),
-                        color = ChatUserTimestampColor,
-                        fontSize = 11.sp,
+                    Row(
                         modifier = Modifier
-                            .alpha(userTimestampAlpha)
-                    )
+                            .alpha(userTimestampAlpha),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatTimestamp(message.timestamp),
+                            color = ChatUserTimestampColor,
+                            fontSize = 11.sp,
+                        )
+                        if (message.text.isNotBlank()) {
+                            ChatMessageCopyButton(
+                                messageText = message.text,
+                                copied = copied,
+                                onCopied = onCopied,
+                                buttonSize = 20.4.dp,
+                            )
+                        }
+                    }
                 }
             }
         }
     } else {
-        val clipboardManager = LocalClipboardManager.current
-        val scope = rememberCoroutineScope()
-        var copied by remember(message.id) { mutableStateOf(false) }
-        var copyNonce by remember(message.id) { mutableStateOf(0) }
-
         val attachmentPathKeys = remember(message.attachedFiles) {
             message.attachedFiles.map { it.path.lowercase(Locale.ROOT) }.toSet()
         }
         val clickablePaths = message.finderPaths
             .filterNot { it.path.lowercase(Locale.ROOT) in attachmentPathKeys }
-
-        val copyInteractionSource = remember { MutableInteractionSource() }
-        val isCopyHovered by copyInteractionSource.collectIsHoveredAsState()
-        val copyIconColor by animateColorAsState(
-            targetValue = if (isCopyHovered) ChatHoverIconHoverColor else ChatHoverIconColor,
-            animationSpec = tween(durationMillis = 150)
-        )
-        val copyBackgroundColor by animateColorAsState(
-            targetValue = if (isCopyHovered) ChatHoverButtonBackground else Color.Transparent,
-            animationSpec = tween(durationMillis = 150)
-        )
 
         Box(modifier = contentModifier) {
             Column(
@@ -1574,42 +1585,61 @@ private fun ChatBubble(
                         fontSize = 11.sp
                     )
                     if (message.text.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(copyBackgroundColor)
-                                .hoverable(interactionSource = copyInteractionSource)
-                                .pointerHoverIcon(PointerIcon.Hand)
-                                .clickable(
-                                    interactionSource = copyInteractionSource,
-                                    indication = null,
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(message.text))
-                                        copied = true
-                                        val clickId = copyNonce + 1
-                                        copyNonce = clickId
-                                        scope.launch {
-                                            delay(2000)
-                                            if (copyNonce == clickId) {
-                                                copied = false
-                                            }
-                                        }
-                                    }
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                                contentDescription = null,
-                                tint = copyIconColor,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
+                        ChatMessageCopyButton(
+                            messageText = message.text,
+                            copied = copied,
+                            onCopied = onCopied,
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ChatMessageCopyButton(
+    messageText: String,
+    copied: Boolean,
+    onCopied: () -> Unit,
+    buttonSize: Dp = 24.dp,
+) {
+    val clipboardManager = LocalClipboardManager.current
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val iconColor by animateColorAsState(
+        targetValue = if (isHovered) ChatHoverIconHoverColor else ChatHoverIconColor,
+        animationSpec = tween(durationMillis = 150)
+    )
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isHovered) ChatHoverButtonBackground else Color.Transparent,
+        animationSpec = tween(durationMillis = 150)
+    )
+
+    Box(
+        modifier = Modifier
+            .size(buttonSize)
+            .clip(RoundedCornerShape(6.dp))
+            .background(backgroundColor)
+            .hoverable(interactionSource = interactionSource)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(messageText))
+                    onCopied()
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(14.dp)
+        )
     }
 }
 
