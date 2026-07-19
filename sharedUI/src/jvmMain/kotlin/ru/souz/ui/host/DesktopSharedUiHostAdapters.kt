@@ -1,5 +1,8 @@
 package ru.souz.ui.host
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +35,7 @@ import java.awt.Desktop
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.Locale
 
 class DesktopPathOpener : PathOpener {
     override suspend fun openPath(path: String): Result<Unit> =
@@ -163,15 +167,51 @@ class DesktopPrivacyPolicyOpener : PrivacyPolicyOpener {
     }
 }
 
-class DesktopSettingsHostPreferences : SettingsHostPreferences {
+class DesktopSettingsHostPreferences(
+    private val readUseEnglishInterface: () -> Boolean? = { ConfigStore.get<Boolean>(USE_ENGLISH_INTERFACE) },
+    private val writeUseEnglishInterface: (Boolean) -> Unit = { ConfigStore.put(USE_ENGLISH_INTERFACE, it) },
+    val originalLocale: Locale = Locale.getDefault(),
+    private val systemDisplayLocale: Locale = Locale.getDefault(Locale.Category.DISPLAY),
+    private val systemFormatLocale: Locale = Locale.getDefault(Locale.Category.FORMAT),
+) : SettingsHostPreferences {
+    private var useEnglishInterfaceState by mutableStateOf(
+        readUseEnglishInterface()
+            ?: (systemDisplayLocale.language != "ru")
+    )
+
     override var voiceSpeed: Int
         get() = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
         set(value) {
             ConfigStore.put(ToolSoundConfig.SPEED_KEY, value)
         }
 
+    override var useEnglishInterface: Boolean
+        get() = useEnglishInterfaceState
+        set(value) {
+            writeUseEnglishInterface(value)
+            applyInterfaceLanguage(value)
+            useEnglishInterfaceState = value
+        }
+
     override fun isLocalMacOsSpeechAvailable(): Boolean =
         LocalMacOsSpeechHost.isCurrentHost()
+
+    fun applyInterfaceLanguage() {
+        applyInterfaceLanguage(useEnglishInterfaceState)
+    }
+
+    private fun applyInterfaceLanguage(useEnglish: Boolean) {
+        val locale = Locale.Builder()
+            .setLanguageTag(systemDisplayLocale.toLanguageTag())
+            .setLanguage(if (useEnglish) "en" else "ru")
+            .build()
+        Locale.setDefault(locale)
+        Locale.setDefault(Locale.Category.FORMAT, systemFormatLocale)
+    }
+
+    companion object {
+        private const val USE_ENGLISH_INTERFACE = "USE_ENGLISH_INTERFACE"
+    }
 }
 
 class DesktopTelegramSettingsHost(

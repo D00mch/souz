@@ -151,6 +151,10 @@ class SettingsViewModel(
                     fetchBalance()
                 }
             }
+            is InputUseEnglishInterface -> {
+                settingsHostPreferences.useEnglishInterface = event.enabled
+                setState { copy(useEnglishInterface = event.enabled) }
+            }
             is ToggleApiKeyVisibility -> toggleApiKeyVisibility(event.field)
             StartCodexOAuth -> {
                 codexOAuthJob?.cancel()
@@ -604,6 +608,7 @@ class SettingsViewModel(
                 notificationSoundEnabled = keysProvider.notificationSoundEnabled,
                 voiceInputReviewEnabled = keysProvider.voiceInputReviewEnabled,
                 useEnglishVersion = keysProvider.regionProfile == REGION_EN,
+                useEnglishInterface = settingsHostPreferences.useEnglishInterface,
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 activeAgentId = activeAgentId,
                 availableAgents = availableAgents,

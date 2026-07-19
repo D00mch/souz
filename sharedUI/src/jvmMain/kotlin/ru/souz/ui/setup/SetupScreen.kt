@@ -52,7 +52,7 @@ import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.DialogVariant
-import ru.souz.ui.common.RegionProfileToggle
+import ru.souz.ui.common.LanguageToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
@@ -235,9 +235,9 @@ fun SetupScreenContent(
                             ),
                             color = SetupHintColor
                         )
-                        RegionProfileToggle(
-                            useEnglishProfile = state.useEnglishVersion,
-                            onProfileChange = onUseEnglishVersionChange,
+                        LanguageToggle(
+                            useEnglish = state.useEnglishVersion,
+                            onLanguageChange = onUseEnglishVersionChange,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

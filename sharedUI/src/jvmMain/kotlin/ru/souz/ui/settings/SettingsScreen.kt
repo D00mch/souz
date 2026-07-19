@@ -111,7 +111,7 @@ fun SettingsScreen(
             }
     ) {
         when (state.currentScreen) {
-            SettingsSubScreen.MAIN -> {
+            SettingsSubScreen.MAIN -> key(state.useEnglishInterface) {
                 SettingsScreenMain(
                     state = state,
                     viewModel = viewModel,
@@ -232,6 +232,7 @@ fun SettingsScreenMain(
                             onNotificationSoundEnabledChange = { viewModel.send(SettingsEvent.InputNotificationSoundEnabled(it)) },
                             onVoiceInputReviewEnabledChange = { viewModel.send(SettingsEvent.InputVoiceInputReviewEnabled(it)) },
                             onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
+                            onUseEnglishInterfaceChange = { viewModel.send(SettingsEvent.InputUseEnglishInterface(it)) },
                             onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                             onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
                             onClose = onClose
