@@ -55,7 +55,7 @@ import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.DialogVariant
-import ru.souz.ui.common.RegionProfileToggle
+import ru.souz.ui.common.LanguageToggle
 import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.glassColors
 import org.jetbrains.compose.resources.StringResource
@@ -337,6 +337,7 @@ fun GeneralSettingsContent(
     onNotificationSoundEnabledChange: (Boolean) -> Unit,
     onVoiceInputReviewEnabledChange: (Boolean) -> Unit,
     onUseEnglishVersionChange: (Boolean) -> Unit,
+    onUseEnglishInterfaceChange: (Boolean) -> Unit,
     onChooseVoice: () -> Unit,
     onVoiceSpeedInput: (String) -> Unit,
     onClose: () -> Unit
@@ -358,12 +359,31 @@ fun GeneralSettingsContent(
                     color = SettingsLabelColor
                 )
                 SettingsHoverTooltip(text = stringResource(Res.string.setting_language_profile_desc)) {
-                    RegionProfileToggle(
-                        useEnglishProfile = state.useEnglishVersion,
-                        onProfileChange = onUseEnglishVersionChange,
+                    LanguageToggle(
+                        useEnglish = state.useEnglishVersion,
+                        onLanguageChange = onUseEnglishVersionChange,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(SettingsSpacing.labelToFieldSpacing)) {
+                Text(
+                    text = stringResource(Res.string.setting_interface_language_title),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = SettingsLabelColor
+                )
+                LanguageToggle(
+                    useEnglish = state.useEnglishInterface,
+                    onLanguageChange = onUseEnglishInterfaceChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    russianLabel = Res.string.interface_language_ru_label,
+                    englishLabel = Res.string.interface_language_en_label,
+                )
             }
 
             CalendarDropdown(
@@ -2199,6 +2219,7 @@ private fun GeneralSettingsContentPreview() {
             onNotificationSoundEnabledChange = {},
             onVoiceInputReviewEnabledChange = {},
             onUseEnglishVersionChange = {},
+            onUseEnglishInterfaceChange = {},
             onChooseVoice = {},
             onVoiceSpeedInput = {},
             onClose = {}

@@ -239,11 +239,13 @@ object NoopPrivacyPolicyOpener : PrivacyPolicyOpener {
 
 interface SettingsHostPreferences {
     var voiceSpeed: Int
+    var useEnglishInterface: Boolean
     fun isLocalMacOsSpeechAvailable(): Boolean
 }
 
 class InMemorySettingsHostPreferences(
     override var voiceSpeed: Int = 230,
+    override var useEnglishInterface: Boolean = false,
     private val localMacOsSpeechAvailable: Boolean = false,
 ) : SettingsHostPreferences {
     override fun isLocalMacOsSpeechAvailable(): Boolean = localMacOsSpeechAvailable

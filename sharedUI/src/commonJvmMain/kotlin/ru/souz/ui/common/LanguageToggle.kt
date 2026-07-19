@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import ru.souz.ui.settings.SettingsUiColors
 import souz.sharedui.generated.resources.Res
@@ -34,10 +35,12 @@ private val ToggleSelectedText = SettingsUiColors.toggleActiveText
 private val ToggleText = SettingsUiColors.toggleInactiveText
 
 @Composable
-fun RegionProfileToggle(
-    useEnglishProfile: Boolean,
-    onProfileChange: (Boolean) -> Unit,
+fun LanguageToggle(
+    useEnglish: Boolean,
+    onLanguageChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    russianLabel: StringResource = Res.string.region_profile_ru_label,
+    englishLabel: StringResource = Res.string.region_profile_en_label,
 ) {
     Row(
         modifier = modifier
@@ -51,18 +54,18 @@ fun RegionProfileToggle(
         verticalAlignment = Alignment.CenterVertically
     ) {
         ToggleSegment(
-            text = stringResource(Res.string.region_profile_ru_label),
-            selected = !useEnglishProfile,
+            text = stringResource(russianLabel),
+            selected = !useEnglish,
             onClick = {
-                if (useEnglishProfile) onProfileChange(false)
+                if (useEnglish) onLanguageChange(false)
             },
             modifier = Modifier.weight(1f)
         )
         ToggleSegment(
-            text = stringResource(Res.string.region_profile_en_label),
-            selected = useEnglishProfile,
+            text = stringResource(englishLabel),
+            selected = useEnglish,
             onClick = {
-                if (!useEnglishProfile) onProfileChange(true)
+                if (!useEnglish) onLanguageChange(true)
             },
             modifier = Modifier.weight(1f)
         )

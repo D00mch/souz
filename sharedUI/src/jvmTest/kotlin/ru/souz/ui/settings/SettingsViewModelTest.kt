@@ -274,6 +274,25 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun `interface language change preserves active settings section`() = runTest(dispatcher) {
+        val settingsHostPreferences = InMemorySettingsHostPreferences()
+        val viewModel = SettingsViewModel(
+            di = DI {
+                bindSingleton<TelegramSettingsHost> { ru.souz.ui.host.NoopTelegramSettingsHost }
+                bindSingleton<SettingsHostPreferences> { settingsHostPreferences }
+            },
+            settingsDispatcher = dispatcher,
+        )
+
+        viewModel.handleEvent(SettingsEvent.SelectSettingsSection(SettingsSection.GENERAL))
+        viewModel.handleEvent(SettingsEvent.InputUseEnglishInterface(true))
+
+        assertEquals(SettingsSection.GENERAL, viewModel.uiState.value.activeSection)
+        assertTrue(viewModel.uiState.value.useEnglishInterface)
+        assertTrue(settingsHostPreferences.useEnglishInterface)
+    }
+
+    @Test
     fun `selecting ambient analysis model updates separate local setting without changing agent model`() = runTest(dispatcher) {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU

@@ -64,6 +64,7 @@ data class SettingsState(
     val notificationSoundEnabled: Boolean = true,
     val voiceInputReviewEnabled: Boolean = false,
     val useEnglishVersion: Boolean = false,
+    val useEnglishInterface: Boolean = false,
     val safeModeEnabled: Boolean = false,
     val activeAgentId: AgentId = AgentId.default,
     val availableAgents: List<AgentId> = AgentId.entries,
@@ -137,6 +138,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputNotificationSoundEnabled(val enabled: Boolean): SettingsEvent
     data class InputVoiceInputReviewEnabled(val enabled: Boolean): SettingsEvent
     data class InputUseEnglishVersion(val enabled: Boolean): SettingsEvent
+    data class InputUseEnglishInterface(val enabled: Boolean): SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectAgent(val agentId: AgentId): SettingsEvent
     object ConfirmAgentSwitch : SettingsEvent
