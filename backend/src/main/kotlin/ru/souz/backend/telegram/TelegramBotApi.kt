@@ -33,6 +33,13 @@ interface TelegramBotApi {
         text: String,
     )
 
+    /** Fire-and-forget "typing…" indicator (`sendChatAction`); Telegram expires it after ~5s. */
+    suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String = "typing",
+    )
+
     suspend fun deleteWebhook(
         token: String,
         dropPendingUpdates: Boolean = true,
@@ -88,6 +95,31 @@ internal class HttpTelegramBotApi : TelegramBotApi {
         if (!response.ok) {
             throw TelegramBotApiHttpException(
                 methodName = "sendMessage",
+                statusCode = response.errorCode ?: 500,
+                telegramErrorCode = response.errorCode,
+                description = response.description,
+                parameters = response.parameters,
+            )
+        }
+    }
+
+    override suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String,
+    ) {
+        val response = request(
+            token = token,
+            methodName = "sendChatAction",
+            formParameters = mapOf(
+                "chat_id" to chatId.toString(),
+                "action" to action,
+            ),
+        ).bodyAs<TelegramMethodAckResponse>()
+            .normalizeHttpStatus()
+        if (!response.ok) {
+            throw TelegramBotApiHttpException(
+                methodName = "sendChatAction",
                 statusCode = response.errorCode ?: 500,
                 telegramErrorCode = response.errorCode,
                 description = response.description,

@@ -207,6 +207,51 @@ class TelegramBotPollingServiceTest {
             listOf(GetUpdatesCall("123456:linked-token", 1L, 30, listOf("message"))),
             botApi.getUpdatesCalls,
         )
+        assertEquals(listOf(SentChatAction(777L, "typing")), botApi.chatActions)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `typing indicator repeats every four seconds and stops once the turn completes`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val repository = MemoryTelegramBotBindingRepository()
+        val botApi = FakePollingTelegramBotApi()
+        val executor = RecordingTelegramTurnExecutor(assistantResponse = "done", delayMs = 9_000L)
+        executor.repository = repository
+        linkedBinding(repository)
+        val service = TelegramBotPollingService(
+            repository = repository,
+            botApi = botApi,
+            turnExecutor = executor,
+            tokenCrypto = TelegramBotTokenCrypto(TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY),
+            scope = backgroundScope,
+        )
+        botApi.enqueueSingleTextUpdate(
+            token = "123456:linked-token",
+            updateId = 40L,
+            chatId = 777L,
+            userId = 555L,
+            text = "long thinking please",
+        )
+
+        val poll = backgroundScope.launch(dispatcher) {
+            service.pollEnabledOnce()
+        }
+        runCurrent()
+        assertEquals(listOf(SentChatAction(777L, "typing")), botApi.chatActions)
+
+        advanceTimeBy(4_001L)
+        assertEquals(2, botApi.chatActions.size)
+
+        advanceTimeBy(4_000L)
+        assertEquals(3, botApi.chatActions.size)
+
+        advanceTimeBy(1_000L)
+        poll.join()
+
+        // No further chat action once the turn completes at 9s and cancels the repeating job.
+        assertEquals(3, botApi.chatActions.size)
+        assertEquals(listOf(SentTelegramMessage(777L, "done")), botApi.sentMessages)
     }
 
     @Test
@@ -799,6 +844,11 @@ private data class SentTelegramMessage(
     val text: String,
 )
 
+private data class SentChatAction(
+    val chatId: Long,
+    val action: String,
+)
+
 private data class GetUpdatesCall(
     val token: String,
     val offset: Long?,
@@ -906,6 +956,7 @@ private fun sendMessageResult(
 private class FakePollingTelegramBotApi : TelegramBotApi {
     val sentMessages = mutableListOf<SentTelegramMessage>()
     val getUpdatesCalls = mutableListOf<GetUpdatesCall>()
+    val chatActions = mutableListOf<SentChatAction>()
 
     private val updateHandlers = LinkedHashMap<String, suspend (Long?) -> TelegramUpdatesResponse>()
     private val updateFailures = LinkedHashMap<String, Throwable>()
@@ -981,6 +1032,14 @@ private class FakePollingTelegramBotApi : TelegramBotApi {
         text: String,
     ) {
         sentMessages += SentTelegramMessage(chatId, text)
+    }
+
+    override suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String,
+    ) {
+        chatActions += SentChatAction(chatId, action)
     }
 }
 

@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -288,13 +289,21 @@ class TelegramBotPollingService(
         }
 
         try {
-            val result = turnExecutor.execute(
-                userId = binding.userId,
-                chatId = binding.chatId,
-                content = text,
-                clientMessageId = "telegram:${binding.id}:${update.updateId}",
-                requestOverrides = UserSettingsOverrides(streamingMessages = false),
-            )
+            sendChatActionSafely(token, message.chat.id)
+            val result = coroutineScope {
+                val typingJob = launch { repeatTypingIndicator(token, message.chat.id) }
+                try {
+                    turnExecutor.execute(
+                        userId = binding.userId,
+                        chatId = binding.chatId,
+                        content = text,
+                        clientMessageId = "telegram:${binding.id}:${update.updateId}",
+                        requestOverrides = UserSettingsOverrides(streamingMessages = false),
+                    )
+                } finally {
+                    typingJob.cancelAndJoin()
+                }
+            }
             sendAssistantReply(binding.id, token, message.chat.id, result)
         } catch (e: CancellationException) {
             throw e
@@ -374,6 +383,32 @@ class TelegramBotPollingService(
         }
     }
 
+    /**
+     * Repeats the "typing" chat action every [TYPING_REPEAT_INTERVAL_MS] — shorter than
+     * Telegram's own ~5s expiry — so the indicator stays up continuously while the agent
+     * turn is running. Callers send the first chat action synchronously themselves before
+     * launching this loop; [TYPING_MAX_DURATION_MS] is a safety net in case the caller never
+     * cancels this job (e.g. a turn that hangs instead of failing or completing).
+     */
+    private suspend fun repeatTypingIndicator(token: String, chatId: Long) {
+        withTimeoutOrNull(TYPING_MAX_DURATION_MS) {
+            while (isActive) {
+                delay(TYPING_REPEAT_INTERVAL_MS)
+                sendChatActionSafely(token, chatId)
+            }
+        }
+    }
+
+    private suspend fun sendChatActionSafely(token: String, chatId: Long) {
+        try {
+            botApi.sendChatAction(token = token, chatId = chatId, action = "typing")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Telegram typing indicator send failed for chat {}", chatId)
+        }
+    }
+
     private suspend fun sendReplySafely(
         bindingId: UUID,
         token: String,
@@ -396,6 +431,8 @@ class TelegramBotPollingService(
         const val GET_UPDATES_TIMEOUT_SECONDS: Int = 30
         const val POLL_LOOP_DELAY_MS: Long = 1_000L
         const val LEASE_TTL_SECONDS: Long = 45L
+        const val TYPING_REPEAT_INTERVAL_MS: Long = 4_000L
+        const val TYPING_MAX_DURATION_MS: Long = 5 * 60 * 1_000L
         const val DEFAULT_MAX_CONCURRENCY: Int = 4
         const val MAX_INCOMING_TEXT_LENGTH: Int = 8_000
         const val TELEGRAM_TEXT_LIMIT: Int = 4_096

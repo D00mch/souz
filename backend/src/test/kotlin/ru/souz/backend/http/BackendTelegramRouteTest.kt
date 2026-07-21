@@ -535,6 +535,12 @@ private class FakeTelegramBotApi : TelegramBotApi {
         chatId: Long,
         text: String,
     ) = Unit
+
+    override suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String,
+    ) = Unit
 }
 
 private data class DeleteWebhookCall(

@@ -6,6 +6,12 @@ import io.mockk.clearAllMocks
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.unmockkAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
 import ru.souz.service.speech.SpeechRecognitionProvider
@@ -231,10 +237,64 @@ class TelegramBotControllerTest {
         controller.close()
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `typing indicator repeats every four seconds and stops once the turn completes`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val agentFacade = mockk<AgentFacade>()
+        coEvery { agentFacade.execute("ping") } coAnswers {
+            delay(9_000L)
+            "pong"
+        }
+        val botApi = FakeBotApi()
+        val controller = TelegramBotController(
+            telegramService = mockk(relaxed = true),
+            agentFacade = agentFacade,
+            botApi = botApi,
+        )
+
+        val processing = launch(dispatcher) {
+            controller.processUpdates(
+                token = "token",
+                ownerId = 42,
+                updates = listOf(
+                    TelegramUpdate(
+                        updateId = 5,
+                        message = TelegramMessage(
+                            messageId = 1,
+                            from = TelegramUser(id = 42, isBot = false),
+                            chat = TelegramChat(id = 100, type = "private"),
+                            text = "ping",
+                        ),
+                    ),
+                ),
+                currentOffset = 0,
+            )
+        }
+        runCurrent()
+        assertEquals(listOf("typing"), botApi.chatActions)
+
+        advanceTimeBy(4_001L)
+        assertEquals(2, botApi.chatActions.size)
+
+        advanceTimeBy(4_000L)
+        assertEquals(3, botApi.chatActions.size)
+
+        advanceTimeBy(1_000L)
+        processing.join()
+
+        // No further chat action once the turn completes at 9s and cancels the repeating job.
+        assertEquals(3, botApi.chatActions.size)
+        assertEquals(listOf("Processing command...", "pong"), botApi.sentTexts)
+
+        controller.close()
+    }
+
     private class FakeBotApi(
         private val filesById: Map<String, FileEntry> = emptyMap(),
     ) : TelegramBotApi {
         val sentTexts = mutableListOf<String>()
+        val chatActions = mutableListOf<String>()
 
         data class FileEntry(
             val filePath: String,
@@ -247,6 +307,10 @@ class TelegramBotControllerTest {
 
         override suspend fun sendMessage(token: String, chatId: Long, text: String) {
             sentTexts += text
+        }
+
+        override suspend fun sendChatAction(token: String, chatId: Long, action: String) {
+            chatActions += action
         }
 
         override suspend fun getTelegramFileInfo(token: String, fileId: String): TelegramBotFileResponse {
