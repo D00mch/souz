@@ -1,10 +1,11 @@
 # Backend
 
-The `:backend` module is a JVM HTTP server build for Souz without Compose UI startup, audio capture, hotkeys, or desktop-only tools. It exposes `/health` plus a trusted-proxy `/v1/**` API and reuses the shared `:agent` execution kernel for chat turns.
+The `:backend` module is a JVM HTTP server build for Souz without Compose UI startup, audio capture, hotkeys, or desktop-only tools. It exposes public health and OpenAPI documentation routes plus a trusted-proxy `/v1/**` API and reuses the shared `:agent` execution kernel for chat turns.
 
 ## Routes
 
 - `GET /health` returns process and selected-model status.
+- `GET /docs` serves the public CDN-backed Swagger UI, and `GET /docs/openapi.json` serves the runtime-generated OpenAPI 3.1.1 document. Both documentation routes remain absent from the document itself.
 - `GET /v1/bootstrap` returns backend features, server-visible models/tools, and effective settings for the trusted user, including public `interfaceLanguage`, `requestTimeoutMillis`, and `useFewShotExamples`.
 - `GET /v1/onboarding/state` returns first-run onboarding requirements, current effective settings, and model-access hints for the trusted user.
 - `POST /v1/onboarding/complete` persists first-run preferences, optionally accepts `interfaceLanguage`, `requestTimeoutMillis`, and `useFewShotExamples`, and marks onboarding as completed for the trusted user.
@@ -21,6 +22,7 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 ## Identity And Safety
 
 - `/v1/**` trusts identity only from `X-User-Id` and `X-Souz-Proxy-Auth`.
+- `/`, `/health`, `/docs`, and `/docs/openapi.json` are public. The OpenAPI document models `X-User-Id` and `X-Souz-Proxy-Auth` as two proxy-injected API-key schemes that are required together on every `/v1` operation.
 - `X-User-Id` is treated as an opaque string, validated for shape, and provisioned through `UserRepository.ensureUser(userId)` before the request reaches settings/chat/provider-key services.
 - Missing proxy configuration returns structured `backend_misconfigured`; invalid or missing trusted headers return `untrusted_proxy`, `missing_user_identity`, or `invalid_user_identity`.
 - The backend tool catalog is restricted to backend-safe categories and intentionally excludes desktop-only tools and `WebImageSearch`.
@@ -35,6 +37,13 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 - Telegram bot bindings stay disabled unless `ENABLE_BACKEND_TG_FEATURE=true`. When enabled, they validate tokens through Telegram `getMe`, call `deleteWebhook(drop_pending_updates=true)` before switching to long polling, store a per-chat binding in backend storage with encrypted-at-rest bot tokens plus a hashed one-time link secret, return only safe binding metadata to the UI together with a one-time `/start <secret>` command on bind, keep new/rebound bindings pending until that exact secret arrives from a private Telegram chat, ignore stale/non-matching pre-link messages, bind permanently to the first matching private `from.id + chat.id`, reject later private traffic from other Telegram accounts, feed accepted Telegram text into `AgentExecutionService.executeChatTurn(...)` with `clientMessageId = "telegram:<bindingId>:<updateId>"` and `streamingMessages = false`, renew the per-binding poller lease while an update is in flight, fence reply/checkpoint side effects on active lease ownership, send the final assistant response back to Telegram in <=4096-char chunks with a short fallback reply when needed, and advance `lastUpdateId` only after each update has been processed under the current lease owner.
 - Backend runtime sandboxes are resolved per user only: singleton runtime tools receive `ToolInvocationMeta.userId`, and backend sandbox scope currently omits `conversationId`.
 - `message.delta` stays live-only, while durable events such as `execution.started`, `message.created`, `message.completed`, `tool.call.*`, `option.*`, `execution.finished`, `execution.failed`, and `execution.cancelled` are persisted and replayable. `message.created` now carries `clientMessageId` when the originating user message had one so web clients can reconcile optimistic sends against WS echoes.
+- OpenAPI publishes the canonical durable-event contract as 11 typed discriminator variants and keeps `message.delta` as a separate live-event component for future SSE reuse. Legacy or manually inserted partial/durable-delta rows remain replay-compatible but are outside the supported public schema contract.
+
+## OpenAPI Maintenance
+
+- Every newly registered ordinary HTTP route must attach explicit OpenAPI operation metadata: a stable operation ID, domain tag, parameters/body, success responses, structured errors, and the trusted-proxy security requirement for `/v1` routes.
+- Compiler inference is supplemental. Use runtime route descriptions whenever helpers, service calls, conditional registration, or error paths hide behavior from the Ktor compiler.
+- WebSocket routes and their ordinary HTTP upgrade fallback must carry both compiler exclusion and runtime hiding. Do not add them to OpenAPI; future SSE routes require their own explicit documentation.
 
 ## Storage
 
