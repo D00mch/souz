@@ -702,12 +702,15 @@ class BackendStage3RouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"nope"}""")
         }
+        val ownedPayload = json.readTree(ownedResponse.bodyAsText())
 
         assertEquals(HttpStatusCode.OK, ownedResponse.status)
         assertEquals(
             listOf("visible message"),
-            json.readTree(ownedResponse.bodyAsText())["items"].map { it["content"].asText() }
+            ownedPayload["items"].map { it["content"].asText() }
         )
+        assertTrue(ownedPayload.has("nextBeforeSeq"))
+        assertTrue(ownedPayload["nextBeforeSeq"].isNull)
         assertEquals(HttpStatusCode.NotFound, foreignGet.status)
         assertEquals("chat_not_found", json.readTree(foreignGet.bodyAsText())["error"]["code"].asText())
         assertEquals(HttpStatusCode.NotFound, foreignPost.status)

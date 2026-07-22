@@ -12,7 +12,8 @@ ktor {
     openApi {
         enabled.set(true)
         codeInferenceEnabled.set(true)
-        onlyCommented.set(false)
+        // Full inference outlines deferred descriptions and breaks their reified schema helpers.
+        onlyCommented.set(true)
     }
 }
 

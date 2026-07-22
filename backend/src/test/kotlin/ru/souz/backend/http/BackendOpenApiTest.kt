@@ -16,6 +16,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.llms.LLMModel
 
 class BackendOpenApiTest {
     private val json = jacksonObjectMapper()
@@ -131,6 +132,7 @@ class BackendOpenApiTest {
             assertTrue(providerKeyBody["required"].map { it.asText() }.contains("apiKey"))
             assertTrue(apiKey["writeOnly"].asBoolean())
             assertEquals(1, apiKey["minLength"].asInt())
+            assertEquals("\\S", apiKey["pattern"].asText())
             assertNoSecretExampleOrDefault(apiKey)
 
             val telegramBody = requestSchema(document, "/v1/chats/{chatId}/telegram-bot", "put")
@@ -138,18 +140,38 @@ class BackendOpenApiTest {
             assertTrue(telegramBody["required"].map { it.asText() }.contains("token"))
             assertTrue(token["writeOnly"].asBoolean())
             assertEquals(4_096, token["maxLength"].asInt())
+            assertEquals("\\S", token["pattern"].asText())
             assertNoSecretExampleOrDefault(token)
 
             val settingsBody = requestSchema(document, "/v1/me/settings", "patch")
             assertTrue(settingsBody["properties"]["defaultModel"]["enum"].any(JsonNode::isNull))
             assertTrue(settingsBody["properties"]["interfaceLanguage"]["enum"].any(JsonNode::isNull))
+            assertEquals("\\S", settingsBody["properties"]["locale"]["pattern"].asText())
+            assertEquals("\\S", settingsBody["properties"]["timeZone"]["pattern"].asText())
+            assertEquals("\\S", settingsBody["properties"]["enabledTools"]["items"]["pattern"].asText())
+            assertEquals(
+                LLMModel.entries.map { it.alias }.distinct(),
+                settingsBody["properties"]["defaultModel"]["enum"]
+                    .filterNot(JsonNode::isNull)
+                    .map(JsonNode::asText),
+            )
+
+            val titleBody = requestSchema(document, "/v1/chats/{chatId}/title", "patch")
+            assertEquals("\\S", titleBody["properties"]["title"]["pattern"].asText())
 
             val messageBody = requestSchema(document, "/v1/chats/{chatId}/messages", "post")
             assertTrue(messageBody["required"].map { it.asText() }.contains("content"))
             assertEquals(1, messageBody["properties"]["content"]["minLength"].asInt())
+            assertEquals("\\S", messageBody["properties"]["content"]["pattern"].asText())
             val messageOptions = resolveSchema(document, messageBody["properties"]["options"])
             assertEquals(1.0, messageOptions["properties"]["contextSize"]["minimum"].asDouble())
             assertTrue(messageOptions["properties"]["model"]["enum"].any(JsonNode::isNull))
+            assertEquals("\\S", messageOptions["properties"]["locale"]["pattern"].asText())
+            assertEquals("\\S", messageOptions["properties"]["timeZone"]["pattern"].asText())
+
+            val optionBody = requestSchema(document, "/v1/options/{optionId}/answer", "post")
+            assertEquals("\\S", optionBody["properties"]["selectedOptionIds"]["items"]["pattern"].asText())
+            assertTrue(optionBody["properties"]["metadata"]["description"].asText().contains("non-whitespace"))
 
             assertEquals(
                 setOf("201", "400", "401", "500"),
@@ -171,7 +193,45 @@ class BackendOpenApiTest {
         }
 
     @Test
-    fun `durable replay uses the strict 11 variant event union and excludes live delta`() =
+    fun `nullable response schemas preserve explicit wire nulls after component extraction`() =
+        testApplication {
+            installBackend(BackendFeatureFlags(telegramBot = true))
+            val document = openApiDocument()
+
+            val messages = responseSchema(document, "/v1/chats/{chatId}/messages", "get", "200")
+            assertEquals(
+                setOf("integer", "null"),
+                schemaTypes(document, messages["properties"]["nextBeforeSeq"]),
+            )
+
+            val created = responseSchema(document, "/v1/chats/{chatId}/messages", "post", "200")
+            assertEquals(
+                setOf("object", "null"),
+                schemaTypes(document, created["properties"]["assistantMessage"]),
+            )
+            assertEquals(
+                setOf("object"),
+                schemaTypes(document, created["properties"]["message"]),
+            )
+            val execution = resolveSchema(document, created["properties"]["execution"])
+            assertEquals(
+                setOf("object", "null"),
+                schemaTypes(document, execution["properties"]["usage"]),
+            )
+
+            val telegram = responseSchema(document, "/v1/chats/{chatId}/telegram-bot", "get", "200")
+            assertEquals(
+                setOf("object", "null"),
+                schemaTypes(document, telegram["properties"]["telegramBot"]),
+            )
+            assertEquals(
+                setOf("string", "null"),
+                schemaTypes(document, telegram["properties"]["pendingLinkCommand"]),
+            )
+        }
+
+    @Test
+    fun `durable replay keeps strict canonical variants and exposes a disjoint legacy fallback`() =
         testApplication {
             installBackend(BackendFeatureFlags())
             val document = openApiDocument()
@@ -213,12 +273,37 @@ class BackendOpenApiTest {
                 delta["required"].map { it.asText() }.toSet(),
             )
 
-            val replay = responseSchema(document, "/v1/chats/{chatId}/events", "get", "200")
+            val replayEvent = schemas[BackendEventOpenApiSchemas.REPLAY_EVENT]
+            val legacy = schemas[BackendEventOpenApiSchemas.LEGACY_DURABLE_EVENT]
+            assertEquals(
+                setOf(
+                    "#/components/schemas/${BackendEventOpenApiSchemas.DURABLE_EVENT}",
+                    "#/components/schemas/${BackendEventOpenApiSchemas.LEGACY_DURABLE_EVENT}",
+                ),
+                replayEvent["oneOf"].map { it["\$ref"].asText() }.toSet(),
+            )
+            assertEquals(
+                setOf("seq", "durable", "chatId", "executionId", "type", "payload", "createdAt"),
+                legacy["required"].map { it.asText() }.toSet(),
+            )
+            assertEquals(1.0, legacy["properties"]["seq"]["minimum"].asDouble())
+            assertEquals(listOf(true), legacy["properties"]["durable"]["enum"].map { it.asBoolean() })
+            assertEquals(
+                eventPayloadExpectations.keys + "message.delta",
+                legacy["properties"]["type"]["enum"].map { it.asText() }.toSet(),
+            )
+            assertEquals("object", legacy["properties"]["payload"]["type"].asText())
+            assertTrue(legacy["properties"]["payload"]["additionalProperties"].asBoolean())
             assertEquals(
                 "#/components/schemas/${BackendEventOpenApiSchemas.DURABLE_EVENT}",
+                legacy["not"]["\$ref"].asText(),
+            )
+
+            val replay = responseSchema(document, "/v1/chats/{chatId}/events", "get", "200")
+            assertEquals(
+                "#/components/schemas/${BackendEventOpenApiSchemas.REPLAY_EVENT}",
                 replay["properties"]["items"]["items"]["\$ref"].asText(),
             )
-            assertFalse(replay.toString().contains(BackendEventOpenApiSchemas.MESSAGE_DELTA_EVENT))
 
             val finished = schemas["BackendExecutionFinishedEventPayload"]
             assertFalse(finished["properties"].has("usage"))
@@ -471,6 +556,37 @@ class BackendOpenApiTest {
                 return resolveSchema(document, schema["allOf"][0])
             }
             return schema
+        }
+
+        fun schemaTypes(
+            document: JsonNode,
+            schema: JsonNode,
+            visitedReferences: MutableSet<String> = mutableSetOf(),
+        ): Set<String> = buildSet {
+            schema["\$ref"]?.asText()?.let { reference ->
+                if (visitedReferences.add(reference)) {
+                    addAll(
+                        schemaTypes(
+                            document = document,
+                            schema = document.at(reference.removePrefix("#")),
+                            visitedReferences = visitedReferences,
+                        )
+                    )
+                }
+            }
+
+            schema["type"]?.let { type ->
+                when {
+                    type.isTextual -> add(type.asText())
+                    type.isArray -> addAll(type.map(JsonNode::asText))
+                }
+            }
+
+            listOf("anyOf", "oneOf", "allOf").forEach { keyword ->
+                schema[keyword]?.forEach { branch ->
+                    addAll(schemaTypes(document, branch, visitedReferences))
+                }
+            }
         }
 
         data class OperationExpectation(

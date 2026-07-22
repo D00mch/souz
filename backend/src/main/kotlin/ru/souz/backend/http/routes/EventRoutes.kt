@@ -56,7 +56,7 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
         operationId = "listChatEvents",
         tag = BackendOpenApiTags.EVENTS,
         summary = "List durable chat events",
-        description = "Replays canonical durable events for an owned chat. Returns 404 feature_disabled when events are disabled; live-only message.delta events are never included.",
+        description = "Replays durable events for an owned chat. Canonical events use typed variants, while legacy or partial stored rows use a compatibility fallback. Newly produced message.delta events remain live-only, although historically stored durable delta rows can replay through the fallback. Returns 404 feature_disabled when events are disabled.",
     ) {
         parameters {
             uuidPathParameter("chatId", "Owned chat UUID.")
@@ -70,7 +70,7 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
         responses {
             jsonResponse(
                 status = HttpStatusCode.OK,
-                description = "Canonical durable events in sequence order.",
+                description = "Canonical and replay-compatible legacy durable events in sequence order.",
                 schema = BackendEventOpenApiSchemas.replayResponse,
             )
             v1ErrorResponses(HttpStatusCode.BadRequest, HttpStatusCode.NotFound)

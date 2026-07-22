@@ -70,7 +70,11 @@ internal fun Route.messageRoutes(deps: BackendHttpDependencies) {
             )
         }
         responses {
-            jsonResponse<BackendV1MessagesResponse>(HttpStatusCode.OK, "Visible messages in sequence order.")
+            jsonResponse<BackendV1MessagesResponse>(
+                status = HttpStatusCode.OK,
+                description = "Visible messages in sequence order.",
+                schemaTransform = BackendOpenApiSchemas::messagesResponse,
+            )
             v1ErrorResponses(HttpStatusCode.BadRequest, HttpStatusCode.NotFound)
         }
     }
@@ -105,7 +109,11 @@ internal fun Route.messageRoutes(deps: BackendHttpDependencies) {
             )
         }
         responses {
-            jsonResponse<BackendV1CreateMessageResponse>(HttpStatusCode.OK, "Created message and execution state.")
+            jsonResponse<BackendV1CreateMessageResponse>(
+                status = HttpStatusCode.OK,
+                description = "Created message and execution state.",
+                schemaTransform = BackendOpenApiSchemas::createMessageResponse,
+            )
             v1ErrorResponses(HttpStatusCode.BadRequest, HttpStatusCode.NotFound, HttpStatusCode.Conflict)
         }
     }

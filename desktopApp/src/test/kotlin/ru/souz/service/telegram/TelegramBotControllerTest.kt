@@ -1,5 +1,6 @@
 package ru.souz.service.telegram
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.clearAllMocks
@@ -8,6 +9,7 @@ import io.mockk.slot
 import io.mockk.unmockkAll
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
+import ru.souz.llms.restJsonMapper
 import ru.souz.service.speech.SpeechRecognitionProvider
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -22,6 +24,70 @@ class TelegramBotControllerTest {
     fun clearMocks() {
         clearAllMocks()
         unmockkAll()
+    }
+
+    @Test
+    fun `restJsonMapper deserializes Telegram snake case fields`() {
+        val updates = restJsonMapper.readValue<TelegramUpdatesResponse>(
+            """
+            {
+              "ok": true,
+              "result": [
+                {
+                  "update_id": 101,
+                  "message": {
+                    "message_id": 202,
+                    "from": {
+                      "id": 303,
+                      "is_bot": false,
+                      "first_name": "Owner",
+                      "username": "owner"
+                    },
+                    "chat": {
+                      "id": 303,
+                      "type": "private"
+                    },
+                    "document": {
+                      "file_id": "document-id",
+                      "file_name": "report.pdf"
+                    },
+                    "voice": {
+                      "file_id": "voice-id"
+                    }
+                  }
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val update = updates.result.single()
+        assertEquals(101L, update.updateId)
+        val message = assertNotNull(update.message)
+        assertEquals(202L, message.messageId)
+        assertEquals("document-id", message.document?.fileId)
+        assertEquals("report.pdf", message.document?.fileName)
+        assertEquals("voice-id", message.voice?.fileId)
+        assertEquals(false, message.from?.isBot)
+        assertEquals("Owner", message.from?.firstName)
+
+        val fileResponse = restJsonMapper.readValue<TelegramBotFileResponse>(
+            """
+            {
+              "ok": true,
+              "result": {
+                "file_id": "document-id",
+                "file_path": "documents/report.pdf",
+                "file_size": 4096
+              }
+            }
+            """.trimIndent(),
+        )
+
+        val file = assertNotNull(fileResponse.result)
+        assertEquals("document-id", file.fileId)
+        assertEquals("documents/report.pdf", file.filePath)
+        assertEquals(4096L, file.fileSize)
     }
 
     @Test

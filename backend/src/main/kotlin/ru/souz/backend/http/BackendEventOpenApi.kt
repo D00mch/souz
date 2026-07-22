@@ -6,10 +6,13 @@ import io.ktor.openapi.JsonSchema
 import io.ktor.openapi.JsonSchemaDiscriminator
 import io.ktor.openapi.JsonType
 import io.ktor.openapi.ReferenceOr
+import ru.souz.backend.events.model.AgentEventType
 
 /** Documentation-only schemas for the canonical backend event transport contract. */
 internal object BackendEventOpenApiSchemas {
     const val DURABLE_EVENT = "BackendDurableEventEnvelope"
+    const val LEGACY_DURABLE_EVENT = "BackendLegacyDurableEventEnvelope"
+    const val REPLAY_EVENT = "BackendReplayEventEnvelope"
     const val MESSAGE_DELTA_EVENT = "BackendMessageDeltaEventEnvelope"
     const val REPLAY_RESPONSE = "BackendDurableEventReplayResponse"
 
@@ -44,9 +47,9 @@ internal object BackendEventOpenApiSchemas {
     val replayResponse: JsonSchema = objectSchema(
         required = listOf("items"),
         properties = mapOf(
-            "items" to value(arraySchema(schema(DURABLE_EVENT))),
+            "items" to value(arraySchema(schema(REPLAY_EVENT))),
         ),
-        description = "Canonical durable events in sequence order. Live-only message.delta events are excluded.",
+        description = "Durable events in sequence order. Canonical events use typed variants; legacy or partial stored rows use the compatibility fallback. Newly produced message.delta events remain live-only.",
     )
 
     val components: Map<String, JsonSchema> = buildMap {
@@ -70,7 +73,7 @@ internal object BackendEventOpenApiSchemas {
             DURABLE_EVENT,
             JsonSchema(
                 title = DURABLE_EVENT,
-                description = "The 11 canonical event variants supported by durable replay.",
+                description = "The 11 canonical durable event variants.",
                 oneOf = durableVariants.map { schema(it.componentName) },
                 discriminator = JsonSchemaDiscriminator(
                     propertyName = "type",
@@ -78,6 +81,15 @@ internal object BackendEventOpenApiSchemas {
                         variant.type to "#/components/schemas/${variant.componentName}"
                     },
                 ),
+            ),
+        )
+        put(LEGACY_DURABLE_EVENT, legacyDurableEnvelope())
+        put(
+            REPLAY_EVENT,
+            JsonSchema(
+                title = REPLAY_EVENT,
+                description = "A canonical durable event or a replay-compatible legacy/partial stored event.",
+                oneOf = listOf(schema(DURABLE_EVENT), schema(LEGACY_DURABLE_EVENT)),
             ),
         )
         put(MESSAGE_DELTA_EVENT, messageDeltaEnvelope())
@@ -97,6 +109,25 @@ internal object BackendEventOpenApiSchemas {
                 "createdAt" to value(dateTimeSchema()),
             ),
             description = "Canonical ${variant.type} durable event.",
+        )
+
+    private fun legacyDurableEnvelope(): JsonSchema =
+        JsonSchema(
+            type = JsonType.OBJECT,
+            title = LEGACY_DURABLE_EVENT,
+            description = "Replay compatibility for legacy or partial stored durable events, including historically persisted message.delta rows. Canonical events are explicitly excluded.",
+            required = listOf("seq", "durable", "chatId", "executionId", "type", "payload", "createdAt"),
+            properties = mapOf(
+                "seq" to value(positiveSequenceSchema()),
+                "durable" to value(singletonBoolean(true)),
+                "chatId" to value(uuidSchema()),
+                "executionId" to value(nullableUuidSchema()),
+                "type" to value(stringEnum(AgentEventType.entries.map { it.value })),
+                "payload" to value(arbitraryObjectSchema("Legacy event payload with producer-specific or partial fields.")),
+                "createdAt" to value(dateTimeSchema()),
+            ),
+            additionalProperties = AdditionalProperties.Allowed(false),
+            not = schema(DURABLE_EVENT),
         )
 
     private fun messageDeltaEnvelope(): JsonSchema =
@@ -303,6 +334,9 @@ private fun booleanSchema(): JsonSchema = JsonSchema(type = JsonType.BOOLEAN)
 private fun sequenceSchema(): JsonSchema =
     JsonSchema(type = JsonType.INTEGER, format = "int64", minimum = 0.0)
 
+private fun positiveSequenceSchema(): JsonSchema =
+    JsonSchema(type = JsonType.INTEGER, format = "int64", minimum = 1.0)
+
 private fun nullableSequenceSchema(): JsonSchema =
     JsonSchema(
         type = JsonSchema.SchemaType.AnyOf(listOf(JsonType.INTEGER, JsonType.NULL)),
@@ -318,6 +352,9 @@ private fun nonNegativeLongSchema(): JsonSchema =
 
 private fun singletonString(value: String): JsonSchema =
     JsonSchema(type = JsonType.STRING, enum = listOf(GenericElement(value)))
+
+private fun stringEnum(values: List<String>): JsonSchema =
+    JsonSchema(type = JsonType.STRING, enum = values.map(::GenericElement))
 
 private fun singletonBoolean(value: Boolean): JsonSchema =
     JsonSchema(type = JsonType.BOOLEAN, enum = listOf(GenericElement(value)))
@@ -342,6 +379,13 @@ private fun stringMapSchema(): JsonSchema =
 
 private fun arbitraryJsonSchema(description: String): JsonSchema =
     JsonSchema(description = description)
+
+private fun arbitraryObjectSchema(description: String): JsonSchema =
+    JsonSchema(
+        type = JsonType.OBJECT,
+        description = description,
+        additionalProperties = AdditionalProperties.Allowed(true),
+    )
 
 private fun schema(name: String): ReferenceOr<JsonSchema> = ReferenceOr.schema(name)
 

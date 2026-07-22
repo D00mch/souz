@@ -222,8 +222,20 @@ internal fun Parameters.Builder.strictBooleanQueryParameter(
     }
 }
 
-/** Explicit request-schema corrections for validation that reflection cannot discover. */
+/** Explicit schema corrections for validation and wire details that reflection cannot discover. */
 internal object BackendOpenApiSchemas {
+    fun messagesResponse(schema: JsonSchema): JsonSchema =
+        schema
+            .withoutRequiredProperty("nextBeforeSeq")
+            .withProperty("nextBeforeSeq") { nextBeforeSeq ->
+                nextBeforeSeq.copy(
+                    type = JsonSchema.SchemaType.AnyOf(listOf(JsonType.INTEGER, JsonType.NULL)),
+                )
+            }
+
+    fun createMessageResponse(schema: JsonSchema): JsonSchema =
+        schema.withOptionalNullableObject("assistantMessage")
+
     fun settingsPatch(schema: JsonSchema): JsonSchema =
         schema
             .withModelAliases("defaultModel")
@@ -273,9 +285,15 @@ internal object BackendOpenApiSchemas {
             .withProperty("selectedOptionIds") { selected ->
                 selected.copy(
                     minItems = 1,
-                    items = selected.items?.mapSchema { item -> item.copy(minLength = 1) },
+                    items = selected.items?.mapSchema { item ->
+                        item.copy(minLength = 1, pattern = NON_BLANK_PATTERN)
+                    },
                 )
             }
+            .withPropertyDescription(
+                "metadata",
+                "String metadata. Keys must contain at least one non-whitespace character.",
+            )
 
     fun telegramToken(schema: JsonSchema): JsonSchema =
         schema
@@ -285,6 +303,7 @@ internal object BackendOpenApiSchemas {
                     type = JsonType.STRING,
                     description = "Telegram bot token.",
                     minLength = 1,
+                    pattern = NON_BLANK_PATTERN,
                     maxLength = 4_096,
                     writeOnly = true,
                     default = null,
@@ -308,7 +327,7 @@ private fun JsonSchema.withModelAliases(propertyName: String): JsonSchema =
     withProperty(propertyName) { property ->
         property.copy(
             description = "Known Souz model alias.",
-            enum = property.enumValuesPreservingNull(LLMModel.entries.map { it.alias }),
+            enum = property.enumValuesPreservingNull(LLMModel.entries.map { it.alias }.distinct()),
         )
     }
 
@@ -336,6 +355,7 @@ private fun JsonSchema.withNonBlankString(
         property.copy(
             description = description,
             minLength = 1,
+            pattern = NON_BLANK_PATTERN,
             writeOnly = writeOnly ?: property.writeOnly,
             default = null,
             example = null,
@@ -346,7 +366,9 @@ private fun JsonSchema.withNonBlankString(
 private fun JsonSchema.withNonBlankArrayItems(propertyName: String): JsonSchema =
     withProperty(propertyName) { property ->
         property.copy(
-            items = property.items?.mapSchema { item -> item.copy(minLength = 1) },
+            items = property.items?.mapSchema { item ->
+                item.copy(minLength = 1, pattern = NON_BLANK_PATTERN)
+            },
         )
     }
 
@@ -376,6 +398,55 @@ private fun JsonSchema.withPropertyDescription(
 ): JsonSchema =
     withProperty(propertyName) { property -> property.copy(description = description) }
 
+private fun JsonSchema.withoutRequiredProperty(name: String): JsonSchema =
+    copy(required = required?.filterNot { it == name }?.takeIf { it.isNotEmpty() })
+
+private fun JsonSchema.withOptionalNullableObject(name: String): JsonSchema =
+    withoutRequiredProperty(name).copy(
+        properties = properties?.mapValues { (propertyName, propertySchema) ->
+            if (propertyName == name) propertySchema.asTitlelessNullableWrapper() else propertySchema
+        }
+    )
+
+private fun ReferenceOr<JsonSchema>.asTitlelessNullableWrapper(): ReferenceOr<JsonSchema> =
+    ReferenceOr.Value(
+        JsonSchema(
+            anyOf = listOf(
+                withoutNullability(),
+                ReferenceOr.Value(JsonSchema(type = JsonType.NULL)),
+            )
+        )
+    )
+
+private fun ReferenceOr<JsonSchema>.withoutNullability(): ReferenceOr<JsonSchema> =
+    when (this) {
+        is ReferenceOr.Reference -> this
+        is ReferenceOr.Value -> ReferenceOr.Value(value.withoutNullability())
+    }
+
+private fun JsonSchema.withoutNullability(): JsonSchema =
+    copy(
+        type = when (val schemaType = type) {
+            is JsonSchema.SchemaType.AnyOf -> schemaType.types
+                .filterNot { it == JsonType.NULL }
+                .let { nonNullTypes ->
+                    when (nonNullTypes.size) {
+                        0 -> null
+                        1 -> nonNullTypes.single()
+                        else -> JsonSchema.SchemaType.AnyOf(nonNullTypes)
+                    }
+                }
+
+            JsonType.NULL -> null
+            else -> schemaType
+        },
+        anyOf = anyOf?.filterNot(ReferenceOr<JsonSchema>::isNullSchema)?.takeIf { it.isNotEmpty() },
+        oneOf = oneOf?.filterNot(ReferenceOr<JsonSchema>::isNullSchema)?.takeIf { it.isNotEmpty() },
+    )
+
+private fun ReferenceOr<JsonSchema>.isNullSchema(): Boolean =
+    this is ReferenceOr.Value && value.type == JsonType.NULL
+
 private fun JsonSchema.withProperty(
     name: String,
     transform: (JsonSchema) -> JsonSchema,
@@ -393,3 +464,5 @@ private fun ReferenceOr<JsonSchema>.mapSchema(
         is ReferenceOr.Reference -> this
         is ReferenceOr.Value -> ReferenceOr.Value(transform(value))
     }
+
+private const val NON_BLANK_PATTERN = "\\S"
