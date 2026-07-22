@@ -306,17 +306,17 @@ class TelegramBotController(
      * Sends the "typing" chat action immediately, then repeats it every
      * [TYPING_REPEAT_INTERVAL_MS] — shorter than Telegram's own ~5s expiry — until [block]
      * completes, so the indicator stays up continuously while the agent turn is running.
-     * [TYPING_MAX_DURATION_MS] is a safety net in case [block] hangs instead of completing
-     * or throwing.
+     * Launched concurrently with [block] (never awaited) so this best-effort UI signal cannot
+     * delay starting it. [TYPING_MAX_DURATION_MS] is a safety net in case [block] hangs instead
+     * of completing or throwing.
      */
-    private suspend fun <T> withTypingIndicator(token: String, chatId: Long, block: suspend () -> T): T {
-        sendChatActionSafely(token, chatId)
-        return coroutineScope {
+    private suspend fun <T> withTypingIndicator(token: String, chatId: Long, block: suspend () -> T): T =
+        coroutineScope {
             val typingJob = launch {
                 withTimeoutOrNull(TYPING_MAX_DURATION_MS) {
                     while (isActive) {
-                        delay(TYPING_REPEAT_INTERVAL_MS)
                         sendChatActionSafely(token, chatId)
+                        delay(TYPING_REPEAT_INTERVAL_MS)
                     }
                 }
             }
@@ -326,7 +326,6 @@ class TelegramBotController(
                 typingJob.cancelAndJoin()
             }
         }
-    }
 
     private suspend fun sendChatActionSafely(token: String, chatId: Long) {
         try {

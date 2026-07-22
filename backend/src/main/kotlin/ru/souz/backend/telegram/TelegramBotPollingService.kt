@@ -289,7 +289,6 @@ class TelegramBotPollingService(
         }
 
         try {
-            sendChatActionSafely(binding.id, token, message.chat.id)
             val result = coroutineScope {
                 val typingJob = launch { repeatTypingIndicator(binding.id, token, message.chat.id) }
                 try {
@@ -384,17 +383,18 @@ class TelegramBotPollingService(
     }
 
     /**
-     * Repeats the "typing" chat action every [TYPING_REPEAT_INTERVAL_MS] — shorter than
-     * Telegram's own ~5s expiry — so the indicator stays up continuously while the agent
-     * turn is running. Callers send the first chat action synchronously themselves before
-     * launching this loop; [TYPING_MAX_DURATION_MS] is a safety net in case the caller never
-     * cancels this job (e.g. a turn that hangs instead of failing or completing).
+     * Sends the "typing" chat action immediately, then repeats it every
+     * [TYPING_REPEAT_INTERVAL_MS] — shorter than Telegram's own ~5s expiry — so the indicator
+     * stays up continuously while the agent turn is running. Launched concurrently with the
+     * turn (never awaited) so this best-effort UI signal cannot delay starting the turn itself.
+     * [TYPING_MAX_DURATION_MS] is a safety net in case the caller never cancels this job (e.g.
+     * a turn that hangs instead of failing or completing).
      */
     private suspend fun repeatTypingIndicator(bindingId: UUID, token: String, chatId: Long) {
         withTimeoutOrNull(TYPING_MAX_DURATION_MS) {
             while (isActive) {
-                delay(TYPING_REPEAT_INTERVAL_MS)
                 sendChatActionSafely(bindingId, token, chatId)
+                delay(TYPING_REPEAT_INTERVAL_MS)
             }
         }
     }

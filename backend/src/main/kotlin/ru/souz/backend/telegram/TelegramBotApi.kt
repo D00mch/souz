@@ -15,7 +15,7 @@ import java.net.http.HttpTimeoutException
 import java.time.Duration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 
 interface TelegramBotApi {
     suspend fun getMe(token: String): TelegramGetMeResponse
@@ -156,25 +156,25 @@ internal class HttpTelegramBotApi : TelegramBotApi {
         methodName: String,
         formParameters: Map<String, String>,
     ): TelegramRawResponse =
-        withContext(Dispatchers.IO) {
-            val request = buildRequest(token, methodName, formParameters)
-            try {
+        try {
+            runInterruptible(Dispatchers.IO) {
+                val request = buildRequest(token, methodName, formParameters)
                 client.send(request, HttpResponse.BodyHandlers.ofString()).let { response ->
                     TelegramRawResponse(
                         httpStatus = response.statusCode(),
                         body = response.body(),
                     )
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: HttpTimeoutException) {
-                throw TelegramBotApiTransportException("Telegram request timed out.", e)
-            } catch (e: IOException) {
-                throw TelegramBotApiTransportException("Telegram network request failed.", e)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw TelegramBotApiTransportException("Telegram request was interrupted.", e)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HttpTimeoutException) {
+            throw TelegramBotApiTransportException("Telegram request timed out.", e)
+        } catch (e: IOException) {
+            throw TelegramBotApiTransportException("Telegram network request failed.", e)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw TelegramBotApiTransportException("Telegram request was interrupted.", e)
         }
 
     private fun buildRequest(

@@ -161,7 +161,10 @@ class TelegramBotPollingServiceTest {
     fun `linked private telegram message executes turn with scoped client id and sends assistant reply`() = runTest {
         val repository = MemoryTelegramBotBindingRepository()
         val botApi = FakePollingTelegramBotApi()
-        val executor = RecordingTelegramTurnExecutor(assistantResponse = "Финальный ответ агента.")
+        // A non-zero delay lets the concurrently-launched typing indicator actually run at
+        // least once before the turn completes and cancels it (it is fire-and-forget and does
+        // not delay a turn that finishes without ever suspending).
+        val executor = RecordingTelegramTurnExecutor(assistantResponse = "Финальный ответ агента.", delayMs = 1L)
         val service = pollingService(repository, botApi, executor)
         val binding = linkedBinding(repository)
         botApi.enqueueUpdates(
