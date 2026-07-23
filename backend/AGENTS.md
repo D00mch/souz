@@ -53,6 +53,10 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 
 ## Config
 
+- Server:
+  - `SOUZ_BACKEND_HOST` / `souz.backend.host` (default `127.0.0.1`; must not be blank)
+  - `SOUZ_BACKEND_PORT` / `souz.backend.port` (default `8080`; valid range `1..65535`)
+  - `SOUZ_BACKEND_PROXY_TOKEN` / `souz.backend.proxyToken` (when absent, public routes remain available and `/v1/**` returns `backend_misconfigured`)
 - Feature flags:
   - `SOUZ_FEATURE_WS_EVENTS` / `souz.backend.feature.wsEvents`
   - `SOUZ_FEATURE_STREAMING_MESSAGES` / `souz.backend.feature.streamingMessages`

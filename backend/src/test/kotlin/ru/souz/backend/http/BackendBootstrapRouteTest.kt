@@ -47,9 +47,11 @@ class BackendBootstrapRouteTest {
     fun `bootstrap rejects requests without trusted headers`() = testApplication {
         application {
             backendApplication(
-                selectedModel = { LLMModel.Max.alias },
-                bootstrapService = bootstrapService(),
-                trustedProxyToken = { "proxy-secret" },
+                BackendHttpDependencies(
+                    selectedModel = { LLMModel.Max.alias },
+                    bootstrapService = bootstrapService(),
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -64,9 +66,11 @@ class BackendBootstrapRouteTest {
     fun `bootstrap rejects missing or invalid proxy auth`() = testApplication {
         application {
             backendApplication(
-                selectedModel = { LLMModel.Max.alias },
-                bootstrapService = bootstrapService(),
-                trustedProxyToken = { "proxy-secret" },
+                BackendHttpDependencies(
+                    selectedModel = { LLMModel.Max.alias },
+                    bootstrapService = bootstrapService(),
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -88,9 +92,11 @@ class BackendBootstrapRouteTest {
     fun `bootstrap rejects requests when proxy token is not configured`() = testApplication {
         application {
             backendApplication(
-                selectedModel = { LLMModel.Max.alias },
-                bootstrapService = bootstrapService(),
-                trustedProxyToken = { null },
+                BackendHttpDependencies(
+                    selectedModel = { LLMModel.Max.alias },
+                    bootstrapService = bootstrapService(),
+                    trustedProxyToken = { null },
+                )
             )
         }
 
@@ -108,9 +114,11 @@ class BackendBootstrapRouteTest {
     fun `bootstrap requires user identity header but does not require uuid format`() = testApplication {
         application {
             backendApplication(
-                selectedModel = { LLMModel.Max.alias },
-                bootstrapService = bootstrapService(),
-                trustedProxyToken = { "proxy-secret" },
+                BackendHttpDependencies(
+                    selectedModel = { LLMModel.Max.alias },
+                    bootstrapService = bootstrapService(),
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -141,17 +149,19 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                selectedModel = { settingsProvider.gigaModel.alias },
-                bootstrapService = bootstrapService(
-                    settingsProvider = settingsProvider,
-                    featureFlags = BackendFeatureFlags(
-                        wsEvents = false,
-                        streamingMessages = true,
-                        toolEvents = true,
-                        options = false,
+                BackendHttpDependencies(
+                    selectedModel = { settingsProvider.gigaModel.alias },
+                    bootstrapService = bootstrapService(
+                        settingsProvider = settingsProvider,
+                        featureFlags = BackendFeatureFlags(
+                            wsEvents = false,
+                            streamingMessages = true,
+                            toolEvents = true,
+                            options = false,
+                        ),
                     ),
-                ),
-                trustedProxyToken = { "proxy-secret" },
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -192,22 +202,24 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                selectedModel = { settingsProvider.gigaModel.alias },
-                bootstrapService = bootstrapService(
-                    settingsProvider = settingsProvider,
-                    toolCatalog = toolCatalog(
-                        ToolCategory.FILES to fakeTool("ListFiles"),
-                        ToolCategory.BROWSER to fakeTool("OpenBrowser"),
-                        ToolCategory.TELEGRAM to fakeTool("SendTelegramMessage"),
+                BackendHttpDependencies(
+                    selectedModel = { settingsProvider.gigaModel.alias },
+                    bootstrapService = bootstrapService(
+                        settingsProvider = settingsProvider,
+                        toolCatalog = toolCatalog(
+                            ToolCategory.FILES to fakeTool("ListFiles"),
+                            ToolCategory.BROWSER to fakeTool("OpenBrowser"),
+                            ToolCategory.TELEGRAM to fakeTool("SendTelegramMessage"),
+                        ),
+                        featureFlags = BackendFeatureFlags(
+                            wsEvents = false,
+                            streamingMessages = false,
+                            toolEvents = false,
+                            options = false,
+                        ),
                     ),
-                    featureFlags = BackendFeatureFlags(
-                        wsEvents = false,
-                        streamingMessages = false,
-                        toolEvents = false,
-                        options = false,
-                    ),
-                ),
-                trustedProxyToken = { "proxy-secret" },
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -252,12 +264,14 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                selectedModel = { settingsProvider.gigaModel.alias },
-                bootstrapService = bootstrapService(
-                    settingsProvider = settingsProvider,
-                    userProviderKeyRepository = userProviderKeyRepository,
-                ),
-                trustedProxyToken = { "proxy-secret" },
+                BackendHttpDependencies(
+                    selectedModel = { settingsProvider.gigaModel.alias },
+                    bootstrapService = bootstrapService(
+                        settingsProvider = settingsProvider,
+                        userProviderKeyRepository = userProviderKeyRepository,
+                    ),
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -311,18 +325,20 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                selectedModel = { settingsProvider.gigaModel.alias },
-                bootstrapService = bootstrapService(
-                    settingsProvider = settingsProvider,
-                    userSettingsRepository = userSettingsRepository,
-                    featureFlags = BackendFeatureFlags(
-                        wsEvents = false,
-                        streamingMessages = true,
-                        toolEvents = true,
-                        options = false,
+                BackendHttpDependencies(
+                    selectedModel = { settingsProvider.gigaModel.alias },
+                    bootstrapService = bootstrapService(
+                        settingsProvider = settingsProvider,
+                        userSettingsRepository = userSettingsRepository,
+                        featureFlags = BackendFeatureFlags(
+                            wsEvents = false,
+                            streamingMessages = true,
+                            toolEvents = true,
+                            options = false,
+                        ),
                     ),
-                ),
-                trustedProxyToken = { "proxy-secret" },
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -379,17 +395,19 @@ class BackendBootstrapRouteTest {
         }
         application {
             backendApplication(
-                selectedModel = { settingsProvider.gigaModel.alias },
-                bootstrapService = bootstrapService(
-                    settingsProvider = settingsProvider,
-                    featureFlags = BackendFeatureFlags(
-                        wsEvents = false,
-                        streamingMessages = true,
-                        toolEvents = true,
-                        options = false,
+                BackendHttpDependencies(
+                    selectedModel = { settingsProvider.gigaModel.alias },
+                    bootstrapService = bootstrapService(
+                        settingsProvider = settingsProvider,
+                        featureFlags = BackendFeatureFlags(
+                            wsEvents = false,
+                            streamingMessages = true,
+                            toolEvents = true,
+                            options = false,
+                        ),
                     ),
-                ),
-                trustedProxyToken = { "proxy-secret" },
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 

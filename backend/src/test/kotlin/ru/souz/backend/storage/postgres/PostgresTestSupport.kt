@@ -6,6 +6,7 @@ import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.PostgreSQLContainer
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.app.BackendPostgresConfig
+import ru.souz.backend.app.BackendServerConfig
 import ru.souz.backend.config.BackendFeatureFlags
 
 internal object SharedPostgresContainer {
@@ -32,7 +33,11 @@ internal fun postgresAppConfig(
     val container = SharedPostgresContainer.instance
     return BackendAppConfig(
         featureFlags = BackendFeatureFlags(),
-        proxyToken = null,
+        server = BackendServerConfig(
+            host = "127.0.0.1",
+            port = 8080,
+            proxyToken = null,
+        ),
         masterKey = "test-master-key",
         postgres = BackendPostgresConfig(
             host = container.host,

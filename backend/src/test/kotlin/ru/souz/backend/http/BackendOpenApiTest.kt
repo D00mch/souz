@@ -337,10 +337,12 @@ class BackendOpenApiTest {
         val context = routeTestContext(featureFlags = featureFlags)
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                featureFlags = featureFlags,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    featureFlags = featureFlags,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
     }

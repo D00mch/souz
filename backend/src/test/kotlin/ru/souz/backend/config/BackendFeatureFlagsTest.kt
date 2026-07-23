@@ -10,6 +10,7 @@ import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendPostgresConfig
 import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.app.BackendServerConfig
 import ru.souz.backend.common.BackendConfigurationException
 
 class BackendFeatureFlagsTest {
@@ -49,6 +50,96 @@ class BackendFeatureFlagsTest {
 }
 
 class BackendAppConfigTest {
+    @Test
+    fun `server config reads defaults and explicit settings`() {
+        val defaultConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"),
+            )
+        ).validate()
+        val envConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_BACKEND_HOST" to " 0.0.0.0 ",
+                    "SOUZ_BACKEND_PORT" to "9090",
+                    "SOUZ_BACKEND_PROXY_TOKEN" to " proxy-secret ",
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                ),
+            )
+        ).validate()
+        val propertyConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                properties = mapOf(
+                    "souz.backend.host" to "backend.internal",
+                    "souz.backend.port" to "8181",
+                    "souz.backend.proxyToken" to " property-secret ",
+                    "souz.masterKey" to "test-master-key",
+                ),
+            )
+        ).validate()
+        val blankTokenConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_BACKEND_PROXY_TOKEN" to "   ",
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                ),
+            )
+        ).validate()
+
+        assertEquals(
+            BackendServerConfig(host = "127.0.0.1", port = 8080, proxyToken = null),
+            defaultConfig.server,
+        )
+        assertEquals(
+            BackendServerConfig(host = "0.0.0.0", port = 9090, proxyToken = "proxy-secret"),
+            envConfig.server,
+        )
+        assertEquals(
+            BackendServerConfig(host = "backend.internal", port = 8181, proxyToken = "property-secret"),
+            propertyConfig.server,
+        )
+        assertNull(blankTokenConfig.server.proxyToken)
+    }
+
+    @Test
+    fun `server config rejects malformed and out of range ports`() {
+        val malformedPort = assertFailsWith<BackendConfigurationException> {
+            BackendAppConfig.load(
+                MapBackendConfigSource(
+                    env = mapOf(
+                        "SOUZ_BACKEND_PORT" to "not-a-port",
+                        "SOUZ_MASTER_KEY" to "test-master-key",
+                    ),
+                )
+            )
+        }
+
+        assertTrue(malformedPort.message.orEmpty().contains("SOUZ_BACKEND_PORT"))
+        listOf(0, 65_536).forEach { invalidPort ->
+            val error = assertFailsWith<BackendConfigurationException> {
+                BackendServerConfig(
+                    host = "127.0.0.1",
+                    port = invalidPort,
+                    proxyToken = null,
+                ).validate()
+            }
+            assertTrue(error.message.orEmpty().contains("between 1 and 65535"))
+        }
+    }
+
+    @Test
+    fun `server config rejects blank host`() {
+        val error = assertFailsWith<BackendConfigurationException> {
+            BackendServerConfig(
+                host = "   ",
+                port = 8080,
+                proxyToken = null,
+            ).validate()
+        }
+
+        assertTrue(error.message.orEmpty().contains("SOUZ_BACKEND_HOST"))
+    }
+
     @Test
     fun `postgres config reads defaults and explicit db settings`() {
         val config = BackendAppConfig.load(
