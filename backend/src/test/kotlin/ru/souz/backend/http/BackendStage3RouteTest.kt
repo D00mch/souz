@@ -97,13 +97,15 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -138,13 +140,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -174,13 +178,15 @@ class BackendStage3RouteTest {
         context.settingsProvider.qwenChatKey = null
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -235,13 +241,15 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -269,13 +277,15 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -336,13 +346,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -385,13 +397,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -436,13 +450,15 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -477,13 +493,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -523,13 +541,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -563,13 +583,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -610,14 +632,16 @@ class BackendStage3RouteTest {
         val context = routeTestContext()
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                ensureTrustedUser = context.userRepository::ensureUser,
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    ensureTrustedUser = context.userRepository::ensureUser,
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -681,13 +705,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -702,12 +728,15 @@ class BackendStage3RouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"nope"}""")
         }
+        val ownedPayload = json.readTree(ownedResponse.bodyAsText())
 
         assertEquals(HttpStatusCode.OK, ownedResponse.status)
         assertEquals(
             listOf("visible message"),
-            json.readTree(ownedResponse.bodyAsText())["items"].map { it["content"].asText() }
+            ownedPayload["items"].map { it["content"].asText() }
         )
+        assertTrue(ownedPayload.has("nextBeforeSeq"))
+        assertTrue(ownedPayload["nextBeforeSeq"].isNull)
         assertEquals(HttpStatusCode.NotFound, foreignGet.status)
         assertEquals("chat_not_found", json.readTree(foreignGet.bodyAsText())["error"]["code"].asText())
         assertEquals(HttpStatusCode.NotFound, foreignPost.status)
@@ -731,13 +760,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -783,13 +814,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -839,13 +872,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -906,13 +941,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -946,13 +983,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -995,13 +1034,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -1044,13 +1085,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 
@@ -1097,13 +1140,15 @@ class BackendStage3RouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
             )
         }
 

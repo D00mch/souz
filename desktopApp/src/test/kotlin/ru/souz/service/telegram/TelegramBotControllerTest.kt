@@ -1,13 +1,21 @@
 package ru.souz.service.telegram
 
+import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.clearAllMocks
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.unmockkAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
+import ru.souz.llms.restJsonMapper
 import ru.souz.service.speech.SpeechRecognitionProvider
 import java.nio.file.Files
 import kotlin.test.AfterTest
@@ -22,6 +30,70 @@ class TelegramBotControllerTest {
     fun clearMocks() {
         clearAllMocks()
         unmockkAll()
+    }
+
+    @Test
+    fun `restJsonMapper deserializes Telegram snake case fields`() {
+        val updates = restJsonMapper.readValue<TelegramUpdatesResponse>(
+            """
+            {
+              "ok": true,
+              "result": [
+                {
+                  "update_id": 101,
+                  "message": {
+                    "message_id": 202,
+                    "from": {
+                      "id": 303,
+                      "is_bot": false,
+                      "first_name": "Owner",
+                      "username": "owner"
+                    },
+                    "chat": {
+                      "id": 303,
+                      "type": "private"
+                    },
+                    "document": {
+                      "file_id": "document-id",
+                      "file_name": "report.pdf"
+                    },
+                    "voice": {
+                      "file_id": "voice-id"
+                    }
+                  }
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val update = updates.result.single()
+        assertEquals(101L, update.updateId)
+        val message = assertNotNull(update.message)
+        assertEquals(202L, message.messageId)
+        assertEquals("document-id", message.document?.fileId)
+        assertEquals("report.pdf", message.document?.fileName)
+        assertEquals("voice-id", message.voice?.fileId)
+        assertEquals(false, message.from?.isBot)
+        assertEquals("Owner", message.from?.firstName)
+
+        val fileResponse = restJsonMapper.readValue<TelegramBotFileResponse>(
+            """
+            {
+              "ok": true,
+              "result": {
+                "file_id": "document-id",
+                "file_path": "documents/report.pdf",
+                "file_size": 4096
+              }
+            }
+            """.trimIndent(),
+        )
+
+        val file = assertNotNull(fileResponse.result)
+        assertEquals("document-id", file.fileId)
+        assertEquals("documents/report.pdf", file.filePath)
+        assertEquals(4096L, file.fileSize)
     }
 
     @Test
@@ -231,10 +303,64 @@ class TelegramBotControllerTest {
         controller.close()
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `typing indicator repeats every four seconds and stops once the turn completes`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val agentFacade = mockk<AgentFacade>()
+        coEvery { agentFacade.execute("ping") } coAnswers {
+            delay(9_000L)
+            "pong"
+        }
+        val botApi = FakeBotApi()
+        val controller = TelegramBotController(
+            telegramService = mockk(relaxed = true),
+            agentFacade = agentFacade,
+            botApi = botApi,
+        )
+
+        val processing = launch(dispatcher) {
+            controller.processUpdates(
+                token = "token",
+                ownerId = 42,
+                updates = listOf(
+                    TelegramUpdate(
+                        updateId = 5,
+                        message = TelegramMessage(
+                            messageId = 1,
+                            from = TelegramUser(id = 42, isBot = false),
+                            chat = TelegramChat(id = 100, type = "private"),
+                            text = "ping",
+                        ),
+                    ),
+                ),
+                currentOffset = 0,
+            )
+        }
+        runCurrent()
+        assertEquals(listOf("typing"), botApi.chatActions)
+
+        advanceTimeBy(4_001L)
+        assertEquals(2, botApi.chatActions.size)
+
+        advanceTimeBy(4_000L)
+        assertEquals(3, botApi.chatActions.size)
+
+        advanceTimeBy(1_000L)
+        processing.join()
+
+        // No further chat action once the turn completes at 9s and cancels the repeating job.
+        assertEquals(3, botApi.chatActions.size)
+        assertEquals(listOf("Processing command...", "pong"), botApi.sentTexts)
+
+        controller.close()
+    }
+
     private class FakeBotApi(
         private val filesById: Map<String, FileEntry> = emptyMap(),
     ) : TelegramBotApi {
         val sentTexts = mutableListOf<String>()
+        val chatActions = mutableListOf<String>()
 
         data class FileEntry(
             val filePath: String,
@@ -247,6 +373,10 @@ class TelegramBotControllerTest {
 
         override suspend fun sendMessage(token: String, chatId: Long, text: String) {
             sentTexts += text
+        }
+
+        override suspend fun sendChatAction(token: String, chatId: Long, action: String) {
+            chatActions += action
         }
 
         override suspend fun getTelegramFileInfo(token: String, fileId: String): TelegramBotFileResponse {

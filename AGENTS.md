@@ -38,6 +38,7 @@ If you are not sure about something, left a note for other developers to review.
 - **Two-mode internet search**: quick-answer web lookup for simple factual questions and multi-step research mode with LLM-built strategy, broader source coverage, cited long-form synthesis, and automatic `.md` export for oversized reports.
 - **Voice and desktop interaction** via audio recording/playback, global hotkeys, and native media key bindings.
 - **Ambient agent foundation** with volatile in-memory microphone transcription using live STT when available and batch fallback otherwise, batch-aware semantic speech blocks, local-only `EMPTY`/`TASK:` analysis, bounded confirmed in-window suggestions, and dispatch through the normal desktop agent voice path only after user confirmation.
+- **Runtime-generated backend OpenAPI documentation** with public Swagger UI at `/docs`, an OpenAPI 3.1.1 document at `/docs/openapi.json`, explicit trusted-proxy security schemes for every `/v1` operation, and canonical typed durable-event schemas while WebSocket routes remain excluded.
 
 ## Project Structure
 
@@ -102,6 +103,7 @@ flowchart LR
 
 - Backend host adapters intentionally replace desktop-only SPI pieces with no-op implementations while keeping the same graph execution kernel.
 - `/v1/**` trusts user identity only from proxy-managed headers and never from request bodies.
+- `/docs` and `/docs/openapi.json` are public and generated from the backend's registered HTTP routing tree; documentation routes and the WebSocket transport are excluded from the published OpenAPI paths.
 - PostgreSQL is the backend's only structured-data store. It uses JDBC + HikariCP + Flyway with explicit `SOUZ_BACKEND_DB_*` / `souz.backend.db.*` settings (`host`, `port`, `name`, `user`, `password`, `schema`, `maxPoolSize`, `connectionTimeoutMs`) and defaults of `127.0.0.1`, `5432`, `souz`, `souz`, `public`, `10`, and `30000`. Backend user-scoped skill bundles and runtime sandbox workspaces remain filesystem-backed independently of database persistence.
 
 ## Builds

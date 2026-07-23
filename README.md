@@ -334,6 +334,7 @@ Skill bundles and runtime sandbox workspaces remain filesystem-backed and are in
 # Server
 SOUZ_BACKEND_HOST=127.0.0.1
 SOUZ_BACKEND_PORT=8080
+SOUZ_BACKEND_PROXY_TOKEN=replace-with-shared-proxy-secret
 
 # Feature flags
 SOUZ_FEATURE_WS_EVENTS=true
@@ -350,6 +351,8 @@ SOUZ_BACKEND_DB_SCHEMA=public
 SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
+
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
 Run the backend:
 

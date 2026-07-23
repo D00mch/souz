@@ -75,6 +75,7 @@ kotlin {
                 implementation(libs.lucene.core)
                 implementation(libs.logback)
                 implementation(libs.slfj)
+                implementation(libs.slf4j.jcl)
                 implementation(libs.log4j.to.slf4j)
                 implementation("org.jetbrains.skiko:skiko-awt:0.9.22.2")
                 runtimeOnly(skikoAwtRuntimeModule())

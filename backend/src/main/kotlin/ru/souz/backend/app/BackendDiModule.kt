@@ -33,6 +33,7 @@ import ru.souz.backend.execution.service.AgentExecutionFinalizer
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionRequestFactory
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.llm.BackendLlmClientFactory
@@ -60,6 +61,7 @@ import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.user.repository.UserRepository
+import ru.souz.db.SettingsProvider
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
@@ -291,6 +293,27 @@ fun backendDiModule(
             featureFlags = instance(),
             localModelAvailability = instance<LocalProviderAvailability>(),
             userProviderKeyRepository = instance(),
+        )
+    }
+    bindSingleton {
+        val featureFlags = instance<BackendFeatureFlags>()
+        val settingsProvider = instance<SettingsProvider>()
+        val userRepository = instance<UserRepository>()
+        BackendHttpDependencies(
+            bootstrapService = instance(),
+            onboardingService = instance(),
+            userSettingsService = instance(),
+            providerKeyService = instance(),
+            chatService = instance(),
+            messageService = instance(),
+            executionService = instance(),
+            optionService = instance(),
+            eventService = instance(),
+            telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
+            featureFlags = featureFlags,
+            selectedModel = { settingsProvider.gigaModel.alias },
+            trustedProxyToken = { appConfig.server.proxyToken },
+            ensureTrustedUser = userRepository::ensureUser,
         )
     }
 }

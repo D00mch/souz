@@ -4,7 +4,17 @@ import org.gradle.api.tasks.bundling.AbstractArchiveTask
 
 plugins {
     alias(libs.plugins.kotlinJvm)
+    alias(libs.plugins.ktor)
     application
+}
+
+ktor {
+    openApi {
+        enabled.set(true)
+        codeInferenceEnabled.set(true)
+        // Full inference outlines deferred descriptions and breaks their reified schema helpers.
+        onlyCommented.set(true)
+    }
 }
 
 dependencies {
@@ -18,7 +28,10 @@ dependencies {
     implementation(libs.flyway.core)
     implementation(libs.flyway.database.postgresql)
     implementation(libs.hikari.cp)
+    implementation(libs.ktor.openapiSchemaReflect)
     implementation(libs.ktor.serializationJackson)
+    implementation(libs.ktor.serverRoutingOpenapi)
+    implementation(libs.ktor.serverSwagger)
     implementation(libs.postgresql.jdbc)
     implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
     implementation("io.ktor:ktor-server-content-negotiation:${libs.versions.ktor.get()}")

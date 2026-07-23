@@ -54,18 +54,20 @@ class BackendTelegramRouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.base.bootstrapService,
-                onboardingService = context.base.onboardingService,
-                userSettingsService = context.base.userSettingsService,
-                providerKeyService = context.base.userProviderKeyService,
-                chatService = context.base.chatService,
-                messageService = context.base.messageService,
-                executionService = context.base.executionService,
-                optionService = context.base.optionService,
-                eventService = context.base.eventService,
-                featureFlags = context.base.featureFlags,
-                selectedModel = { context.base.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
+                BackendHttpDependencies(
+                    bootstrapService = context.base.bootstrapService,
+                    onboardingService = context.base.onboardingService,
+                    userSettingsService = context.base.userSettingsService,
+                    providerKeyService = context.base.userProviderKeyService,
+                    chatService = context.base.chatService,
+                    messageService = context.base.messageService,
+                    executionService = context.base.executionService,
+                    optionService = context.base.optionService,
+                    eventService = context.base.eventService,
+                    featureFlags = context.base.featureFlags,
+                    selectedModel = { context.base.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -392,19 +394,21 @@ private data class TelegramRouteTestContext(
 private fun ApplicationTestBuilder.installTelegramApplication(context: TelegramRouteTestContext) {
     application {
         backendApplication(
-            bootstrapService = context.base.bootstrapService,
-            onboardingService = context.base.onboardingService,
-            userSettingsService = context.base.userSettingsService,
-            providerKeyService = context.base.userProviderKeyService,
-            chatService = context.base.chatService,
-            messageService = context.base.messageService,
-            executionService = context.base.executionService,
-            optionService = context.base.optionService,
-            eventService = context.base.eventService,
-            featureFlags = context.base.featureFlags,
-            selectedModel = { context.base.settingsProvider.gigaModel.alias },
-            trustedProxyToken = { "proxy-secret" },
-            telegramBotBindingService = context.service,
+            BackendHttpDependencies(
+                bootstrapService = context.base.bootstrapService,
+                onboardingService = context.base.onboardingService,
+                userSettingsService = context.base.userSettingsService,
+                providerKeyService = context.base.userProviderKeyService,
+                chatService = context.base.chatService,
+                messageService = context.base.messageService,
+                executionService = context.base.executionService,
+                optionService = context.base.optionService,
+                eventService = context.base.eventService,
+                featureFlags = context.base.featureFlags,
+                selectedModel = { context.base.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                telegramBotBindingService = context.service,
+            )
         )
     }
 }
@@ -496,6 +500,12 @@ private class FakeTelegramBotApi : TelegramBotApi {
         token: String,
         chatId: Long,
         text: String,
+    ) = Unit
+
+    override suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String,
     ) = Unit
 }
 
