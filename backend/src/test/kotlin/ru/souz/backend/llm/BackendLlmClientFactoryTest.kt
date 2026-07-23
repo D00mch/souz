@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
+import kotlin.test.assertSame
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -81,8 +81,11 @@ class BackendLlmClientFactoryTest {
         ).message(sampleRequest(LLMModel.OpenAIGpt52.alias))
 
         assertEquals(2, builder.invocations.size)
-        assertEquals(builder.invocations[0].transportId, builder.invocations[1].transportId)
-        assertNotEquals(builder.invocations[0].apiKey, builder.invocations[1].apiKey)
+        assertSame(builder.invocations[0].transport, builder.invocations[1].transport)
+        assertEquals(
+            listOf("user-a-openai", "server-openai-key"),
+            builder.invocations.map { it.apiKey },
+        )
     }
 
     private fun sampleRequest(model: String): LLMRequest.Chat =
@@ -107,7 +110,7 @@ private class RecordingProviderChatApiBuilder : ProviderChatApiBuilder {
                     userId = executionContext.userId,
                     provider = provider,
                     apiKey = settingsProvider.openaiKey.orEmpty(),
-                    transportId = sharedTransport.id,
+                    transport = sharedTransport,
                 )
                 return LLMResponse.Chat.Error(499, "recorded only")
             }
@@ -133,7 +136,7 @@ private data class ProviderClientInvocation(
     val userId: String,
     val provider: LlmProvider,
     val apiKey: String,
-    val transportId: String,
+    val transport: SharedProviderTransport,
 )
 
 private class StaticProviderCredentialResolver(

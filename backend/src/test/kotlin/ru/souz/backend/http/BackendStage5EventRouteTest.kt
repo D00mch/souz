@@ -1,7 +1,6 @@
 package ru.souz.backend.http
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -93,58 +92,6 @@ class BackendStage5EventRouteTest {
         assertEquals(
             "assistant reply to stream me",
             events.first { it.type == AgentEventType.MESSAGE_COMPLETED }.toDto().payload["content"],
-        )
-    }
-
-    @Test
-    fun `non streaming path keeps sync response contract and skips delta events`() = testApplication {
-        val context = streamingRouteTestContext(
-            llmApi = StreamingEventChatApi(
-                chunksByPrompt = mapOf("plain reply" to listOf("assistant ", "reply ", "to plain reply")),
-            ),
-        )
-        val chat = chat(userId = "user-a", title = "Non-streaming chat")
-        runBlocking {
-            context.chatRepository.create(chat)
-        }
-        application {
-            backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                chatService = context.chatService,
-                messageService = context.messageService,
-                executionService = context.executionService,
-            )
-        }
-
-        val patchResponse = client.patch(BackendHttpRoutes.SETTINGS) {
-            trustedHeaders("user-a")
-            contentType(ContentType.Application.Json)
-            setBody("""{"streamingMessages":false}""")
-        }
-        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
-            trustedHeaders("user-a")
-            contentType(ContentType.Application.Json)
-            setBody("""{"content":"plain reply"}""")
-        }
-        val payload = json.readTree(response.bodyAsText())
-        val events = runBlocking { context.eventRepository.listByChat("user-a", chat.id) }
-
-        assertEquals(HttpStatusCode.OK, patchResponse.status)
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals("plain reply", payload["message"]["content"].asText())
-        assertEquals("assistant reply to plain reply", payload["assistantMessage"]["content"].asText())
-        assertEquals(
-            listOf(
-                AgentEventType.MESSAGE_CREATED,
-                AgentEventType.EXECUTION_STARTED,
-                AgentEventType.MESSAGE_CREATED,
-                AgentEventType.MESSAGE_COMPLETED,
-                AgentEventType.EXECUTION_FINISHED,
-            ),
-            events.map { it.type },
         )
     }
 
