@@ -28,19 +28,9 @@ import io.ktor.server.websocket.WebSockets
 import java.net.InetSocketAddress
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
-import ru.souz.backend.bootstrap.BackendBootstrapService
-import ru.souz.backend.chat.service.ChatService
-import ru.souz.backend.chat.service.MessageService
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.events.service.AgentEventService
-import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.routes.v1Routes
-import ru.souz.backend.keys.service.UserProviderKeyService
-import ru.souz.backend.onboarding.BackendOnboardingService
-import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.security.RequestIdentityPlugin
-import ru.souz.backend.settings.service.UserSettingsService
-import ru.souz.backend.telegram.TelegramBotBindingService
 
 /** Health-check response returned by `GET /health`. */
 data class HealthResponse(
@@ -55,40 +45,11 @@ data class RootResponse(
 )
 
 /** Embedded Ktor server wrapper for the Souz backend HTTP API. */
-class BackendHttpServer(
-    bootstrapService: BackendBootstrapService,
-    onboardingService: BackendOnboardingService? = null,
-    userSettingsService: UserSettingsService? = null,
-    providerKeyService: UserProviderKeyService? = null,
-    chatService: ChatService? = null,
-    messageService: MessageService? = null,
-    executionService: AgentExecutionService? = null,
-    optionService: OptionService? = null,
-    eventService: AgentEventService? = null,
-    telegramBotBindingService: TelegramBotBindingService? = null,
-    featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
-    selectedModel: () -> String,
+internal class BackendHttpServer(
+    private val dependencies: BackendHttpDependencies,
     private val bindAddress: InetSocketAddress,
-    trustedProxyToken: () -> String? = { null },
-    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(BackendHttpServer::class.java)
-    private val dependencies = BackendHttpDependencies(
-        bootstrapService = bootstrapService,
-        onboardingService = onboardingService,
-        userSettingsService = userSettingsService,
-        providerKeyService = providerKeyService,
-        chatService = chatService,
-        messageService = messageService,
-        executionService = executionService,
-        optionService = optionService,
-        eventService = eventService,
-        telegramBotBindingService = telegramBotBindingService,
-        featureFlags = featureFlags,
-        selectedModel = selectedModel,
-        trustedProxyToken = trustedProxyToken,
-        ensureTrustedUser = ensureTrustedUser,
-    )
     private val server = embeddedServer(
         factory = Netty,
         host = bindAddress.hostString,
@@ -118,40 +79,10 @@ class BackendHttpServer(
 }
 
 /** Installs backend HTTP routes into a Ktor application. */
-fun Application.backendApplication(
-    bootstrapService: BackendBootstrapService,
-    onboardingService: BackendOnboardingService? = null,
-    userSettingsService: UserSettingsService? = null,
-    providerKeyService: UserProviderKeyService? = null,
-    chatService: ChatService? = null,
-    messageService: MessageService? = null,
-    executionService: AgentExecutionService? = null,
-    optionService: OptionService? = null,
-    eventService: AgentEventService? = null,
-    telegramBotBindingService: TelegramBotBindingService? = null,
-    featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
-    selectedModel: () -> String,
-    trustedProxyToken: () -> String? = { null },
-    ensureTrustedUser: suspend (String) -> Unit = { _ -> },
+internal fun Application.backendApplication(
+    dependencies: BackendHttpDependencies,
 ) {
-    configureBackendHttpServer(
-        BackendHttpDependencies(
-            bootstrapService = bootstrapService,
-            onboardingService = onboardingService,
-            userSettingsService = userSettingsService,
-            providerKeyService = providerKeyService,
-            chatService = chatService,
-            messageService = messageService,
-            executionService = executionService,
-            optionService = optionService,
-            eventService = eventService,
-            telegramBotBindingService = telegramBotBindingService,
-            featureFlags = featureFlags,
-            selectedModel = selectedModel,
-            trustedProxyToken = trustedProxyToken,
-            ensureTrustedUser = ensureTrustedUser,
-        )
-    )
+    configureBackendHttpServer(dependencies)
 }
 
 internal fun Application.configureBackendHttpServer(dependencies: BackendHttpDependencies) {
