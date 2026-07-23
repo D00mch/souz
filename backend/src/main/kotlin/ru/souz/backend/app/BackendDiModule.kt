@@ -15,6 +15,7 @@ import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
+import ru.souz.backend.agent.runtime.BackendDurableToolPermissionRequester
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -25,6 +26,11 @@ import ru.souz.backend.chat.service.MessageService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
+import ru.souz.backend.permission.repository.PermissionWorkflowRepository
+import ru.souz.backend.permission.service.DurablePermissionService
+import ru.souz.backend.permission.service.PermissionContinuationDispatcher
+import ru.souz.backend.permission.service.PermissionService
+import ru.souz.backend.permission.service.PermissionRecoveryService
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
@@ -32,6 +38,7 @@ import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionFinalizer
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionRequestFactory
+import ru.souz.backend.execution.service.AgentExecutionPermissionDispatcher
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
@@ -52,6 +59,7 @@ import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
+import ru.souz.backend.storage.postgres.PostgresPermissionWorkflowRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresToolCallRepository
@@ -74,6 +82,7 @@ import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.skills.registry.FileSystemSkillRegistryConfig
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.runtimeToolsDiModule
+import ru.souz.tool.ToolPermissionRequester
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -117,6 +126,12 @@ fun backendDiModule(
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
     bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance()) }
     bindSingleton<OptionRepository> { PostgresOptionRepository(instance()) }
+    bindSingleton<PermissionWorkflowRepository> { PostgresPermissionWorkflowRepository(instance()) }
+    if (appConfig.featureFlags.permissions) {
+        bindSingleton<ToolPermissionRequester> {
+            BackendDurableToolPermissionRequester(instance())
+        }
+    }
     bindSingleton<AgentEventRepository> { PostgresAgentEventRepository(instance()) }
     bindSingleton<ToolCallRepository> { PostgresToolCallRepository(instance()) }
     bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
@@ -208,6 +223,8 @@ fun backendDiModule(
             skillCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             skillRegistryRepository = instance(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
+            featureFlags = instance(),
+            permissionWorkflowRepository = instance(),
         )
     }
     bindSingleton {
@@ -221,7 +238,12 @@ fun backendDiModule(
             agentStateRepository = instance(),
             chatRepository = instance(),
             executionRepository = instance(),
-            turnRunner = BackendConversationRuntimeTurnRunner(instance()),
+            turnRunner = BackendConversationRuntimeTurnRunner(
+                runtimeFactory = instance(),
+                permissionWorkflowRepository = instance(),
+                eventService = instance(),
+            ),
+            permissionWorkflowRepository = instance(),
         )
     }
     bindSingleton {
@@ -241,7 +263,11 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
+            permissionWorkflowRepository = instance(),
         )
+    }
+    bindSingleton<PermissionContinuationDispatcher> {
+        AgentExecutionPermissionDispatcher(instance())
     }
     if (appConfig.featureFlags.telegramBot) {
         bindSingleton<TelegramBotApi> { HttpTelegramBotApi() }
@@ -278,6 +304,23 @@ fun backendDiModule(
             featureFlags = instance(),
         )
     }
+    bindSingleton<PermissionService> {
+        DurablePermissionService(
+            chatRepository = instance(),
+            workflowRepository = instance(),
+            eventService = instance(),
+            continuationDispatcher = instance(),
+        )
+    }
+    bindSingleton {
+        PermissionRecoveryService(
+            featureFlags = instance(),
+            workflowRepository = instance(),
+            continuationDispatcher = instance(),
+            eventService = instance(),
+            scope = instance<BackendApplicationScope>(),
+        )
+    }
     bindSingleton {
         MessageService(
             chatRepository = instance(),
@@ -308,6 +351,7 @@ fun backendDiModule(
             messageService = instance(),
             executionService = instance(),
             optionService = instance(),
+            permissionService = instance(),
             eventService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             featureFlags = featureFlags,

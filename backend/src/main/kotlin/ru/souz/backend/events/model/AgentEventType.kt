@@ -9,6 +9,8 @@ enum class AgentEventType(val value: String) {
     TOOL_CALL_FAILED("tool.call.failed"),
     OPTION_REQUESTED("option.requested"),
     OPTION_ANSWERED("option.answered"),
+    PERMISSION_REQUESTED("permission.requested"),
+    PERMISSION_RESOLVED("permission.resolved"),
     EXECUTION_STARTED("execution.started"),
     EXECUTION_FINISHED("execution.finished"),
     EXECUTION_FAILED("execution.failed"),

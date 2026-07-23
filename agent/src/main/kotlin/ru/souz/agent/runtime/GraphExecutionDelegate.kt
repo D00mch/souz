@@ -18,9 +18,9 @@ import kotlin.coroutines.cancellation.CancellationException
 internal interface GraphExecutionDelegate {
     fun cancelActiveJob()
 
-    suspend fun executeWithTrace(
-        graph: Graph<String, String>,
-        ctx: AgentContext<String>,
+    suspend fun <I> executeWithTrace(
+        graph: Graph<I, String>,
+        ctx: AgentContext<I>,
         onStep: GraphStepCallback? = null,
     ): AgentExecutionResult
 }
@@ -36,9 +36,9 @@ internal class GraphExecutionDelegateImpl(
         runningJob.load()?.cancel(CancellationException("Cancelled by facade"))
     }
 
-    override suspend fun executeWithTrace(
-        graph: Graph<String, String>,
-        ctx: AgentContext<String>,
+    override suspend fun <I> executeWithTrace(
+        graph: Graph<I, String>,
+        ctx: AgentContext<I>,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()

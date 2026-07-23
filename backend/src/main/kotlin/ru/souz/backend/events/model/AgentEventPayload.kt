@@ -104,6 +104,24 @@ data class ChoiceAnsweredPayload(
     val metadata: Map<String, String> = emptyMap(),
 ) : AgentEventPayload
 
+data class PermissionRequestedPayload(
+    val permissionRequestId: UUID,
+    val invocationId: UUID,
+    val toolName: String,
+    val toolCallId: String? = null,
+    val description: String,
+    val displayParams: Map<String, String> = emptyMap(),
+    val status: String = "pending",
+) : AgentEventPayload
+
+data class PermissionResolvedPayload(
+    val permissionRequestId: UUID,
+    val invocationId: UUID,
+    val toolName: String,
+    val toolCallId: String? = null,
+    val status: String,
+) : AgentEventPayload
+
 data class RawAgentEventPayload(
     val values: Map<String, String>,
 ) : AgentEventPayload
@@ -142,6 +160,8 @@ internal object AgentEventPayloadStorageCodec {
                 AgentEventType.TOOL_CALL_FAILED -> mapper.treeToValue(payload, ToolCallFailedPayload::class.java)
                 AgentEventType.OPTION_REQUESTED -> mapper.treeToValue(payload, ChoiceRequestedPayload::class.java)
                 AgentEventType.OPTION_ANSWERED -> mapper.treeToValue(payload, ChoiceAnsweredPayload::class.java)
+                AgentEventType.PERMISSION_REQUESTED -> mapper.treeToValue(payload, PermissionRequestedPayload::class.java)
+                AgentEventType.PERMISSION_RESOLVED -> mapper.treeToValue(payload, PermissionResolvedPayload::class.java)
                 AgentEventType.EXECUTION_STARTED -> mapper.treeToValue(payload, ExecutionStartedPayload::class.java)
                 AgentEventType.EXECUTION_FINISHED -> mapper.treeToValue(payload, ExecutionFinishedPayload::class.java)
                 AgentEventType.EXECUTION_FAILED -> mapper.treeToValue(payload, ExecutionFailedPayload::class.java)

@@ -8,6 +8,7 @@ import java.util.IllformedLocaleException
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.backend.permission.model.PermissionDecision
 import ru.souz.llms.LLMModel
 
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
@@ -107,6 +108,10 @@ internal fun parseInterfaceLanguage(rawInterfaceLanguage: String, fieldName: Str
 internal fun parseRequestTimeoutMillis(rawRequestTimeoutMillis: Long, fieldName: String): Long =
     rawRequestTimeoutMillis.takeIf { it >= MIN_REQUEST_TIMEOUT_MILLIS }
         ?: throw invalidV1Request("$fieldName must be at least $MIN_REQUEST_TIMEOUT_MILLIS.")
+
+internal fun BackendV1PermissionDecisionRequest.toPermissionDecision(): PermissionDecision =
+    PermissionDecision.entries.firstOrNull { it.value == decision }
+        ?: throw invalidV1Request("decision must be one of: grant, deny.")
 
 private suspend inline fun <reified T : Any> ApplicationCall.receiveOrRequestError(
     crossinline errorFactory: (String) -> RuntimeException,

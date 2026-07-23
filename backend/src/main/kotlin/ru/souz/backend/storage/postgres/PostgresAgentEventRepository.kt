@@ -1,6 +1,7 @@
 package ru.souz.backend.storage.postgres
 
 import java.time.Instant
+import java.sql.Connection
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.events.model.AgentEvent
@@ -22,40 +23,13 @@ class PostgresAgentEventRepository(
         createdAt: Instant,
     ): AgentEvent = dataSource.write { connection ->
         connection.lockChat(userId, chatId)
-        val nextSeq = connection.prepareStatement(
-            "select coalesce(max(seq), 0) + 1 from agent_events where user_id = ? and chat_id = ?"
-        ).use { statement ->
-            statement.setString(1, userId)
-            statement.setObject(2, chatId)
-            statement.executeQuery().use { resultSet ->
-                resultSet.next()
-                resultSet.getLong(1)
-            }
-        }
-        connection.prepareStatement(
-            """
-            insert into agent_events(id, user_id, chat_id, execution_id, seq, type, payload, created_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent()
-        ).use { statement ->
-            statement.setObject(1, id)
-            statement.setString(2, userId)
-            statement.setObject(3, chatId)
-            statement.setObject(4, executionId)
-            statement.setLong(5, nextSeq)
-            statement.setString(6, type.value)
-            statement.setJson(7, postgresStorageMapper.writeValueAsString(AgentEventPayloadStorageCodec.toStorageJson(payload)))
-            statement.setInstant(8, createdAt)
-            statement.executeUpdate()
-        }
-        AgentEvent(
-            id = id,
+        connection.appendAgentEvent(
             userId = userId,
             chatId = chatId,
             executionId = executionId,
-            seq = nextSeq,
             type = type,
             payload = payload,
+            id = id,
             createdAt = createdAt,
         )
     }
@@ -100,4 +74,60 @@ class PostgresAgentEventRepository(
             }
         }
     }
+}
+
+/**
+ * Appends a durable event on an existing transaction.
+ *
+ * The caller must lock the chat first. Permission lifecycle transitions use this
+ * helper so state changes and their replayable notification commit together.
+ */
+internal fun Connection.appendAgentEvent(
+    userId: String,
+    chatId: UUID,
+    executionId: UUID?,
+    type: AgentEventType,
+    payload: AgentEventPayload,
+    id: UUID = UUID.randomUUID(),
+    createdAt: Instant = Instant.now(),
+): AgentEvent {
+    val nextSeq = prepareStatement(
+        "select coalesce(max(seq), 0) + 1 from agent_events where user_id = ? and chat_id = ?"
+    ).use { statement ->
+        statement.setString(1, userId)
+        statement.setObject(2, chatId)
+        statement.executeQuery().use { resultSet ->
+            resultSet.next()
+            resultSet.getLong(1)
+        }
+    }
+    prepareStatement(
+        """
+        insert into agent_events(id, user_id, chat_id, execution_id, seq, type, payload, created_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimIndent()
+    ).use { statement ->
+        statement.setObject(1, id)
+        statement.setString(2, userId)
+        statement.setObject(3, chatId)
+        statement.setObject(4, executionId)
+        statement.setLong(5, nextSeq)
+        statement.setString(6, type.value)
+        statement.setJson(
+            7,
+            postgresStorageMapper.writeValueAsString(AgentEventPayloadStorageCodec.toStorageJson(payload)),
+        )
+        statement.setInstant(8, createdAt)
+        statement.executeUpdate()
+    }
+    return AgentEvent(
+        id = id,
+        userId = userId,
+        chatId = chatId,
+        executionId = executionId,
+        seq = nextSeq,
+        type = type,
+        payload = payload,
+        createdAt = createdAt,
+    )
 }

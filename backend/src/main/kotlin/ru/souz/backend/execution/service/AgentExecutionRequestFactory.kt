@@ -14,6 +14,7 @@ import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.repository.OptionRepository
+import ru.souz.backend.permission.repository.ClaimedPermissionContinuation
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
@@ -108,6 +109,36 @@ internal class AgentExecutionRequestFactory(
         option: Option,
     ): PreparedContinuationTurn {
         val runtimeRequest = createContinuationTurnRequest(execution, option)
+        return PreparedContinuationTurn(
+            conversationKey = conversationKey(execution.userId, execution.chatId),
+            runtimeRequest = runtimeRequest,
+            streamingMessagesEnabled = runtimeRequest.streamingMessages == true,
+            toolEventsEnabled = executionMetadataBoolean(execution, METADATA_SHOW_TOOL_EVENTS) ?: false,
+        )
+    }
+
+    fun preparePermissionContinuationTurn(
+        execution: AgentExecution,
+        continuation: ClaimedPermissionContinuation,
+    ): PreparedContinuationTurn {
+        val runtimeRequest = BackendConversationTurnRequest(
+            prompt = "",
+            model = execution.model?.alias
+                ?: throw internalError("Execution model is missing."),
+            contextSize = executionMetadataInt(execution, METADATA_CONTEXT_SIZE)
+                ?: throw internalError("Execution contextSize is missing."),
+            locale = execution.metadata[METADATA_LOCALE]
+                ?: throw internalError("Execution locale is missing."),
+            timeZone = execution.metadata[METADATA_TIME_ZONE]
+                ?: throw internalError("Execution timeZone is missing."),
+            executionId = execution.id.toString(),
+            temperature = executionMetadataFloat(execution, METADATA_TEMPERATURE),
+            systemPrompt = execution.metadata[METADATA_SYSTEM_PROMPT]?.takeIf { it.isNotEmpty() },
+            streamingMessages = executionMetadataBoolean(execution, METADATA_STREAMING_MESSAGES),
+            requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
+            useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
+            permissionContinuation = continuation,
+        )
         return PreparedContinuationTurn(
             conversationKey = conversationKey(execution.userId, execution.chatId),
             runtimeRequest = runtimeRequest,

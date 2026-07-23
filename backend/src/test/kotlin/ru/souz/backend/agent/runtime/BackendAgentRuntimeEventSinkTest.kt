@@ -381,6 +381,7 @@ private class RecordingToolCallRepository : ToolCallRepository {
     val startedContexts = mutableListOf<ToolCallContext>()
     val finishedContexts = mutableListOf<ToolCallContext>()
     val failedContexts = mutableListOf<ToolCallContext>()
+    private val records = mutableMapOf<ToolCallContext, ToolCall>()
 
     override suspend fun started(
         context: ToolCallContext,
@@ -398,7 +399,7 @@ private class RecordingToolCallRepository : ToolCallRepository {
             status = ToolCallStatus.RUNNING,
             argumentsJson = argumentsPreview,
             startedAt = startedAt,
-        )
+        ).also { records[context] = it }
     }
 
     override suspend fun finished(
@@ -421,7 +422,7 @@ private class RecordingToolCallRepository : ToolCallRepository {
             startedAt = finishedAt,
             finishedAt = finishedAt,
             durationMs = durationMs,
-        )
+        ).also { records[context] = it }
     }
 
     override suspend fun failed(
@@ -444,10 +445,10 @@ private class RecordingToolCallRepository : ToolCallRepository {
             startedAt = finishedAt,
             finishedAt = finishedAt,
             durationMs = durationMs,
-        )
+        ).also { records[context] = it }
     }
 
-    override suspend fun get(context: ToolCallContext): ToolCall? = error("Not used in this test")
+    override suspend fun get(context: ToolCallContext): ToolCall? = records[context]
 
     override suspend fun listByExecution(
         context: ToolCallContext,

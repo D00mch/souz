@@ -2,9 +2,12 @@ package ru.souz.backend.execution.service
 
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
+import java.time.Duration
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
@@ -21,6 +24,8 @@ import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.repository.OptionRepository
+import ru.souz.backend.permission.repository.PermissionWorkflowRepository
+import ru.souz.backend.permission.model.PermissionRequestStatus
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 
@@ -38,6 +43,7 @@ class AgentExecutionService internal constructor(
     private val requestFactory: AgentExecutionRequestFactory,
     private val finalizer: AgentExecutionFinalizer,
     private val launcher: AgentExecutionLauncher,
+    private val permissionWorkflowRepository: PermissionWorkflowRepository? = null,
 ) {
     suspend fun executeChatTurn(
         userId: String,
@@ -236,6 +242,80 @@ class AgentExecutionService internal constructor(
         return runningExecution
     }
 
+    suspend fun resumePermission(executionId: UUID) {
+        val repository = permissionWorkflowRepository ?: return
+        val leaseToken = UUID.randomUUID()
+        val now = Instant.now()
+        val continuation = repository.claimReady(
+            executionId = executionId,
+            leaseToken = leaseToken,
+            leaseExpiresAt = now.plus(PERMISSION_RESUME_CLAIM_TTL),
+            now = now,
+        ) ?: return
+        val execution = continuation.execution
+        try {
+            val chat = requireOwnedChat(execution.userId, execution.chatId)
+            val prepared = requestFactory.preparePermissionContinuationTurn(execution, continuation)
+            val eventSink = requestFactory.createEventSink(
+                userId = execution.userId,
+                chatId = execution.chatId,
+                execution = execution,
+                messageRepository = messageRepository,
+                optionRepository = optionRepository,
+                executionRepository = executionRepository,
+                eventService = eventService,
+                toolCallRepository = toolCallRepository,
+                streamingMessagesEnabled = prepared.streamingMessagesEnabled,
+                toolEventsEnabled = prepared.toolEventsEnabled,
+            )
+            launcher.startBackgroundExecution(
+                execution = execution,
+                eventSink = eventSink,
+            ) {
+                if (!repository.isClaimActive(execution.id, leaseToken)) {
+                    return@startBackgroundExecution
+                }
+                val permissionRequest = continuation.permissionRequest
+                if (
+                    permissionRequest?.status == PermissionRequestStatus.GRANTED &&
+                    continuation.invocation.phase != ru.souz.backend.permission.repository.PermissionInvocationPhase.RESULT_STORED
+                ) {
+                    val markedExecuting = repository.markExecuting(
+                        permissionRequestId = permissionRequest.id,
+                        leaseToken = leaseToken,
+                    )
+                    if (!markedExecuting) {
+                        return@startBackgroundExecution
+                    }
+                }
+                finalizer.runExecution(
+                    chat = chat,
+                    execution = execution,
+                    conversationKey = prepared.conversationKey,
+                    turnRequest = prepared.runtimeRequest,
+                    eventSink = eventSink,
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            failPermissionResumePreparation(repository, execution.id)
+            throw cancelled
+        } catch (error: Exception) {
+            failPermissionResumePreparation(repository, execution.id)
+            throw error
+        }
+    }
+
+    private suspend fun failPermissionResumePreparation(
+        repository: PermissionWorkflowRepository,
+        executionId: UUID,
+    ) = withContext(NonCancellable) {
+        repository.failCheckpoint(
+            executionId = executionId,
+            errorCode = "permission_resume_failed",
+            errorMessage = "Permission continuation could not be prepared.",
+        ).forEach { eventService.publishPersisted(it) }
+    }
+
     suspend fun cancelActive(
         userId: String,
         chatId: UUID,
@@ -264,6 +344,29 @@ class AgentExecutionService internal constructor(
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
         if (!execution.status.isActiveForCancellation()) {
             throw invalidV1Request("Execution is not active.")
+        }
+        if (execution.status == AgentExecutionStatus.WAITING_PERMISSION) {
+            val repository = permissionWorkflowRepository
+                ?: throw invalidV1Request("Permission workflow is unavailable.")
+            val events = repository.cancelPendingForExecution(
+                userId = execution.userId,
+                chatId = execution.chatId,
+                executionId = execution.id,
+            )
+            events.forEach { eventService.publishPersisted(it) }
+            val current = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)
+                ?: return execution.copy(
+                    status = AgentExecutionStatus.CANCELLED,
+                    cancelRequested = true,
+                    finishedAt = Instant.now(),
+                )
+            if (events.isNotEmpty() || !current.status.isActiveForCancellation()) {
+                return current
+            }
+            if (current.status == AgentExecutionStatus.WAITING_PERMISSION) {
+                throw invalidV1Request("Permission execution could not be cancelled.")
+            }
+            return cancelExecutionInternal(current)
         }
         val cancellingExecution = executionRepository.update(
             execution.copy(
@@ -295,4 +398,7 @@ private fun AgentExecutionStatus.isActiveForCancellation(): Boolean =
     this == AgentExecutionStatus.QUEUED ||
         this == AgentExecutionStatus.RUNNING ||
         this == AgentExecutionStatus.WAITING_OPTION ||
+        this == AgentExecutionStatus.WAITING_PERMISSION ||
         this == AgentExecutionStatus.CANCELLING
+
+private val PERMISSION_RESUME_CLAIM_TTL: Duration = Duration.ofMinutes(2)

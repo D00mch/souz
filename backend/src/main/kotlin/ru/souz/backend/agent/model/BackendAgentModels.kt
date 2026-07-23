@@ -1,5 +1,7 @@
 package ru.souz.backend.agent.model
 
+import ru.souz.backend.permission.repository.ClaimedPermissionContinuation
+
 /** Stable backend conversation identifier composed from user and conversation ids. */
 data class AgentConversationKey(
     val userId: String,
@@ -19,4 +21,5 @@ internal data class BackendConversationTurnRequest(
     val streamingMessages: Boolean? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
+    val permissionContinuation: ClaimedPermissionContinuation? = null,
 )

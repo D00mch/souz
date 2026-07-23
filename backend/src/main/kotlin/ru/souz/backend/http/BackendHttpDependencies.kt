@@ -9,6 +9,7 @@ import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
+import ru.souz.backend.permission.service.PermissionService
 import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.telegram.TelegramBotBindingService
 
@@ -22,6 +23,7 @@ internal data class BackendHttpDependencies(
     val messageService: MessageService? = null,
     val executionService: AgentExecutionService? = null,
     val optionService: OptionService? = null,
+    val permissionService: PermissionService? = null,
     val eventService: AgentEventService? = null,
     val telegramBotBindingService: TelegramBotBindingService? = null,
     val featureFlags: BackendFeatureFlags = BackendFeatureFlags(),

@@ -5,6 +5,7 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.telegram.TelegramBotPollingService
+import ru.souz.backend.permission.service.PermissionRecoveryService
 import ru.souz.llms.local.LocalLlamaRuntime
 
 /** Process-wide backend runtime container with shared services and LLM resources. */
@@ -16,9 +17,11 @@ class BackendRuntime private constructor(
         if (httpDependencies.featureFlags.telegramBot) di.direct.instance() else null
     }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
+    private val permissionRecoveryService: PermissionRecoveryService by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
+        permissionRecoveryService.start()
         telegramBotPollingService?.start()
     }
 

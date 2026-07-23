@@ -100,6 +100,21 @@ class AgentEventPayloadSerializationTest {
                 freeText = "because",
                 metadata = mapOf("source" to "web-ui"),
             ),
+            AgentEventType.PERMISSION_REQUESTED to PermissionRequestedPayload(
+                permissionRequestId = UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+                invocationId = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                toolName = "PermissionFixture",
+                toolCallId = "provider-call-1",
+                description = "Allow the fixture effect?",
+                displayParams = mapOf("target" to "fixture"),
+            ),
+            AgentEventType.PERMISSION_RESOLVED to PermissionResolvedPayload(
+                permissionRequestId = UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+                invocationId = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                toolName = "PermissionFixture",
+                toolCallId = "provider-call-1",
+                status = "granted",
+            ),
         )
 
         payloads.forEach { (type, payload) ->

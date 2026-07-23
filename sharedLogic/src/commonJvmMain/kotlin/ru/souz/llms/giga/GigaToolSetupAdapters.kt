@@ -1,6 +1,7 @@
 package ru.souz.llms.giga
 
 import kotlinx.coroutines.CancellationException
+import ru.souz.agent.runtime.AgentExecutionPause
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -84,6 +85,8 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
                 )
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: AgentExecutionPause) {
+                throw e
             } catch (e: Exception) {
                 e.toGigaToolMessage(functionCall.name)
             } catch (e: LinkageError) {
@@ -114,6 +117,8 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): LLMTo
                     name = functionCall.name,
                 )
             } catch (e: CancellationException) {
+                throw e
+            } catch (e: AgentExecutionPause) {
                 throw e
             } catch (e: Exception) {
                 e.toGigaToolMessage(functionCall.name)

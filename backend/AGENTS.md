@@ -17,6 +17,8 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 - `GET /v1/chats/{chatId}/telegram-bot`, `PUT /v1/chats/{chatId}/telegram-bot`, and `DELETE /v1/chats/{chatId}/telegram-bot` manage Telegram bot bindings for an owned chat without returning the raw token or token hash.
 - `GET /v1/chats/{chatId}/events` and `WS /v1/chats/{chatId}/ws` replay durable events and subscribe to live per-chat updates.
 - `POST /v1/options/{optionId}/answer` resumes the original execution after a pending option is answered.
+- `GET /v1/chats/{chatId}/permission-requests/pending` returns the authoritative client-safe snapshot of pending durable permission requests for an owned chat.
+- `PUT /v1/permission-requests/{id}/decision` atomically grants or denies an owned durable permission request and queues asynchronous continuation; identical decisions are idempotent, conflicting decisions return `409`, and missing/foreign IDs share the same `404` response.
 - `POST /v1/chats/{chatId}/cancel-active` and `POST /v1/chats/{chatId}/executions/{executionId}/cancel` cancel active executions.
 
 ## Identity And Safety
@@ -34,10 +36,11 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
 - Execution persists product messages separately from `agent_conversation_state`; runtime-only continuation state stays inside `AgentStateRepository`.
 - `conversationId = chatId.toString()` is the stable runtime identity for chat execution.
 - `BackendConversationRuntimeFactory` rebuilds a request-scoped runtime from persisted session state, while `AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation.
+- Durable permissions are disabled by default. When enabled, the backend checkpoints complete ordered tool batches and exact results in Flyway V9 PostgreSQL tables, parks execution and permission events atomically, resumes through a lease-protected post-tool graph, and fails an invocation whose effect may have been in flight at restart. The generic `ToolPermissionRequester` binding is opt-in; existing backend production tools still do not prompt.
 - Telegram bot bindings stay disabled unless `ENABLE_BACKEND_TG_FEATURE=true`. When enabled, they validate tokens through Telegram `getMe`, call `deleteWebhook(drop_pending_updates=true)` before switching to long polling, store a per-chat binding in backend storage with encrypted-at-rest bot tokens plus a hashed one-time link secret, return only safe binding metadata to the UI together with a one-time `/start <secret>` command on bind, keep new/rebound bindings pending until that exact secret arrives from a private Telegram chat, ignore stale/non-matching pre-link messages, bind permanently to the first matching private `from.id + chat.id`, reject later private traffic from other Telegram accounts, feed accepted Telegram text into `AgentExecutionService.executeChatTurn(...)` with `clientMessageId = "telegram:<bindingId>:<updateId>"` and `streamingMessages = false`, renew the per-binding poller lease while an update is in flight, fence reply/checkpoint side effects on active lease ownership, send the final assistant response back to Telegram in <=4096-char chunks with a short fallback reply when needed, and advance `lastUpdateId` only after each update has been processed under the current lease owner.
 - Backend runtime sandboxes are resolved per user only: singleton runtime tools receive `ToolInvocationMeta.userId`, and backend sandbox scope currently omits `conversationId`.
-- Newly produced `message.delta` events stay live-only, while durable events such as `execution.started`, `message.created`, `message.completed`, `tool.call.*`, `option.*`, `execution.finished`, `execution.failed`, and `execution.cancelled` are persisted and replayable. Historically stored durable delta rows can still replay through the legacy compatibility path. `message.created` now carries `clientMessageId` when the originating user message had one so web clients can reconcile optimistic sends against WS echoes.
-- OpenAPI publishes the canonical durable-event contract as 11 typed discriminator variants and keeps `message.delta` as a separate live-event component for future SSE reuse. Replay responses use a canonical-or-legacy union: legacy or manually inserted partial/durable-delta rows are documented by an explicitly disjoint compatibility fallback rather than weakening the canonical variants.
+- Newly produced `message.delta` events stay live-only, while durable events such as `execution.started`, `message.created`, `message.completed`, `tool.call.*`, `option.*`, `permission.requested`, `permission.resolved`, `execution.finished`, `execution.failed`, and `execution.cancelled` are persisted and replayable. Historically stored durable delta rows can still replay through the legacy compatibility path. `message.created` now carries `clientMessageId` when the originating user message had one so web clients can reconcile optimistic sends against WS echoes.
+- OpenAPI publishes the canonical durable-event contract as 13 typed discriminator variants and keeps `message.delta` as a separate live-event component for future SSE reuse. Replay responses use a canonical-or-legacy union: legacy or manually inserted partial/durable-delta rows are documented by an explicitly disjoint compatibility fallback rather than weakening the canonical variants.
 
 ## OpenAPI Maintenance
 
@@ -62,6 +65,7 @@ The `:backend` module is a JVM HTTP server build for Souz without Compose UI sta
   - `SOUZ_FEATURE_STREAMING_MESSAGES` / `souz.backend.feature.streamingMessages`
   - `SOUZ_FEATURE_TOOL_EVENTS` / `souz.backend.feature.toolEvents`
   - `SOUZ_FEATURE_OPTIONS` / `souz.backend.feature.options`
+  - `SOUZ_FEATURE_PERMISSIONS` / `souz.backend.feature.permissions`
   - `ENABLE_BACKEND_TG_FEATURE` / `souz.backend.feature.telegramBot`
 - Telegram:
   - `TELEGRAM_TOKEN_ENCRYPTION_KEY` / `souz.telegram.tokenEncryptionKey`

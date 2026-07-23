@@ -9,9 +9,11 @@ import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceRequestedPayload
 import ru.souz.backend.events.model.ChoiceOptionItemPayload
 import ru.souz.backend.events.model.MessageCreatedPayload
+import ru.souz.backend.events.model.PermissionRequestedPayload
 import ru.souz.backend.events.model.RawAgentEventPayload
 import ru.souz.backend.events.model.ToolCallFinishedPayload
 import ru.souz.backend.events.model.ToolCallStartedPayload
+import ru.souz.backend.permission.model.PermissionRequest
 import ru.souz.llms.restJsonMapper
 
 class BackendV1EventDtoPayloadTest {
@@ -160,5 +162,75 @@ class BackendV1EventDtoPayloadTest {
         assertEquals("Pick one", dto.payload["title"])
         assertEquals("Alpha", options[0]["label"].asText())
         assertEquals("first", options[0]["content"].asText())
+    }
+
+    @Test
+    fun `permission event payload exposes only bounded client safe prompt data`() {
+        val event = AgentEvent(
+            id = UUID.randomUUID(),
+            userId = "user-a",
+            chatId = UUID.randomUUID(),
+            executionId = UUID.randomUUID(),
+            seq = 9L,
+            type = AgentEventType.PERMISSION_REQUESTED,
+            payload = PermissionRequestedPayload(
+                permissionRequestId = UUID.randomUUID(),
+                invocationId = UUID.randomUUID(),
+                toolName = "PermissionFixture",
+                toolCallId = "provider-call-1",
+                description = "d".repeat(PermissionRequest.MAX_DESCRIPTION_LENGTH + 1),
+                displayParams = (1..(PermissionRequest.MAX_DISPLAY_PARAMS + 2)).associate { index ->
+                    "key-$index" to "v".repeat(PermissionRequest.MAX_DISPLAY_PARAM_VALUE_LENGTH + 1)
+                },
+            ),
+            createdAt = Instant.parse("2026-07-23T10:00:00Z"),
+        )
+
+        val payload = event.toDto().payload
+        val displayParams = payload["displayParams"] as Map<*, *>
+
+        assertEquals(PermissionRequest.MAX_DESCRIPTION_LENGTH, (payload["description"] as String).length)
+        assertEquals(PermissionRequest.MAX_DISPLAY_PARAMS, displayParams.size)
+        assertEquals("pending", payload["status"])
+        assertEquals(null, payload["arguments"])
+        assertEquals(null, payload["promptHash"])
+        assertEquals(null, payload["checkpoint"])
+    }
+
+    @Test
+    fun `legacy permission payload is bounded before replay transport`() {
+        val event = AgentEvent(
+            id = UUID.randomUUID(),
+            userId = "user-a",
+            chatId = UUID.randomUUID(),
+            executionId = UUID.randomUUID(),
+            seq = 10L,
+            type = AgentEventType.PERMISSION_REQUESTED,
+            payload = RawAgentEventPayload(
+                values = mapOf(
+                    "permissionRequestId" to UUID.randomUUID().toString(),
+                    "invocationId" to UUID.randomUUID().toString(),
+                    "toolName" to "PermissionFixture",
+                    "description" to "d".repeat(PermissionRequest.MAX_DESCRIPTION_LENGTH + 1),
+                    "displayParams" to restJsonMapper.writeValueAsString(
+                        (1..(PermissionRequest.MAX_DISPLAY_PARAMS + 1)).associate { index ->
+                            "key-$index" to "v".repeat(PermissionRequest.MAX_DISPLAY_PARAM_VALUE_LENGTH + 1)
+                        }
+                    ),
+                    "status" to "pending",
+                ),
+            ),
+            createdAt = Instant.parse("2026-07-23T10:00:01Z"),
+        )
+
+        val payload = event.toDto().payload
+        val displayParams = payload["displayParams"] as Map<*, *>
+
+        assertEquals(PermissionRequest.MAX_DESCRIPTION_LENGTH, (payload["description"] as String).length)
+        assertEquals(PermissionRequest.MAX_DISPLAY_PARAMS, displayParams.size)
+        assertEquals(
+            PermissionRequest.MAX_DISPLAY_PARAM_VALUE_LENGTH,
+            displayParams.values.first().toString().length,
+        )
     }
 }

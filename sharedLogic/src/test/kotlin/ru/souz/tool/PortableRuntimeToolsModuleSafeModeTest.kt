@@ -125,11 +125,41 @@ class PortableRuntimeToolsModuleSafeModeTest {
         assertNotNull(directDI.instance<ToolModifyFile>())
     }
 
+    @Test
+    fun `backend requester binding is not consumed by existing portable production tools`() = runTest {
+        val home = createTempDirectory("portable-requester-only-home-")
+        val stateRoot = createTempDirectory("portable-requester-only-state-")
+        val source = home.resolve("source.txt").apply { writeText("keep") }
+        val destination = home.resolve("destination.txt")
+        var permissionRequests = 0
+        val requester = ToolPermissionRequester { _, _, _ ->
+            permissionRequests += 1
+            ToolPermissionResult.No("must not be used")
+        }
+        val directDI = createDirectDI(
+            home = home,
+            stateRoot = stateRoot,
+            safeModeEnabled = true,
+            bindBrokers = false,
+            requester = requester,
+        )
+
+        val result = directDI.instance<ToolMoveFile>().suspendInvoke(
+            ToolMoveFile.Input(source.toString(), destination.toString())
+        )
+
+        assertEquals(0, permissionRequests)
+        assertTrue(source.notExists())
+        assertTrue(destination.exists())
+        assertTrue(result.contains("File moved"))
+    }
+
     private fun createDirectDI(
         home: Path,
         stateRoot: Path,
         safeModeEnabled: Boolean,
         bindBrokers: Boolean,
+        requester: ToolPermissionRequester? = null,
     ) = DI.direct {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.forbiddenFolders } returns emptyList()
@@ -149,6 +179,9 @@ class PortableRuntimeToolsModuleSafeModeTest {
         if (bindBrokers) {
             bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance<SettingsProvider>()) }
             bindSingleton { DeferredToolModifyPermissionBroker(instance<SettingsProvider>(), instance()) }
+        }
+        requester?.let { boundRequester ->
+            bindSingleton<ToolPermissionRequester> { boundRequester }
         }
         import(portableRuntimeToolsDiModule())
     }

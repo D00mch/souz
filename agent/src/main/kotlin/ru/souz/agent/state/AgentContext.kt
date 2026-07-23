@@ -1,6 +1,7 @@
 package ru.souz.agent.state
 
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.AgentToolBatchCheckpointSink
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -15,6 +16,7 @@ data class AgentContext<I>(
     val systemPrompt: String,
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    val toolBatchCheckpointSink: AgentToolBatchCheckpointSink = AgentToolBatchCheckpointSink.NONE,
 ) {
     inline fun <reified O> map(
         settings: AgentSettings = this.settings,
@@ -30,6 +32,7 @@ data class AgentContext<I>(
         systemPrompt = systemPrompt,
         toolInvocationMeta = toolInvocationMeta,
         runtimeEventSink = runtimeEventSink,
+        toolBatchCheckpointSink = toolBatchCheckpointSink,
     )
 }
 

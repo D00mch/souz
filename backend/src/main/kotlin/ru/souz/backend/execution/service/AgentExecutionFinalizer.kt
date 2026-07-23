@@ -22,6 +22,7 @@ import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.permission.repository.PermissionWorkflowRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.llms.LLMResponse
 
@@ -35,6 +36,7 @@ internal class AgentExecutionFinalizer(
     private val chatRepository: ChatRepository,
     private val executionRepository: AgentExecutionRepository,
     private val turnRunner: BackendConversationTurnRunner,
+    private val permissionWorkflowRepository: PermissionWorkflowRepository? = null,
 ) {
     private val sessionRepository = AgentStateBackedSessionRepository(agentStateRepository)
 
@@ -72,6 +74,10 @@ internal class AgentExecutionFinalizer(
                     execution = execution,
                     executionOutcome = executionOutcome,
                     conversationKey = conversationKey,
+                )
+
+                is BackendConversationTurnOutcome.WaitingPermission -> persistWaitingPermissionExecution(
+                    execution = execution,
                 )
             }
         } catch (e: CancellationException) {
@@ -208,7 +214,8 @@ internal class AgentExecutionFinalizer(
             currentExecution.status == AgentExecutionStatus.CANCELLED ||
             currentExecution.status == AgentExecutionStatus.COMPLETED ||
             currentExecution.status == AgentExecutionStatus.FAILED ||
-            currentExecution.status == AgentExecutionStatus.WAITING_OPTION
+            currentExecution.status == AgentExecutionStatus.WAITING_OPTION ||
+            currentExecution.status == AgentExecutionStatus.WAITING_PERMISSION
         ) {
             return
         }
@@ -248,7 +255,7 @@ internal class AgentExecutionFinalizer(
             usage = usage,
             metadata = emptyMap(),
         )
-        return executionRepository.update(
+        val failed = executionRepository.update(
             currentExecution.copy(
                 status = AgentExecutionStatus.FAILED,
                 finishedAt = Instant.now(),
@@ -257,6 +264,8 @@ internal class AgentExecutionFinalizer(
                 usage = usage ?: currentExecution.usage,
             )
         )
+        permissionWorkflowRepository?.deleteCheckpoint(executionId)
+        return failed
     }
 
     suspend fun markCancelled(
@@ -266,7 +275,7 @@ internal class AgentExecutionFinalizer(
         usage: AgentExecutionUsage?,
     ): AgentExecution {
         val currentExecution = currentExecution(executionId, userId, chatId)
-        return executionRepository.update(
+        val cancelled = executionRepository.update(
             currentExecution.copy(
                 status = AgentExecutionStatus.CANCELLED,
                 cancelRequested = true,
@@ -276,6 +285,8 @@ internal class AgentExecutionFinalizer(
                 usage = usage ?: currentExecution.usage,
             )
         )
+        permissionWorkflowRepository?.deleteCheckpoint(executionId)
+        return cancelled
     }
 
     suspend fun currentExecution(
@@ -317,6 +328,7 @@ internal class AgentExecutionFinalizer(
             )
         )
         eventSink.emitExecutionFinished(finalExecution)
+        permissionWorkflowRepository?.deleteCheckpoint(execution.id)
 
         return PersistedExecutionResult(
             assistantMessage = assistantMessage,
@@ -331,22 +343,34 @@ internal class AgentExecutionFinalizer(
     ): PersistedExecutionResult {
         sessionRepository.save(conversationKey, executionOutcome.session)
         val waitingExecution = currentExecution(execution.id, execution.userId, execution.chatId)
+        val persistedExecution = if (waitingExecution.status == AgentExecutionStatus.WAITING_OPTION) {
+            executionRepository.update(
+                waitingExecution.copy(
+                    usage = executionOutcome.usage.toExecutionUsage(),
+                )
+            )
+        } else {
+            executionRepository.update(
+                waitingExecution.copy(
+                    status = AgentExecutionStatus.WAITING_OPTION,
+                    usage = executionOutcome.usage.toExecutionUsage(),
+                )
+            )
+        }
+        permissionWorkflowRepository?.deleteCheckpoint(execution.id)
         return PersistedExecutionResult(
             assistantMessage = null,
-            execution = if (waitingExecution.status == AgentExecutionStatus.WAITING_OPTION) {
-                executionRepository.update(
-                    waitingExecution.copy(
-                        usage = executionOutcome.usage.toExecutionUsage(),
-                    )
-                )
-            } else {
-                executionRepository.update(
-                    waitingExecution.copy(
-                        status = AgentExecutionStatus.WAITING_OPTION,
-                        usage = executionOutcome.usage.toExecutionUsage(),
-                    )
-                )
-            },
+            execution = persistedExecution,
+        )
+    }
+
+    private suspend fun persistWaitingPermissionExecution(
+        execution: AgentExecution,
+    ): PersistedExecutionResult {
+        val current = currentExecution(execution.id, execution.userId, execution.chatId)
+        return PersistedExecutionResult(
+            assistantMessage = null,
+            execution = current,
         )
     }
 }

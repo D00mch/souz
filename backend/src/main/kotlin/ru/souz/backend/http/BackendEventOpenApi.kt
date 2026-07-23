@@ -7,6 +7,7 @@ import io.ktor.openapi.JsonSchemaDiscriminator
 import io.ktor.openapi.JsonType
 import io.ktor.openapi.ReferenceOr
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.permission.model.PermissionRequest
 
 /** Documentation-only schemas for the canonical backend event transport contract. */
 internal object BackendEventOpenApiSchemas {
@@ -28,6 +29,8 @@ internal object BackendEventOpenApiSchemas {
     private const val TOOL_CALL_FAILED_PAYLOAD = "BackendToolCallFailedEventPayload"
     private const val OPTION_REQUESTED_PAYLOAD = "BackendOptionRequestedEventPayload"
     private const val OPTION_ANSWERED_PAYLOAD = "BackendOptionAnsweredEventPayload"
+    private const val PERMISSION_REQUESTED_PAYLOAD = "BackendPermissionRequestedEventPayload"
+    private const val PERMISSION_RESOLVED_PAYLOAD = "BackendPermissionResolvedEventPayload"
     private const val OPTION_ITEM = "BackendEventOptionItem"
 
     private val durableVariants = listOf(
@@ -42,6 +45,16 @@ internal object BackendEventOpenApiSchemas {
         DurableVariant("tool.call.failed", "BackendToolCallFailedEventEnvelope", TOOL_CALL_FAILED_PAYLOAD),
         DurableVariant("option.requested", "BackendOptionRequestedEventEnvelope", OPTION_REQUESTED_PAYLOAD),
         DurableVariant("option.answered", "BackendOptionAnsweredEventEnvelope", OPTION_ANSWERED_PAYLOAD),
+        DurableVariant(
+            "permission.requested",
+            "BackendPermissionRequestedEventEnvelope",
+            PERMISSION_REQUESTED_PAYLOAD,
+        ),
+        DurableVariant(
+            "permission.resolved",
+            "BackendPermissionResolvedEventEnvelope",
+            PERMISSION_RESOLVED_PAYLOAD,
+        ),
     )
 
     val replayResponse: JsonSchema = objectSchema(
@@ -66,6 +79,8 @@ internal object BackendEventOpenApiSchemas {
         put(OPTION_ITEM, optionItem())
         put(OPTION_REQUESTED_PAYLOAD, optionRequestedPayload())
         put(OPTION_ANSWERED_PAYLOAD, optionAnsweredPayload())
+        put(PERMISSION_REQUESTED_PAYLOAD, permissionRequestedPayload())
+        put(PERMISSION_RESOLVED_PAYLOAD, permissionResolvedPayload())
         durableVariants.forEach { variant ->
             put(variant.componentName, durableEnvelope(variant))
         }
@@ -73,7 +88,7 @@ internal object BackendEventOpenApiSchemas {
             DURABLE_EVENT,
             JsonSchema(
                 title = DURABLE_EVENT,
-                description = "The 11 canonical durable event variants.",
+                description = "The 13 canonical durable event variants.",
                 oneOf = durableVariants.map { schema(it.componentName) },
                 discriminator = JsonSchemaDiscriminator(
                     propertyName = "type",
@@ -293,6 +308,41 @@ internal object BackendEventOpenApiSchemas {
             ),
         )
 
+    private fun permissionRequestedPayload(): JsonSchema =
+        objectSchema(
+            required = listOf(
+                "permissionRequestId",
+                "invocationId",
+                "toolName",
+                "description",
+                "displayParams",
+                "status",
+            ),
+            properties = mapOf(
+                "permissionRequestId" to value(uuidSchema()),
+                "invocationId" to value(uuidSchema()),
+                "toolName" to value(stringSchema()),
+                "toolCallId" to value(stringSchema()),
+                "description" to value(
+                    stringSchema().copy(maxLength = PermissionRequest.MAX_DESCRIPTION_LENGTH)
+                ),
+                "displayParams" to value(permissionDisplayParamsSchema()),
+                "status" to value(singletonString("pending")),
+            ),
+        )
+
+    private fun permissionResolvedPayload(): JsonSchema =
+        objectSchema(
+            required = listOf("permissionRequestId", "invocationId", "toolName", "status"),
+            properties = mapOf(
+                "permissionRequestId" to value(uuidSchema()),
+                "invocationId" to value(uuidSchema()),
+                "toolName" to value(stringSchema()),
+                "toolCallId" to value(stringSchema()),
+                "status" to value(stringEnum(listOf("granted", "denied", "cancelled"))),
+            ),
+        )
+
     private data class DurableVariant(
         val type: String,
         val componentName: String,
@@ -375,6 +425,18 @@ private fun stringMapSchema(): JsonSchema =
     JsonSchema(
         type = JsonType.OBJECT,
         additionalProperties = AdditionalProperties.PSchema(value(stringSchema())),
+    )
+
+private fun permissionDisplayParamsSchema(): JsonSchema =
+    JsonSchema(
+        type = JsonType.OBJECT,
+        description = "Client-safe display parameters. Keys are at most ${PermissionRequest.MAX_DISPLAY_PARAM_KEY_LENGTH} characters.",
+        additionalProperties = AdditionalProperties.PSchema(
+            value(
+                stringSchema().copy(maxLength = PermissionRequest.MAX_DISPLAY_PARAM_VALUE_LENGTH)
+            )
+        ),
+        maxProperties = PermissionRequest.MAX_DISPLAY_PARAMS,
     )
 
 private fun arbitraryJsonSchema(description: String): JsonSchema =

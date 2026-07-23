@@ -5,6 +5,8 @@ import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.service.ChatSummary
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.options.service.AnswerOptionResult
+import ru.souz.backend.permission.model.PermissionRequest
+import ru.souz.backend.permission.service.PermissionDecisionResult
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
@@ -17,6 +19,8 @@ import ru.souz.backend.events.model.ExecutionStartedPayload
 import ru.souz.backend.events.model.MessageCompletedPayload
 import ru.souz.backend.events.model.MessageCreatedPayload
 import ru.souz.backend.events.model.MessageDeltaPayload
+import ru.souz.backend.events.model.PermissionRequestedPayload
+import ru.souz.backend.events.model.PermissionResolvedPayload
 import ru.souz.backend.events.model.RawAgentEventPayload
 import ru.souz.backend.events.model.ToolCallFailedPayload
 import ru.souz.backend.events.model.ToolCallFinishedPayload
@@ -170,6 +174,43 @@ internal data class BackendV1AnswerOptionResponse(
     val execution: BackendV1ExecutionDto,
 )
 
+internal data class BackendV1PendingPermissionRequestsResponse(
+    val items: List<BackendV1PermissionRequestDto>,
+)
+
+internal data class BackendV1PermissionDecisionRequest(
+    @io.ktor.openapi.JsonSchema.Enum("grant", "deny")
+    val decision: String = "",
+)
+
+internal data class BackendV1PermissionDecisionResponse(
+    val permissionRequest: BackendV1PermissionRequestDto,
+    val execution: BackendV1ExecutionDto,
+)
+
+internal data class BackendV1PermissionRequestDto(
+    @io.ktor.openapi.JsonSchema.Format("uuid")
+    val id: String,
+    @io.ktor.openapi.JsonSchema.Format("uuid")
+    val chatId: String,
+    @io.ktor.openapi.JsonSchema.Format("uuid")
+    val executionId: String,
+    @io.ktor.openapi.JsonSchema.Format("uuid")
+    val invocationId: String,
+    val toolName: String,
+    val toolCallId: String?,
+    @io.ktor.openapi.JsonSchema.MaxLength(PermissionRequest.MAX_DESCRIPTION_LENGTH)
+    val description: String,
+    @io.ktor.openapi.JsonSchema.MaxProperties(PermissionRequest.MAX_DISPLAY_PARAMS)
+    val displayParams: Map<String, String>,
+    @io.ktor.openapi.JsonSchema.Enum("pending", "granted", "denied", "cancelled")
+    val status: String,
+    @io.ktor.openapi.JsonSchema.Format("date-time")
+    val createdAt: String,
+    @io.ktor.openapi.JsonSchema.Format("date-time")
+    val resolvedAt: String?,
+)
+
 internal data class BackendV1OptionDto(
     val id: String,
     val status: String,
@@ -208,6 +249,16 @@ internal data class BackendV1ExecutionDto(
     val chatId: String,
     val userMessageId: String?,
     val assistantMessageId: String?,
+    @io.ktor.openapi.JsonSchema.Enum(
+        "queued",
+        "running",
+        "waiting_option",
+        "waiting_permission",
+        "cancelling",
+        "cancelled",
+        "completed",
+        "failed",
+    )
     val status: String,
     val requestId: String?,
     val clientMessageId: String?,
@@ -316,6 +367,27 @@ internal fun AnswerOptionResult.toResponse(): BackendV1AnswerOptionResponse =
             status = option.status.value,
         ),
         execution = execution.toDto(),
+    )
+
+internal fun PermissionDecisionResult.toResponse(): BackendV1PermissionDecisionResponse =
+    BackendV1PermissionDecisionResponse(
+        permissionRequest = permissionRequest.toDto(),
+        execution = execution.toDto(),
+    )
+
+internal fun PermissionRequest.toDto(): BackendV1PermissionRequestDto =
+    BackendV1PermissionRequestDto(
+        id = id.toString(),
+        chatId = chatId.toString(),
+        executionId = executionId.toString(),
+        invocationId = invocationId.toString(),
+        toolName = toolName,
+        toolCallId = toolCallId,
+        description = description.take(PermissionRequest.MAX_DESCRIPTION_LENGTH),
+        displayParams = displayParams.toBoundedDisplayParams(),
+        status = status.value,
+        createdAt = createdAt.toString(),
+        resolvedAt = resolvedAt?.toString(),
     )
 
 internal fun ChatMessage.toDto(): BackendV1MessageDto =
@@ -442,6 +514,24 @@ private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<Stri
             "metadata" to metadata,
         )
 
+        is PermissionRequestedPayload -> linkedMapOf<String, Any?>(
+            "permissionRequestId" to permissionRequestId.toString(),
+            "invocationId" to invocationId.toString(),
+            "toolName" to toolName,
+            "toolCallId" to toolCallId,
+            "description" to description.take(PermissionRequest.MAX_DESCRIPTION_LENGTH),
+            "displayParams" to displayParams.toBoundedDisplayParams(),
+            "status" to status,
+        ).withoutNulls()
+
+        is PermissionResolvedPayload -> linkedMapOf<String, Any?>(
+            "permissionRequestId" to permissionRequestId.toString(),
+            "invocationId" to invocationId.toString(),
+            "toolName" to toolName,
+            "toolCallId" to toolCallId,
+            "status" to status,
+        ).withoutNulls()
+
         is ToolCallStartedPayload -> linkedMapOf<String, Any?>(
             "toolCallId" to toolCallId,
             "name" to name,
@@ -470,6 +560,15 @@ private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<Stri
 
 private fun LinkedHashMap<String, Any?>.withoutNulls(): Map<String, Any?> =
     entries.filter { it.value != null }.associateTo(LinkedHashMap()) { it.toPair() }
+
+private fun Map<String, String>.toBoundedDisplayParams(): Map<String, String> =
+    entries.asSequence()
+        .filter { (key, _) -> key.isNotBlank() }
+        .take(PermissionRequest.MAX_DISPLAY_PARAMS)
+        .associateTo(LinkedHashMap()) { (key, value) ->
+            key.take(PermissionRequest.MAX_DISPLAY_PARAM_KEY_LENGTH) to
+                value.take(PermissionRequest.MAX_DISPLAY_PARAM_VALUE_LENGTH)
+        }
 
 private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): Map<String, Any?> =
     when (type) {
@@ -537,6 +636,24 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyJsonIfPresent<Map<String, String>>("metadata")
         }
 
+        AgentEventType.PERMISSION_REQUESTED -> buildLegacyPayload {
+            copyIfPresent("permissionRequestId")
+            copyIfPresent("invocationId")
+            copyIfPresent("toolName")
+            copyIfPresent("toolCallId")
+            copyBoundedIfPresent("description", PermissionRequest.MAX_DESCRIPTION_LENGTH)
+            copyBoundedDisplayParamsIfPresent("displayParams")
+            copyIfPresent("status")
+        }
+
+        AgentEventType.PERMISSION_RESOLVED -> buildLegacyPayload {
+            copyIfPresent("permissionRequestId")
+            copyIfPresent("invocationId")
+            copyIfPresent("toolName")
+            copyIfPresent("toolCallId")
+            copyIfPresent("status")
+        }
+
         AgentEventType.TOOL_CALL_STARTED -> buildLegacyPayload {
             copyIfPresent("toolCallId")
             copyIfPresent("name")
@@ -596,6 +713,26 @@ private class LegacyPayloadBuilder(
         sourceKey: String = key,
     ) {
         source[sourceKey]?.toBooleanStrictOrNull()?.let { values[key] = it }
+    }
+
+    fun copyBoundedIfPresent(
+        key: String,
+        maxLength: Int,
+        sourceKey: String = key,
+    ) {
+        source[sourceKey]?.let { values[key] = it.take(maxLength) }
+    }
+
+    fun copyBoundedDisplayParamsIfPresent(
+        key: String,
+        sourceKey: String = key,
+    ) {
+        source[sourceKey]?.takeIf { it.isNotBlank() }?.let { rawValue ->
+            values[key] = restJsonMapper.readValue(
+                rawValue,
+                object : com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {},
+            ).toBoundedDisplayParams()
+        }
     }
 
     inline fun <reified T> copyJsonIfPresent(

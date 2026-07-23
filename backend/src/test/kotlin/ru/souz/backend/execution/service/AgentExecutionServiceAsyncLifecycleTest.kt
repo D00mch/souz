@@ -190,14 +190,50 @@ class AgentExecutionServiceAsyncLifecycleTest {
             context.close()
         }
     }
+
+    @Test
+    fun `fast permission decision is not overwritten when the paused turn unwinds`() = runTest {
+        val context = asyncLifecycleContext { executionRepository ->
+            FastPermissionDecisionTurnRunner(executionRepository)
+        }
+        try {
+            val result = context.service.executeChatTurn(
+                userId = context.chat.userId,
+                chatId = context.chat.id,
+                content = "permission race",
+            )
+
+            advanceUntilIdle()
+
+            val stored = assertNotNull(
+                context.executionRepository.getByChat(
+                    context.chat.userId,
+                    context.chat.id,
+                    result.execution.id,
+                )
+            )
+            assertEquals(AgentExecutionStatus.QUEUED, stored.status)
+            assertFalse(
+                context.eventRepository.listByChat(context.chat.userId, context.chat.id)
+                    .any { it.type == AgentEventType.EXECUTION_FAILED }
+            )
+        } finally {
+            context.close()
+        }
+    }
 }
 
 private suspend fun TestScope.asyncLifecycleContext(
     turnRunner: BackendConversationTurnRunner,
+): AsyncLifecycleTestContext = asyncLifecycleContext { turnRunner }
+
+private suspend fun TestScope.asyncLifecycleContext(
+    turnRunnerFactory: (MemoryAgentExecutionRepository) -> BackendConversationTurnRunner,
 ): AsyncLifecycleTestContext {
     val chatRepository = MemoryChatRepository()
     val messageRepository = MemoryMessageRepository()
     val executionRepository = MemoryAgentExecutionRepository()
+    val turnRunner = turnRunnerFactory(executionRepository)
     val optionRepository = MemoryOptionRepository()
     val eventRepository = MemoryAgentEventRepository()
     val userSettingsRepository = MemoryUserSettingsRepository()
@@ -269,6 +305,24 @@ private suspend fun TestScope.asyncLifecycleContext(
         eventRepository = eventRepository,
         executionScope = executionScope,
     )
+}
+
+private class FastPermissionDecisionTurnRunner(
+    private val executionRepository: MemoryAgentExecutionRepository,
+) : BackendConversationTurnRunner {
+    override suspend fun run(
+        conversationKey: AgentConversationKey,
+        request: BackendConversationTurnRequest,
+        eventSink: ru.souz.agent.runtime.AgentRuntimeEventSink,
+        initialUsage: LLMResponse.Usage,
+    ): BackendConversationTurnOutcome {
+        val executionId = UUID.fromString(checkNotNull(request.executionId))
+        val execution = assertNotNull(executionRepository.get(conversationKey.userId, executionId))
+        executionRepository.update(execution.copy(status = AgentExecutionStatus.QUEUED))
+        return BackendConversationTurnOutcome.WaitingPermission(
+            usage = LLMResponse.Usage(2, 1, 3, 0),
+        )
+    }
 }
 
 private data class AsyncLifecycleTestContext(

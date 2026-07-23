@@ -7,6 +7,7 @@ data class BackendFeatureFlags(
     val streamingMessages: Boolean = false,
     val toolEvents: Boolean = false,
     val options: Boolean = false,
+    val permissions: Boolean = false,
     val telegramBot: Boolean = false,
 ) {
     companion object {
@@ -30,6 +31,11 @@ data class BackendFeatureFlags(
                 options = source.booleanValue(
                     envKey = "SOUZ_FEATURE_OPTIONS",
                     propertyKey = "souz.backend.feature.options",
+                    default = false,
+                ),
+                permissions = source.booleanValue(
+                    envKey = "SOUZ_FEATURE_PERMISSIONS",
+                    propertyKey = "souz.backend.feature.permissions",
                     default = false,
                 ),
                 telegramBot = source.booleanValue(

@@ -18,6 +18,7 @@ import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILLS_ACTIVATION_NODE_NAME
 import ru.souz.agent.runtime.GraphExecutionDelegate
+import ru.souz.agent.runtime.AgentToolBatchResume
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.llms.LLMResponse
@@ -71,6 +72,39 @@ class GraphBasedAgent internal constructor(
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
+    /**
+     * Dedicated continuation graph for a durably stored tool batch.
+     *
+     * It intentionally omits input-to-history, classification, skill activation, MCP discovery,
+     * and context enrichment. The stored batch is handled first and then rejoins the ordinary
+     * LLM/tool/summary loop.
+     */
+    private val toolBatchResumeGraph: Graph<AgentToolBatchResume, String> =
+        buildGraph(name = "AgentToolBatchResume") {
+            val resumeToolUse: Node<AgentToolBatchResume, String> = nodesCommon.resumeToolUse()
+            val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("Resume LLM")
+            val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Resume Chat.Ok") { ctx ->
+                ctx.map { ctx.input as LLMResponse.Chat.Ok }
+            }
+            val chatErrorToFinish: Node<LLMResponse.Chat, String> =
+                nodesErrorHandling.chatErrorToFinish("Resume Chat.Error->Finish")
+            val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesCommon.toolUse("Resume toolUse")
+            val summary: Node<LLMResponse.Chat.Ok, String> = nodesSummarization.summarize("Resume Summary")
+
+            nodeInput.edgeTo(resumeToolUse)
+            resumeToolUse.edgeTo(chatSubgraph)
+            chatSubgraph.edgeTo { ctx ->
+                when (ctx.input) {
+                    is LLMResponse.Chat.Error -> chatErrorToFinish
+                    is LLMResponse.Chat.Ok -> chatOk
+                }
+            }
+            chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else summary }
+            toolUse.edgeTo(chatSubgraph)
+            summary.edgeTo(nodeFinish)
+            chatErrorToFinish.edgeTo(nodeFinish)
+        }
+
     override fun cancelActiveJob() {
         executionDelegate.cancelActiveJob()
     }
@@ -82,6 +116,15 @@ class GraphBasedAgent internal constructor(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = ctx, onStep = onStep)
+
+    override suspend fun resumeToolBatchWithTrace(
+        ctx: AgentContext<AgentToolBatchResume>,
+        onStep: GraphStepCallback?,
+    ): AgentExecutionResult = executionDelegate.executeWithTrace(
+        graph = toolBatchResumeGraph,
+        ctx = ctx,
+        onStep = onStep,
+    )
 
     private val LLMResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 }

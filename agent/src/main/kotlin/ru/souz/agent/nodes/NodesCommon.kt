@@ -5,9 +5,13 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.AgentToolBatch
+import ru.souz.agent.runtime.AgentToolBatchCheckpoint
+import ru.souz.agent.runtime.AgentToolBatchCheckpointPhase
+import ru.souz.agent.runtime.AgentToolBatchResume
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.runtime.AgentToolInvocation
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -23,12 +27,12 @@ import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.ConversationId
 import ru.souz.memory.MemoryContext
 import ru.souz.memory.MemoryOwnerId
-
 import ru.souz.memory.MemoryRetrievalRequest
 import ru.souz.memory.MemorySessionId
 import ru.souz.memory.NoopConversationMemoryRuntime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 private const val INJECTED_CONTEXT_PREFIX = "<context>\nBackground information. Use ONLY if strictly relevant to the user query. If irrelevant (e.g. chitchat), IGNORE completely. Do NOT reference this data in output.\n---\n"
 private const val INJECTED_CONTEXT_SUFFIX = "</context>"
@@ -98,9 +102,24 @@ internal class NodesCommon(
      * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
      */
     fun toolUse(name: String = "toolUse"): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = fnCallMessages(ctx)
-        val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
-        ctx.map(history = history) { ctx.history.last().content }
+        val batch = materializeToolBatch(ctx.input)
+        executeToolBatch(
+            ctx = ctx,
+            resume = AgentToolBatchResume(
+                batch = batch,
+                nextInvocationIndex = 0,
+            ),
+            initialPhase = AgentToolBatchCheckpointPhase.PLANNED,
+        )
+    }
+
+    /** Re-enters a stored tool batch without replaying any pre-LLM graph nodes. */
+    fun resumeToolUse(name: String = "ToolBatchResume"): Node<AgentToolBatchResume, String> = Node(name) { ctx ->
+        executeToolBatch(
+            ctx = ctx,
+            resume = ctx.input,
+            initialPhase = AgentToolBatchCheckpointPhase.RESUMING,
+        )
     }
 
     /**
@@ -179,34 +198,114 @@ internal class NodesCommon(
         null
     }
 
-    private suspend fun fnCallMessages(ctx: AgentContext<LLMResponse.Chat.Ok>): List<LLMRequest.Message> =
-        ctx.input.choices.mapNotNull { choice ->
-            val msg = choice.message
-            val functionCall = msg.functionCall
-            val functionsStateId = msg.functionsStateId
-            if (functionCall != null && functionsStateId != null) {
-                executeTool(
-                    settings = ctx.settings,
-                    functionCall = functionCall,
-                    meta = ctx.toolInvocationMeta,
-                    toolCallId = functionsStateId,
-                    eventSink = ctx.runtimeEventSink,
-                ).copy(functionsStateId = functionsStateId)
-            } else null
+    private fun materializeToolBatch(response: LLMResponse.Chat.Ok): AgentToolBatch {
+        val invocations = response.choices.mapNotNull { choice ->
+            val functionCall = choice.message.functionCall ?: return@mapNotNull null
+            functionCall to choice.message.functionsStateId
+        }.mapIndexed { index, (functionCall, providerToolCallId) ->
+            AgentToolInvocation(
+                invocationId = UUID.randomUUID(),
+                batchIndex = index,
+                functionCall = functionCall,
+                providerToolCallId = providerToolCallId,
+            )
+        }
+        check(invocations.isNotEmpty()) { "Tool-use response did not contain a function call." }
+        return AgentToolBatch(
+            batchId = UUID.randomUUID(),
+            invocations = invocations,
+        )
+    }
+
+    private suspend fun <I> executeToolBatch(
+        ctx: AgentContext<I>,
+        resume: AgentToolBatchResume,
+        initialPhase: AgentToolBatchCheckpointPhase,
+    ): AgentContext<String> {
+        val batch = resume.batch
+        var nextInvocationIndex = resume.nextInvocationIndex
+        val history = ArrayList(ctx.history)
+
+        saveToolBatchCheckpoint(
+            ctx = ctx,
+            batch = batch,
+            nextInvocationIndex = nextInvocationIndex,
+            history = history,
+            phase = initialPhase,
+        )
+
+        resume.pendingResult?.let { pendingResult ->
+            val invocation = batch.invocations[nextInvocationIndex]
+            ctx.runtimeEventSink.emit(
+                AgentRuntimeEvent.ToolCallFinished(
+                    toolCallId = invocation.providerToolCallId ?: invocation.invocationId.toString(),
+                    name = invocation.functionCall.name,
+                    result = pendingResult.content,
+                    durationMs = 0,
+                )
+            )
+            history += pendingResult.withInvocationCorrelation(invocation)
+            nextInvocationIndex += 1
+            saveToolBatchCheckpoint(
+                ctx = ctx,
+                batch = batch,
+                nextInvocationIndex = nextInvocationIndex,
+                history = history,
+                phase = AgentToolBatchCheckpointPhase.RESULT_STORED,
+            )
         }
 
-    private suspend fun executeTool(
-        settings: AgentSettings,
-        functionCall: LLMResponse.FunctionCall,
-        meta: ToolInvocationMeta,
-        toolCallId: String? = null,
-        eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
-    ): LLMRequest.Message = agentToolExecutor.execute(
-        settings = settings,
-        functionCall = functionCall,
-        meta = meta,
-        toolCallId = toolCallId,
-        eventSink = eventSink,
+        while (nextInvocationIndex < batch.invocations.size) {
+            val invocation = batch.invocations[nextInvocationIndex]
+            val resumePermissionId = resume.resumePermissionId
+                ?.takeIf { nextInvocationIndex == resume.nextInvocationIndex }
+            val result = agentToolExecutor.execute(
+                settings = ctx.settings,
+                invocation = invocation,
+                meta = invocation.invocationMeta(
+                    base = ctx.toolInvocationMeta,
+                    resumePermissionId = resumePermissionId,
+                ),
+                eventSink = ctx.runtimeEventSink,
+                emitStartedEvent = invocation.invocationId !in resume.startedInvocationIds,
+            ).withInvocationCorrelation(invocation)
+            history += result
+            nextInvocationIndex += 1
+            saveToolBatchCheckpoint(
+                ctx = ctx,
+                batch = batch,
+                nextInvocationIndex = nextInvocationIndex,
+                history = history,
+                phase = AgentToolBatchCheckpointPhase.RESULT_STORED,
+            )
+        }
+
+        return ctx.map(history = history) { history.lastOrNull()?.content.orEmpty() }
+    }
+
+    private suspend fun saveToolBatchCheckpoint(
+        ctx: AgentContext<*>,
+        batch: AgentToolBatch,
+        nextInvocationIndex: Int,
+        history: List<LLMRequest.Message>,
+        phase: AgentToolBatchCheckpointPhase,
+    ) {
+        ctx.toolBatchCheckpointSink.save(
+            checkpoint = AgentToolBatchCheckpoint(
+                batch = batch,
+                nextInvocationIndex = nextInvocationIndex,
+                history = history.toList(),
+                phase = phase,
+            ),
+            context = ctx.copy(history = history.toList()),
+        )
+    }
+
+    private fun LLMRequest.Message.withInvocationCorrelation(
+        invocation: AgentToolInvocation,
+    ): LLMRequest.Message = copy(
+        functionsStateId = invocation.providerToolCallId,
+        name = name ?: invocation.functionCall.name,
     )
 
     private suspend fun retrieveMemoryBlock(

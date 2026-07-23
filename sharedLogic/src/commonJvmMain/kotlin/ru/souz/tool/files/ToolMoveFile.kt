@@ -47,7 +47,8 @@ class ToolMoveFile(
             linkedMapOf(
                 "sourcePath" to fixedSourcePath,
                 "destinationPath" to fixedDestinationPath,
-            )
+            ),
+            meta,
         )
         if (result is ToolPermissionResult.No) return result.msg
         return invoke(input, meta)

@@ -33,7 +33,8 @@ class ToolDeleteFile(
         val fixedPath = filesToolUtil.applyDefaultEnvs(input.path, meta)
         val result = permissionBroker?.requestPermission(
             "Delete file or folder",
-            linkedMapOf("path" to fixedPath)
+            linkedMapOf("path" to fixedPath),
+            meta,
         )
         if (result is ToolPermissionResult.No) return result.msg
         return invoke(input, meta)

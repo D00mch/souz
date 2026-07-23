@@ -21,6 +21,7 @@ If you are not sure about something, left a note for other developers to review.
 ## Features
 
 - **Graph-based agent runtime** with explicit nodes, transitions, retries, and session history.
+- **Durable backend tool-permission framework** behind `SOUZ_FEATURE_PERMISSIONS` / `souz.backend.feature.permissions`: semantic tool batches are checkpointed in PostgreSQL before execution, permission pauses survive backend restarts, grant/deny decisions continue from the stored invocation without a synthetic user turn, and ambiguous in-flight tool outcomes fail rather than being retried. Trusted-proxy clients use an owner-scoped pending snapshot plus idempotent decision API and receive typed `permission.requested` / `permission.resolved` durable events. The framework is opt-in for backend tool construction; existing production tools do not prompt in v1.
 - **Standalone ClawHub/OpenClaw skills support across `:agent` and `:sharedLogic`**: bundle parsing, canonical hashing, sandbox-safe filesystem bundle loading, desktop/Android single-user skill storage with backend user-scoped storage support, runtime-backed activated-skill command execution through `RunSkillCommand`, plus a Docker-bundled academic paper skill fixture seeded into runtime registry storage for sandbox testing.
 - **Shared sandbox abstraction for tools and skills** in `:sharedLogic`: Android/Desktop shared contracts live under `sharedLogic/src/commonJvmMain/kotlin/ru/souz/runtime/sandbox/`, with Android app-private direct filesystem sandbox storage and POSIX `/system/bin/sh` skill script execution in `androidMain` (not GNU Bash), plus local/Docker process sandboxes in `jvmMain`.
 - **Multi-model LLM integrations** for GigaChat (REST/voice), Qwen, AiTunnel, Anthropic Claude, and OpenAI APIs.
@@ -91,20 +92,27 @@ If you are not sure about something, left a note for other developers to review.
 flowchart LR
     bootstrap["GET /v1/bootstrap"] --> http["BackendHttpServer"]
     messages["POST /v1/chats/{chatId}/messages"] --> http
+    permissions["GET pending permissions\nPUT grant or deny"] --> http
     bootstrap --> security["Trusted proxy headers\nX-User-Id + X-Souz-Proxy-Auth"]
     security --> meta["Bootstrap service\nfeatures, storage, tools, models, settings"]
     messages --> execution["AgentExecutionService\npersist execution + launch/finalize"]
+    http --> permissionApi["Durable PermissionService\nownership + idempotent decisions"]
     execution --> runtime["BackendConversationRuntimeFactory\nbuild request-scoped runtime"]
     runtime --> repo["AgentSessionRepository\nload/save persisted session snapshot"]
     runtime --> kernel["AgentExecutionKernelFactory\nshared :agent execution path"]
     kernel --> tools["runtimeToolsDiModule()\nFILES, IMAGE, WEB_SEARCH, CONFIG,\nDATA_ANALYTICS, CALCULATOR"]
+    tools --> workflow["PostgreSQL permission workflow\nrequests + checkpoints + invocations"]
+    permissionApi --> workflow
+    workflow --> resume["Stored tool-batch continuation"]
+    resume --> runtime
     kernel --> llm["LLMFactory and provider APIs"]
 ```
 
 - Backend host adapters intentionally replace desktop-only SPI pieces with no-op implementations while keeping the same graph execution kernel.
 - `/v1/**` trusts user identity only from proxy-managed headers and never from request bodies.
 - `/docs` and `/docs/openapi.json` are public and generated from the backend's registered HTTP routing tree; documentation routes and the WebSocket transport are excluded from the published OpenAPI paths.
-- PostgreSQL is the backend's only structured-data store. It uses JDBC + HikariCP + Flyway with explicit `SOUZ_BACKEND_DB_*` / `souz.backend.db.*` settings (`host`, `port`, `name`, `user`, `password`, `schema`, `maxPoolSize`, `connectionTimeoutMs`) and defaults of `127.0.0.1`, `5432`, `souz`, `souz`, `public`, `10`, and `30000`. Backend user-scoped skill bundles and runtime sandbox workspaces remain filesystem-backed independently of database persistence.
+- Backend permissions are disabled by default. When enabled, `GET /v1/chats/{chatId}/permission-requests/pending` is the authoritative reconnect snapshot and `PUT /v1/permission-requests/{id}/decision` accepts only `grant` or `deny`; missing and foreign request IDs share the same `404`, conflicting decisions return `409`, and repeated identical decisions do not create another durable event but may safely repair a missed dispatch while the execution remains queued.
+- PostgreSQL is the backend's only structured-data store. It uses JDBC + HikariCP + Flyway with explicit `SOUZ_BACKEND_DB_*` / `souz.backend.db.*` settings (`host`, `port`, `name`, `user`, `password`, `schema`, `maxPoolSize`, `connectionTimeoutMs`) and defaults of `127.0.0.1`, `5432`, `souz`, `souz`, `public`, `10`, and `30000`. Flyway V9 adds durable permission requests, execution checkpoints, and ordered tool invocations. Backend user-scoped skill bundles and runtime sandbox workspaces remain filesystem-backed independently of database persistence.
 
 ## Builds
 

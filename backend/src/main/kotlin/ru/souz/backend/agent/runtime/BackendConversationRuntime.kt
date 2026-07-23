@@ -1,9 +1,14 @@
 package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
+import java.util.UUID
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.AgentId
+import ru.souz.agent.runtime.AgentToolBatch
+import ru.souz.agent.runtime.AgentToolBatchResume
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
@@ -18,8 +23,13 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
+import ru.souz.backend.permission.repository.PermissionWorkflowRepository
+import ru.souz.backend.permission.repository.ClaimedPermissionContinuation
+import ru.souz.backend.permission.repository.PermissionInvocationPhase
+import ru.souz.backend.permission.model.PermissionRequestStatus
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
@@ -43,6 +53,9 @@ internal class BackendConversationRuntime(
     private val executor: AgentExecutor,
     private val usageTrackingApi: CumulativeUsageTrackingChatApi,
     private val persistedSession: AgentConversationSession?,
+    private val checkpointObjectMapper: ObjectMapper,
+    private val permissionsEnabled: Boolean,
+    private val permissionWorkflowRepository: PermissionWorkflowRepository?,
 ) {
     private val activeAgentId = contextFactory.normalizeAgentId(
         persistedSession?.activeAgentId ?: settingsProvider.activeAgentId
@@ -70,6 +83,24 @@ internal class BackendConversationRuntime(
             temperature = currentTemperature,
         )
 
+        val checkpointSink = if (permissionsEnabled) {
+            val repository = checkNotNull(permissionWorkflowRepository) {
+                "Permission workflow repository is required when permissions are enabled."
+            }
+            BackendAgentToolBatchCheckpointSink(
+                executionId = request.executionId.toRequiredUuid("executionId"),
+                userId = key.userId,
+                chatId = key.conversationId.toRequiredUuid("conversationId"),
+                activeAgentId = activeAgentId,
+                originalPrompt = request.prompt,
+                baseStateRowVersion = persistedSession?.rowVersion ?: 0L,
+                workflowRepository = repository,
+                objectMapper = checkpointObjectMapper,
+            )
+        } else {
+            ru.souz.agent.runtime.AgentToolBatchCheckpointSink.NONE
+        }
+
         val seedContext = contextFactory.create(
             agentId = activeAgentId,
             history = persistedSession?.history.orEmpty(),
@@ -83,6 +114,7 @@ internal class BackendConversationRuntime(
                 locale = request.locale,
                 timeZone = request.timeZone,
             ),
+            toolBatchCheckpointSink = checkpointSink,
         )
 
         val result = executor.execute(
@@ -113,6 +145,114 @@ internal class BackendConversationRuntime(
         )
     }
 
+    internal suspend fun resumePermission(
+        request: BackendConversationTurnRequest,
+        continuation: ClaimedPermissionContinuation,
+        eventSink: AgentRuntimeEventSink,
+    ): BackendConversationExecution {
+        settingsProvider.applyRequest(
+            request = request,
+            activeAgentId = activeAgentId,
+            temperature = currentTemperature,
+        )
+        val checkpoint = continuation.checkpoint
+        val snapshot = checkpointObjectMapper.readValue<BackendAgentContextCheckpointV1>(checkpoint.contextJson)
+        require(snapshot.schemaVersion == BackendAgentContextCheckpointV1.SCHEMA_VERSION) {
+            "Unsupported permission checkpoint schema ${snapshot.schemaVersion}."
+        }
+        val batch = checkpointObjectMapper.readValue<AgentToolBatch>(checkpoint.batchJson)
+        val restoredAgentId = contextFactory.normalizeAgentId(AgentId.fromStorageValue(snapshot.activeAgentId))
+        val checkpointSink = BackendAgentToolBatchCheckpointSink(
+            executionId = continuation.execution.id,
+            userId = continuation.execution.userId,
+            chatId = continuation.execution.chatId,
+            activeAgentId = restoredAgentId,
+            originalPrompt = snapshot.originalPrompt,
+            baseStateRowVersion = checkpoint.baseStateRowVersion,
+            workflowRepository = checkNotNull(permissionWorkflowRepository),
+            objectMapper = checkpointObjectMapper,
+            initialRevision = checkpoint.revision,
+        )
+        val seed = contextFactory.create(
+            agentId = restoredAgentId,
+            history = snapshot.history,
+            model = settingsProvider.gigaModel,
+            contextSize = snapshot.contextSize,
+            temperature = snapshot.temperature,
+            toolInvocationMeta = ToolInvocationMeta(
+                userId = key.userId,
+                conversationId = key.conversationId,
+                requestId = request.executionId,
+                locale = request.locale,
+                timeZone = request.timeZone,
+            ),
+            toolBatchCheckpointSink = checkpointSink,
+        ).copy(
+            history = snapshot.history,
+            activeTools = snapshot.activeTools,
+            systemPrompt = snapshot.systemPrompt,
+        )
+        require(checkpointCompatibilityKey(batch, seed, checkpointObjectMapper) == checkpoint.compatibilityKey) {
+            "Permission checkpoint tool definitions are incompatible with this runtime."
+        }
+        val permissionRequest = continuation.permissionRequest
+        val resume = when {
+            continuation.invocation.phase == PermissionInvocationPhase.RESULT_STORED -> AgentToolBatchResume(
+                batch = batch,
+                nextInvocationIndex = checkpoint.nextOrdinal,
+            )
+
+            continuation.invocation.phase == PermissionInvocationPhase.PLANNED && permissionRequest == null -> {
+                checkNotNull(permissionWorkflowRepository).beginInvocation(
+                    executionId = continuation.execution.id,
+                    invocationId = continuation.invocation.invocationId,
+                )
+                AgentToolBatchResume(
+                    batch = batch,
+                    nextInvocationIndex = checkpoint.nextOrdinal,
+                )
+            }
+
+            checkNotNull(permissionRequest) {
+                "A claimed tool invocation requires a resolved permission."
+            }.status == PermissionRequestStatus.GRANTED -> AgentToolBatchResume(
+                batch = batch,
+                nextInvocationIndex = checkpoint.nextOrdinal,
+                resumePermissionId = permissionRequest.id.toString(),
+                startedInvocationIds = setOf(continuation.invocation.invocationId),
+            )
+
+            permissionRequest.status == PermissionRequestStatus.DENIED -> AgentToolBatchResume.denied(
+                batch = batch,
+                nextInvocationIndex = checkpoint.nextOrdinal,
+                startedInvocationIds = setOf(continuation.invocation.invocationId),
+            )
+
+            else -> error("Only a resolved permission can resume an execution.")
+        }
+        val result = executor.resumeToolBatch(
+            agentId = restoredAgentId,
+            context = seed,
+            resume = resume,
+            eventSink = eventSink,
+        )
+        val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
+        val nextSession = AgentConversationSession(
+            activeAgentId = nextAgentId,
+            history = result.context.history,
+            temperature = result.context.settings.temperature,
+            locale = request.locale,
+            timeZone = request.timeZone,
+            basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L,
+            rowVersion = checkpoint.baseStateRowVersion,
+        )
+        return BackendConversationExecution(
+            output = result.output,
+            usage = usageTrackingApi.cumulativeUsage(),
+            session = nextSession,
+        )
+    }
+
     internal fun currentUsage(): LLMResponse.Usage = usageTrackingApi.cumulativeUsage()
 }
 
@@ -128,6 +268,8 @@ class BackendConversationRuntimeFactory(
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCommandTool: LLMToolSetup? = null,
     private val agentBackgroundScope: kotlinx.coroutines.CoroutineScope,
+    private val featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
+    private val permissionWorkflowRepository: PermissionWorkflowRepository? = null,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -186,9 +328,16 @@ class BackendConversationRuntimeFactory(
             executor = kernel.executor,
             usageTrackingApi = usageTrackingApi,
             persistedSession = persistedSession,
+            checkpointObjectMapper = logObjectMapper,
+            permissionsEnabled = featureFlags.permissions,
+            permissionWorkflowRepository = permissionWorkflowRepository,
         )
     }
 }
+
+private fun String?.toRequiredUuid(label: String): UUID =
+    this?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
+        ?: error("Backend runtime requires a valid $label for durable permission checkpoints.")
 
 private object BackendNoopSkillRegistryRepository : SkillRegistryRepository {
     override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()

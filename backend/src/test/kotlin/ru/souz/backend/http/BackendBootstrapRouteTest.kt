@@ -158,6 +158,7 @@ class BackendBootstrapRouteTest {
                             streamingMessages = true,
                             toolEvents = true,
                             options = false,
+                            permissions = true,
                         ),
                     ),
                     trustedProxyToken = { "proxy-secret" },
@@ -175,6 +176,7 @@ class BackendBootstrapRouteTest {
         assertEquals("user-123", payload["user"]["id"].asText())
         assertFalse(payload.has("storage"))
         assertEquals(true, payload["features"]["streamingMessages"].asBoolean())
+        assertEquals(true, payload["features"]["permissions"].asBoolean())
         assertEquals(true, payload["settings"]["showToolEvents"].asBoolean())
         assertEquals(true, payload["settings"]["streamingMessages"].asBoolean())
         assertEquals(LLMModel.Max.alias, payload["settings"]["defaultModel"].asText())

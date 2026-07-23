@@ -14,6 +14,9 @@ import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILLS_ACTIVATION_NODE_NAME
 import ru.souz.agent.graph.Node
+import ru.souz.agent.runtime.AgentToolBatchResume
+import ru.souz.agent.runtime.AgentToolBatch
+import ru.souz.agent.runtime.AgentToolInvocation
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
@@ -22,6 +25,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import java.util.UUID
 
 class GraphBasedAgentTest {
     @Test
@@ -45,6 +49,11 @@ class GraphBasedAgentTest {
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
         every { nodesCommon.toolUse() } returns toolUseNode(executed)
         every { nodesSummarization.summarize() } returns summaryNode(executed)
+        every { nodesCommon.resumeToolUse() } returns resumeToolUseNode(executed)
+        every { nodesLLM.chat("Resume LLM") } returns chatNode("Resume LLM", executed)
+        every { nodesErrorHandling.chatErrorToFinish("Resume Chat.Error->Finish") } returns errorNode(executed)
+        every { nodesCommon.toolUse("Resume toolUse") } returns toolUseNode(executed)
+        every { nodesSummarization.summarize("Resume Summary") } returns summaryNode(executed)
 
         val agent = GraphBasedAgent(
             logObjectMapper = restJsonMapper,
@@ -72,6 +81,37 @@ class GraphBasedAgentTest {
             "Summary",
         )
         assertEquals(expectedRun + expectedRun, executed)
+
+        executed.clear()
+        val invocation = AgentToolInvocation(
+            invocationId = UUID.randomUUID(),
+            batchIndex = 0,
+            functionCall = LLMResponse.FunctionCall("tool.fixture", emptyMap()),
+            providerToolCallId = "provider-call",
+        )
+        val resumeBase = baseContext().copy(
+            activeTools = listOf(
+                LLMRequest.Function(
+                    name = "tool.fixture",
+                    description = "Fixture",
+                    parameters = LLMRequest.Parameters("object", emptyMap()),
+                )
+            ),
+            systemPrompt = "stored resume system prompt",
+        )
+        val resumeContext = resumeBase.map {
+            AgentToolBatchResume(
+                batch = AgentToolBatch(UUID.randomUUID(), listOf(invocation)),
+                nextInvocationIndex = 0,
+            )
+        }
+        val resumed = agent.resumeToolBatchWithTrace(resumeContext)
+
+        assertEquals("final", resumed.output)
+        assertEquals(listOf("ToolBatchResume", "Resume LLM", "Summary"), executed)
+        assertEquals(resumeBase.history, resumed.context.history)
+        assertEquals(resumeBase.activeTools, resumed.context.activeTools)
+        assertEquals("stored resume system prompt", resumed.context.systemPrompt)
     }
 
     private fun passthroughStringNode(
@@ -114,6 +154,13 @@ class GraphBasedAgentTest {
 
     private fun toolUseNode(executed: MutableList<String>): Node<LLMResponse.Chat.Ok, String> = Node("toolUse") { ctx ->
         executed += "toolUse"
+        ctx.map { "tool-result" }
+    }
+
+    private fun resumeToolUseNode(
+        executed: MutableList<String>,
+    ): Node<AgentToolBatchResume, String> = Node("ToolBatchResume") { ctx ->
+        executed += "ToolBatchResume"
         ctx.map { "tool-result" }
     }
 

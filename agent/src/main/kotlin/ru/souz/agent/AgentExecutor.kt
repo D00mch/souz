@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.AgentToolBatchResume
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -45,6 +46,35 @@ class AgentExecutor internal constructor(
         eventSink = eventSink,
         onStep = null,
     )
+
+    /**
+     * Continues a stored semantic tool batch and rejoins the normal post-tool agent loop.
+     * No synthetic user turn or pre-LLM discovery/classification nodes are executed.
+     */
+    suspend fun resumeToolBatch(
+        agentId: AgentId,
+        context: AgentContext<String>,
+        resume: AgentToolBatchResume,
+        eventSink: AgentRuntimeEventSink? = null,
+    ): AgentExecutionResult = resumeToolBatchWithTrace(
+        agentId = agentId,
+        context = context,
+        resume = resume,
+        eventSink = eventSink,
+        onStep = null,
+    )
+
+    internal suspend fun resumeToolBatchWithTrace(
+        agentId: AgentId,
+        context: AgentContext<String>,
+        resume: AgentToolBatchResume,
+        eventSink: AgentRuntimeEventSink? = null,
+        onStep: GraphStepCallback?,
+    ): AgentExecutionResult {
+        val runtimeEventSink = eventSink ?: context.runtimeEventSink
+        val seed = context.map(transform = { resume }).copy(runtimeEventSink = runtimeEventSink)
+        return agentById(agentId).resumeToolBatchWithTrace(seed, onStep)
+    }
 
     internal suspend fun executeWithTrace(
         agentId: AgentId,

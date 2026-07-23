@@ -1,5 +1,6 @@
 package ru.souz.agent.runtime
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -28,20 +29,41 @@ class AgentToolExecutor(
         meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
         toolCallId: String? = null,
         eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    ): LLMRequest.Message = execute(
+        settings = settings,
+        invocation = AgentToolInvocation(
+            invocationId = UUID.randomUUID(),
+            batchIndex = 0,
+            functionCall = functionCall,
+            providerToolCallId = toolCallId,
+        ),
+        meta = meta,
+        eventSink = eventSink,
+    )
+
+    suspend fun execute(
+        settings: AgentSettings,
+        invocation: AgentToolInvocation,
+        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
+        eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+        emitStartedEvent: Boolean = true,
     ): LLMRequest.Message {
-        _toolInvocations.tryEmit(functionCall)
+        val functionCall = invocation.functionCall
+        if (emitStartedEvent) _toolInvocations.tryEmit(functionCall)
         val startedAtNanos = System.nanoTime()
-        val runtimeToolCallId = toolCallId ?: UUID.randomUUID().toString()
+        val runtimeToolCallId = invocation.providerToolCallId ?: invocation.invocationId.toString()
         val toolCategoryName = settings.tools.categoryByName[functionCall.name]?.name
         val logContext = currentCoroutineContext()[AgentExecutionLogContext.Element]?.value
-        logContext?.incrementToolExecutionCount()
-        eventSink.emit(
-            AgentRuntimeEvent.ToolCallStarted(
-                toolCallId = runtimeToolCallId,
-                name = functionCall.name,
-                arguments = functionCall.arguments,
+        if (emitStartedEvent) {
+            logContext?.incrementToolExecutionCount()
+            eventSink.emit(
+                AgentRuntimeEvent.ToolCallStarted(
+                    toolCallId = runtimeToolCallId,
+                    name = functionCall.name,
+                    arguments = functionCall.arguments,
+                )
             )
-        )
+        }
         val fn: LLMToolSetup = settings.tools.byName[functionCall.name] ?: return LLMRequest.Message(
             role = LLMMessageRole.function,
             content = """{"result":"no such function ${functionCall.name}"}""",
@@ -65,7 +87,14 @@ class AgentToolExecutor(
             )
         }
         return try {
-            fn.invoke(functionCall, meta).also {
+            val invocationMeta = if (
+                meta.attributes[AgentToolInvocationAttributes.INVOCATION_ID] == invocation.invocationId.toString()
+            ) {
+                meta
+            } else {
+                invocation.invocationMeta(meta)
+            }
+            fn.invoke(functionCall, invocationMeta).also {
                 eventSink.emit(
                     AgentRuntimeEvent.ToolCallFinished(
                         toolCallId = runtimeToolCallId,
@@ -82,6 +111,10 @@ class AgentToolExecutor(
                     success = true,
                 )
             }
+        } catch (pause: AgentExecutionPause) {
+            throw pause
+        } catch (cancel: CancellationException) {
+            throw cancel
         } catch (e: Exception) {
             eventSink.emit(
                 AgentRuntimeEvent.ToolCallFailed(

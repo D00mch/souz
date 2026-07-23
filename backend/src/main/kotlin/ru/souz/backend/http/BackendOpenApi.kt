@@ -29,6 +29,7 @@ internal object BackendOpenApiTags {
     const val EVENTS = "Events"
     const val EXECUTIONS = "Executions"
     const val OPTIONS = "Options"
+    const val PERMISSIONS = "Permissions"
     const val TELEGRAM = "Telegram"
 }
 
@@ -311,6 +312,11 @@ internal object BackendOpenApiSchemas {
                     examples = null,
                 )
             }
+
+    fun permissionDecision(schema: JsonSchema): JsonSchema =
+        schema
+            .copy(required = listOf("decision"))
+            .withStringEnum("decision", listOf("grant", "deny"))
 }
 
 private fun HttpStatusCode.v1ErrorDescription(): String =

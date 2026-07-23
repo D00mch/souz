@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.ToolInvocationMeta
 
 sealed interface ToolPermissionResult {
     object Ok : ToolPermissionResult
@@ -19,10 +20,34 @@ data class ToolPermissionRequest(
     val params: Map<String, String>,
 )
 
-interface ToolPermissionBroker {
-    val requests: Flow<ToolPermissionRequest>
+/**
+ * Minimal permission dependency consumed by tools that can run in a durable backend execution.
+ *
+ * Requesters may either return a decision immediately, suspend in-process, or throw an agent
+ * execution-pause signal after durably parking the invocation. Invocation metadata is deliberately
+ * part of this small contract so a backend requester can correlate the semantic tool invocation;
+ * local requesters are free to ignore it.
+ */
+fun interface ToolPermissionRequester {
+    suspend fun requestPermission(
+        description: String,
+        displayParams: Map<String, String>,
+        meta: ToolInvocationMeta,
+    ): ToolPermissionResult
 
-    suspend fun requestPermission(description: String, params: Map<String, String>): ToolPermissionResult
+    suspend fun requestPermission(
+        description: String,
+        displayParams: Map<String, String>,
+    ): ToolPermissionResult = requestPermission(
+        description = description,
+        displayParams = displayParams,
+        meta = ToolInvocationMeta.localDefault(),
+    )
+}
+
+/** Local interactive permission flow used by the desktop and Android hosts. */
+interface ToolPermissionBroker : ToolPermissionRequester {
+    val requests: Flow<ToolPermissionRequest>
 
     suspend fun resolve(requestId: Long, approved: Boolean)
 }
@@ -40,7 +65,8 @@ class ImmediateToolPermissionBroker(
 
     override suspend fun requestPermission(
         description: String,
-        params: Map<String, String>,
+        displayParams: Map<String, String>,
+        meta: ToolInvocationMeta,
     ): ToolPermissionResult {
         if (!settingsProvider.safeModeEnabled) return ToolPermissionResult.Ok
         return requestMutex.withLock {
@@ -55,7 +81,7 @@ class ImmediateToolPermissionBroker(
                 ToolPermissionRequest(
                     id = id,
                     description = description,
-                    params = params,
+                    params = displayParams,
                 )
             )
             val approved = try {

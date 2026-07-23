@@ -173,6 +173,51 @@ class BackendOpenApiTest {
             assertEquals("\\S", optionBody["properties"]["selectedOptionIds"]["items"]["pattern"].asText())
             assertTrue(optionBody["properties"]["metadata"]["description"].asText().contains("non-whitespace"))
 
+            val permissionDecision = requestSchema(
+                document,
+                "/v1/permission-requests/{id}/decision",
+                "put",
+            )
+            assertEquals(
+                listOf("grant", "deny"),
+                permissionDecision["properties"]["decision"]["enum"].map { it.asText() },
+            )
+            assertTrue(permissionDecision["required"].map { it.asText() }.contains("decision"))
+
+            val permissionResponse = responseSchema(
+                document,
+                "/v1/permission-requests/{id}/decision",
+                "put",
+                "200",
+            )
+            val permissionRequest = resolveSchema(document, permissionResponse["properties"]["permissionRequest"])
+            assertEquals(
+                setOf("pending", "granted", "denied", "cancelled"),
+                permissionRequest["properties"]["status"]["enum"].map { it.asText() }.toSet(),
+            )
+            assertEquals(512, permissionRequest["properties"]["description"]["maxLength"].asInt())
+            assertEquals(16, permissionRequest["properties"]["displayParams"]["maxProperties"].asInt())
+            assertEquals("uuid", permissionRequest["properties"]["id"]["format"].asText())
+            assertEquals("date-time", permissionRequest["properties"]["createdAt"]["format"].asText())
+            assertFalse(permissionRequest["properties"].has("userId"))
+            assertFalse(permissionRequest["properties"].has("arguments"))
+            assertFalse(permissionRequest["properties"].has("promptHash"))
+            assertFalse(permissionRequest["properties"].has("checkpoint"))
+            val permissionExecution = resolveSchema(document, permissionResponse["properties"]["execution"])
+            assertEquals(
+                setOf(
+                    "queued",
+                    "running",
+                    "waiting_option",
+                    "waiting_permission",
+                    "cancelling",
+                    "cancelled",
+                    "completed",
+                    "failed",
+                ),
+                permissionExecution["properties"]["status"]["enum"].map { it.asText() }.toSet(),
+            )
+
             assertEquals(
                 setOf("201", "400", "401", "500"),
                 responseCodes(document, "/v1/chats", "post"),
@@ -240,7 +285,7 @@ class BackendOpenApiTest {
             val delta = schemas[BackendEventOpenApiSchemas.MESSAGE_DELTA_EVENT]
             val expectedTypes = eventPayloadExpectations.keys
 
-            assertEquals(11, durable["oneOf"].size())
+            assertEquals(13, durable["oneOf"].size())
             assertEquals(
                 expectedTypes,
                 durable["discriminator"]["mapping"].fieldNames().asSequence().toSet(),
@@ -331,6 +376,19 @@ class BackendOpenApiTest {
                 optionItem["properties"]["content"]["type"].map { it.asText() }.toSet(),
             )
             assertEquals("string", optionAnswered["properties"]["metadata"]["additionalProperties"]["type"].asText())
+
+            val permissionRequested = schemas["BackendPermissionRequestedEventPayload"]
+            val permissionResolved = schemas["BackendPermissionResolvedEventPayload"]
+            assertEquals(512, permissionRequested["properties"]["description"]["maxLength"].asInt())
+            assertEquals(16, permissionRequested["properties"]["displayParams"]["maxProperties"].asInt())
+            assertEquals(
+                listOf("pending"),
+                permissionRequested["properties"]["status"]["enum"].map { it.asText() },
+            )
+            assertEquals(
+                setOf("granted", "denied", "cancelled"),
+                permissionResolved["properties"]["status"]["enum"].map { it.asText() }.toSet(),
+            )
         }
 
     private fun ApplicationTestBuilder.installBackend(featureFlags: BackendFeatureFlags) {
@@ -362,8 +420,8 @@ class BackendOpenApiTest {
         }
 
         assertEquals(expected, actual)
-        assertEquals(if (telegramEnabled) 18 else 17, actual.size)
-        assertEquals(if (telegramEnabled) 24 else 21, actual.values.sumOf(Set<String>::size))
+        assertEquals(if (telegramEnabled) 20 else 19, actual.size)
+        assertEquals(if (telegramEnabled) 26 else 23, actual.values.sumOf(Set<String>::size))
         assertFalse(actual.containsKey(BackendHttpRoutes.DOCS))
         assertFalse(actual.containsKey(BackendHttpRoutes.OPENAPI_DOCUMENT))
         assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
@@ -449,6 +507,21 @@ class BackendOpenApiTest {
                 "BackendOptionAnsweredEventPayload",
                 setOf("optionId", "status", "selectedOptionIds", "freeText", "metadata"),
             ),
+            "permission.requested" to EventPayloadExpectation(
+                "BackendPermissionRequestedEventPayload",
+                setOf(
+                    "permissionRequestId",
+                    "invocationId",
+                    "toolName",
+                    "description",
+                    "displayParams",
+                    "status",
+                ),
+            ),
+            "permission.resolved" to EventPayloadExpectation(
+                "BackendPermissionResolvedEventPayload",
+                setOf("permissionRequestId", "invocationId", "toolName", "status"),
+            ),
         )
 
         fun expectedOperations(telegramEnabled: Boolean): Map<String, Set<String>> =
@@ -470,6 +543,8 @@ class BackendOpenApiTest {
                 "/v1/chats/{chatId}/cancel-active" to setOf("post"),
                 "/v1/chats/{chatId}/executions/{executionId}/cancel" to setOf("post"),
                 "/v1/options/{optionId}/answer" to setOf("post"),
+                "/v1/chats/{chatId}/permission-requests/pending" to setOf("get"),
+                "/v1/permission-requests/{id}/decision" to setOf("put"),
             ) + if (telegramEnabled) {
                 mapOf("/v1/chats/{chatId}/telegram-bot" to setOf("get", "put", "delete"))
             } else {
@@ -499,6 +574,8 @@ class BackendOpenApiTest {
                 "cancelActiveExecution" to v1Expectation("Executions", "200", "400", "404"),
                 "cancelExecution" to v1Expectation("Executions", "200", "400", "404"),
                 "answerOption" to v1Expectation("Options", "200", "400", "404"),
+                "listPendingPermissionRequests" to v1Expectation("Permissions", "200", "400", "404"),
+                "decidePermissionRequest" to v1Expectation("Permissions", "200", "400", "404", "409"),
             ) + if (telegramEnabled) {
                 mapOf(
                     "getTelegramBotBinding" to v1Expectation("Telegram", "200", "400", "404"),

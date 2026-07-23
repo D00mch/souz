@@ -20,6 +20,11 @@ class AgentEventService(
     private val eventRepository: AgentEventRepository,
     private val eventBus: AgentEventBus,
 ) {
+    /** Publishes an event that was already stored by a larger database transaction. */
+    suspend fun publishPersisted(event: AgentEvent) {
+        eventBus.publish(event)
+    }
+
     suspend fun appendDurable(
         userId: String,
         chatId: UUID,

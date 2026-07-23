@@ -17,6 +17,7 @@ import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.runtime.AgentToolInvocationAttributes
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -261,10 +262,20 @@ class NodesCommonTest {
         coEvery {
             agentToolExecutor.execute(
                 settings = any(),
-                functionCall = functionCall,
-                meta = meta,
-                toolCallId = "call-1",
+                invocation = match {
+                    it.functionCall == functionCall && it.providerToolCallId == "call-1"
+                },
+                meta = match {
+                    it.userId == meta.userId &&
+                        it.conversationId == meta.conversationId &&
+                        it.requestId == meta.requestId &&
+                        it.attributes[AgentToolInvocationAttributes.INVOCATION_ID] != null &&
+                        it.attributes[AgentToolInvocationAttributes.TOOL_NAME] == functionCall.name &&
+                        it.attributes[AgentToolInvocationAttributes.EXECUTION_ID] == meta.requestId &&
+                        it.attributes[AgentToolInvocationAttributes.PROVIDER_TOOL_CALL_ID] == "call-1"
+                },
                 eventSink = any(),
+                emitStartedEvent = true,
             )
         } returns LLMRequest.Message(
             role = LLMMessageRole.function,
@@ -325,10 +336,18 @@ class NodesCommonTest {
         coVerify(exactly = 1) {
             agentToolExecutor.execute(
                 settings = context.settings,
-                functionCall = functionCall,
-                meta = meta,
-                toolCallId = "call-1",
+                invocation = match {
+                    it.functionCall == functionCall && it.providerToolCallId == "call-1"
+                },
+                meta = match {
+                    it.userId == meta.userId &&
+                        it.conversationId == meta.conversationId &&
+                        it.requestId == meta.requestId &&
+                        it.attributes[AgentToolInvocationAttributes.INVOCATION_ID] != null &&
+                        it.attributes[AgentToolInvocationAttributes.TOOL_NAME] == functionCall.name
+                },
                 eventSink = eventSink,
+                emitStartedEvent = true,
             )
         }
         assertEquals("""{"ok":true}""", result.history.last().content)

@@ -274,7 +274,8 @@ class DeferredToolModifyPermissionBroker(
 
     override suspend fun requestPermission(
         description: String,
-        params: Map<String, String>,
+        displayParams: Map<String, String>,
+        meta: ToolInvocationMeta,
     ): ToolPermissionResult = ToolPermissionResult.Ok
 
     override suspend fun resolve(requestId: Long, approved: Boolean) = Unit

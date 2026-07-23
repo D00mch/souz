@@ -7,7 +7,7 @@ package ru.souz.agent.runtime
  * execution. Concurrent calls are not part of the contract unless an
  * implementation explicitly documents support for them.
  */
-interface AgentRuntimeEventSink {
+fun interface AgentRuntimeEventSink {
     suspend fun emit(event: AgentRuntimeEvent)
 
     companion object {

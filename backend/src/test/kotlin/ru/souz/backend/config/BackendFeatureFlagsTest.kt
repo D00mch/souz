@@ -22,6 +22,7 @@ class BackendFeatureFlagsTest {
         assertFalse(flags.streamingMessages)
         assertFalse(flags.toolEvents)
         assertFalse(flags.options)
+        assertFalse(flags.permissions)
         assertFalse(flags.telegramBot)
     }
 
@@ -37,6 +38,7 @@ class BackendFeatureFlagsTest {
                 properties = mapOf(
                     "souz.backend.feature.toolEvents" to "true",
                     "souz.backend.feature.options" to "true",
+                    "souz.backend.feature.permissions" to "true",
                 ),
             )
         )
@@ -45,6 +47,7 @@ class BackendFeatureFlagsTest {
         assertTrue(flags.streamingMessages)
         assertTrue(flags.toolEvents)
         assertTrue(flags.options)
+        assertTrue(flags.permissions)
         assertTrue(flags.telegramBot)
     }
 }

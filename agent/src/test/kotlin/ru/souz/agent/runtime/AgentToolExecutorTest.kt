@@ -16,9 +16,55 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import java.util.UUID
 
 class AgentToolExecutorTest {
+    @Test
+    fun `propagates execution pause without failed event or failure telemetry`() = runTest {
+        val telemetryEvents = mutableListOf<AgentToolExecutionEvent>()
+        val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
+        val pause = TestExecutionPause()
+        var receivedMeta: ToolInvocationMeta? = null
+        val invocationId = UUID.randomUUID()
+        val executor = AgentToolExecutor(AgentTelemetry { telemetryEvents += it })
+        val settings = settingsWithFileTool(
+            invokeWithMeta = { _, meta ->
+                receivedMeta = meta
+                throw pause
+            },
+        )
+
+        val thrown = assertFailsWith<TestExecutionPause> {
+            executor.execute(
+                settings = settings,
+                invocation = AgentToolInvocation(
+                    invocationId = invocationId,
+                    batchIndex = 0,
+                    functionCall = LLMResponse.FunctionCall(
+                        name = "tool.read_file",
+                        arguments = mapOf("path" to "/tmp/private.txt"),
+                    ),
+                    providerToolCallId = "provider-call",
+                ),
+                meta = ToolInvocationMeta(
+                    userId = "user-1",
+                    requestId = "execution-1",
+                ),
+                eventSink = CollectingAgentRuntimeEventSink(runtimeEvents),
+            )
+        }
+
+        assertTrue(thrown === pause)
+        assertEquals(emptyList(), telemetryEvents)
+        assertEquals(1, runtimeEvents.size)
+        assertTrue(runtimeEvents.single() is AgentRuntimeEvent.ToolCallStarted)
+        assertEquals(invocationId.toString(), receivedMeta?.attributes?.get(AgentToolInvocationAttributes.INVOCATION_ID))
+        assertEquals("execution-1", receivedMeta?.attributes?.get(AgentToolInvocationAttributes.EXECUTION_ID))
+        assertEquals("provider-call", receivedMeta?.attributes?.get(AgentToolInvocationAttributes.PROVIDER_TOOL_CALL_ID))
+    }
+
     @Test
     fun `reports successful tool execution through injected telemetry sink`() = runTest {
         val events = mutableListOf<AgentToolExecutionEvent>()
@@ -197,7 +243,10 @@ class AgentToolExecutorTest {
             ),
         )
 
-        assertEquals(ToolInvocationMeta.localDefault(), receivedMeta)
+        val actual = requireNotNull(receivedMeta)
+        assertEquals(ToolInvocationMeta.localDefault().userId, actual.userId)
+        assertEquals("tool.read_file", actual.attributes[AgentToolInvocationAttributes.TOOL_NAME])
+        assertNotNull(actual.attributes[AgentToolInvocationAttributes.INVOCATION_ID])
     }
 
     @Test
@@ -230,7 +279,11 @@ class AgentToolExecutorTest {
             meta = meta,
         )
 
-        assertEquals(meta, receivedMeta)
+        val actual = requireNotNull(receivedMeta)
+        assertEquals(meta.copy(attributes = actual.attributes), actual)
+        assertEquals("tool.read_file", actual.attributes[AgentToolInvocationAttributes.TOOL_NAME])
+        assertEquals("request-1", actual.attributes[AgentToolInvocationAttributes.EXECUTION_ID])
+        assertNotNull(actual.attributes[AgentToolInvocationAttributes.INVOCATION_ID])
     }
 
     private fun settingsWithFileTool(
@@ -272,4 +325,6 @@ class AgentToolExecutorTest {
             events += event
         }
     }
+
+    private class TestExecutionPause : AgentExecutionPause("waiting for durable permission")
 }

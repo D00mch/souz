@@ -41,6 +41,9 @@ internal fun ApplicationCall.requireExecutionId(): UUID =
 internal fun ApplicationCall.requireOptionId(): UUID =
     requireUuidParameter("optionId", "optionId must be a UUID.")
 
+internal fun ApplicationCall.requirePermissionRequestId(): UUID =
+    requireUuidParameter("id", "id must be a UUID.")
+
 internal fun ApplicationCall.queryPositiveInt(name: String, defaultValue: Int, max: Int): Int {
     val rawValue = request.queryParameters[name] ?: return normalizePositiveLimit(defaultValue, max)
     return rawValue.toIntOrNull()
@@ -81,6 +84,12 @@ internal fun <T> requireV1Service(service: T?, name: String): T =
 internal fun requireWsEventsEnabled(featureFlags: BackendFeatureFlags) {
     if (!featureFlags.wsEvents) {
         throw featureDisabledV1("WebSocket events feature is disabled.")
+    }
+}
+
+internal fun requirePermissionsEnabled(featureFlags: BackendFeatureFlags) {
+    if (!featureFlags.permissions) {
+        throw featureDisabledV1("Permissions feature is disabled.")
     }
 }
 

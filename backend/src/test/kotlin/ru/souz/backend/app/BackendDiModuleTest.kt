@@ -10,6 +10,8 @@ import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
+import ru.souz.backend.agent.runtime.BackendDurableToolPermissionRequester
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
@@ -39,6 +41,8 @@ import ru.souz.backend.user.repository.UserRepository
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
+import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.ToolPermissionRequester
 
 class BackendDiModuleTest {
     @Test
@@ -104,6 +108,28 @@ class BackendDiModuleTest {
             )
         } finally {
             dataSource.close()
+        }
+    }
+
+    @Test
+    fun `permissions flag binds only the generic durable requester`() {
+        val disabledDataSource = HikariDataSource()
+        val disabled = testDi(testAppConfig(), disabledDataSource)
+        val enabledDataSource = HikariDataSource()
+        val enabled = testDi(
+            testAppConfig(featureFlags = BackendFeatureFlags(permissions = true)),
+            enabledDataSource,
+        )
+
+        try {
+            assertNull(disabled.direct.instanceOrNull<ToolPermissionRequester>())
+            assertIs<BackendDurableToolPermissionRequester>(
+                enabled.direct.instance<ToolPermissionRequester>()
+            )
+            assertNull(enabled.direct.instanceOrNull<ToolPermissionBroker>())
+        } finally {
+            disabledDataSource.close()
+            enabledDataSource.close()
         }
     }
 

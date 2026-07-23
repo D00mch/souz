@@ -25,6 +25,9 @@ import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
+import ru.souz.agent.runtime.AgentExecutionPause
 
 class GigaToolTest {
     private val settingsProvider = mockk<SettingsProvider> {
@@ -137,8 +140,34 @@ class GigaToolTest {
         assertEquals(meta, receivedMeta)
     }
 
+    @Test
+    fun `toGiga propagates durable execution pause instead of converting it to tool result`() = runBlocking {
+        val pause = TestPause()
+        val tool = object : ToolSetup<TestInput> {
+            override val name: String = "Pause"
+            override val description: String = "Pauses"
+            override val fewShotExamples: List<FewShotExample> = emptyList()
+            override val returnParameters: ReturnParameters = ReturnParameters(properties = emptyMap())
+
+            override fun invoke(input: TestInput, meta: ToolInvocationMeta): String = error("unused")
+
+            override suspend fun suspendInvoke(input: TestInput, meta: ToolInvocationMeta): String = throw pause
+        }
+
+        val thrown = assertFailsWith<TestPause> {
+            tool.toGiga<TestInput>().invoke(
+                LLMResponse.FunctionCall("Pause", mapOf("value" to "wait")),
+                ToolInvocationMeta.localDefault(),
+            )
+        }
+
+        assertTrue(thrown === pause)
+    }
+
     private data class TestInput(
         @InputParamDescription("Echo value")
         val value: String,
     )
+
+    private class TestPause : AgentExecutionPause("waiting permission")
 }

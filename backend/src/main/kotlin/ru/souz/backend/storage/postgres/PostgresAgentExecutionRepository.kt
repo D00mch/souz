@@ -139,7 +139,7 @@ class PostgresAgentExecutionRepository(
             """
             select * from agent_executions
             where user_id = ? and chat_id = ?
-              and status in ('queued', 'running', 'waiting_option', 'cancelling')
+              and status in ('queued', 'running', 'waiting_option', 'waiting_permission', 'cancelling')
             order by started_at desc
             limit 1
             """.trimIndent()

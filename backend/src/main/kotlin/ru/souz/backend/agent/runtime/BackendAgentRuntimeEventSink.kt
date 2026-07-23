@@ -35,6 +35,7 @@ import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
+import ru.souz.backend.toolcall.model.ToolCallStatus
 
 /**
  * Not logically concurrent.
@@ -128,7 +129,7 @@ internal class BackendAgentRuntimeEventSink(
         val argumentsPreviewNode = toolCallPreviewer.argumentsPreview(event.arguments)
         val argumentsPreview = toolCallPreviewer.argumentsPreviewJson(event.arguments)
         toolCallRepository.started(
-            context = toolCallContext(event.toolCallId.toString()),
+            context = toolCallContext(event.toolCallId),
             name = event.name,
             argumentsPreview = argumentsPreview,
         )
@@ -147,10 +148,14 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     private suspend fun onToolCallFinished(event: AgentRuntimeEvent.ToolCallFinished) {
+        val context = toolCallContext(event.toolCallId)
+        if (toolCallRepository.get(context)?.status?.isTerminal() == true) {
+            return
+        }
         val resultPreviewNode = toolCallPreviewer.resultPreview(event.result)
         val resultPreview = toolCallPreviewer.resultPreviewJson(event.result)
         toolCallRepository.finished(
-            context = toolCallContext(event.toolCallId.toString()),
+            context = context,
             name = event.name,
             resultPreview = resultPreview,
             durationMs = event.durationMs,
@@ -170,9 +175,13 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     private suspend fun onToolCallFailed(event: AgentRuntimeEvent.ToolCallFailed) {
+        val context = toolCallContext(event.toolCallId)
+        if (toolCallRepository.get(context)?.status?.isTerminal() == true) {
+            return
+        }
         val safeError = toolCallPreviewer.safeErrorPreview(event.error)
         toolCallRepository.failed(
-            context = toolCallContext(event.toolCallId.toString()),
+            context = context,
             name = event.name,
             error = safeError,
             durationMs = event.durationMs,
@@ -383,3 +392,6 @@ internal class BackendAgentRuntimeEventSink(
     }
 
 }
+
+private fun ToolCallStatus.isTerminal(): Boolean =
+    this == ToolCallStatus.FINISHED || this == ToolCallStatus.FAILED

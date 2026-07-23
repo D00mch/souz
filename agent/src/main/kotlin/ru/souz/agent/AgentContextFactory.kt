@@ -4,6 +4,7 @@ import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.agent.runtime.AgentToolBatchCheckpointSink
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -46,6 +47,7 @@ class AgentContextFactory(
         contextSize: Int,
         temperature: Float,
         toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
+        toolBatchCheckpointSink: AgentToolBatchCheckpointSink = AgentToolBatchCheckpointSink.NONE,
     ): AgentContext<String> {
         val normalizedAgentId = normalizeAgentId(agentId)
         val settings = AgentSettings(
@@ -64,6 +66,7 @@ class AgentContextFactory(
             activeTools = allFunctions,
             systemPrompt = systemPrompt,
             toolInvocationMeta = toolInvocationMeta,
+            toolBatchCheckpointSink = toolBatchCheckpointSink,
         )
     }
 
