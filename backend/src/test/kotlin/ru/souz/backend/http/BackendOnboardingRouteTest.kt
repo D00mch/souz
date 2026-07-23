@@ -36,12 +36,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -84,12 +86,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -125,12 +129,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -161,12 +167,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -217,12 +225,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -269,12 +279,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -313,12 +325,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -353,12 +367,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -392,12 +408,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
@@ -432,12 +450,14 @@ class BackendOnboardingRouteTest {
         )
         application {
             backendApplication(
-                bootstrapService = context.bootstrapService,
-                selectedModel = { context.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
-                userSettingsService = context.userSettingsService,
-                providerKeyService = context.userProviderKeyService,
-                onboardingService = context.onboardingService,
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
             )
         }
 
