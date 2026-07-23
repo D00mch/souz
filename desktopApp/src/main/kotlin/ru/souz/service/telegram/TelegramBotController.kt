@@ -495,14 +495,14 @@ data class TelegramUpdatesResponse(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramUpdate(
-    @JsonProperty("update_id")
+    @param:JsonProperty("update_id")
     val updateId: Long,
     val message: TelegramMessage? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramMessage(
-    @JsonProperty("message_id")
+    @param:JsonProperty("message_id")
     val messageId: Long,
     val from: TelegramUser? = null,
     val chat: TelegramChat,
@@ -514,24 +514,24 @@ data class TelegramMessage(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramDocument(
-    @JsonProperty("file_id")
+    @param:JsonProperty("file_id")
     val fileId: String,
-    @JsonProperty("file_name")
+    @param:JsonProperty("file_name")
     val fileName: String? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramVoice(
-    @JsonProperty("file_id")
+    @param:JsonProperty("file_id")
     val fileId: String,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramUser(
     val id: Long,
-    @JsonProperty("is_bot")
+    @param:JsonProperty("is_bot")
     val isBot: Boolean,
-    @JsonProperty("first_name")
+    @param:JsonProperty("first_name")
     val firstName: String? = null,
     val username: String? = null,
 )
@@ -551,11 +551,11 @@ data class TelegramBotFileResponse(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramBotFile(
-    @JsonProperty("file_id")
+    @param:JsonProperty("file_id")
     val fileId: String,
-    @JsonProperty("file_path")
+    @param:JsonProperty("file_path")
     val filePath: String? = null,
-    @JsonProperty("file_size")
+    @param:JsonProperty("file_size")
     val fileSize: Long? = null,
 )
 
