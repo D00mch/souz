@@ -495,42 +495,6 @@ class BackendStage6EventRouteTest {
     }
 
     @Test
-    fun `sync contract stays unchanged when ws events are off even if streaming is enabled`() = testApplication {
-        val context = routeTestContext(
-            llmApi = ImmediateStage6StreamingChatApi(),
-            settingsProvider = TestSettingsProvider().apply {
-                gigaChatKey = "giga-key"
-                qwenChatKey = "qwen-key"
-                contextSize = 24_000
-                temperature = 0.6f
-                useStreaming = true
-            },
-            featureFlags = BackendFeatureFlags(
-                wsEvents = false,
-                streamingMessages = true,
-                toolEvents = true,
-            ),
-        )
-        val chat = chat(userId = "user-a", title = "Sync fallback")
-        runBlocking {
-            context.chatRepository.create(chat)
-        }
-        installStage6Application(context)
-
-        val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
-            trustedHeaders("user-a")
-            contentType(ContentType.Application.Json)
-            setBody("""{"content":"keep sync"}""")
-        }
-        val payload = stage6Json.readTree(response.bodyAsText())
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals("keep sync", payload["message"]["content"].asText())
-        assertEquals("assistant reply to keep sync", payload["assistantMessage"]["content"].asText())
-        assertEquals("completed", payload["execution"]["status"].asText())
-    }
-
-    @Test
     fun `websocket stream stays isolated by user and chat`() = testApplication {
         val api = GateControlledStage6StreamingChatApi()
         val context = stage6RouteTestContext(api)

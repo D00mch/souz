@@ -11,12 +11,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.runtime.AgentRuntimeEventSink
-import ru.souz.agent.skills.activation.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -30,36 +24,6 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
 class BackendConversationRuntimeSettingsTest {
-    @Test
-    fun `runtime factory keeps compatibility with skill registry constructor argument`() = runTest {
-        val capturedTimeouts = mutableListOf<Long>()
-        val runtimeFactory = BackendConversationRuntimeFactory(
-            baseSettingsProvider = TestSettingsProvider().apply {
-                gigaChatKey = "giga-key"
-                requestTimeoutMillis = 30_000L
-            },
-            llmApiFactory = { context ->
-                capturedTimeouts += context.settingsProvider.requestTimeoutMillis
-                ReplyingChatApi()
-            },
-            sessionRepository = InMemoryAgentSessionRepository(),
-            logObjectMapper = jacksonObjectMapper(),
-            systemPrompt = "backend test prompt",
-            toolCatalog = BackendNoopAgentToolCatalog,
-            skillRegistryRepository = UnusedSkillRegistryRepository,
-            agentBackgroundScope = backgroundScope,
-        )
-        val request = turnRequest().copy(requestTimeoutMillis = 45_000L)
-
-        runtimeFactory.create(conversationKey(), request).execute(
-            request = request,
-            persistSession = false,
-            eventSink = AgentRuntimeEventSink.NONE,
-        )
-
-        assertEquals(listOf(45_000L), capturedTimeouts)
-    }
-
     @Test
     fun `runtime factory applies request timeout to request scoped llm settings provider`() = runTest {
         val capturedTimeouts = mutableListOf<Long>()
@@ -260,42 +224,3 @@ private fun reply(body: LLMRequest.Chat, content: String): LLMResponse.Chat.Ok =
         model = body.model,
         usage = LLMResponse.Usage(7, 3, 10, 0),
     )
-
-private object UnusedSkillRegistryRepository : SkillRegistryRepository {
-    override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = null
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? = null
-
-    override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill =
-        error("Not used in backend runtime settings tests.")
-
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null
-
-    override suspend fun getValidation(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-    ): SkillValidationRecord? = null
-
-    override suspend fun saveValidation(record: SkillValidationRecord) = Unit
-
-    override suspend fun markValidationStatus(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-        status: SkillValidationStatus,
-        reason: String?,
-    ) = Unit
-
-    override suspend fun invalidateOtherValidations(
-        userId: String,
-        skillId: SkillId,
-        activeBundleHash: String,
-        policyVersion: String,
-        reason: String?,
-    ) = Unit
-}

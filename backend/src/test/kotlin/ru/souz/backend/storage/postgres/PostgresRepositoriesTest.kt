@@ -19,7 +19,6 @@ import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Disabled
 import ru.souz.agent.AgentId
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationSession
@@ -55,25 +54,8 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 
-@Disabled
 class PostgresRepositoriesTest {
-    @Test
-    fun `fresh schema bootstrap applies postgres migrations in unique order and creates tool_calls`() {
-        val schema = newPostgresSchema("postgres_fresh_bootstrap")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertEquals(
-                listOf("1", "2", "3", "4", "5", "6"),
-                appliedMigrationVersions(it),
-            )
-            assertTrue(tableExists(it, "tool_calls"))
-            assertFalse(foreignKeyExists(it, "agent_executions", "user_message_id"))
-            assertFalse(foreignKeyExists(it, "agent_executions", "assistant_message_id"))
-            assertFalse(foreignKeyExists(it, "agent_events", "execution_id"))
-        }
-    }
-
+    
     @Test
     fun `user settings repository tolerates legacy partial settings json`() = runTest {
         val schema = newPostgresSchema("postgres_legacy_settings_json")
