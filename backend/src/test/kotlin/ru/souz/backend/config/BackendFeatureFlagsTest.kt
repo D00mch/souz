@@ -128,16 +128,29 @@ class BackendAppConfigTest {
     }
 
     @Test
-    fun `server config rejects blank host`() {
-        val error = assertFailsWith<BackendConfigurationException> {
-            BackendServerConfig(
-                host = "   ",
-                port = 8080,
-                proxyToken = null,
-            ).validate()
-        }
+    fun `server config rejects blank host from config source`() {
+        val sources = listOf(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_BACKEND_HOST" to "   ",
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                ),
+            ),
+            MapBackendConfigSource(
+                properties = mapOf(
+                    "souz.backend.host" to "   ",
+                    "souz.masterKey" to "test-master-key",
+                ),
+            ),
+        )
 
-        assertTrue(error.message.orEmpty().contains("SOUZ_BACKEND_HOST"))
+        sources.forEach { source ->
+            val error = assertFailsWith<BackendConfigurationException> {
+                BackendAppConfig.load(source).validate()
+            }
+
+            assertTrue(error.message.orEmpty().contains("SOUZ_BACKEND_HOST"))
+        }
     }
 
     @Test

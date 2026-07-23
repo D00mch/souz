@@ -134,11 +134,10 @@ data class BackendAppConfig(
             BackendAppConfig(
                 featureFlags = BackendFeatureFlags.load(source),
                 server = BackendServerConfig(
-                    host = source.stringValue(
+                    host = source.value(
                         envKey = "SOUZ_BACKEND_HOST",
                         propertyKey = "souz.backend.host",
-                        default = "127.0.0.1",
-                    ),
+                    )?.trim() ?: "127.0.0.1",
                     port = source.intValue(
                         envKey = "SOUZ_BACKEND_PORT",
                         propertyKey = "souz.backend.port",
