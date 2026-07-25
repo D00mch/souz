@@ -2,23 +2,20 @@
 
 Souz is a Kotlin Multiplatform AI assistant with desktop, Android, and backend hosts over shared agent and runtime modules.
 
-## Working Agreement
+- Read and maintain this file and `docs/pain-points.md` before changing the repository.
+- Keep documentation concise and current-state only. Do not write change-history phrases such as “now we do”.
 
-- Read this file before changing the repository.
-- For every module you touch, read that module's `AGENTS.md` before editing it.
-- Read [`docs/pain-points.md`](docs/pain-points.md), then only the module topics relevant to the area you will change.
-- Keep documentation concise and current-state only. Update the smallest owning document instead of copying the same fact across files.
-- Put durable instructions, ownership boundaries, and verification commands in `AGENTS.md`.
-- Put non-obvious invariants, failure modes, and safe-change guidance in pain-point topics.
-- Put human-facing architecture and usage descriptions in READMEs. Exact routes, config keys, constants, and file inventories should come from source code or generated documentation.
+## UI architecture principles
 
-## Engineering Principles
+- UI layers (Screens and Composables) should not do neither business logic, nor IO operations.
+- UI-logic should be coordinated from ViewModels. ViewModel may delegate business logic to UseCases.
 
-- Keep screens and composables presentation-only. Coordinate UI behavior in ViewModels and delegate domain work to use cases.
-- Prefer direct composition and the simplest design that satisfies known requirements.
-- Before adding an abstraction justified by possible future flexibility, explain the concrete extension point and ask the developer.
-- In coroutine-managed code, prefer coroutine coordination primitives over blocking JVM synchronization. Isolate unavoidable JVM or native synchronization at adapter boundaries.
-- Preserve module and source-set boundaries; do not solve placement problems with platform checks inside shared code.
+## Development principles
+
+- Prefer composition to inheritance, utilize open closed principle
+- Do not mix coroutines with the JVM low level concurrency primitives such as: Volatile, Synchronize, ThreadLocal, etc).
+- When you see that something can be done simpler, in less lines of code, removing the unnecessary abstractions, note the developer and ask questions on that.
+- Abstractions only pay off, if we need the flexibility in the future. You don't know the future, developer does. Aks developer when chosing abstractions. 
 
 ## Module Map
 
