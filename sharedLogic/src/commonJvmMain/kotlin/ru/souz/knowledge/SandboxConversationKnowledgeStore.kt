@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.knowledge.KnowledgeContent
 import ru.souz.agent.knowledge.KnowledgeEntry
-import ru.souz.agent.knowledge.KnowledgeStore
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.knowledge.KnowledgeStoreCorruptionException
 import ru.souz.agent.knowledge.KnowledgeStoreException
 import ru.souz.agent.knowledge.KnowledgeStorePersistenceException
@@ -28,13 +28,13 @@ import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 
-class SandboxKnowledgeStore(
+class SandboxConversationKnowledgeStore(
     private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
     private val objectMapper: ObjectMapper = restJsonMapper,
     private val idGenerator: () -> UUID = UUID::randomUUID,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) : KnowledgeStore {
-    private val logger = LoggerFactory.getLogger(SandboxKnowledgeStore::class.java)
+) : ConversationKnowledgeStore {
+    private val logger = LoggerFactory.getLogger(SandboxConversationKnowledgeStore::class.java)
 
     override suspend fun put(
         meta: ToolInvocationMeta,
@@ -42,7 +42,7 @@ class SandboxKnowledgeStore(
         content: String,
     ): KnowledgeWriteResult {
         require(sourceTool.isNotBlank()) { "Knowledge source tool must not be blank." }
-        val conversationId = normalizedConversationId(meta)
+        val conversationId = availableConversationId(meta)
             ?: return KnowledgeWriteResult.ConversationUnavailable
 
         return withContext(ioDispatcher) {
@@ -258,7 +258,7 @@ class SandboxKnowledgeStore(
     ): Path = Path.of(sandbox.runtimePaths.stateRootPath)
         .resolve(KNOWLEDGE_DIRECTORY)
         .resolve(USERS_DIRECTORY)
-        .resolve(scopeKey(userId.trim()))
+        .resolve(scopeKey(userId))
         .resolve(CONVERSATIONS_DIRECTORY)
         .resolve(scopeKey(conversationId))
 
@@ -270,11 +270,11 @@ class SandboxKnowledgeStore(
         return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
     }
 
-    private fun normalizedConversationId(meta: ToolInvocationMeta): String? =
-        meta.conversationId?.trim()?.takeIf(String::isNotEmpty)
+    private fun availableConversationId(meta: ToolInvocationMeta): String? =
+        meta.conversationId?.takeIf(String::isNotBlank)
 
     private fun requireConversationId(meta: ToolInvocationMeta): String =
-        normalizedConversationId(meta)
+        availableConversationId(meta)
             ?: throw KnowledgeStoreUnavailableException(
                 "Knowledge storage requires a nonblank conversation ID."
             )

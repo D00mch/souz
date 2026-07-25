@@ -38,11 +38,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-class SandboxKnowledgeStoreTest {
+class SandboxConversationKnowledgeStoreTest {
     @Test
     fun `round trips complete exact-cap and empty entries with compact canonical records`() = runTest {
         withFixture { fixture ->
-            val exactCap = "a".repeat(SandboxKnowledgeStore.MAX_RETAINED_CONTENT_BYTES.toInt())
+            val exactCap = "a".repeat(SandboxConversationKnowledgeStore.MAX_RETAINED_CONTENT_BYTES.toInt())
             val exact = fixture.store.put(fixture.meta(), "ReadFile", exactCap).storedEntry()
             val empty = fixture.store.put(fixture.meta(), "EmptyTool", "").storedEntry()
 
@@ -68,7 +68,7 @@ class SandboxKnowledgeStoreTest {
     fun `oversized ascii content retains equal head and tail budgets`() = runTest {
         withFixture { fixture ->
             val omittedChars = 137
-            val partLength = SandboxKnowledgeStore.PART_BYTE_BUDGET.toInt()
+            val partLength = SandboxConversationKnowledgeStore.PART_BYTE_BUDGET.toInt()
             val content = "h".repeat(partLength) + "x".repeat(omittedChars) + "t".repeat(partLength)
 
             val entry = fixture.store.put(
@@ -79,7 +79,7 @@ class SandboxKnowledgeStoreTest {
             val truncated = assertIs<KnowledgeContent.Truncated>(entry.content)
 
             assertEquals(content.length, entry.originalLength)
-            assertEquals(SandboxKnowledgeStore.MAX_RETAINED_CONTENT_BYTES.toInt(), entry.storedLength)
+            assertEquals(SandboxConversationKnowledgeStore.MAX_RETAINED_CONTENT_BYTES.toInt(), entry.storedLength)
             assertEquals(partLength, truncated.head.length)
             assertEquals(partLength, truncated.tail.length)
             assertTrue(truncated.head.all { it == 'h' })
@@ -118,17 +118,22 @@ class SandboxKnowledgeStoreTest {
     }
 
     @Test
-    fun `missing conversation is unavailable without resolving a sandbox`() = runTest {
+    fun `null or blank conversation is unavailable without resolving a sandbox`() = runTest {
         val fixture = Fixture()
         try {
-            val meta = ToolInvocationMeta(userId = "user-1")
-
-            assertEquals(
-                KnowledgeWriteResult.ConversationUnavailable,
-                fixture.store.put(meta, "Tool", "content"),
+            val unavailableMetas = listOf(
+                ToolInvocationMeta(userId = "user-1"),
+                ToolInvocationMeta(userId = "user-1", conversationId = " \t "),
             )
-            assertFailsWith<KnowledgeStoreUnavailableException> { fixture.store.get(meta, VALID_ID) }
-            assertFailsWith<KnowledgeStoreUnavailableException> { fixture.store.clearConversation(meta) }
+
+            unavailableMetas.forEach { meta ->
+                assertEquals(
+                    KnowledgeWriteResult.ConversationUnavailable,
+                    fixture.store.put(meta, "Tool", "content"),
+                )
+                assertFailsWith<KnowledgeStoreUnavailableException> { fixture.store.get(meta, VALID_ID) }
+                assertFailsWith<KnowledgeStoreUnavailableException> { fixture.store.clearConversation(meta) }
+            }
             assertEquals(0, fixture.resolveCount)
         } finally {
             fixture.close()
@@ -164,6 +169,41 @@ class SandboxKnowledgeStoreTest {
             assertTrue(Files.exists(recordPath))
             assertEquals(43, recordPath.parent.fileName.toString().length)
             assertEquals(43, recordPath.parent.parent.parent.fileName.toString().length)
+        }
+    }
+
+    @Test
+    fun `exact invocation identities remain isolated through targeted cleanup`() = runTest {
+        withFixture { fixture ->
+            val plain = fixture.meta(userId = "user", conversationId = "chat")
+            val spacedConversation = fixture.meta(userId = "user", conversationId = " chat ")
+            val spacedUser = fixture.meta(userId = " user ", conversationId = "chat")
+
+            val plainEntry = fixture.store.put(plain, "Tool", "plain").storedEntry()
+            val spacedConversationEntry = fixture.store
+                .put(spacedConversation, "Tool", "spaced conversation")
+                .storedEntry()
+            val spacedUserEntry = fixture.store.put(spacedUser, "Tool", "spaced user").storedEntry()
+
+            assertEquals(plainEntry, fixture.store.get(plain, plainEntry.id))
+            assertEquals(
+                spacedConversationEntry,
+                fixture.store.get(spacedConversation, spacedConversationEntry.id),
+            )
+            assertEquals(spacedUserEntry, fixture.store.get(spacedUser, spacedUserEntry.id))
+            assertNull(fixture.store.get(spacedConversation, plainEntry.id))
+            assertNull(fixture.store.get(spacedUser, plainEntry.id))
+
+            fixture.store.clearConversation(spacedConversation)
+
+            assertNull(fixture.store.get(spacedConversation, spacedConversationEntry.id))
+            assertEquals(plainEntry, fixture.store.get(plain, plainEntry.id))
+            assertEquals(spacedUserEntry, fixture.store.get(spacedUser, spacedUserEntry.id))
+
+            fixture.store.clearConversation(spacedUser)
+
+            assertNull(fixture.store.get(spacedUser, spacedUserEntry.id))
+            assertEquals(plainEntry, fixture.store.get(plain, plainEntry.id))
         }
     }
 
@@ -211,7 +251,7 @@ class SandboxKnowledgeStoreTest {
             val oversized = fixture.store.put(meta, "Tool", "other").storedEntry()
             Files.write(
                 fixture.recordPath(meta, oversized.id),
-                ByteArray(SandboxKnowledgeStore.MAX_SERIALIZED_RECORD_BYTES.toInt() + 1),
+                ByteArray(SandboxConversationKnowledgeStore.MAX_SERIALIZED_RECORD_BYTES.toInt() + 1),
             )
             assertFailsWith<KnowledgeStoreCorruptionException> { fixture.store.get(meta, oversized.id) }
         }
@@ -304,7 +344,7 @@ class SandboxKnowledgeStoreTest {
             resolveCount += 1
             sandbox
         }
-        val store = SandboxKnowledgeStore(resolver)
+        val store = SandboxConversationKnowledgeStore(resolver)
 
         fun meta(
             userId: String = "user-1",
@@ -317,9 +357,9 @@ class SandboxKnowledgeStoreTest {
         fun recordPath(meta: ToolInvocationMeta, id: String): Path = stateRoot
             .resolve("knowledge")
             .resolve("users")
-            .resolve(scopeKey(meta.userId.trim()))
+            .resolve(scopeKey(meta.userId))
             .resolve("conversations")
-            .resolve(scopeKey(requireNotNull(meta.conversationId).trim()))
+            .resolve(scopeKey(requireNotNull(meta.conversationId)))
             .resolve("$id.json")
 
         override fun close() {

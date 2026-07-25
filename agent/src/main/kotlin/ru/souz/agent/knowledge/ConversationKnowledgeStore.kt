@@ -4,7 +4,7 @@ import java.util.UUID
 import ru.souz.llms.ToolInvocationMeta
 
 /** Conversation-scoped immutable storage for large, temporarily retained tool results. */
-interface KnowledgeStore {
+interface ConversationKnowledgeStore {
     suspend fun put(
         meta: ToolInvocationMeta,
         sourceTool: String,
