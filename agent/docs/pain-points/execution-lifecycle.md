@@ -8,7 +8,7 @@ Server-side and other concurrent callers must create an `AgentExecutionKernel` p
 
 ## Why this is fragile
 
-The facade owns mutable context, execution state, active-agent routing, session start/finish, and a generation guard for post-turn memory capture. Overlapping work can attach steps to the wrong session, overwrite newer context, clear `isExecuting` early, or capture a cancelled turn.
+The facade owns mutable context, execution state, active-agent routing, and session start/finish. Overlapping work can attach steps to the wrong session, overwrite newer context, or clear `isExecuting` early. Completed-turn memory capture is graph-owned and uses successful graph finalization as its boundary rather than facade acceptance.
 
 ## Safe changes
 
@@ -16,8 +16,8 @@ The facade owns mutable context, execution state, active-agent routing, session 
 - Update facade context only from the current execution and restore the facade's base invocation metadata after per-call overrides.
 - Preserve cancellation propagation through `AgentExecutor`, `TraceableAgent`, and `GraphExecutionDelegate`.
 - Do not make `GraphSessionService` multi-task by adding more shared mutable state. Introduce an explicit execution/session object if parallel tracing becomes a requirement.
-- Keep completed-turn memory capture after successful current-generation execution; it is asynchronous and must not make the turn fail.
+- Keep memory recall before the LLM and completed-turn capture inside graph finalization. Snapshot the turn before history summarization, schedule capture only after finalization succeeds, and isolate capture failures from the returned turn.
 
 ## Verification
 
-Run `./gradlew :agent:test`. Cover cancellation by a new turn or context change, stale-generation completion, invocation-metadata overrides, session finalization on failure, and isolation between request-scoped kernels.
+Run `./gradlew :agent:test`. Cover cancellation by a new turn or context change, invocation-metadata overrides, session finalization on failure, memory finalization failure/cancellation, and isolation between request-scoped kernels.

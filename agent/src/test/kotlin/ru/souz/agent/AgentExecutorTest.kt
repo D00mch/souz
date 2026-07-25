@@ -1,0 +1,77 @@
+package ru.souz.agent
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.runTest
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentSettings
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertSame
+
+class AgentExecutorTest {
+    @Test
+    fun `executor prepares seed and forwards tracing without changing agent context`() = runTest {
+        val agent = CapturingAgent()
+        val executor = AgentExecutor(agentProvider = { agent })
+        val eventSink = object : AgentRuntimeEventSink {
+            override suspend fun emit(event: AgentRuntimeEvent) = Unit
+        }
+        val callback: GraphStepCallback = { _, _, _, _ -> }
+
+        val result = executor.executeWithTrace(
+            agentId = AgentId.GRAPH,
+            context = baseContext(),
+            input = "hello",
+            eventSink = eventSink,
+            onStep = callback,
+        )
+
+        val executedContext = agent.executedContexts.single()
+        assertEquals("hello", executedContext.input)
+        assertEquals("Base system prompt", executedContext.systemPrompt)
+        assertSame(eventSink, executedContext.runtimeEventSink)
+        assertSame(callback, agent.receivedCallback)
+        assertEquals("assistant response", result.output)
+        assertEquals("Base system prompt", result.context.systemPrompt)
+    }
+
+    private fun baseContext(): AgentContext<String> = AgentContext(
+        input = "",
+        settings = AgentSettings(
+            model = "model",
+            temperature = 0f,
+            toolsByCategory = emptyMap(),
+        ),
+        history = listOf(LLMRequest.Message(LLMMessageRole.system, "Base system prompt")),
+        activeTools = emptyList(),
+        systemPrompt = "Base system prompt",
+    )
+
+    private class CapturingAgent : TraceableAgent {
+        val executedContexts = mutableListOf<AgentContext<String>>()
+        var receivedCallback: GraphStepCallback? = null
+
+        override val sideEffects: Flow<String> = emptyFlow()
+
+        override suspend fun execute(ctx: AgentContext<String>): String = executeWithTrace(ctx).output
+
+        override suspend fun executeWithTrace(
+            ctx: AgentContext<String>,
+            onStep: GraphStepCallback?,
+        ): AgentExecutionResult {
+            executedContexts += ctx
+            receivedCallback = onStep
+            return AgentExecutionResult(
+                output = "assistant response",
+                context = ctx.copy(input = "assistant response"),
+            )
+        }
+
+        override fun cancelActiveJob() = Unit
+    }
+}

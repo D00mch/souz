@@ -8,6 +8,7 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
+import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
@@ -63,8 +64,8 @@ class AgentExecutionKernelFactory(
             agentToolExecutor = agentToolExecutor,
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
-            memoryRuntime = memoryRuntime,
         )
+        val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(
             settingsProvider = settingsProvider,
             logObjectMapper = logObjectMapper,
@@ -100,11 +101,10 @@ class AgentExecutionKernelFactory(
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMcp,
             nodesSkills = nodesSkills,
+            nodesMemory = nodesMemory,
         )
         val executor = AgentExecutor(
             agentProvider = { graphAgent },
-            memoryRuntime = memoryRuntime,
-            captureScope = captureScope,
         )
         return AgentExecutionKernel(
             contextFactory = contextFactory,

@@ -1,9 +1,7 @@
 package ru.souz.agent.nodes
 
-import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
-import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
@@ -19,14 +17,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
-import ru.souz.memory.ConversationMemoryRuntime
-import ru.souz.memory.ConversationId
-import ru.souz.memory.MemoryContext
-import ru.souz.memory.MemoryOwnerId
-
-import ru.souz.memory.MemoryRetrievalRequest
-import ru.souz.memory.MemorySessionId
-import ru.souz.memory.NoopConversationMemoryRuntime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -48,7 +38,6 @@ internal class NodesCommon(
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
-    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -111,14 +100,13 @@ internal class NodesCommon(
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
-        val additionalMessage = appendActualInformation(
-            userText = ctx.input,
-            meta = ctx.toolInvocationMeta,
-            eventSink = ctx.runtimeEventSink,
-        )
+        val additionalMessage = appendActualInformation(ctx.input)
 
+        val currentUserIndex = ctx.history.indexOfLast { it.role == LLMMessageRole.user }
         val newHistory = ctx.history
-            .filterNot(LLMRequest.Message::isInjectedContextMessage)
+            .filterIndexed { index, message ->
+                index == currentUserIndex || !message.isInjectedContextMessage()
+            }
             .toMutableList()
         additionalMessage?.let {
             l.info("Injecting additional context ({} chars)", it.content.length)
@@ -129,15 +117,12 @@ internal class NodesCommon(
 
     private suspend fun appendActualInformation(
         userText: String,
-        meta: ToolInvocationMeta,
-        eventSink: AgentRuntimeEventSink,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
-        val memoryBlock = retrieveMemoryBlock(userText, meta, eventSink)
         val additionalData = loadAdditionalData(userText)
-        if (memoryBlock == null && additionalData.isEmpty()) return null
-        return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(memoryBlock, additionalData))
+        if (additionalData.isEmpty()) return null
+        return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(additionalData))
     }
 
     private fun buildUserGeoLocationFact(): String? = try {
@@ -209,41 +194,6 @@ internal class NodesCommon(
         eventSink = eventSink,
     )
 
-    private suspend fun retrieveMemoryBlock(
-        userText: String,
-        meta: ToolInvocationMeta,
-        eventSink: AgentRuntimeEventSink,
-    ): String? {
-        val memoryResult = try {
-            memoryRuntime.retrieveMemory(
-                MemoryRetrievalRequest(
-                    context = MemoryContext(
-                        ownerId = MemoryOwnerId(meta.userId),
-                        conversationId = meta.conversationId?.let(::ConversationId),
-                        sessionId = meta.conversationId?.let(::MemorySessionId),
-                        projectId = null,
-                    ),
-                    query = userText,
-                )
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            l.warn("Memory retrieval failed: {}", e.message)
-            return null
-        }
-        val renderedBlock = memoryResult.renderedPromptBlock.orEmpty().trim()
-        if (renderedBlock.isBlank()) return null
-        try {
-            eventSink.emit(AgentRuntimeEvent.MemoryPromptAugmented(renderedBlock, memoryResult.facts))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            l.warn("Memory augmentation trace failed: {}", e.message)
-        }
-        return renderedBlock
-    }
-
     private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
         try {
             addAll(desktopInfoRepository.search(userText))
@@ -269,19 +219,9 @@ internal class NodesCommon(
         )
     }
 
-    private fun buildContextMessage(
-        memoryBlock: String?,
-        additionalData: List<StorredData>,
-    ): String = buildString {
+    private fun buildContextMessage(additionalData: List<StorredData>): String = buildString {
         append(INJECTED_CONTEXT_PREFIX)
-        memoryBlock?.let {
-            append(it)
-            append('\n')
-        }
-        if (additionalData.isNotEmpty()) {
-            if (memoryBlock != null) append("\nOther relevant context:\n")
-            additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
-        }
+        additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
         append(INJECTED_CONTEXT_SUFFIX)
     }
 

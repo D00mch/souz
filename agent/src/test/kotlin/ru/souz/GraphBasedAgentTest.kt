@@ -10,6 +10,7 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
+import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILLS_ACTIVATION_NODE_NAME
@@ -33,6 +34,7 @@ class GraphBasedAgentTest {
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMCP = mockk<NodesMCP>()
         val nodesSkills = mockk<NodesSkills>()
+        val nodesMemory = mockk<NodesMemory>()
         val executed = mutableListOf<String>()
 
         every { nodesLLM.sideEffects } returns emptyFlow()
@@ -41,10 +43,13 @@ class GraphBasedAgentTest {
         every { nodesSkills.node(SKILLS_ACTIVATION_NODE_NAME) } returns passthroughStringNode(SKILLS_ACTIVATION_NODE_NAME, executed)
         every { nodesMCP.nodeProvideMcpTools("MCP Node") } returns passthroughStringNode("MCP Node", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthroughStringNode("appendActualInformation", executed)
+        every { nodesMemory.recall() } returns passthroughStringNode("Memory recall", executed)
         every { nodesLLM.chat("LLM") } returns chatNode("LLM", executed)
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
         every { nodesCommon.toolUse() } returns toolUseNode(executed)
-        every { nodesSummarization.summarize() } returns summaryNode(executed)
+        val summarization = summaryNode(mutableListOf())
+        every { nodesSummarization.summarize() } returns summarization
+        every { nodesMemory.finalizeTurn(summarization) } returns finalizationNode(executed)
 
         val agent = GraphBasedAgent(
             logObjectMapper = restJsonMapper,
@@ -55,6 +60,7 @@ class GraphBasedAgentTest {
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMCP,
             nodesSkills = nodesSkills,
+            nodesMemory = nodesMemory,
         )
 
         repeat(2) {
@@ -68,8 +74,9 @@ class GraphBasedAgentTest {
             SKILLS_ACTIVATION_NODE_NAME,
             "MCP Node",
             "appendActualInformation",
+            "Memory recall",
             "LLM",
-            "Summary",
+            "Memory-aware finalization",
         )
         assertEquals(expectedRun + expectedRun, executed)
     }
@@ -109,6 +116,13 @@ class GraphBasedAgentTest {
 
     private fun summaryNode(executed: MutableList<String>): Node<LLMResponse.Chat.Ok, String> = Node("Summary") { ctx ->
         executed += "Summary"
+        ctx.map { "final" }
+    }
+
+    private fun finalizationNode(
+        executed: MutableList<String>,
+    ): Node<LLMResponse.Chat.Ok, String> = Node("Memory-aware finalization") { ctx ->
+        executed += "Memory-aware finalization"
         ctx.map { "final" }
     }
 
