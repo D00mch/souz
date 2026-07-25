@@ -26,7 +26,7 @@ class AgentFacade internal constructor(
 ) {
     private val l = LoggerFactory.getLogger(AgentFacade::class.java)
 
-    val availableAgents: List<AgentId> = executor.availableAgents
+    val availableAgents: List<AgentId> = contextFactory.availableAgents
 
     private val _activeAgentId = MutableStateFlow(contextFactory.normalizeAgentId(settingsProvider.activeAgentId))
     val activeAgentId: StateFlow<AgentId> = _activeAgentId.asStateFlow()

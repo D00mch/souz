@@ -23,7 +23,9 @@ class AgentExecutor internal constructor(
     private val agentProvider: (AgentId) -> TraceableAgent,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
-    val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
+    // Execution can be called with an agent ID persisted by a different host configuration.
+    // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
+    private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutor::class.java)
 

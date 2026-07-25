@@ -31,7 +31,7 @@ class AgentFacadeMemoryTest {
         every { contextFactory.normalizeAgentId(any()) } returns AgentId.GRAPH
         every { contextFactory.create(AgentId.GRAPH) } returns context
         val executor = mockk<AgentExecutor>()
-        every { executor.availableAgents } returns listOf(AgentId.GRAPH)
+        every { contextFactory.availableAgents } returns listOf(AgentId.GRAPH)
         every { executor.sideEffects(any()) } returns emptyFlow()
         every { executor.cancelActiveJob(any()) } just runs
         coEvery { executor.executeWithTrace(any(), any(), any(), any(), any()) } returns AgentExecutionResult(
