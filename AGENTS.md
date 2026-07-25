@@ -4,8 +4,9 @@ Souz is a Kotlin Multiplatform AI assistant with a Compose Desktop host and an A
 
 ## Note for LLM
 
-Keep this file updated whenever top level details changes.
-If you are not sure about something, left a note for other developers to review.
+- Read this file before changing the repository.
+- Keep documentation concise and current-state only. Do not write change-history phrases such as “now we do”.
+- Update this file when architecture, behavior, commands, or repository structure changes.
 
 ### UI architecture principles
 
@@ -14,9 +15,10 @@ If you are not sure about something, left a note for other developers to review.
 
 ### Development principles
 
-- Prefer composition to inheritance.
+- Prefer composition to inheritance, utilize open closed principle
 - Do not mix coroutines with the JVM low level concurrency primitives such as: Volatile, Synchronize, ThreadLocal, etc).
-- Utilize open closed principle.
+- When you see that something can be done simpler, in less lines of code, removing the unnecessary abstractions, note the developer and ask questions on that.
+- Abstractions only pay off, if we need the flexibility in the future. You don't know the future, developer does. Aks developer when chosing abstractions. 
 
 ## Features
 
