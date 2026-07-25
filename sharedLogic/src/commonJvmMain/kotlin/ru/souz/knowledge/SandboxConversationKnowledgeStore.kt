@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import java.nio.charset.StandardCharsets
-import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
@@ -54,7 +53,7 @@ class SandboxConversationKnowledgeStore(
 
                 repeat(MAX_ID_GENERATION_ATTEMPTS) {
                     val id = idGenerator().toString()
-                    val recordPath = fileSystem.resolvePath(recordPath(conversationDirectory, id).toString())
+                    val recordPath = fileSystem.resolvePath(recordPath(conversationDirectory, id))
                     if (recordPath.exists) {
                         return@repeat
                     }
@@ -96,7 +95,7 @@ class SandboxConversationKnowledgeStore(
                     recordPath(
                         conversationDirectory(sandbox, meta.userId, conversationId),
                         canonicalId,
-                    ).toString()
+                    )
                 )
                 if (!path.exists) {
                     return@runPersistenceOperation null
@@ -113,7 +112,7 @@ class SandboxConversationKnowledgeStore(
                 val sandbox = sandboxResolver.resolve(meta)
                 val fileSystem = sandbox.fileSystem
                 val directory = fileSystem.resolvePath(
-                    conversationDirectory(sandbox, meta.userId, conversationId).toString()
+                    conversationDirectory(sandbox, meta.userId, conversationId)
                 )
                 if (!directory.exists) {
                     return@runPersistenceOperation
@@ -255,15 +254,26 @@ class SandboxConversationKnowledgeStore(
         sandbox: RuntimeSandbox,
         userId: String,
         conversationId: String,
-    ): Path = Path.of(sandbox.runtimePaths.stateRootPath)
-        .resolve(KNOWLEDGE_DIRECTORY)
-        .resolve(USERS_DIRECTORY)
-        .resolve(scopeKey(userId))
-        .resolve(CONVERSATIONS_DIRECTORY)
-        .resolve(scopeKey(conversationId))
+    ): String = sandboxPath(
+        sandbox.runtimePaths.stateRootPath,
+        KNOWLEDGE_DIRECTORY,
+        USERS_DIRECTORY,
+        scopeKey(userId),
+        CONVERSATIONS_DIRECTORY,
+        scopeKey(conversationId),
+    )
 
-    private fun recordPath(conversationDirectory: Path, id: String): Path =
-        conversationDirectory.resolve("$id.json")
+    private fun recordPath(conversationDirectory: String, id: String): String =
+        sandboxPath(conversationDirectory, "$id.json")
+
+    /** Keeps container paths POSIX-shaped instead of interpreting them through the host filesystem. */
+    private fun sandboxPath(root: String, vararg segments: String): String = buildString {
+        append(root.trimEnd('/'))
+        segments.forEach { segment ->
+            append('/')
+            append(segment)
+        }
+    }
 
     private fun scopeKey(raw: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(StandardCharsets.UTF_8))

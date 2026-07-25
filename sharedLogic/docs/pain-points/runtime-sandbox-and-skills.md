@@ -26,6 +26,7 @@ JVM local mode supports `SandboxConversationKnowledgeStore` only when `stateRoot
 - Keep Android skill scripts POSIX-compatible unless Android explicitly gains another runtime.
 - When changing skill layout or scope, update the repository, command tool, host DI wiring, Docker entrypoint, and tests together.
 - Keep Knowledge paths internal: callers provide opaque UUIDs, never filesystem paths. Preserve atomic JSON writes, the UTF-8 retention cap, whole-code-point head/tail boundaries, record validation, and conversation-only recursive cleanup.
+- Build Knowledge paths as slash-delimited sandbox strings. Docker runtime paths are POSIX container paths and must not pass through host `Path` semantics.
 - Treat missing Knowledge conversation scope as unavailable; never fall back to user-wide storage. Do not add TTL or startup cleanup without defining how retained references in conversation history expire.
 
 ## Verification

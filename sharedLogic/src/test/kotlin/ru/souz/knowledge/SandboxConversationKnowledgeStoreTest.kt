@@ -26,6 +26,8 @@ import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
+import ru.souz.runtime.sandbox.docker.DockerSandboxFileSystem
+import ru.souz.runtime.sandbox.docker.DockerSandboxLayout
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createTempDirectory
@@ -93,9 +95,9 @@ class SandboxConversationKnowledgeStoreTest {
     }
 
     @Test
-    fun `multibyte truncation preserves code points and utf16 offsets`() = runTest {
+    fun `multibyte truncation moves boundaries to preserve code points and utf16 lengths`() = runTest {
         withFixture { fixture ->
-            val content = "🙂".repeat(262_145)
+            val content = "a" + "🙂".repeat(262_145) + "b"
 
             val entry = fixture.store.put(
                 fixture.meta(),
@@ -104,13 +106,12 @@ class SandboxConversationKnowledgeStoreTest {
             ).storedEntry()
             val truncated = assertIs<KnowledgeContent.Truncated>(entry.content)
 
-            assertEquals(524_290, entry.originalLength)
-            assertEquals(524_288, entry.storedLength)
-            assertEquals(
-                1_048_576,
-                listOf(truncated.head, truncated.tail).sumOf { it.toByteArray(StandardCharsets.UTF_8).size },
-            )
+            assertEquals(524_292, entry.originalLength)
+            assertEquals(524_286, entry.storedLength)
+            assertEquals('a', truncated.head.first())
+            assertEquals('b', truncated.tail.last())
             listOf(truncated.head, truncated.tail).forEach { part ->
+                assertEquals(524_285, part.toByteArray(StandardCharsets.UTF_8).size)
                 assertFalse(part.first().isLowSurrogate())
                 assertFalse(part.last().isHighSurrogate())
             }
@@ -195,6 +196,7 @@ class SandboxConversationKnowledgeStoreTest {
             assertNull(fixture.store.get(spacedUser, plainEntry.id))
 
             fixture.store.clearConversation(spacedConversation)
+            fixture.store.clearConversation(spacedConversation)
 
             assertNull(fixture.store.get(spacedConversation, spacedConversationEntry.id))
             assertEquals(plainEntry, fixture.store.get(plain, plainEntry.id))
@@ -208,24 +210,59 @@ class SandboxConversationKnowledgeStoreTest {
     }
 
     @Test
-    fun `clear removes only one conversation and is idempotent`() = runTest {
-        withFixture { fixture ->
-            val firstMeta = fixture.meta(conversationId = "conversation-1")
-            val secondMeta = fixture.meta(conversationId = "conversation-2")
-            val first = fixture.store.put(firstMeta, "Tool", "first").storedEntry()
-            val second = fixture.store.put(secondMeta, "Tool", "second").storedEntry()
+    fun `docker knowledge paths remain POSIX and state-rooted`() = runTest {
+        val hostRoot = createTempDirectory("souz-docker-knowledge-store-")
+        try {
+            val layout = DockerSandboxLayout(hostRoot)
+            layout.ensureHostDirectories()
+            val resolvedPaths = mutableListOf<String>()
+            val dockerFileSystem = DockerSandboxFileSystem(layout)
+            val recordingFileSystem = object : SandboxFileSystem by dockerFileSystem {
+                override fun resolvePath(rawPath: String): SandboxPathInfo {
+                    resolvedPaths += rawPath
+                    return dockerFileSystem.resolvePath(rawPath)
+                }
+            }
+            val sandbox = mockk<RuntimeSandbox> {
+                every { runtimePaths } returns layout.runtimePaths
+                every { fileSystem } returns recordingFileSystem
+            }
+            val store = SandboxConversationKnowledgeStore(
+                sandboxResolver = ToolInvocationRuntimeSandboxResolver { sandbox },
+            )
+            val meta = ToolInvocationMeta(userId = "user-1", conversationId = "conversation-1")
 
-            fixture.store.clearConversation(firstMeta)
-            fixture.store.clearConversation(firstMeta)
+            val entry = store.put(meta, "Tool", "content").storedEntry()
 
-            assertNull(fixture.store.get(firstMeta, first.id))
-            assertEquals(second, fixture.store.get(secondMeta, second.id))
+            assertEquals(entry, store.get(meta, entry.id))
+            assertTrue(Files.exists(layout.hostStateRoot.resolve("knowledge")))
+
+            store.clearConversation(meta)
+
+            assertNull(store.get(meta, entry.id))
+            assertTrue(
+                resolvedPaths.all { rawPath ->
+                    rawPath.startsWith("${layout.runtimePaths.stateRootPath}/knowledge/") && '\\' !in rawPath
+                }
+            )
+        } finally {
+            hostRoot.toFile().deleteRecursively()
         }
     }
 
     @Test
     fun `corrupt and oversized records are rejected`() = runTest {
-        withFixture { fixture ->
+        var readCount = 0
+        withFixture(
+            fileSystemTransform = { delegate ->
+                object : SandboxFileSystem by delegate {
+                    override fun readText(path: SandboxPathInfo): String {
+                        readCount += 1
+                        return delegate.readText(path)
+                    }
+                }
+            }
+        ) { fixture ->
             val meta = fixture.meta()
             val corrupt = fixture.store.put(meta, "Tool", "content").storedEntry()
             Files.writeString(fixture.recordPath(meta, corrupt.id), "{}")
@@ -253,7 +290,9 @@ class SandboxConversationKnowledgeStoreTest {
                 fixture.recordPath(meta, oversized.id),
                 ByteArray(SandboxConversationKnowledgeStore.MAX_SERIALIZED_RECORD_BYTES.toInt() + 1),
             )
+            val readsBeforeOversizedRecord = readCount
             assertFailsWith<KnowledgeStoreCorruptionException> { fixture.store.get(meta, oversized.id) }
+            assertEquals(readsBeforeOversizedRecord, readCount)
         }
     }
 
@@ -311,8 +350,11 @@ class SandboxConversationKnowledgeStoreTest {
         }
     }
 
-    private suspend fun withFixture(block: suspend (Fixture) -> Unit) {
-        val fixture = Fixture()
+    private suspend fun withFixture(
+        fileSystemTransform: (SandboxFileSystem) -> SandboxFileSystem = { it },
+        block: suspend (Fixture) -> Unit,
+    ) {
+        val fixture = Fixture(fileSystemTransform)
         try {
             block(fixture)
         } finally {
