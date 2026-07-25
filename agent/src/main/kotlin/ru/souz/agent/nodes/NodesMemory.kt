@@ -26,7 +26,7 @@ import ru.souz.memory.NoopConversationMemoryRuntime
 
 private const val INJECTED_MEMORY_PREFIX = "<souz_memory_context>\n"
 private const val INJECTED_MEMORY_SUFFIX = "\n</souz_memory_context>"
-internal const val INJECTED_MEMORY_MESSAGE_NAME = "souz.injected.memory"
+internal const val INJECTED_MEMORY_MESSAGE_NAME = "souz_injected_memory"
 
 internal fun LLMRequest.Message.isInjectedMemoryContextMessage(): Boolean =
     role == LLMMessageRole.user && name == INJECTED_MEMORY_MESSAGE_NAME

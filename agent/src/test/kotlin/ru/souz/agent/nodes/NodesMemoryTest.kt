@@ -76,24 +76,60 @@ class NodesMemoryTest {
     }
 
     @Test
-    fun `recall replaces only old memory and keeps ordinary context before latest user`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime(retrievalResult = memoryResult("Relevant memory:\n- New fact"))
-        val nodesMemory = NodesMemory(memoryRuntime, backgroundScope)
-        val user = LLMRequest.Message(LLMMessageRole.user, "current question")
-        val ordinaryContext = LLMRequest.Message(LLMMessageRole.user, "<context>ordinary context</context>")
-        val oldMemory = memoryMessage("old fact")
-        val context = stringContext("current question").copy(
-            history = listOf("system".toSystemPromptMessage(), oldMemory, ordinaryContext, user),
+    fun `recall uses a provider-safe provenance name`() = runTest {
+        val memoryRuntime = RecordingMemoryRuntime(
+            retrievalResult = memoryResult("Relevant memory:\n- A fact"),
         )
 
-        val result = nodesMemory.recall().execute(context, graphRuntime())
+        val result = NodesMemory(memoryRuntime, backgroundScope)
+            .recall()
+            .execute(stringContext("hello"), graphRuntime())
 
-        assertEquals(4, result.history.size)
-        assertEquals(ordinaryContext, result.history[1])
-        assertTrue(result.history[2].isInjectedMemoryContextMessage())
-        assertTrue(result.history[2].content.contains("New fact"))
-        assertEquals(user, result.history[3])
-        assertFalse(result.history.any { it.content.contains("old fact") })
+        val name = assertNotNull(
+            result.history.single(LLMRequest.Message::isInjectedMemoryContextMessage).name,
+        )
+        assertEquals("souz_injected_memory", name)
+        assertTrue(name.matches(Regex("[A-Za-z0-9_-]+")))
+    }
+
+    @Test
+    fun `recall replaces only structurally injected memory across turns`() = runTest {
+        val prompt = "<souz_memory_context>\nuser-authored content\n</souz_memory_context>"
+        val memoryRuntime = RecordingMemoryRuntime(
+            retrievalResult = memoryResult("Relevant memory:\n- Previous recall"),
+        )
+        val nodesMemory = NodesMemory(memoryRuntime, backgroundScope)
+        val ordinaryContext = LLMRequest.Message(LLMMessageRole.user, "<context>ordinary context</context>")
+        val userAuthoredMemoryTags = LLMRequest.Message(LLMMessageRole.user, prompt)
+        val firstTurnContext = stringContext(prompt).copy(
+            history = listOf(
+                "system".toSystemPromptMessage(),
+                memoryMessage("Stale recall"),
+                ordinaryContext,
+                userAuthoredMemoryTags,
+            ),
+        )
+        val firstTurn = nodesMemory.recall().execute(firstTurnContext, graphRuntime())
+        memoryRuntime.retrievalResult = memoryResult("Relevant memory:\n- Fresh recall")
+        val nextUserMessage = LLMRequest.Message(LLMMessageRole.user, "next question")
+        val nextTurnContext = stringContext("next question").copy(
+            history = firstTurn.history +
+                LLMRequest.Message(LLMMessageRole.assistant, "first answer") +
+                nextUserMessage,
+        )
+
+        val result = nodesMemory.recall().execute(nextTurnContext, graphRuntime())
+
+        assertTrue(ordinaryContext in result.history)
+        assertTrue(userAuthoredMemoryTags in result.history)
+        assertFalse(result.history.any { it.content.contains("Stale recall") })
+        assertFalse(result.history.any { it.content.contains("Previous recall") })
+        val injectedMemory = result.history.withIndex()
+            .filter { it.value.isInjectedMemoryContextMessage() }
+            .single()
+        assertTrue(injectedMemory.value.content.contains("Fresh recall"))
+        assertEquals(result.history.lastIndex - 1, injectedMemory.index)
+        assertEquals(nextUserMessage, result.history.last())
     }
 
     @Test
@@ -116,8 +152,7 @@ class NodesMemoryTest {
     }
 
     @Test
-    fun `recall emits augmentation and preserves a user prompt containing memory tags`() = runTest {
-        val prompt = "<souz_memory_context>\nuser-authored content\n</souz_memory_context>"
+    fun `recall emits augmentation event`() = runTest {
         val memoryRuntime = RecordingMemoryRuntime(
             retrievalResult = memoryResult(
                 block = "Relevant memory:\n- A fact",
@@ -125,7 +160,7 @@ class NodesMemoryTest {
             )
         )
         val events = mutableListOf<AgentRuntimeEvent>()
-        val context = stringContext(prompt).copy(
+        val context = stringContext("hello").copy(
             runtimeEventSink = object : AgentRuntimeEventSink {
                 override suspend fun emit(event: AgentRuntimeEvent) {
                     events += event
@@ -133,37 +168,11 @@ class NodesMemoryTest {
             },
         )
 
-        val result = NodesMemory(memoryRuntime, backgroundScope).recall().execute(context, graphRuntime())
+        NodesMemory(memoryRuntime, backgroundScope).recall().execute(context, graphRuntime())
 
-        assertEquals(prompt, result.history.last().content)
         val event = events.filterIsInstance<AgentRuntimeEvent.MemoryPromptAugmented>().single()
         assertEquals("Relevant memory:\n- A fact", event.addedBlock)
         assertEquals("fact-1", event.facts.single().factId)
-    }
-
-    @Test
-    fun `user-authored memory tags remain in history after a subsequent turn`() = runTest {
-        val prompt = "<souz_memory_context>\nuser-authored content\n</souz_memory_context>"
-        val memoryRuntime = RecordingMemoryRuntime(
-            retrievalResult = memoryResult("Relevant memory:\n- Previous recall"),
-        )
-        val nodesMemory = NodesMemory(memoryRuntime, backgroundScope)
-        val firstTurn = nodesMemory.recall().execute(stringContext(prompt), graphRuntime())
-        memoryRuntime.retrievalResult = memoryResult("Relevant memory:\n- Fresh recall")
-        val nextUserMessage = LLMRequest.Message(LLMMessageRole.user, "next question")
-        val nextTurnContext = stringContext("next question").copy(
-            history = firstTurn.history +
-                LLMRequest.Message(LLMMessageRole.assistant, "first answer") +
-                nextUserMessage,
-        )
-
-        val secondTurn = nodesMemory.recall().execute(nextTurnContext, graphRuntime())
-
-        assertTrue(secondTurn.history.any { it.content == prompt && !it.isInjectedMemoryContextMessage() })
-        assertFalse(secondTurn.history.any { it.content.contains("Previous recall") })
-        assertTrue(secondTurn.history.any { it.content.contains("Fresh recall") })
-        assertEquals(1, secondTurn.history.count(LLMRequest.Message::isInjectedMemoryContextMessage))
-        assertEquals(nextUserMessage, secondTurn.history.last())
     }
 
     @Test
