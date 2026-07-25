@@ -1,5 +1,6 @@
 package ru.souz.db
 
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProviderImpl.Companion.AI_TUNNEL_KEY
@@ -71,7 +72,15 @@ object ConfigStore : ToolsSettingsStore {
         }.getOrNull()
     }
 
-    override fun loadToolsSettings(key: String): ToolsSettingsState? = get(key)
+    override fun loadToolsSettings(key: String): ToolsSettingsState? {
+        val raw = get<String>(key) ?: return null
+        return runCatching {
+            val root = restJsonMapper.readTree(raw)
+            // hack for the existing users to handle stored preferences
+            (root.get("categories") as? ObjectNode)?.remove("PRESENTATION")
+            restJsonMapper.treeToValue(root, ToolsSettingsState::class.java)
+        }.getOrNull()
+    }
 
     override fun saveToolsSettings(key: String, state: ToolsSettingsState) {
         put(key, state)
