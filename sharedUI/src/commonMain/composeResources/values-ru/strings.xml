@@ -27,9 +27,6 @@
     <string name="quick_action_documents_label">Документы</string>
     <string name="quick_action_documents_description">Создать или найти файл</string>
     <string name="quick_action_documents_message">Помоги в работе с файлами на компьютере</string>
-    <string name="quick_action_presentation_label">Презентация</string>
-    <string name="quick_action_presentation_description">Создать презентацию</string>
-    <string name="quick_action_presentation_message">Помоги создать презентацию</string>
     <string name="quick_action_analytics_label">Аналитика</string>
     <string name="quick_action_analytics_description">Графики и данные</string>
     <string name="quick_action_analytics_message">Помоги в работе с данными</string>
@@ -609,8 +606,6 @@
     <string name="chat_action_telegram_saved_messages">Сохраняю в Избранное Telegram</string>
     <string name="chat_action_take_screenshot">Делаю скриншот: %1$s</string>
     <string name="chat_action_start_screen_recording">Открываю запись экрана</string>
-    <string name="chat_action_presentation_create">Создаю презентацию: %1$s</string>
-    <string name="chat_action_presentation_read">Читаю презентацию: %1$s</string>
     <string name="chat_action_generic_tool">Запускаю инструмент: %1$s</string>
     <string name="chat_action_value_history">история</string>
     <string name="chat_action_value_bookmarks">закладки</string>

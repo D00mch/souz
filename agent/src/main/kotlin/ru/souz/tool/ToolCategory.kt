@@ -17,6 +17,5 @@ enum class ToolCategory {
     CHAT,
     TELEGRAM,
     DESKTOP,
-    PRESENTATION,
     HELP,
 }

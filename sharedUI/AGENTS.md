@@ -1,6 +1,6 @@
 # Shared UI
 
-`:sharedUI` owns the Android/Desktop presentation layer: portable Compose resources and primitives, shared ViewModels and UI logic, host-port contracts, and platform-specific screens and adapters. UI hosts may depend on this module; `:backend` must not.
+`:sharedUI` owns the Android/Desktop UI layer: portable Compose resources and primitives, shared ViewModels and UI logic, host-port contracts, and platform-specific screens and adapters. UI hosts may depend on this module; `:backend` must not.
 
 Before changing this module, read the [pain-point index](docs/pain-points.md) and the topics relevant to the area.
 

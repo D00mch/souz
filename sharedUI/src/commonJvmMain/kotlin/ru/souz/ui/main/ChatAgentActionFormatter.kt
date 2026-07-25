@@ -96,11 +96,6 @@ class ChatAgentActionFormatter {
                 nullableTextArg(args, "nameSuffix")?.takeIf { it.isNotBlank() } ?: localizedValue(Res.string.chat_action_value_default),
             )
             "StartScreenRecording" -> getString(Res.string.chat_action_start_screen_recording)
-            "PresentationCreate" -> format(
-                Res.string.chat_action_presentation_create,
-                textArg(args, "title", "filename", "outputPath"),
-            )
-            "PresentationRead" -> format(Res.string.chat_action_presentation_read, pathArg(args, "filePath"))
             else -> format(Res.string.chat_action_generic_tool, functionCall.name)
         }
     }
