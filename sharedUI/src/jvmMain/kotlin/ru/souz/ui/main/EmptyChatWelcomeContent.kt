@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Mail
-import androidx.compose.material.icons.filled.PresentToAll
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -119,14 +118,6 @@ private val EmptyChatQuickActions = listOf(
         descriptionRes = Res.string.quick_action_documents_description,
         gradient = Brush.linearGradient(colors = listOf(Color(0xFF22C55E), Color(0xFF34D399))),
         messageRes = Res.string.quick_action_documents_message,
-    ),
-    QuickActionCardModel(
-        id = "presentation",
-        icon = Icons.Filled.PresentToAll,
-        labelRes = Res.string.quick_action_presentation_label,
-        descriptionRes = Res.string.quick_action_presentation_description,
-        gradient = Brush.linearGradient(colors = listOf(Color(0xFFF43F5E), Color(0xFFF472B6))),
-        messageRes = Res.string.quick_action_presentation_message,
     ),
     QuickActionCardModel(
         id = "analytics",

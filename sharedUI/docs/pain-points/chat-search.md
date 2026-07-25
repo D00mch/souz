@@ -4,7 +4,7 @@
 
 Search offsets describe visible rendered text, not raw Markdown. User messages use one plain-text projection; assistant messages use separate Markdown and code-block parts so each rendered block can receive its own highlights. `MarkdownSearchTraversal` and `MarkdownSearchAnnotator` must implement the same flattening and offset rules.
 
-The projection used to index a message is also the rendering contract for that message. Query text, matches, and active selection belong to `MainState.chatSearch`; the compact search panel owns only open/focus and keyboard presentation state.
+The projection used to index a message is also the rendering contract for that message. Query text, matches, and active selection belong to `MainState.chatSearch`; the compact search panel owns only open/focus and keyboard display state.
 
 ## Why it is fragile
 

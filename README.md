@@ -13,7 +13,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 - **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
-- **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, presentations, and calculator.
+- **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, and calculator.
 - **SafeMode confirmations** for tool permission prompts, destructive Telegram operations, ambiguous contact/chat selection, and deferred file-modification review.
 - **Multi-provider LLM support** for GigaChat, Qwen, AiTunnel, Anthropic Claude, OpenAI, and local llama.cpp models.
 - **Local inference** through a packaged native bridge with Qwen/Gemma chat profiles, EmbeddingGemma embeddings, prompt-family rendering, strict JSON tool output handling, model downloads, preload/warmup, and cancellation.
@@ -40,7 +40,7 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 ├── native/                 # llama.cpp bridge and local model runtime
 ├── ambientAgent/           # Ambient transcription semantics and local task analysis
 ├── sharedLogic/            # Shared Android/JVM runtime logic, providers, tools, and sandboxes
-├── sharedUI/               # Shared Compose presentation plus desktop UI, view models, host ports, UI adapters, UI resources
+├── sharedUI/               # Shared Compose and desktop UI, view models, host ports, UI adapters, UI resources
 ├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
 ├── androidApp/             # Android chat-agent host over sharedUI, sharedLogic, and GraphBasedAgent
 ├── backend/                # Ktor HTTP backend over the shared agent runtime
@@ -102,16 +102,16 @@ flowchart LR
 
 `:desktopApp` owns the runnable desktop entry point, app composition root, OS integrations, desktop-only services/tools, and Compose Desktop packaging. It depends on `:sharedLogic` and `:sharedUI`.
 
-`:sharedUI` owns shared presentation surfaces and the desktop experience:
+`:sharedUI` owns shared UI surfaces and the desktop experience:
 
-- Android-capable shared chat/settings presentation surface for the Android chat-agent entry point.
+- Android-capable shared chat/settings surface for the Android chat-agent entry point.
 - Compose screens, ViewModels, app theme, reusable UI components, and setup/settings flows for desktop.
 - Chat UI with model/context selectors, attachments, send/mic controls, streaming state, speech output, and graph/thinking visualization.
 - Tool-management UI and permission/selection approval flows.
 - Settings UI for models, provider keys, general behavior, security, folders, Telegram, sessions, visualization, and support logs.
 - Host-port interfaces plus UI adapters for permission/selection flows and macOS window effects. Non-UI desktop services and OS-bound tools live in `:desktopApp`.
 
-UI code should stay presentation-only. Business logic belongs in ViewModels or use cases.
+UI code should stay rendering-only. Business logic belongs in ViewModels or use cases.
 
 ### KMP / shared modules
 
@@ -123,7 +123,7 @@ Souz keeps platform-specific logic at the edges:
 - `:ambientAgent` contains shared semantic-block and local task-analysis contracts plus the JVM transcription service.
 - `:sharedLogic` contains Android/JVM shared runtime services, portable tools, sandbox/skills infrastructure, provider clients, and platform-specific runtime implementations. See [`sharedLogic/README.md`](sharedLogic/README.md).
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
-- `:sharedUI` contains shared Compose presentation, Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
+- `:sharedUI` contains shared Compose and Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
 - `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
 - `:androidApp` contains the Android entry point, Android storage/settings adapters, and the Android bridge from shared chat UI events to `GraphBasedAgent`.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
@@ -245,7 +245,6 @@ Souz has two tool catalogs:
 | Calculator | Calculator |
 | Telegram | Read inbox, get chat history, set chat state, send message/attachment, forward message, search Telegram, save to Saved Messages |
 | Desktop | Take screenshot, start screen recording |
-| Presentation | Create presentation, read presentation, list/find files for presentation workflows |
 
 ### Backend-safe runtime tools
 
@@ -259,7 +258,7 @@ The backend-safe catalog avoids desktop-only APIs and includes:
 | Data analytics | CSV plotting, Excel read, Excel report |
 | Calculator | Calculator |
 
-The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, presentation UI integrations, and other OS-bound tools. It separately supports Telegram bot chat bindings for text ingress into existing backend chats.
+The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, and other OS-bound tools. It separately supports Telegram bot chat bindings for text ingress into existing backend chats.
 
 ## UI confirmations and approval flows
 
