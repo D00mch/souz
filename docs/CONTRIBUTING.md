@@ -16,9 +16,17 @@
 Implementations overview:
 
 - [Agent module](../agent/README.md)
-- [MCP integration](../sharedUI/src/jvmMain/kotlin/ru/souz/service/mcp/README.md)
+- [Shared runtime and MCP integration](../sharedLogic/README.md)
+- [MCP transport details](../sharedLogic/src/jvmMain/kotlin/ru/souz/service/mcp/README.md)
 
-Implementation details are provided within [AGENTS.md](../AGENTS.md) files.
+Use each documentation surface for one purpose:
+
+- [AGENTS.md](../AGENTS.md) files contain durable engineering instructions, ownership boundaries, and verification commands.
+- [Pain-point topics](pain-points.md) contain non-obvious invariants, failure modes, and safe-change guidance.
+- README files contain human-facing architecture and usage descriptions.
+- Source code and generated API documentation are authoritative for exact routes, configuration keys, constants, and file inventories.
+
+Keep documentation current-state only and update the smallest owning document instead of copying the same fact into several files.
 
 ## Process
 

@@ -1,15 +1,17 @@
 # Shared Logic Module
 
-`:sharedLogic` contains the JVM runtime layer shared by the desktop app (`:desktopApp` through `:sharedUI`) and the HTTP backend (`:backend`), plus an Android-safe LLM/runtime variant used by `:androidApp`.
+`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by the Android app, desktop app, and HTTP backend.
 
-The full JVM implementation lives under `src/jvmMain`: provider clients, shared LLM runtime wiring, settings access, backend-safe tools, shared models/contracts, skill bundle storage/loading, and the sandbox contracts used by tools and skills. The Android variant lives under `src/androidMain` and intentionally exposes only the settings and LLM runtime surface needed by Android chat-agent execution. OS-bound desktop services/tools live in `:desktopApp`.
+Android/JVM-compatible provider clients, settings and memory contracts, sandbox contracts, skill storage/loading, and portable tools live under `src/commonJvmMain`. Android settings and its app-private runtime sandbox live under `src/androidMain`. Desktop/backend-only configuration, native local models, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling live under `src/jvmMain`. OS-bound desktop services and tools remain in `:desktopApp`.
 
 ## Sandbox Modes
 
-`RuntimeSandboxFactory` chooses the active sandbox with `SOUZ_SANDBOX_MODE`.
+On JVM hosts, `DefaultRuntimeSandboxFactory` chooses the active sandbox with `SOUZ_SANDBOX_MODE`.
 
 - `local`: default when `SOUZ_SANDBOX_MODE` is unset.
 - `docker`: uses `DockerRuntimeSandbox` and the `souz-runtime-sandbox:latest` image.
+
+Android uses `AndroidRuntimeSandboxFactory` directly. It always creates an app-private `AndroidRuntimeSandbox`; the JVM environment variable does not select Android mode.
 
 Local mode is enough for normal development:
 
