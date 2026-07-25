@@ -4,6 +4,6 @@ Read the topic files relevant to the code you plan to change in :ambientAgent. T
 
 ## Topics
 
-No module-specific pain-point topics are currently recorded.
+- [Transcription and analysis](pain-points/transcription-and-analysis.md) — PCM input, live/batch transcript semantics, block construction, and confirmation ownership.
 
 When a new problem does not fit an existing topic, add a focused file under [`ambientAgent/docs/pain-points/`](pain-points/) and link it here.

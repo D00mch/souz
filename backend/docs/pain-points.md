@@ -1,9 +1,11 @@
 # Pain points
 
-Read the topic files relevant to the code you plan to change in :backend. These notes document lasting constraints and common pitfalls, not a history of changes.
+Read the topics relevant to the code you plan to change in `:backend`.
 
 ## Topics
 
-No module-specific pain-point topics are currently recorded.
+- [Trusted proxy](pain-points/trusted-proxy.md) — identity validation, provisioning, user scoping, and backend-safe tools.
+- [Execution, OpenAPI, and events](pain-points/execution-openapi-and-events.md) — runtime ownership, event durability, compatibility, and route documentation.
+- [Telegram bindings](pain-points/telegram-bindings.md) — token custody, private-account linking, polling leases, and checkpoint safety.
 
-When a new problem does not fit an existing topic, add a focused file under [`backend/docs/pain-points/`](pain-points/) and link it here.
+Add a focused topic only for a lasting, non-obvious constraint. Keep each topic current-state and operational.

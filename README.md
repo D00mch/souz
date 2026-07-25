@@ -38,7 +38,8 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 ├── graph-engine/           # Framework-free typed graph DSL/runtime
 ├── llms/                   # Shared LLM DTOs, provider enums, model profiles, token logging
 ├── native/                 # llama.cpp bridge and local model runtime
-├── sharedLogic/            # Shared JVM runtime plus Android-safe LLM/agent support variant
+├── ambientAgent/           # Ambient transcription semantics and local task analysis
+├── sharedLogic/            # Shared Android/JVM runtime logic, providers, tools, and sandboxes
 ├── sharedUI/               # Shared Compose presentation plus desktop UI, view models, host ports, UI adapters, UI resources
 ├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
 ├── androidApp/             # Android chat-agent host over sharedUI, sharedLogic, and GraphBasedAgent
@@ -55,6 +56,7 @@ Gradle modules included by the build:
 :graph-engine
 :llms
 :native
+:ambientAgent
 :sharedLogic
 :sharedUI
 :desktopApp
@@ -64,7 +66,7 @@ Gradle modules included by the build:
 
 Module docs:
 
-- [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
+- [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared Android/JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
 
 ## Architecture (module structure)
 
@@ -77,13 +79,15 @@ flowchart LR
     androidApp --> agentNode
     androidApp --> runtimeNode
     sharedUi --> agentNode[":agent\nGraphBasedAgent"]
+    sharedUi --> ambientNode[":ambientAgent\nAmbient speech analysis"]
     backendApi[":backend\nHTTP API"] --> agentNode
 
     agentNode --> graphEngine[":graph-engine\nTyped graph runtime"]
-    agentNode --> runtimeNode[":sharedLogic\nShared JVM runtime"]
+    agentNode --> runtimeNode[":sharedLogic\nShared runtime logic"]
     agentNode --> llmsNode[":llms\nLLM contracts"]
     runtimeNode --> llmsNode
     runtimeNode --> nativeRuntime[":native\nLocal llama.cpp runtime"]
+    ambientNode --> runtimeNode
     backendApi --> runtimeNode
     desktopApp --> runtimeNode
     sharedUi --> runtimeNode
@@ -116,7 +120,8 @@ Souz keeps platform-specific logic at the edges:
 - `:llms` contains provider-agnostic contracts and shared model/profile definitions.
 - `:graph-engine` contains no LLM/tool/agent knowledge; it only runs typed suspendable graph nodes.
 - `:agent` implements agent behavior on top of the graph engine.
-- `:sharedLogic` contains JVM-shared runtime services, backend-safe tools, sandbox/skills infrastructure, provider clients, shared contracts/models, and a minimal Android-safe LLM runtime surface for the Android agent host. See [`sharedLogic/README.md`](sharedLogic/README.md).
+- `:ambientAgent` contains shared semantic-block and local task-analysis contracts plus the JVM transcription service.
+- `:sharedLogic` contains Android/JVM shared runtime services, portable tools, sandbox/skills infrastructure, provider clients, and platform-specific runtime implementations. See [`sharedLogic/README.md`](sharedLogic/README.md).
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
 - `:sharedUI` contains shared Compose presentation, Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
 - `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
@@ -131,7 +136,8 @@ Souz keeps platform-specific logic at the edges:
 flowchart TD
     input["User input"] --> history["Append input to history"]
     history --> classify["Classify request / narrow tool categories"]
-    classify --> mcp["Inject MCP tools"]
+    classify --> skills["Select and activate skills"]
+    skills --> mcp["Inject MCP tools"]
     mcp --> enrich["Append additional context"]
     enrich --> llm["LLM chat node"]
     llm --> decision{"LLM result"}
@@ -146,6 +152,7 @@ flowchart TD
 Key behavior:
 
 - Classification narrows tool exposure before the LLM call.
+- Skill activation injects selected instructions and exposes a turn-scoped command tool when the activated skill is executable.
 - MCP tools are injected dynamically.
 - Tool calls loop back into the LLM until the model returns a final answer.
 - Session history and graph steps can be persisted for replay/inspection.
@@ -180,16 +187,16 @@ Souz separates tool behavior from the execution environment through `RuntimeSand
 
 ```text
 RuntimeSandbox
-├── mode: LOCAL | DOCKER
+├── mode: LOCAL | DOCKER | ANDROID
 ├── scope: SandboxScope
 ├── runtimePaths: home, workspace, state, sessions, vector index, logs, models, native libs, skills
 ├── fileSystem: SandboxFileSystem
 └── commandExecutor: SandboxCommandExecutor
 ```
 
-The current implementations are `LocalRuntimeSandbox` and `DockerRuntimeSandbox`. Local mode is the default. Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker` and requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`sharedLogic/README.md`](sharedLogic/README.md) for setup details.
+JVM hosts use `LocalRuntimeSandbox` by default or opt into `DockerRuntimeSandbox` through `SOUZ_SANDBOX_MODE=docker`; Docker mode requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Android uses `AndroidRuntimeSandbox` with app-private filesystem roots and `/system/bin/sh` command execution. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`sharedLogic/README.md`](sharedLogic/README.md) for setup details.
 
-Default state layout is under:
+The default JVM state layout is under:
 
 ```text
 ~/.local/state/souz/

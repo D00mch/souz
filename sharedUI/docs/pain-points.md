@@ -1,9 +1,10 @@
 # Pain points
 
-Read the topic files relevant to the code you plan to change in :sharedUI. These notes document lasting constraints and common pitfalls, not a history of changes.
+Read the topics relevant to the code you plan to change in `:sharedUI`.
 
 ## Topics
 
-No module-specific pain-point topics are currently recorded.
+- [Chat search](pain-points/chat-search.md) — rendered-text offsets, projection reuse, and highlighting consistency.
+- [Desktop locale](pain-points/desktop-locale.md) — interface language, formatting locale, and the agent's startup locale.
 
-When a new problem does not fit an existing topic, add a focused file under [`sharedUI/docs/pain-points/`](pain-points/) and link it here.
+Add a focused topic only for a lasting, non-obvious constraint. Keep each topic current-state and operational.

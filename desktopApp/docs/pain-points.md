@@ -1,9 +1,9 @@
 # Pain points
 
-Read the topic files relevant to the code you plan to change in :desktopApp. These notes document lasting constraints and common pitfalls, not a history of changes.
+Read the topics relevant to the code you plan to change in `:desktopApp`.
 
 ## Topics
 
-No module-specific pain-point topics are currently recorded.
+- [Telegram runtime and tool safety](pain-points/telegram-runtime-and-tool-safety.md) — authorization readiness, cache semantics, selection UX, attachments, and SafeMode.
 
-When a new problem does not fit an existing topic, add a focused file under [`desktopApp/docs/pain-points/`](pain-points/) and link it here.
+Add a focused topic only for a lasting, non-obvious constraint. Keep each topic current-state and operational.
