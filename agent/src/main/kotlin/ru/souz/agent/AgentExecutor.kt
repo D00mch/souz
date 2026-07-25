@@ -6,7 +6,9 @@ import ru.souz.agent.state.AgentContext
 
 class AgentExecutor internal constructor(
     private val agentProvider: (AgentId) -> TraceableAgent,
-    val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
+    // Execution can be called with an agent ID persisted by a different host configuration.
+    // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
+    private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
 ) {
     fun sideEffects(agentId: AgentId): Flow<String> = agentById(agentId).sideEffects
 
