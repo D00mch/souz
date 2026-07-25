@@ -26,11 +26,10 @@ import ru.souz.memory.NoopConversationMemoryRuntime
 
 private const val INJECTED_MEMORY_PREFIX = "<souz_memory_context>\n"
 private const val INJECTED_MEMORY_SUFFIX = "\n</souz_memory_context>"
+internal const val INJECTED_MEMORY_MESSAGE_NAME = "souz.injected.memory"
 
 internal fun LLMRequest.Message.isInjectedMemoryContextMessage(): Boolean =
-    role == LLMMessageRole.user &&
-        content.startsWith(INJECTED_MEMORY_PREFIX) &&
-        content.endsWith(INJECTED_MEMORY_SUFFIX)
+    role == LLMMessageRole.user && name == INJECTED_MEMORY_MESSAGE_NAME
 
 /** Nodes responsible for persistent conversation-memory recall and completed-turn capture. */
 internal class NodesMemory(
@@ -42,17 +41,15 @@ internal class NodesMemory(
     /** Replaces the previous memory augmentation with memory relevant to the current user input. */
     fun recall(name: String = "Memory recall"): Node<String, String> = Node(name) { ctx ->
         val memoryBlock = retrieveMemoryBlock(ctx)
-        val currentUserIndex = ctx.history.indexOfLast { it.role == LLMMessageRole.user }
         val history = ctx.history
-            .filterIndexed { index, message ->
-                index == currentUserIndex || !message.isInjectedMemoryContextMessage()
-            }
+            .filterNot(LLMRequest.Message::isInjectedMemoryContextMessage)
             .toMutableList()
 
         memoryBlock?.let { block ->
             val message = LLMRequest.Message(
                 role = LLMMessageRole.user,
                 content = INJECTED_MEMORY_PREFIX + block + INJECTED_MEMORY_SUFFIX,
+                name = INJECTED_MEMORY_MESSAGE_NAME,
             )
             val latestUserIndex = history.indexOfLast { it.role == LLMMessageRole.user }
             if (latestUserIndex >= 0) history.add(latestUserIndex, message) else history += message

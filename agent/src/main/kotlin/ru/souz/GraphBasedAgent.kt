@@ -59,12 +59,12 @@ class GraphBasedAgent internal constructor(
         )
 
         nodeInput.edgeTo(inputToHistory)
-        inputToHistory.edgeTo(nodeClassify)
+        inputToHistory.edgeTo(memoryRecall)
+        memoryRecall.edgeTo(nodeClassify)
         nodeClassify.edgeTo(nodeSkillsActivation)
         nodeSkillsActivation.edgeTo(nodeMcp)
         nodeMcp.edgeTo(contextEnrich)
-        contextEnrich.edgeTo(memoryRecall)
-        memoryRecall.edgeTo(chatSubgraph)
+        contextEnrich.edgeTo(chatSubgraph)
         chatSubgraph.edgeTo { ctx ->
             when (ctx.input) {
                 is LLMResponse.Chat.Error -> chatErrorToFinish

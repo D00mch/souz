@@ -16,7 +16,7 @@ The facade owns mutable context, execution state, active-agent routing, and sess
 - Update facade context only from the current execution and restore the facade's base invocation metadata after per-call overrides.
 - Preserve cancellation propagation through `AgentExecutor`, `TraceableAgent`, and `GraphExecutionDelegate`.
 - Do not make `GraphSessionService` multi-task by adding more shared mutable state. Introduce an explicit execution/session object if parallel tracing becomes a requirement.
-- Keep memory recall before the LLM and completed-turn capture inside graph finalization. Snapshot the turn before history summarization, schedule capture only after finalization succeeds, and isolate capture failures from the returned turn.
+- Keep memory recall immediately after history input and before classification. Identify injected memory through its structural provenance marker, remove the previous turn's injection, and insert fresh recall before classification. Keep completed-turn capture inside graph finalization: snapshot before history summarization, schedule only after finalization succeeds, and isolate capture failures from the returned turn.
 
 ## Verification
 

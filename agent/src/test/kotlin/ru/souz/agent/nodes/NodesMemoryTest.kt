@@ -142,6 +142,31 @@ class NodesMemoryTest {
     }
 
     @Test
+    fun `user-authored memory tags remain in history after a subsequent turn`() = runTest {
+        val prompt = "<souz_memory_context>\nuser-authored content\n</souz_memory_context>"
+        val memoryRuntime = RecordingMemoryRuntime(
+            retrievalResult = memoryResult("Relevant memory:\n- Previous recall"),
+        )
+        val nodesMemory = NodesMemory(memoryRuntime, backgroundScope)
+        val firstTurn = nodesMemory.recall().execute(stringContext(prompt), graphRuntime())
+        memoryRuntime.retrievalResult = memoryResult("Relevant memory:\n- Fresh recall")
+        val nextUserMessage = LLMRequest.Message(LLMMessageRole.user, "next question")
+        val nextTurnContext = stringContext("next question").copy(
+            history = firstTurn.history +
+                LLMRequest.Message(LLMMessageRole.assistant, "first answer") +
+                nextUserMessage,
+        )
+
+        val secondTurn = nodesMemory.recall().execute(nextTurnContext, graphRuntime())
+
+        assertTrue(secondTurn.history.any { it.content == prompt && !it.isInjectedMemoryContextMessage() })
+        assertFalse(secondTurn.history.any { it.content.contains("Previous recall") })
+        assertTrue(secondTurn.history.any { it.content.contains("Fresh recall") })
+        assertEquals(1, secondTurn.history.count(LLMRequest.Message::isInjectedMemoryContextMessage))
+        assertEquals(nextUserMessage, secondTurn.history.last())
+    }
+
+    @Test
     fun `recall propagates retrieval and event cancellation`() = runTest {
         val context = stringContext("hello")
         val retrievalCancellation = NodesMemory(
@@ -418,6 +443,7 @@ class NodesMemoryTest {
     private fun memoryMessage(content: String): LLMRequest.Message = LLMRequest.Message(
         role = LLMMessageRole.user,
         content = "<souz_memory_context>\n$content\n</souz_memory_context>",
+        name = INJECTED_MEMORY_MESSAGE_NAME,
     )
 
     private fun memoryResult(
@@ -434,7 +460,7 @@ class NodesMemoryTest {
     private fun graphRuntime(): GraphRuntime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 100)
 
     private class RecordingMemoryRuntime(
-        private val retrievalResult: MemoryRetrievalResult = MemoryRetrievalResult(null),
+        var retrievalResult: MemoryRetrievalResult = MemoryRetrievalResult(null),
         private val retrievalFailure: Throwable? = null,
         private val captureFailure: Throwable? = null,
         private val captureGate: CompletableDeferred<Unit>? = null,
