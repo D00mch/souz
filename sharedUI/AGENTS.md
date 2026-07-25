@@ -2,6 +2,8 @@
 
 The `:sharedUI` module contains reusable Android/Desktop Compose presentation in `commonMain`, desktop Compose UI, view models, UI-facing adapters, host-port interfaces, a UI-only DI module, Compose resources, and UI/ViewModel JVM tests.
 
+Before changing this module, review its [pain-point index](docs/pain-points.md) and relevant notes.
+
 Only UI hosts such as `:desktopApp` and `:androidApp` should depend on this module. Keep `:backend` independent from `:sharedUI`.
 
 ## Project Structure

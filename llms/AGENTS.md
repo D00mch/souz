@@ -1,5 +1,7 @@
 # LLMs
 
+Before changing this module, review its [pain-point index](docs/pain-points.md) and relevant notes.
+
 ## Module Scope
 
 - Shared `ru.souz.llms` contracts live here: DTOs, model/provider enums, request/response helpers, token logging, build-profile selection logic, and the shared Souz state-path helper consumed by `:agent`, `:sharedLogic`, and `:native`.

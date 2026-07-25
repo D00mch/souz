@@ -1,5 +1,7 @@
 ## Project Structure
 
+Before changing this module, review its [pain-point index](docs/pain-points.md) and relevant notes.
+
 ```text
 graph-engine/
 ├── src/main/kotlin/ru/souz/graph/

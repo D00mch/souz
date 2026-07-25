@@ -2,6 +2,8 @@
 
 The `:desktopApp` module contains the runnable desktop entry points, desktop DI composition root, OS integrations, desktop-only tools/services, and Compose Desktop packaging/distribution configuration for Souz.
 
+Before changing this module, review its [pain-point index](docs/pain-points.md) and relevant notes.
+
 It depends on `:sharedLogic` and `:sharedUI`. Keep Compose screens, view models, UI adapters, and UI tests in `:sharedUI`; keep backend-safe runtime logic in `:sharedLogic`; keep OS-bound desktop services/tools and app composition wiring here.
 
 Desktop-only persistence such as the SQLite working-memory repository belongs here when the shared layer only needs contracts/services.

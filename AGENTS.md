@@ -5,6 +5,7 @@ Souz is a Kotlin Multiplatform AI assistant with a Compose Desktop host and an A
 ## Note for LLM
 
 - Read this file before changing the repository.
+- Read `docs/pain-points.md`, then every topic file it routes to for the area you will touch.
 - Keep documentation concise and current-state only. Do not write change-history phrases such as “now we do”.
 - Update this file when architecture, behavior, commands, or repository structure changes.
 
@@ -86,6 +87,8 @@ Souz is a Kotlin Multiplatform AI assistant with a Compose Desktop host and an A
 ├── scripts/                                # Build, release, and packaging helper scripts
 └── gradle/                                 # Gradle version catalog and wrapper configuration
 ```
+
+Every Gradle module contains a `docs/pain-points.md` index linked from its `AGENTS.md` and a `docs/pain-points/` topic directory. Keep module-specific constraints there and reserve the root pain-points index for cross-module topics and links to module indexes.
 
 ## Backend Flow
 

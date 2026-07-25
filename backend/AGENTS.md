@@ -2,6 +2,8 @@
 
 The `:backend` module is a JVM HTTP server build for Souz without Compose UI startup, audio capture, hotkeys, or desktop-only tools. It exposes public health and OpenAPI documentation routes plus a trusted-proxy `/v1/**` API and reuses the shared `:agent` execution kernel for chat turns.
 
+Before changing this module, review its [pain-point index](docs/pain-points.md) and relevant notes.
+
 ## Routes
 
 - `GET /health` returns process and selected-model status.

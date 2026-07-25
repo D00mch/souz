@@ -2,6 +2,8 @@
 
 The `:sharedLogic` module contains shared JVM runtime infrastructure reused by desktop (`:desktopApp`) and backend (`:backend`).
 
+Before changing this module, review its [pain-point index](docs/pain-points.md) and relevant notes.
+
 Keep this module UI-free and backend-safe by default. OS-bound desktop tools/services belong in `:desktopApp`; sharedLogic may expose shared models, contracts, sandbox abstractions, and runtime-safe implementations.
 
 ## Responsibilities
