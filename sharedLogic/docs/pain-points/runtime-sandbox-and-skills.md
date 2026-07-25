@@ -6,6 +6,8 @@
 - `FileSystemSkillRegistryRepository` and `RunSkillCommand` must use the same `SkillStorageScope`. `SINGLE_USER` and `USER_SCOPED` have different bundle and validation paths.
 - Skill metadata, immutable hash-addressed bundles, and validation records stay behind `SandboxFileSystem`. Bundle loading rejects escaping paths, symlinks, non-regular files, binary content, and invalid UTF-8.
 - `RunSkillCommand` accepts only a skill activated for the current turn and keeps its script and working directory within that skill bundle.
+- `SandboxKnowledgeStore` requires invocation user and conversation identity, resolves the sandbox for every operation, and scopes immutable UUID entries under fixed-length SHA-256 user and conversation keys. Entries remain until targeted conversation cleanup.
+- Knowledge retains at most 1 MiB of UTF-8 content. Complete entries keep the full result. Truncated entries keep as many whole Unicode code points as fit in separate 512 KiB head and tail budgets and omit the middle. `originalLength` and `storedLength` use UTF-16 `String` indices; boundary selection is internal to the store.
 
 ## Why this is fragile
 
@@ -13,12 +15,16 @@ The same contracts back three different runtimes. JVM hosts select local or Dock
 
 Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
 
+Local and Android sandboxes can share physical state roots across logical scopes, and Backend scope resolution can omit conversation identity. Knowledge isolation therefore comes from its internal hashed user/conversation path rather than `RuntimeSandbox.scope`. Local process execution is not a cross-tenant filesystem security boundary.
+
 ## Safe changes
 
 - Pass `ToolInvocationMeta` through every file or command operation and resolve paths at the call boundary.
 - Preserve path containment and bundle validation when adding repository or command features.
 - Keep Android skill scripts POSIX-compatible unless Android explicitly gains another runtime.
 - When changing skill layout or scope, update the repository, command tool, host DI wiring, Docker entrypoint, and tests together.
+- Keep Knowledge paths internal: callers provide opaque UUIDs, never filesystem paths. Preserve atomic JSON writes, the UTF-8 retention cap, whole-code-point head/tail boundaries, record validation, and conversation-only recursive cleanup.
+- Treat missing Knowledge conversation scope as unavailable; never fall back to user-wide storage. Do not add TTL or startup cleanup without defining how retained references in conversation history expire.
 
 ## Verification
 
@@ -28,5 +34,7 @@ Run:
 ./gradlew :sharedLogic:jvmTest --tests 'ru.souz.runtime.sandbox.*' --tests 'ru.souz.skills.*' --tests 'ru.souz.tool.skills.*'
 ./gradlew :sharedLogic:compileAndroidMain
 ```
+
+For Knowledge storage changes, include `--tests 'ru.souz.knowledge.*'` in the JVM test selection.
 
 For Docker behavior, build the sandbox image and run the opt-in Docker tests described in the module `AGENTS.md`.
