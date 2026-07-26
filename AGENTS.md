@@ -12,7 +12,7 @@ Souz is a Kotlin Multiplatform AI assistant with desktop, Android, and backend h
 
 ## Development principles
 
-- Prefer composition to inheritance, utilize open closed principle, when you think it's appropriate. Ask developer if you hesitate.
+- Prefer composition to inheritance.
 - When you see that something can be done simpler, in less lines of code, removing the unnecessary abstractions, note the developer and ask questions on that.
 - Abstractions only pay off, if we need the flexibility in the future. You don't know the future, developer does. Aks developer when choosing abstractions. 
 - Do not mix coroutines with the JVM low level concurrency primitives such as: Volatile, Synchronize, ThreadLocal, etc).
