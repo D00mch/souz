@@ -120,13 +120,16 @@ fun portableSkillToolsDiModule(
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
         ToolGetKnowledge(instance())
     }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL) {
+    bindSingleton {
         ToolInvokeSkill(
             toolCatalog = instance(),
             toolsFilter = instance(),
             repository = instance(),
             commandTool = instance(),
         )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL) {
+        instance<ToolInvokeSkill>()
     }
 }
 

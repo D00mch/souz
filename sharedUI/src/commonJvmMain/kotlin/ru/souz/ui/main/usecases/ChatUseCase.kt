@@ -49,10 +49,10 @@ class ChatUseCase internal constructor(
     private val tokenLogging: TokenLogging,
     private val memoryConversationCleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
     private val conversationKnowledgeStore: ConversationKnowledgeStore,
+    private val chatAgentActionFormatter: ChatAgentActionFormatter = ChatAgentActionFormatter(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
-    private val chatAgentActionFormatter = ChatAgentActionFormatter()
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeRequestMutex = Mutex()
     private var activeChatRequestId: Long = 0L
@@ -237,6 +237,7 @@ class ChatUseCase internal constructor(
     }
 
     private fun subscribeOnTaskSideEffects(scope: CoroutineScope, msg: ChatMessage): Job {
+        val agentId = agentFacade.activeAgentId.value
         val job = scope.launch {
             var isCodeBlockStarted = false
             var accumulatedText = ""
@@ -274,7 +275,8 @@ class ChatUseCase internal constructor(
                         }
                     }
                     is AgentSideEffect.Fn -> {
-                        val action = chatAgentActionFormatter.format(effect.call)
+                        val action = chatAgentActionFormatter.format(agentId, effect.call)
+                            ?: return@collect
                         emitState {
                             copy(
                                 agentActions = (agentActions + action)

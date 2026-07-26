@@ -45,6 +45,8 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class SkillRuntimeToolsTest {
@@ -229,6 +231,27 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `delegated tool metadata uses only the enabled catalog`() {
+        val repository = mockk<SkillRegistryRepository>(relaxed = true)
+        val catalog = catalog(
+            ToolCategory.FILES to listOf(
+                RecordingTool("enabled"),
+                RecordingTool("disabled"),
+            )
+        )
+        val filter = TestToolsFilter { tools ->
+            tools.mapValues { (_, categoryTools) -> categoryTools.filterKeys { it != "disabled" } }
+        }
+        val runner = invokeSkillTool(repository, catalog, filter)
+
+        assertEquals("enabled", runner.delegatedToolName(" enabled "))
+        assertNull(runner.delegatedToolName("disabled"))
+        assertNull(runner.delegatedToolName("bundle-or-missing"))
+        coVerify(exactly = 0) { repository.listSkills(any()) }
+        coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
+    }
+
+    @Test
     fun `file backed invocation binds authorization and preserves complete output`() = runTest {
         val home = createTempDirectory("future-skill-home-")
         val stateRoot = home.resolve("state").createDirectories()
@@ -302,12 +325,14 @@ class SkillRuntimeToolsTest {
         val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
         val getSkills = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_TOOL)
         val runtimeCommand = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL)
+        val concreteRuntimeCommand = direct.instance<ToolInvokeSkill>()
         val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
         assertEquals(ToolRunSkillCommand.NAME, legacy.fn.name)
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
         assertEquals(ToolGetSkills.NAME, getSkills.fn.name)
         assertEquals(ToolInvokeSkill.NAME, runtimeCommand.fn.name)
+        assertSame(concreteRuntimeCommand, runtimeCommand)
         assertTrue(knowledgeStore is SandboxConversationKnowledgeStore)
         assertFalse(
             catalog.toolsByCategory.values.any {

@@ -607,6 +607,7 @@
     <string name="chat_action_take_screenshot">Taking screenshot: %1$s</string>
     <string name="chat_action_start_screen_recording">Opening screen recording</string>
     <string name="chat_action_generic_tool">Running tool: %1$s</string>
+    <string name="chat_action_skill">Using skill: %1$s</string>
     <string name="chat_action_value_history">history</string>
     <string name="chat_action_value_bookmarks">bookmarks</string>
     <string name="chat_action_value_tabs">tabs</string>

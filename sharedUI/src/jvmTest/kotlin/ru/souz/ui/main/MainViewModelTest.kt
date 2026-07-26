@@ -58,6 +58,7 @@ import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentId
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
@@ -93,6 +94,9 @@ import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolModifyFile
@@ -698,6 +702,42 @@ class MainViewModelTest {
                 finalState.chatMessages.last { !it.isUser }.agentActions
             )
             assertTrue(finalState.agentActions.isEmpty())
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `skills graph hides core tool actions during processing`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
+            awaitState(viewModel) { it.isProcessing }
+
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall(ToolGetSkills.NAME, mapOf("skillIds" to emptyList<String>()))
+                )
+            )
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall(ToolGetKnowledge.NAME, mapOf("knowledgeId" to "knowledge-1"))
+                )
+            )
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.agentActions.isEmpty())
+            response.complete("done")
+            val finalState = awaitState(viewModel) { !it.isProcessing }
+            assertTrue(finalState.chatMessages.last { !it.isUser }.agentActions.isEmpty())
         } finally {
             harness.clear()
         }
@@ -1485,6 +1525,7 @@ class MainViewModelTest {
         memoryConversationCleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
         conversationKnowledgeStore: ConversationKnowledgeStore = mockk(relaxed = true),
         conversationFinishedEvents: MutableList<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>? = null,
+        activeAgentId: AgentId = AgentId.GRAPH,
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         val sideEffects = MutableSharedFlow<AgentSideEffect>()
@@ -1497,8 +1538,8 @@ class MainViewModelTest {
                 context = agentFacade.currentContext.value,
             )
         }
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.activeAgentId } returns MutableStateFlow(activeAgentId)
+        every { agentFacade.availableAgents } returns listOf(activeAgentId)
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         var gigaModelState = configuredModel
@@ -1582,6 +1623,8 @@ class MainViewModelTest {
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
         every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
         every { tokenLogging.sessionTokenUsage() } returns LLMResponse.Usage(0, 0, 0, 0)
+        val toolInvokeSkill = mockk<ToolInvokeSkill>(relaxed = true)
+        every { toolInvokeSkill.delegatedToolName(any()) } returns null
 
         val di = DI {
             import(sharedUiMainViewModelUseCasesDiModule())
@@ -1611,6 +1654,7 @@ class MainViewModelTest {
             bindSingleton<AttachmentMetadataProvider> { DesktopAttachmentMetadataProvider() }
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }
+            bindSingleton<ToolInvokeSkill> { toolInvokeSkill }
             bindSingleton { DesktopStructuredLogger() }
             conversationFinishedEvents?.let { finishedEvents ->
                 bind<ChatObservabilityTracker>(overrides = true) with scoped(mainViewModelDiScope).singleton {

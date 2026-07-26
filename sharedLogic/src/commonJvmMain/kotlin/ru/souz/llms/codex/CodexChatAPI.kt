@@ -307,9 +307,7 @@ class CodexChatAPI(
                     choices.add(
                         LLMResponse.Choice(
                             message = LLMResponse.Message(
-                                content = restJsonMapper.writeValueAsString(
-                                    mapOf("name" to name, "arguments" to args)
-                                ),
+                                content = "",
                                 role = LLMMessageRole.assistant,
                                 functionCall = LLMResponse.FunctionCall(name = name, arguments = args),
                                 functionsStateId = callId,

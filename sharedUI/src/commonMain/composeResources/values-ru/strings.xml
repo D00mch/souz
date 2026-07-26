@@ -609,6 +609,7 @@
     <string name="chat_action_take_screenshot">Делаю скриншот: %1$s</string>
     <string name="chat_action_start_screen_recording">Открываю запись экрана</string>
     <string name="chat_action_generic_tool">Запускаю инструмент: %1$s</string>
+    <string name="chat_action_skill">Использую навык: %1$s</string>
     <string name="chat_action_value_history">история</string>
     <string name="chat_action_value_bookmarks">закладки</string>
     <string name="chat_action_value_tabs">вкладки</string>
