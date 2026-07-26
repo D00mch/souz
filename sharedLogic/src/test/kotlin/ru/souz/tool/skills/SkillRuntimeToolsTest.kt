@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
@@ -29,11 +30,13 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.restJsonMapper
+import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.portableSkillToolsDiModule
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
@@ -296,13 +299,21 @@ class SkillRuntimeToolsTest {
         }
 
         val legacy = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL)
+        val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
         val getSkills = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_TOOL)
         val runtimeCommand = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL)
+        val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
         assertEquals(ToolRunSkillCommand.NAME, legacy.fn.name)
+        assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
         assertEquals(ToolGetSkills.NAME, getSkills.fn.name)
         assertEquals(ToolInvokeSkill.NAME, runtimeCommand.fn.name)
-        assertFalse(catalog.toolsByCategory.values.any { ToolGetSkills.NAME in it || ToolInvokeSkill.NAME in it })
+        assertTrue(knowledgeStore is SandboxConversationKnowledgeStore)
+        assertFalse(
+            catalog.toolsByCategory.values.any {
+                ToolGetKnowledge.NAME in it || ToolGetSkills.NAME in it || ToolInvokeSkill.NAME in it
+            }
+        )
     }
 
     private fun getSkillsTool(

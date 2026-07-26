@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
@@ -127,6 +128,10 @@ class BackendConversationRuntimeFactory(
     private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCommandTool: LLMToolSetup? = null,
+    private val getSkillsTool: LLMToolSetup,
+    private val getKnowledgeTool: LLMToolSetup,
+    private val runtimeCommandTool: LLMToolSetup,
+    private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: kotlinx.coroutines.CoroutineScope,
 ) {
     internal suspend fun create(
@@ -170,6 +175,10 @@ class BackendConversationRuntimeFactory(
             ),
             mcpToolProvider = BackendNoopMcpToolProvider,
             skillCommandTool = skillCommandTool,
+            getSkillsTool = getSkillsTool,
+            getKnowledgeTool = getKnowledgeTool,
+            runtimeCommandTool = runtimeCommandTool,
+            knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = usageTrackingApi,

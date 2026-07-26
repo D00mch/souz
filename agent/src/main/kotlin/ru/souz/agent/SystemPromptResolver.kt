@@ -6,7 +6,9 @@ class SystemPromptResolver {
     fun defaultPrompt(agentId: AgentId, model: LLMModel, regionProfile: String): String {
         val isEnglish = regionProfile.equals(REGION_EN, ignoreCase = true)
         return when (agentId) {
-            AgentId.GRAPH -> if (isEnglish) GRAPH_DEFAULT_SYSTEM_PROMPT_EN else GRAPH_DEFAULT_SYSTEM_PROMPT_RU
+            AgentId.GRAPH,
+            AgentId.SKILLS_GRAPH,
+            -> if (isEnglish) GRAPH_DEFAULT_SYSTEM_PROMPT_EN else GRAPH_DEFAULT_SYSTEM_PROMPT_RU
         }
     }
 }

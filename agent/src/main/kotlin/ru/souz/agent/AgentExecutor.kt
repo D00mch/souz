@@ -25,7 +25,7 @@ class AgentExecutor internal constructor(
     private val captureScope: CoroutineScope,
     // Execution can be called with an agent ID persisted by a different host configuration.
     // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
-    private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
+    private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutor::class.java)
 

@@ -1874,10 +1874,12 @@ fun AgentDropdown(
 
 private fun AgentId.titleRes() = when (this) {
     AgentId.GRAPH -> Res.string.agent_option_graph_title
+    AgentId.SKILLS_GRAPH -> Res.string.agent_option_skills_graph_title
 }
 
 private fun AgentId.descriptionRes() = when (this) {
     AgentId.GRAPH -> Res.string.agent_option_graph_description
+    AgentId.SKILLS_GRAPH -> Res.string.agent_option_skills_graph_description
 }
 
 @Composable

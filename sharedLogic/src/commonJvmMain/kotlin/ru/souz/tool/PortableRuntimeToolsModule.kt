@@ -4,11 +4,13 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
+import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -28,6 +30,7 @@ import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.skills.ToolGetSkills
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.ToolRunSkillCommand
@@ -95,6 +98,8 @@ fun portableRuntimeToolsDiModule(
 fun portableSkillToolsDiModule(
     skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
 ): DI.Module = DI.Module("portableSkillTools") {
+    bindSingleton { SandboxConversationKnowledgeStore(instance()) }
+    bindSingleton<ConversationKnowledgeStore> { instance<SandboxConversationKnowledgeStore>() }
     bindSingleton {
         ToolRunSkillCommand(
             sandboxResolver = instance(),
@@ -111,6 +116,9 @@ fun portableSkillToolsDiModule(
             repository = instance(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
         )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
+        ToolGetKnowledge(instance())
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL) {
         ToolInvokeSkill(

@@ -17,6 +17,7 @@ import ru.souz.ambient.AmbientTranscriptEvent
 import ru.souz.ambient.AmbientTranscriptionService
 import ru.souz.ambient.AmbientTranscriptionState
 import ru.souz.ambient.SemanticBlockBuilder
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.ui.common.FileSystemPathMetadataProvider
@@ -128,6 +129,7 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
             log = instance(),
             tokenLogging = instance(),
             memoryConversationCleanup = instance(),
+            conversationKnowledgeStore = instance<ConversationKnowledgeStore>(),
             ioDispatcher = context.ioDispatcher,
         )
     }

@@ -32,7 +32,9 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.TestConversationKnowledgeStore
 import ru.souz.backend.TestSkillRegistryRepository
+import ru.souz.backend.testCoreTool
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationState
@@ -1262,6 +1264,10 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
         skillRegistryRepository = TestSkillRegistryRepository,
+        getSkillsTool = testCoreTool("GetSkills"),
+        getKnowledgeTool = testCoreTool("GetKnowledge"),
+        runtimeCommandTool = testCoreTool("RunSkillCommand"),
+        knowledgeStore = TestConversationKnowledgeStore,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)

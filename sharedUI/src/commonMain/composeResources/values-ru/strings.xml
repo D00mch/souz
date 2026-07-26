@@ -159,6 +159,8 @@
     <string name="label_agent">Агент</string>
     <string name="agent_option_graph_title">Graph-агент</string>
     <string name="agent_option_graph_description">Классический графовый поток с итеративными вызовами инструментов и суммаризацией.</string>
+    <string name="agent_option_skills_graph_title">Skills Graph-агент</string>
+    <string name="agent_option_skills_graph_description">Графовый поток с поиском навыков, временным хранилищем знаний и запуском команд навыков.</string>
     <string name="agent_switch_dialog_title">Сменить активного агента?</string>
     <string name="agent_switch_dialog_message">Текущая работа будет отменена, а активный контекст беседы будет очищен.</string>
     <string name="agent_switch_dialog_confirm">Сменить</string>

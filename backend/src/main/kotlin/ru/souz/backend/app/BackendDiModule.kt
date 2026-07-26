@@ -9,6 +9,7 @@ import java.time.Clock
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
@@ -206,6 +207,10 @@ fun backendDiModule(
             toolCatalog = instance(),
             toolsFilter = instance(),
             skillCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
+            getSkillsTool = instance(tag = SkillToolBindingTags.GET_SKILLS_TOOL),
+            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
+            knowledgeStore = instance<ConversationKnowledgeStore>(),
             skillRegistryRepository = instance(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
         )

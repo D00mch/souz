@@ -15,7 +15,7 @@ class AgentContextFactory(
     private val systemPromptResolver: SystemPromptResolver,
     private val toolCatalog: AgentToolCatalog,
     // This list is also exposed by AgentFacade so callers can offer only agents with valid contexts.
-    internal val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
+    internal val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
 ) {
     fun normalizeAgentId(agentId: AgentId): AgentId =
         if (agentId in availableAgents) agentId else AgentId.default
