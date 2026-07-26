@@ -228,7 +228,7 @@ class SettingsProviderImpl(
         }
 
     override var requestTimeoutMillis: Long
-        get() = _requestTimeoutDelegate?.toLongOrNull() ?: 40_000L
+        get() = _requestTimeoutDelegate?.toLongOrNull() ?: DEFAULT_REQUEST_TIMEOUT_MILLIS
         set(value) {
             _requestTimeoutDelegate = value.toString()
         }

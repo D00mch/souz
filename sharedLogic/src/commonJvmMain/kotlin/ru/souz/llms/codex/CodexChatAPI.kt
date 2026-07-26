@@ -189,6 +189,9 @@ class CodexChatAPI(
                             put("type", prop.type)
                             if (!prop.description.isNullOrBlank()) put("description", prop.description)
                             if (!prop.enum.isNullOrEmpty()) put("enum", prop.enum)
+                            if (prop.type == "array") {
+                                put("items", emptyMap<String, Any>())
+                            }
                         }
                     },
                     "required" to fn.parameters.required,
@@ -307,9 +310,7 @@ class CodexChatAPI(
                     choices.add(
                         LLMResponse.Choice(
                             message = LLMResponse.Message(
-                                content = restJsonMapper.writeValueAsString(
-                                    mapOf("name" to name, "arguments" to args)
-                                ),
+                                content = "",
                                 role = LLMMessageRole.assistant,
                                 functionCall = LLMResponse.FunctionCall(name = name, arguments = args),
                                 functionsStateId = callId,

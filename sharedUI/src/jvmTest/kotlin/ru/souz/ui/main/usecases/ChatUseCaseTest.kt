@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentId
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
@@ -78,6 +79,7 @@ class ChatUseCaseTest {
         val finished = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
+        every { agentFacade.activeAgentId } returns MutableStateFlow(AgentId.GRAPH)
         every { agentFacade.currentContext } returns MutableStateFlow(
             AgentContext(
                 input = "",
@@ -151,6 +153,7 @@ class ChatUseCaseTest {
         val executionMeta = mutableListOf<ToolInvocationMeta?>()
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
+        every { agentFacade.activeAgentId } returns MutableStateFlow(AgentId.GRAPH)
         every { agentFacade.currentContext } returns MutableStateFlow(
             AgentContext(
                 input = "",
@@ -354,6 +357,7 @@ class ChatUseCaseTest {
     ): ChatUseCase {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
+        every { agentFacade.activeAgentId } returns MutableStateFlow(AgentId.GRAPH)
         every { agentFacade.currentContext } returns MutableStateFlow(
             AgentContext(
                 input = "",

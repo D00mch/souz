@@ -2,11 +2,30 @@ package ru.souz.ui.main
 
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
+import ru.souz.agent.AgentId
 import ru.souz.llms.LLMResponse
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.skills.ToolInvokeSkill
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 
-class ChatAgentActionFormatter {
+class ChatAgentActionFormatter(
+    private val delegatedToolName: (String) -> String? = { null },
+) {
+    suspend fun format(
+        agentId: AgentId,
+        functionCall: LLMResponse.FunctionCall,
+    ): String? {
+        if (agentId != AgentId.SKILLS_GRAPH) return format(functionCall)
+
+        return when (functionCall.name) {
+            ToolGetSkills.NAME, ToolGetKnowledge.NAME -> null
+            ToolInvokeSkill.NAME -> formatSkillInvocation(functionCall)
+            else -> format(functionCall)
+        }
+    }
+
     suspend fun format(functionCall: LLMResponse.FunctionCall): String {
         val args = functionCall.arguments
         return when (functionCall.name) {
@@ -99,6 +118,30 @@ class ChatAgentActionFormatter {
             else -> format(Res.string.chat_action_generic_tool, functionCall.name)
         }
     }
+
+    private suspend fun formatSkillInvocation(functionCall: LLMResponse.FunctionCall): String {
+        val skillId = (functionCall.arguments["skillId"] as? String)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return format(functionCall)
+        val arguments = functionCall.arguments.nestedSkillArgumentsOrNull()
+            ?: return format(functionCall)
+        val toolName = runCatching { delegatedToolName(skillId) }.getOrNull()
+
+        return if (toolName != null) {
+            format(LLMResponse.FunctionCall(name = toolName, arguments = arguments))
+        } else {
+            format(Res.string.chat_action_skill, skillId)
+        }
+    }
+}
+
+private fun Map<String, Any>.nestedSkillArgumentsOrNull(): Map<String, Any>? {
+    if ("arguments" !in this) return emptyMap()
+    val nested = this["arguments"] as? Map<*, *> ?: return null
+    if (nested.keys.any { it !is String }) return null
+    @Suppress("UNCHECKED_CAST")
+    return nested as Map<String, Any>
 }
 
 private suspend fun browserInfoTypeLabel(value: String): String = when (value) {

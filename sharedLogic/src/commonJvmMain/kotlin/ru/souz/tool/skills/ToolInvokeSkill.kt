@@ -64,6 +64,10 @@ class ToolInvokeSkill internal constructor(
         )
     }
 
+    /** Returns the enabled compiled tool delegated to by this Skill ID without loading Skill storage. */
+    fun delegatedToolName(skillId: String): String? =
+        skillId.trim().takeIf { it.isNotEmpty() }?.let { enabledTools()[it]?.fn?.name }
+
     private suspend fun invokeSkill(
         input: Input,
         outerFunctionName: String,
