@@ -12,17 +12,19 @@ import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
+import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class SkillsGraphBasedAgentTest {
     @Test
-    fun `graph installs core tools once and loops tool calls directly back to chat`() = runTest {
+    fun `graph starts with only core tools and loops tool calls directly back to chat`() = runTest {
         val nodesLLM = mockk<NodesLLM>()
         val nodesCommon = mockk<NodesCommon>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
@@ -31,15 +33,17 @@ class SkillsGraphBasedAgentTest {
         val getSkills = tool("GetSkills")
         val getKnowledge = tool("GetKnowledge")
         val runtimeCommand = tool("RunSkillCommand")
+        val coreTools = listOf(getSkills, getKnowledge, runtimeCommand)
         val executed = mutableListOf<String>()
         var chatCount = 0
 
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesCommon.inputToHistory() } returns passthrough("Input->History", executed)
+        every { nodesCommon.inputToHistory() } returns coreToolsPassthrough(
+            name = "Input->History",
+            executed = executed,
+            coreTools = coreTools,
+        )
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
-        every {
-            nodesCommon.installCoreTools(listOf(getSkills, getKnowledge, runtimeCommand))
-        } returns passthrough("Install core tools", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
         every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
             executed += "LLM"
@@ -78,7 +82,6 @@ class SkillsGraphBasedAgentTest {
             listOf(
                 "Input->History",
                 "Memory recall",
-                "Install core tools",
                 "appendActualInformation",
                 "LLM",
                 "toolUse",
@@ -106,9 +109,6 @@ class SkillsGraphBasedAgentTest {
         every { nodesLLM.sideEffects } returns emptyFlow()
         every { nodesCommon.inputToHistory() } returns passthrough("Input->History", executed)
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
-        every {
-            nodesCommon.installCoreTools(listOf(getSkills, getKnowledge, runtimeCommand))
-        } returns passthrough("Install core tools", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
         every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
             executed += "LLM"
@@ -135,7 +135,6 @@ class SkillsGraphBasedAgentTest {
             listOf(
                 "Input->History",
                 "Memory recall",
-                "Install core tools",
                 "appendActualInformation",
                 "LLM",
                 "Chat.Error",
@@ -167,6 +166,19 @@ class SkillsGraphBasedAgentTest {
 
     private fun passthrough(name: String, executed: MutableList<String>) = Node<String, String>(name) { ctx ->
         executed += name
+        ctx
+    }
+
+    private fun coreToolsPassthrough(
+        name: String,
+        executed: MutableList<String>,
+        coreTools: List<LLMToolSetup>,
+    ) = Node<String, String>(name) { ctx ->
+        executed += name
+        assertEquals(coreTools.map { it.fn }, ctx.activeTools)
+        assertEquals(coreTools.associateBy { it.fn.name }, ctx.settings.tools.byName)
+        assertEquals(emptyMap(), ctx.settings.tools.byCategory)
+        assertEquals(emptyMap(), ctx.settings.tools.categoryByName)
         ctx
     }
 
@@ -221,11 +233,22 @@ class SkillsGraphBasedAgentTest {
         usage = LLMResponse.Usage(1, 1, 2, 0),
     )
 
-    private fun baseContext() = AgentContext(
-        input = "Hello",
-        settings = AgentSettings(model = "test", temperature = 0f, toolsByCategory = emptyMap()),
-        history = emptyList(),
-        activeTools = emptyList(),
-        systemPrompt = "system",
-    )
+    private fun baseContext(): AgentContext<String> {
+        val catalogTool = tool("CatalogTool")
+        return AgentContext(
+            input = "Hello",
+            settings = AgentSettings(
+                model = "test",
+                temperature = 0f,
+                tools = AgentTools(
+                    byCategory = mapOf(
+                        ToolCategory.FILES to mapOf(catalogTool.fn.name to catalogTool),
+                    ),
+                ),
+            ),
+            history = emptyList(),
+            activeTools = listOf(catalogTool.fn),
+            systemPrompt = "system",
+        )
+    }
 }

@@ -9,7 +9,6 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
-import ru.souz.agent.state.AgentTools
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -19,7 +18,6 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toSystemPromptMessage
@@ -123,24 +121,6 @@ internal class NodesCommon(
         }
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.history.last().content }
-    }
-
-    /** Replaces both advertised and executable tools with the skills graph's core tool set. */
-    fun installCoreTools(
-        coreTools: List<LLMToolSetup>,
-        name: String = "Install core tools",
-    ): Node<String, String> = Node(name) { ctx ->
-        val toolsByName = coreTools.associateBy { it.fn.name }
-        ctx.map(
-            settings = ctx.settings.copy(
-                tools = AgentTools(
-                    byCategory = emptyMap(),
-                    byName = toolsByName,
-                    categoryByName = emptyMap(),
-                )
-            ),
-            activeTools = coreTools.map { it.fn },
-        )
     }
 
     /**

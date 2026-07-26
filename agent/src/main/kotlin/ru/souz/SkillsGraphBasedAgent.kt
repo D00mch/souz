@@ -16,6 +16,7 @@ import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
+import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 
@@ -40,12 +41,16 @@ class SkillsGraphBasedAgent internal constructor(
 ) : TraceableAgent {
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
 
+    private val coreTools = listOf(getSkillsTool, getKnowledgeTool, runtimeCommandTool)
+    private val coreFunctions = coreTools.map { it.fn }
+    private val coreToolRegistry = AgentTools(
+        byCategory = emptyMap(),
+        byName = coreTools.associateBy { it.fn.name },
+    )
+
     private val graph: Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
         val memoryRecall = nodesMemory.recall()
-        val installCoreTools = nodesCommon.installCoreTools(
-            listOf(getSkillsTool, getKnowledgeTool, runtimeCommandTool)
-        )
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
         val chat = nodesLLM.chat("LLM")
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
@@ -59,8 +64,7 @@ class SkillsGraphBasedAgent internal constructor(
 
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(memoryRecall)
-        memoryRecall.edgeTo(installCoreTools)
-        installCoreTools.edgeTo(contextEnrich)
+        memoryRecall.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chat)
         chat.edgeTo { ctx ->
             when (ctx.input) {
@@ -84,7 +88,13 @@ class SkillsGraphBasedAgent internal constructor(
     override suspend fun executeWithTrace(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
-    ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = ctx, onStep = onStep)
+    ): AgentExecutionResult {
+        val restrictedContext = ctx.copy(
+            settings = ctx.settings.copy(tools = coreToolRegistry),
+            activeTools = coreFunctions,
+        )
+        return executionDelegate.executeWithTrace(graph = graph, ctx = restrictedContext, onStep = onStep)
+    }
 
     private val LLMResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 }
