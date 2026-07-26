@@ -77,6 +77,7 @@ internal class AgentExecutionRequestFactory(
                 showToolEvents = effectiveSettings.showToolEvents,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
+                enabledTools = effectiveSettings.enabledTools,
             ),
         )
 
@@ -97,6 +98,7 @@ internal class AgentExecutionRequestFactory(
                 streamingMessages = effectiveSettings.streamingMessages,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
+                enabledTools = effectiveSettings.enabledTools.toSet(),
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId),
             shouldReturnRunning = effectiveSettings.streamingMessages && featureFlags.wsEvents,
@@ -136,6 +138,7 @@ internal class AgentExecutionRequestFactory(
             streamingMessages = executionMetadataBoolean(execution, METADATA_STREAMING_MESSAGES),
             requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
+            enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
         )
 
     fun createEventSink(
@@ -184,6 +187,7 @@ internal class AgentExecutionRequestFactory(
         showToolEvents: Boolean,
         requestTimeoutMillis: Long,
         useFewShotExamples: Boolean,
+        enabledTools: Set<String>,
     ): Map<String, String> = buildMap {
         put(METADATA_CONTEXT_SIZE, contextSize.toString())
         put(METADATA_TEMPERATURE, temperature.toString())
@@ -193,6 +197,7 @@ internal class AgentExecutionRequestFactory(
         put(METADATA_SHOW_TOOL_EVENTS, showToolEvents.toString())
         put(METADATA_REQUEST_TIMEOUT_MILLIS, requestTimeoutMillis.toString())
         put(METADATA_USE_FEW_SHOT_EXAMPLES, useFewShotExamples.toString())
+        put(METADATA_ENABLED_TOOLS, restJsonMapper.writeValueAsString(enabledTools.sorted()))
         systemPrompt?.let { put(METADATA_SYSTEM_PROMPT, it) }
     }
 
@@ -215,6 +220,18 @@ internal class AgentExecutionRequestFactory(
         execution: AgentExecution,
         key: String,
     ): Boolean? = execution.metadata[key]?.toBooleanStrictOrNull()
+
+    private fun executionMetadataStringSet(
+        execution: AgentExecution,
+        key: String,
+    ): Set<String>? {
+        val raw = execution.metadata[key] ?: return null
+        return runCatching {
+            restJsonMapper.readValue(raw, Array<String>::class.java).toSet()
+        }.getOrElse {
+            throw internalError("Execution $key metadata is invalid.")
+        }
+    }
 }
 
 private fun Option.toContinuationInput(): String {
@@ -256,4 +273,5 @@ private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
 private const val METADATA_REQUEST_TIMEOUT_MILLIS = "requestTimeoutMillis"
 private const val METADATA_USE_FEW_SHOT_EXAMPLES = "useFewShotExamples"
+private const val METADATA_ENABLED_TOOLS = "enabledTools"
 private const val OPTION_CONTINUATION_PREFIX = "__option_answer__"

@@ -16,6 +16,7 @@ Accepting identity from a body, query, route parameter, or unverified header let
 - Apply ownership checks to every user resource, including nested chat, execution, option, event, Telegram, and provider-key operations.
 - Pass `ToolInvocationMeta.userId` into backend runtime work. Backend sandbox scope is user-scoped and does not currently add conversation scope.
 - Keep the backend tool catalog limited to backend-safe categories and exclude desktop-only tools and `WebImageSearch`.
+- Restrict compiled tools with the trusted user's effective `enabledTools` snapshot for discovery and invocation without hiding core or user-installed file-backed skills.
 - Document both proxy headers as jointly required OpenAPI security schemes for every `/v1` operation.
 
 ## Verification
