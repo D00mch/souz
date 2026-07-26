@@ -6,6 +6,7 @@
 - `DesktopStructuredLogger` and `StructuredLoggingAgentTelemetry` emit structured SLF4J key-value events. Preserve the event domain/name fields and request context needed to correlate app sessions, conversations, requests, and tool calls.
 - The shared layer emits events but does not own a logging backend, destination, or retention policy. The desktop host routes the structured logger to bounded local telemetry files through its Logback configuration.
 - Provider adapters do not copy a serialized function-call envelope into `LLMResponse.Message.content`. Tool-call history is reconstructed from `functionCall`; non-empty content is treated as assistant text by the streaming runtime.
+- OpenAI-compatible provider requests include an `items` schema for every array-valued tool property. The shared property contract does not describe element types, so adapters use an unconstrained item schema.
 
 ## Why this is fragile
 
@@ -22,6 +23,7 @@ Duplicating a typed function call into message content exposes its serialized JS
 - Keep sink configuration, file paths, rollover, and retention in the host rather than `:sharedLogic`.
 - Add fields compatibly and keep high-cardinality or sensitive payload content out of structured events by default.
 - When adapting a provider's tool-call response, populate `functionCall` and its call ID without copying the call envelope into `content`.
+- When adapting tool schemas for an OpenAI-compatible provider, preserve the declared property metadata and add an unconstrained `items` schema to array properties.
 
 ## Verification
 

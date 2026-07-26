@@ -189,6 +189,9 @@ class CodexChatAPI(
                             put("type", prop.type)
                             if (!prop.description.isNullOrBlank()) put("description", prop.description)
                             if (!prop.enum.isNullOrEmpty()) put("enum", prop.enum)
+                            if (prop.type == "array") {
+                                put("items", emptyMap<String, Any>())
+                            }
                         }
                     },
                     "required" to fn.parameters.required,
