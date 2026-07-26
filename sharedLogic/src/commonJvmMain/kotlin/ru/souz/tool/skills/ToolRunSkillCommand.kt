@@ -89,6 +89,13 @@ class ToolRunSkillCommand(
     }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
+        return executeCommand(input, meta).render()
+    }
+
+    internal suspend fun executeCommand(
+        input: Input,
+        meta: ToolInvocationMeta,
+    ): SandboxCommandResult {
         val skillId = SkillId(input.skillId.trim())
         val skill = input.activeSkills.firstOrNull { it.skillId == skillId.value }
             ?: throw BadInputException("Skill is not active for this turn: ${input.skillId}")
@@ -97,7 +104,7 @@ class ToolRunSkillCommand(
         val workingDirectory = resolveWorkingDirectory(skillRoot, input.workingDirectory)
         val scriptPath = resolveScriptPath(sandbox, skillRoot, input.scriptPath)
         val timeoutMillis = input.timeoutMillis.coerceIn(1L, MAX_TIMEOUT_MILLIS)
-        val result = sandbox.commandExecutor.execute(
+        return sandbox.commandExecutor.execute(
             SandboxCommandRequest(
                 runtime = input.runtime,
                 command = input.command,
@@ -110,7 +117,6 @@ class ToolRunSkillCommand(
                 timeoutMillis = timeoutMillis,
             )
         )
-        return result.render()
     }
 
     private fun resolveSkillRoot(

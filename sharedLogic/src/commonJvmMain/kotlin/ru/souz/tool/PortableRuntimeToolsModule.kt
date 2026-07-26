@@ -28,6 +28,8 @@ import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
@@ -87,11 +89,36 @@ fun portableRuntimeToolsDiModule(
         bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
     }
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
+    import(portableSkillToolsDiModule(skillStorageScope = skillStorageScope))
+}
+
+fun portableSkillToolsDiModule(
+    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
+): DI.Module = DI.Module("portableSkillTools") {
+    bindSingleton {
         ToolRunSkillCommand(
             sandboxResolver = instance(),
             skillStorageScope = skillStorageScope,
-        ).toGiga()
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
+        instance<ToolRunSkillCommand>().toGiga()
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_TOOL) {
+        ToolGetSkills(
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+            repository = instance(),
+            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL) {
+        ToolInvokeSkill(
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+            repository = instance(),
+            commandTool = instance(),
+        )
     }
 }
 

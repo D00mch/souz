@@ -4,6 +4,13 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import kotlin.math.pow
 
+/**
+ * Routes a generic Skill invocation to either a compiled tool or a file-backed Skill.
+ *
+ * Implements [LLMToolSetup] directly to preserve delegated messages and attachments and to return
+ * structured command results without the additional String serialization performed by
+ * [ru.souz.llms.giga.toGiga].
+ */
 class ToolCalculator : ToolSetup<ToolCalculator.Input> {
 
     data class Input(

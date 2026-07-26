@@ -110,7 +110,6 @@ import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.SkillStorageScope
-import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.DesktopConversationMemoryRuntime
 import ru.souz.memory.DesktopMemoryMaintenanceBackgroundRunner
@@ -380,12 +379,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     bindSingleton { ToolsFactory(di) }
     bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
-        ToolRunSkillCommand(
-            sandboxResolver = instance(),
-            skillStorageScope = SkillStorageScope.SINGLE_USER,
-        ).toGiga()
-    }
+    import(portableSkillToolsDiModule(skillStorageScope = SkillStorageScope.SINGLE_USER))
     import(
         agentDiModule(
             logObjectMapperTag = DiTags.TAG_LOG,
