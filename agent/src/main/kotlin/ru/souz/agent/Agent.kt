@@ -20,5 +20,4 @@ interface Agent {
 data class AgentExecutionResult(
     val output: String,
     val context: AgentContext<String>,
-    internal val captureCompletedTurn: () -> Unit = {},
 )

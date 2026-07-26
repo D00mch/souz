@@ -15,6 +15,8 @@ Advertising a small tool list without replacing executable lookup would let a fa
 ## Safe changes
 
 - Keep core-tool restriction at the execution boundary so every graph node sees the restricted context; tool loops return directly to the LLM.
+- Keep memory recall after history input and before context enrichment. Run it only once per user turn.
+- Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.
 - Keep large-result processing opt-in beside the classic `NodesCommon.toolUse()` path.
 - Preserve function-result role, name, attachments, and call ID when replacing only its content.
 - Keep Knowledge cleanup tied to destructive or local conversation-close lifecycles. Backend archive is non-destructive and does not clear Knowledge.

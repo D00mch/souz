@@ -133,10 +133,6 @@ class AgentFacade internal constructor(
                 sessionService.onStep(step, node, from, to)
             }
             _currentContext.emit(result.context.copy(toolInvocationMeta = baseContext.toolInvocationMeta))
-            if (generation == executionGeneration) {
-                runCatching { result.captureCompletedTurn() }
-                    .onFailure { e -> l.warn("memory capture completion failed", e) }
-            }
             result
         } finally {
             runCatching { sessionService.finishTask() }

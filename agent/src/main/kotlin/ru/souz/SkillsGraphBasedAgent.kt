@@ -11,6 +11,7 @@ import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
+import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
@@ -29,6 +30,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesCommon: NodesCommon,
     private val nodesErrorHandling: NodesErrorHandling,
     private val nodesSummarization: NodesSummarization,
+    private val nodesMemory: NodesMemory,
     getSkillsTool: LLMToolSetup,
     getKnowledgeTool: LLMToolSetup,
     runtimeCommandTool: LLMToolSetup,
@@ -48,17 +50,21 @@ class SkillsGraphBasedAgent internal constructor(
 
     private val graph: Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
+        val memoryRecall = nodesMemory.recall()
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
         val chat = nodesLLM.chat("LLM")
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
         val toolUse = nodesCommon.toolUseWithKnowledge(getKnowledgeTool.fn.name)
-        val summary = nodesSummarization.summarize()
+        val finalizeTurn = nodesMemory.finalizeTurn(
+            summarization = nodesSummarization.summarize(),
+        )
         val chatErrorToFinish = nodesErrorHandling.chatErrorToFinish()
 
         nodeInput.edgeTo(inputToHistory)
-        inputToHistory.edgeTo(contextEnrich)
+        inputToHistory.edgeTo(memoryRecall)
+        memoryRecall.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chat)
         chat.edgeTo { ctx ->
             when (ctx.input) {
@@ -66,9 +72,9 @@ class SkillsGraphBasedAgent internal constructor(
                 is LLMResponse.Chat.Ok -> chatOk
             }
         }
-        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else summary }
+        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else finalizeTurn }
         toolUse.edgeTo(chat)
-        summary.edgeTo(nodeFinish)
+        finalizeTurn.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 

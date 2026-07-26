@@ -1,7 +1,6 @@
 package ru.souz.agent
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import kotlinx.coroutines.CoroutineScope
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
@@ -14,6 +13,7 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
+import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
@@ -28,7 +28,6 @@ import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
-import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
 
 fun agentDiModule(
@@ -58,10 +57,10 @@ fun agentDiModule(
             agentToolExecutor = instance(),
             defaultBrowserProvider = instance(),
             runtimeEnvironment = instance(),
-            memoryRuntime = instance(),
             knowledgeStore = instanceOrNull<ConversationKnowledgeStore>(),
         )
     }
+    bindSingleton { NodesMemory(instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { JsonUtils(restJsonMapper) }
@@ -103,6 +102,7 @@ fun agentDiModule(
             nodesSummarization = instance(),
             nodesMCP = instance(),
             nodesSkills = instance(),
+            nodesMemory = instance(),
         )
     }
     bindSingleton {
@@ -112,6 +112,7 @@ fun agentDiModule(
             nodesCommon = instance(),
             nodesErrorHandling = instance(),
             nodesSummarization = instance(),
+            nodesMemory = instance(),
             getSkillsTool = instance(tag = SkillToolBindingTags.GET_SKILLS_TOOL),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
@@ -125,8 +126,6 @@ fun agentDiModule(
                     AgentId.SKILLS_GRAPH -> instance<SkillsGraphBasedAgent>()
                 }
             },
-            memoryRuntime = instance<ConversationMemoryRuntime>(),
-            captureScope = instance<CoroutineScope>(),
         )
     }
     bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }

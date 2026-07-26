@@ -8,6 +8,7 @@ import ru.souz.agent.graph.Node
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
+import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -28,6 +29,7 @@ class SkillsGraphBasedAgentTest {
         val nodesCommon = mockk<NodesCommon>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
+        val nodesMemory = mockk<NodesMemory>()
         val getSkills = tool("GetSkills")
         val getKnowledge = tool("GetKnowledge")
         val runtimeCommand = tool("RunSkillCommand")
@@ -41,6 +43,7 @@ class SkillsGraphBasedAgentTest {
             executed = executed,
             coreTools = coreTools,
         )
+        every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
         every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
             executed += "LLM"
@@ -57,6 +60,10 @@ class SkillsGraphBasedAgentTest {
             executed += "Summary"
             ctx.map { "final" }
         }
+        every { nodesMemory.finalizeTurn(any()) } returns Node("Memory-aware finalization") { ctx ->
+            executed += "Memory-aware finalization"
+            ctx.map { "final" }
+        }
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
 
         val result = agent(
@@ -64,6 +71,7 @@ class SkillsGraphBasedAgentTest {
             nodesCommon,
             nodesErrorHandling,
             nodesSummarization,
+            nodesMemory,
             getSkills,
             getKnowledge,
             runtimeCommand,
@@ -73,13 +81,14 @@ class SkillsGraphBasedAgentTest {
         assertEquals(
             listOf(
                 "Input->History",
+                "Memory recall",
                 "appendActualInformation",
                 "LLM",
                 "toolUse",
                 "LLM",
                 "toolUse",
                 "LLM",
-                "Summary",
+                "Memory-aware finalization",
             ),
             executed,
         )
@@ -91,6 +100,7 @@ class SkillsGraphBasedAgentTest {
         val nodesCommon = mockk<NodesCommon>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
+        val nodesMemory = mockk<NodesMemory>()
         val getSkills = tool("GetSkills")
         val getKnowledge = tool("GetKnowledge")
         val runtimeCommand = tool("RunSkillCommand")
@@ -98,6 +108,7 @@ class SkillsGraphBasedAgentTest {
 
         every { nodesLLM.sideEffects } returns emptyFlow()
         every { nodesCommon.inputToHistory() } returns passthrough("Input->History", executed)
+        every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
         every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
             executed += "LLM"
@@ -105,6 +116,7 @@ class SkillsGraphBasedAgentTest {
         }
         every { nodesCommon.toolUseWithKnowledge(getKnowledge.fn.name) } returns Node("toolUse") { it.map { "" } }
         every { nodesSummarization.summarize() } returns Node("Summary") { it.map { "" } }
+        every { nodesMemory.finalizeTurn(any()) } returns Node("Memory-aware finalization") { it.map { "" } }
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
 
         val result = agent(
@@ -112,6 +124,7 @@ class SkillsGraphBasedAgentTest {
             nodesCommon,
             nodesErrorHandling,
             nodesSummarization,
+            nodesMemory,
             getSkills,
             getKnowledge,
             runtimeCommand,
@@ -119,7 +132,13 @@ class SkillsGraphBasedAgentTest {
 
         assertEquals("friendly error", result.output)
         assertEquals(
-            listOf("Input->History", "appendActualInformation", "LLM", "Chat.Error"),
+            listOf(
+                "Input->History",
+                "Memory recall",
+                "appendActualInformation",
+                "LLM",
+                "Chat.Error",
+            ),
             executed,
         )
     }
@@ -129,6 +148,7 @@ class SkillsGraphBasedAgentTest {
         nodesCommon: NodesCommon,
         nodesErrorHandling: NodesErrorHandling,
         nodesSummarization: NodesSummarization,
+        nodesMemory: NodesMemory,
         getSkills: LLMToolSetup,
         getKnowledge: LLMToolSetup,
         runtimeCommand: LLMToolSetup,
@@ -138,6 +158,7 @@ class SkillsGraphBasedAgentTest {
         nodesCommon = nodesCommon,
         nodesErrorHandling = nodesErrorHandling,
         nodesSummarization = nodesSummarization,
+        nodesMemory = nodesMemory,
         getSkillsTool = getSkills,
         getKnowledgeTool = getKnowledge,
         runtimeCommandTool = runtimeCommand,

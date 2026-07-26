@@ -14,6 +14,7 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
+import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILLS_ACTIVATION_NODE_NAME
@@ -31,6 +32,7 @@ class GraphBasedAgent internal constructor(
     private val nodesSummarization: NodesSummarization,
     private val nodesMCP: NodesMCP,
     private val nodesSkills: NodesSkills,
+    private val nodesMemory: NodesMemory,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
@@ -46,15 +48,19 @@ class GraphBasedAgent internal constructor(
         }
         val chatErrorToFinish: Node<LLMResponse.Chat, String> = nodesErrorHandling.chatErrorToFinish()
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
+        val memoryRecall: Node<String, String> = nodesMemory.recall()
         val nodeClassify: Node<String, String> = nodesClassify.node(CLASSIFY_NODE_NAME)
         val nodeSkillsActivation: Node<String, String> = nodesSkills.node(SKILLS_ACTIVATION_NODE_NAME)
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
         val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesCommon.toolUse()
-        val summary: Node<LLMResponse.Chat.Ok, String> = nodesSummarization.summarize()
+        val finalizeTurn: Node<LLMResponse.Chat.Ok, String> = nodesMemory.finalizeTurn(
+            summarization = nodesSummarization.summarize(),
+        )
 
         nodeInput.edgeTo(inputToHistory)
-        inputToHistory.edgeTo(nodeClassify)
+        inputToHistory.edgeTo(memoryRecall)
+        memoryRecall.edgeTo(nodeClassify)
         nodeClassify.edgeTo(nodeSkillsActivation)
         nodeSkillsActivation.edgeTo(nodeMcp)
         nodeMcp.edgeTo(contextEnrich)
@@ -65,9 +71,9 @@ class GraphBasedAgent internal constructor(
                 is LLMResponse.Chat.Ok -> chatOk
             }
         }
-        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else summary }
+        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else finalizeTurn }
         toolUse.edgeTo(chatSubgraph)
-        summary.edgeTo(nodeFinish)
+        finalizeTurn.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 

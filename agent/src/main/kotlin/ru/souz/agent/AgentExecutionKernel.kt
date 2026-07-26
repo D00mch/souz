@@ -10,6 +10,7 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
+import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
@@ -69,9 +70,9 @@ class AgentExecutionKernelFactory(
             agentToolExecutor = agentToolExecutor,
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
-            memoryRuntime = memoryRuntime,
             knowledgeStore = knowledgeStore,
         )
+        val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(
             settingsProvider = settingsProvider,
             logObjectMapper = logObjectMapper,
@@ -107,6 +108,7 @@ class AgentExecutionKernelFactory(
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMcp,
             nodesSkills = nodesSkills,
+            nodesMemory = nodesMemory,
         )
         val skillsGraphAgent = SkillsGraphBasedAgent(
             logObjectMapper = logObjectMapper,
@@ -114,6 +116,7 @@ class AgentExecutionKernelFactory(
             nodesCommon = nodesCommon,
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
+            nodesMemory = nodesMemory,
             getSkillsTool = getSkillsTool,
             getKnowledgeTool = getKnowledgeTool,
             runtimeCommandTool = runtimeCommandTool,
@@ -125,8 +128,6 @@ class AgentExecutionKernelFactory(
                     AgentId.SKILLS_GRAPH -> skillsGraphAgent
                 }
             },
-            memoryRuntime = memoryRuntime,
-            captureScope = captureScope,
         )
         return AgentExecutionKernel(
             contextFactory = contextFactory,
