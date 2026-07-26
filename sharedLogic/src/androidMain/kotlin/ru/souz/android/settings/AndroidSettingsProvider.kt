@@ -6,6 +6,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import ru.souz.agent.AgentId
+import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
@@ -160,7 +161,7 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         set(value) = putBoolean(ONBOARDING_COMPLETED, value)
 
     override var requestTimeoutMillis: Long
-        get() = long(REQUEST_TIMEOUT_MILLIS, 40_000L)
+        get() = long(REQUEST_TIMEOUT_MILLIS, DEFAULT_REQUEST_TIMEOUT_MILLIS)
         set(value) = putLong(REQUEST_TIMEOUT_MILLIS, value)
 
     override var contextSize: Int

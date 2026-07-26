@@ -93,8 +93,6 @@ import ru.souz.service.speech.SaluteSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.service.telegram.TelegramChatSelectionBroker
 import ru.souz.service.telegram.TelegramContactSelectionBroker
-import ru.souz.tool.presentation.ToolPresentationCreate
-import ru.souz.tool.presentation.ToolPresentationRead
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -112,7 +110,6 @@ import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.SkillStorageScope
-import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.DesktopConversationMemoryRuntime
 import ru.souz.memory.DesktopMemoryMaintenanceBackgroundRunner
@@ -332,8 +329,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
     bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
-    bindSingleton { ToolPresentationCreate(filesToolUtil = instance(), webImageDownloader = instance()) }
-    bindSingleton { ToolPresentationRead(instance()) }
     bindSingleton { ToolTelegramReadInbox(instance()) }
     bindSingleton { ToolTelegramGetHistory(instance(), instance()) }
     bindSingleton { ToolTelegramSetState(instance(), instance(), instance()) }
@@ -384,12 +379,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     bindSingleton { ToolsFactory(di) }
     bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
-        ToolRunSkillCommand(
-            sandboxResolver = instance(),
-            skillStorageScope = SkillStorageScope.SINGLE_USER,
-        ).toGiga()
-    }
+    import(portableSkillToolsDiModule(skillStorageScope = SkillStorageScope.SINGLE_USER))
     import(
         agentDiModule(
             logObjectMapperTag = DiTags.TAG_LOG,

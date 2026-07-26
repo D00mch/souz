@@ -17,8 +17,10 @@ import ru.souz.ambient.AmbientTranscriptEvent
 import ru.souz.ambient.AmbientTranscriptionService
 import ru.souz.ambient.AmbientTranscriptionState
 import ru.souz.ambient.SemanticBlockBuilder
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.tool.SelectionApprovalSource
+import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.ui.common.FileSystemPathMetadataProvider
 import ru.souz.ui.common.PathMetadataProvider
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
@@ -46,6 +48,7 @@ import ru.souz.ui.host.SupportLogService
 import ru.souz.ui.host.TelegramSettingsHost
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiSpeechPlayer
+import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.usecases.AttachmentMetadataProvider
 import ru.souz.ui.main.usecases.ChatAttachmentsUseCase
 import ru.souz.ui.main.usecases.ChatUseCase
@@ -128,6 +131,10 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
             log = instance(),
             tokenLogging = instance(),
             memoryConversationCleanup = instance(),
+            conversationKnowledgeStore = instance<ConversationKnowledgeStore>(),
+            chatAgentActionFormatter = ChatAgentActionFormatter(
+                instance<ToolInvokeSkill>()::delegatedToolName,
+            ),
             ioDispatcher = context.ioDispatcher,
         )
     }

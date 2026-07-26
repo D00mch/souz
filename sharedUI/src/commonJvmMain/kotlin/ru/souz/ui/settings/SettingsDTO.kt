@@ -1,6 +1,7 @@
 package ru.souz.ui.settings
 
 import ru.souz.agent.AgentId
+import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMModel
@@ -77,8 +78,8 @@ data class SettingsState(
     val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),
     val availableVoiceRecognitionModels: List<VoiceRecognitionModel> = emptyList(),
     val systemPrompt: String = "",
-    val requestTimeoutMillis: Long = 10_000L,
-    val requestTimeoutInput: String = "10000",
+    val requestTimeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MILLIS,
+    val requestTimeoutInput: String = DEFAULT_REQUEST_TIMEOUT_MILLIS.toString(),
     val contextSize: Int = DEFAULT_MAX_TOKENS,
     val contextSizeInput: String = DEFAULT_MAX_TOKENS.toString(),
     val temperature: Float = 0.7f,

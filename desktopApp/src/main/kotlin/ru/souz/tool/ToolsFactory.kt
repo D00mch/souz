@@ -22,8 +22,6 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.tool.presentation.ToolPresentationCreate
-import ru.souz.tool.presentation.ToolPresentationRead
 import ru.souz.tool.telegram.ToolTelegramForward
 import ru.souz.tool.telegram.ToolTelegramGetHistory
 import ru.souz.tool.telegram.ToolTelegramReadInbox
@@ -100,13 +98,11 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
     private val excelRead: ExcelRead by di.instance()
     private val excelReport: ExcelReport by di.instance()
 
-    // Presentation tools
+    // Web tools
     private val toolInternetSearch: ToolInternetSearch by di.instance()
     private val toolInternetResearch: ToolInternetResearch by di.instance()
     private val toolWebImageSearch: ToolWebImageSearch by di.instance()
     private val toolWebPageText: ToolWebPageText by di.instance()
-    private val toolPresentationCreate: ToolPresentationCreate by di.instance()
-    private val toolPresentationRead: ToolPresentationRead by di.instance()
 
     override val toolsByCategory: Map<ToolCategory, Map<FunctionName, LLMToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -224,12 +220,6 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
             toolStartScreenRecording.toGiga(),
         )
 
-        ToolCategory.PRESENTATION -> listOf(
-            toolPresentationCreate.toGiga(),
-            toolPresentationRead.toGiga(),
-            toolListFiles.toGiga(),
-            toolFindFilesByName.toGiga(),
-        )
     }.map {
         object : LLMToolSetup by it {
             override val fn: LLMRequest.Function =

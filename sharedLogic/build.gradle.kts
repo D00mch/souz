@@ -50,6 +50,7 @@ kotlin {
                 implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
                 implementation(libs.java.diffUtils)
                 implementation(libs.jsoup)
+                implementation(libs.re2j)
                 implementation(libs.slf4j.api)
             }
         }

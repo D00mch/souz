@@ -153,8 +153,8 @@ class ToolInternetSearchTest {
             chatOk(
                 """
                 {
-                  "goal": "Сравнить presentation libraries",
-                  "searchQueries": ["presentation libraries overview", "presentation libraries comparison", "presentation libraries docs", "presentation libraries examples"],
+                  "goal": "Сравнить logging libraries",
+                  "searchQueries": ["logging libraries overview", "logging libraries comparison", "logging libraries docs", "logging libraries examples"],
                   "subQuestions": [],
                   "answerSections": []
                 }
@@ -172,8 +172,8 @@ class ToolInternetSearchTest {
         )
         coEvery { webResearchClient.searchWeb(any(), any()) } returns (1..6).map { idx ->
             WebSearchResult(
-                title = "Presentation source $idx",
-                url = "https://example.com/presentation-$idx",
+                title = "Logging source $idx",
+                url = "https://example.com/logging-$idx",
                 snippet = "Snippet $idx",
             )
         }
@@ -182,7 +182,7 @@ class ToolInternetSearchTest {
         }
 
         val output = invokeResearch(
-            query = "Подбери библиотеку для презентаций",
+            query = "Подбери библиотеку для логирования",
             maxSources = 4,
         )
 
@@ -199,8 +199,8 @@ class ToolInternetSearchTest {
             chatOk(
                 """
                 {
-                  "goal": "Сравнить presentation libraries",
-                  "searchQueries": ["presentation libraries overview", "presentation libraries comparison", "presentation libraries docs", "presentation libraries examples"],
+                  "goal": "Сравнить logging libraries",
+                  "searchQueries": ["logging libraries overview", "logging libraries comparison", "logging libraries docs", "logging libraries examples"],
                   "subQuestions": [],
                   "answerSections": []
                 }
@@ -448,8 +448,8 @@ class ToolInternetSearchTest {
             chatOk(
                 """
                 {
-                  "goal": "Оценить рынок инструментов для презентаций",
-                  "searchQueries": ["presentation libraries overview", "presentation libraries comparison", "presentation generation frameworks", "presentation automation tools"],
+                  "goal": "Оценить рынок инструментов для логирования",
+                  "searchQueries": ["logging libraries overview", "logging libraries comparison", "logging frameworks", "logging automation tools"],
                   "subQuestions": ["Какие библиотеки самые зрелые"],
                   "answerSections": ["Вывод", "Сравнение", "Рекомендация"]
                 }
@@ -467,14 +467,14 @@ class ToolInternetSearchTest {
         )
         coEvery { webResearchClient.searchWeb(any(), any()) } returns listOf(
             WebSearchResult(
-                title = "Presentation library overview",
-                url = "https://example.com/presentation-library-overview",
-                snippet = "Overview of presentation libraries.",
+                title = "Logging library overview",
+                url = "https://example.com/logging-library-overview",
+                snippet = "Overview of logging libraries.",
             ),
             WebSearchResult(
-                title = "Presentation library comparison",
-                url = "https://example.com/presentation-library-comparison",
-                snippet = "Comparison of presentation libraries.",
+                title = "Logging library comparison",
+                url = "https://example.com/logging-library-comparison",
+                snippet = "Comparison of logging libraries.",
             ),
         )
         coEvery { webResearchClient.extractPageText(any(), any()) } answers {
@@ -484,7 +484,7 @@ class ToolInternetSearchTest {
         try {
             val output = invokeResearch(
                 tool = realResearchTool,
-                query = "Найди подходящую библиотеку для презентаций",
+                query = "Найди подходящую библиотеку для логирования",
                 maxSources = 8,
             )
             val reportFilePath = assertNotNull(output.reportFilePath)

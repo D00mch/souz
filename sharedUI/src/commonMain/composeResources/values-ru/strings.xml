@@ -27,9 +27,6 @@
     <string name="quick_action_documents_label">Документы</string>
     <string name="quick_action_documents_description">Создать или найти файл</string>
     <string name="quick_action_documents_message">Помоги в работе с файлами на компьютере</string>
-    <string name="quick_action_presentation_label">Презентация</string>
-    <string name="quick_action_presentation_description">Создать презентацию</string>
-    <string name="quick_action_presentation_message">Помоги создать презентацию</string>
     <string name="quick_action_analytics_label">Аналитика</string>
     <string name="quick_action_analytics_description">Графики и данные</string>
     <string name="quick_action_analytics_message">Помоги в работе с данными</string>
@@ -162,6 +159,8 @@
     <string name="label_agent">Агент</string>
     <string name="agent_option_graph_title">Graph-агент</string>
     <string name="agent_option_graph_description">Классический графовый поток с итеративными вызовами инструментов и суммаризацией.</string>
+    <string name="agent_option_skills_graph_title">Skills Graph-агент</string>
+    <string name="agent_option_skills_graph_description">Графовый поток с поиском навыков, временным хранилищем знаний и запуском команд навыков.</string>
     <string name="agent_switch_dialog_title">Сменить активного агента?</string>
     <string name="agent_switch_dialog_message">Текущая работа будет отменена, а активный контекст беседы будет очищен.</string>
     <string name="agent_switch_dialog_confirm">Сменить</string>
@@ -609,9 +608,8 @@
     <string name="chat_action_telegram_saved_messages">Сохраняю в Избранное Telegram</string>
     <string name="chat_action_take_screenshot">Делаю скриншот: %1$s</string>
     <string name="chat_action_start_screen_recording">Открываю запись экрана</string>
-    <string name="chat_action_presentation_create">Создаю презентацию: %1$s</string>
-    <string name="chat_action_presentation_read">Читаю презентацию: %1$s</string>
     <string name="chat_action_generic_tool">Запускаю инструмент: %1$s</string>
+    <string name="chat_action_skill">Использую навык: %1$s</string>
     <string name="chat_action_value_history">история</string>
     <string name="chat_action_value_bookmarks">закладки</string>
     <string name="chat_action_value_tabs">вкладки</string>

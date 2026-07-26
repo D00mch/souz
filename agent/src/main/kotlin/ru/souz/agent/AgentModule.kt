@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.GraphBasedAgent
+import ru.souz.SkillsGraphBasedAgent
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
@@ -18,6 +21,7 @@ import ru.souz.agent.skills.SkillActivationPipeline
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentRuntimeEnvironment
+import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
@@ -46,7 +50,16 @@ fun agentDiModule(
     }
     bindSingleton { AgentToolExecutor(instance<AgentTelemetry>()) }
     bindSingleton { NodesErrorHandling(instance()) }
-    bindSingleton { NodesCommon(instance(), instance(), instance(), instance(), instance()) }
+    bindSingleton {
+        NodesCommon(
+            desktopInfoRepository = instance(),
+            settingsProvider = instance(),
+            agentToolExecutor = instance(),
+            defaultBrowserProvider = instance(),
+            runtimeEnvironment = instance(),
+            knowledgeStore = instanceOrNull<ConversationKnowledgeStore>(),
+        )
+    }
     bindSingleton { NodesMemory(instance(), instance()) }
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
@@ -93,8 +106,26 @@ fun agentDiModule(
         )
     }
     bindSingleton {
+        SkillsGraphBasedAgent(
+            logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
+            nodesLLM = instance(),
+            nodesCommon = instance(),
+            nodesErrorHandling = instance(),
+            nodesSummarization = instance(),
+            nodesMemory = instance(),
+            getSkillsTool = instance(tag = SkillToolBindingTags.GET_SKILLS_TOOL),
+            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
+        )
+    }
+    bindSingleton {
         AgentExecutor(
-            agentProvider = { instance<GraphBasedAgent>() },
+            agentProvider = { agentId ->
+                when (agentId) {
+                    AgentId.GRAPH -> instance<GraphBasedAgent>()
+                    AgentId.SKILLS_GRAPH -> instance<SkillsGraphBasedAgent>()
+                }
+            },
         )
     }
     bindSingleton { AgentFacade(instance(), instance(), instance(), instance(), instance()) }

@@ -12,10 +12,10 @@ Souz is a Kotlin Multiplatform AI assistant with desktop, Android, and backend h
 
 ## Development principles
 
-- Prefer composition to inheritance, utilize open closed principle
-- Do not mix coroutines with the JVM low level concurrency primitives such as: Volatile, Synchronize, ThreadLocal, etc).
+- Prefer composition to inheritance.
 - When you see that something can be done simpler, in less lines of code, removing the unnecessary abstractions, note the developer and ask questions on that.
-- Abstractions only pay off, if we need the flexibility in the future. You don't know the future, developer does. Aks developer when chosing abstractions. 
+- Abstractions only pay off, if we need the flexibility in the future. You don't know the future, developer does. Aks developer when choosing abstractions. 
+- Do not mix coroutines with the JVM low level concurrency primitives such as: Volatile, Synchronize, ThreadLocal, etc).
 
 ## Module Map
 
@@ -25,7 +25,7 @@ Souz is a Kotlin Multiplatform AI assistant with desktop, Android, and backend h
 - `:native` — local llama.cpp runtime and native bridge.
 - `:ambientAgent` — ambient transcription semantics and local task analysis.
 - `:sharedLogic` — Android/JVM shared runtime logic, providers, tools, skills, memory, and sandboxes.
-- `:sharedUI` — Android/Desktop presentation logic, ViewModels, host ports, and Compose UI.
+- `:sharedUI` — Android/Desktop UI logic, ViewModels, host ports, and Compose UI.
 - `:desktopApp` — desktop composition root, OS integrations, persistence, and packaging.
 - `:androidApp` — Android application host and platform bindings.
 - `:backend` — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.

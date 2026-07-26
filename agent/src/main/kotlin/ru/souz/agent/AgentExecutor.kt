@@ -8,7 +8,7 @@ class AgentExecutor internal constructor(
     private val agentProvider: (AgentId) -> TraceableAgent,
     // Execution can be called with an agent ID persisted by a different host configuration.
     // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
-    private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH),
+    private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
 ) {
     fun sideEffects(agentId: AgentId): Flow<String> = agentById(agentId).sideEffects
 

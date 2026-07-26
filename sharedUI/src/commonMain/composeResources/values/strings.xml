@@ -27,9 +27,6 @@
     <string name="quick_action_documents_label">Documents</string>
     <string name="quick_action_documents_description">Create or find a file</string>
     <string name="quick_action_documents_message">Help me work with files on my computer</string>
-    <string name="quick_action_presentation_label">Presentation</string>
-    <string name="quick_action_presentation_description">Create a presentation</string>
-    <string name="quick_action_presentation_message">Help me create a presentation</string>
     <string name="quick_action_analytics_label">Analytics</string>
     <string name="quick_action_analytics_description">Charts and data</string>
     <string name="quick_action_analytics_message">Help me work with data</string>
@@ -166,6 +163,8 @@
     <string name="label_agent">Agent</string>
     <string name="agent_option_graph_title">Graph Agent</string>
     <string name="agent_option_graph_description">Classic graph flow with iterative tool calls and summarization.</string>
+    <string name="agent_option_skills_graph_title">Skills Graph Agent</string>
+    <string name="agent_option_skills_graph_description">Tool-driven graph with skill discovery, temporary Knowledge retrieval, and skill commands.</string>
     <string name="agent_switch_dialog_title">Switch active agent?</string>
     <string name="agent_switch_dialog_message">Current work will be cancelled and the active conversation context will be cleared.</string>
     <string name="agent_switch_dialog_confirm">Switch</string>
@@ -607,9 +606,8 @@
     <string name="chat_action_telegram_saved_messages">Saving to Telegram Saved Messages</string>
     <string name="chat_action_take_screenshot">Taking screenshot: %1$s</string>
     <string name="chat_action_start_screen_recording">Opening screen recording</string>
-    <string name="chat_action_presentation_create">Creating presentation: %1$s</string>
-    <string name="chat_action_presentation_read">Reading presentation: %1$s</string>
     <string name="chat_action_generic_tool">Running tool: %1$s</string>
+    <string name="chat_action_skill">Using skill: %1$s</string>
     <string name="chat_action_value_history">history</string>
     <string name="chat_action_value_bookmarks">bookmarks</string>
     <string name="chat_action_value_tabs">tabs</string>

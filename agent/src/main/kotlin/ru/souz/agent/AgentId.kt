@@ -2,6 +2,7 @@ package ru.souz.agent
 
 enum class AgentId(val storageValue: String) {
     GRAPH("graph"),
+    SKILLS_GRAPH("skills"),
     ;
 
     companion object {

@@ -58,8 +58,10 @@ import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentId
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentSideEffect
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientSemanticBlock
 import ru.souz.ambient.AmbientSpeechAvailability
@@ -73,6 +75,7 @@ import ru.souz.llms.TokenLogging
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMResponse.FunctionCall
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
@@ -91,6 +94,9 @@ import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.files.ToolModifyFile
@@ -702,6 +708,42 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `skills graph hides core tool actions during processing`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
+            awaitState(viewModel) { it.isProcessing }
+
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall(ToolGetSkills.NAME, mapOf("skillIds" to emptyList<String>()))
+                )
+            )
+            harness.sideEffects.emit(
+                AgentSideEffect.Fn(
+                    FunctionCall(ToolGetKnowledge.NAME, mapOf("knowledgeId" to "knowledge-1"))
+                )
+            )
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.agentActions.isEmpty())
+            response.complete("done")
+            val finalState = awaitState(viewModel) { !it.isProcessing }
+            assertTrue(finalState.chatMessages.last { !it.isUser }.agentActions.isEmpty())
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `tool invocation after stop is ignored until next request starts`() = runTest(mainDispatcher) {
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
@@ -1171,11 +1213,15 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `confirmed new conversation cleans discarded chat memory`() = runTest(mainDispatcher) {
+    fun `confirmed new conversation cleans discarded chat memory and Knowledge`() = runTest(mainDispatcher) {
         val cleanup = RecordingMemoryConversationCleanup()
+        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
+        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
         val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
         val harness = createHarness(
             memoryConversationCleanup = cleanup,
+            conversationKnowledgeStore = knowledgeStore,
             conversationFinishedEvents = finishedConversations,
         )
 
@@ -1192,14 +1238,77 @@ class MainViewModelTest {
             awaitState(viewModel) { it.showNewChatDialog }
             viewModel.handleEvent(MainEvent.ConfirmNewConversation)
             awaitState(viewModel) { it.chatMessages.isEmpty() && !it.showNewChatDialog }
+            advanceUntilIdle()
 
             assertEquals(1, cleanup.cleanedConversationIds.size)
             assertTrue(cleanup.cleanedConversationIds.single().isNotBlank())
             assertEquals(cleanup.cleanedConversationIds.single(), finishedConversations.single().first)
+            assertEquals(cleanup.cleanedConversationIds.single(), clearedKnowledgeMeta.single().conversationId)
             assertEquals(ChatConversationCloseReason.NEW_CONVERSATION, finishedConversations.single().third)
         } finally {
             harness.clear()
         }
+    }
+
+    @Test
+    fun `clear context immediately cleans conversation memory and Knowledge`() = runTest(mainDispatcher) {
+        val cleanup = RecordingMemoryConversationCleanup()
+        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
+        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
+        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
+        val harness = createHarness(
+            memoryConversationCleanup = cleanup,
+            conversationKnowledgeStore = knowledgeStore,
+            conversationFinishedEvents = finishedConversations,
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            viewModel.handleEvent(MainEvent.SendChatMessage("retain a Knowledge reference"))
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
+            }
+
+            viewModel.handleEvent(MainEvent.ClearContext)
+            awaitState(viewModel) { it.chatMessages.isEmpty() && it.userExpectCloseOnX }
+            advanceUntilIdle()
+
+            assertEquals(1, cleanup.cleanedConversationIds.size)
+            assertEquals(cleanup.cleanedConversationIds.single(), clearedKnowledgeMeta.single().conversationId)
+            assertEquals(ChatConversationCloseReason.CLEAR_CONTEXT, finishedConversations.single().third)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `view model teardown cleans conversation memory and Knowledge`() = runTest(mainDispatcher) {
+        val cleanup = RecordingMemoryConversationCleanup()
+        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
+        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
+        val finishedConversations = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
+        val harness = createHarness(
+            memoryConversationCleanup = cleanup,
+            conversationKnowledgeStore = knowledgeStore,
+            conversationFinishedEvents = finishedConversations,
+        )
+
+        val viewModel = harness.viewModel
+        advanceUntilIdle()
+        viewModel.handleEvent(MainEvent.SendChatMessage("temporary data"))
+        awaitState(viewModel) { state ->
+            !state.isProcessing && state.chatMessages.any { it.text == "stub response" }
+        }
+
+        harness.clear()
+        advanceUntilIdle()
+
+        assertEquals(1, cleanup.cleanedConversationIds.size)
+        assertEquals(cleanup.cleanedConversationIds.single(), clearedKnowledgeMeta.single().conversationId)
+        assertEquals(ChatConversationCloseReason.VIEW_MODEL_CLEARED, finishedConversations.single().third)
     }
 
     @Test
@@ -1414,7 +1523,9 @@ class MainViewModelTest {
             LLMResponse.RecognizeResponse()
         },
         memoryConversationCleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
+        conversationKnowledgeStore: ConversationKnowledgeStore = mockk(relaxed = true),
         conversationFinishedEvents: MutableList<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>? = null,
+        activeAgentId: AgentId = AgentId.GRAPH,
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         val sideEffects = MutableSharedFlow<AgentSideEffect>()
@@ -1427,8 +1538,8 @@ class MainViewModelTest {
                 context = agentFacade.currentContext.value,
             )
         }
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.activeAgentId } returns MutableStateFlow(activeAgentId)
+        every { agentFacade.availableAgents } returns listOf(activeAgentId)
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         var gigaModelState = configuredModel
@@ -1512,6 +1623,8 @@ class MainViewModelTest {
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
         every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
         every { tokenLogging.sessionTokenUsage() } returns LLMResponse.Usage(0, 0, 0, 0)
+        val toolInvokeSkill = mockk<ToolInvokeSkill>(relaxed = true)
+        every { toolInvokeSkill.delegatedToolName(any()) } returns null
 
         val di = DI {
             import(sharedUiMainViewModelUseCasesDiModule())
@@ -1541,6 +1654,7 @@ class MainViewModelTest {
             bindSingleton<AttachmentMetadataProvider> { DesktopAttachmentMetadataProvider() }
             bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
             bindSingleton<TokenLogging> { tokenLogging }
+            bindSingleton<ToolInvokeSkill> { toolInvokeSkill }
             bindSingleton { DesktopStructuredLogger() }
             conversationFinishedEvents?.let { finishedEvents ->
                 bind<ChatObservabilityTracker>(overrides = true) with scoped(mainViewModelDiScope).singleton {
@@ -1552,6 +1666,7 @@ class MainViewModelTest {
                 }
             }
             bindSingleton<MemoryConversationCleanup> { memoryConversationCleanup }
+            bindSingleton<ConversationKnowledgeStore> { conversationKnowledgeStore }
             bindSingleton<PermissionPromptService> { desktopPermissionService }
             bindSingleton<kotlinx.coroutines.CoroutineScope> { TestScope(mainDispatcher) }
             bindSingleton<AmbientTranscriptionService> { ambientTranscriptionService }

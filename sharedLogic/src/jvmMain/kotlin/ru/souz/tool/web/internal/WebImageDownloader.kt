@@ -12,9 +12,7 @@ private const val IMAGE_DOWNLOAD_REQUEST_TIMEOUT_MS = 10_000L
 private const val IMAGE_DOWNLOAD_MAX_BYTES = 20 * 1024 * 1024
 
 /**
- * Shared image downloader/validator used by:
- * - [ToolWebImageSearch] for optional local image export
- * - [ToolPresentationCreate] for remote `imagePath` URLs
+ * Shared image downloader/validator used by [ToolWebImageSearch] for optional local image export.
  *
  * The downloader stores only assets that are detected as supported raster image formats.
  */

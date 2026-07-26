@@ -1,11 +1,15 @@
 package ru.souz.agent.nodes
 
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.agent.state.AgentTools
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -15,7 +19,9 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toSystemPromptMessage
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -38,6 +44,7 @@ internal class NodesCommon(
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
+    private val knowledgeStore: ConversationKnowledgeStore? = null,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -87,9 +94,53 @@ internal class NodesCommon(
      * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
      */
     fun toolUse(name: String = "toolUse"): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = fnCallMessages(ctx)
+        val fnCallMessages = fnCallMessages(ctx).map { it.second }
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.history.last().content }
+    }
+
+    /**
+     * Executes tool calls and replaces oversized results with conversation-scoped Knowledge references.
+     * This is opt-in so the classic graph's tool-use behavior remains unchanged.
+     */
+    fun toolUseWithKnowledge(
+        getKnowledgeToolName: String,
+        name: String = "toolUse",
+    ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
+        val fnCallMessages = fnCallMessages(ctx).map { (functionCall, message) ->
+            if (
+                functionCall.name == getKnowledgeToolName ||
+                message.content.toByteArray(Charsets.UTF_8).size <= KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES
+            ) {
+                message
+            } else {
+                offloadToolResult(
+                    message = message,
+                    sourceTool = functionCall.name,
+                    meta = ctx.toolInvocationMeta,
+                )
+            }
+        }
+        val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
+        ctx.map(history = history) { ctx.history.last().content }
+    }
+
+    /** Replaces both advertised and executable tools with the skills graph's core tool set. */
+    fun installCoreTools(
+        coreTools: List<LLMToolSetup>,
+        name: String = "Install core tools",
+    ): Node<String, String> = Node(name) { ctx ->
+        val toolsByName = coreTools.associateBy { it.fn.name }
+        ctx.map(
+            settings = ctx.settings.copy(
+                tools = AgentTools(
+                    byCategory = emptyMap(),
+                    byName = toolsByName,
+                    categoryByName = emptyMap(),
+                )
+            ),
+            activeTools = coreTools.map { it.fn },
+        )
     }
 
     /**
@@ -164,13 +215,15 @@ internal class NodesCommon(
         null
     }
 
-    private suspend fun fnCallMessages(ctx: AgentContext<LLMResponse.Chat.Ok>): List<LLMRequest.Message> =
+    private suspend fun fnCallMessages(
+        ctx: AgentContext<LLMResponse.Chat.Ok>,
+    ): List<Pair<LLMResponse.FunctionCall, LLMRequest.Message>> =
         ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
             val functionCall = msg.functionCall
             val functionsStateId = msg.functionsStateId
             if (functionCall != null && functionsStateId != null) {
-                executeTool(
+                functionCall to executeTool(
                     settings = ctx.settings,
                     functionCall = functionCall,
                     meta = ctx.toolInvocationMeta,
@@ -179,6 +232,46 @@ internal class NodesCommon(
                 ).copy(functionsStateId = functionsStateId)
             } else null
         }
+
+    private suspend fun offloadToolResult(
+        message: LLMRequest.Message,
+        sourceTool: String,
+        meta: ToolInvocationMeta,
+    ): LLMRequest.Message {
+        val store = knowledgeStore ?: run {
+            l.warn("Knowledge storage is unavailable; keeping oversized {} result inline", sourceTool)
+            return message
+        }
+        return try {
+            when (val writeResult = store.put(meta, sourceTool, message.content)) {
+                KnowledgeWriteResult.ConversationUnavailable -> {
+                    l.warn("Conversation scope is unavailable; keeping oversized {} result inline", sourceTool)
+                    message
+                }
+
+                is KnowledgeWriteResult.Stored -> {
+                    val entry = writeResult.entry
+                    message.copy(
+                        content = restJsonMapper.writeValueAsString(
+                            linkedMapOf(
+                                "knowledgeId" to entry.id,
+                                "sourceTool" to entry.sourceTool,
+                                "originalLength" to entry.originalLength,
+                                "storedLength" to entry.storedLength,
+                                "truncated" to (entry.storedLength < entry.originalLength),
+                                "instruction" to "Call GetKnowledge with this knowledgeId to retrieve the retained result.",
+                            )
+                        )
+                    )
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            l.warn("Knowledge storage failed; keeping oversized {} result inline", sourceTool, error)
+            message
+        }
+    }
 
     private suspend fun executeTool(
         settings: AgentSettings,
@@ -228,6 +321,8 @@ internal class NodesCommon(
     private fun StorredData.readableType(): String =
         type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
+
+private const val KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES = 4_096
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
     val ctx = this
