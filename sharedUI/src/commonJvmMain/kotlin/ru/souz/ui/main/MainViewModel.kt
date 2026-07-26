@@ -28,6 +28,7 @@ import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.main.search.ChatMessageSearchProjection
 import ru.souz.ui.main.search.ChatSearchEngine
@@ -531,8 +532,9 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
+        val conversationMeta = chatUseCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
         chatUseCase.clearConversationContext()
-        finishCurrentConversationAndCleanupMemory(ChatConversationCloseReason.NEW_CONVERSATION)
+        launchConversationCleanup(conversationMeta)
 
         setStateAndRefreshChatSearch {
             copy(
@@ -713,8 +715,9 @@ class MainViewModel(
 
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = chatUseCase.snapshotContext()
+        val conversationMeta = chatUseCase.finishCurrentConversation(ChatConversationCloseReason.CLEAR_CONTEXT)
         chatUseCase.clearConversationContext()
-        finishCurrentConversationAndCleanupMemory(ChatConversationCloseReason.CLEAR_CONTEXT)
+        launchConversationCleanup(conversationMeta)
 
         when (currentState.userExpectCloseOnX) {
             false -> {
@@ -763,14 +766,12 @@ class MainViewModel(
         }
     }
 
-    private suspend fun finishCurrentConversationAndCleanupMemory(reason: ChatConversationCloseReason): String? {
-        val conversationId = chatUseCase.finishCurrentConversation(reason)
-        if (conversationId != null) {
+    private fun launchConversationCleanup(conversationMeta: ToolInvocationMeta?) {
+        if (conversationMeta != null) {
             viewModelScope.launch {
-                chatUseCase.cleanupConversationMemory(conversationId)
+                chatUseCase.cleanupConversation(conversationMeta)
             }
         }
-        return conversationId
     }
 
     override fun onCleared() {
@@ -788,10 +789,10 @@ class MainViewModel(
         super.onCleared()
         localModelPreloadJob?.cancel()
         ambientModelPreloadJob?.cancel()
-        val closedConversationId = chatUseCase.onCleared()
-        if (closedConversationId != null) {
+        val closedConversationMeta = chatUseCase.onCleared()
+        if (closedConversationMeta != null) {
             appScope.launch {
-                chatUseCase.cleanupConversationMemory(closedConversationId)
+                chatUseCase.cleanupConversation(closedConversationMeta)
             }
         }
         permissionsUseCase.onCleared()

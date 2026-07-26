@@ -3,6 +3,8 @@ package ru.souz.agent
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import ru.souz.GraphBasedAgent
+import ru.souz.SkillsGraphBasedAgent
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
@@ -45,6 +47,10 @@ class AgentExecutionKernelFactory(
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
     private val skillCommandTool: LLMToolSetup? = null,
+    private val getSkillsTool: LLMToolSetup,
+    private val getKnowledgeTool: LLMToolSetup,
+    private val runtimeCommandTool: LLMToolSetup,
+    private val knowledgeStore: ConversationKnowledgeStore,
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
     private val llmApi: LLMChatAPI,
@@ -64,6 +70,7 @@ class AgentExecutionKernelFactory(
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
             memoryRuntime = memoryRuntime,
+            knowledgeStore = knowledgeStore,
         )
         val nodesClassification = NodesClassification(
             settingsProvider = settingsProvider,
@@ -101,8 +108,23 @@ class AgentExecutionKernelFactory(
             nodesMCP = nodesMcp,
             nodesSkills = nodesSkills,
         )
+        val skillsGraphAgent = SkillsGraphBasedAgent(
+            logObjectMapper = logObjectMapper,
+            nodesLLM = nodesLLM,
+            nodesCommon = nodesCommon,
+            nodesErrorHandling = nodesErrorHandling,
+            nodesSummarization = nodesSummarization,
+            getSkillsTool = getSkillsTool,
+            getKnowledgeTool = getKnowledgeTool,
+            runtimeCommandTool = runtimeCommandTool,
+        )
         val executor = AgentExecutor(
-            agentProvider = { graphAgent },
+            agentProvider = { agentId ->
+                when (agentId) {
+                    AgentId.GRAPH -> graphAgent
+                    AgentId.SKILLS_GRAPH -> skillsGraphAgent
+                }
+            },
             memoryRuntime = memoryRuntime,
             captureScope = captureScope,
         )

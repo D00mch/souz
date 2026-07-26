@@ -9,7 +9,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 ## Highlights
 
 - **Kotlin Multiplatform app surfaces** built with Compose for Desktop plus an Android chat-agent entry point.
-- **GraphBasedAgent** powered by an explicit graph runtime with classification, MCP tool injection, prompt enrichment, LLM execution, tool loops, summarization, retries, tracing, and cancellation.
+- **Selectable graph agents**: the default `GraphBasedAgent` uses classification, skill activation, and MCP injection, while `SkillsGraphBasedAgent` lets the model discover and run skills through three always-available core tools.
 - **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
@@ -34,7 +34,7 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 
 ```text
 .
-├── agent/                  # Shared agent contracts, GraphBasedAgent, skill activation, sessions
+├── agent/                  # Shared agent contracts, graph agents, skill activation, sessions
 ├── graph-engine/           # Framework-free typed graph DSL/runtime
 ├── llms/                   # Shared LLM DTOs, provider enums, model profiles, token logging
 ├── native/                 # llama.cpp bridge and local model runtime
@@ -42,7 +42,7 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 ├── sharedLogic/            # Shared Android/JVM runtime logic, providers, tools, and sandboxes
 ├── sharedUI/               # Shared Compose and desktop UI, view models, host ports, UI adapters, UI resources
 ├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
-├── androidApp/             # Android chat-agent host over sharedUI, sharedLogic, and GraphBasedAgent
+├── androidApp/             # Android chat-agent host over sharedUI, sharedLogic, and graph agents
 ├── backend/                # Ktor HTTP backend over the shared agent runtime
 ├── scripts/                # Build, release, and packaging helper scripts
 ├── docs/                   # Project documentation
@@ -78,7 +78,7 @@ flowchart LR
     androidApp --> sharedUi
     androidApp --> agentNode
     androidApp --> runtimeNode
-    sharedUi --> agentNode[":agent\nGraphBasedAgent"]
+    sharedUi --> agentNode[":agent\nGraph agents"]
     sharedUi --> ambientNode[":ambientAgent\nAmbient speech analysis"]
     backendApi[":backend\nHTTP API"] --> agentNode
 
@@ -125,10 +125,12 @@ Souz keeps platform-specific logic at the edges:
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
 - `:sharedUI` contains shared Compose and Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
 - `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
-- `:androidApp` contains the Android entry point, Android storage/settings adapters, and the Android bridge from shared chat UI events to `GraphBasedAgent`.
+- `:androidApp` contains the Android entry point, Android storage/settings adapters, and the Android bridge from shared chat UI events to the selected graph agent.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
 
-## GraphBasedAgent
+## Agent graphs
+
+### GraphBasedAgent
 
 `GraphBasedAgent` is the standard tool-calling agent. Its graph is explicit and traceable:
 
@@ -158,6 +160,30 @@ Key behavior:
 - Session history and graph steps can be persisted for replay/inspection.
 - The execution delegate supports active-job cancellation and trace callbacks.
 - Errors are routed through a dedicated user-facing error node.
+
+### SkillsGraphBasedAgent
+
+`SkillsGraphBasedAgent` is available under the persisted agent ID `skills`; `GraphBasedAgent` under `graph` remains the default. Its graph keeps tool discovery inside the model-driven tool loop:
+
+```mermaid
+flowchart TD
+    input["User input"] --> history["Append input to history"]
+    history --> core["Install core tools"]
+    core --> enrich["Append additional context"]
+    enrich --> llm["LLM chat node"]
+    llm --> decision{"LLM result"}
+    decision -->|tool call| tool["Execute tool"]
+    tool --> result["Append result or Knowledge reference"]
+    result --> llm
+    decision -->|final answer| summary["Summarize or return"]
+    decision -->|error| errorNode["Map error to user-facing output"]
+    summary --> finish["Finish"]
+    errorNode --> finish
+```
+
+The skills-oriented graph exposes exactly `GetSkills`, `GetKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Catalog and MCP tools are not directly callable; executable skill commands delegate to the internal catalog.
+
+Tool-result text larger than 4,096 UTF-8 bytes is retained as conversation-scoped temporary Knowledge and replaced in history by a compact reference. A result of exactly 4 KiB stays inline. `GetKnowledge` returns a complete retained value or searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
 
 ## Graph engine
 

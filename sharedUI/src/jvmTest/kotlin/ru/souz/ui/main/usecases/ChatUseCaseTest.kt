@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentSideEffect
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.db.SettingsProvider
@@ -40,6 +41,7 @@ import ru.souz.service.observability.DesktopStructuredLogger
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -121,6 +123,7 @@ class ChatUseCaseTest {
             observabilityTracker = tracker,
             log = DesktopStructuredLogger(),
             tokenLogging = tokenLogging,
+            conversationKnowledgeStore = mockk(relaxed = true),
             ioDispatcher = UnconfinedTestDispatcher(),
         )
 
@@ -207,6 +210,7 @@ class ChatUseCaseTest {
             observabilityTracker = ChatObservabilityTracker(log = DesktopStructuredLogger()),
             log = DesktopStructuredLogger(),
             tokenLogging = tokenLogging,
+            conversationKnowledgeStore = mockk(relaxed = true),
             ioDispatcher = UnconfinedTestDispatcher(),
         )
 
@@ -247,11 +251,13 @@ class ChatUseCaseTest {
             )
         }
         executeStarted.await()
-        val conversationId = useCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
-        assertNotNull(conversationId)
+        val conversationMeta = assertNotNull(
+            useCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
+        )
+        val conversationId = assertNotNull(conversationMeta.conversationId)
 
         useCase.clearConversationContext()
-        useCase.cleanupConversationMemory(conversationId)
+        useCase.cleanupConversation(conversationMeta)
 
         assertEquals(listOf(conversationId), cleanup.cleanedConversationIds)
         assertTrue(executeResult.isActive)
@@ -259,8 +265,91 @@ class ChatUseCaseTest {
         advanceUntilIdle()
     }
 
+    @Test
+    fun `conversation cleanup uses exact execution metadata after context reset`() = runTest {
+        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
+        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
+        val baseMeta = ToolInvocationMeta(
+            userId = "user-42",
+            locale = "ru-RU",
+            timeZone = "Europe/Moscow",
+            attributes = mapOf("host" to "desktop"),
+        )
+        val useCase = createExecutableUseCase(
+            knowledgeStore = knowledgeStore,
+            baseMeta = baseMeta,
+        )
+
+        useCase.sendChatMessage(
+            scope = backgroundScope,
+            isVoice = false,
+            chatMessage = "hello",
+            requestSource = ChatRequestSource.CHAT_UI,
+        )
+        val capturedMeta = assertNotNull(
+            useCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
+        )
+
+        useCase.clearConversationContext()
+        useCase.cleanupConversation(capturedMeta)
+
+        assertEquals("user-42", capturedMeta.userId)
+        assertEquals("ru-RU", capturedMeta.locale)
+        assertEquals("Europe/Moscow", capturedMeta.timeZone)
+        assertTrue(capturedMeta.conversationId?.isNotBlank() == true)
+        assertTrue(capturedMeta.requestId?.isNotBlank() == true)
+        assertEquals("desktop", capturedMeta.attributes["host"])
+        assertTrue(capturedMeta.attributes["userMessageId"]?.isNotBlank() == true)
+        assertTrue(capturedMeta.attributes["assistantMessageId"]?.isNotBlank() == true)
+        assertEquals(listOf(capturedMeta), clearedKnowledgeMeta)
+    }
+
+    @Test
+    fun `memory cleanup failure does not prevent Knowledge cleanup`() = runTest {
+        val clearedKnowledgeMeta = mutableListOf<ToolInvocationMeta>()
+        val knowledgeStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { knowledgeStore.clearConversation(capture(clearedKnowledgeMeta)) } returns Unit
+        val useCase = createExecutableUseCase(
+            cleanup = object : MemoryConversationCleanup {
+                override suspend fun cleanupConversation(conversationId: String) {
+                    error("memory failure")
+                }
+            },
+            knowledgeStore = knowledgeStore,
+        )
+        val meta = ToolInvocationMeta(userId = "user-1", conversationId = "conversation-1")
+
+        useCase.cleanupConversation(meta)
+
+        assertEquals(listOf(meta), clearedKnowledgeMeta)
+    }
+
+    @Test
+    fun `Knowledge cleanup failure is best effort and cancellation propagates`() = runTest {
+        val failingStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { failingStore.clearConversation(any()) } throws IllegalStateException("storage failure")
+        val cleanup = RecordingMemoryConversationCleanup()
+        val useCase = createExecutableUseCase(cleanup = cleanup, knowledgeStore = failingStore)
+        val meta = ToolInvocationMeta(userId = "user-1", conversationId = "conversation-1")
+
+        useCase.cleanupConversation(meta)
+
+        assertEquals(listOf("conversation-1"), cleanup.cleanedConversationIds)
+
+        val cancellingStore = mockk<ConversationKnowledgeStore>(relaxed = true)
+        coEvery { cancellingStore.clearConversation(any()) } throws CancellationException("cancelled")
+        val cancellingUseCase = createExecutableUseCase(knowledgeStore = cancellingStore)
+
+        assertFailsWith<CancellationException> {
+            cancellingUseCase.cleanupConversation(meta)
+        }
+    }
+
     private fun createExecutableUseCase(
         cleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
+        knowledgeStore: ConversationKnowledgeStore = mockk(relaxed = true),
+        baseMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
         executeAnswer: suspend () -> String = { "response" },
     ): ChatUseCase {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
@@ -276,7 +365,7 @@ class ChatUseCaseTest {
                 history = listOf(LLMRequest.Message(LLMMessageRole.system, "Base system prompt")),
                 activeTools = emptyList(),
                 systemPrompt = "Base system prompt",
-                toolInvocationMeta = ToolInvocationMeta.localDefault(),
+                toolInvocationMeta = baseMeta,
             )
         )
         coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
@@ -320,6 +409,7 @@ class ChatUseCaseTest {
             log = DesktopStructuredLogger(),
             tokenLogging = tokenLogging,
             memoryConversationCleanup = cleanup,
+            conversationKnowledgeStore = knowledgeStore,
             ioDispatcher = UnconfinedTestDispatcher(),
         )
     }

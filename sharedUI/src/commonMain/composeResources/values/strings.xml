@@ -163,6 +163,8 @@
     <string name="label_agent">Agent</string>
     <string name="agent_option_graph_title">Graph Agent</string>
     <string name="agent_option_graph_description">Classic graph flow with iterative tool calls and summarization.</string>
+    <string name="agent_option_skills_graph_title">Skills Graph Agent</string>
+    <string name="agent_option_skills_graph_description">Tool-driven graph with skill discovery, temporary Knowledge retrieval, and skill commands.</string>
     <string name="agent_switch_dialog_title">Switch active agent?</string>
     <string name="agent_switch_dialog_message">Current work will be cancelled and the active conversation context will be cleared.</string>
     <string name="agent_switch_dialog_confirm">Switch</string>

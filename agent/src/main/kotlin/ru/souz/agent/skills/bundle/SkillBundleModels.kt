@@ -4,6 +4,7 @@ import ru.souz.agent.skills.activation.SkillId
 
 internal const val SKILL_MD_PATH = "SKILL.md"
 
+/** The skill with all the data */
 data class SkillBundle(
     val skillId: SkillId,
     val manifest: SkillManifest,

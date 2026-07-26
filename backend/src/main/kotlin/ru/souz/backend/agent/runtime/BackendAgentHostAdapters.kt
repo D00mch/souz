@@ -32,7 +32,7 @@ class BackendConversationSettingsProvider(
 
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
-    override var activeAgentId: AgentId = AgentId.default
+    override var activeAgentId: AgentId = delegate.activeAgentId
     override var gigaModel: LLMModel = delegate.gigaModel
     override var useFewShotExamples: Boolean = useFewShotExamples
     override var useStreaming: Boolean = false

@@ -10,8 +10,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.TestConversationKnowledgeStore
+import ru.souz.backend.testCoreTool
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
@@ -24,6 +27,35 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 
 class BackendConversationRuntimeSettingsTest {
+    @Test
+    fun `runtime resolves skills graph with only its core tools`() = runTest {
+        val api = ReplyingChatApi()
+        val settings = TestSettingsProvider().apply {
+            gigaChatKey = "giga-key"
+            activeAgentId = AgentId.SKILLS_GRAPH
+        }
+        val runtimeFactory = runtimeFactory(
+            settingsProvider = settings,
+            llmApiFactory = { api },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.FILES,
+                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+            ),
+        )
+        val request = turnRequest()
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        assertEquals(
+            listOf("GetSkills", "GetKnowledge", "RunSkillCommand"),
+            api.finalRequests.single().functions.map { it.name },
+        )
+    }
+
     @Test
     fun `runtime factory applies request timeout to request scoped llm settings provider`() = runTest {
         val capturedTimeouts = mutableListOf<Long>()
@@ -122,6 +154,10 @@ private fun runtimeFactory(
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,
+        getSkillsTool = testCoreTool("GetSkills"),
+        getKnowledgeTool = testCoreTool("GetKnowledge"),
+        runtimeCommandTool = testCoreTool("RunSkillCommand"),
+        knowledgeStore = TestConversationKnowledgeStore,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
 
