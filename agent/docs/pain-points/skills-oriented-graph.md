@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes exactly `GetSkills`, `GetKnowledge`, and generic `RunSkillCommand`. At the start of each turn it replaces both the functions advertised to the model and the executable tool lookup with those three tools. It does not run classification, legacy skill activation, or MCP injection.
+`SkillsGraphBasedAgent` exposes exactly `GetSkills`, `GetKnowledge`, and generic `RunSkillCommand`. Its execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. It does not run classification, legacy skill activation, or MCP injection.
 
 Tool results larger than 4,096 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 4,096 bytes stays inline. `GetKnowledge` results are never offloaded again. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 
@@ -14,7 +14,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 
 ## Safe changes
 
-- Keep core-tool installation before context enrichment and run it only once per user turn; tool loops return directly to the LLM.
+- Keep core-tool restriction at the execution boundary so every graph node sees the restricted context; tool loops return directly to the LLM.
 - Keep large-result processing opt-in beside the classic `NodesCommon.toolUse()` path.
 - Preserve function-result role, name, attachments, and call ID when replacing only its content.
 - Keep Knowledge cleanup tied to destructive or local conversation-close lifecycles. Backend archive is non-destructive and does not clear Knowledge.

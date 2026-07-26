@@ -25,7 +25,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.ToolCategory
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.test.Test
@@ -143,36 +142,6 @@ class NodesCommonKnowledgeTest {
         }
     }
 
-    @Test
-    fun `core tools replace advertised and executable catalog tools`() = runTest {
-        val catalogTool = FixedResultTool("CatalogTool", "catalog")
-        val coreTools = listOf(
-            FixedResultTool("GetSkills", "skills"),
-            FixedResultTool("GetKnowledge", "knowledge"),
-            FixedResultTool("RunSkillCommand", "command"),
-        )
-        val nodes = nodesCommon(knowledgeStore = null)
-        val context = stringContext(
-            tools = AgentTools(
-                byCategory = mapOf(ToolCategory.FILES to mapOf(catalogTool.fn.name to catalogTool)),
-            )
-        ).copy(activeTools = listOf(catalogTool.fn))
-
-        val result = nodes.installCoreTools(coreTools).execute(context, runtime())
-
-        assertEquals(coreTools.map { it.fn }, result.activeTools)
-        assertEquals(coreTools.associateBy { it.fn.name }, result.settings.tools.byName)
-        assertTrue(result.settings.tools.byCategory.isEmpty())
-        assertTrue(result.settings.tools.categoryByName.isEmpty())
-        assertFalse(result.settings.tools.byName.containsKey(catalogTool.fn.name))
-
-        val fabricatedCallResult = AgentToolExecutor().execute(
-            settings = result.settings,
-            functionCall = LLMResponse.FunctionCall(catalogTool.fn.name, emptyMap()),
-        )
-        assertTrue(fabricatedCallResult.content.contains("no such function CatalogTool"))
-    }
-
     private suspend fun executeToolResult(
         content: String,
         store: ConversationKnowledgeStore,
@@ -225,14 +194,6 @@ class NodesCommonKnowledgeTest {
             ),
         )
     }
-
-    private fun stringContext(tools: AgentTools): AgentContext<String> = AgentContext(
-        input = "input",
-        settings = AgentSettings(model = "test", temperature = 0f, tools = tools),
-        history = emptyList(),
-        activeTools = emptyList(),
-        systemPrompt = "system",
-    )
 
     private fun nodesCommon(knowledgeStore: ConversationKnowledgeStore?): NodesCommon = NodesCommon(
         desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
