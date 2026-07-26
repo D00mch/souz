@@ -7,9 +7,7 @@ import java.time.Instant
 /**
  * Lightweight persisted view of a registered skill.
  *
- * This record is intentionally cheaper than [ru.souz.agent.skills.bundle.SkillBundle]: it
- * exposes the manifest, stable id, and current bundle hash used by selection and cache lookup
- * without forcing callers to load all bundle files.
+ * The [ru.souz.agent.skills.bundle.SkillBundle] is like a Movie, and the [StoredSkill] is a trailer.
  */
 data class StoredSkill(
     /** User that owns this registration namespace. */
