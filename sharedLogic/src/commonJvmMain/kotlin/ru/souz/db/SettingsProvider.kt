@@ -11,6 +11,7 @@ import ru.souz.llms.VoiceRecognitionProvider
 
 const val REGION_RU = "ru"
 const val REGION_EN = "en"
+const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 400_000L
 
 interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var gigaChatKey: String?
