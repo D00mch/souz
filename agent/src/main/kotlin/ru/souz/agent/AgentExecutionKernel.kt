@@ -13,6 +13,7 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.nodes.SkillsGraphNodes
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.SkillActivationPipeline
 import ru.souz.agent.skills.registry.SkillRegistryRepository
@@ -94,6 +95,13 @@ class AgentExecutionKernelFactory(
             skillCommandTool = skillCommandTool,
         )
         val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
+        val skillsGraphNodes = SkillsGraphNodes(
+            logObjectMapper = logObjectMapper,
+            nodesCommon = nodesCommon,
+            getSkillsTool = getSkillsTool,
+            getKnowledgeTool = getKnowledgeTool,
+            runtimeCommandTool = runtimeCommandTool,
+        )
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,
             systemPromptResolver = SystemPromptResolver(),
@@ -114,12 +122,10 @@ class AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             nodesLLM = nodesLLM,
             nodesCommon = nodesCommon,
+            skillsGraphNodes = skillsGraphNodes,
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
-            getSkillsTool = getSkillsTool,
-            getKnowledgeTool = getKnowledgeTool,
-            runtimeCommandTool = runtimeCommandTool,
         )
         val executor = AgentExecutor(
             agentProvider = { agentId ->

@@ -50,6 +50,7 @@ class ToolGetSkills(
             properties = mapOf(
                 "results" to LLMRequest.Property("array", "Available Skill summaries or requested Skill details."),
                 "errors" to LLMRequest.Property("array", "Per-Skill discovery errors, including unavailable IDs."),
+                "instruction" to LLMRequest.Property("string", "Required Skill discovery and invocation protocol."),
             ),
         ),
     )
@@ -98,8 +99,9 @@ class ToolGetSkills(
                     add(
                         SummaryResult(
                             skillId = tool.fn.name,
-                            name = tool.fn.name,
+                            displayName = tool.fn.name,
                             description = tool.fn.description,
+                            nextCall = inspectCall(tool.fn.name),
                         )
                     )
                 }
@@ -162,22 +164,24 @@ class ToolGetSkills(
 
     private fun StoredSkill.toSummary(): SummaryResult = SummaryResult(
         skillId = skillId.value,
-        name = manifest.name,
+        displayName = manifest.name,
         description = manifest.description,
+        nextCall = inspectCall(skillId.value),
     )
 
     private fun LLMToolSetup.toDetail(): ToolSkillDetail = ToolSkillDetail(
         skillId = fn.name,
-        name = fn.name,
+        displayName = fn.name,
         description = fn.description,
         inputSchema = fn.parameters,
         returnSchema = fn.returnParameters,
         fewShotExamples = fn.fewShotExamples.orEmpty(),
+        nextCall = invokeCall(fn.name),
     )
 
     private fun SkillBundle.toDetail(): BundleSkillDetail = BundleSkillDetail(
         skillId = skillId.value,
-        name = manifest.name,
+        displayName = manifest.name,
         description = manifest.description,
         skillMarkdownBody = skillMarkdownBody,
         author = manifest.author,
@@ -187,6 +191,24 @@ class ToolGetSkills(
             .filterNot { it == SKILL_MARKDOWN_PATH },
         inputSchema = legacyCommandTool.fn.parameters.withoutLegacyBindings(),
         returnSchema = sandboxCommandResultSchema(),
+        nextCall = invokeCall(skillId.value),
+    )
+
+    private fun inspectCall(skillId: String): SkillCallTemplate = SkillCallTemplate(
+        name = NAME,
+        arguments = mapOf("skillIds" to listOf(skillId)),
+        instruction = "Call this exact template to inspect the Skill schema.",
+    )
+
+    private fun invokeCall(skillId: String): SkillCallTemplate = SkillCallTemplate(
+        name = ToolInvokeSkill.NAME,
+        arguments = mapOf(
+            "skillId" to skillId,
+            "arguments" to emptyMap<String, Any>(),
+        ),
+        instruction =
+            "Replace the nested arguments object with values matching the sibling inputSchema before calling; " +
+                "leave it empty only when that schema has no inputs.",
     )
 
     private fun LLMRequest.Parameters.withoutLegacyBindings(): LLMRequest.Parameters = copy(
@@ -203,7 +225,14 @@ class ToolGetSkills(
 private data class GetSkillsResponse(
     val results: List<SkillResult> = emptyList(),
     val errors: List<SkillError> = emptyList(),
+    val instruction: String = SKILL_INVOCATION_INSTRUCTION,
 )
+
+private const val SKILL_INVOCATION_INSTRUCTION =
+    "Values in results[].skillId are Skill IDs, not callable function names. " +
+        "Inspect them with GetSkills(skillIds=[...]), then execute them only with " +
+        "RunSkillCommand(skillId=<exact ID>, arguments=<matching input schema>). " +
+        "Never put a Skill ID in the function name field."
 
 private sealed interface SkillResult {
     val skillId: String
@@ -211,22 +240,24 @@ private sealed interface SkillResult {
 
 private data class SummaryResult(
     override val skillId: String,
-    val name: String,
+    val displayName: String,
     val description: String,
+    val nextCall: SkillCallTemplate,
 ) : SkillResult
 
 private data class ToolSkillDetail(
     override val skillId: String,
-    val name: String,
+    val displayName: String,
     val description: String,
     val inputSchema: LLMRequest.Parameters,
     val returnSchema: LLMRequest.Parameters?,
     val fewShotExamples: List<LLMRequest.FewShotExample>,
+    val nextCall: SkillCallTemplate,
 ) : SkillResult
 
 private data class BundleSkillDetail(
     override val skillId: String,
-    val name: String,
+    val displayName: String,
     val description: String,
     val skillMarkdownBody: String,
     val author: String?,
@@ -234,7 +265,14 @@ private data class BundleSkillDetail(
     val supportingFiles: List<String>,
     val inputSchema: LLMRequest.Parameters,
     val returnSchema: LLMRequest.Parameters,
+    val nextCall: SkillCallTemplate,
 ) : SkillResult
+
+private data class SkillCallTemplate(
+    val name: String,
+    val arguments: Map<String, Any>,
+    val instruction: String,
+)
 
 private data class SkillError(
     val skillId: String?,

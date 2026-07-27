@@ -80,7 +80,8 @@ class SkillRuntimeToolsTest {
             }
         }
 
-        val response = getSkillsTool(repository, catalog, filter).call(emptyMap())
+        val getSkills = getSkillsTool(repository, catalog, filter)
+        val response = getSkills.call(emptyMap())
 
         assertEquals(
             listOf("alpha", "collision", "disabled", "zeta"),
@@ -98,6 +99,11 @@ class SkillRuntimeToolsTest {
             "filtered zeta",
             response["results"].first { it["skillId"].asText() == "zeta" }["description"].asText(),
         )
+        assertContains(response["instruction"].asText(), ToolInvokeSkill.NAME)
+        assertContains(response["instruction"].asText(), "not callable function names")
+        assertTrue(getSkills.fn.returnParameters!!.properties.containsKey("instruction"))
+        assertTrue(response["results"].all { it.has("displayName") && !it.has("name") })
+        assertEquals(ToolGetSkills.NAME, response["results"].first()["nextCall"]["name"].asText())
         assertTrue(response["errors"].isEmpty)
         coVerify(exactly = 1) { repository.listSkills(USER_ID) }
         coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
@@ -164,6 +170,12 @@ class SkillRuntimeToolsTest {
         assertEquals("filtered compiled", toolDetail["description"].asText())
         assertTrue(toolDetail["inputSchema"]["properties"].has("filteredArgument"))
         assertEquals("filtered example", toolDetail["fewShotExamples"].single()["request"].asText())
+        assertEquals(ToolInvokeSkill.NAME, toolDetail["nextCall"]["name"].asText())
+        assertEquals("compiled", toolDetail["nextCall"]["arguments"]["skillId"].asText())
+        assertTrue(toolDetail["nextCall"]["arguments"]["arguments"].isObject)
+        assertTrue(toolDetail["nextCall"]["arguments"]["arguments"].isEmpty)
+        assertContains(toolDetail["nextCall"]["instruction"].asText(), "inputSchema")
+        assertEquals(listOf("skillId", "arguments"), invokeSkillTool(repository).fn.parameters.required)
 
         val bundleDetail = response["results"][1]
         assertEquals("Use the complete bundle instructions.", bundleDetail["skillMarkdownBody"].asText())
@@ -194,7 +206,9 @@ class SkillRuntimeToolsTest {
             getSkillsTool(repository).call(mapOf("skillIds" to listOf("cancelled")))
         }
         assertFailsWith<CancellationException> {
-            invokeSkillTool(repository).call(mapOf("skillId" to "cancelled"))
+            invokeSkillTool(repository).call(
+                mapOf("skillId" to "cancelled", "arguments" to emptyMap<String, Any>())
+            )
         }
     }
 
@@ -211,6 +225,10 @@ class SkillRuntimeToolsTest {
         val meta = ToolInvocationMeta(userId = "runtime-user", conversationId = "conversation")
         val arguments = mapOf<String, Any>("value" to 7, "nested" to mapOf("ok" to true))
 
+        val missingArguments = runner.call(mapOf("skillId" to "compiled"))
+        assertEquals("skill_invocation_failed", missingArguments["error"]["code"].asText())
+        assertNull(compiled.lastArguments)
+
         val result = runner.invoke(
             LLMResponse.FunctionCall(
                 name = ToolInvokeSkill.NAME,
@@ -225,9 +243,19 @@ class SkillRuntimeToolsTest {
         assertEquals(listOf("attachment-id"), result.attachments)
         assertEquals(ToolInvokeSkill.NAME, result.name)
         coVerify(exactly = 0) { repository.loadSkillBundle(any(), SkillId("compiled")) }
-        assertEquals("invalid_skill_id", runner.call(mapOf("skillId" to " "))["error"]["code"].asText())
-        assertEquals("skill_disabled", runner.call(mapOf("skillId" to "disabled"))["error"]["code"].asText())
-        assertEquals("skill_not_found", runner.call(mapOf("skillId" to "missing"))["error"]["code"].asText())
+        val emptyArguments = mapOf<String, Any>("arguments" to emptyMap<String, Any>())
+        assertEquals(
+            "invalid_skill_id",
+            runner.call(emptyArguments + ("skillId" to " "))["error"]["code"].asText(),
+        )
+        assertEquals(
+            "skill_disabled",
+            runner.call(emptyArguments + ("skillId" to "disabled"))["error"]["code"].asText(),
+        )
+        assertEquals(
+            "skill_not_found",
+            runner.call(emptyArguments + ("skillId" to "missing"))["error"]["code"].asText(),
+        )
     }
 
     @Test

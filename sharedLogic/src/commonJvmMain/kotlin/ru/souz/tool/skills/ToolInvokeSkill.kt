@@ -29,7 +29,7 @@ class ToolInvokeSkill(
 ) : LLMToolSetup {
     data class Input(
         val skillId: String,
-        val arguments: Map<String, Any> = emptyMap(),
+        val arguments: Map<String, Any>,
     )
 
     override val fn: LLMRequest.Function = LLMRequest.Function(
@@ -41,7 +41,7 @@ class ToolInvokeSkill(
                 "skillId" to LLMRequest.Property("string", "Exact unqualified Skill ID returned by GetSkills."),
                 "arguments" to LLMRequest.Property("object", "Arguments matching the Skill input schema returned by GetSkills."),
             ),
-            required = listOf("skillId"),
+            required = listOf("skillId", "arguments"),
         ),
     )
 

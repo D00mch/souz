@@ -1,7 +1,6 @@
 package ru.souz
 
-import io.mockk.every
-import io.mockk.mockk
+import io.mockk.*
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.Node
@@ -10,6 +9,7 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.nodes.SkillsGraphNodes
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
@@ -27,6 +27,7 @@ class SkillsGraphBasedAgentTest {
     fun `graph starts with only core tools and loops tool calls directly back to chat`() = runTest {
         val nodesLLM = mockk<NodesLLM>()
         val nodesCommon = mockk<NodesCommon>()
+        val skillsGraphNodes = mockk<SkillsGraphNodes>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
@@ -45,14 +46,24 @@ class SkillsGraphBasedAgentTest {
         )
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
+        every { skillsGraphNodes.restrictToCoreTools(any<AgentContext<String>>()) } answers {
+            val context = firstArg<AgentContext<String>>()
+            context.copy(
+                settings = context.settings.copy(
+                    tools = AgentTools(
+                        byCategory = emptyMap(),
+                        byName = coreTools.associateBy { it.fn.name },
+                    )
+                ),
+                activeTools = coreTools.map { it.fn },
+            )
+        }
         every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
             executed += "LLM"
             chatCount += 1
             ctx.map { if (chatCount <= 2) toolCallResponse() else finalResponse() }
         }
-        every {
-            nodesCommon.toolUseWithKnowledge(getKnowledge.fn.name)
-        } returns Node("toolUse") { ctx ->
+        every { skillsGraphNodes.toolUse() } returns Node("toolUse") { ctx ->
             executed += "toolUse"
             ctx.map { "tool-result" }
         }
@@ -69,12 +80,10 @@ class SkillsGraphBasedAgentTest {
         val result = agent(
             nodesLLM,
             nodesCommon,
+            skillsGraphNodes,
             nodesErrorHandling,
             nodesSummarization,
             nodesMemory,
-            getSkills,
-            getKnowledge,
-            runtimeCommand,
         ).executeWithTrace(baseContext())
 
         assertEquals("final", result.output)
@@ -92,29 +101,31 @@ class SkillsGraphBasedAgentTest {
             ),
             executed,
         )
+        verify(exactly = 1) { skillsGraphNodes.restrictToCoreTools(any<AgentContext<String>>()) }
     }
 
     @Test
     fun `LLM errors use existing user-facing error node`() = runTest {
         val nodesLLM = mockk<NodesLLM>()
         val nodesCommon = mockk<NodesCommon>()
+        val skillsGraphNodes = mockk<SkillsGraphNodes>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
-        val getSkills = tool("GetSkills")
-        val getKnowledge = tool("GetKnowledge")
-        val runtimeCommand = tool("RunSkillCommand")
         val executed = mutableListOf<String>()
 
         every { nodesLLM.sideEffects } returns emptyFlow()
         every { nodesCommon.inputToHistory() } returns passthrough("Input->History", executed)
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
+        every { skillsGraphNodes.restrictToCoreTools(any<AgentContext<String>>()) } answers {
+            firstArg()
+        }
         every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
             executed += "LLM"
             ctx.map { LLMResponse.Chat.Error(500, "provider failed") }
         }
-        every { nodesCommon.toolUseWithKnowledge(getKnowledge.fn.name) } returns Node("toolUse") { it.map { "" } }
+        every { skillsGraphNodes.toolUse() } returns Node("toolUse") { it.map { "" } }
         every { nodesSummarization.summarize() } returns Node("Summary") { it.map { "" } }
         every { nodesMemory.finalizeTurn(any()) } returns Node("Memory-aware finalization") { it.map { "" } }
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
@@ -122,12 +133,10 @@ class SkillsGraphBasedAgentTest {
         val result = agent(
             nodesLLM,
             nodesCommon,
+            skillsGraphNodes,
             nodesErrorHandling,
             nodesSummarization,
             nodesMemory,
-            getSkills,
-            getKnowledge,
-            runtimeCommand,
         ).executeWithTrace(baseContext())
 
         assertEquals("friendly error", result.output)
@@ -146,22 +155,18 @@ class SkillsGraphBasedAgentTest {
     private fun agent(
         nodesLLM: NodesLLM,
         nodesCommon: NodesCommon,
+        skillsGraphNodes: SkillsGraphNodes,
         nodesErrorHandling: NodesErrorHandling,
         nodesSummarization: NodesSummarization,
         nodesMemory: NodesMemory,
-        getSkills: LLMToolSetup,
-        getKnowledge: LLMToolSetup,
-        runtimeCommand: LLMToolSetup,
     ) = SkillsGraphBasedAgent(
         logObjectMapper = restJsonMapper,
         nodesLLM = nodesLLM,
         nodesCommon = nodesCommon,
+        skillsGraphNodes = skillsGraphNodes,
         nodesErrorHandling = nodesErrorHandling,
         nodesSummarization = nodesSummarization,
         nodesMemory = nodesMemory,
-        getSkillsTool = getSkills,
-        getKnowledgeTool = getKnowledge,
-        runtimeCommandTool = runtimeCommand,
     )
 
     private fun passthrough(name: String, executed: MutableList<String>) = Node<String, String>(name) { ctx ->

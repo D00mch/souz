@@ -4,6 +4,10 @@
 
 `SkillsGraphBasedAgent` exposes exactly `GetSkills`, `GetKnowledge`, and generic `RunSkillCommand`. Its execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. It does not run classification, legacy skill activation, or MCP injection.
 
+A Skill ID called as a function is rejected without executing it. The function result directs the model to inspect an unknown Skill with `GetSkills`, or to retry a successfully inspected Skill through `RunSkillCommand` while preserving failed-call telemetry. Rejected calls from one response remain an ordered recovery batch whose first entry is the singular required next call. Recovery guidance uses the inspection history available at each call, so a valid discovery earlier in the same response can refine guidance for later rejected calls. Rejected arguments are only candidate values; the retry must conform to the discovered schema. Guidance after a failed discovery tells the model not to repeat discovery for that Skill ID.
+
+Inspection state comes from successful `GetSkills` detail results, including complete details retrieved through `GetKnowledge` after offloading. Results earlier in the same multi-call response are visible to recovery of later calls.
+
 Tool results larger than 4,096 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 4,096 bytes stays inline. `GetKnowledge` results are never offloaded again. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 
 Knowledge entries use UTF-16 offsets and lengths because they retain Kotlin strings. A complete read returns all retained text. A truncated read exposes the retained head and tail with their original ranges and the omitted range. Regex retrieval searches retained segments independently, so it never matches across an omitted middle. Knowledge is temporary and belongs to the exact tool-invocation conversation scope.

@@ -16,6 +16,7 @@ import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.nodes.SkillsGraphNodes
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.SkillActivationPipeline
 import ru.souz.agent.skills.registry.SkillRegistryRepository
@@ -89,6 +90,15 @@ fun agentDiModule(
             skillCommandTool = skillCommandToolTag?.let { tag -> instance<LLMToolSetup>(tag = tag) },
         )
     }
+    bindSingleton {
+        SkillsGraphNodes(
+            logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
+            nodesCommon = instance(),
+            getSkillsTool = instance(tag = SkillToolBindingTags.GET_SKILLS_TOOL),
+            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
+        )
+    }
     bindSingleton { SystemPromptResolver() }
     bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
     bindSingleton { AgentContextFactory(instance(), instance(), instance()) }
@@ -110,12 +120,10 @@ fun agentDiModule(
             logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
             nodesLLM = instance(),
             nodesCommon = instance(),
+            skillsGraphNodes = instance(),
             nodesErrorHandling = instance(),
             nodesSummarization = instance(),
             nodesMemory = instance(),
-            getSkillsTool = instance(tag = SkillToolBindingTags.GET_SKILLS_TOOL),
-            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
         )
     }
     bindSingleton {

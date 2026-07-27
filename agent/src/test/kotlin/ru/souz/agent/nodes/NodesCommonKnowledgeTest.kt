@@ -142,6 +142,92 @@ class NodesCommonKnowledgeTest {
         }
     }
 
+    @Test
+    fun `unknown tool result can provide recovery guidance without executing the rejected tool`() = runTest {
+        val rejectedTool = FixedResultTool("FindFilesByName", "must not execute")
+        val context = toolContext(rejectedTool).copy(
+            settings = AgentSettings(
+                model = "test",
+                temperature = 0f,
+                tools = AgentTools(emptyMap()),
+            ),
+        )
+
+        val result = nodesCommon(knowledgeStore = null).toolUseWithKnowledge(
+            getKnowledgeToolName = "GetKnowledge",
+            unknownToolResult = { functionCall, _, rejectedCalls ->
+                assertEquals(listOf(functionCall), rejectedCalls)
+                "recover ${functionCall.name} ${functionCall.arguments}"
+            },
+        ).execute(context, runtime())
+
+        val message = result.history.last()
+        assertEquals("recover FindFilesByName {}", message.content)
+        assertEquals("FindFilesByName", message.name)
+        assertEquals("call-1", message.functionsStateId)
+        assertFalse(message.content.contains("must not execute"))
+    }
+
+    @Test
+    fun `unknown tool recovery sees preceding tool results from the same response`() = runTest {
+        val detail = """{"results":[{"skillId":"FindFilesByName","inputSchema":{"type":"object"}}]}"""
+        val getSkills = FixedResultTool("GetSkills", detail)
+        val calls = listOf("GetSkills", "FindFilesByName", "ListNotes").mapIndexed { index, name ->
+            LLMResponse.Choice(
+                message = LLMResponse.Message(
+                    content = "",
+                    role = LLMMessageRole.assistant,
+                    functionCall = LLMResponse.FunctionCall(name, emptyMap()),
+                    functionsStateId = "call-$index",
+                ),
+                index = index,
+                finishReason = LLMResponse.FinishReason.function_call,
+            )
+        }
+        val baseContext = toolContext(getSkills)
+        val context = baseContext.copy(input = baseContext.input.copy(choices = calls))
+        val observedRejectedCalls = mutableListOf<List<String>>()
+
+        val result = nodesCommon(knowledgeStore = null).toolUseWithKnowledge(
+            getKnowledgeToolName = "GetKnowledge",
+            unknownToolResult = { functionCall, history, rejectedCalls ->
+                observedRejectedCalls += rejectedCalls.map { it.name }
+                val state = if (history.any { it.name == "GetSkills" && it.content == detail }) {
+                    "inspected"
+                } else {
+                    "missing"
+                }
+                "${functionCall.name}:$state"
+            },
+        ).execute(context, runtime())
+
+        assertEquals(
+            listOf(detail, "FindFilesByName:inspected", "ListNotes:inspected"),
+            result.history.takeLast(3).map { it.content },
+        )
+        assertEquals(2, observedRejectedCalls.size)
+        assertTrue(
+            observedRejectedCalls.all { it == listOf("FindFilesByName", "ListNotes") }
+        )
+    }
+
+    @Test
+    fun `unknown tool recovery is not used for an active core tool`() = runTest {
+        val coreTool = FixedResultTool("GetSkills", "skills")
+        var recoveryUsed = false
+
+        val result = nodesCommon(knowledgeStore = null).toolUseWithKnowledge(
+            getKnowledgeToolName = "GetKnowledge",
+            unknownToolResult = { _, _, _ ->
+                recoveryUsed = true
+                "recover"
+            },
+        ).execute(toolContext(coreTool), runtime())
+
+        assertEquals("skills", result.history.last().content)
+        assertFalse(recoveryUsed)
+    }
+
     private suspend fun executeToolResult(
         content: String,
         store: ConversationKnowledgeStore,

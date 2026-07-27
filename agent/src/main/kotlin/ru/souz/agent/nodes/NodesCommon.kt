@@ -103,9 +103,14 @@ internal class NodesCommon(
      */
     fun toolUseWithKnowledge(
         getKnowledgeToolName: String,
+        unknownToolResult: ((
+            LLMResponse.FunctionCall,
+            List<LLMRequest.Message>,
+            List<LLMResponse.FunctionCall>,
+        ) -> String)? = null,
         name: String = "toolUse",
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = fnCallMessages(ctx).map { (functionCall, message) ->
+        val fnCallMessages = fnCallMessages(ctx, unknownToolResult).map { (functionCall, message) ->
             if (
                 functionCall.name == getKnowledgeToolName ||
                 message.content.toByteArray(Charsets.UTF_8).size <= KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES
@@ -197,21 +202,45 @@ internal class NodesCommon(
 
     private suspend fun fnCallMessages(
         ctx: AgentContext<LLMResponse.Chat.Ok>,
-    ): List<Pair<LLMResponse.FunctionCall, LLMRequest.Message>> =
-        ctx.input.choices.mapNotNull { choice ->
-            val msg = choice.message
-            val functionCall = msg.functionCall
-            val functionsStateId = msg.functionsStateId
-            if (functionCall != null && functionsStateId != null) {
-                functionCall to executeTool(
-                    settings = ctx.settings,
-                    functionCall = functionCall,
-                    meta = ctx.toolInvocationMeta,
-                    toolCallId = functionsStateId,
-                    eventSink = ctx.runtimeEventSink,
-                ).copy(functionsStateId = functionsStateId)
-            } else null
+        unknownToolResult: ((
+            LLMResponse.FunctionCall,
+            List<LLMRequest.Message>,
+            List<LLMResponse.FunctionCall>,
+        ) -> String)? = null,
+    ): List<Pair<LLMResponse.FunctionCall, LLMRequest.Message>> {
+        val recoveryHistory = ArrayList(ctx.history)
+        val rejectedCalls = ctx.input.choices.mapNotNull { it.message.functionCall }
+            .filterNot { it.name in ctx.settings.tools.byName }
+        return buildList {
+            ctx.input.choices.forEach { choice ->
+                val msg = choice.message
+                val functionCall = msg.functionCall
+                val functionsStateId = msg.functionsStateId
+                if (functionCall != null && functionsStateId != null) {
+                    val toolResult = executeTool(
+                        settings = ctx.settings,
+                        functionCall = functionCall,
+                        meta = ctx.toolInvocationMeta,
+                        toolCallId = functionsStateId,
+                        eventSink = ctx.runtimeEventSink,
+                    )
+                    val recoveredResult = if (
+                        unknownToolResult != null && functionCall.name !in ctx.settings.tools.byName
+                    ) {
+                        toolResult.copy(
+                            content = unknownToolResult(functionCall, recoveryHistory, rejectedCalls),
+                            name = functionCall.name,
+                        )
+                    } else {
+                        toolResult
+                    }
+                    val result = recoveredResult.copy(functionsStateId = functionsStateId)
+                    add(functionCall to result)
+                    recoveryHistory += result
+                }
+            }
         }
+    }
 
     private suspend fun offloadToolResult(
         message: LLMRequest.Message,

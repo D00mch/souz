@@ -13,12 +13,11 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.nodes.SkillsGraphNodes
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 
 /**
  * Agent graph whose model always sees only the core skill-discovery, Knowledge, and execution tools.
@@ -28,25 +27,16 @@ class SkillsGraphBasedAgent internal constructor(
     logObjectMapper: ObjectMapper,
     private val nodesLLM: NodesLLM,
     private val nodesCommon: NodesCommon,
+    private val skillsGraphNodes: SkillsGraphNodes,
     private val nodesErrorHandling: NodesErrorHandling,
     private val nodesSummarization: NodesSummarization,
     private val nodesMemory: NodesMemory,
-    getSkillsTool: LLMToolSetup,
-    getKnowledgeTool: LLMToolSetup,
-    runtimeCommandTool: LLMToolSetup,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),
 ) : TraceableAgent {
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
-
-    private val coreTools = listOf(getSkillsTool, getKnowledgeTool, runtimeCommandTool)
-    private val coreFunctions = coreTools.map { it.fn }
-    private val coreToolRegistry = AgentTools(
-        byCategory = emptyMap(),
-        byName = coreTools.associateBy { it.fn.name },
-    )
 
     private val graph: Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
@@ -56,7 +46,7 @@ class SkillsGraphBasedAgent internal constructor(
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
-        val toolUse = nodesCommon.toolUseWithKnowledge(getKnowledgeTool.fn.name)
+        val toolUse = skillsGraphNodes.toolUse()
         val finalizeTurn = nodesMemory.finalizeTurn(
             summarization = nodesSummarization.summarize(),
         )
@@ -88,13 +78,11 @@ class SkillsGraphBasedAgent internal constructor(
     override suspend fun executeWithTrace(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
-    ): AgentExecutionResult {
-        val restrictedContext = ctx.copy(
-            settings = ctx.settings.copy(tools = coreToolRegistry),
-            activeTools = coreFunctions,
-        )
-        return executionDelegate.executeWithTrace(graph = graph, ctx = restrictedContext, onStep = onStep)
-    }
+    ): AgentExecutionResult = executionDelegate.executeWithTrace(
+        graph = graph,
+        ctx = skillsGraphNodes.restrictToCoreTools(ctx),
+        onStep = onStep,
+    )
 
     private val LLMResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 }

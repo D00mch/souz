@@ -12,13 +12,14 @@ import org.kodein.di.bindProvider
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
-import ru.souz.agent.Agent
+import ru.souz.agent.AgentContextFactory
+import ru.souz.agent.AgentExecutor
 import ru.souz.agent.AgentId
-import ru.souz.agent.SystemPromptResolver
-import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentSettings
-import ru.souz.GraphBasedAgent
-import ru.souz.SkillsGraphBasedAgent
+import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.McpToolProvider
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
@@ -26,6 +27,12 @@ import ru.souz.db.SettingsProviderImpl
 import ru.souz.di.mainDiModule
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.tunnel.AiTunnelChatAPI
@@ -37,42 +44,34 @@ import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramService
-import ru.souz.tool.ToolRunBashCommand
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
+import ru.souz.tool.RuntimePassThroughToolsFilter
+import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolsFactory
-import ru.souz.tool.calendar.ToolCalendarCreateEvent
-import ru.souz.tool.calendar.ToolCalendarDeleteEvent
 import ru.souz.runtime.files.FilesToolUtil
-import ru.souz.tool.files.ToolDeleteFile
-import ru.souz.tool.files.ToolModifyFile
-import ru.souz.tool.files.ToolMoveFile
-import ru.souz.tool.files.ToolNewFile
-import ru.souz.tool.mail.ToolMailReplyMessage
-import ru.souz.tool.mail.ToolMailSendNewMessage
-import ru.souz.tool.notes.ToolCreateNote
-import ru.souz.tool.notes.ToolDeleteNote
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
 class AgentScenarioTestSupport(
     private val selectedModel: LLMModel,
-    private val agentType: AgentId,
 ) {
+    private val agentType: AgentId = parseScenarioAgentId(readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_AGENT))
     val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
     private var fewShotExamplesEnabled: Boolean = true
 
     private val spySettings: SettingsProviderImpl by lazy {
         spyk(SettingsProviderImpl(ConfigStore)) {
+            every { contextSize } returns 32_000
             every { forbiddenFolders } returns emptyList()
             every { useStreaming } returns false
             every { useFewShotExamples } answers { fewShotExamplesEnabled }
             every { gigaModel } returns selectedModel
             every { requestTimeoutMillis } returns 60_000L
-            every { temperature } returns 0.2f
+            every { temperature } returns 0f
             every { getSystemPromptForAgentModel(any(), any()) } answers {
-                """
-                    Будь полезен. Выполняй инструкции с помощью тулов.
-                """.trimIndent()
+                scenarioSystemPrompt(firstArg())
             }
         }
     }
@@ -98,58 +97,11 @@ class AgentScenarioTestSupport(
                     )
                 }
             }
-
-            // Safe defaults: prevent accidental system mutations if a scenario doesn't explicitly mock these tools.
-            bindSingleton<ToolNewFile>(overrides = true) {
-                val tool = spyk(ToolNewFile(filesUtil))
-                coEvery { tool.invoke(any<ToolNewFile.Input>(), any()) } returns "Created"
-                tool
-            }
-            bindSingleton<ToolModifyFile>(overrides = true) {
-                val tool = spyk(ToolModifyFile(filesUtil))
-                coEvery { tool.invoke(any<ToolModifyFile.Input>(), any()) } returns "Modified"
-                tool
-            }
-            bindSingleton<ToolDeleteFile>(overrides = true) {
-                val tool = spyk(ToolDeleteFile(filesUtil))
-                coEvery { tool.invoke(any<ToolDeleteFile.Input>(), any()) } returns "Deleted"
-                tool
-            }
-            bindSingleton<ToolMoveFile>(overrides = true) {
-                val tool = spyk(ToolMoveFile(filesUtil))
-                coEvery { tool.invoke(any<ToolMoveFile.Input>(), any()) } returns "Moved"
-                tool
-            }
-            bindSingleton<ToolCreateNote>(overrides = true) {
-                val tool = spyk(ToolCreateNote(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolCreateNote.Input>(), any()) } returns "Created"
-                tool
-            }
-            bindSingleton<ToolDeleteNote>(overrides = true) {
-                val tool = spyk(ToolDeleteNote(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolDeleteNote.Input>(), any()) } returns "Deleted"
-                tool
-            }
-            bindSingleton<ToolCalendarCreateEvent>(overrides = true) {
-                val tool = spyk(ToolCalendarCreateEvent(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolCalendarCreateEvent.Input>(), any()) } returns "Event created"
-                tool
-            }
-            bindSingleton<ToolCalendarDeleteEvent>(overrides = true) {
-                val tool = spyk(ToolCalendarDeleteEvent(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolCalendarDeleteEvent.Input>(), any()) } returns "Deleted"
-                tool
-            }
-            bindSingleton<ToolMailSendNewMessage>(overrides = true) {
-                val tool = spyk(ToolMailSendNewMessage(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolMailSendNewMessage.Input>(), any()) } returns "Sent"
-                tool
-            }
-            bindSingleton<ToolMailReplyMessage>(overrides = true) {
-                val tool = spyk(ToolMailReplyMessage(ToolRunBashCommand))
-                coEvery { tool.invoke(any<ToolMailReplyMessage.Input>(), any()) } returns "Replied"
-                tool
-            }
+            bindSingleton<AgentToolsFilter>(overrides = true) { RuntimePassThroughToolsFilter }
+            bindSingleton<SkillRegistryRepository>(overrides = true) { emptySkillRegistryRepository() }
+            bindSingleton<McpToolProvider>(overrides = true) { EmptyMcpToolProvider }
+            bindSingleton<ConversationMemoryRuntime>(overrides = true) { NoopConversationMemoryRuntime }
+            bindSingleton<DefaultBrowserProvider>(overrides = true) { DefaultBrowserProvider { null } }
 
             bindSingleton<GigaRestChatAPI>(overrides = true) {
                 if (gigaRestChatAPI == null) {
@@ -289,86 +241,193 @@ class AgentScenarioTestSupport(
 
     suspend fun runScenarioWithMocks(
         userPrompt: String,
+        mockedTools: List<LLMToolSetup>,
         useFewShotExamples: Boolean = false,
-        overrides: DI.MainBuilder.() -> Unit,
     ) {
         val previousFewShotExamplesEnabled = fewShotExamplesEnabled
         fewShotExamplesEnabled = useFewShotExamples
         try {
-            val di = DI.invoke(allowSilentOverride = true) {
-                import(mainDiModule, allowOverride = true)
-                import(testOverrideModule, allowOverride = true)
-                bindProvider<DI> { this.di }
-                overrides()
-            }
-            val agent: Agent = when (agentType) {
-                AgentId.GRAPH -> di.direct.instance<GraphBasedAgent>()
-                AgentId.SKILLS_GRAPH -> di.direct.instance<SkillsGraphBasedAgent>()
-            }
-            runGraphAgent(agent, di, userPrompt)
+            runAgent(createScenarioDi(mockedTools), userPrompt)
         } finally {
             fewShotExamplesEnabled = previousFewShotExamplesEnabled
         }
     }
 
+    internal fun createScenarioDi(mockedTools: List<LLMToolSetup>): DI =
+        DI.invoke(allowSilentOverride = true) {
+            import(mainDiModule, allowOverride = true)
+            import(testOverrideModule, allowOverride = true)
+            bindProvider<DI> { this.di }
+            bindSingleton<AgentToolCatalog>(overrides = true) {
+                ScenarioAgentToolCatalog(
+                    productionCatalog = instance<ToolsFactory>(),
+                    mockedTools = mockedTools,
+                )
+            }
+    }
+
     fun finish() {
+        val prefix = "[agent=${agentType.storageValue}]"
         when (selectedModel.provider) {
-            LlmProvider.GIGA -> println("Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.QWEN -> println("Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.AI_TUNNEL -> println("Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.ANTHROPIC -> println("Spent: ${anthropicChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.OPENAI -> println("Spent: ${openAiChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            LlmProvider.GIGA -> println("$prefix Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            LlmProvider.QWEN -> println("$prefix Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            LlmProvider.AI_TUNNEL -> println("$prefix Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            LlmProvider.ANTHROPIC -> println("$prefix Spent: ${anthropicChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            LlmProvider.OPENAI -> println("$prefix Spent: ${openAiChatAPI?.getSessionTokenUsage() ?: "n/a"}")
             LlmProvider.LOCAL -> {
-                println("Spent: local provider")
+                println("$prefix Spent: local provider")
                 runCatching { localLlamaRuntime?.close() }
                 localChatAPI = null
                 localLlamaRuntime = null
             }
-            LlmProvider.CODEX -> println("Spent: codex provider (no session tracking)")
+            LlmProvider.CODEX -> println("$prefix Spent: codex provider (no session tracking)")
         }
         val requestCount = httpRequestCount.get()
         if (requestCount == 0L) {
-            println("HTTP requests: 0")
+            println("$prefix HTTP requests: 0")
             return
         }
         val avgMs = httpRequestTotalNanos.get().toDouble() / requestCount / 1_000_000.0
-        println("HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
+        println("$prefix HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
     }
 
-    private suspend fun runGraphAgent(agent: Agent, di: DI, userPrompt: String) {
-        val settingsProvider: SettingsProvider = di.direct.instance()
-        val toolsFactory: ToolsFactory = di.direct.instance()
-        val systemPromptResolver: SystemPromptResolver = di.direct.instance()
-
-        val model = settingsProvider.gigaModel
-        val settings = AgentSettings(
-            model = model.alias,
-            temperature = settingsProvider.temperature,
-            toolsByCategory = toolsFactory.toolsByCategory,
-            contextSize = settingsProvider.contextSize,
-        )
-        val prompt = settingsProvider.getSystemPromptForAgentModel(agentType, model)
-            ?: systemPromptResolver.defaultPrompt(
+    private suspend fun runAgent(di: DI, userPrompt: String) {
+        val contextFactory: AgentContextFactory = di.direct.instance()
+        val executor: AgentExecutor = di.direct.instance()
+        val toolCalls = mutableListOf<ScenarioToolCall>()
+        try {
+            executor.execute(
                 agentId = agentType,
-                model = model,
-                regionProfile = settingsProvider.regionProfile,
+                context = contextFactory.create(agentType),
+                input = userPrompt,
+                eventSink = object : AgentRuntimeEventSink {
+                    override suspend fun emit(event: AgentRuntimeEvent) {
+                        if (event is AgentRuntimeEvent.ToolCallStarted) {
+                            toolCalls += ScenarioToolCall(event.name, event.arguments)
+                        }
+                    }
+                },
             )
-        val ctx = AgentContext(
-            input = userPrompt,
-            settings = settings,
-            history = emptyList(),
-            activeTools = settings.tools.byName.values.map { it.fn },
-            systemPrompt = prompt,
-        )
-
-        agent.execute(ctx)
+        } finally {
+            println("[agent=${agentType.storageValue}] Tool calls: ${toolCalls.joinToString { it.traceLabel() }}")
+        }
     }
 }
 
+private data class ScenarioToolCall(
+    val name: String,
+    val arguments: Map<String, Any?>,
+)
+
+private fun ScenarioToolCall.traceLabel(): String {
+    val skillId = arguments["skillId"] as? String
+    val delegatedArguments = arguments["arguments"] as? Map<*, *>
+    val argumentKeys = (delegatedArguments?.keys ?: arguments.keys)
+        .map(Any?::toString)
+        .sorted()
+    val target = skillId?.let { "->$it" }.orEmpty()
+    return "$name$target(${argumentKeys.joinToString()})"
+}
+
+internal class ScenarioAgentToolCatalog(
+    productionCatalog: AgentToolCatalog,
+    mockedTools: List<LLMToolSetup>,
+) : AgentToolCatalog {
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = buildMap {
+        val duplicateNames = mockedTools
+            .groupingBy { it.fn.name }
+            .eachCount()
+            .filterValues { it > 1 }
+            .keys
+            .sorted()
+        require(duplicateNames.isEmpty()) {
+            "Scenario mocks contain duplicate tool names: ${duplicateNames.joinToString()}"
+        }
+
+        val mockedByName = mockedTools.associateBy { it.fn.name }
+        val matchedNames = mutableSetOf<String>()
+        productionCatalog.toolsByCategory.forEach { (category, productionTools) ->
+            val scenarioTools = productionTools.mapNotNull { (name, productionTool) ->
+                val mockedTool = mockedByName[name] ?: return@mapNotNull null
+                matchedNames += name
+                name to productionTool.withMockInvocation(mockedTool)
+            }.toMap()
+            if (scenarioTools.isNotEmpty()) put(category, scenarioTools)
+        }
+
+        val unknownNames = (mockedByName.keys - matchedNames).sorted()
+        require(unknownNames.isEmpty()) {
+            "Scenario mocks are not present in the production tool catalog: ${unknownNames.joinToString()}"
+        }
+    }
+}
+
+private fun LLMToolSetup.withMockInvocation(mockedTool: LLMToolSetup): LLMToolSetup {
+    val productionTool = this
+    return object : LLMToolSetup {
+        override val fn: LLMRequest.Function = productionTool.fn
+
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+            mockedTool.invoke(functionCall)
+
+        override suspend fun invoke(
+            functionCall: LLMResponse.FunctionCall,
+            meta: ToolInvocationMeta,
+        ): LLMRequest.Message = mockedTool.invoke(functionCall, meta)
+    }
+}
+
+internal fun emptySkillRegistryRepository(): SkillRegistryRepository = mockk {
+    coEvery { listSkills(any()) } returns emptyList()
+    coEvery { getSkill(any(), any()) } returns null
+    coEvery { getSkillByName(any(), any()) } returns null
+    coEvery { loadSkillBundle(any(), any()) } returns null
+    coEvery { getValidation(any(), any(), any(), any()) } returns null
+}
+
+internal object EmptyMcpToolProvider : McpToolProvider {
+    override suspend fun tools(): List<LLMToolSetup> = emptyList()
+}
+
 const val SOUZ_AGENT_INTEGRATION_TESTS_ON = "SOUZ_AGENT_INTEGRATION_TESTS_ON"
+const val SOUZ_AGENT_INTEGRATION_TEST_AGENT = "SOUZ_AGENT_INTEGRATION_TEST_AGENT"
 
 private fun isAgentScenarioIntegrationTestsEnabled(envValue: String?): Boolean =
     envValue.equals("true", ignoreCase = true)
+
+internal fun parseScenarioAgentId(rawValue: String?): AgentId = when (rawValue?.trim()?.lowercase()) {
+    null, "", AgentId.GRAPH.storageValue -> AgentId.GRAPH
+    AgentId.SKILLS_GRAPH.storageValue -> AgentId.SKILLS_GRAPH
+    else -> error(
+        "Unsupported $SOUZ_AGENT_INTEGRATION_TEST_AGENT='$rawValue'. " +
+            "Expected '${AgentId.GRAPH.storageValue}' or '${AgentId.SKILLS_GRAPH.storageValue}'."
+    )
+}
+
+private fun scenarioSystemPrompt(agentId: AgentId): String = buildString {
+    appendLine("Будь полезен. Выполняй инструкции с помощью доступных функций.")
+    appendLine("The available functions run in an authorized test environment and can perform the requested desktop and browser actions. Do not claim that you lack those capabilities when a relevant function is available.")
+    append("Complete every requested action explicitly and in the requested order. Do not omit an action because another requested action appears similar or redundant.")
+    if (agentId == AgentId.SKILLS_GRAPH) {
+        appendLine()
+        appendLine()
+        appendLine("Use only the functions listed as active tools. Never call a discovered Skill ID as a function.")
+        appendLine("In a multi-call response, every call name must still be GetSkills, GetKnowledge, or RunSkillCommand; put each Skill ID inside RunSkillCommand arguments.")
+        appendLine("For an actionable user request, your first assistant turn MUST be a GetSkills function call with empty arguments.")
+        appendLine("Do not describe a plan, announce that discovery is needed, or emit text instead of that first function call.")
+        appendLine("For every task that requires an action:")
+        appendLine("1. Call GetSkills with an empty skillIds list to discover available Skills.")
+        appendLine("2. Call GetSkills again with the exact required Skill IDs to inspect their argument schemas.")
+        appendLine("3. Call RunSkillCommand with an exact skillId and arguments matching that schema.")
+        appendLine("For multi-step tasks, invoke each required Skill through RunSkillCommand in the requested order before replying.")
+        appendLine()
+        appendLine("Example sequence for a discovered ExampleSkill:")
+        appendLine("- GetSkills arguments: {\"skillIds\":[]}")
+        appendLine("- GetSkills arguments: {\"skillIds\":[\"ExampleSkill\"]}")
+        appendLine("- RunSkillCommand arguments: {\"skillId\":\"ExampleSkill\",\"arguments\":{\"value\":\"example\"}}")
+        append("ExampleSkill is never a function name. Valid function names remain GetSkills, GetKnowledge, and RunSkillCommand.")
+    }
+}
 
 private fun readSystemProperty(name: String): String? = System.getProperty(name)?.takeIf { it.isNotBlank() }
 
