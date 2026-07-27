@@ -60,7 +60,6 @@ Choose the shortest discovery path:
 1. If the task clearly belongs to one category, call GetSkillsByCategory once. It returns full descriptions and schemas for every Skill in that category.
 2. If you already know the exact Skill ID, call GetSkillByName directly.
 3. If you only need to see which Skills exist in a category, call GetSkillsNamesByCategory. Then call GetSkillByName only for the selected Skill.
-4. Stored file-backed Skills belong to the CUSTOM category.
 
 Do not call multiple discovery tools when one call provides enough information.
 

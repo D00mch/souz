@@ -16,7 +16,6 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toSystemPromptMessage
-import ru.souz.tool.DEFAULT_STORED_SKILLS_CATEGORY
 import ru.souz.tool.ToolCategory
 
 /** Nodes and execution-boundary context preparation owned by [ru.souz.SkillsGraphBasedAgent]. */
@@ -138,7 +137,6 @@ private fun Map<ToolCategory, Map<String, LLMToolSetup>>.skillCategoryNames(): L
     .filterValues { it.isNotEmpty() }
     .keys
     .map { it.name }
-    .plus(DEFAULT_STORED_SKILLS_CATEGORY)
     .distinct()
     .sorted()
 

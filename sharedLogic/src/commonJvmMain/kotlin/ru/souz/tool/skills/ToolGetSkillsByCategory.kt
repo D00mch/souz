@@ -67,7 +67,7 @@ class ToolGetSkillsByCategory(
         requestedCategory: String,
         meta: ToolInvocationMeta,
     ): SkillsByCategoryResponse {
-        val names = getSkillsNamesByCategory.getSkillNames(requestedCategory, meta)
+        val names = getSkillsNamesByCategory.getSkillNames(requestedCategory)
         names.error?.let { error ->
             return SkillsByCategoryResponse(category = names.category, errors = listOf(error))
         }

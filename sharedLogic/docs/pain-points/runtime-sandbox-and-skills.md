@@ -7,7 +7,7 @@
 - Skill metadata, immutable hash-addressed bundles, and validation records stay behind `SandboxFileSystem`. Bundle loading rejects escaping paths, symlinks, non-regular files, binary content, and invalid UTF-8.
 - `RunSkillCommand` accepts only a skill activated for the current turn and keeps its script and working directory within that skill bundle.
 - The legacy command and generic `RunSkillCommand` share one concrete executor. Generic bundle calls bind the current ID, hash, supporting paths, and active-skill authorization internally, then return the complete `SandboxCommandResult` for later Knowledge offloading.
-- `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` are separately tagged and remain outside `AgentToolCatalog`. Skill tools trust bundles accepted by the registry loader and do not use the legacy validation cache. Stored file-backed skills belong to the discovery-only `CUSTOM` category.
+- `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` are separately tagged and remain outside `AgentToolCatalog`. Skill tools trust bundles accepted by the registry loader and do not use the legacy validation cache.
 
 - The Skill discovery tools and `ToolInvokeSkill` implement `LLMToolSetup` directly so their structured results are serialized exactly once. `ToolInvokeSkill` must also preserve the complete `LLMRequest.Message`, including attachments, when delegating to a compiled tool. `ToolSetup.toGiga()` cannot preserve these behaviors because its contract returns `String` and serializes that value again.
 - `SandboxConversationKnowledgeStore` requires invocation user and conversation identity, resolves the sandbox for every operation, and scopes immutable UUID entries under fixed-length SHA-256 user and conversation keys. Entries remain until targeted conversation cleanup.
@@ -19,7 +19,7 @@
 
 The same contracts back three different runtimes. JVM hosts select local or Docker mode; Android uses app-private filesystem roots and executes shell skills with POSIX `/system/bin/sh`. Android does not provide the Python or Node skill runtimes, and its `BASH` option is compatibility naming rather than a GNU Bash guarantee. A storage-scope mismatch makes an installed skill visible to activation but unavailable to command execution.
 
-Skill discovery applies `AgentToolsFilter` on every discovery and invocation. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. `CUSTOM` name discovery reads registry metadata only, while detail and execution load the current bundle.
+Skill discovery applies `AgentToolsFilter` on every discovery and invocation. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. Category discovery lists filtered compiled tools only, while detail and execution load stored bundles by exact Skill ID.
 
 Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
 

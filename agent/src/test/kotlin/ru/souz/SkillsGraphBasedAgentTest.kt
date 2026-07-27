@@ -224,7 +224,6 @@ class SkillsGraphBasedAgentTest {
         val effectiveSystemPrompt = ctx.history.first().content
         assertContains(effectiveSystemPrompt, PROVIDED_SYSTEM_PROMPT)
         assertContains(effectiveSystemPrompt, "The supplied prompt continues after the category-section reference.")
-        assertContains(effectiveSystemPrompt, "- CUSTOM")
         assertContains(effectiveSystemPrompt, "- FILES")
         ctx
     }

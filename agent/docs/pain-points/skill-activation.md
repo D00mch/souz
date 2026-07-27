@@ -12,7 +12,7 @@ Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCate
 
 Loading bundles before selection expands the prompt and trust surface. Reusing approval across users, hashes, or policies can execute content that was never approved.
 
-The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Stored bundles use the `CUSTOM` category. Category-name discovery reads stored metadata only; bundle detail and execution load the current bundle. Generic bundle execution must bind the current bundle identity internally before reusing the legacy command implementation.
+The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before reusing the legacy command implementation.
 
 Blocked and exception paths clear injected skill instructions, and classification resets the active tool list, but those paths do not currently remove a `RunSkillCommand` setup injected by an earlier successful activation from `settings.tools`. Executor lookup can therefore retain stale command capability. Treat this as a known revocation gap, not as a security boundary.
 

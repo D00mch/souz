@@ -1,24 +1,20 @@
 package ru.souz.tool.skills
 
 import kotlinx.coroutines.CancellationException
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.DEFAULT_STORED_SKILLS_CATEGORY
 import ru.souz.tool.ToolCategory
 
-/** Returns exact IDs for enabled tool-backed Skills or stored Skills in the `CUSTOM` category. */
+/** Returns exact IDs for enabled tool-backed Skills in one compiled-tool category. */
 class ToolGetSkillsNamesByCategory(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
-    private val repository: SkillRegistryRepository,
 ) : LLMToolSetup {
     data class Input(
         val category: String = "",
@@ -47,7 +43,7 @@ class ToolGetSkillsNamesByCategory(
     ): LLMRequest.Message {
         val response = try {
             val input = restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-            getSkillNames(input.category, meta)
+            getSkillNames(input.category)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -68,7 +64,6 @@ class ToolGetSkillsNamesByCategory(
 
     internal suspend fun getSkillNames(
         requestedCategory: String,
-        meta: ToolInvocationMeta,
     ): CategorySkillNamesResponse {
         val categoryName = requestedCategory.trim()
         if (categoryName.isBlank()) {
@@ -77,29 +72,19 @@ class ToolGetSkillsNamesByCategory(
             )
         }
         val category = ToolCategory.entries.firstOrNull { it.name.equals(categoryName, ignoreCase = true) }
-        val canonicalCategory = category?.name
-            ?: DEFAULT_STORED_SKILLS_CATEGORY.takeIf { it.equals(categoryName, ignoreCase = true) }
             ?: return CategorySkillNamesResponse(
                 error = SkillDiscoveryError(null, "category_not_found", "Unknown Skill category: $categoryName")
             )
+        val canonicalCategory = category.name
 
         return try {
             val filteredCatalog = toolsFilter.applyFilter(toolCatalog.toolsByCategory)
-            val enabledTools = AgentTools(filteredCatalog).byName
-            val skillNames = if (canonicalCategory == DEFAULT_STORED_SKILLS_CATEGORY) {
-                repository.listSkills(meta.userId)
-                    .map { it.skillId.value }
-                    .filterNot(enabledTools::containsKey)
-                    .sorted()
-            } else {
-                filteredCatalog[category]
-                    .orEmpty()
-                    .keys
-                    .sorted()
-            }
             CategorySkillNamesResponse(
                 category = canonicalCategory,
-                skillNames = skillNames,
+                skillNames = filteredCatalog[category]
+                    .orEmpty()
+                    .keys
+                    .sorted(),
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -132,7 +117,7 @@ internal fun categoryInputParameters(): LLMRequest.Parameters = LLMRequest.Param
         "category" to LLMRequest.Property(
             type = "string",
             description = "Skill category name.",
-            enum = ToolCategory.entries.map { it.name } + DEFAULT_STORED_SKILLS_CATEGORY,
+            enum = ToolCategory.entries.map { it.name },
         )
     ),
     required = listOf("category"),

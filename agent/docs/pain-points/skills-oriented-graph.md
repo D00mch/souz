@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand`. Its execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains non-empty compiled-tool category names filtered by the active tool policy and the stored-skill `CUSTOM` category, while `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification, legacy skill activation, or MCP injection.
+`SkillsGraphBasedAgent` exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand`. Its execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains non-empty compiled-tool category names filtered by the active tool policy, while `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification, legacy skill activation, or MCP injection.
 
 `NodesSkillsGraph` owns this context preparation and Knowledge-aware tool-result handling. `NodesCommon` owns generic tool-call execution and the classic inline-only tool-use node.
 

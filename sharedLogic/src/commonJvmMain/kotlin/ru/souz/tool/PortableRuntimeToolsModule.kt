@@ -128,7 +128,6 @@ fun portableSkillToolsDiModule(
         ToolGetSkillsNamesByCategory(
             toolCatalog = instance(),
             toolsFilter = instance(),
-            repository = instance(),
         )
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL) {

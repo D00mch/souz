@@ -40,7 +40,6 @@ class BackendSkillCoreToolsFactory(
         val getSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
-            repository = skillRegistryRepository,
         )
         return BackendSkillCoreTools(
             getSkillByNameTool = getSkillByName,

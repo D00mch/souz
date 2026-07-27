@@ -88,16 +88,17 @@ class BackendSkillCoreToolsFactoryTest {
             ),
             meta,
         ).contentJson()
-        val customNames = coreTools.getSkillsNamesByCategoryTool.invoke(
+        val unknownCategoryNames = coreTools.getSkillsNamesByCategoryTool.invoke(
             LLMResponse.FunctionCall(
                 name = "GetSkillsNamesByCategory",
-                arguments = mapOf("category" to "CUSTOM"),
+                arguments = mapOf("category" to "UNKNOWN_CATEGORY"),
             ),
             meta,
         ).contentJson()
 
         assertEquals(listOf("EnabledTool"), compiledNames["skillNames"].map { it.asText() })
-        assertEquals(listOf(FILE_SKILL_ID), customNames["skillNames"].map { it.asText() })
+        assertEquals("category_not_found", unknownCategoryNames["error"]["code"].asText())
+        assertTrue(unknownCategoryNames["category"].isNull)
         assertFalse(compiledNames.toString().contains("DisabledTool"))
         assertEquals(
             listOf(

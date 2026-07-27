@@ -71,7 +71,6 @@ class NodesSkillsGraphTest {
         assertEquals(emptyMap(), result.settings.tools.byCategory)
         assertEquals(2, result.history.size)
         assertContains(result.history.first().content, suppliedPrompt)
-        assertContains(result.history.first().content, "- CUSTOM")
         assertContains(result.history.first().content, "- FILES")
         assertFalse(result.history.first().content.contains("obsolete effective prompt"))
     }
@@ -104,10 +103,8 @@ class NodesSkillsGraphTest {
         filter.allowedCategory = ToolCategory.BROWSER
         val browserPrompt = graph.prepareContext(context, listOf(filesTool)).history.first().content
 
-        assertContains(filesPrompt, "- CUSTOM")
         assertContains(filesPrompt, "- FILES")
         assertFalse(filesPrompt.contains("- BROWSER"))
-        assertContains(browserPrompt, "- CUSTOM")
         assertContains(browserPrompt, "- BROWSER")
         assertFalse(browserPrompt.contains("- FILES"))
     }
