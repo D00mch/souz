@@ -171,17 +171,31 @@ Key behavior:
 
 ```mermaid
 flowchart TD
-    input["User input"] --> history["Append input to history"]
+    input["User input"] --> boundary["Restrict execution context to fixed core tools"]
+    boundary --> coreTools["Core tools only\nGetSkillByName\nGetSkillsByCategory\nGetSkillsNamesByCategory\nGetKnowledge\nSearchKnowledge\nRunSkillCommand"]
+    boundary --> history["Append input to history"]
     history --> memory["Recall scoped memory"]
-    memory --> inventory["Append Skill inventory"]
+    memory --> inventory["Append skill_inventory block\nTool-backed IDs by category\nFile-backed IDs only"]
     inventory --> enrich["Append additional context"]
-    enrich --> llm["LLM chat node"]
+    enrich --> llm["LLM chat node\nsees only core tools"]
     llm --> decision{"LLM result"}
-    decision -->|tool call| tool["Execute tool"]
-    tool --> result["Append result or Knowledge reference"]
-    result --> llm
-    decision -->|final answer| summary["Summarize or return"]
+
+    decision -->|GetSkillByName| lookup["Load exact Skill\napprove file-backed bundle"]
+    decision -->|GetSkillsByCategory / names| categories["List or load tool-backed category Skills"]
+    decision -->|RunSkillCommand| command["Invoke enabled tool-backed Skill\nor sandboxed file-backed command"]
+    decision -->|GetKnowledge / SearchKnowledge| knowledge["Read conversation Knowledge"]
+    decision -->|final answer| summary["Memory-aware finalization\nsummarize or return"]
     decision -->|error| errorNode["Map error to user-facing output"]
+
+    lookup --> append["Append inline function result"]
+    categories --> append
+    knowledge --> append
+    command --> offload{"Non-exempt result > 8 KiB?"}
+    offload -->|yes| reference["Store Knowledge\nappend compact reference"]
+    offload -->|no| append
+    reference --> llm
+    append --> llm
+
     summary --> finish["Finish"]
     errorNode --> finish
 ```
