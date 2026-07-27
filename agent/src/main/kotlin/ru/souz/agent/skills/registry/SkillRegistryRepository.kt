@@ -15,6 +15,10 @@ interface SkillRegistryRepository {
     /** Returns metadata for every skill currently registered for the given user. */
     suspend fun listSkills(userId: String): List<StoredSkill>
 
+    /** Returns metadata-only entries for compact discovery inventory. */
+    suspend fun listSkillInventory(userId: String): List<SkillInventoryEntry> =
+        listSkills(userId).map { it.toInventoryEntry() }
+
     /** Looks up a registered skill by its canonical [SkillId]. */
     suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill?
 

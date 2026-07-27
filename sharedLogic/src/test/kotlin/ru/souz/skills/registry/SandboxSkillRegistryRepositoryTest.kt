@@ -132,6 +132,35 @@ class FileSystemSkillRegistryRepositoryTest {
     }
 
     @Test
+    fun `lists loose skill inventory without loading supporting files or hashing bundle`() = runTest {
+        val stateRoot = createTempDirectory("skill-registry-loose-inventory-")
+        val paths = DefaultSouzPaths(stateRoot = stateRoot)
+        val repository = createRepository(paths)
+        val skillId = SkillId("loose-inventory-skill")
+        val skillRoot = paths.skillsDir.resolve(skillId.value)
+        Files.createDirectories(skillRoot)
+        Files.writeString(
+            skillRoot.resolve("SKILL.md"),
+            """
+                ---
+                name: loose_inventory_skill
+                description: Loose inventory fixture skill
+                ---
+                Loose instructions.
+            """.trimIndent(),
+        )
+        Files.writeString(skillRoot.resolve("payload.bin"), "This file is not allowed in full bundles.")
+
+        val inventory = repository.listSkillInventory("user-1").single()
+
+        assertEquals(skillId, inventory.skillId)
+        assertEquals("loose_inventory_skill", inventory.manifest.name)
+        assertEquals("Loose inventory fixture skill", inventory.manifest.description)
+        assertEquals(Instant.EPOCH, inventory.createdAt)
+        assertTrue(repository.listSkills("user-1").isEmpty())
+    }
+
+    @Test
     fun `saves and reads validation record`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-")
         val repository = createRepository(DefaultSouzPaths(stateRoot = stateRoot))

@@ -13,11 +13,17 @@ import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.json.JsonUtils
 
-class SkillApprovalGate(
+class SkillApprovalGate private constructor(
     private val registryRepository: SkillRegistryRepository,
-    private val llmValidator: SkillLlmValidator,
+    private val llmValidatorProvider: () -> SkillLlmValidator,
     private val clock: Clock = Clock.systemUTC(),
 ) {
+    constructor(
+        registryRepository: SkillRegistryRepository,
+        llmValidator: SkillLlmValidator,
+        clock: Clock = Clock.systemUTC(),
+    ) : this(registryRepository, { llmValidator }, clock)
+
     data class Input(
         val userId: String,
         val skillId: SkillId,
@@ -151,7 +157,7 @@ class SkillApprovalGate(
             return Result.Rejected(bundleHash, "Static validation failed.", static.findings)
         }
 
-        val llmVerdict = llmValidator.validate(
+        val llmVerdict = llmValidatorProvider().validate(
             SkillLlmValidationInput(
                 userId = input.userId,
                 skillId = input.skillId,
@@ -224,11 +230,13 @@ class SkillApprovalGate(
             jsonUtils: JsonUtils,
         ): SkillApprovalGate = SkillApprovalGate(
             registryRepository = registryRepository,
-            llmValidator = LlmSkillValidator(
-                llmApi = llmApi,
-                model = settingsProvider.gigaModel.alias,
-                jsonUtils = jsonUtils,
-            ),
+            llmValidatorProvider = {
+                LlmSkillValidator(
+                    llmApi = llmApi,
+                    model = settingsProvider.gigaModel.alias,
+                    jsonUtils = jsonUtils,
+                )
+            },
         )
     }
 }

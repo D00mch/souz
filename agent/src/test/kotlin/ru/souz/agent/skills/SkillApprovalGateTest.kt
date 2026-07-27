@@ -1,6 +1,10 @@
 package ru.souz.agent.skills
 
+import java.io.File
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.AgentId
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
@@ -9,6 +13,14 @@ import ru.souz.agent.skills.implementations.activation.FakeSkillLlmValidator
 import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
 import ru.souz.agent.skills.implementations.bundle.skillFixturePath
 import ru.souz.agent.skills.implementations.registry.InMemorySkillRegistryRepository
+import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.json.JsonUtils
+import ru.souz.llms.restJsonMapper
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
@@ -81,6 +93,43 @@ class SkillApprovalGateTest {
         assertEquals(0, validator.invocationCount)
     }
 
+    @Test
+    fun `factory resolves validation model when approval runs`() = runTest {
+        val repository = InMemorySkillRegistryRepository()
+        val firstBundle = fixtureBundle()
+        val settingsProvider = MutableAgentSettingsProvider(LLMModel.Max)
+        val api = CapturingApprovalChatApi()
+        val gate = SkillApprovalGate.from(
+            registryRepository = repository,
+            llmApi = api,
+            settingsProvider = settingsProvider,
+            jsonUtils = JsonUtils(restJsonMapper),
+        )
+        repository.saveSkillBundle(USER_ID, firstBundle)
+
+        settingsProvider.gigaModel = LLMModel.OpenAIGpt5Mini
+        val firstApproval = assertIs<SkillApprovalGate.Result.Approved>(
+            gate.ensureApproved(input(firstBundle))
+        )
+
+        val changedBundle = SkillBundle.fromFiles(
+            skillId = SKILL_ID,
+            files = firstBundle.files + SkillFile("notes.txt", "changed".toByteArray()),
+        )
+        repository.saveSkillBundle(USER_ID, changedBundle)
+        settingsProvider.gigaModel = LLMModel.QwenMax
+        val secondApproval = assertIs<SkillApprovalGate.Result.Approved>(
+            gate.ensureApproved(input(changedBundle))
+        )
+
+        assertEquals(
+            listOf(LLMModel.OpenAIGpt5Mini.alias, LLMModel.QwenMax.alias),
+            api.models,
+        )
+        assertEquals(LLMModel.OpenAIGpt5Mini.alias, firstApproval.record?.model)
+        assertEquals(LLMModel.QwenMax.alias, secondApproval.record?.model)
+    }
+
     private fun input(bundle: SkillBundle): SkillApprovalGate.Input = SkillApprovalGate.Input(
         userId = USER_ID,
         skillId = SKILL_ID,
@@ -92,8 +141,83 @@ class SkillApprovalGateTest {
         rootDirectory = skillFixturePath("paper-summarize-academic"),
     )
 
+    private class MutableAgentSettingsProvider(
+        override var gigaModel: LLMModel,
+    ) : AgentSettingsProvider {
+        override var defaultCalendar: String? = null
+        override var regionProfile: String = "default"
+        override var activeAgentId: AgentId = AgentId.default
+        override var useStreaming: Boolean = false
+        override var contextSize: Int = 0
+        override var temperature: Float = 0f
+
+        override fun getSystemPromptForAgentModel(
+            agentId: AgentId,
+            model: LLMModel,
+        ): String? = null
+
+        override fun setSystemPromptForAgentModel(
+            agentId: AgentId,
+            model: LLMModel,
+            prompt: String?,
+        ) = Unit
+    }
+
+    private class CapturingApprovalChatApi : LLMChatAPI {
+        val models = mutableListOf<String>()
+
+        override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+            models += body.model
+            return LLMResponse.Chat.Ok(
+                choices = listOf(
+                    LLMResponse.Choice(
+                        message = LLMResponse.Message(
+                            content = APPROVAL_JSON,
+                            role = LLMMessageRole.assistant,
+                            functionsStateId = null,
+                        ),
+                        index = 0,
+                        finishReason = LLMResponse.FinishReason.stop,
+                    ),
+                ),
+                created = 1L,
+                model = body.model,
+                usage = LLMResponse.Usage(0, 0, 0, 0),
+            )
+        }
+
+        override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = emptyFlow()
+
+        override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
+            error("Not used in this test")
+        }
+
+        override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
+            error("Not used in this test")
+        }
+
+        override suspend fun downloadFile(fileId: String): String? {
+            error("Not used in this test")
+        }
+
+        override suspend fun balance(): LLMResponse.Balance {
+            error("Not used in this test")
+        }
+    }
+
     private companion object {
         const val USER_ID = "user-1"
         val SKILL_ID = SkillId("paper-summarize-academic")
+        val APPROVAL_JSON = """
+            {
+              "decision":"approve",
+              "confidence":0.96,
+              "riskLevel":"low",
+              "reasons":["Benign test fixture"],
+              "requestedCapabilities":["paper summarization"],
+              "suspiciousFiles":[],
+              "findings":[]
+            }
+        """.trimIndent()
     }
 }
