@@ -49,7 +49,7 @@ class GraphAgentComplexScenarios {
     @ParameterizedTest(name = "scenario1_readFileThenSendEmailIfNoSecret[{index}] {0}")
     @ValueSource(
         strings = [
-            "Прочти public-note.txt. Если в тексте нет слова secret, создай письмо на audit@example.com с темой " +
+            "Найди и прочти public-note.txt. Если в тексте нет слова secret, создай письмо на audit@example.com с темой " +
                     "Public Note и вставь в тело текст файла.",
             "Сделай по шагам: 1) найди и прочти файл public-note.txt; 2) если в нём нет слова secret, " +
                     "подготовь email для audit@example.com с темой Public Note и исходным текстом файла",
