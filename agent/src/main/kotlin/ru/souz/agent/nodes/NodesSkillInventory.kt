@@ -71,8 +71,8 @@ internal class NodesSkillInventory(
             .filterValues { it.isNotEmpty() }
 
         val fileBackedSkillIds = try {
-            skillRegistryRepository.listSkillInventory(userId)
-                .map { it.skillId.value }
+            skillRegistryRepository.listSkillInventoryIds(userId)
+                .map { it.value }
                 .filterNot { it in toolBackedSkillIds }
                 .distinct()
                 .sorted()

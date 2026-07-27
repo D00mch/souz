@@ -19,6 +19,10 @@ interface SkillRegistryRepository {
     suspend fun listSkillInventory(userId: String): List<SkillInventoryEntry> =
         listSkills(userId).map { it.toInventoryEntry() }
 
+    /** Returns only opaque Skill IDs for prompt inventory. */
+    suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
+        listSkillInventory(userId).map { it.skillId }
+
     /** Looks up a registered skill by its canonical [SkillId]. */
     suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill?
 

@@ -16,7 +16,7 @@ The separately tagged tools merge compiled tools and stored bundles into one ID 
 
 ## Safe changes
 
-- Keep inventory data compact and user-scoped. Do not load `SKILL.md` or supporting files while rendering the inventory.
+- Keep prompt inventory compact and user-scoped. Use an ID-only registry path and do not load `SKILL.md` or supporting files while rendering the inventory.
 - Render file-backed Skill IDs as opaque escaped data only. Do not copy unapproved manifest names or descriptions into the system prompt.
 - Keep the order structural validation, static validation, then bounded LLM validation. Cache both approvals and rejections for the exact identity.
 - Treat a per-skill rejection as local to that skill lookup or invocation. Do not return `SKILL.md` or execute commands for rejected bundles.

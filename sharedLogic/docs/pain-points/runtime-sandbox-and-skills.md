@@ -19,7 +19,7 @@
 
 The same contracts back three different runtimes. JVM hosts select local or Docker mode; Android uses app-private filesystem roots and executes shell skills with POSIX `/system/bin/sh`. Android does not provide the Python or Node skill runtimes, and its `BASH` option is compatibility naming rather than a GNU Bash guarantee. A storage-scope mismatch makes an installed skill visible to activation but unavailable to command execution.
 
-Skill discovery applies `AgentToolsFilter` on every discovery and invocation. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. Category discovery lists filtered compiled tools only. Compact graph inventory calls `SkillRegistryRepository.listSkillInventory`, which must not read supporting files or hash loose bundles. Detail and execution load stored bundles by exact Skill ID.
+Skill discovery applies `AgentToolsFilter` on every discovery and invocation. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. Category discovery lists filtered compiled tools only. Compact graph inventory calls `SkillRegistryRepository.listSkillInventoryIds`, which must not read loose `SKILL.md`, read supporting files, or hash loose bundles. Detail and execution load stored bundles by exact Skill ID.
 
 Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
 

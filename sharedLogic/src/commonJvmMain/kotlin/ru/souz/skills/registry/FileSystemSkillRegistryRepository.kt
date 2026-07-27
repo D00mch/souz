@@ -139,6 +139,37 @@ class FileSystemSkillRegistryRepository(
         inventory
     }
 
+    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> = withContext(Dispatchers.IO) {
+        val store = storeFor(userId)
+        val skillsRoot = store.resolvePath(skillsRoot(store.paths, userId))
+        if (!skillsRoot.exists || !skillsRoot.isDirectory) {
+            logSkillRootUnavailable(userId, store, skillsRoot)
+            return@withContext emptyList()
+        }
+
+        val skillRoots = store.fileSystem.listDescendants(
+            root = skillsRoot,
+            maxDepth = 1,
+            includeHidden = true,
+        )
+            .filter { it.isDirectory && it.parentPath == skillsRoot.path }
+
+        val skillIds = skillRoots
+            .mapNotNull { skillRoot ->
+                readStoredSkillOrNull(store, store.resolveChildPath(skillRoot, STORED_SKILL_FILE_NAME))
+                    ?.skillId
+                    ?: readLooseSkillInventoryIdOrNull(
+                        store = store,
+                        skillRoot = skillRoot,
+                    )
+            }
+            .distinct()
+            .sortedBy { it.value }
+
+        logSkillInventoryIdsListed(userId, store, skillsRoot, skillRoots, skillIds)
+        skillIds
+    }
+
     override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = withContext(Dispatchers.IO) {
         val store = storeFor(userId)
         readStoredSkillOrNull(store, metadataPath(store.paths, userId, skillId))
@@ -454,6 +485,19 @@ class FileSystemSkillRegistryRepository(
         }.getOrNull()
     }
 
+    private fun readLooseSkillInventoryIdOrNull(
+        store: Store,
+        skillRoot: SandboxPathInfo,
+    ): SkillId? {
+        val skillId = runCatching {
+            SkillId(requireSafePathSegment(skillRoot.name, "SkillId"))
+        }.getOrNull() ?: return null
+        if (!skillRoot.exists || !skillRoot.isDirectory) return null
+        val skillMarkdown = store.resolveChildPath(skillRoot, SKILL_MARKDOWN_FILE_NAME)
+        if (!skillMarkdown.exists || !skillMarkdown.isRegularFile) return null
+        return skillId
+    }
+
     private suspend fun loadLooseSkillBundleOrNull(
         store: Store,
         userId: String,
@@ -711,6 +755,26 @@ class FileSystemSkillRegistryRepository(
             skillsRoot.path,
             skillRoots.size,
             inventory.map { it.skillId.value },
+        )
+    }
+
+    private fun logSkillInventoryIdsListed(
+        userId: String,
+        store: Store,
+        skillsRoot: SandboxPathInfo,
+        skillRoots: List<SandboxPathInfo>,
+        skillIds: List<SkillId>,
+    ) {
+        logger.info(
+            "Skill registry listed {} inventory id(s) for user={} scope={} sandboxMode={} root={} " +
+                    "candidateDirs={} ids={}",
+            skillIds.size,
+            userId,
+            config.scope,
+            store.sandboxMode,
+            skillsRoot.path,
+            skillRoots.size,
+            skillIds.map { it.value },
         )
     }
 

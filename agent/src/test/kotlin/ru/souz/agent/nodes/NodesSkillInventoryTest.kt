@@ -1,6 +1,7 @@
 package ru.souz.agent.nodes
 
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.GraphRuntime
@@ -38,11 +39,12 @@ class NodesSkillInventoryTest {
             )
         )
 
+        val repository = repository(
+            storedSkill("paper-summarize-academic", "paper_summarize", "Summarize papers."),
+        )
         val result = node(
             catalog = catalog(catalogTool),
-            repository = repository(
-                storedSkill("paper-summarize-academic", "paper_summarize", "Summarize papers."),
-            ),
+            repository = repository,
         ).node(skillTools = listOf(coreTool)).execute(context, runtime())
 
         assertEquals(PROVIDED_SYSTEM_PROMPT, result.systemPrompt)
@@ -56,6 +58,8 @@ class NodesSkillInventoryTest {
         assertFalse(result.history.first().content.contains("paper_summarize"))
         assertFalse(result.history.first().content.contains("Summarize papers."))
         assertFalse(result.history.first().content.contains("obsolete effective prompt"))
+        coVerify(exactly = 1) { repository.listSkillInventoryIds(any()) }
+        coVerify(exactly = 0) { repository.listSkillInventory(any()) }
     }
 
     @Test
@@ -184,6 +188,7 @@ class NodesSkillInventoryTest {
         mockk(relaxed = true) {
             coEvery { listSkills(any()) } returns skills.toList()
             coEvery { listSkillInventory(any()) } returns skills.map { it.toInventoryEntry() }
+            coEvery { listSkillInventoryIds(any()) } returns skills.map { it.skillId }
         }
 
     private fun storedSkill(

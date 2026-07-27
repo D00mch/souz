@@ -161,6 +161,20 @@ class FileSystemSkillRegistryRepositoryTest {
     }
 
     @Test
+    fun `lists loose skill inventory ids without reading skill markdown content`() = runTest {
+        val stateRoot = createTempDirectory("skill-registry-loose-inventory-id-")
+        val paths = DefaultSouzPaths(stateRoot = stateRoot)
+        val repository = createRepository(paths)
+        val skillId = SkillId("loose-inventory-id-skill")
+        val skillRoot = paths.skillsDir.resolve(skillId.value)
+        Files.createDirectories(skillRoot)
+        Files.write(skillRoot.resolve("SKILL.md"), ByteArray(2 * 1024 * 1024) { 'x'.code.toByte() })
+
+        assertEquals(listOf(skillId), repository.listSkillInventoryIds("user-1"))
+        assertTrue(repository.listSkillInventory("user-1").isEmpty())
+    }
+
+    @Test
     fun `saves and reads validation record`() = runTest {
         val stateRoot = createTempDirectory("skill-registry-validation-")
         val repository = createRepository(DefaultSouzPaths(stateRoot = stateRoot))
