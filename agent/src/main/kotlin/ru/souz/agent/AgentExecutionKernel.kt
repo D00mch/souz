@@ -12,6 +12,7 @@ import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
+import ru.souz.agent.nodes.NodesSkillsGraph
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.SkillActivationPipeline
@@ -48,8 +49,11 @@ class AgentExecutionKernelFactory(
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
     private val skillCommandTool: LLMToolSetup? = null,
-    private val getSkillsTool: LLMToolSetup,
+    private val getSkillByNameTool: LLMToolSetup,
+    private val getSkillsByCategoryTool: LLMToolSetup,
+    private val getSkillsNamesByCategoryTool: LLMToolSetup,
     private val getKnowledgeTool: LLMToolSetup,
+    private val searchKnowledgeTool: LLMToolSetup,
     private val runtimeCommandTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val telemetry: AgentTelemetry,
@@ -70,7 +74,12 @@ class AgentExecutionKernelFactory(
             agentToolExecutor = agentToolExecutor,
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
+        )
+        val nodesSkillsGraph = NodesSkillsGraph(
+            nodesCommon = nodesCommon,
             knowledgeStore = knowledgeStore,
+            toolCatalog = toolCatalog,
+            toolsFilter = toolsFilter,
         )
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(
@@ -117,8 +126,12 @@ class AgentExecutionKernelFactory(
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
-            getSkillsTool = getSkillsTool,
+            nodesSkillsGraph = nodesSkillsGraph,
+            getSkillByNameTool = getSkillByNameTool,
+            getSkillsByCategoryTool = getSkillsByCategoryTool,
+            getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,
             getKnowledgeTool = getKnowledgeTool,
+            searchKnowledgeTool = searchKnowledgeTool,
             runtimeCommandTool = runtimeCommandTool,
         )
         val executor = AgentExecutor(

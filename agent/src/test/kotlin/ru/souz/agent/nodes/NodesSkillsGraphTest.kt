@@ -15,7 +15,9 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
@@ -25,15 +27,91 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
+import ru.souz.tool.ToolCategory
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class NodesCommonKnowledgeTest {
+class NodesSkillsGraphTest {
+    @Test
+    fun `prepare context restricts tools and augments history without changing the supplied prompt`() {
+        val coreTool = FixedResultTool("CoreTool", "{}")
+        val catalogTool = FixedResultTool("CatalogTool", "{}")
+        val catalog = object : AgentToolCatalog {
+            override val toolsByCategory = mapOf(
+                ToolCategory.FILES to mapOf(catalogTool.fn.name to catalogTool),
+            )
+        }
+        val suppliedPrompt = "A caller-provided system prompt."
+        val context = AgentContext(
+            input = "hello",
+            settings = AgentSettings(
+                model = "test",
+                temperature = 0f,
+                tools = AgentTools(catalog.toolsByCategory),
+            ),
+            history = listOf(
+                LLMRequest.Message(LLMMessageRole.system, "obsolete effective prompt"),
+                LLMRequest.Message(LLMMessageRole.user, "hello"),
+            ),
+            activeTools = listOf(catalogTool.fn),
+            systemPrompt = suppliedPrompt,
+        )
+
+        val result = nodesSkillsGraph(null, catalog).prepareContext(context, listOf(coreTool))
+
+        assertEquals(suppliedPrompt, result.systemPrompt)
+        assertEquals(listOf(coreTool.fn), result.activeTools)
+        assertEquals(mapOf(coreTool.fn.name to coreTool), result.settings.tools.byName)
+        assertEquals(emptyMap(), result.settings.tools.byCategory)
+        assertEquals(2, result.history.size)
+        assertContains(result.history.first().content, suppliedPrompt)
+        assertContains(result.history.first().content, "- CUSTOM")
+        assertContains(result.history.first().content, "- FILES")
+        assertFalse(result.history.first().content.contains("obsolete effective prompt"))
+    }
+
+    @Test
+    fun `prepare context advertises categories from the current tool filter`() {
+        val filesTool = FixedResultTool("FilesTool", "{}")
+        val browserTool = FixedResultTool("BrowserTool", "{}")
+        val catalog = object : AgentToolCatalog {
+            override val toolsByCategory = mapOf(
+                ToolCategory.FILES to mapOf(filesTool.fn.name to filesTool),
+                ToolCategory.BROWSER to mapOf(browserTool.fn.name to browserTool),
+            )
+        }
+        val filter = SwitchingToolsFilter(ToolCategory.FILES)
+        val context = AgentContext(
+            input = "hello",
+            settings = AgentSettings(
+                model = "test",
+                temperature = 0f,
+                tools = AgentTools(catalog.toolsByCategory),
+            ),
+            history = emptyList(),
+            activeTools = emptyList(),
+            systemPrompt = "system",
+        )
+        val graph = nodesSkillsGraph(null, catalog, filter)
+
+        val filesPrompt = graph.prepareContext(context, listOf(filesTool)).history.first().content
+        filter.allowedCategory = ToolCategory.BROWSER
+        val browserPrompt = graph.prepareContext(context, listOf(filesTool)).history.first().content
+
+        assertContains(filesPrompt, "- CUSTOM")
+        assertContains(filesPrompt, "- FILES")
+        assertFalse(filesPrompt.contains("- BROWSER"))
+        assertContains(browserPrompt, "- CUSTOM")
+        assertContains(browserPrompt, "- BROWSER")
+        assertFalse(browserPrompt.contains("- FILES"))
+    }
+
     @Test
     fun `results at 4096 UTF-8 bytes stay inline and 4097 bytes are offloaded`() = runTest {
         val store = RecordingKnowledgeStore()
@@ -70,18 +148,19 @@ class NodesCommonKnowledgeTest {
     }
 
     @Test
-    fun `GetKnowledge results are never re-offloaded`() = runTest {
+    fun `Knowledge retrieval results are never re-offloaded`() = runTest {
         val store = RecordingKnowledgeStore()
         val content = "k".repeat(10_000)
 
-        val result = executeToolResult(
-            content = content,
-            store = store,
-            functionName = "GetKnowledge",
-            getKnowledgeToolName = "GetKnowledge",
-        )
+        listOf("GetKnowledge", "SearchKnowledge").forEach { functionName ->
+            val result = executeToolResult(
+                content = content,
+                store = store,
+                functionName = functionName,
+            )
 
-        assertEquals(content, result.content)
+            assertEquals(content, result.content)
+        }
         assertTrue(store.puts.isEmpty())
     }
 
@@ -113,7 +192,9 @@ class NodesCommonKnowledgeTest {
             activeTools = toolsByName.values.map { it.fn },
         )
 
-        val result = nodesCommon(store).toolUseWithKnowledge("GetKnowledge").execute(context, runtime())
+        val result = nodesSkillsGraph(store)
+            .toolUseWithKnowledge(setOf("GetKnowledge", "SearchKnowledge"))
+            .execute(context, runtime())
 
         assertEquals(listOf("FirstTool", "SecondTool"), store.puts.map { it.sourceTool })
         assertEquals(listOf(4_097, 4_098), store.puts.map { it.content.length })
@@ -151,11 +232,11 @@ class NodesCommonKnowledgeTest {
             name = "LargeTool",
         ),
         functionName: String = "LargeTool",
-        getKnowledgeToolName: String = "GetKnowledge",
+        knowledgeToolNames: Set<String> = setOf("GetKnowledge", "SearchKnowledge"),
     ): LLMRequest.Message {
         val tool = FixedResultTool(functionName, returnedMessage)
         val context = toolContext(tool)
-        val result = nodesCommon(store).toolUseWithKnowledge(getKnowledgeToolName).execute(context, runtime())
+        val result = nodesSkillsGraph(store).toolUseWithKnowledge(knowledgeToolNames).execute(context, runtime())
         return result.history.last()
     }
 
@@ -195,19 +276,32 @@ class NodesCommonKnowledgeTest {
         )
     }
 
-    private fun nodesCommon(knowledgeStore: ConversationKnowledgeStore?): NodesCommon = NodesCommon(
-        desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
-        settingsProvider = mockk<AgentSettingsProvider>(relaxed = true) {
-            every { defaultCalendar } returns null
+    private fun nodesSkillsGraph(
+        knowledgeStore: ConversationKnowledgeStore?,
+        toolCatalog: AgentToolCatalog = object : AgentToolCatalog {
+            override val toolsByCategory = emptyMap<ToolCategory, Map<String, LLMToolSetup>>()
         },
-        agentToolExecutor = AgentToolExecutor(),
-        defaultBrowserProvider = DefaultBrowserProvider { null },
-        runtimeEnvironment = object : AgentRuntimeEnvironment {
-            override val locale: Locale = Locale.US
-            override val zoneId: ZoneId = ZoneId.of("UTC")
-        },
-        knowledgeStore = knowledgeStore,
-    )
+        toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
+    ): NodesSkillsGraph {
+        val nodesCommon = NodesCommon(
+            desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
+            settingsProvider = mockk<AgentSettingsProvider>(relaxed = true) {
+                every { defaultCalendar } returns null
+            },
+            agentToolExecutor = AgentToolExecutor(),
+            defaultBrowserProvider = DefaultBrowserProvider { null },
+            runtimeEnvironment = object : AgentRuntimeEnvironment {
+                override val locale: Locale = Locale.US
+                override val zoneId: ZoneId = ZoneId.of("UTC")
+            },
+        )
+        return NodesSkillsGraph(
+            nodesCommon = nodesCommon,
+            knowledgeStore = knowledgeStore,
+            toolCatalog = toolCatalog,
+            toolsFilter = toolsFilter,
+        )
+    }
 
     private fun runtime() = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
 
@@ -218,6 +312,7 @@ class NodesCommonKnowledgeTest {
         assertEquals(originalLength, reference["storedLength"].intValue())
         assertFalse(reference["truncated"].booleanValue())
         assertTrue(reference["instruction"].textValue().contains("GetKnowledge"))
+        assertTrue(reference["instruction"].textValue().contains("SearchKnowledge"))
         assertEquals(6, reference.size())
     }
 
@@ -267,6 +362,21 @@ class NodesCommonKnowledgeTest {
         override suspend fun clearConversation(meta: ToolInvocationMeta) = Unit
 
         data class Put(val meta: ToolInvocationMeta, val sourceTool: String, val content: String)
+    }
+
+    private object PassThroughToolsFilter : AgentToolsFilter {
+        override fun applyFilter(
+            toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
+    }
+
+    private class SwitchingToolsFilter(
+        var allowedCategory: ToolCategory,
+    ) : AgentToolsFilter {
+        override fun applyFilter(
+            toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        ): Map<ToolCategory, Map<String, LLMToolSetup>> =
+            toolsByCategory.filterKeys { it == allowedCategory }
     }
 
     private companion object {

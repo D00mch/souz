@@ -9,7 +9,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 ## Highlights
 
 - **Kotlin Multiplatform app surfaces** built with Compose for Desktop plus an Android chat-agent entry point.
-- **Selectable graph agents**: the default `GraphBasedAgent` uses classification, skill activation, and MCP injection, while `SkillsGraphBasedAgent` lets the model discover and run skills through three always-available core tools.
+- **Selectable graph agents**: the default `GraphBasedAgent` uses classification, skill activation, and MCP injection, while `SkillsGraphBasedAgent` lets the model discover and run skills through six always-available core tools.
 - **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
@@ -181,9 +181,9 @@ flowchart TD
     errorNode --> finish
 ```
 
-The skills-oriented graph exposes exactly `GetSkills`, `GetKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Catalog and MCP tools are not directly callable; executable skill commands delegate to the internal catalog.
+The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Its system prompt lists the non-empty compiled-tool categories filtered by the active tool policy plus `CUSTOM`, the default category for stored file-backed skills. Catalog and MCP tools are not directly callable; executable skill commands delegate to the internal catalog.
 
-Tool-result text larger than 4,096 UTF-8 bytes is retained as conversation-scoped temporary Knowledge and replaced in history by a compact reference. A result of exactly 4 KiB stays inline. `GetKnowledge` returns a complete retained value or searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
+Tool-result text larger than 4,096 UTF-8 bytes is retained as conversation-scoped temporary Knowledge and replaced in history by a compact reference. A result of exactly 4 KiB stays inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
 
 ## Graph engine
 
@@ -387,7 +387,7 @@ SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 
 The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
-Backend executions snapshot each user's effective `enabledTools`. The snapshot controls compiled-tool classification, `GetSkills` discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core skill tools and user-installed file-backed skills remain available.
+Backend executions snapshot each user's effective `enabledTools`. The snapshot controls compiled-tool classification, category-based Skill discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core skill tools and user-installed file-backed skills remain available.
 
 Run the backend:
 

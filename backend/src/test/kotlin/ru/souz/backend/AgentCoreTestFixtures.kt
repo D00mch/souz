@@ -34,6 +34,7 @@ internal fun testSkillCoreToolsFactory(
     skillRegistryRepository = skillRegistryRepository,
     legacyCommandTool = testCoreTool("RunSkillCommand"),
     getKnowledgeTool = testCoreTool("GetKnowledge"),
+    searchKnowledgeTool = testCoreTool("SearchKnowledge"),
     commandTool = ToolRunSkillCommand(
         ToolInvocationRuntimeSandboxResolver {
             error("The test skill command sandbox is not configured.")

@@ -11,6 +11,7 @@ import ru.souz.agent.knowledge.KnowledgeStoreUnavailableException
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import kotlin.test.Test
@@ -47,7 +48,7 @@ class ToolGetKnowledgeTest {
     fun `full read reports retained and omitted ranges for truncated text`() = runTest {
         val entry = truncated(head = "head", tail = "tail", originalLength = 12)
 
-        val response = ToolGetKnowledge(FakeKnowledgeStore(entry)).callBody()
+        val response = ToolGetKnowledge(FakeKnowledgeStore(entry)).getBody()
 
         assertTrue(response["truncated"].asBoolean())
         assertEquals(8, response["storedLength"].asInt())
@@ -59,19 +60,37 @@ class ToolGetKnowledgeTest {
     }
 
     @Test
-    fun `regex is case-sensitive by default and accepts inline flags`() = runTest {
-        val tool = ToolGetKnowledge(FakeKnowledgeStore(complete("Alpha alpha")))
+    fun `full read rejects search arguments without reading storage`() = runTest {
+        val invalidArguments = listOf(
+            emptyMap(),
+            mapOf("knowledgeId" to " "),
+            mapOf("knowledgeId" to 123),
+            mapOf("knowledgeId" to KNOWLEDGE_ID, "unexpected" to true),
+            mapOf("knowledgeId" to KNOWLEDGE_ID, "regex" to ".*"),
+        )
 
-        val sensitive = tool.callBody(regex = "alpha", charsBefore = 0, charsAfter = 0)
-        val insensitive = tool.callBody(regex = "(?i)alpha", charsBefore = 0, charsAfter = 0)
+        invalidArguments.forEach { arguments ->
+            val store = FakeKnowledgeStore(complete("x"))
+            val response = ToolGetKnowledge(store).call(arguments).second
+            assertEquals("invalid_arguments", response["error"]["code"].asText(), arguments.toString())
+            assertEquals(0, store.getCalls)
+        }
+    }
+
+    @Test
+    fun `search is case-sensitive by default and accepts inline flags`() = runTest {
+        val tool = ToolSearchKnowledge(FakeKnowledgeStore(complete("Alpha alpha")))
+
+        val sensitive = tool.searchBody(regex = "alpha", charsBefore = 0, charsAfter = 0)
+        val insensitive = tool.searchBody(regex = "(?i)alpha", charsBefore = 0, charsAfter = 0)
 
         assertEquals(listOf(6), sensitive["matches"].map { it["start"].asInt() })
         assertEquals(listOf(0, 6), insensitive["matches"].map { it["start"].asInt() })
     }
 
     @Test
-    fun `regex matches are non-overlapping and include exact custom context offsets`() = runTest {
-        val response = ToolGetKnowledge(FakeKnowledgeStore(complete("012aaaa789"))).callBody(
+    fun `search matches are non-overlapping and include exact custom context offsets`() = runTest {
+        val response = ToolSearchKnowledge(FakeKnowledgeStore(complete("012aaaa789"))).searchBody(
             regex = "aa",
             charsBefore = 2,
             charsAfter = 1,
@@ -79,55 +98,50 @@ class ToolGetKnowledgeTest {
 
         val matches = response["matches"]
         assertEquals(2, matches.size())
-        matches[0].assertMatch(
-            text = "aa",
-            start = 3,
-            end = 5,
-            excerpt = "12aaa",
-            excerptStart = 1,
-            excerptEnd = 6,
-        )
-        matches[1].assertMatch(
-            text = "aa",
-            start = 5,
-            end = 7,
-            excerpt = "aaaa7",
-            excerptStart = 3,
-            excerptEnd = 8,
-        )
+        matches[0].assertMatch("aa", 3, 5, "12aaa", 1, 6)
+        matches[1].assertMatch("aa", 5, 7, "aaaa7", 3, 8)
     }
 
     @Test
-    fun `default regex context and match limit are applied`() = runTest {
+    fun `search omits excerpt when it is identical to the exact match`() = runTest {
+        val match = ToolSearchKnowledge(FakeKnowledgeStore(complete("a target z")))
+            .searchBody(regex = "target", charsBefore = 0, charsAfter = 0)
+            .get("matches")
+            .single()
+
+        assertEquals("target", match["text"].asText())
+        assertEquals(2, match["start"].asInt())
+        assertEquals(8, match["end"].asInt())
+        assertNull(match.get("excerpt"))
+        assertNull(match.get("excerptStart"))
+        assertNull(match.get("excerptEnd"))
+    }
+
+    @Test
+    fun `default search context and match limit are applied`() = runTest {
         val contextText = "x".repeat(300) + "hit" + "y".repeat(300)
-        val contextResponse = ToolGetKnowledge(FakeKnowledgeStore(complete(contextText))).callBody(regex = "hit")
+        val contextResponse = ToolSearchKnowledge(FakeKnowledgeStore(complete(contextText)))
+            .searchBody(regex = "hit")
         val match = contextResponse["matches"].single()
         assertEquals(44, match["excerptStart"].asInt())
         assertEquals(559, match["excerptEnd"].asInt())
         assertEquals(515, match["excerpt"].asText().length)
 
-        val limitResponse = ToolGetKnowledge(
+        val limitResponse = ToolSearchKnowledge(
             FakeKnowledgeStore(complete(List(25) { "a" }.joinToString(" ")))
-        ).callBody(regex = "a", charsBefore = 0, charsAfter = 0)
-        assertEquals(ToolGetKnowledge.DEFAULT_MAX_MATCHES, limitResponse["matches"].size())
+        ).searchBody(regex = "a", charsBefore = 0, charsAfter = 0)
+        assertEquals(ToolSearchKnowledge.DEFAULT_MAX_MATCHES, limitResponse["matches"].size())
     }
 
     @Test
     fun `excerpt boundaries preserve whole Unicode code points with UTF-16 offsets`() = runTest {
-        val response = ToolGetKnowledge(FakeKnowledgeStore(complete("a😀match😀z"))).callBody(
+        val response = ToolSearchKnowledge(FakeKnowledgeStore(complete("a😀match😀z"))).searchBody(
             regex = "match",
             charsBefore = 1,
             charsAfter = 1,
         )
 
-        response["matches"].single().assertMatch(
-            text = "match",
-            start = 3,
-            end = 8,
-            excerpt = "😀match😀",
-            excerptStart = 1,
-            excerptEnd = 10,
-        )
+        response["matches"].single().assertMatch("match", 3, 8, "😀match😀", 1, 10)
     }
 
     @Test
@@ -137,30 +151,31 @@ class ToolGetKnowledgeTest {
             tail = "START omega",
             originalLength = 30,
         )
-        val tool = ToolGetKnowledge(FakeKnowledgeStore(entry))
+        val tool = ToolSearchKnowledge(FakeKnowledgeStore(entry))
 
-        val anchored = tool.callBody(
+        val anchored = tool.searchBody(
             regex = "END$|^START",
             charsBefore = 0,
             charsAfter = 0,
         )
         assertEquals(2, anchored["matches"].size())
-        anchored["matches"][0].assertMatch("END", 6, 9, "END", 6, 9)
-        anchored["matches"][1].assertMatch("START", 19, 24, "START", 19, 24)
+        anchored["matches"][0].assertExactMatch("END", 6, 9)
+        anchored["matches"][1].assertExactMatch("START", 19, 24)
 
-        val acrossGap = tool.callBody(regex = "ENDSTART", charsBefore = 0, charsAfter = 0)
+        val acrossGap = tool.searchBody(regex = "ENDSTART", charsBefore = 0, charsAfter = 0)
         assertTrue(acrossGap["matches"].isEmpty)
     }
 
     @Test
-    fun `invalid argument combinations and bounds return structured errors without reading storage`() = runTest {
+    fun `invalid search arguments and bounds return structured errors without reading storage`() = runTest {
         val invalidArguments = listOf(
             emptyMap(),
-            mapOf("knowledgeId" to " "),
-            mapOf("knowledgeId" to 123),
-            mapOf("knowledgeId" to KNOWLEDGE_ID, "unexpected" to true),
+            mapOf("knowledgeId" to " ", "regex" to "x"),
+            mapOf("knowledgeId" to 123, "regex" to "x"),
+            mapOf("knowledgeId" to KNOWLEDGE_ID),
+            mapOf("knowledgeId" to KNOWLEDGE_ID, "regex" to " "),
             mapOf("knowledgeId" to KNOWLEDGE_ID, "regex" to 123),
-            mapOf("knowledgeId" to KNOWLEDGE_ID, "charsBefore" to 1),
+            mapOf("knowledgeId" to KNOWLEDGE_ID, "regex" to "x", "unexpected" to true),
             mapOf("knowledgeId" to KNOWLEDGE_ID, "regex" to "x", "charsBefore" to 1.0),
             mapOf("knowledgeId" to KNOWLEDGE_ID, "regex" to "x", "charsAfter" to "1"),
             mapOf("knowledgeId" to KNOWLEDGE_ID, "regex" to "x", "maxMatches" to 1.9),
@@ -174,21 +189,25 @@ class ToolGetKnowledgeTest {
 
         invalidArguments.forEach { arguments ->
             val store = FakeKnowledgeStore(complete("x"))
-            val response = ToolGetKnowledge(store).call(arguments).second
+            val response = ToolSearchKnowledge(store).call(arguments).second
             assertEquals("invalid_arguments", response["error"]["code"].asText(), arguments.toString())
             assertEquals(0, store.getCalls)
         }
     }
 
     @Test
-    fun `inclusive argument limits are accepted`() = runTest {
+    fun `inclusive search limits are accepted`() = runTest {
         val arguments = listOf(
             Triple(0, 0, 1),
-            Triple(ToolGetKnowledge.MAX_CONTEXT_CHARS, ToolGetKnowledge.MAX_CONTEXT_CHARS, ToolGetKnowledge.MAX_MATCHES),
+            Triple(
+                ToolSearchKnowledge.MAX_CONTEXT_CHARS,
+                ToolSearchKnowledge.MAX_CONTEXT_CHARS,
+                ToolSearchKnowledge.MAX_MATCHES,
+            ),
         )
 
         arguments.forEach { (before, after, matches) ->
-            val response = ToolGetKnowledge(FakeKnowledgeStore(complete("x"))).callBody(
+            val response = ToolSearchKnowledge(FakeKnowledgeStore(complete("x"))).searchBody(
                 regex = "x",
                 charsBefore = before,
                 charsAfter = after,
@@ -197,7 +216,7 @@ class ToolGetKnowledgeTest {
             assertEquals(1, response["matches"].size())
         }
 
-        val bigIntegerResponse = ToolGetKnowledge(FakeKnowledgeStore(complete("x"))).call(
+        val bigIntegerResponse = ToolSearchKnowledge(FakeKnowledgeStore(complete("x"))).call(
             mapOf(
                 "knowledgeId" to KNOWLEDGE_ID,
                 "regex" to "x",
@@ -212,7 +231,7 @@ class ToolGetKnowledgeTest {
         listOf("(?=x)", "(x)\\1").forEach { regex ->
             val store = FakeKnowledgeStore(complete("xx"))
 
-            val response = ToolGetKnowledge(store).callBody(regex = regex)
+            val response = ToolSearchKnowledge(store).searchBody(regex = regex)
 
             assertEquals("invalid_regex", response["error"]["code"].asText())
             assertEquals(0, store.getCalls)
@@ -220,39 +239,46 @@ class ToolGetKnowledgeTest {
     }
 
     @Test
-    fun `missing conversation and failed storage reads return distinct structured errors`() = runTest {
-        val missing = ToolGetKnowledge(FakeKnowledgeStore(null)).callBody()
-        assertEquals("knowledge_not_found", missing["error"]["code"].asText())
+    fun `shared retrieval maps missing conversation and storage failures`() = runTest {
+        listOf(
+            FakeKnowledgeStore(null) to "knowledge_not_found",
+            FakeKnowledgeStore(error = KnowledgeStoreUnavailableException("conversation required")) to
+                "conversation_unavailable",
+            FakeKnowledgeStore(error = IllegalStateException("storage failed")) to "storage_failure",
+        ).forEach { (store, expectedCode) ->
+            val retriever = KnowledgeRetriever(store)
+            val getResponse = ToolGetKnowledge(retriever).getBody()
+            val searchResponse = ToolSearchKnowledge(retriever).searchBody(regex = "target")
 
-        val unavailable = ToolGetKnowledge(
-            FakeKnowledgeStore(error = KnowledgeStoreUnavailableException("conversation required"))
-        ).callBody()
-        assertEquals("conversation_unavailable", unavailable["error"]["code"].asText())
-        assertEquals("conversation required", unavailable["error"]["message"].asText())
-
-        val failed = ToolGetKnowledge(
-            FakeKnowledgeStore(error = IllegalStateException("storage failed"))
-        ).callBody()
-        assertEquals("storage_failure", failed["error"]["code"].asText())
-        assertEquals("storage failed", failed["error"]["message"].asText())
+            assertEquals(expectedCode, getResponse["error"]["code"].asText())
+            assertEquals(expectedCode, searchResponse["error"]["code"].asText())
+        }
     }
 
     @Test
-    fun `storage cancellation propagates`() = runTest {
-        val tool = ToolGetKnowledge(FakeKnowledgeStore(error = CancellationException("cancelled")))
+    fun `shared retrieval propagates storage cancellation`() = runTest {
+        val retriever = KnowledgeRetriever(
+            FakeKnowledgeStore(error = CancellationException("cancelled"))
+        )
 
-        assertFailsWith<CancellationException> { tool.callBody() }
+        assertFailsWith<CancellationException> { ToolGetKnowledge(retriever).getBody() }
+        assertFailsWith<CancellationException> {
+            ToolSearchKnowledge(retriever).searchBody(regex = "target")
+        }
     }
 
-    private suspend fun ToolGetKnowledge.callBody(
-        regex: String? = null,
+    private suspend fun ToolGetKnowledge.getBody(): JsonNode =
+        call(mapOf("knowledgeId" to KNOWLEDGE_ID)).second
+
+    private suspend fun ToolSearchKnowledge.searchBody(
+        regex: String,
         charsBefore: Int? = null,
         charsAfter: Int? = null,
         maxMatches: Int? = null,
     ): JsonNode {
         val arguments = buildMap<String, Any> {
             put("knowledgeId", KNOWLEDGE_ID)
-            regex?.let { put("regex", it) }
+            put("regex", regex)
             charsBefore?.let { put("charsBefore", it) }
             charsAfter?.let { put("charsAfter", it) }
             maxMatches?.let { put("maxMatches", it) }
@@ -260,11 +286,11 @@ class ToolGetKnowledgeTest {
         return call(arguments).second
     }
 
-    private suspend fun ToolGetKnowledge.call(
+    private suspend fun LLMToolSetup.call(
         arguments: Map<String, Any>,
         meta: ToolInvocationMeta = META,
     ) = invoke(
-        LLMResponse.FunctionCall(name = ToolGetKnowledge.NAME, arguments = arguments),
+        LLMResponse.FunctionCall(name = fn.name, arguments = arguments),
         meta,
     ).let { message -> message to restJsonMapper.readTree(message.content) }
 
@@ -347,4 +373,15 @@ private fun JsonNode.assertMatch(
     assertEquals(excerpt, get("excerpt").asText())
     assertEquals(excerptStart, get("excerptStart").asInt())
     assertEquals(excerptEnd, get("excerptEnd").asInt())
+}
+
+private fun JsonNode.assertExactMatch(
+    text: String,
+    start: Int,
+    end: Int,
+) {
+    assertEquals(text, get("text").asText())
+    assertEquals(start, get("start").asInt())
+    assertEquals(end, get("end").asInt())
+    assertNull(get("excerpt"))
 }

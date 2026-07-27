@@ -8,7 +8,10 @@ import org.jetbrains.compose.resources.getString
 import ru.souz.agent.AgentId
 import ru.souz.llms.LLMResponse
 import ru.souz.tool.knowledge.ToolGetKnowledge
-import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.chat_action_generic_tool
@@ -69,13 +72,34 @@ class ChatAgentActionFormatterTest {
         assertNull(
             formatter.format(
                 AgentId.SKILLS_GRAPH,
-                LLMResponse.FunctionCall(ToolGetSkills.NAME, mapOf("skillIds" to emptyList<String>())),
+                LLMResponse.FunctionCall(ToolGetSkillByName.NAME, mapOf("skillId" to "ListFiles")),
+            )
+        )
+        assertNull(
+            formatter.format(
+                AgentId.SKILLS_GRAPH,
+                LLMResponse.FunctionCall(ToolGetSkillsByCategory.NAME, mapOf("category" to "FILES")),
+            )
+        )
+        assertNull(
+            formatter.format(
+                AgentId.SKILLS_GRAPH,
+                LLMResponse.FunctionCall(ToolGetSkillsNamesByCategory.NAME, mapOf("category" to "FILES")),
             )
         )
         assertNull(
             formatter.format(
                 AgentId.SKILLS_GRAPH,
                 LLMResponse.FunctionCall(ToolGetKnowledge.NAME, mapOf("knowledgeId" to "knowledge-1")),
+            )
+        )
+        assertNull(
+            formatter.format(
+                AgentId.SKILLS_GRAPH,
+                LLMResponse.FunctionCall(
+                    ToolSearchKnowledge.NAME,
+                    mapOf("knowledgeId" to "knowledge-1", "regex" to "target"),
+                ),
             )
         )
     }
@@ -134,10 +158,10 @@ class ChatAgentActionFormatterTest {
         val formatter = ChatAgentActionFormatter { "InternetSearch" }
 
         assertEquals(
-            "Запускаю инструмент: GetSkills",
+            "Запускаю инструмент: GetSkillByName",
             formatter.format(
                 AgentId.GRAPH,
-                LLMResponse.FunctionCall(ToolGetSkills.NAME, emptyMap()),
+                LLMResponse.FunctionCall(ToolGetSkillByName.NAME, mapOf("skillId" to "ListFiles")),
             ),
         )
         assertEquals(

@@ -53,7 +53,14 @@ class BackendConversationRuntimeSettingsTest {
         )
 
         assertEquals(
-            listOf("GetSkills", "GetKnowledge", "RunSkillCommand"),
+            listOf(
+                "GetSkillByName",
+                "GetSkillsByCategory",
+                "GetSkillsNamesByCategory",
+                "GetKnowledge",
+                "SearchKnowledge",
+                "RunSkillCommand",
+            ),
             api.finalRequests.single().functions.map { it.name },
         )
     }

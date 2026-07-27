@@ -95,7 +95,7 @@ import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.knowledge.ToolGetKnowledge
-import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.runtime.files.FilesToolUtil
@@ -724,7 +724,7 @@ class MainViewModelTest {
 
             harness.sideEffects.emit(
                 AgentSideEffect.Fn(
-                    FunctionCall(ToolGetSkills.NAME, mapOf("skillIds" to emptyList<String>()))
+                    FunctionCall(ToolGetSkillsByCategory.NAME, mapOf("category" to "FILES"))
                 )
             )
             harness.sideEffects.emit(
