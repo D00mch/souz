@@ -81,15 +81,27 @@ quote() {
 }
 
 generate_cask() {
+  local cask_version="$VERSION"
+  local release_version_ref="#{version}"
+  local file_version_ref="#{version}"
+
+  if [[ "$RELEASE_TAG" != "$VERSION" ]]; then
+    cask_version="$VERSION,$RELEASE_TAG"
+    release_version_ref="#{version.after_comma}"
+    file_version_ref="#{version.before_comma}"
+  fi
+
+  local cask_url="https://github.com/$GITHUB_REPO/releases/download/$release_version_ref/Souz_#{arch}-$file_version_ref.dmg"
+
   cat <<EOF
 cask $(quote "$TOKEN") do
   arch arm: "aarch64", intel: "X86_64"
 
-  version $(quote "$VERSION")
+  version $(quote "$cask_version")
   sha256 arm:   $(quote "$ARM64_SHA256"),
          intel: $(quote "$INTEL_SHA256")
 
-  url $(quote "$RELEASE_BASE_URL/Souz_#{arch}-$VERSION.dmg"),
+  url $(quote "$cask_url"),
       verified: $(quote "github.com/$GITHUB_REPO/")
   name $(quote "$APP_NAME")
   desc $(quote "$DESC")
