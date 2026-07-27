@@ -41,6 +41,7 @@ import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
+import ru.souz.service.keys.Keys
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.service.telegram.TelegramService
@@ -90,6 +91,7 @@ class AgentScenarioTestSupport(
         DI.Module("TestOverrideModule") {
             bindSingleton<SettingsProvider>(overrides = true) { spySettings }
             bindSingleton<FilesToolUtil>(overrides = true) { filesUtil }
+            bindSingleton<Keys>(overrides = true) { mockk(relaxed = true) }
             bindSingleton<TelegramService>(overrides = true) {
                 mockk<TelegramService>(relaxed = true).also { telegramService ->
                     every { telegramService.authState } returns MutableStateFlow(
