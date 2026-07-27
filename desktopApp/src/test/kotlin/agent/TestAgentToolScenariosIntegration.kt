@@ -1,20 +1,17 @@
 package agent
 
 import io.mockk.*
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import org.kodein.di.DI
-import org.kodein.di.bindProvider
-import org.kodein.di.bindSingleton
-import ru.souz.agent.AgentId
-import ru.souz.GraphBasedAgent
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.giga.toGiga
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.tool.application.ToolOpen
@@ -37,19 +34,17 @@ import ru.souz.tool.notes.ToolListNotes
 import ru.souz.tool.notes.ToolSearchNotes
 import ru.souz.tool.textReplace.ToolGetClipboard
 
-
 /**
- * Integration tests for tool invocation scenarios via [GraphBasedAgent.execute].
+ * Integration tests for tool invocation scenarios across graph agent implementations.
  * Tools are mocked: we verify that LLM calls the required tools with the expected parameters.
- * All scenarios are run via graphAgent.execute(input).
  * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` before running these integration tests.
+ * Select `graph` (default) or `skills` with [SOUZ_AGENT_INTEGRATION_TEST_AGENT].
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val selectedModel = LLMModel.LocalGemma4_E2B_It
-    private val agentType = AgentId.GRAPH
-    private val support = AgentScenarioTestSupport(selectedModel, agentType)
+    private val selectedModel = LLMModel.AnthropicHaiku45
+    private val support = AgentScenarioTestSupport(selectedModel)
     private val runTest = support::runTest
     private val filesUtil: FilesToolUtil
         get() = support.filesUtil
@@ -59,7 +54,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
     @AfterEach
     fun clearMocks() {
-        clearAllMocks()
+        clearAllMocks(answers = false)
         unmockkAll()
     }
 
@@ -68,9 +63,9 @@ class GraphAgentToolScenariosIntegrationTest {
 
     private suspend fun runScenarioWithMocks(
         userPrompt: String,
+        mockedTools: List<LLMToolSetup>,
         useFewShotExamples: Boolean = true,
-        overrides: DI.MainBuilder.() -> Unit,
-    ) = support.runScenarioWithMocks(userPrompt, useFewShotExamples, overrides)
+    ) = support.runScenarioWithMocks(userPrompt, mockedTools, useFewShotExamples)
 
     @ParameterizedTest(name = "scenario1_launchApplication[{index}] {0}")
     @ValueSource(
@@ -93,11 +88,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { testOpenApp.invoke(any(), any()) } returns "Opened"
 
-        runScenarioWithMocks(userPrompt) {
-            bindProvider<DI> { this.di }
-            bindSingleton<ToolShowApps> { testGetApps }
-            bindSingleton<ToolOpen> { testOpenApp }
-        }
+        runScenarioWithMocks(userPrompt, listOf(testGetApps.toGiga(), testOpenApp.toGiga()))
 
         coVerify(atLeast = 1) {
             testOpenApp.invoke(match { it.target.contains("ru.keepcoder.Telegram", ignoreCase = true) }, any())
@@ -142,11 +133,10 @@ class GraphAgentToolScenariosIntegrationTest {
             "Tab opened"
         }
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolOpenDefaultBrowser> { toolOpenDefaultBrowser }
-            bindSingleton<ToolOpen> { toolOpen }
-            bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(toolOpenDefaultBrowser.toGiga(), toolOpen.toGiga(), toolCreateNewBrowserTab.toGiga()),
+        )
         assertEquals(
             1,
             openCalls,
@@ -168,9 +158,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolCreateNewBrowserTab.invoke(any(), any()) } returns "Tab opened"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolCreateNewBrowserTab.toGiga()))
         coVerify(exactly = 1) {
             toolCreateNewBrowserTab.invoke(match { it.url.contains("example.com") }, any())
         }
@@ -197,11 +185,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolCreateNewBrowserTab.invoke(any(), any()) } returns "Opened"
 
         try {
-            runScenarioWithMocks(userPrompt) {
-                bindSingleton<ToolChromeInfo> { toolChromeInfo }
-                bindSingleton<ToolSafariInfo> { toolSafariInfo }
-                bindSingleton<ToolCreateNewBrowserTab> { toolCreateNewBrowserTab }
-            }
+            runScenarioWithMocks(
+                userPrompt,
+                listOf(toolChromeInfo.toGiga(), toolSafariInfo.toGiga(), toolCreateNewBrowserTab.toGiga()),
+            )
             coVerify(atLeast = 1) {
                 toolChromeInfo.invoke(match { it.type == ToolChromeInfo.InfoType.history }, any())
             }
@@ -238,10 +225,7 @@ class GraphAgentToolScenariosIntegrationTest {
             "Page content"
         }
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolSafariInfo> { toolSafariInfo }
-            bindSingleton<ToolChromeInfo> { toolChromeInfo }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolSafariInfo.toGiga(), toolChromeInfo.toGiga()))
         assertTrue(
             pageTextCalls >= 1,
             "Expected at least one pageText action via SafariInfo or ChromeInfo, but got $pageTextCalls"
@@ -262,9 +246,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolCalendarListEvents.invoke(any(), any()) } returns "[]"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolCalendarListEvents.toGiga()))
         coVerify(exactly = 1) { toolCalendarListEvents.invoke(any(), any()) }
     }
 
@@ -282,9 +264,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolCalendarCreateEvent.toGiga()))
         coVerify(exactly = 1) {
             toolCalendarCreateEvent.invoke(match { it.title.isNotBlank() && it.startDateTime.isNotBlank() }, any())
         }
@@ -315,11 +295,14 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
         coEvery { toolCalendarDeleteEvent.invoke(any(), any()) } returns "Deleted"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
-            bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
-            bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(
+                toolCalendarListEvents.toGiga(),
+                toolCalendarCreateEvent.toGiga(),
+                toolCalendarDeleteEvent.toGiga(),
+            ),
+        )
 
         coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any(), any()) }
         coVerify(atLeast = 1) {
@@ -347,11 +330,14 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolCalendarCreateEvent.invoke(any(), any()) } returns "Event created"
         coEvery { toolCalendarDeleteEvent.invoke(any(), any()) } returns "Deleted"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCalendarListEvents> { toolCalendarListEvents }
-            bindSingleton<ToolCalendarCreateEvent> { toolCalendarCreateEvent }
-            bindSingleton<ToolCalendarDeleteEvent> { toolCalendarDeleteEvent }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(
+                toolCalendarListEvents.toGiga(),
+                toolCalendarCreateEvent.toGiga(),
+                toolCalendarDeleteEvent.toGiga(),
+            ),
+        )
         coVerify(atLeast = 1) { toolCalendarListEvents.invoke(any(), any()) }
     }
 
@@ -372,11 +358,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns "[\"sample.csv\"]"
         coEvery { excelRead.invoke(any(), any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCreatePlotFromCsv> { toolCreatePlotFromCsv }
-            bindSingleton<ToolListFiles> { toolListFiles }
-            bindSingleton<ExcelRead> { excelRead }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(toolCreatePlotFromCsv.toGiga(), toolListFiles.toGiga(), excelRead.toGiga()),
+        )
         coVerify(exactly = 1) {
             toolCreatePlotFromCsv.invoke(match { it.path.contains("sample.csv") }, any())
         }
@@ -396,9 +381,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolFindFilesByName.invoke(any(), any()) } returns "~/path/to/test.txt"
         coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "~/path/to/test.txt"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolFindFilesByName.toGiga()))
         coVerify(atLeast = 1) {
             toolFindFilesByName.suspendInvoke(match { it.fileName.contains("100 ошибок в го") }, any())
         }
@@ -418,9 +401,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolListFiles.invoke(any(), any()) } returns "test.txt, read_me.txt, sample.csv"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolListFiles.toGiga()))
         coVerify(exactly = 1) { toolListFiles.invoke(any(), any()) }
     }
 
@@ -439,9 +420,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolNewFile.invoke(any(), any()) } returns "Created"
 
         val tempFile = "test_integration.txt"
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolNewFile> { toolNewFile }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolNewFile.toGiga()))
         coVerify(exactly = 1) { toolNewFile.invoke(match { it.path.contains(tempFile) && it.text.contains("Hello") }, any()) }
     }
 
@@ -461,10 +440,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"~/tmp/test-data/test_integration.txt\"]"
 
         val tempFile = "test_integration.txt"
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolExtractText> { toolExtractText }
-            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolExtractText.toGiga(), toolFindFilesByName.toGiga()))
         coVerify(exactly = 1) { toolExtractText.invoke(match { it.filePath.contains(tempFile) }, any()) }
     }
 
@@ -500,11 +476,10 @@ class GraphAgentToolScenariosIntegrationTest {
             "Modified"
         }
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolExtractText> { toolExtractText }
-            bindSingleton<ToolModifyFile> { toolModifyFile }
-            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(toolExtractText.toGiga(), toolModifyFile.toGiga(), toolFindFilesByName.toGiga()),
+        )
         coVerify(exactly = 1) {
             toolModifyFile.invoke(match { it.path.contains(tempFile) && it.newString.contains(appendText) }, any())
         }
@@ -529,10 +504,7 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolFindFilesByName.suspendInvoke(any(), any()) } returns "[\"/tmp/test-data/test_integration.txt\"]"
 
         val tempFile = "test_integration.txt"
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolDeleteFile> { toolDeleteFile }
-            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolDeleteFile.toGiga(), toolFindFilesByName.toGiga()))
         coVerify(exactly = 1) { toolDeleteFile.invoke(match { it.path.contains(tempFile) }, any()) }
     }
 
@@ -554,11 +526,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns """["sample.csv", "README.md", "/dest"]"""
         coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns """["~/sample.csv", "~/README.md", "~/dest/"]"""
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolMoveFile> { toolMoveFile }
-            bindSingleton<ToolListFiles> { toolListFiles }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(toolMoveFile.toGiga(), toolListFiles.toGiga(), toolFindFiles.toGiga()),
+        )
         coVerify(exactly = 1) {
             toolMoveFile.invoke(match { it.sourcePath.contains("README") && it.destinationPath.contains("dest") }, any())
         }
@@ -578,9 +549,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolExtractText.invoke(any(), any()) } returns "Test content\nСтрока для проверки извлечения текста."
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolExtractText> { toolExtractText }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolExtractText.toGiga()))
         coVerify(exactly = 1) {
             toolExtractText.invoke(match { it.filePath.contains("test.txt") }, any())
         }
@@ -604,11 +573,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns "[\"sample.pdf\"]"
         coEvery { toolReadPdfPages.invoke(any(), any()) } returns "Page 1 content"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolReadPdfPages> { toolReadPdfPages }
-            bindSingleton<ToolListFiles> { toolListFiles }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(toolReadPdfPages.toGiga(), toolListFiles.toGiga(), toolFindFiles.toGiga()),
+        )
         coVerify(exactly = 1) {
             toolReadPdfPages.invoke(match { it.filePath.contains("sample") }, any())
         }
@@ -628,9 +596,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolOpen.invoke(any(), any()) } returns "Opened"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolOpen> { toolOpen }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolOpen.toGiga()))
         coVerify(exactly = 1) {
             toolOpen.invoke(match { it.target.contains("read_me.txt") }, any())
         }
@@ -641,7 +607,7 @@ class GraphAgentToolScenariosIntegrationTest {
         strings = [
             "Создай заметку \"тест интеграции\", перечисли заметки, найди заметку тест, удали заметку тест интеграции",
             "Сделай заметку тест интеграции, покажи список заметок, найди тест, затем удали тест интеграции",
-            "Работаем с заметками. Добавь заметку \"тест интеграции\", проверь список, найди ее и удали",
+            "Работаем с заметками. Добавь заметку \"тест интеграции\", покажи список заметок, найди ее и удали",
         ]
     )
     fun scenario19_notesFindCreateDeleteList(userPrompt: String) = runTest {
@@ -668,12 +634,15 @@ class GraphAgentToolScenariosIntegrationTest {
             if (hasNote) "[\"$noteTitle\"]" else "[]"
         }
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolCreateNote> { toolCreateNote }
-            bindSingleton<ToolListNotes> { toolListNotes }
-            bindSingleton<ToolSearchNotes> { toolSearchNotes }
-            bindSingleton<ToolDeleteNote> { toolDeleteNote }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(
+                toolCreateNote.toGiga(),
+                toolListNotes.toGiga(),
+                toolSearchNotes.toGiga(),
+                toolDeleteNote.toGiga(),
+            ),
+        )
         coVerify(exactly = 1) { toolCreateNote.invoke(match { it.noteText.contains(noteTitle) }, any()) }
         coVerify(atLeast = 1) { toolListNotes.invoke(any(), any()) }
         coVerify(atLeast = 0) { toolSearchNotes.invoke(any(), any()) }
@@ -703,11 +672,14 @@ class GraphAgentToolScenariosIntegrationTest {
             ID: 50101 | From: Test Contact <test@example.com> | Subject: Отчет за сегодня
         """.trimIndent()
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolMailUnreadMessagesCount> { toolMailUnreadMessagesCount }
-            bindSingleton<ToolMailListMessages> { toolMailListMessages }
-            bindSingleton<ToolMailSearch> { toolMailSearch }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(
+                toolMailUnreadMessagesCount.toGiga(),
+                toolMailListMessages.toGiga(),
+                toolMailSearch.toGiga(),
+            ),
+        )
         coVerify(exactly = 1) { toolMailUnreadMessagesCount.invoke(any(), any()) }
         coVerify(exactly = 1) { toolMailListMessages.invoke(any(), any()) }
     }
@@ -729,10 +701,7 @@ class GraphAgentToolScenariosIntegrationTest {
             ID: 50101 | From: Test Contact <test@example.com> | Subject: Переписка по тестам
         """.trimIndent()
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolMailSendNewMessage> { toolMailSendNewMessage }
-            bindSingleton<ToolMailSearch> { toolMailSearch }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolMailSendNewMessage.toGiga(), toolMailSearch.toGiga()))
         coVerify(exactly = 1) {
             toolMailSendNewMessage.invoke(match { it.recipientAddress.contains("test@example.com") }, any())
         }
@@ -751,9 +720,7 @@ class GraphAgentToolScenariosIntegrationTest {
 
         coEvery { toolGetClipboard.invoke(any(), any()) } returns "Selected text"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolGetClipboard> { toolGetClipboard }
-        }
+        runScenarioWithMocks(userPrompt, listOf(toolGetClipboard.toGiga()))
         coVerify(atLeast = 1) { toolGetClipboard.invoke(any(), any()) }
     }
 
@@ -774,11 +741,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { excelRead.invoke(any(), any()) } returns """{"headers":["Date","Amount"],"rowCount":10}"""
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ExcelRead> { excelRead }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
+        )
         coVerify(atLeast = 1) {
             excelRead.invoke(match { it.path.contains("sales") && it.operation == ExcelRead.ReadOperation.STRUCTURE }, any())
         }
@@ -804,11 +770,10 @@ class GraphAgentToolScenariosIntegrationTest {
             |]""".trimMargin()
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ExcelRead> { excelRead }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
+        )
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 val filter = it.filter
@@ -839,11 +804,10 @@ class GraphAgentToolScenariosIntegrationTest {
             |]""".trimMargin()
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ExcelRead> { excelRead }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
+        )
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 val sortBy = it.sortBy
@@ -871,11 +835,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { excelRead.invoke(any(), any()) } returns "1500"
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx"]"""
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ExcelRead> { excelRead }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
+        )
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 val range = it.range
@@ -917,11 +880,10 @@ class GraphAgentToolScenariosIntegrationTest {
             }
         }
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ExcelRead> { excelRead }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(excelRead.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
+        )
         coVerify(atLeast = 1) {
             excelRead.invoke(match {
                 val lookupValue = it.lookupValue
@@ -951,11 +913,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
         coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[]"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ExcelReport> { excelReport }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(excelReport.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
+        )
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
                 val headers = it.headers
@@ -982,11 +943,10 @@ class GraphAgentToolScenariosIntegrationTest {
         coEvery { toolListFiles.invoke(any(), any()) } returns """["~/price.xlsx", "~/sales.xlsx"]"""
         coEvery { toolFindFiles.suspendInvoke(any(), any()) } returns "[]"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ExcelReport> { excelReport }
-            bindSingleton<ToolFindFilesByName> { toolFindFiles }
-            bindSingleton<ToolListFiles> { toolListFiles }
-        }
+        runScenarioWithMocks(
+            userPrompt,
+            listOf(excelReport.toGiga(), toolFindFiles.toGiga(), toolListFiles.toGiga()),
+        )
         coVerify(atLeast = 1) {
             excelReport.invoke(match {
                 it.path.contains("stats") && !it.csvData.isNullOrEmpty()
