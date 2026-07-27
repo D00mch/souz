@@ -10,7 +10,7 @@ TOKEN="souz-ai"
 APP_NAME="Souz AI"
 APP_BUNDLE="Souz AI.app"
 DESC="Security-focused desktop AI assistant"
-HOMEPAGE="https://souz.app"
+HOMEPAGE="https://souz.app/"
 MIN_MACOS=":monterey"
 VERSION=""
 RELEASE_TAG=""
@@ -83,27 +83,19 @@ quote() {
 generate_cask() {
   cat <<EOF
 cask $(quote "$TOKEN") do
+  arch arm: "aarch64", intel: "X86_64"
+
   version $(quote "$VERSION")
+  sha256 arm:   $(quote "$ARM64_SHA256"),
+         intel: $(quote "$INTEL_SHA256")
 
-  on_arm do
-    sha256 $(quote "$ARM64_SHA256")
-    url $(quote "$RELEASE_BASE_URL/Souz_aarch64-$VERSION.dmg")
-  end
-
-  on_intel do
-    sha256 $(quote "$INTEL_SHA256")
-    url $(quote "$RELEASE_BASE_URL/Souz_X86_64-$VERSION.dmg")
-  end
-
+  url $(quote "$RELEASE_BASE_URL/Souz_#{arch}-$VERSION.dmg"),
+      verified: $(quote "github.com/$GITHUB_REPO/")
   name $(quote "$APP_NAME")
   desc $(quote "$DESC")
   homepage $(quote "$HOMEPAGE")
 
-  livecheck do
-    url :url
-  end
-
-  depends_on macos: ">= $MIN_MACOS"
+  depends_on macos: $MIN_MACOS
 
   app $(quote "$APP_BUNDLE")
 
