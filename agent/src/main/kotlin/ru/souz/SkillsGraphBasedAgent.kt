@@ -45,14 +45,14 @@ class SkillsGraphBasedAgent internal constructor(
 ) : TraceableAgent {
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
 
-    private val coreTools = listOf(
+    private val alwaysInlineResultTools = listOf(
         getSkillByNameTool,
         getSkillsByCategoryTool,
         getSkillsNamesByCategoryTool,
         getKnowledgeTool,
         searchKnowledgeTool,
-        runtimeCommandTool,
     )
+    private val coreTools = alwaysInlineResultTools + runtimeCommandTool
     private val graph: Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
         val memoryRecall = nodesMemory.recall()
@@ -62,7 +62,7 @@ class SkillsGraphBasedAgent internal constructor(
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
         val toolUse = nodesSkillsGraph.toolUseWithKnowledge(
-            setOf(getKnowledgeTool.fn.name, searchKnowledgeTool.fn.name),
+            alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )
         val finalizeTurn = nodesMemory.finalizeTurn(
             summarization = nodesSummarization.summarize(),

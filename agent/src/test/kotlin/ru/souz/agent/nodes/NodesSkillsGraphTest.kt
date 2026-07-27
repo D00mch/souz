@@ -113,9 +113,9 @@ class NodesSkillsGraphTest {
     }
 
     @Test
-    fun `results at 4096 UTF-8 bytes stay inline and 4097 bytes are offloaded`() = runTest {
+    fun `results at 8192 UTF-8 bytes stay inline and 8193 bytes are offloaded`() = runTest {
         val store = RecordingKnowledgeStore()
-        val exact = "é".repeat(2_048)
+        val exact = "é".repeat(4_096)
         val oversized = exact + "a"
 
         val exactResult = executeToolResult(exact, store)
@@ -132,7 +132,7 @@ class NodesSkillsGraphTest {
         val store = RecordingKnowledgeStore()
         val original = LLMRequest.Message(
             role = LLMMessageRole.function,
-            content = "x".repeat(4_097),
+            content = "x".repeat(8_193),
             functionsStateId = "call-7",
             attachments = listOf("attachment-1"),
             name = "LargeTool",
@@ -165,10 +165,39 @@ class NodesSkillsGraphTest {
     }
 
     @Test
+    fun `skill discovery results stay inline and preserve their structured JSON`() = runTest {
+        val store = RecordingKnowledgeStore()
+        val discoveryToolNames = setOf(
+            "GetSkillByName",
+            "GetSkillsByCategory",
+            "GetSkillsNamesByCategory",
+        )
+
+        discoveryToolNames.forEach { functionName ->
+            val content = restJsonMapper.writeValueAsString(
+                linkedMapOf(
+                    "tool" to functionName,
+                    "payload" to "x".repeat(10_000),
+                )
+            )
+            val result = executeToolResult(
+                content = content,
+                store = store,
+                functionName = functionName,
+                alwaysInlineToolNames = discoveryToolNames,
+            )
+
+            assertEquals(content, result.content)
+            assertEquals(restJsonMapper.readTree(content), restJsonMapper.readTree(result.content))
+        }
+        assertTrue(store.puts.isEmpty())
+    }
+
+    @Test
     fun `multiple oversized results are offloaded independently`() = runTest {
         val store = RecordingKnowledgeStore()
-        val first = FixedResultTool("FirstTool", "a".repeat(4_097))
-        val second = FixedResultTool("SecondTool", "b".repeat(4_098))
+        val first = FixedResultTool("FirstTool", "a".repeat(8_193))
+        val second = FixedResultTool("SecondTool", "b".repeat(8_194))
         val toolsByName = listOf(first, second).associateBy { it.fn.name }
         val choices = toolsByName.values.mapIndexed { index, tool ->
             LLMResponse.Choice(
@@ -197,7 +226,7 @@ class NodesSkillsGraphTest {
             .execute(context, runtime())
 
         assertEquals(listOf("FirstTool", "SecondTool"), store.puts.map { it.sourceTool })
-        assertEquals(listOf(4_097, 4_098), store.puts.map { it.content.length })
+        assertEquals(listOf(8_193, 8_194), store.puts.map { it.content.length })
         assertEquals(
             listOf("FirstTool", "SecondTool"),
             result.history.takeLast(2).map { restJsonMapper.readTree(it.content)["sourceTool"].textValue() },
@@ -206,7 +235,7 @@ class NodesSkillsGraphTest {
 
     @Test
     fun `unavailable or failed storage keeps the result inline`() = runTest {
-        val content = "x".repeat(4_097)
+        val content = "x".repeat(8_193)
         val unavailable = RecordingKnowledgeStore(writeResult = KnowledgeWriteResult.ConversationUnavailable)
         val failed = RecordingKnowledgeStore(failure = IllegalStateException("disk failed"))
 
@@ -219,7 +248,7 @@ class NodesSkillsGraphTest {
         val store = RecordingKnowledgeStore(failure = CancellationException("cancelled"))
 
         assertFailsWith<CancellationException> {
-            executeToolResult("x".repeat(4_097), store)
+            executeToolResult("x".repeat(8_193), store)
         }
     }
 
@@ -232,11 +261,11 @@ class NodesSkillsGraphTest {
             name = "LargeTool",
         ),
         functionName: String = "LargeTool",
-        knowledgeToolNames: Set<String> = setOf("GetKnowledge", "SearchKnowledge"),
+        alwaysInlineToolNames: Set<String> = setOf("GetKnowledge", "SearchKnowledge"),
     ): LLMRequest.Message {
         val tool = FixedResultTool(functionName, returnedMessage)
         val context = toolContext(tool)
-        val result = nodesSkillsGraph(store).toolUseWithKnowledge(knowledgeToolNames).execute(context, runtime())
+        val result = nodesSkillsGraph(store).toolUseWithKnowledge(alwaysInlineToolNames).execute(context, runtime())
         return result.history.last()
     }
 

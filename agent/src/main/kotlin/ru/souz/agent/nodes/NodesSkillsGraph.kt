@@ -48,14 +48,14 @@ internal class NodesSkillsGraph(
         )
     }
 
-    /** Executes tool calls and replaces oversized results with conversation-scoped Knowledge references. */
+    /** Keeps exempt results unchanged and replaces other oversized results with Knowledge references. */
     fun toolUseWithKnowledge(
-        knowledgeToolNames: Set<String>,
+        alwaysInlineToolNames: Set<String>,
         name: String = "toolUse",
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
         val fnCallMessages = nodesCommon.executeFunctionCalls(ctx).map { (functionCall, message) ->
             if (
-                functionCall.name in knowledgeToolNames ||
+                functionCall.name in alwaysInlineToolNames ||
                 message.content.toByteArray(Charsets.UTF_8).size <= KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES
             ) {
                 message
@@ -142,4 +142,4 @@ private fun Map<ToolCategory, Map<String, LLMToolSetup>>.skillCategoryNames(): L
     .distinct()
     .sorted()
 
-private const val KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES = 4_096
+private const val KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES = 8_192
