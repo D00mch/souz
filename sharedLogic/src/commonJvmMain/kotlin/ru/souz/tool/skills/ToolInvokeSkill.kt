@@ -21,7 +21,7 @@ import ru.souz.llms.restJsonMapper
  * structured command results without the additional String serialization performed by
  * [ru.souz.llms.giga.toGiga].
  */
-class ToolInvokeSkill internal constructor(
+class ToolInvokeSkill(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val repository: SkillRegistryRepository,

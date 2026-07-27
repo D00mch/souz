@@ -16,6 +16,7 @@ import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
+import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -75,6 +76,7 @@ import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.skills.registry.FileSystemSkillRegistryConfig
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.runtimeToolsDiModule
+import ru.souz.tool.skills.ToolRunSkillCommand
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -198,18 +200,24 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        BackendSkillCoreToolsFactory(
+            skillRegistryRepository = instance(),
+            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
+            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            commandTool = instance<ToolRunSkillCommand>(),
+        )
+    }
+    bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
+            configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
-            toolsFilter = instance(),
             skillCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
-            getSkillsTool = instance(tag = SkillToolBindingTags.GET_SKILLS_TOOL),
-            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
+            skillCoreToolsFactory = instance(),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             skillRegistryRepository = instance(),
             agentBackgroundScope = instance<BackendApplicationScope>(),

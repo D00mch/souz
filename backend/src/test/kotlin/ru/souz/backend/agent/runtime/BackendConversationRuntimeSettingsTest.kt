@@ -14,9 +14,10 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.TestConversationKnowledgeStore
-import ru.souz.backend.testCoreTool
+import ru.souz.backend.testSkillCoreToolsFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -32,7 +33,7 @@ class BackendConversationRuntimeSettingsTest {
         val api = ReplyingChatApi()
         val settings = TestSettingsProvider().apply {
             gigaChatKey = "giga-key"
-            activeAgentId = AgentId.SKILLS_GRAPH
+            activeAgentId = AgentId.GRAPH
         }
         val runtimeFactory = runtimeFactory(
             settingsProvider = settings,
@@ -41,6 +42,7 @@ class BackendConversationRuntimeSettingsTest {
                 category = ToolCategory.FILES,
                 tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
             ),
+            configuredAgentId = AgentId.SKILLS_GRAPH,
         )
         val request = turnRequest()
 
@@ -54,6 +56,68 @@ class BackendConversationRuntimeSettingsTest {
             listOf("GetSkills", "GetKnowledge", "RunSkillCommand"),
             api.finalRequests.single().functions.map { it.name },
         )
+    }
+
+    @Test
+    fun `new runtime uses configured graph instead of shared jvm preference`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "FILES 100")
+        val settings = TestSettingsProvider().apply {
+            gigaChatKey = "giga-key"
+            activeAgentId = AgentId.SKILLS_GRAPH
+        }
+        val runtimeFactory = runtimeFactory(
+            settingsProvider = settings,
+            llmApiFactory = { api },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.FILES,
+                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+            ),
+            configuredAgentId = AgentId.GRAPH,
+        )
+        val request = turnRequest()
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        assertEquals(listOf("ListFiles"), api.finalRequests.single().functions.map { it.name })
+    }
+
+    @Test
+    fun `persisted conversation agent takes precedence over backend configuration`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "FILES 100")
+        val sessionRepository = InMemoryAgentSessionRepository()
+        val key = conversationKey()
+        sessionRepository.save(
+            key,
+            AgentConversationSession(
+                activeAgentId = AgentId.GRAPH,
+                history = emptyList(),
+                temperature = 0.4f,
+                locale = "en-US",
+                timeZone = "UTC",
+            )
+        )
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.FILES,
+                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+            ),
+            configuredAgentId = AgentId.SKILLS_GRAPH,
+            sessionRepository = sessionRepository,
+        )
+        val request = turnRequest()
+
+        runtimeFactory.create(key, request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        assertEquals(listOf("ListFiles"), api.finalRequests.single().functions.map { it.name })
     }
 
     @Test
@@ -140,23 +204,68 @@ class BackendConversationRuntimeSettingsTest {
             api.finalRequests.single().functions.single().fewShotExamples.orEmpty(),
         )
     }
+
+    @Test
+    fun `runtime applies enabled tool snapshot to compiled tools`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "FILES 100")
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.FILES,
+                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+            ),
+        )
+        val enabledTools = linkedSetOf<String>()
+        val request = turnRequest().copy(enabledTools = enabledTools)
+        val runtime = runtimeFactory.create(conversationKey(), request)
+        enabledTools += "ListFiles"
+
+        runtime.execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        assertEquals(emptyList(), api.finalRequests.single().functions)
+    }
+
+    @Test
+    fun `request tool catalog captures an immutable enabled tool snapshot`() {
+        val sourceCatalog = singleToolCatalog(
+            category = ToolCategory.FILES,
+            tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+        )
+        val enabledTools = linkedSetOf("ListFiles")
+        val requestCatalog = BackendRequestToolCatalog(
+            delegate = sourceCatalog,
+            toolsFilter = BackendRequestToolsFilter(enabledTools),
+        )
+
+        enabledTools.clear()
+
+        assertEquals(
+            setOf("ListFiles"),
+            requestCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
+        )
+    }
 }
 
 private fun runtimeFactory(
     settingsProvider: TestSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
     llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
+    configuredAgentId: AgentId = AgentId.GRAPH,
+    sessionRepository: InMemoryAgentSessionRepository = InMemoryAgentSessionRepository(),
 ): BackendConversationRuntimeFactory =
     BackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = llmApiFactory,
-        sessionRepository = InMemoryAgentSessionRepository(),
+        sessionRepository = sessionRepository,
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "backend test prompt",
+        configuredAgentId = configuredAgentId,
         toolCatalog = toolCatalog,
-        getSkillsTool = testCoreTool("GetSkills"),
-        getKnowledgeTool = testCoreTool("GetKnowledge"),
-        runtimeCommandTool = testCoreTool("RunSkillCommand"),
+        skillCoreToolsFactory = testSkillCoreToolsFactory(),
         knowledgeStore = TestConversationKnowledgeStore,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )

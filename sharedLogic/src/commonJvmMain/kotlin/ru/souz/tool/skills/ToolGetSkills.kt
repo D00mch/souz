@@ -23,7 +23,7 @@ import ru.souz.llms.restJsonMapper
  *
  * This tool returns structured JSON, so using [ru.souz.tool.ToolSetup] would double-encode the response.
  */
-class ToolGetSkills internal constructor(
+class ToolGetSkills(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val repository: SkillRegistryRepository,

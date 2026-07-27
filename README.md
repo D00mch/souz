@@ -367,6 +367,7 @@ Skill bundles and runtime sandbox workspaces remain filesystem-backed and are in
 SOUZ_BACKEND_HOST=127.0.0.1
 SOUZ_BACKEND_PORT=8080
 SOUZ_BACKEND_PROXY_TOKEN=replace-with-shared-proxy-secret
+SOUZ_BACKEND_AGENT=graph # graph or skills
 
 # Feature flags
 SOUZ_FEATURE_WS_EVENTS=true
@@ -384,7 +385,9 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+
+Backend executions snapshot each user's effective `enabledTools`. The snapshot controls compiled-tool classification, `GetSkills` discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core skill tools and user-installed file-backed skills remain available.
 
 Run the backend:
 

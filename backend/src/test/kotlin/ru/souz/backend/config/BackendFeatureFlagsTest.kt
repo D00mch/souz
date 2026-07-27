@@ -6,6 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import ru.souz.agent.AgentId
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendPostgresConfig
@@ -50,6 +51,49 @@ class BackendFeatureFlagsTest {
 }
 
 class BackendAppConfigTest {
+    @Test
+    fun `backend agent defaults to graph and reads env or property`() {
+        val defaultConfig = BackendAppConfig.load(
+            MapBackendConfigSource(env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"))
+        )
+        val envConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                    "SOUZ_BACKEND_AGENT" to " skills ",
+                ),
+                properties = mapOf("souz.backend.agent" to "graph"),
+            )
+        )
+        val propertyConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"),
+                properties = mapOf("souz.backend.agent" to "SKILLS"),
+            )
+        )
+
+        assertEquals(AgentId.GRAPH, defaultConfig.agentId)
+        assertEquals(AgentId.SKILLS_GRAPH, envConfig.agentId)
+        assertEquals(AgentId.SKILLS_GRAPH, propertyConfig.agentId)
+    }
+
+    @Test
+    fun `backend agent rejects unsupported values`() {
+        val error = assertFailsWith<BackendConfigurationException> {
+            BackendAppConfig.load(
+                MapBackendConfigSource(
+                    env = mapOf(
+                        "SOUZ_MASTER_KEY" to "test-master-key",
+                        "SOUZ_BACKEND_AGENT" to "desktop",
+                    )
+                )
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("SOUZ_BACKEND_AGENT"))
+        assertTrue(error.message.orEmpty().contains("graph, skills"))
+    }
+
     @Test
     fun `server config reads defaults and explicit settings`() {
         val defaultConfig = BackendAppConfig.load(

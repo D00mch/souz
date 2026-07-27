@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import ru.souz.agent.AgentContextFactory
+import ru.souz.agent.AgentId
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentExecutor
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
@@ -14,7 +15,6 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
@@ -124,13 +124,11 @@ class BackendConversationRuntimeFactory(
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
+    private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val toolsFilter: AgentToolsFilter = BackendNoopAgentToolsFilter,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCommandTool: LLMToolSetup? = null,
-    private val getSkillsTool: LLMToolSetup,
-    private val getKnowledgeTool: LLMToolSetup,
-    private val runtimeCommandTool: LLMToolSetup,
+    private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: kotlinx.coroutines.CoroutineScope,
 ) {
@@ -147,9 +145,19 @@ class BackendConversationRuntimeFactory(
             useFewShotExamples = request.useFewShotExamples ?: baseSettingsProvider.useFewShotExamples,
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
+        settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
         val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
             delegate = toolCatalog,
             settingsProvider = settingsProvider,
+        )
+        val requestToolsFilter = BackendRequestToolsFilter(request.enabledTools)
+        val filteredToolCatalog = BackendRequestToolCatalog(
+            delegate = requestScopedToolCatalog,
+            toolsFilter = requestToolsFilter,
+        )
+        val skillCoreTools = skillCoreToolsFactory.create(
+            toolCatalog = requestScopedToolCatalog,
+            toolsFilter = requestToolsFilter,
         )
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
@@ -166,8 +174,8 @@ class BackendConversationRuntimeFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
-            toolCatalog = requestScopedToolCatalog,
-            toolsFilter = toolsFilter,
+            toolCatalog = filteredToolCatalog,
+            toolsFilter = requestToolsFilter,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
                 localeTag = request.locale,
@@ -175,9 +183,9 @@ class BackendConversationRuntimeFactory(
             ),
             mcpToolProvider = BackendNoopMcpToolProvider,
             skillCommandTool = skillCommandTool,
-            getSkillsTool = getSkillsTool,
-            getKnowledgeTool = getKnowledgeTool,
-            runtimeCommandTool = runtimeCommandTool,
+            getSkillsTool = skillCoreTools.getSkillsTool,
+            getKnowledgeTool = skillCoreTools.getKnowledgeTool,
+            runtimeCommandTool = skillCoreTools.runtimeCommandTool,
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,

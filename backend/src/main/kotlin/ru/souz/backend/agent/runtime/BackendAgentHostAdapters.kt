@@ -7,7 +7,6 @@ import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -141,13 +140,6 @@ object BackendNoopAgentDesktopInfoRepository : AgentDesktopInfoRepository {
 /** Backend fallback tool catalog used when no shared catalog is bound. */
 object BackendNoopAgentToolCatalog : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = emptyMap()
-}
-
-/** Backend fallback filter that leaves the bound tool catalog unchanged. */
-object BackendNoopAgentToolsFilter : AgentToolsFilter {
-    override fun applyFilter(
-        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-    ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
 }
 
 /** Backend implementation for hosts without a meaningful default browser. */
