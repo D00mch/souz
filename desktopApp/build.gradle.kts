@@ -156,6 +156,11 @@ tasks.test {
     systemProperty("junit.jupiter.execution.timeout.mode", "enabled")
 }
 
+tasks.named<Jar>("jar") {
+    // Native macOS libraries are shipped as app resources so release signing can timestamp them as files.
+    exclude("**/*.dylib", "**/*.jnilib")
+}
+
 val isAppStoreRelease: Boolean = (project.findProperty("macOsAppStoreRelease") as String?)?.toBoolean() ?: false
 val macBuildNumber: String = (project.findProperty("buildNumber") as String?) ?: "1"
 val includeAllMacNativeResources: Boolean =
@@ -184,7 +189,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Pkg)
             packageName = distributionPackageName
-            packageVersion = "1.0.6"
+            packageVersion = "1.0.7"
             // Compose copies app resources from <root>/common + OS/target subfolders.
             appResourcesRootDir.set(preparedAppResourcesDir)
 
