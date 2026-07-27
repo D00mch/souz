@@ -10,7 +10,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 
 - **Kotlin Multiplatform app surfaces** built with Compose for Desktop plus an Android chat-agent entry point.
 - **Selectable graph agents**: the default `GraphBasedAgent` uses memory recall, direct-tool classification, compact Skill inventory, and MCP injection, while `SkillsGraphBasedAgent` exposes only Skill/Knowledge core tools.
-- **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, memory, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
+- **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, OpenAPI/Swagger docs, onboarding, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, and calculator.
@@ -204,7 +204,7 @@ The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory
 
 Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution, and both paths require cached or fresh `SkillApprovalGate` approval.
 
-Tool-result text larger than 8,192 UTF-8 bytes is retained as conversation-scoped temporary Knowledge and replaced in history by a compact reference. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
+When conversation-scoped Knowledge storage is available and persistence succeeds, tool-result text larger than 8,192 UTF-8 bytes is retained as temporary Knowledge and replaced in history by a compact reference. Without conversation scope or usable storage, the result remains inline. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
 
 ## Graph engine
 
@@ -335,13 +335,13 @@ Confirmation-related flows:
 
 ## Memory
 
-Souz memory is a scoped fact store used by agent graphs as untrusted prompt context.
+The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime; the backend currently uses the no-op implementation.
 
 Memory flow:
 
 - `NodesMemory` recalls facts relevant to the current user input and injects them as a tagged memory block before tool setup.
 - Completed turns are captured asynchronously after successful finalization, with user text, assistant synthesis, and bounded tool-output evidence.
-- Facts can be global, project, chat/thread, or session scoped. Chat/thread compatibility preserves older stored scopes.
+- The memory model supports global, project, and session scopes. Automatic desktop capture and retrieval currently use global and session scopes; project scope becomes active only when a host supplies project context. Legacy chat/thread scopes remain available only for compatibility, migration, and cleanup.
 - Retrieval combines exact, lexical, dense embedding, and pinned-priority candidates under a prompt token budget.
 - Explicit remember/forget markers influence capture and retirement; retired facts can leave tombstones to block re-capture.
 - Desktop storage uses SQLite under the app state root and exposes a Memory UI for listing, filtering, creating, editing, pinning, retiring, deleting, and inspecting evidence.
@@ -427,14 +427,14 @@ SOUZ_FEATURE_WS_EVENTS=true
 SOUZ_FEATURE_STREAMING_MESSAGES=true
 SOUZ_FEATURE_TOOL_EVENTS=true
 SOUZ_FEATURE_OPTIONS=true
-SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY=4
-TELEGRAM_TOKEN_ENCRYPTION_KEY=replace-when-telegram-bot-is-enabled
+ENABLE_BACKEND_TG_FEATURE=true
 
-# LLM limits and retries
-SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS=4
-SOUZ_BACKEND_LIMIT_PER_USER_REQUESTS_PER_MINUTE=30
-SOUZ_BACKEND_LIMIT_PER_USER_TOKENS_PER_MINUTE=120000
-SOUZ_BACKEND_LIMIT_GLOBAL_PROVIDER_CONCURRENCY=8
+# Telegram bot
+SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY=4
+# Generate once with: openssl rand -base64 32
+TELEGRAM_TOKEN_ENCRYPTION_KEY=...
+
+# Provider retries
 SOUZ_BACKEND_PROVIDER_MAX_429_RETRIES=2
 SOUZ_BACKEND_PROVIDER_BACKOFF_BASE_MS=500
 SOUZ_BACKEND_PROVIDER_BACKOFF_MAX_MS=5000
@@ -450,7 +450,7 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
 Backend executions snapshot each user's effective `enabledTools`. The snapshot controls direct-tool classification, tool-backed Skill inventory/category discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core Skill/Knowledge tools and user-installed file-backed skills remain available.
 
@@ -473,11 +473,17 @@ flowchart LR
     inventory["Append compact Skill inventory"] --> lookup["GetSkillByName / RunSkillCommand"]
     lookup --> skillLoad["Load exact file-backed bundle"]
     skillLoad --> skillHash["Canonical hash"]
-    skillHash --> validationCache["Validation cache lookup"]
-    validationCache --> structuralValidation["Structural validation"]
-    structuralValidation --> staticValidation["Static validation"]
-    staticValidation --> llmValidation["LLM validation"]
-    llmValidation --> approval["Return instructions or execute command"]
+    skillHash --> validationCache{"Cached validation?"}
+    validationCache -->|approved| approval["Return instructions or execute command"]
+    validationCache -->|rejected| rejection["Return rejection"]
+    validationCache -->|missing or stale| structuralValidation{"Structural validation"}
+    structuralValidation -->|hard reject| rejection
+    structuralValidation -->|pass| staticValidation{"Static validation"}
+    staticValidation -->|hard reject| rejection
+    staticValidation -->|pass| llmValidation["LLM validation"]
+    llmValidation --> verdict{"Approved?"}
+    verdict -->|yes| approval
+    verdict -->|no| rejection
 ```
 
 Skill safety and storage:
@@ -485,7 +491,7 @@ Skill safety and storage:
 - Skill inventory is compact and user-scoped: enabled tool-backed Skill IDs by category plus opaque file-backed Skill IDs.
 - Tool-backed Skills are direct tools viewed through the Skill APIs; enabled tool-backed Skills take precedence over stored bundles with the same ID.
 - File-backed bundle content is loaded only on exact lookup or execution.
-- `GetSkillByName` returns full file-backed `SKILL.md` content and supporting-file names only after approval.
+- `GetSkillByName` returns the approved file-backed `SKILL.md` instruction body, parsed name and description, and supporting-file paths; raw YAML frontmatter is not returned.
 - `RunSkillCommand` executes file-backed Skill scripts inside the resolved runtime sandbox and binds active Skill identity internally.
 - Bundles are loaded through safe filesystem access.
 - Desktop/local skills are persisted under `~/.local/state/souz/skills/{skillId}/`, with immutable bundles in `bundles/{bundleHash}/` and metadata in `stored-skill.json`.
