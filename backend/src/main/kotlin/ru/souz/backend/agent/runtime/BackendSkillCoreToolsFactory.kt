@@ -31,7 +31,7 @@ class BackendSkillCoreToolsFactory(
     fun create(
         toolCatalog: AgentToolCatalog,
         toolsFilter: AgentToolsFilter,
-        approvalGate: SkillApprovalGate? = null,
+        approvalGate: SkillApprovalGate,
     ): BackendSkillCoreTools {
         val getSkillByName = ToolGetSkillByName(
             toolCatalog = toolCatalog,
