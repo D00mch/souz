@@ -72,6 +72,7 @@ class BackendSkillCoreToolsFactoryTest {
             skillRegistryRepository = repository,
             legacyCommandTool = commandTool.toGiga(),
             getKnowledgeTool = testCoreTool("GetKnowledge"),
+            searchKnowledgeTool = testCoreTool("SearchKnowledge"),
             commandTool = commandTool,
         )
         val mutableEnabledTools = linkedSetOf("EnabledTool")
@@ -80,21 +81,39 @@ class BackendSkillCoreToolsFactoryTest {
 
         val coreTools = factory.create(catalog, toolsFilter)
         val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
-        val summaries = coreTools.getSkillsTool.invoke(
-            LLMResponse.FunctionCall(name = "GetSkills", arguments = emptyMap()),
+        val compiledNames = coreTools.getSkillsNamesByCategoryTool.invoke(
+            LLMResponse.FunctionCall(
+                name = "GetSkillsNamesByCategory",
+                arguments = mapOf("category" to ToolCategory.FILES.name),
+            ),
+            meta,
+        ).contentJson()
+        val customNames = coreTools.getSkillsNamesByCategoryTool.invoke(
+            LLMResponse.FunctionCall(
+                name = "GetSkillsNamesByCategory",
+                arguments = mapOf("category" to "CUSTOM"),
+            ),
             meta,
         ).contentJson()
 
+        assertEquals(listOf("EnabledTool"), compiledNames["skillNames"].map { it.asText() })
+        assertEquals(listOf(FILE_SKILL_ID), customNames["skillNames"].map { it.asText() })
+        assertFalse(compiledNames.toString().contains("DisabledTool"))
         assertEquals(
-            listOf("EnabledTool", FILE_SKILL_ID),
-            summaries["results"].map { it["skillId"].asText() },
-        )
-        assertFalse(summaries.toString().contains("DisabledTool"))
-        assertEquals(
-            listOf("GetSkills", "GetKnowledge", "RunSkillCommand"),
             listOf(
-                coreTools.getSkillsTool.fn.name,
+                "GetSkillByName",
+                "GetSkillsByCategory",
+                "GetSkillsNamesByCategory",
+                "GetKnowledge",
+                "SearchKnowledge",
+                "RunSkillCommand",
+            ),
+            listOf(
+                coreTools.getSkillByNameTool.fn.name,
+                coreTools.getSkillsByCategoryTool.fn.name,
+                coreTools.getSkillsNamesByCategoryTool.fn.name,
                 coreTools.getKnowledgeTool.fn.name,
+                coreTools.searchKnowledgeTool.fn.name,
                 coreTools.runtimeCommandTool.fn.name,
             ),
         )

@@ -204,6 +204,7 @@ fun backendDiModule(
             skillRegistryRepository = instance(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
             commandTool = instance<ToolRunSkillCommand>(),
         )
     }

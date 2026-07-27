@@ -30,8 +30,12 @@ import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.knowledge.KnowledgeRetriever
 import ru.souz.tool.knowledge.ToolGetKnowledge
-import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.tool.web.ToolInternetResearch
@@ -109,16 +113,42 @@ fun portableSkillToolsDiModule(
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
         instance<ToolRunSkillCommand>().toGiga()
     }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_TOOL) {
-        ToolGetSkills(
+    bindSingleton {
+        ToolGetSkillByName(
             toolCatalog = instance(),
             toolsFilter = instance(),
             repository = instance(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
         )
     }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL) {
+        instance<ToolGetSkillByName>()
+    }
+    bindSingleton {
+        ToolGetSkillsNamesByCategory(
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+            repository = instance(),
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL) {
+        instance<ToolGetSkillsNamesByCategory>()
+    }
+    bindSingleton {
+        ToolGetSkillsByCategory(
+            getSkillByName = instance(),
+            getSkillsNamesByCategory = instance(),
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL) {
+        instance<ToolGetSkillsByCategory>()
+    }
+    bindSingleton { KnowledgeRetriever(instance()) }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
-        ToolGetKnowledge(instance())
+        ToolGetKnowledge(retriever = instance())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
+        ToolSearchKnowledge(retriever = instance())
     }
     bindSingleton {
         ToolInvokeSkill(

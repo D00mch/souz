@@ -1,5 +1,6 @@
 package ru.souz
 
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.emptyFlow
@@ -9,7 +10,9 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
+import ru.souz.agent.nodes.NodesSkillsGraph
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
@@ -20,6 +23,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 
 class SkillsGraphBasedAgentTest {
@@ -30,10 +34,20 @@ class SkillsGraphBasedAgentTest {
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
-        val getSkills = tool("GetSkills")
+        val getSkillByName = tool("GetSkillByName")
+        val getSkillsByCategory = tool("GetSkillsByCategory")
+        val getSkillsNamesByCategory = tool("GetSkillsNamesByCategory")
         val getKnowledge = tool("GetKnowledge")
+        val searchKnowledge = tool("SearchKnowledge")
         val runtimeCommand = tool("RunSkillCommand")
-        val coreTools = listOf(getSkills, getKnowledge, runtimeCommand)
+        val coreTools = listOf(
+            getSkillByName,
+            getSkillsByCategory,
+            getSkillsNamesByCategory,
+            getKnowledge,
+            searchKnowledge,
+            runtimeCommand,
+        )
         val executed = mutableListOf<String>()
         var chatCount = 0
 
@@ -50,11 +64,9 @@ class SkillsGraphBasedAgentTest {
             chatCount += 1
             ctx.map { if (chatCount <= 2) toolCallResponse() else finalResponse() }
         }
-        every {
-            nodesCommon.toolUseWithKnowledge(getKnowledge.fn.name)
-        } returns Node("toolUse") { ctx ->
+        coEvery { nodesCommon.executeFunctionCalls(any()) } answers {
             executed += "toolUse"
-            ctx.map { "tool-result" }
+            emptyList()
         }
         every { nodesSummarization.summarize() } returns Node("Summary") { ctx ->
             executed += "Summary"
@@ -66,16 +78,20 @@ class SkillsGraphBasedAgentTest {
         }
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
 
-        val result = agent(
+        val skillsAgent = agent(
             nodesLLM,
             nodesCommon,
             nodesErrorHandling,
             nodesSummarization,
             nodesMemory,
-            getSkills,
+            getSkillByName,
+            getSkillsByCategory,
+            getSkillsNamesByCategory,
             getKnowledge,
+            searchKnowledge,
             runtimeCommand,
-        ).executeWithTrace(baseContext())
+        )
+        val result = skillsAgent.executeWithTrace(baseContext())
 
         assertEquals("final", result.output)
         assertEquals(
@@ -92,6 +108,9 @@ class SkillsGraphBasedAgentTest {
             ),
             executed,
         )
+
+        skillsAgent.executeWithTrace(result.context.copy(input = "Again"))
+        assertEquals(PROVIDED_SYSTEM_PROMPT, result.context.systemPrompt)
     }
 
     @Test
@@ -101,8 +120,11 @@ class SkillsGraphBasedAgentTest {
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
-        val getSkills = tool("GetSkills")
+        val getSkillByName = tool("GetSkillByName")
+        val getSkillsByCategory = tool("GetSkillsByCategory")
+        val getSkillsNamesByCategory = tool("GetSkillsNamesByCategory")
         val getKnowledge = tool("GetKnowledge")
+        val searchKnowledge = tool("SearchKnowledge")
         val runtimeCommand = tool("RunSkillCommand")
         val executed = mutableListOf<String>()
 
@@ -114,7 +136,6 @@ class SkillsGraphBasedAgentTest {
             executed += "LLM"
             ctx.map { LLMResponse.Chat.Error(500, "provider failed") }
         }
-        every { nodesCommon.toolUseWithKnowledge(getKnowledge.fn.name) } returns Node("toolUse") { it.map { "" } }
         every { nodesSummarization.summarize() } returns Node("Summary") { it.map { "" } }
         every { nodesMemory.finalizeTurn(any()) } returns Node("Memory-aware finalization") { it.map { "" } }
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
@@ -125,8 +146,11 @@ class SkillsGraphBasedAgentTest {
             nodesErrorHandling,
             nodesSummarization,
             nodesMemory,
-            getSkills,
+            getSkillByName,
+            getSkillsByCategory,
+            getSkillsNamesByCategory,
             getKnowledge,
+            searchKnowledge,
             runtimeCommand,
         ).executeWithTrace(baseContext())
 
@@ -149,8 +173,11 @@ class SkillsGraphBasedAgentTest {
         nodesErrorHandling: NodesErrorHandling,
         nodesSummarization: NodesSummarization,
         nodesMemory: NodesMemory,
-        getSkills: LLMToolSetup,
+        getSkillByName: LLMToolSetup,
+        getSkillsByCategory: LLMToolSetup,
+        getSkillsNamesByCategory: LLMToolSetup,
         getKnowledge: LLMToolSetup,
+        searchKnowledge: LLMToolSetup,
         runtimeCommand: LLMToolSetup,
     ) = SkillsGraphBasedAgent(
         logObjectMapper = restJsonMapper,
@@ -159,8 +186,20 @@ class SkillsGraphBasedAgentTest {
         nodesErrorHandling = nodesErrorHandling,
         nodesSummarization = nodesSummarization,
         nodesMemory = nodesMemory,
-        getSkillsTool = getSkills,
+        nodesSkillsGraph = NodesSkillsGraph(
+            nodesCommon = nodesCommon,
+            knowledgeStore = null,
+            toolCatalog = object : AgentToolCatalog {
+                override val toolsByCategory = mapOf(
+                    ToolCategory.FILES to mapOf("CatalogTool" to tool("CatalogTool")),
+                )
+            },
+        ),
+        getSkillByNameTool = getSkillByName,
+        getSkillsByCategoryTool = getSkillsByCategory,
+        getSkillsNamesByCategoryTool = getSkillsNamesByCategory,
         getKnowledgeTool = getKnowledge,
+        searchKnowledgeTool = searchKnowledge,
         runtimeCommandTool = runtimeCommand,
     )
 
@@ -179,6 +218,12 @@ class SkillsGraphBasedAgentTest {
         assertEquals(coreTools.associateBy { it.fn.name }, ctx.settings.tools.byName)
         assertEquals(emptyMap(), ctx.settings.tools.byCategory)
         assertEquals(emptyMap(), ctx.settings.tools.categoryByName)
+        assertEquals(PROVIDED_SYSTEM_PROMPT, ctx.systemPrompt)
+        val effectiveSystemPrompt = ctx.history.first().content
+        assertContains(effectiveSystemPrompt, PROVIDED_SYSTEM_PROMPT)
+        assertContains(effectiveSystemPrompt, "The supplied prompt continues after the category-section reference.")
+        assertContains(effectiveSystemPrompt, "- CUSTOM")
+        assertContains(effectiveSystemPrompt, "- FILES")
         ctx
     }
 
@@ -204,7 +249,10 @@ class SkillsGraphBasedAgentTest {
                 message = LLMResponse.Message(
                     content = "",
                     role = LLMMessageRole.assistant,
-                    functionCall = LLMResponse.FunctionCall("GetSkills", emptyMap()),
+                    functionCall = LLMResponse.FunctionCall(
+                        "GetSkillsByCategory",
+                        mapOf("category" to "FILES"),
+                    ),
                     functionsStateId = "call-1",
                 ),
                 index = 0,
@@ -248,7 +296,17 @@ class SkillsGraphBasedAgentTest {
             ),
             history = emptyList(),
             activeTools = listOf(catalogTool.fn),
-            systemPrompt = "system",
+            systemPrompt = PROVIDED_SYSTEM_PROMPT,
         )
+    }
+
+    private companion object {
+        val PROVIDED_SYSTEM_PROMPT = """
+            ## Skill Discovery
+
+            Available Skill category names are listed in the <skill_categories> section.
+
+            The supplied prompt continues after the category-section reference.
+        """.trimIndent()
     }
 }

@@ -34,12 +34,12 @@ class ToolInvokeSkill(
 
     override val fn: LLMRequest.Function = LLMRequest.Function(
         name = NAME,
-        description = "Invoke one available Skill. Inspect its details with GetSkills first, then pass arguments matching the returned input schema.",
+        description = "Invoke one available Skill. Inspect its details with GetSkillByName or GetSkillsByCategory first, then pass arguments matching the returned input schema.",
         parameters = LLMRequest.Parameters(
             type = "object",
             properties = mapOf(
-                "skillId" to LLMRequest.Property("string", "Exact unqualified Skill ID returned by GetSkills."),
-                "arguments" to LLMRequest.Property("object", "Arguments matching the Skill input schema returned by GetSkills."),
+                "skillId" to LLMRequest.Property("string", "Exact unqualified Skill ID returned by a Skill discovery tool."),
+                "arguments" to LLMRequest.Property("object", "Arguments matching the input schema returned by a Skill discovery tool."),
             ),
             required = listOf("skillId"),
         ),

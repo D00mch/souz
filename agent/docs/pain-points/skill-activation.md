@@ -6,13 +6,13 @@ Every classic `GraphBasedAgent` turn runs classification, skill activation, then
 
 Validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle invalidates other cached validations for that skill and policy. Changing validation rules requires a new policy version.
 
-Separately tagged `GetSkills`, `GetKnowledge`, and generic `RunSkillCommand` tools are the fixed core tool set for `SkillsGraphBasedAgent`. They remain outside `AgentToolCatalog` and are not connected to the classic `GraphBasedAgent`. The skill tools trust bundles accepted by the registry loader and do not read or write the legacy validation cache. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
+Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` tools are the fixed core tool set for `SkillsGraphBasedAgent`. They remain outside `AgentToolCatalog` and are not connected to the classic `GraphBasedAgent`. The skill tools trust bundles accepted by the registry loader and do not read or write the legacy validation cache. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
 
 ## Why this is fragile
 
 Loading bundles before selection expands the prompt and trust surface. Reusing approval across users, hashes, or policies can execute content that was never approved.
 
-The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Summary discovery reads stored metadata only; bundle detail and execution load the current bundle. Generic bundle execution must bind the current bundle identity internally before reusing the legacy command implementation.
+The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Stored bundles use the `CUSTOM` category. Category-name discovery reads stored metadata only; bundle detail and execution load the current bundle. Generic bundle execution must bind the current bundle identity internally before reusing the legacy command implementation.
 
 Blocked and exception paths clear injected skill instructions, and classification resets the active tool list, but those paths do not currently remove a `RunSkillCommand` setup injected by an earlier successful activation from `settings.tools`. Executor lookup can therefore retain stale command capability. Treat this as a known revocation gap, not as a security boundary.
 

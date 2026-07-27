@@ -5,7 +5,10 @@ import org.jetbrains.compose.resources.getString
 import ru.souz.agent.AgentId
 import ru.souz.llms.LLMResponse
 import ru.souz.tool.knowledge.ToolGetKnowledge
-import ru.souz.tool.skills.ToolGetSkills
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -20,7 +23,12 @@ class ChatAgentActionFormatter(
         if (agentId != AgentId.SKILLS_GRAPH) return format(functionCall)
 
         return when (functionCall.name) {
-            ToolGetSkills.NAME, ToolGetKnowledge.NAME -> null
+            ToolGetSkillByName.NAME,
+            ToolGetSkillsByCategory.NAME,
+            ToolGetSkillsNamesByCategory.NAME,
+            ToolGetKnowledge.NAME,
+            ToolSearchKnowledge.NAME,
+            -> null
             ToolInvokeSkill.NAME -> formatSkillInvocation(functionCall)
             else -> format(functionCall)
         }

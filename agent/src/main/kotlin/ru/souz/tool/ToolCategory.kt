@@ -1,5 +1,7 @@
 package ru.souz.tool
 
+const val DEFAULT_STORED_SKILLS_CATEGORY = "CUSTOM"
+
 enum class ToolCategory {
     FILES,
     IMAGE,

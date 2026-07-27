@@ -35,8 +35,10 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.tool.DEFAULT_STORED_SKILLS_CATEGORY
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.portableSkillToolsDiModule
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
@@ -61,7 +63,7 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `summaries are metadata only and enabled compiled tools win collisions`() = runTest {
+    fun `category names include enabled compiled tools and unshadowed custom skills`() = runTest {
         val repository = repository(bundle("alpha"), bundle("disabled"), bundle("collision"))
         val zeta = RecordingTool("zeta")
         val disabled = RecordingTool("disabled")
@@ -80,31 +82,25 @@ class SkillRuntimeToolsTest {
             }
         }
 
-        val response = getSkillsTool(repository, catalog, filter).call(emptyMap())
+        val namesTool = getSkillsNamesByCategoryTool(repository, catalog, filter)
+        val fileSkills = namesTool.call(mapOf("category" to ToolCategory.FILES.name))
+        val webSkills = namesTool.call(mapOf("category" to ToolCategory.WEB_SEARCH.name))
+        val customSkills = namesTool.call(
+            mapOf("category" to DEFAULT_STORED_SKILLS_CATEGORY)
+        )
 
-        assertEquals(
-            listOf("alpha", "collision", "disabled", "zeta"),
-            response["results"].map { it["skillId"].asText() },
-        )
-        assertEquals(
-            "compiled collision",
-            response["results"].first { it["skillId"].asText() == "collision" }["description"].asText(),
-        )
-        assertEquals(
-            "Description disabled",
-            response["results"].first { it["skillId"].asText() == "disabled" }["description"].asText(),
-        )
-        assertEquals(
-            "filtered zeta",
-            response["results"].first { it["skillId"].asText() == "zeta" }["description"].asText(),
-        )
-        assertTrue(response["errors"].isEmpty)
+        assertEquals(listOf("zeta"), fileSkills["skillNames"].map { it.asText() })
+        assertEquals(listOf("collision"), webSkills["skillNames"].map { it.asText() })
+        assertEquals(listOf("alpha", "disabled"), customSkills["skillNames"].map { it.asText() })
+        assertTrue(fileSkills["error"].isNull)
+        assertTrue(webSkills["error"].isNull)
+        assertTrue(customSkills["error"].isNull)
         coVerify(exactly = 1) { repository.listSkills(USER_ID) }
         coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
     }
 
     @Test
-    fun `batch details preserve order and return independent schemas and errors`() = runTest {
+    fun `category and direct lookups return full skill descriptions and independent errors`() = runTest {
         val repository = repository(
             bundle(
                 skillId = "bundle-skill",
@@ -142,30 +138,30 @@ class SkillRuntimeToolsTest {
             }
         }
 
-        val response = getSkillsTool(repository, catalog, filter).call(
-            mapOf(
-                "skillIds" to listOf(
-                    " compiled ",
-                    "bundle-skill",
-                    "compiled",
-                    "",
-                    "missing",
-                    "disabled",
-                    "collision",
-                )
-            )
+        val byName = getSkillByNameTool(repository, catalog, filter)
+        val byCategory = getSkillsByCategoryTool(repository, catalog, filter)
+        val categoryResponse = byCategory.call(mapOf("category" to ToolCategory.FILES.name))
+        val customCategoryResponse = byCategory.call(
+            mapOf("category" to DEFAULT_STORED_SKILLS_CATEGORY)
         )
+        val bundleResponse = byName.call(mapOf("skillId" to "bundle-skill"))
+        val disabledResponse = byName.call(mapOf("skillId" to "disabled"))
+        val collisionResponse = byName.call(mapOf("skillId" to "collision"))
+        val blankResponse = byName.call(mapOf("skillId" to ""))
+        val missingResponse = byName.call(mapOf("skillId" to "missing"))
 
-        assertEquals(
-            listOf("compiled", "bundle-skill", "disabled", "collision"),
-            response["results"].map { it["skillId"].asText() },
-        )
-        val toolDetail = response["results"][0]
+        val toolDetail = categoryResponse["skills"].single()
         assertEquals("filtered compiled", toolDetail["description"].asText())
         assertTrue(toolDetail["inputSchema"]["properties"].has("filteredArgument"))
         assertEquals("filtered example", toolDetail["fewShotExamples"].single()["request"].asText())
+        assertTrue(categoryResponse["errors"].isEmpty)
+        assertEquals(
+            listOf("bundle-skill", "disabled"),
+            customCategoryResponse["skills"].map { it["skillId"].asText() },
+        )
+        assertTrue(customCategoryResponse["errors"].isEmpty)
 
-        val bundleDetail = response["results"][1]
+        val bundleDetail = bundleResponse["skill"]
         assertEquals("Use the complete bundle instructions.", bundleDetail["skillMarkdownBody"].asText())
         assertEquals(listOf("scripts/helper.sh"), bundleDetail["supportingFiles"].map { it.asText() })
         assertFalse(bundleDetail.toString().contains("supporting-secret-content"))
@@ -174,14 +170,10 @@ class SkillRuntimeToolsTest {
         assertTrue(bundleDetail["inputSchema"]["properties"].has("runtime"))
         assertTrue(bundleDetail["returnSchema"]["properties"].has("stdout"))
 
-        assertEquals("Description disabled", response["results"][2]["description"].asText())
-        assertEquals("compiled collision", response["results"][3]["description"].asText())
-        assertEquals(listOf("", "missing"), response["errors"].map { it["skillId"].asText() })
-        assertEquals(
-            listOf("invalid_skill_id", "skill_not_found"),
-            response["errors"].map { it["code"].asText() },
-        )
-        coVerify(exactly = 0) { repository.listSkills(any()) }
+        assertEquals("Description disabled", disabledResponse["skill"]["description"].asText())
+        assertEquals("compiled collision", collisionResponse["skill"]["description"].asText())
+        assertEquals("invalid_skill_id", blankResponse["error"]["code"].asText())
+        assertEquals("skill_not_found", missingResponse["error"]["code"].asText())
         coVerify(exactly = 0) { repository.loadSkillBundle(any(), SkillId("collision")) }
     }
 
@@ -191,7 +183,7 @@ class SkillRuntimeToolsTest {
         coEvery { repository.loadSkillBundle(any(), any()) } throws CancellationException("stop")
 
         assertFailsWith<CancellationException> {
-            getSkillsTool(repository).call(mapOf("skillIds" to listOf("cancelled")))
+            getSkillByNameTool(repository).call(mapOf("skillId" to "cancelled"))
         }
         assertFailsWith<CancellationException> {
             invokeSkillTool(repository).call(mapOf("skillId" to "cancelled"))
@@ -323,33 +315,64 @@ class SkillRuntimeToolsTest {
 
         val legacy = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL)
         val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
-        val getSkills = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_TOOL)
+        val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
+        val getSkillByName = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL)
+        val getSkillsByCategory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL)
+        val getSkillsNamesByCategory =
+            direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL)
         val runtimeCommand = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL)
         val concreteRuntimeCommand = direct.instance<ToolInvokeSkill>()
         val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
         assertEquals(ToolRunSkillCommand.NAME, legacy.fn.name)
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
-        assertEquals(ToolGetSkills.NAME, getSkills.fn.name)
+        assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
+        assertEquals(ToolGetSkillByName.NAME, getSkillByName.fn.name)
+        assertEquals(ToolGetSkillsByCategory.NAME, getSkillsByCategory.fn.name)
+        assertEquals(ToolGetSkillsNamesByCategory.NAME, getSkillsNamesByCategory.fn.name)
         assertEquals(ToolInvokeSkill.NAME, runtimeCommand.fn.name)
         assertSame(concreteRuntimeCommand, runtimeCommand)
         assertTrue(knowledgeStore is SandboxConversationKnowledgeStore)
         assertFalse(
             catalog.toolsByCategory.values.any {
-                ToolGetKnowledge.NAME in it || ToolGetSkills.NAME in it || ToolInvokeSkill.NAME in it
+                ToolGetKnowledge.NAME in it ||
+                    ToolSearchKnowledge.NAME in it ||
+                    ToolGetSkillByName.NAME in it ||
+                    ToolGetSkillsByCategory.NAME in it ||
+                    ToolGetSkillsNamesByCategory.NAME in it ||
+                    ToolInvokeSkill.NAME in it
             }
         )
     }
 
-    private fun getSkillsTool(
+    private fun getSkillByNameTool(
         repository: SkillRegistryRepository,
         catalog: AgentToolCatalog = catalog(),
         filter: AgentToolsFilter = TestToolsFilter(),
-    ): ToolGetSkills = ToolGetSkills(
+    ): ToolGetSkillByName = ToolGetSkillByName(
         toolCatalog = catalog,
         toolsFilter = filter,
         repository = repository,
         legacyCommandTool = ToolRunSkillCommand(mockk(relaxed = true)).toGiga(),
+    )
+
+    private fun getSkillsNamesByCategoryTool(
+        repository: SkillRegistryRepository,
+        catalog: AgentToolCatalog = catalog(),
+        filter: AgentToolsFilter = TestToolsFilter(),
+    ): ToolGetSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
+        toolCatalog = catalog,
+        toolsFilter = filter,
+        repository = repository,
+    )
+
+    private fun getSkillsByCategoryTool(
+        repository: SkillRegistryRepository,
+        catalog: AgentToolCatalog = catalog(),
+        filter: AgentToolsFilter = TestToolsFilter(),
+    ): ToolGetSkillsByCategory = ToolGetSkillsByCategory(
+        getSkillByName = getSkillByNameTool(repository, catalog, filter),
+        getSkillsNamesByCategory = getSkillsNamesByCategoryTool(repository, catalog, filter),
     )
 
     private fun invokeSkillTool(

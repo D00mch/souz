@@ -15,6 +15,7 @@ import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkills
+import ru.souz.agent.nodes.NodesSkillsGraph
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.SkillActivationPipeline
@@ -57,7 +58,13 @@ fun agentDiModule(
             agentToolExecutor = instance(),
             defaultBrowserProvider = instance(),
             runtimeEnvironment = instance(),
+        )
+    }
+    bindSingleton {
+        NodesSkillsGraph(
+            nodesCommon = instance(),
             knowledgeStore = instanceOrNull<ConversationKnowledgeStore>(),
+            toolCatalog = instance(),
         )
     }
     bindSingleton { NodesMemory(instance(), instance()) }
@@ -113,8 +120,12 @@ fun agentDiModule(
             nodesErrorHandling = instance(),
             nodesSummarization = instance(),
             nodesMemory = instance(),
-            getSkillsTool = instance(tag = SkillToolBindingTags.GET_SKILLS_TOOL),
+            nodesSkillsGraph = instance(),
+            getSkillByNameTool = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
+            getSkillsByCategoryTool = instance(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL),
+            getSkillsNamesByCategoryTool = instance(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
             runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
         )
     }
