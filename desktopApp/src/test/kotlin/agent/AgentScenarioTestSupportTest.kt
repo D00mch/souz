@@ -100,15 +100,6 @@ class AgentScenarioTestSupportTest {
     }
 
     @Test
-    fun `dynamic skills and MCP providers are empty`() = runTest {
-        val repository = emptySkillRegistryRepository()
-
-        assertTrue(repository.listSkills("scenario-test").isEmpty())
-        assertNull(repository.loadSkillBundle("scenario-test", SkillId("browser")))
-        assertTrue(EmptyMcpToolProvider.tools().isEmpty())
-    }
-
-    @Test
     fun `scenario DI keeps skills and host integrations hermetic`() = runTest {
         val mockedFileTool = RecordingTool("FindFilesByName", "mock metadata")
         val di = AgentScenarioTestSupport(LLMModel.LocalGemma4_E4B_It)

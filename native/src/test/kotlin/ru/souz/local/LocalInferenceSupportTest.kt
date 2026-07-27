@@ -608,6 +608,7 @@ class LocalInferenceSupportTest {
             """.trimIndent(),
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
             usage = LLMResponse.Usage(10, 5, 15, 0),
+            allowedToolNames = setOf("ToolListFiles"),
         )
 
         val ok = assertIs<LLMResponse.Chat.Ok>(result)
@@ -627,6 +628,7 @@ class LocalInferenceSupportTest {
             """.trimIndent(),
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
             usage = LLMResponse.Usage(10, 5, 15, 0),
+            allowedToolNames = setOf("CalendarListEvents"),
         )
 
         val ok = assertIs<LLMResponse.Chat.Ok>(result)
@@ -649,12 +651,28 @@ class LocalInferenceSupportTest {
             """.trimIndent(),
             requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
             usage = LLMResponse.Usage(10, 5, 15, 0),
+            allowedToolNames = setOf("ToolListFiles"),
         )
 
         val ok = assertIs<LLMResponse.Chat.Ok>(result)
         val choice = ok.choices.single()
         assertEquals("ToolListFiles", choice.message.functionCall?.name)
         assertEquals("call_1", choice.message.functionsStateId)
+    }
+
+    @Test
+    fun `strict json parser rejects an unadvertised tool call`() {
+        val result = LocalStrictJsonParser().parse(
+            rawText =
+                """{"type":"tool_calls","calls":[{"id":"call_1","name":"CreateNewBrowserTab","arguments":{}}]}""",
+            requestModel = LocalModelProfiles.GEMMA4_E4B_IT.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+            allowedToolNames = setOf("GetSkills", "GetKnowledge", "RunSkillCommand"),
+        )
+
+        val error = assertIs<LLMResponse.Chat.Error>(result)
+        assertTrue(error.message.contains("unadvertised_tool_call"))
+        assertTrue(error.message.contains("CreateNewBrowserTab"))
     }
 
     @Test
@@ -1285,6 +1303,55 @@ class LocalInferenceSupportTest {
         val ok = assertIs<LLMResponse.Chat.Ok>(responses.single())
         assertEquals("stream done", ok.choices.single().message.content)
         verify(exactly = 1) { bridge.generateStream(runtimePointer, modelPointer, any(), any()) }
+    }
+
+    @Test
+    fun `local runtime accepts advertised tool calls in chat and stream`() = runBlocking {
+        val profile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val availability = mockk<LocalProviderAvailability>()
+        every { availability.status() } returns LocalProviderStatus(
+            available = true,
+            message = "OK",
+            selectedProfile = profile,
+            availableModels = listOf(profile.gigaModel),
+        )
+
+        val modelStore = mockk<LocalModelStore>()
+        every { modelStore.requireAvailable(profile) } returns Path.of("/tmp/${profile.ggufFilename}")
+
+        val promptRenderer = mockk<LocalPromptRenderer>()
+        every { promptRenderer.render(any(), profile) } returns "prompt"
+
+        val bridge = mockk<LocalNativeBridge>()
+        val runtimePointer = Pointer(23)
+        val modelPointer = Pointer(24)
+        every { bridge.createRuntime() } returns runtimePointer
+        every { bridge.loadModel(runtimePointer, any()) } returns modelPointer
+        val nativeToolCall =
+            """{"text":"{\"type\":\"tool_calls\",\"calls\":[{\"id\":\"call_1\",\"name\":\"CalendarListEvents\",\"arguments\":{\"calendarName\":\"Work\",\"date\":\"2026-07-27\"}}]}","finish_reason":"tool_calls","prompt_tokens":4,"completion_tokens":2,"total_tokens":6,"precached_prompt_tokens":0}"""
+        every { bridge.generate(runtimePointer, modelPointer, any()) } returns nativeToolCall
+        every { bridge.generateStream(runtimePointer, modelPointer, any(), any()) } returns nativeToolCall
+
+        val runtime = LocalLlamaRuntime(
+            availability = availability,
+            modelStore = modelStore,
+            promptRenderer = promptRenderer,
+            strictJsonParser = LocalStrictJsonParser(),
+            bridge = bridge,
+        )
+        val request = LLMRequest.Chat(
+            model = profile.gigaModel.alias,
+            messages = listOf(LLMRequest.Message(LLMMessageRole.user, "List today's meetings")),
+            functions = listOf(calendarListEventsFn),
+        )
+
+        val chat = assertIs<LLMResponse.Chat.Ok>(runtime.chat(request))
+        val streamed = assertIs<LLMResponse.Chat.Ok>(
+            withTimeout(1_000) { runtime.chatStream(request).toList().single() }
+        )
+
+        assertEquals("CalendarListEvents", chat.choices.single().message.functionCall?.name)
+        assertEquals("CalendarListEvents", streamed.choices.single().message.functionCall?.name)
     }
 
     @Test

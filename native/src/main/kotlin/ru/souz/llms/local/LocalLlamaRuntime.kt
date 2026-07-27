@@ -57,6 +57,7 @@ class LocalLlamaRuntime(
             rawText = nativeResult.text,
             requestModel = body.model,
             usage = nativeResult.toUsage(),
+            allowedToolNames = body.functions.map { it.name }.toSet(),
             nativeFinishReason = nativeResult.finishReason,
             allowRawOutput = body.prefersPlainTextLocalOutput(),
         )
@@ -73,6 +74,7 @@ class LocalLlamaRuntime(
                     rawText = result.text,
                     requestModel = body.model,
                     usage = result.toUsage(),
+                    allowedToolNames = body.functions.map { it.name }.toSet(),
                     nativeFinishReason = result.finishReason,
                     allowRawOutput = body.prefersPlainTextLocalOutput(),
                 )
