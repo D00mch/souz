@@ -6,6 +6,7 @@ import ru.souz.agent.graph.Node
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
@@ -16,29 +17,36 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toSystemPromptMessage
 import ru.souz.tool.DEFAULT_STORED_SKILLS_CATEGORY
+import ru.souz.tool.ToolCategory
 
 /** Nodes and execution-boundary context preparation owned by [ru.souz.SkillsGraphBasedAgent]. */
 internal class NodesSkillsGraph(
     private val nodesCommon: NodesCommon,
     private val knowledgeStore: ConversationKnowledgeStore?,
-    toolCatalog: AgentToolCatalog,
+    private val toolCatalog: AgentToolCatalog,
+    private val toolsFilter: AgentToolsFilter,
 ) {
     private val l = LoggerFactory.getLogger(NodesSkillsGraph::class.java)
-    private val promptAugmenter = SkillsPromptAugmenter(toolCatalog)
+    private val promptAugmenter = SkillsPromptAugmenter()
 
     fun prepareContext(
         ctx: AgentContext<String>,
         coreTools: List<LLMToolSetup>,
-    ): AgentContext<String> = ctx.copy(
-        settings = ctx.settings.copy(
-            tools = AgentTools(
-                byCategory = emptyMap(),
-                byName = coreTools.associateBy { it.fn.name },
-            )
-        ),
-        activeTools = coreTools.map { it.fn },
-        history = promptAugmenter.augment(ctx.systemPrompt, ctx.history),
-    )
+    ): AgentContext<String> {
+        val categoryNames = toolsFilter
+            .applyFilter(toolCatalog.toolsByCategory)
+            .skillCategoryNames()
+        return ctx.copy(
+            settings = ctx.settings.copy(
+                tools = AgentTools(
+                    byCategory = emptyMap(),
+                    byName = coreTools.associateBy { it.fn.name },
+                )
+            ),
+            activeTools = coreTools.map { it.fn },
+            history = promptAugmenter.augment(ctx.systemPrompt, ctx.history, categoryNames),
+        )
+    }
 
     /** Executes tool calls and replaces oversized results with conversation-scoped Knowledge references. */
     fun toolUseWithKnowledge(
@@ -104,18 +112,13 @@ internal class NodesSkillsGraph(
     }
 }
 
-private class SkillsPromptAugmenter(toolCatalog: AgentToolCatalog) {
-    private val categoryBlock = buildString {
-        append("<skill_categories>\nSkill category names:\n")
-        append(toolCatalog.skillCategoryNames().joinToString(separator = "\n") { "- $it" })
-        append("\n</skill_categories>")
-    }
-
+private class SkillsPromptAugmenter {
     fun augment(
         systemPrompt: String,
         history: List<LLMRequest.Message>,
+        categoryNames: List<String>,
     ): List<LLMRequest.Message> {
-        val message = "$systemPrompt\n\n$categoryBlock".toSystemPromptMessage()
+        val message = "$systemPrompt\n\n${categoryBlock(categoryNames)}".toSystemPromptMessage()
         if (history.isEmpty()) return listOf(message)
         return if (history.first().role == LLMMessageRole.system) {
             listOf(message) + history.drop(1)
@@ -123,9 +126,15 @@ private class SkillsPromptAugmenter(toolCatalog: AgentToolCatalog) {
             listOf(message) + history
         }
     }
+
+    private fun categoryBlock(categoryNames: List<String>) = buildString {
+        append("<skill_categories>\nSkill category names:\n")
+        append(categoryNames.joinToString(separator = "\n") { "- $it" })
+        append("\n</skill_categories>")
+    }
 }
 
-private fun AgentToolCatalog.skillCategoryNames(): List<String> = toolsByCategory
+private fun Map<ToolCategory, Map<String, LLMToolSetup>>.skillCategoryNames(): List<String> = this
     .filterValues { it.isNotEmpty() }
     .keys
     .map { it.name }

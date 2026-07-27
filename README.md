@@ -181,7 +181,7 @@ flowchart TD
     errorNode --> finish
 ```
 
-The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Its system prompt lists the non-empty compiled-tool categories plus `CUSTOM`, the default category for stored file-backed skills. Catalog and MCP tools are not directly callable; executable skill commands delegate to the internal catalog.
+The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Its system prompt lists the non-empty compiled-tool categories filtered by the active tool policy plus `CUSTOM`, the default category for stored file-backed skills. Catalog and MCP tools are not directly callable; executable skill commands delegate to the internal catalog.
 
 Tool-result text larger than 4,096 UTF-8 bytes is retained as conversation-scoped temporary Knowledge and replaced in history by a compact reference. A result of exactly 4 KiB stays inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
 

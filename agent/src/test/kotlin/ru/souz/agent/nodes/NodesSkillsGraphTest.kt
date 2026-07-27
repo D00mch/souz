@@ -17,6 +17,7 @@ import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
@@ -73,6 +74,42 @@ class NodesSkillsGraphTest {
         assertContains(result.history.first().content, "- CUSTOM")
         assertContains(result.history.first().content, "- FILES")
         assertFalse(result.history.first().content.contains("obsolete effective prompt"))
+    }
+
+    @Test
+    fun `prepare context advertises categories from the current tool filter`() {
+        val filesTool = FixedResultTool("FilesTool", "{}")
+        val browserTool = FixedResultTool("BrowserTool", "{}")
+        val catalog = object : AgentToolCatalog {
+            override val toolsByCategory = mapOf(
+                ToolCategory.FILES to mapOf(filesTool.fn.name to filesTool),
+                ToolCategory.BROWSER to mapOf(browserTool.fn.name to browserTool),
+            )
+        }
+        val filter = SwitchingToolsFilter(ToolCategory.FILES)
+        val context = AgentContext(
+            input = "hello",
+            settings = AgentSettings(
+                model = "test",
+                temperature = 0f,
+                tools = AgentTools(catalog.toolsByCategory),
+            ),
+            history = emptyList(),
+            activeTools = emptyList(),
+            systemPrompt = "system",
+        )
+        val graph = nodesSkillsGraph(null, catalog, filter)
+
+        val filesPrompt = graph.prepareContext(context, listOf(filesTool)).history.first().content
+        filter.allowedCategory = ToolCategory.BROWSER
+        val browserPrompt = graph.prepareContext(context, listOf(filesTool)).history.first().content
+
+        assertContains(filesPrompt, "- CUSTOM")
+        assertContains(filesPrompt, "- FILES")
+        assertFalse(filesPrompt.contains("- BROWSER"))
+        assertContains(browserPrompt, "- CUSTOM")
+        assertContains(browserPrompt, "- BROWSER")
+        assertFalse(browserPrompt.contains("- FILES"))
     }
 
     @Test
@@ -244,6 +281,7 @@ class NodesSkillsGraphTest {
         toolCatalog: AgentToolCatalog = object : AgentToolCatalog {
             override val toolsByCategory = emptyMap<ToolCategory, Map<String, LLMToolSetup>>()
         },
+        toolsFilter: AgentToolsFilter = PassThroughToolsFilter,
     ): NodesSkillsGraph {
         val nodesCommon = NodesCommon(
             desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
@@ -261,6 +299,7 @@ class NodesSkillsGraphTest {
             nodesCommon = nodesCommon,
             knowledgeStore = knowledgeStore,
             toolCatalog = toolCatalog,
+            toolsFilter = toolsFilter,
         )
     }
 
@@ -323,6 +362,21 @@ class NodesSkillsGraphTest {
         override suspend fun clearConversation(meta: ToolInvocationMeta) = Unit
 
         data class Put(val meta: ToolInvocationMeta, val sourceTool: String, val content: String)
+    }
+
+    private object PassThroughToolsFilter : AgentToolsFilter {
+        override fun applyFilter(
+            toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
+    }
+
+    private class SwitchingToolsFilter(
+        var allowedCategory: ToolCategory,
+    ) : AgentToolsFilter {
+        override fun applyFilter(
+            toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        ): Map<ToolCategory, Map<String, LLMToolSetup>> =
+            toolsByCategory.filterKeys { it == allowedCategory }
     }
 
     private companion object {

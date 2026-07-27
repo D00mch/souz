@@ -79,6 +79,7 @@ class AgentExecutionKernelFactory(
             nodesCommon = nodesCommon,
             knowledgeStore = knowledgeStore,
             toolCatalog = toolCatalog,
+            toolsFilter = toolsFilter,
         )
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(

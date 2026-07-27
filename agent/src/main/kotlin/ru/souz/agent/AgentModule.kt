@@ -65,6 +65,7 @@ fun agentDiModule(
             nodesCommon = instance(),
             knowledgeStore = instanceOrNull<ConversationKnowledgeStore>(),
             toolCatalog = instance(),
+            toolsFilter = instance(),
         )
     }
     bindSingleton { NodesMemory(instance(), instance()) }

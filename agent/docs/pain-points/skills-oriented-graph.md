@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand`. Its execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains the non-empty compiled-tool category names and the stored-skill `CUSTOM` category, while `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification, legacy skill activation, or MCP injection.
+`SkillsGraphBasedAgent` exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand`. Its execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains non-empty compiled-tool category names filtered by the active tool policy and the stored-skill `CUSTOM` category, while `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification, legacy skill activation, or MCP injection.
 
 `NodesSkillsGraph` owns this context preparation and Knowledge-aware tool-result handling. `NodesCommon` owns generic tool-call execution and the classic inline-only tool-use node.
 
@@ -17,7 +17,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 ## Safe changes
 
 - Keep core-tool restriction at the execution boundary so every graph node sees the restricted context; tool loops return directly to the LLM.
-- Keep `AgentContext.systemPrompt` equal to the configured prompt. Let `NodesSkillsGraph` capture non-empty catalog categories and append them only to the effective system message in history.
+- Keep `AgentContext.systemPrompt` equal to the configured prompt. Let `NodesSkillsGraph` capture non-empty catalog categories through the active tool policy per turn and append them only to the effective system message in history.
 - Keep memory recall after history input and before context enrichment. Run it only once per user turn.
 - Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.
 - Keep large-result processing in `NodesSkillsGraph.toolUseWithKnowledge`; `NodesCommon.toolUse()` remains inline-only.

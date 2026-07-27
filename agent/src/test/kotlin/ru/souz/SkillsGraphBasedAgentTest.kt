@@ -13,6 +13,7 @@ import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillsGraph
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
@@ -194,6 +195,7 @@ class SkillsGraphBasedAgentTest {
                     ToolCategory.FILES to mapOf("CatalogTool" to tool("CatalogTool")),
                 )
             },
+            toolsFilter = passThroughToolsFilter(),
         ),
         getSkillByNameTool = getSkillByName,
         getSkillsByCategoryTool = getSkillsByCategory,
@@ -241,6 +243,12 @@ class SkillsGraphBasedAgentTest {
 
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall) =
             LLMRequest.Message(LLMMessageRole.function, "{}", name = name)
+    }
+
+    private fun passThroughToolsFilter(): AgentToolsFilter = object : AgentToolsFilter {
+        override fun applyFilter(
+            toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
     }
 
     private fun toolCallResponse(): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
