@@ -20,6 +20,7 @@ import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.SkillToolBindingTags
@@ -216,6 +217,20 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `file backed lookup returns validation error when approval rejects`() = runTest {
+        val repository = repository(bundle("unsafe"))
+        val approvalGate = rejectingApprovalGate("Rejected by policy.")
+
+        val response = getSkillByNameTool(repository, approvalGate = approvalGate)
+            .call(mapOf("skillId" to "unsafe"))
+
+        assertEquals("skill_validation_rejected", response["error"]["code"].asText())
+        assertEquals("Rejected by policy.", response["error"]["message"].asText())
+        assertTrue(response["skill"].isNull)
+        coVerify(exactly = 1) { approvalGate.ensureApproved(any()) }
+    }
+
+    @Test
     fun `discovery and invocation propagate cancellation`() = runTest {
         val repository = mockk<SkillRegistryRepository>()
         coEvery { repository.loadSkillBundle(any(), any()) } throws CancellationException("stop")
@@ -336,6 +351,24 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `file backed invocation returns validation error when approval rejects`() = runTest {
+        val repository = repository(bundle("unsafe"))
+        val approvalGate = rejectingApprovalGate("Rejected by policy.")
+        val runner = invokeSkillTool(repository, approvalGate = approvalGate)
+
+        val response = runner.call(
+            mapOf(
+                "skillId" to "unsafe",
+                "arguments" to mapOf("runtime" to SandboxCommandRuntime.BASH.name, "script" to "printf nope"),
+            )
+        )
+
+        assertEquals("skill_validation_rejected", response["error"]["code"].asText())
+        assertEquals("Rejected by policy.", response["error"]["message"].asText())
+        coVerify(exactly = 1) { approvalGate.ensureApproved(any()) }
+    }
+
+    @Test
     fun `portable composition exposes tagged runtime tools outside the catalog`() {
         val home = createTempDirectory("skill-di-home-")
         val stateRoot = home.resolve("state").createDirectories()
@@ -387,11 +420,13 @@ class SkillRuntimeToolsTest {
         repository: SkillRegistryRepository,
         catalog: AgentToolCatalog = catalog(),
         filter: AgentToolsFilter = TestToolsFilter(),
+        approvalGate: SkillApprovalGate? = null,
     ): ToolGetSkillByName = ToolGetSkillByName(
         toolCatalog = catalog,
         toolsFilter = filter,
         repository = repository,
         legacyCommandTool = ToolRunSkillCommand(mockk(relaxed = true)).toGiga(),
+        approvalGate = approvalGate,
     )
 
     private fun getSkillsNamesByCategoryTool(
@@ -415,11 +450,13 @@ class SkillRuntimeToolsTest {
         repository: SkillRegistryRepository,
         catalog: AgentToolCatalog = catalog(),
         filter: AgentToolsFilter = TestToolsFilter(),
+        approvalGate: SkillApprovalGate? = null,
     ): ToolInvokeSkill = ToolInvokeSkill(
         toolCatalog = catalog,
         toolsFilter = filter,
         repository = repository,
         commandTool = ToolRunSkillCommand(mockk(relaxed = true)),
+        approvalGate = approvalGate,
     )
 
     private fun localSandbox(home: Path, stateRoot: Path): LocalRuntimeSandbox {
@@ -440,6 +477,15 @@ class SkillRuntimeToolsTest {
         const val USER_ID = "user-1"
     }
 }
+
+private fun rejectingApprovalGate(reason: String): SkillApprovalGate =
+    mockk {
+        coEvery { ensureApproved(any()) } returns SkillApprovalGate.Result.Rejected(
+            bundleHash = "a".repeat(64),
+            reason = reason,
+            findings = emptyList(),
+        )
+    }
 
 private class RecordingTool(
     name: String,

@@ -89,7 +89,7 @@ class BackendConversationRuntimeSettingsTest {
             eventSink = AgentRuntimeEventSink.NONE,
         )
 
-        assertEquals(listOf("ListFiles"), api.finalRequests.single().functions.map { it.name })
+        assertEquals(listOf("ListFiles") + CLASSIC_SKILL_CORE_TOOLS, api.finalRequests.single().functions.map { it.name })
     }
 
     @Test
@@ -124,7 +124,7 @@ class BackendConversationRuntimeSettingsTest {
             eventSink = AgentRuntimeEventSink.NONE,
         )
 
-        assertEquals(listOf("ListFiles"), api.finalRequests.single().functions.map { it.name })
+        assertEquals(listOf("ListFiles") + CLASSIC_SKILL_CORE_TOOLS, api.finalRequests.single().functions.map { it.name })
     }
 
     @Test
@@ -177,7 +177,10 @@ class BackendConversationRuntimeSettingsTest {
             eventSink = AgentRuntimeEventSink.NONE,
         )
 
-        assertEquals(emptyList(), api.finalRequests.single().functions.single().fewShotExamples.orEmpty())
+        assertEquals(
+            emptyList(),
+            api.finalRequests.single().functions.single { it.name == "ListFiles" }.fewShotExamples.orEmpty(),
+        )
     }
 
     @Test
@@ -208,7 +211,7 @@ class BackendConversationRuntimeSettingsTest {
 
         assertEquals(
             listOf(LLMRequest.FewShotExample(request = "List project files", params = mapOf("path" to "."))),
-            api.finalRequests.single().functions.single().fewShotExamples.orEmpty(),
+            api.finalRequests.single().functions.single { it.name == "ListFiles" }.fewShotExamples.orEmpty(),
         )
     }
 
@@ -233,7 +236,7 @@ class BackendConversationRuntimeSettingsTest {
             eventSink = AgentRuntimeEventSink.NONE,
         )
 
-        assertEquals(emptyList(), api.finalRequests.single().functions)
+        assertEquals(CLASSIC_SKILL_CORE_TOOLS, api.finalRequests.single().functions.map { it.name })
     }
 
     @Test
@@ -297,6 +300,13 @@ private fun turnRequest(): BackendConversationTurnRequest =
         requestTimeoutMillis = 30_000L,
         useFewShotExamples = true,
     )
+
+private val CLASSIC_SKILL_CORE_TOOLS = listOf(
+    "GetSkillByName",
+    "GetKnowledge",
+    "SearchKnowledge",
+    "RunSkillCommand",
+)
 
 private fun singleToolCatalog(
     category: ToolCategory,

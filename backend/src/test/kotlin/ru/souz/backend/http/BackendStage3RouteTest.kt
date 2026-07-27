@@ -917,7 +917,8 @@ class BackendStage3RouteTest {
         assertEquals(LLMModel.QwenMax.alias, finalRequest.model)
         assertEquals(12_000, finalRequest.maxTokens)
         assertEquals(0.15f, finalRequest.temperature)
-        assertEquals("be brief", finalRequest.messages.first { it.role == LLMMessageRole.system }.content)
+        val effectiveSystemPrompt = finalRequest.messages.first { it.role == LLMMessageRole.system }.content
+        assertEquals("be brief", effectiveSystemPrompt.substringBefore("\n\n<skill_inventory>"))
         assertEquals(Locale.forLanguageTag("en-US"), storedState?.locale)
         assertEquals(ZoneId.of("Europe/Amsterdam"), storedState?.timeZone)
     }

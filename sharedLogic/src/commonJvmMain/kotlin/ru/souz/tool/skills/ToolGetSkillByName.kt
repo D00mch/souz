@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentTools
@@ -24,6 +25,7 @@ class ToolGetSkillByName(
     private val toolsFilter: AgentToolsFilter,
     private val repository: SkillRegistryRepository,
     private val legacyCommandTool: LLMToolSetup,
+    private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
     data class Input(
         val skillId: String = "",
@@ -97,11 +99,13 @@ class ToolGetSkillByName(
             when {
                 skillId in enabledTools -> SkillLookupResponse(skill = enabledTools.getValue(skillId).toDetail())
                 else -> {
-                    val bundle = repository.loadSkillBundle(meta.userId, SkillId(skillId))
+                    val parsedSkillId = SkillId(skillId)
+                    val bundle = repository.loadSkillBundle(meta.userId, parsedSkillId)
                     when {
-                        bundle != null -> SkillLookupResponse(
-                            skill = bundle.toDetail(),
-                            executionSchema = fileSkillExecutionSchema(),
+                        bundle != null -> approvedBundleResponse(
+                            userId = meta.userId,
+                            skillId = parsedSkillId,
+                            bundle = bundle,
                         )
                         skillId in unfilteredTools -> SkillLookupResponse(
                             error = SkillDiscoveryError(
@@ -128,6 +132,41 @@ class ToolGetSkillByName(
                     skillId = skillId,
                     code = "skill_unavailable",
                     message = error.message ?: "Skill is unavailable: $skillId",
+                )
+            )
+        }
+    }
+
+    private suspend fun approvedBundleResponse(
+        userId: String,
+        skillId: SkillId,
+        bundle: SkillBundle,
+    ): SkillLookupResponse {
+        val gate = approvalGate
+            ?: return SkillLookupResponse(
+                skill = bundle.toDetail(),
+                executionSchema = fileSkillExecutionSchema(),
+            )
+
+        return when (
+            val approval = gate.ensureApproved(
+                SkillApprovalGate.Input(
+                    userId = userId,
+                    skillId = skillId,
+                    bundle = bundle,
+                )
+            )
+        ) {
+            is SkillApprovalGate.Result.Approved -> SkillLookupResponse(
+                skill = approval.bundle.toDetail(),
+                executionSchema = fileSkillExecutionSchema(),
+            )
+
+            is SkillApprovalGate.Result.Rejected -> SkillLookupResponse(
+                error = SkillDiscoveryError(
+                    skillId = skillId.value,
+                    code = "skill_validation_rejected",
+                    message = approval.reason,
                 )
             )
         }

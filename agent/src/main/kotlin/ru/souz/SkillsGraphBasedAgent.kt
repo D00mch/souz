@@ -12,8 +12,10 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkillsGraph
+import ru.souz.agent.nodes.NodesSkillInventory
+import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
@@ -31,7 +33,8 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesErrorHandling: NodesErrorHandling,
     private val nodesSummarization: NodesSummarization,
     private val nodesMemory: NodesMemory,
-    private val nodesSkillsGraph: NodesSkillsGraph,
+    private val nodesSkillInventory: NodesSkillInventory,
+    private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     getSkillByNameTool: LLMToolSetup,
     getSkillsByCategoryTool: LLMToolSetup,
     getSkillsNamesByCategoryTool: LLMToolSetup,
@@ -56,12 +59,16 @@ class SkillsGraphBasedAgent internal constructor(
     private val graph: Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
         val memoryRecall = nodesMemory.recall()
+        val skillInventory = nodesSkillInventory.node(
+            skillTools = emptyList(),
+            name = SKILL_INVENTORY_NODE_NAME,
+        )
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
         val chat = nodesLLM.chat("LLM")
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
-        val toolUse = nodesSkillsGraph.toolUseWithKnowledge(
+        val toolUse = nodesToolUseWithKnowledge.node(
             alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )
         val finalizeTurn = nodesMemory.finalizeTurn(
@@ -71,7 +78,8 @@ class SkillsGraphBasedAgent internal constructor(
 
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(memoryRecall)
-        memoryRecall.edgeTo(contextEnrich)
+        memoryRecall.edgeTo(skillInventory)
+        skillInventory.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chat)
         chat.edgeTo { ctx ->
             when (ctx.input) {
@@ -96,7 +104,7 @@ class SkillsGraphBasedAgent internal constructor(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
-        val restrictedContext = nodesSkillsGraph.prepareContext(ctx, coreTools)
+        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, coreTools)
         return executionDelegate.executeWithTrace(graph = graph, ctx = restrictedContext, onStep = onStep)
     }
 

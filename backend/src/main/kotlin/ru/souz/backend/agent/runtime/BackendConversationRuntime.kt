@@ -11,6 +11,7 @@ import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentTelemetry
@@ -23,8 +24,9 @@ import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.json.JsonUtils
+import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
 
@@ -127,7 +129,6 @@ class BackendConversationRuntimeFactory(
     private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
-    private val skillCommandTool: LLMToolSetup? = null,
     private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: kotlinx.coroutines.CoroutineScope,
@@ -155,10 +156,6 @@ class BackendConversationRuntimeFactory(
             delegate = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,
         )
-        val skillCoreTools = skillCoreToolsFactory.create(
-            toolCatalog = requestScopedToolCatalog,
-            toolsFilter = requestToolsFilter,
-        )
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = key.userId,
@@ -169,6 +166,18 @@ class BackendConversationRuntimeFactory(
         val usageTrackingApi = CumulativeUsageTrackingChatApi(
             delegate = delegateApi,
             initialUsage = initialUsage,
+        )
+        val effectiveSkillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository
+        val skillApprovalGate = SkillApprovalGate.from(
+            registryRepository = effectiveSkillRegistryRepository,
+            llmApi = usageTrackingApi,
+            settingsProvider = settingsProvider,
+            jsonUtils = JsonUtils(restJsonMapper),
+        )
+        val skillCoreTools = skillCoreToolsFactory.create(
+            toolCatalog = requestScopedToolCatalog,
+            toolsFilter = requestToolsFilter,
+            approvalGate = skillApprovalGate,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
@@ -182,7 +191,6 @@ class BackendConversationRuntimeFactory(
                 timeZone = request.timeZone,
             ),
             mcpToolProvider = BackendNoopMcpToolProvider,
-            skillCommandTool = skillCommandTool,
             getSkillByNameTool = skillCoreTools.getSkillByNameTool,
             getSkillsByCategoryTool = skillCoreTools.getSkillsByCategoryTool,
             getSkillsNamesByCategoryTool = skillCoreTools.getSkillsNamesByCategoryTool,
@@ -195,7 +203,7 @@ class BackendConversationRuntimeFactory(
             llmApi = usageTrackingApi,
             apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
-            skillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository,
+            skillRegistryRepository = effectiveSkillRegistryRepository,
             captureScope = agentBackgroundScope,
         ).create()
         return BackendConversationRuntime(

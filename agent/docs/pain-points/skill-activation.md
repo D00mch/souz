@@ -1,34 +1,30 @@
-# Skill activation
+# Skill inventory and approval
 
 ## Invariant
 
-Every classic `GraphBasedAgent` turn runs classification, skill activation, then MCP injection. Skill selection reads only user-scoped stored metadata; full bundle content is loaded only for selected skill IDs. Activated instructions are turn-scoped. A successful activation updates dynamic skill command exposure for that context.
+Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inventory/core-tool installation, then MCP injection. Classification narrows only direct tool schemas advertised to the model; executable lookup may still contain the wider direct tool catalog supplied by the host. The compact Skill inventory is appended to the effective system message and lists enabled tool-backed Skill IDs plus user-scoped stored Skill metadata without loading file-backed bundles.
 
-Validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle invalidates other cached validations for that skill and policy. Changing validation rules requires a new policy version.
+`GetSkillByName` and generic `RunSkillCommand` are the only paths that load full file-backed bundle content for model use. Both require cached or fresh approval through the shared approval gate before returning `SKILL.md` or executing bundled commands. Validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle invalidates other cached validations for that skill and policy. Changing validation rules requires a new policy version.
 
-Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` tools are the fixed core tool set for `SkillsGraphBasedAgent`. They remain outside `AgentToolCatalog` and are not connected to the classic `GraphBasedAgent`. The skill tools trust bundles accepted by the registry loader and do not read or write the legacy validation cache. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
+Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` tools remain outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all six. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` in addition to classified direct tools. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
 
 ## Why this is fragile
 
-Loading bundles before selection expands the prompt and trust surface. Reusing approval across users, hashes, or policies can execute content that was never approved.
+Loading bundles into the inventory would expand the prompt and trust surface. Reusing approval across users, hashes, or policies can return or execute content that was never approved.
 
 The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before reusing the legacy command implementation.
 
-Blocked and exception paths clear injected skill instructions, and classification resets the active tool list, but those paths do not currently remove a `RunSkillCommand` setup injected by an earlier successful activation from `settings.tools`. Executor lookup can therefore retain stale command capability. Treat this as a known revocation gap, not as a security boundary.
-
 ## Safe changes
 
-- Preserve metadata-first selection and reject selector output that is not present in that user's catalog.
+- Keep inventory metadata compact and user-scoped. Do not load `SKILL.md` or supporting files while rendering the inventory.
 - Keep the order structural validation, static validation, then bounded LLM validation. Cache both approvals and rejections for the exact identity.
-- Treat a per-skill rejection as local to that skill and continue with other selections. Treat pipeline failures as blocked, clear injected skill instructions, and continue the normal agent turn without skill context.
+- Treat a per-skill rejection as local to that skill lookup or invocation. Do not return `SKILL.md` or execute commands for rejected bundles.
 - Rethrow coroutine cancellation from every phase.
-- On successful activation, expose `RunSkillCommand` only when the host provides it and at least one skill is active; otherwise remove the dynamic instance. Inject the active skill identity into calls and use the tool only when an activated instruction requires command or script execution.
-- If blocked or failed activation must revoke command execution, fix the blocked/exception branches to remove the managed tool from both settings and active tools, then add a regression test. Do not document revocation as guaranteed until that behavior exists.
-- Keep supporting-file content out of selection; load it only as part of the selected bundle's bounded validation and activation path.
-- Keep the separately tagged core tools out of `AgentToolCatalog`; the skills-oriented graph owns and isolates its always-available tool set.
+- Keep supporting-file content out of inventory; load it only as part of bounded validation and execution paths.
+- Keep the separately tagged core tools out of `AgentToolCatalog`; graph nodes install them explicitly.
 - Preserve compiled-tool precedence consistently in summary, detail, and execution paths. Load a stored bundle only after enabled-tool lookup fails.
 - Never expose `activeSkills`, bundle hashes, storage paths, or supporting-file content through skill discovery. Generic execution binds those values internally.
 
 ## Verification
 
-Run `./gradlew :agent:test` for legacy graph changes. For separately tagged runtime-tool changes, also run `./gradlew :sharedLogic:jvmTest :sharedLogic:compileAndroidMain`.
+Run `./gradlew :agent:test` for graph and approval changes. For separately tagged runtime-tool changes, also run `./gradlew :sharedLogic:jvmTest :sharedLogic:compileAndroidMain`.

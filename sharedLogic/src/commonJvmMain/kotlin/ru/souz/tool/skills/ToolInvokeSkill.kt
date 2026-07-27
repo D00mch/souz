@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentTools
@@ -26,6 +27,7 @@ class ToolInvokeSkill(
     private val toolsFilter: AgentToolsFilter,
     private val repository: SkillRegistryRepository,
     private val commandTool: ToolRunSkillCommand,
+    private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
     data class Input(
         val skillId: String,
@@ -94,6 +96,25 @@ class ToolInvokeSkill(
 
         val bundle = repository.loadSkillBundle(meta.userId, SkillId(skillId))
         if (bundle != null) {
+            val approval = approvalGate?.ensureApproved(
+                SkillApprovalGate.Input(
+                    userId = meta.userId,
+                    skillId = SkillId(skillId),
+                    bundle = bundle,
+                )
+            )
+            if (approval is SkillApprovalGate.Result.Rejected) {
+                return errorMessage(
+                    outerFunctionName,
+                    "skill_validation_rejected",
+                    approval.reason,
+                )
+            }
+            val bundleHash = when (approval) {
+                is SkillApprovalGate.Result.Approved -> approval.bundleHash
+                null -> SkillBundleHasher.hash(bundle)
+                is SkillApprovalGate.Result.Rejected -> error("Rejected approval must return before execution.")
+            }
             val rawInput = restJsonMapper.convertValue(
                 input.arguments + ("skillId" to skillId) - "activeSkills",
                 ToolRunSkillCommand.Input::class.java,
@@ -103,7 +124,7 @@ class ToolInvokeSkill(
                 activeSkills = listOf(
                     ToolRunSkillCommand.ActiveSkillInput(
                         skillId = skillId,
-                        bundleHash = SkillBundleHasher.hash(bundle),
+                        bundleHash = bundleHash,
                         supportingFiles = bundle.files
                             .map { it.normalizedPath }
                             .filterNot { it == SKILL_MARKDOWN_PATH },
