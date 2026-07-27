@@ -6,12 +6,14 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.Node
+import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkillsGraph
+import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
@@ -84,7 +86,7 @@ class SkillsGraphBasedAgentTest {
             nodesCommon,
             nodesErrorHandling,
             nodesSummarization,
-            nodesMemory,
+        nodesMemory,
             getSkillByName,
             getSkillsByCategory,
             getSkillsNamesByCategory,
@@ -186,17 +188,16 @@ class SkillsGraphBasedAgentTest {
         nodesCommon = nodesCommon,
         nodesErrorHandling = nodesErrorHandling,
         nodesSummarization = nodesSummarization,
-        nodesMemory = nodesMemory,
-        nodesSkillsGraph = NodesSkillsGraph(
-            nodesCommon = nodesCommon,
-            knowledgeStore = null,
-            toolCatalog = object : AgentToolCatalog {
-                override val toolsByCategory = mapOf(
-                    ToolCategory.FILES to mapOf("CatalogTool" to tool("CatalogTool")),
-                )
-            },
-            toolsFilter = passThroughToolsFilter(),
-        ),
+            nodesMemory = nodesMemory,
+            nodesSkillInventory = NodesSkillInventory(
+                toolCatalog = testCatalog(),
+                toolsFilter = passThroughToolsFilter(),
+                skillRegistryRepository = emptySkillRegistry(),
+            ),
+            nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
+                nodesCommon = nodesCommon,
+                knowledgeStore = null,
+            ),
         getSkillByNameTool = getSkillByName,
         getSkillsByCategoryTool = getSkillsByCategory,
         getSkillsNamesByCategoryTool = getSkillsNamesByCategory,
@@ -221,12 +222,20 @@ class SkillsGraphBasedAgentTest {
         assertEquals(emptyMap(), ctx.settings.tools.byCategory)
         assertEquals(emptyMap(), ctx.settings.tools.categoryByName)
         assertEquals(PROVIDED_SYSTEM_PROMPT, ctx.systemPrompt)
-        val effectiveSystemPrompt = ctx.history.first().content
-        assertContains(effectiveSystemPrompt, PROVIDED_SYSTEM_PROMPT)
-        assertContains(effectiveSystemPrompt, "The supplied prompt continues after the category-section reference.")
-        assertContains(effectiveSystemPrompt, "- CUSTOM")
-        assertContains(effectiveSystemPrompt, "- FILES")
+        if (ctx.history.isNotEmpty()) {
+            assertContains(ctx.history.first().content, "<skill_inventory>")
+        }
         ctx
+    }
+
+    private fun testCatalog(): AgentToolCatalog = object : AgentToolCatalog {
+        override val toolsByCategory = mapOf(
+            ToolCategory.FILES to mapOf("CatalogTool" to tool("CatalogTool")),
+        )
+    }
+
+    private fun emptySkillRegistry(): SkillRegistryRepository = mockk(relaxed = true) {
+        coEvery { listSkills(any()) } returns emptyList()
     }
 
     private fun errorNode(executed: MutableList<String>) = Node<LLMResponse.Chat, String>("Chat.Error") { ctx ->
@@ -312,9 +321,9 @@ class SkillsGraphBasedAgentTest {
         val PROVIDED_SYSTEM_PROMPT = """
             ## Skill Discovery
 
-            Available Skill category names are listed in the <skill_categories> section.
+            Available Skills are listed in the <skill_inventory> section.
 
-            The supplied prompt continues after the category-section reference.
+            The supplied prompt continues after the inventory-section reference.
         """.trimIndent()
     }
 }

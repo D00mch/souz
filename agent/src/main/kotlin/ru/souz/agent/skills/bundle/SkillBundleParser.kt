@@ -1,9 +1,26 @@
 package ru.souz.agent.skills.bundle
 
-internal object SkillBundleParser {
+object SkillBundleParser {
 
     fun parse(markdown: String): ParsedSkillMarkdown {
         val normalized = markdown.replace("\r\n", "\n")
+        val secondDelimiterIndex = closingDelimiterIndex(normalized)
+        val frontmatter = normalized.substring(4, secondDelimiterIndex).trim()
+        val body = normalized.substring(secondDelimiterIndex + "\n---\n".length).trim()
+        return ParsedSkillMarkdown(
+            manifest = parseManifestFrontmatter(frontmatter),
+            body = body,
+        )
+    }
+
+    fun parseManifest(markdown: String): SkillManifest {
+        val normalized = markdown.replace("\r\n", "\n")
+        val secondDelimiterIndex = closingDelimiterIndex(normalized)
+        val frontmatter = normalized.substring(4, secondDelimiterIndex).trim()
+        return parseManifestFrontmatter(frontmatter)
+    }
+
+    private fun closingDelimiterIndex(normalized: String): Int {
         if (!normalized.startsWith("---\n")) {
             throw SkillBundleException("SKILL.md must start with YAML frontmatter.")
         }
@@ -12,9 +29,10 @@ internal object SkillBundleParser {
         if (secondDelimiterIndex < 0) {
             throw SkillBundleException("SKILL.md is missing a closing YAML frontmatter delimiter.")
         }
+        return secondDelimiterIndex
+    }
 
-        val frontmatter = normalized.substring(4, secondDelimiterIndex).trim()
-        val body = normalized.substring(secondDelimiterIndex + "\n---\n".length).trim()
+    private fun parseManifestFrontmatter(frontmatter: String): SkillManifest {
         val parsedMap = parseYamlLikeMap(frontmatter)
 
         val name = parsedMap["name"]?.takeIf { it.isNotBlank() }
@@ -23,16 +41,13 @@ internal object SkillBundleParser {
             ?: throw SkillBundleException("SKILL.md frontmatter is missing required field: description")
 
         val metadata = parseMetadata(frontmatter)
-        return ParsedSkillMarkdown(
-            manifest = SkillManifest(
-                name = name,
-                description = description,
-                author = parsedMap["author"]?.takeIf { it.isNotBlank() },
-                version = parsedMap["version"]?.takeIf { it.isNotBlank() },
-                metadata = metadata,
-                rawFrontmatter = frontmatter,
-            ),
-            body = body,
+        return SkillManifest(
+            name = name,
+            description = description,
+            author = parsedMap["author"]?.takeIf { it.isNotBlank() },
+            version = parsedMap["version"]?.takeIf { it.isNotBlank() },
+            metadata = metadata,
+            rawFrontmatter = frontmatter,
         )
     }
 

@@ -26,6 +26,13 @@ private val GRAPH_DEFAULT_SYSTEM_PROMPT_RU = """
    - Если нужно вернуть текст - возвращай в формате Markdown.
    - В Markdown не возвращай таблицы - вместо них возвращай форматированные списки.
 
+## Skills:
+Доступные Skill ID перечислены в секции <skill_inventory>. Если прямые функции не покрывают задачу, используй on-demand Skills:
+- вызови GetSkillByName с точным skillId;
+- следуй возвращенным инструкциям и схеме;
+- вызови RunSkillCommand с тем же skillId, если Skill требует исполнения;
+- если результат инструмента содержит Knowledge reference, вызови GetKnowledge для полного retained content или SearchKnowledge для точечного regex-поиска.
+
 ## Критически важно:
 Твоя задача — ДЕЙСТВОВАТЬ, а не болтать.
 """.trimIndent()
@@ -42,6 +49,13 @@ private val GRAPH_DEFAULT_SYSTEM_PROMPT_EN = """
    - If text must be returned, use Markdown format.
    - Do not use tables in Markdown; use formatted lists instead.
 
+## Skills:
+Available Skill IDs are listed in the <skill_inventory> section. If direct functions do not cover the task, use on-demand Skills:
+- call GetSkillByName with the exact skillId;
+- follow the returned instructions and schema;
+- call RunSkillCommand with the same skillId when the Skill requires execution;
+- if a tool result contains a Knowledge reference, use GetKnowledge for all retained content or SearchKnowledge for targeted regex retrieval.
+
 ## Critically Important:
 Your task is to ACT, not to chat.
 """.trimIndent()
@@ -53,14 +67,13 @@ You are an action-oriented assistant. Solve the user's task completely, using Sk
 
 ## Skill Discovery
 
-Available Skill category names are listed in the <skill_categories> section.
+Available Skills are listed in the <skill_inventory> section.
 
 Choose the shortest discovery path:
 
-1. If the task clearly belongs to one category, call GetSkillsByCategory once. It returns full descriptions and schemas for every Skill in that category.
-2. If you already know the exact Skill ID, call GetSkillByName directly.
-3. If you only need to see which Skills exist in a category, call GetSkillsNamesByCategory. Then call GetSkillByName only for the selected Skill.
-4. Stored file-backed Skills belong to the CUSTOM category.
+1. If you already know the exact Skill ID from the inventory, call GetSkillByName directly.
+2. If the task clearly belongs to one tool-backed category, call GetSkillsByCategory once. It returns full descriptions and schemas for every Skill in that category.
+3. If you only need to inspect a category's IDs, call GetSkillsNamesByCategory. Then call GetSkillByName only for the selected Skill.
 
 Do not call multiple discovery tools when one call provides enough information.
 

@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.runtime
 
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.llms.LLMToolSetup
@@ -30,17 +31,18 @@ class BackendSkillCoreToolsFactory(
     fun create(
         toolCatalog: AgentToolCatalog,
         toolsFilter: AgentToolsFilter,
+        approvalGate: SkillApprovalGate,
     ): BackendSkillCoreTools {
         val getSkillByName = ToolGetSkillByName(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
             repository = skillRegistryRepository,
             legacyCommandTool = legacyCommandTool,
+            approvalGate = approvalGate,
         )
         val getSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
-            repository = skillRegistryRepository,
         )
         return BackendSkillCoreTools(
             getSkillByNameTool = getSkillByName,
@@ -56,6 +58,7 @@ class BackendSkillCoreToolsFactory(
                 toolsFilter = toolsFilter,
                 repository = skillRegistryRepository,
                 commandTool = commandTool,
+                approvalGate = approvalGate,
             ),
         )
     }

@@ -15,13 +15,15 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkills
+import ru.souz.agent.nodes.NodesSkillInventory
+import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
-import ru.souz.agent.nodes.SKILLS_ACTIVATION_NODE_NAME
+import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 
 class GraphBasedAgent internal constructor(
     logObjectMapper: ObjectMapper,
@@ -31,8 +33,13 @@ class GraphBasedAgent internal constructor(
     private val nodesErrorHandling: NodesErrorHandling,
     private val nodesSummarization: NodesSummarization,
     private val nodesMCP: NodesMCP,
-    private val nodesSkills: NodesSkills,
+    private val nodesSkillInventory: NodesSkillInventory,
+    private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     private val nodesMemory: NodesMemory,
+    getSkillByNameTool: LLMToolSetup,
+    getKnowledgeTool: LLMToolSetup,
+    searchKnowledgeTool: LLMToolSetup,
+    runtimeCommandTool: LLMToolSetup,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
@@ -40,6 +47,12 @@ class GraphBasedAgent internal constructor(
 ) : TraceableAgent {
 
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
+    private val alwaysInlineResultTools = listOf(
+        getSkillByNameTool,
+        getKnowledgeTool,
+        searchKnowledgeTool,
+    )
+    private val skillTools = alwaysInlineResultTools + runtimeCommandTool
 
     private val graph: Graph<String, String> = buildGraph(name = "Agent") {
         val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("LLM")
@@ -50,10 +63,15 @@ class GraphBasedAgent internal constructor(
         val contextEnrich: Node<String, String> = nodesCommon.nodeAppendAdditionalData()
         val memoryRecall: Node<String, String> = nodesMemory.recall()
         val nodeClassify: Node<String, String> = nodesClassify.node(CLASSIFY_NODE_NAME)
-        val nodeSkillsActivation: Node<String, String> = nodesSkills.node(SKILLS_ACTIVATION_NODE_NAME)
+        val nodeSkillInventory: Node<String, String> = nodesSkillInventory.node(
+            skillTools = skillTools,
+            name = SKILL_INVENTORY_NODE_NAME,
+        )
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
         val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
-        val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesCommon.toolUse()
+        val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesToolUseWithKnowledge.node(
+            alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
+        )
         val finalizeTurn: Node<LLMResponse.Chat.Ok, String> = nodesMemory.finalizeTurn(
             summarization = nodesSummarization.summarize(),
         )
@@ -61,8 +79,8 @@ class GraphBasedAgent internal constructor(
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(memoryRecall)
         memoryRecall.edgeTo(nodeClassify)
-        nodeClassify.edgeTo(nodeSkillsActivation)
-        nodeSkillsActivation.edgeTo(nodeMcp)
+        nodeClassify.edgeTo(nodeSkillInventory)
+        nodeSkillInventory.edgeTo(nodeMcp)
         nodeMcp.edgeTo(contextEnrich)
         contextEnrich.edgeTo(chatSubgraph)
         chatSubgraph.edgeTo { ctx ->

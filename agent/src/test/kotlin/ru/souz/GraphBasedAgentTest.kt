@@ -11,10 +11,11 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkills
+import ru.souz.agent.nodes.NodesSkillInventory
+import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.INJECTED_MEMORY_MESSAGE_NAME
-import ru.souz.agent.nodes.SKILLS_ACTIVATION_NODE_NAME
+import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.nodes.isInjectedMemoryContextMessage
 import ru.souz.agent.graph.Node
 import ru.souz.agent.state.AgentContext
@@ -22,6 +23,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
@@ -41,7 +43,8 @@ class GraphBasedAgentTest {
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMCP = mockk<NodesMCP>()
-        val nodesSkills = mockk<NodesSkills>()
+        val nodesSkillInventory = mockk<NodesSkillInventory>()
+        val nodesToolUseWithKnowledge = mockk<NodesToolUseWithKnowledge>()
         val nodesMemory = NodesMemory(
             memoryRuntime = object : ConversationMemoryRuntime {
                 override suspend fun retrieveMemory(
@@ -58,14 +61,12 @@ class GraphBasedAgentTest {
             ctx.map(history = ctx.history + LLMRequest.Message(LLMMessageRole.user, ctx.input))
         }
         every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
-        every { nodesSkills.node(SKILLS_ACTIVATION_NODE_NAME) } returns passthroughStringNode(
-            SKILLS_ACTIVATION_NODE_NAME,
-        )
+        every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME) } returns passthroughStringNode(SKILL_INVENTORY_NODE_NAME)
         every { nodesMCP.nodeProvideMcpTools("MCP Node") } returns passthroughStringNode("MCP Node")
         every { nodesCommon.nodeAppendAdditionalData() } returns passthroughStringNode("appendActualInformation")
         every { nodesLLM.chat("LLM") } returns chatNode("LLM")
         every { nodesErrorHandling.chatErrorToFinish() } returns errorNode()
-        every { nodesCommon.toolUse() } returns toolUseNode()
+        every { nodesToolUseWithKnowledge.node(any(), any()) } returns toolUseNode()
         every { nodesSummarization.summarize() } returns summaryNode()
 
         val agent = GraphBasedAgent(
@@ -76,14 +77,19 @@ class GraphBasedAgentTest {
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMCP,
-            nodesSkills = nodesSkills,
+            nodesSkillInventory = nodesSkillInventory,
+            nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
+            getSkillByNameTool = dummyTool("GetSkillByName"),
+            getKnowledgeTool = dummyTool("GetKnowledge"),
+            searchKnowledgeTool = dummyTool("SearchKnowledge"),
+            runtimeCommandTool = dummyTool("RunSkillCommand"),
         )
         val expectedRun = listOf(
             "Input->History",
             "Memory recall",
             CLASSIFY_NODE_NAME,
-            SKILLS_ACTIVATION_NODE_NAME,
+            SKILL_INVENTORY_NODE_NAME,
             "MCP Node",
             "appendActualInformation",
             "LLM",
@@ -152,6 +158,17 @@ class GraphBasedAgentTest {
 
     private fun errorNode(): Node<LLMResponse.Chat, String> = Node("Chat.Error->Finish") { ctx ->
         ctx.map { "error" }
+    }
+
+    private fun dummyTool(name: String): LLMToolSetup = object : LLMToolSetup {
+        override val fn = LLMRequest.Function(
+            name = name,
+            description = name,
+            parameters = LLMRequest.Parameters("object", emptyMap()),
+        )
+
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+            LLMRequest.Message(LLMMessageRole.function, "{}", name = functionCall.name)
     }
 
     private fun baseContext(): AgentContext<String> = AgentContext(

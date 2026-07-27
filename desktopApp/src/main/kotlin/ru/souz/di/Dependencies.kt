@@ -26,7 +26,6 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.ActiveRecorderPcmAudioFrameSource
 import ru.souz.service.audio.ActiveSoundRecorder
@@ -385,7 +384,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             logObjectMapperTag = DiTags.TAG_LOG,
             apiClassifierTag = DiTags.TAG_API,
             localClassifierTag = DiTags.TAG_LOCAL,
-            skillCommandToolTag = SkillToolBindingTags.COMMAND_TOOL,
         )
     )
     bindSingleton { TelegramBotController(instance(), instance(), speechRecognitionProvider = instance()) }

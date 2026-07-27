@@ -5,6 +5,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.SkillToolBindingTags
@@ -119,6 +120,7 @@ fun portableSkillToolsDiModule(
             toolsFilter = instance(),
             repository = instance(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
+            approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL) {
@@ -128,7 +130,6 @@ fun portableSkillToolsDiModule(
         ToolGetSkillsNamesByCategory(
             toolCatalog = instance(),
             toolsFilter = instance(),
-            repository = instance(),
         )
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL) {
@@ -156,6 +157,7 @@ fun portableSkillToolsDiModule(
             toolsFilter = instance(),
             repository = instance(),
             commandTool = instance(),
+            approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL) {

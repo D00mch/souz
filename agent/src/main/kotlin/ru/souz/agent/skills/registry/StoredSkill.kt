@@ -25,3 +25,30 @@ data class StoredSkill(
     /** Creation or first-registration timestamp captured by the backing store. */
     val createdAt: Instant,
 )
+
+/**
+ * Metadata-only view for compact prompt inventory.
+ *
+ * This deliberately excludes bundle identity so filesystem implementations can list loose
+ * Skill directories without reading supporting files or hashing the full bundle.
+ */
+data class SkillInventoryEntry(
+    /** User that owns this registration namespace. */
+    val userId: String,
+
+    /** Stable canonical identifier used for on-demand lookup and execution. */
+    val skillId: SkillId,
+
+    /** Parsed `SKILL.md` frontmatter for non-prompt inventory consumers. */
+    val manifest: SkillManifest,
+
+    /** Creation or first-registration timestamp captured by the backing store. */
+    val createdAt: Instant,
+)
+
+fun StoredSkill.toInventoryEntry(): SkillInventoryEntry = SkillInventoryEntry(
+    userId = userId,
+    skillId = skillId,
+    manifest = manifest,
+    createdAt = createdAt,
+)

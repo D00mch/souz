@@ -217,7 +217,6 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
-            skillCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             skillCoreToolsFactory = instance(),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             skillRegistryRepository = instance(),

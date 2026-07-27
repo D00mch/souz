@@ -11,11 +11,10 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkills
-import ru.souz.agent.nodes.NodesSkillsGraph
+import ru.souz.agent.nodes.NodesSkillInventory
+import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.skills.SkillActivationPipeline
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
@@ -28,8 +27,6 @@ import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.json.JsonUtils
-import ru.souz.llms.restJsonMapper
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
@@ -48,7 +45,6 @@ class AgentExecutionKernelFactory(
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
-    private val skillCommandTool: LLMToolSetup? = null,
     private val getSkillByNameTool: LLMToolSetup,
     private val getSkillsByCategoryTool: LLMToolSetup,
     private val getSkillsNamesByCategoryTool: LLMToolSetup,
@@ -67,7 +63,6 @@ class AgentExecutionKernelFactory(
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
-        val jsonUtils = JsonUtils(restJsonMapper)
         val nodesCommon = NodesCommon(
             desktopInfoRepository = desktopInfoRepository,
             settingsProvider = settingsProvider,
@@ -75,11 +70,14 @@ class AgentExecutionKernelFactory(
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
         )
-        val nodesSkillsGraph = NodesSkillsGraph(
+        val nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
             nodesCommon = nodesCommon,
             knowledgeStore = knowledgeStore,
+        )
+        val nodesSkillInventory = NodesSkillInventory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
+            skillRegistryRepository = skillRegistryRepository,
         )
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(
@@ -93,15 +91,6 @@ class AgentExecutionKernelFactory(
         val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesMcp = NodesMCP(mcpToolProvider)
-        val nodesSkills = NodesSkills(
-            pipeline = SkillActivationPipeline.from(
-                registryRepository = skillRegistryRepository,
-                llmApi = llmApi,
-                settingsProvider = settingsProvider,
-                jsonUtils = jsonUtils,
-            ),
-            skillCommandTool = skillCommandTool,
-        )
         val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,
@@ -116,8 +105,13 @@ class AgentExecutionKernelFactory(
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMcp,
-            nodesSkills = nodesSkills,
+            nodesSkillInventory = nodesSkillInventory,
+            nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
+            getSkillByNameTool = getSkillByNameTool,
+            getKnowledgeTool = getKnowledgeTool,
+            searchKnowledgeTool = searchKnowledgeTool,
+            runtimeCommandTool = runtimeCommandTool,
         )
         val skillsGraphAgent = SkillsGraphBasedAgent(
             logObjectMapper = logObjectMapper,
@@ -126,7 +120,8 @@ class AgentExecutionKernelFactory(
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMemory = nodesMemory,
-            nodesSkillsGraph = nodesSkillsGraph,
+            nodesSkillInventory = nodesSkillInventory,
+            nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             getSkillByNameTool = getSkillByNameTool,
             getSkillsByCategoryTool = getSkillsByCategoryTool,
             getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,

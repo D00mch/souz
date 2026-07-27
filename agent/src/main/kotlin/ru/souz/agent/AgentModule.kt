@@ -14,12 +14,12 @@ import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkills
-import ru.souz.agent.nodes.NodesSkillsGraph
+import ru.souz.agent.nodes.NodesSkillInventory
+import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.skills.SkillActivationPipeline
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.SkillToolBindingTags
@@ -27,7 +27,6 @@ import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
 import ru.souz.llms.json.JsonUtils
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.UserMessageClassifier
 
@@ -35,7 +34,6 @@ fun agentDiModule(
     logObjectMapperTag: Any? = null,
     apiClassifierTag: Any? = null,
     localClassifierTag: Any? = null,
-    skillCommandToolTag: Any? = null,
     graphSessionRepositoryTag: Any? = null,
 ): DI.Module = DI.Module("agent") {
     bindSingleton {
@@ -61,11 +59,16 @@ fun agentDiModule(
         )
     }
     bindSingleton {
-        NodesSkillsGraph(
+        NodesToolUseWithKnowledge(
             nodesCommon = instance(),
             knowledgeStore = instanceOrNull<ConversationKnowledgeStore>(),
+        )
+    }
+    bindSingleton {
+        NodesSkillInventory(
             toolCatalog = instance(),
             toolsFilter = instance(),
+            skillRegistryRepository = instance<SkillRegistryRepository>(),
         )
     }
     bindSingleton { NodesMemory(instance(), instance()) }
@@ -84,17 +87,11 @@ fun agentDiModule(
         )
     }
     bindSingleton {
-        SkillActivationPipeline.from(
+        SkillApprovalGate.from(
             registryRepository = instance<SkillRegistryRepository>(),
             llmApi = instance(),
             settingsProvider = instance(),
             jsonUtils = instance(),
-        )
-    }
-    bindSingleton {
-        NodesSkills(
-            pipeline = instance(),
-            skillCommandTool = skillCommandToolTag?.let { tag -> instance<LLMToolSetup>(tag = tag) },
         )
     }
     bindSingleton { SystemPromptResolver() }
@@ -109,8 +106,13 @@ fun agentDiModule(
             nodesErrorHandling = instance(),
             nodesSummarization = instance(),
             nodesMCP = instance(),
-            nodesSkills = instance(),
+            nodesSkillInventory = instance(),
+            nodesToolUseWithKnowledge = instance(),
             nodesMemory = instance(),
+            getSkillByNameTool = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
+            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
+            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
         )
     }
     bindSingleton {
@@ -121,7 +123,8 @@ fun agentDiModule(
             nodesErrorHandling = instance(),
             nodesSummarization = instance(),
             nodesMemory = instance(),
-            nodesSkillsGraph = instance(),
+            nodesSkillInventory = instance(),
+            nodesToolUseWithKnowledge = instance(),
             getSkillByNameTool = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
             getSkillsByCategoryTool = instance(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL),
             getSkillsNamesByCategoryTool = instance(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL),

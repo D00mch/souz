@@ -20,6 +20,7 @@ import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.SkillToolBindingTags
@@ -36,7 +37,6 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
-import ru.souz.tool.DEFAULT_STORED_SKILLS_CATEGORY
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
@@ -64,8 +64,7 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `category names include enabled compiled tools and unshadowed custom skills`() = runTest {
-        val repository = repository(bundle("alpha"), bundle("disabled"), bundle("collision"))
+    fun `category names include enabled compiled tools only`() = runTest {
         val zeta = RecordingTool("zeta")
         val disabled = RecordingTool("disabled")
         val collision = RecordingTool("collision", description = "compiled collision")
@@ -83,21 +82,17 @@ class SkillRuntimeToolsTest {
             }
         }
 
-        val namesTool = getSkillsNamesByCategoryTool(repository, catalog, filter)
+        val namesTool = getSkillsNamesByCategoryTool(catalog, filter)
         val fileSkills = namesTool.call(mapOf("category" to ToolCategory.FILES.name))
         val webSkills = namesTool.call(mapOf("category" to ToolCategory.WEB_SEARCH.name))
-        val customSkills = namesTool.call(
-            mapOf("category" to DEFAULT_STORED_SKILLS_CATEGORY)
-        )
+        val unknownCategorySkills = namesTool.call(mapOf("category" to "UNKNOWN_CATEGORY"))
 
         assertEquals(listOf("zeta"), fileSkills["skillNames"].map { it.asText() })
         assertEquals(listOf("collision"), webSkills["skillNames"].map { it.asText() })
-        assertEquals(listOf("alpha", "disabled"), customSkills["skillNames"].map { it.asText() })
+        assertEquals(0, unknownCategorySkills["skillNames"].size())
         assertTrue(fileSkills["error"].isNull)
         assertTrue(webSkills["error"].isNull)
-        assertTrue(customSkills["error"].isNull)
-        coVerify(exactly = 1) { repository.listSkills(USER_ID) }
-        coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
+        assertEquals("category_not_found", unknownCategorySkills["error"]["code"].asText())
     }
 
     @Test
@@ -142,9 +137,7 @@ class SkillRuntimeToolsTest {
         val byName = getSkillByNameTool(repository, catalog, filter)
         val byCategory = getSkillsByCategoryTool(repository, catalog, filter)
         val categoryResponse = byCategory.call(mapOf("category" to ToolCategory.FILES.name))
-        val customCategoryResponse = byCategory.call(
-            mapOf("category" to DEFAULT_STORED_SKILLS_CATEGORY)
-        )
+        val unknownCategoryResponse = byCategory.call(mapOf("category" to "UNKNOWN_CATEGORY"))
         val bundleResponse = byName.call(mapOf("skillId" to "bundle-skill"))
         val disabledResponse = byName.call(mapOf("skillId" to "disabled"))
         val collisionResponse = byName.call(mapOf("skillId" to "collision"))
@@ -157,13 +150,8 @@ class SkillRuntimeToolsTest {
         assertEquals("filtered example", toolDetail["fewShotExamples"].single()["request"].asText())
         assertFalse(categoryResponse.has("executionSchema"))
         assertTrue(categoryResponse["errors"].isEmpty)
-        assertEquals(
-            listOf("bundle-skill", "disabled"),
-            customCategoryResponse["skills"].map { it["skillId"].asText() },
-        )
-        assertTrue(customCategoryResponse["executionSchema"]["inputSchema"]["properties"].has("runtime"))
-        assertTrue(customCategoryResponse["executionSchema"]["returnSchema"]["properties"].has("stdout"))
-        assertTrue(customCategoryResponse["errors"].isEmpty)
+        assertEquals(0, unknownCategoryResponse["skills"].size())
+        assertEquals("category_not_found", unknownCategoryResponse["errors"].single()["code"].asText())
 
         val bundleDetail = bundleResponse["skill"]
         assertEquals("Use the complete bundle instructions.", bundleDetail["skillMarkdownBody"].asText())
@@ -190,7 +178,7 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `file backed category returns one shared schema and complete markdown bodies`() = runTest {
+    fun `direct file backed lookup returns schema and complete markdown body`() = runTest {
         val completeBody = """
             # Complete Instructions
 
@@ -209,27 +197,37 @@ class SkillRuntimeToolsTest {
             bundle("alpha", body = completeBody),
             bundle("beta", body = "Use beta instructions."),
         )
-        val response = getSkillsByCategoryTool(repository).call(
-            mapOf("category" to DEFAULT_STORED_SKILLS_CATEGORY)
-        )
-        val skillsById = response["skills"].associateBy { it["skillId"].asText() }
+        val response = getSkillByNameTool(repository).call(mapOf("skillId" to "alpha"))
+        val skill = response["skill"]
 
         assertEquals(1, response.countFieldName("executionSchema"))
         assertEquals(1, response.countFieldName("inputSchema"))
         assertEquals(1, response.countFieldName("returnSchema"))
         assertTrue(response["executionSchema"]["inputSchema"]["properties"].has("runtime"))
         assertTrue(response["executionSchema"]["returnSchema"]["properties"].has("stdout"))
-        assertEquals(completeBody, skillsById.getValue("alpha")["skillMarkdownBody"].asText())
-        response["skills"].forEach { skill ->
-            assertEquals(
-                setOf("skillId", "name", "description", "skillMarkdownBody", "supportingFiles"),
-                skill.fieldNameSet(),
-            )
-            assertFalse(skill.has("author"))
-            assertFalse(skill.has("version"))
-            assertFalse(skill.has("inputSchema"))
-            assertFalse(skill.has("returnSchema"))
-        }
+        assertEquals(completeBody, skill["skillMarkdownBody"].asText())
+        assertEquals(
+            setOf("skillId", "name", "description", "skillMarkdownBody", "supportingFiles"),
+            skill.fieldNameSet(),
+        )
+        assertFalse(skill.has("author"))
+        assertFalse(skill.has("version"))
+        assertFalse(skill.has("inputSchema"))
+        assertFalse(skill.has("returnSchema"))
+    }
+
+    @Test
+    fun `file backed lookup returns validation error when approval rejects`() = runTest {
+        val repository = repository(bundle("unsafe"))
+        val approvalGate = rejectingApprovalGate("Rejected by policy.")
+
+        val response = getSkillByNameTool(repository, approvalGate = approvalGate)
+            .call(mapOf("skillId" to "unsafe"))
+
+        assertEquals("skill_validation_rejected", response["error"]["code"].asText())
+        assertEquals("Rejected by policy.", response["error"]["message"].asText())
+        assertTrue(response["skill"].isNull)
+        coVerify(exactly = 1) { approvalGate.ensureApproved(any()) }
     }
 
     @Test
@@ -353,6 +351,24 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `file backed invocation returns validation error when approval rejects`() = runTest {
+        val repository = repository(bundle("unsafe"))
+        val approvalGate = rejectingApprovalGate("Rejected by policy.")
+        val runner = invokeSkillTool(repository, approvalGate = approvalGate)
+
+        val response = runner.call(
+            mapOf(
+                "skillId" to "unsafe",
+                "arguments" to mapOf("runtime" to SandboxCommandRuntime.BASH.name, "script" to "printf nope"),
+            )
+        )
+
+        assertEquals("skill_validation_rejected", response["error"]["code"].asText())
+        assertEquals("Rejected by policy.", response["error"]["message"].asText())
+        coVerify(exactly = 1) { approvalGate.ensureApproved(any()) }
+    }
+
+    @Test
     fun `portable composition exposes tagged runtime tools outside the catalog`() {
         val home = createTempDirectory("skill-di-home-")
         val stateRoot = home.resolve("state").createDirectories()
@@ -404,21 +420,21 @@ class SkillRuntimeToolsTest {
         repository: SkillRegistryRepository,
         catalog: AgentToolCatalog = catalog(),
         filter: AgentToolsFilter = TestToolsFilter(),
+        approvalGate: SkillApprovalGate? = null,
     ): ToolGetSkillByName = ToolGetSkillByName(
         toolCatalog = catalog,
         toolsFilter = filter,
         repository = repository,
         legacyCommandTool = ToolRunSkillCommand(mockk(relaxed = true)).toGiga(),
+        approvalGate = approvalGate,
     )
 
     private fun getSkillsNamesByCategoryTool(
-        repository: SkillRegistryRepository,
         catalog: AgentToolCatalog = catalog(),
         filter: AgentToolsFilter = TestToolsFilter(),
     ): ToolGetSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
         toolCatalog = catalog,
         toolsFilter = filter,
-        repository = repository,
     )
 
     private fun getSkillsByCategoryTool(
@@ -427,18 +443,20 @@ class SkillRuntimeToolsTest {
         filter: AgentToolsFilter = TestToolsFilter(),
     ): ToolGetSkillsByCategory = ToolGetSkillsByCategory(
         getSkillByName = getSkillByNameTool(repository, catalog, filter),
-        getSkillsNamesByCategory = getSkillsNamesByCategoryTool(repository, catalog, filter),
+        getSkillsNamesByCategory = getSkillsNamesByCategoryTool(catalog, filter),
     )
 
     private fun invokeSkillTool(
         repository: SkillRegistryRepository,
         catalog: AgentToolCatalog = catalog(),
         filter: AgentToolsFilter = TestToolsFilter(),
+        approvalGate: SkillApprovalGate? = null,
     ): ToolInvokeSkill = ToolInvokeSkill(
         toolCatalog = catalog,
         toolsFilter = filter,
         repository = repository,
         commandTool = ToolRunSkillCommand(mockk(relaxed = true)),
+        approvalGate = approvalGate,
     )
 
     private fun localSandbox(home: Path, stateRoot: Path): LocalRuntimeSandbox {
@@ -459,6 +477,15 @@ class SkillRuntimeToolsTest {
         const val USER_ID = "user-1"
     }
 }
+
+private fun rejectingApprovalGate(reason: String): SkillApprovalGate =
+    mockk {
+        coEvery { ensureApproved(any()) } returns SkillApprovalGate.Result.Rejected(
+            bundleHash = "a".repeat(64),
+            reason = reason,
+            findings = emptyList(),
+        )
+    }
 
 private class RecordingTool(
     name: String,

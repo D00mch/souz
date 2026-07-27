@@ -18,6 +18,11 @@ import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.bundle.SkillManifest
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
+import ru.souz.agent.skills.validation.SkillApprovalGate
+import ru.souz.agent.skills.validation.SkillLlmValidationDecision
+import ru.souz.agent.skills.validation.SkillLlmValidationVerdict
+import ru.souz.agent.skills.validation.SkillLlmValidator
+import ru.souz.agent.skills.validation.SkillRiskLevel
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentToolCatalog
@@ -79,7 +84,7 @@ class BackendSkillCoreToolsFactoryTest {
         val toolsFilter = BackendRequestToolsFilter(mutableEnabledTools)
         mutableEnabledTools += "DisabledTool"
 
-        val coreTools = factory.create(catalog, toolsFilter)
+        val coreTools = factory.create(catalog, toolsFilter, approvingGate(repository))
         val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
         val compiledNames = coreTools.getSkillsNamesByCategoryTool.invoke(
             LLMResponse.FunctionCall(
@@ -88,16 +93,17 @@ class BackendSkillCoreToolsFactoryTest {
             ),
             meta,
         ).contentJson()
-        val customNames = coreTools.getSkillsNamesByCategoryTool.invoke(
+        val unknownCategoryNames = coreTools.getSkillsNamesByCategoryTool.invoke(
             LLMResponse.FunctionCall(
                 name = "GetSkillsNamesByCategory",
-                arguments = mapOf("category" to "CUSTOM"),
+                arguments = mapOf("category" to "UNKNOWN_CATEGORY"),
             ),
             meta,
         ).contentJson()
 
         assertEquals(listOf("EnabledTool"), compiledNames["skillNames"].map { it.asText() })
-        assertEquals(listOf(FILE_SKILL_ID), customNames["skillNames"].map { it.asText() })
+        assertEquals("category_not_found", unknownCategoryNames["error"]["code"].asText())
+        assertTrue(unknownCategoryNames["category"].isNull)
         assertFalse(compiledNames.toString().contains("DisabledTool"))
         assertEquals(
             listOf(
@@ -221,6 +227,23 @@ private fun fileSkillBundle(): SkillBundle {
         skillMarkdownBody = "Use the file skill.",
     )
 }
+
+private fun approvingGate(repository: SkillRegistryRepository): SkillApprovalGate =
+    SkillApprovalGate(
+        registryRepository = repository,
+        llmValidator = SkillLlmValidator {
+            SkillLlmValidationVerdict(
+                decision = SkillLlmValidationDecision.APPROVE,
+                confidence = 1.0,
+                riskLevel = SkillRiskLevel.LOW,
+                reasons = listOf("test approval"),
+                requestedCapabilities = emptyList(),
+                suspiciousFiles = emptyList(),
+                findings = emptyList(),
+                model = "test",
+            )
+        },
+    )
 
 private class SingleBundleRepository(
     private val bundle: SkillBundle,
