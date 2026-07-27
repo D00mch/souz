@@ -45,7 +45,6 @@ object LocalStrictJsonContract {
         appendLine("- Use \"tool_calls\" when any tool is required before answering.")
         appendLine("- Tool call ids must be unique within the response.")
         appendLine("- Each object inside \"calls\" may contain only \"id\", \"name\", and \"arguments\".")
-        appendLine("- Every tool call \"name\" must exactly match one of the Active tool names below.")
         appendLine("- Tool arguments must be valid JSON objects that match the tool schema.")
         appendLine("- Inside \"arguments\", include only concrete argument values. Never copy schema keys like \"type\", \"properties\", \"required\", \"description\", or \"enum\".")
         if (toolsJson.isNotBlank()) {
@@ -65,7 +64,6 @@ class LocalStrictJsonParser {
         rawText: String,
         requestModel: String,
         usage: LLMResponse.Usage,
-        allowedToolNames: Set<String> = emptySet(),
         nativeFinishReason: String = "stop",
         created: Long = System.currentTimeMillis(),
         allowRawOutput: Boolean = false,
@@ -78,7 +76,7 @@ class LocalStrictJsonParser {
         val node = runCatching { restJsonMapper.readTree(trimmed) }
             .getOrElse { error ->
                 tryRecoverMalformedToolCalls(trimmed)?.let { recovered ->
-                    return parseToolCalls(recovered, requestModel, usage, created, allowedToolNames)
+                    return parseToolCalls(recovered, requestModel, usage, created)
                 }
                 tryRecoverMalformedFinalText(trimmed)?.let { recovered ->
                     return plainTextFinal(
@@ -106,23 +104,6 @@ class LocalStrictJsonParser {
 
         val type = node["type"]?.asText()
         if (type == null) {
-            val legacyToolCalls = node["tool_calls"]
-            if (legacyToolCalls?.isArray == true) {
-                return parseToolCalls(
-                    node = restJsonMapper.readTree(
-                        restJsonMapper.writeValueAsString(
-                            mapOf(
-                                "type" to "tool_calls",
-                                "calls" to legacyToolCalls,
-                            )
-                        )
-                    ),
-                    requestModel = requestModel,
-                    usage = usage,
-                    created = created,
-                    allowedToolNames = allowedToolNames,
-                )
-            }
             if (looksLikeSingleToolCall(node)) {
                 return parseToolCalls(
                     node = restJsonMapper.readTree(
@@ -136,7 +117,6 @@ class LocalStrictJsonParser {
                     requestModel = requestModel,
                     usage = usage,
                     created = created,
-                    allowedToolNames = allowedToolNames,
                 )
             }
             if (looksLikeResultObject(node)) {
@@ -156,7 +136,7 @@ class LocalStrictJsonParser {
 
         return when (type) {
             "final" -> parseFinal(node, requestModel, usage, finishReason, created)
-            "tool_calls" -> parseToolCalls(node, requestModel, usage, created, allowedToolNames)
+            "tool_calls" -> parseToolCalls(node, requestModel, usage, created)
             else -> plainTextFinal(
                 text = trimmed,
                 requestModel = requestModel,
@@ -535,7 +515,6 @@ class LocalStrictJsonParser {
         requestModel: String,
         usage: LLMResponse.Usage,
         created: Long,
-        allowedToolNames: Set<String>,
     ): LLMResponse.Chat {
         val callsNode = node["calls"]
         if (callsNode == null || !callsNode.isArray || callsNode.isEmpty) {
@@ -545,13 +524,6 @@ class LocalStrictJsonParser {
         val choices = callsNode.mapIndexed { index, callNode ->
             val name = callNode["name"]?.takeIf(JsonNode::isTextual)?.asText()
                 ?: return LLMResponse.Chat.Error(-1, "Local provider tool call #$index is missing string field \"name\".")
-            if (name !in allowedToolNames) {
-                return LLMResponse.Chat.Error(
-                    -1,
-                    "$UNADVERTISED_TOOL_CALL_ERROR_CODE: Local provider tool call #$index uses " +
-                        "unadvertised function \"$name\".",
-                )
-            }
             val id = callNode["id"]?.takeIf(JsonNode::isTextual)?.asText()
                 ?: return LLMResponse.Chat.Error(-1, "Local provider tool call #$index is missing string field \"id\".")
             val argumentsNode = callNode["arguments"]
@@ -591,5 +563,3 @@ class LocalStrictJsonParser {
         else -> LLMResponse.FinishReason.stop
     }
 }
-
-internal const val UNADVERTISED_TOOL_CALL_ERROR_CODE = "unadvertised_tool_call"
