@@ -6,13 +6,13 @@
 
 `NodesSkillsGraph` owns this context preparation and Knowledge-aware tool-result handling. `NodesCommon` owns generic tool-call execution and the classic inline-only tool-use node.
 
-Tool results larger than 4,096 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 4,096 bytes stays inline. `GetKnowledge` and `SearchKnowledge` results are never offloaded again. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
+Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 
 Knowledge entries use UTF-16 offsets and lengths because they retain Kotlin strings. `GetKnowledge` returns all retained content: a complete read returns its text, while a truncated read exposes the retained head and tail with their original ranges and the omitted range. `SearchKnowledge` searches retained segments independently, so it never matches across an omitted middle. A match without additional context omits its redundant excerpt and excerpt offsets. Knowledge is temporary and belongs to the exact tool-invocation conversation scope.
 
 ## Why this is fragile
 
-Advertising a small tool list without replacing executable lookup would let a fabricated call reach a catalog tool. Re-offloading Knowledge reads could create an endless chain of references. Measuring the boundary in Kotlin characters would incorrectly treat multibyte UTF-8 results.
+Advertising a small tool list without replacing executable lookup would let a fabricated call reach a catalog tool. Offloading skill discovery would replace model-consumable schemas and instructions with avoidable Knowledge references. Re-offloading Knowledge reads could create an endless chain of references. Measuring the boundary in Kotlin characters would incorrectly treat multibyte UTF-8 results.
 
 ## Safe changes
 
@@ -26,4 +26,4 @@ Advertising a small tool list without replacing executable lookup would let a fa
 
 ## Verification
 
-Run `./gradlew :agent:test`. Cover the 4,096/4,097-byte boundary with multibyte input, core-tool isolation, repeated tool loops, Knowledge-read exemption, storage failure, and cancellation.
+Run `./gradlew :agent:test`. Cover the 8,192/8,193-byte boundary with multibyte input, core-tool isolation, skill-discovery and Knowledge-read exemptions, repeated tool loops, storage failure, and cancellation.

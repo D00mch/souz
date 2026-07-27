@@ -1,5 +1,6 @@
 package ru.souz.tool.skills
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import kotlinx.coroutines.CancellationException
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -26,6 +27,7 @@ class ToolGetSkillsByCategory(
             properties = mapOf(
                 "category" to LLMRequest.Property("string", "Canonical category name."),
                 "skills" to LLMRequest.Property("array", "Full descriptions of Skills in the category."),
+                "executionSchema" to LLMRequest.Property("object", "Shared input and return schema for file-backed Skills in this response. Tool-backed Skills keep individual schemas on each Skill entry."),
                 "errors" to LLMRequest.Property("array", "Per-Skill or category lookup errors."),
             ),
         ),
@@ -72,14 +74,19 @@ class ToolGetSkillsByCategory(
 
         val skills = mutableListOf<SkillDetail>()
         val errors = mutableListOf<SkillDiscoveryError>()
+        var executionSchema: SkillExecutionSchema? = null
         for (skillId in names.skillNames) {
             val lookup = getSkillByName.getSkill(skillId, meta)
             lookup.skill?.let(skills::add)
+            if (executionSchema == null) {
+                executionSchema = lookup.executionSchema
+            }
             lookup.error?.let(errors::add)
         }
         return SkillsByCategoryResponse(
             category = names.category,
             skills = skills,
+            executionSchema = executionSchema,
             errors = errors,
         )
     }
@@ -92,5 +99,7 @@ class ToolGetSkillsByCategory(
 private data class SkillsByCategoryResponse(
     val category: String? = null,
     val skills: List<SkillDetail> = emptyList(),
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    val executionSchema: SkillExecutionSchema? = null,
     val errors: List<SkillDiscoveryError> = emptyList(),
 )

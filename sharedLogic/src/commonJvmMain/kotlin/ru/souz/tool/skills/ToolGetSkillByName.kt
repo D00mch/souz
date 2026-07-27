@@ -1,5 +1,6 @@
 package ru.souz.tool.skills
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -45,6 +46,7 @@ class ToolGetSkillByName(
             type = "object",
             properties = mapOf(
                 "skill" to LLMRequest.Property("object", "The full Skill description, or null on error."),
+                "executionSchema" to LLMRequest.Property("object", "Shared input and return schema for file-backed Skills. Tool-backed Skills keep individual schemas on the Skill entry."),
                 "error" to LLMRequest.Property("object", "A lookup error, or null on success."),
             ),
         ),
@@ -97,7 +99,10 @@ class ToolGetSkillByName(
                 else -> {
                     val bundle = repository.loadSkillBundle(meta.userId, SkillId(skillId))
                     when {
-                        bundle != null -> SkillLookupResponse(skill = bundle.toDetail())
+                        bundle != null -> SkillLookupResponse(
+                            skill = bundle.toDetail(),
+                            executionSchema = fileSkillExecutionSchema(),
+                        )
                         skillId in unfilteredTools -> SkillLookupResponse(
                             error = SkillDiscoveryError(
                                 skillId,
@@ -137,18 +142,19 @@ class ToolGetSkillByName(
         fewShotExamples = fn.fewShotExamples.orEmpty(),
     )
 
+    private fun fileSkillExecutionSchema(): SkillExecutionSchema = SkillExecutionSchema(
+        inputSchema = legacyCommandTool.fn.parameters.withoutLegacyBindings(),
+        returnSchema = sandboxCommandResultSchema(),
+    )
+
     private fun SkillBundle.toDetail(): BundleSkillDetail = BundleSkillDetail(
         skillId = skillId.value,
         name = manifest.name,
         description = manifest.description,
         skillMarkdownBody = skillMarkdownBody,
-        author = manifest.author,
-        version = manifest.version,
         supportingFiles = files
             .map { it.normalizedPath }
             .filterNot { it == SKILL_MARKDOWN_PATH },
-        inputSchema = legacyCommandTool.fn.parameters.withoutLegacyBindings(),
-        returnSchema = sandboxCommandResultSchema(),
     )
 
     private fun LLMRequest.Parameters.withoutLegacyBindings(): LLMRequest.Parameters = copy(
@@ -164,12 +170,19 @@ class ToolGetSkillByName(
 
 internal data class SkillLookupResponse(
     val skill: SkillDetail? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    val executionSchema: SkillExecutionSchema? = null,
     val error: SkillDiscoveryError? = null,
 )
 
 internal sealed interface SkillDetail {
     val skillId: String
 }
+
+internal data class SkillExecutionSchema(
+    val inputSchema: LLMRequest.Parameters,
+    val returnSchema: LLMRequest.Parameters,
+)
 
 private data class ToolSkillDetail(
     override val skillId: String,
@@ -185,11 +198,7 @@ private data class BundleSkillDetail(
     val name: String,
     val description: String,
     val skillMarkdownBody: String,
-    val author: String?,
-    val version: String?,
     val supportingFiles: List<String>,
-    val inputSchema: LLMRequest.Parameters,
-    val returnSchema: LLMRequest.Parameters,
 ) : SkillDetail
 
 internal data class SkillDiscoveryError(

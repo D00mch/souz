@@ -1,5 +1,6 @@
 package ru.souz.tool.skills
 
+import com.fasterxml.jackson.databind.JsonNode
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -154,27 +155,81 @@ class SkillRuntimeToolsTest {
         assertEquals("filtered compiled", toolDetail["description"].asText())
         assertTrue(toolDetail["inputSchema"]["properties"].has("filteredArgument"))
         assertEquals("filtered example", toolDetail["fewShotExamples"].single()["request"].asText())
+        assertFalse(categoryResponse.has("executionSchema"))
         assertTrue(categoryResponse["errors"].isEmpty)
         assertEquals(
             listOf("bundle-skill", "disabled"),
             customCategoryResponse["skills"].map { it["skillId"].asText() },
         )
+        assertTrue(customCategoryResponse["executionSchema"]["inputSchema"]["properties"].has("runtime"))
+        assertTrue(customCategoryResponse["executionSchema"]["returnSchema"]["properties"].has("stdout"))
         assertTrue(customCategoryResponse["errors"].isEmpty)
 
         val bundleDetail = bundleResponse["skill"]
         assertEquals("Use the complete bundle instructions.", bundleDetail["skillMarkdownBody"].asText())
         assertEquals(listOf("scripts/helper.sh"), bundleDetail["supportingFiles"].map { it.asText() })
         assertFalse(bundleDetail.toString().contains("supporting-secret-content"))
-        assertFalse(bundleDetail["inputSchema"]["properties"].has("skillId"))
-        assertFalse(bundleDetail["inputSchema"]["properties"].has("activeSkills"))
-        assertTrue(bundleDetail["inputSchema"]["properties"].has("runtime"))
-        assertTrue(bundleDetail["returnSchema"]["properties"].has("stdout"))
+        assertEquals(
+            setOf("skillId", "name", "description", "skillMarkdownBody", "supportingFiles"),
+            bundleDetail.fieldNameSet(),
+        )
+        assertFalse(bundleDetail.has("author"))
+        assertFalse(bundleDetail.has("version"))
+        assertFalse(bundleDetail.has("inputSchema"))
+        assertFalse(bundleDetail.has("returnSchema"))
+        assertFalse(bundleResponse["executionSchema"]["inputSchema"]["properties"].has("skillId"))
+        assertFalse(bundleResponse["executionSchema"]["inputSchema"]["properties"].has("activeSkills"))
+        assertTrue(bundleResponse["executionSchema"]["inputSchema"]["properties"].has("runtime"))
+        assertTrue(bundleResponse["executionSchema"]["returnSchema"]["properties"].has("stdout"))
 
         assertEquals("Description disabled", disabledResponse["skill"]["description"].asText())
         assertEquals("compiled collision", collisionResponse["skill"]["description"].asText())
         assertEquals("invalid_skill_id", blankResponse["error"]["code"].asText())
         assertEquals("skill_not_found", missingResponse["error"]["code"].asText())
         coVerify(exactly = 0) { repository.loadSkillBundle(any(), SkillId("collision")) }
+    }
+
+    @Test
+    fun `file backed category returns one shared schema and complete markdown bodies`() = runTest {
+        val completeBody = """
+            # Complete Instructions
+
+            Keep the full authored instruction body available to the LLM.
+
+            1. Preserve numbered steps.
+            2. Preserve fenced command examples.
+
+            ```bash
+            printf 'alpha'
+            ```
+
+            Final line must remain present.
+        """.trimIndent()
+        val repository = repository(
+            bundle("alpha", body = completeBody),
+            bundle("beta", body = "Use beta instructions."),
+        )
+        val response = getSkillsByCategoryTool(repository).call(
+            mapOf("category" to DEFAULT_STORED_SKILLS_CATEGORY)
+        )
+        val skillsById = response["skills"].associateBy { it["skillId"].asText() }
+
+        assertEquals(1, response.countFieldName("executionSchema"))
+        assertEquals(1, response.countFieldName("inputSchema"))
+        assertEquals(1, response.countFieldName("returnSchema"))
+        assertTrue(response["executionSchema"]["inputSchema"]["properties"].has("runtime"))
+        assertTrue(response["executionSchema"]["returnSchema"]["properties"].has("stdout"))
+        assertEquals(completeBody, skillsById.getValue("alpha")["skillMarkdownBody"].asText())
+        response["skills"].forEach { skill ->
+            assertEquals(
+                setOf("skillId", "name", "description", "skillMarkdownBody", "supportingFiles"),
+                skill.fieldNameSet(),
+            )
+            assertFalse(skill.has("author"))
+            assertFalse(skill.has("version"))
+            assertFalse(skill.has("inputSchema"))
+            assertFalse(skill.has("returnSchema"))
+        }
     }
 
     @Test
@@ -494,6 +549,33 @@ private suspend fun LLMToolSetup.call(
     invoke(LLMResponse.FunctionCall(fn.name, arguments), meta).content
 )
 
+private fun JsonNode.fieldNameSet(): Set<String> = fieldNames().asSequence().toSet()
+
+private fun JsonNode.countFieldName(name: String): Int {
+    var count = 0
+
+    fun visit(node: JsonNode) {
+        when {
+            node.isObject -> {
+                val fields = node.fields()
+                while (fields.hasNext()) {
+                    val (fieldName, value) = fields.next()
+                    if (fieldName == name) count += 1
+                    visit(value)
+                }
+            }
+            node.isArray -> {
+                for (child in node) {
+                    visit(child)
+                }
+            }
+        }
+    }
+
+    visit(this)
+    return count
+}
+
 private fun bundle(
     skillId: String,
     body: String = "Follow these instructions.",
@@ -504,15 +586,15 @@ private fun bundle(
         add(
             SkillFile(
                 normalizedPath = "SKILL.md",
-                content = """
-                    ---
-                    name: Name $skillId
-                    description: Description $skillId
-                    author: Test Author
-                    version: 1.0
-                    ---
-                    $body
-                """.trimIndent().toByteArray(),
+                content = buildString {
+                    appendLine("---")
+                    appendLine("name: Name $skillId")
+                    appendLine("description: Description $skillId")
+                    appendLine("author: Test Author")
+                    appendLine("version: 1.0")
+                    appendLine("---")
+                    append(body)
+                }.toByteArray(),
             )
         )
         supportingFiles.forEach { (path, fileContent) ->
