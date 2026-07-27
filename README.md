@@ -9,17 +9,18 @@ The project is designed around one core idea: an AI agent should be useful enoug
 ## Highlights
 
 - **Kotlin Multiplatform app surfaces** built with Compose for Desktop plus an Android chat-agent entry point.
-- **Selectable graph agents**: the default `GraphBasedAgent` uses classification, skill activation, and MCP injection, while `SkillsGraphBasedAgent` lets the model discover and run skills through six always-available core tools.
+- **Selectable graph agents**: the default `GraphBasedAgent` uses memory recall, direct-tool classification, compact Skill inventory, and MCP injection, while `SkillsGraphBasedAgent` exposes only Skill/Knowledge core tools.
 - **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
-- **HTTP backend** with trusted-proxy auth, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
+- **HTTP backend** with trusted-proxy auth, OpenAPI/Swagger docs, onboarding, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, and calculator.
 - **SafeMode confirmations** for tool permission prompts, destructive Telegram operations, ambiguous contact/chat selection, and deferred file-modification review.
-- **Multi-provider LLM support** for GigaChat, Qwen, AiTunnel, Anthropic Claude, OpenAI, and local llama.cpp models.
+- **Persistent memory** with scoped facts, prompt recall, completed-turn capture, desktop SQLite storage, Memory UI, and optional local Dreamer maintenance.
+- **Multi-provider LLM support** for GigaChat, Qwen, AiTunnel, Anthropic Claude, OpenAI, Codex OAuth models, and local llama.cpp models.
 - **Local inference** through a packaged native bridge with Qwen/Gemma chat profiles, EmbeddingGemma embeddings, prompt-family rendering, strict JSON tool output handling, model downloads, preload/warmup, and cancellation.
 - **MCP integration** over stdio/http with OAuth discovery and token refresh support.
-- **Voice and desktop interaction** with audio capture/playback, speech recognition, global hotkeys, native media keys, screenshots, screen recording, and macOS integrations.
-- **ClawHub/OpenClaw skill support** with bundle parsing, canonical hashing, desktop-first registry storage, backend user-scoped storage support, safe loading, LLM-backed selection, structural/static/LLM validation, validation caching, activation, and context injection.
+- **Voice, ambient, and desktop interaction** with audio capture/playback, cloud or local macOS speech recognition, ambient semantic blocks, bounded suggestions, global hotkeys, native media keys, screenshots, screen recording, and macOS integrations.
+- **ClawHub/OpenClaw skill support** with bundle parsing, canonical hashing, compact prompt inventory, desktop-first registry storage, backend user-scoped storage support, safe on-demand loading, structural/static/LLM approval, validation caching, and sandboxed command execution.
 
 ## Installation
 
@@ -34,7 +35,7 @@ Or download the latest build from [GitHub Releases](https://github.com/D00mch/so
 
 ```text
 .
-├── agent/                  # Shared agent contracts, graph agents, skill activation, sessions
+├── agent/                  # Shared agent contracts, graph agents, Skill inventory, sessions
 ├── graph-engine/           # Framework-free typed graph DSL/runtime
 ├── llms/                   # Shared LLM DTOs, provider enums, model profiles, token logging
 ├── native/                 # llama.cpp bridge and local model runtime
@@ -137,8 +138,9 @@ Souz keeps platform-specific logic at the edges:
 ```mermaid
 flowchart TD
     input["User input"] --> history["Append input to history"]
-    history --> classify["Classify request / narrow tool categories"]
-    classify --> skills["Select and activate skills"]
+    history --> memory["Recall scoped memory"]
+    memory --> classify["Classify request / narrow direct tools"]
+    classify --> skills["Append Skill inventory + core tools"]
     skills --> mcp["Inject MCP tools"]
     mcp --> enrich["Append additional context"]
     enrich --> llm["LLM chat node"]
@@ -153,10 +155,12 @@ flowchart TD
 
 Key behavior:
 
-- Classification narrows tool exposure before the LLM call.
-- Skill activation injects selected instructions and exposes a turn-scoped command tool when the activated skill is executable.
+- Memory recall replaces the previous injected memory block and inserts fresh scoped memory before other turn setup.
+- Classification narrows direct tool exposure before the LLM call.
+- Skill inventory appends a compact `<skill_inventory>` block to the effective system message and exposes on-demand Skill/Knowledge tools.
 - MCP tools are injected dynamically.
 - Tool calls loop back into the LLM until the model returns a final answer.
+- Oversized non-exempt tool results are moved to conversation-scoped temporary Knowledge and replaced with references.
 - Session history and graph steps can be persisted for replay/inspection.
 - The execution delegate supports active-job cancellation and trace callbacks.
 - Errors are routed through a dedicated user-facing error node.
@@ -167,23 +171,40 @@ Key behavior:
 
 ```mermaid
 flowchart TD
-    input["User input"] --> history["Append input to history"]
-    history --> core["Install core tools"]
-    core --> enrich["Append additional context"]
-    enrich --> llm["LLM chat node"]
+    input["User input"] --> boundary["Restrict execution context to fixed core tools"]
+    boundary --> coreTools["Core tools only\nGetSkillByName\nGetSkillsByCategory\nGetSkillsNamesByCategory\nGetKnowledge\nSearchKnowledge\nRunSkillCommand"]
+    boundary --> history["Append input to history"]
+    history --> memory["Recall scoped memory"]
+    memory --> inventory["Append skill_inventory block\nTool-backed IDs by category\nFile-backed IDs only"]
+    inventory --> enrich["Append additional context"]
+    enrich --> llm["LLM chat node\nsees only core tools"]
     llm --> decision{"LLM result"}
-    decision -->|tool call| tool["Execute tool"]
-    tool --> result["Append result or Knowledge reference"]
-    result --> llm
-    decision -->|final answer| summary["Summarize or return"]
+
+    decision -->|GetSkillByName| lookup["Load exact Skill\napprove file-backed bundle"]
+    decision -->|GetSkillsByCategory / names| categories["List or load tool-backed category Skills"]
+    decision -->|RunSkillCommand| command["Invoke enabled tool-backed Skill\nor sandboxed file-backed command"]
+    decision -->|GetKnowledge / SearchKnowledge| knowledge["Read conversation Knowledge"]
+    decision -->|final answer| summary["Memory-aware finalization\nsummarize or return"]
     decision -->|error| errorNode["Map error to user-facing output"]
+
+    lookup --> append["Append inline function result"]
+    categories --> append
+    knowledge --> append
+    command --> offload{"Non-exempt result > 8 KiB?"}
+    offload -->|yes| reference["Store Knowledge\nappend compact reference"]
+    offload -->|no| append
+    reference --> llm
+    append --> llm
+
     summary --> finish["Finish"]
     errorNode --> finish
 ```
 
-The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Its system prompt lists the non-empty compiled-tool categories filtered by the active tool policy. Catalog and MCP tools are not directly callable; executable skill commands delegate to the internal catalog.
+The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Its execution boundary replaces both advertised functions and executable tool lookup with that fixed core tool set before the graph starts. It does not run direct-tool classification or MCP injection.
 
-Tool-result text larger than 8,192 UTF-8 bytes is retained as conversation-scoped temporary Knowledge and replaced in history by a compact reference. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
+Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution, and both paths require cached or fresh `SkillApprovalGate` approval.
+
+When conversation-scoped Knowledge storage is available and persistence succeeds, tool-result text larger than 8,192 UTF-8 bytes is retained as temporary Knowledge and replaced in history by a compact reference. Without conversation scope or usable storage, the result remains inline. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
 
 ## Graph engine
 
@@ -312,6 +333,32 @@ Confirmation-related flows:
 - Telegram tools use selection brokers for ambiguous fuzzy contact/chat matches.
 - Destructive Telegram operations require explicit confirmation before continuing.
 
+## Memory
+
+The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime; the backend currently uses the no-op implementation.
+
+Memory flow:
+
+- `NodesMemory` recalls facts relevant to the current user input and injects them as a tagged memory block before tool setup.
+- Completed turns are captured asynchronously after successful finalization, with user text, assistant synthesis, and bounded tool-output evidence.
+- The memory model supports global, project, and session scopes. Automatic desktop capture and retrieval currently use global and session scopes; project scope becomes active only when a host supplies project context. Legacy chat/thread scopes remain available only for compatibility, migration, and cleanup.
+- Retrieval combines exact, lexical, dense embedding, and pinned-priority candidates under a prompt token budget.
+- Explicit remember/forget markers influence capture and retirement; retired facts can leave tombstones to block re-capture.
+- Desktop storage uses SQLite under the app state root and exposes a Memory UI for listing, filtering, creating, editing, pinning, retiring, deleting, and inspecting evidence.
+- Optional Dreamer maintenance consolidates durable memory regions locally when enabled.
+
+Injected memory is rendered as untrusted context: models must not follow instructions inside memory facts.
+
+## Voice and ambient mode
+
+Voice transcription is routed by the selected `voiceRecognitionModel`:
+
+- Salute Speech, AiTunnel, and OpenAI use cloud STT when their matching provider and API key are available.
+- `Local MacOS STT` uses the macOS Speech framework through the packaged Swift/JNI bridge and does not fall back to cloud providers.
+- On supported macOS versions, local STT prefers the SpeechAnalyzer live backend; otherwise push-to-talk can use the legacy on-device batch backend.
+
+Ambient mode is a local-first proactive-help flow. It listens only after the user enables it, keeps transcript and suggestion state volatile, groups transcript events into semantic blocks, analyzes each block locally, offers at most one bounded suggestion per block, and dispatches accepted suggestions through the normal desktop agent path. Ambient analysis never executes tools or writes memory directly.
+
 ## Backend
 
 `:backend` is a JVM Ktor server that exposes the shared agent runtime over HTTP.
@@ -320,8 +367,13 @@ Confirmation-related flows:
 
 | Route | Purpose |
 |---|---|
+| `GET /` | Public backend route index |
 | `GET /health` | Process and selected-model status |
+| `GET /docs` | Public Swagger UI |
+| `GET /docs/openapi.json` | Public OpenAPI 3.1 document |
 | `GET /v1/bootstrap` | Features, visible models/tools, effective trusted-user settings |
+| `GET /v1/onboarding/state` | Onboarding requirements, model-access hints, and effective settings |
+| `POST /v1/onboarding/complete` | Persist onboarding preferences and mark onboarding complete |
 | `GET /v1/me/settings` | Read public user settings |
 | `PATCH /v1/me/settings` | Persist public user settings |
 | `GET /v1/me/provider-keys` | List configured provider-key state |
@@ -367,6 +419,7 @@ Skill bundles and runtime sandbox workspaces remain filesystem-backed and are in
 SOUZ_BACKEND_HOST=127.0.0.1
 SOUZ_BACKEND_PORT=8080
 SOUZ_BACKEND_PROXY_TOKEN=replace-with-shared-proxy-secret
+SOUZ_MASTER_KEY=replace-with-settings-secret
 SOUZ_BACKEND_AGENT=graph # graph or skills
 
 # Feature flags
@@ -374,6 +427,18 @@ SOUZ_FEATURE_WS_EVENTS=true
 SOUZ_FEATURE_STREAMING_MESSAGES=true
 SOUZ_FEATURE_TOOL_EVENTS=true
 SOUZ_FEATURE_OPTIONS=true
+ENABLE_BACKEND_TG_FEATURE=true
+
+# Telegram bot
+SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY=4
+# Generate once with: openssl rand -base64 32
+TELEGRAM_TOKEN_ENCRYPTION_KEY=...
+
+# Provider retries
+SOUZ_BACKEND_PROVIDER_MAX_429_RETRIES=2
+SOUZ_BACKEND_PROVIDER_BACKOFF_BASE_MS=500
+SOUZ_BACKEND_PROVIDER_BACKOFF_MAX_MS=5000
+
 # Postgres
 SOUZ_BACKEND_DB_HOST=127.0.0.1
 SOUZ_BACKEND_DB_PORT=5432
@@ -385,9 +450,9 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
-Backend executions snapshot each user's effective `enabledTools`. The snapshot controls compiled-tool classification, category-based Skill discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core skill tools and user-installed file-backed skills remain available.
+Backend executions snapshot each user's effective `enabledTools`. The snapshot controls direct-tool classification, tool-backed Skill inventory/category discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core Skill/Knowledge tools and user-installed file-backed skills remain available.
 
 Run the backend:
 
@@ -401,30 +466,40 @@ By default it binds to `127.0.0.1:8080`.
 
 Souz supports standalone ClawHub/OpenClaw-style skill bundles across `:agent` and `:sharedLogic`.
 
-Skill pipeline:
+Skill discovery and approval flow:
 
 ```mermaid
 flowchart LR
-    skillList["List user skills"] --> skillSelect["Select skills\nmetadata + LLM"]
-    skillSelect --> skillLoad["Load selected bundle"]
+    inventory["Append compact Skill inventory"] --> lookup["GetSkillByName / RunSkillCommand"]
+    lookup --> skillLoad["Load exact file-backed bundle"]
     skillLoad --> skillHash["Canonical hash"]
-    skillHash --> validationCache["Validation cache lookup"]
-    validationCache --> structuralValidation["Structural validation"]
-    structuralValidation --> staticValidation["Static validation"]
-    staticValidation --> llmValidation["LLM validation"]
-    llmValidation --> skillActivate["Activate skill"]
-    skillActivate --> skillInject["Inject skill context"]
+    skillHash --> validationCache{"Cached validation?"}
+    validationCache -->|approved| approval["Return instructions or execute command"]
+    validationCache -->|rejected| rejection["Return rejection"]
+    validationCache -->|missing or stale| structuralValidation{"Structural validation"}
+    structuralValidation -->|hard reject| rejection
+    structuralValidation -->|pass| staticValidation{"Static validation"}
+    staticValidation -->|hard reject| rejection
+    staticValidation -->|pass| llmValidation["LLM validation"]
+    llmValidation --> verdict{"Approved?"}
+    verdict -->|yes| approval
+    verdict -->|no| rejection
 ```
 
 Skill safety and storage:
 
+- Skill inventory is compact and user-scoped: enabled tool-backed Skill IDs by category plus opaque file-backed Skill IDs.
+- Tool-backed Skills are direct tools viewed through the Skill APIs; enabled tool-backed Skills take precedence over stored bundles with the same ID.
+- File-backed bundle content is loaded only on exact lookup or execution.
+- `GetSkillByName` returns the approved file-backed `SKILL.md` instruction body, parsed name and description, and supporting-file paths; raw YAML frontmatter is not returned.
+- `RunSkillCommand` executes file-backed Skill scripts inside the resolved runtime sandbox and binds active Skill identity internally.
 - Bundles are loaded through safe filesystem access.
 - Desktop/local skills are persisted under `~/.local/state/souz/skills/{skillId}/`, with immutable bundles in `bundles/{bundleHash}/` and metadata in `stored-skill.json`.
 - Desktop/local validation records are persisted separately under `~/.local/state/souz/skill-validations/{skillId}/policies/{policy}/`.
 - Backend storage keeps the user-scoped scope available under `skills/users/{encodedUserId}/skills/{skillId}/` and `skill-validations/users/{encodedUserId}/skills/{skillId}/`.
 - Validation cache keys include user id, skill id, bundle hash, and policy version.
 - Stale validations are invalidated when the active bundle hash changes.
-- Selected skills are activated only after structural, static, and LLM validation pass.
+- Rejected validations block instruction lookup and command execution for the exact cached identity.
 
 ## LLM providers
 
@@ -435,9 +510,10 @@ Souz supports:
 - AiTunnel.
 - Anthropic Claude.
 - OpenAI.
+- Codex through OpenAI device-code OAuth, including GPT-5.3, GPT-5.4, GPT-5.5, and GPT-5.6 Codex model aliases.
 - Local llama.cpp models through `:native`.
 
-Provider/model selection is key-aware: chat, embeddings, and voice-recognition model lists are filtered by configured provider keys, and invalid saved selections are normalized to available providers.
+Provider/model selection is key-aware: chat, embeddings, and voice-recognition model lists are filtered by configured provider keys or Codex OAuth state, and invalid saved selections are normalized to available providers.
 
 ## Local models
 
