@@ -1,0 +1,187 @@
+components:
+  schemas:
+    UUID:
+      type: string
+      format: uuid
+    DateTime:
+      type: string
+      format: date-time
+    NonEmptyString:
+      type: string
+      minLength: 1
+      pattern: "\\S"
+    ArbitraryJson:
+      description: Any JSON value.
+    DeviceType:
+      type: string
+      enum: [tv_box, smart_speaker, smartphone, unknown]
+    DeviceChannel:
+      type: string
+      enum: [voice, screen, mobile]
+    DeviceCapability:
+      type: string
+      enum: [speech, screen, device_tools, user_permissions, deep_links, oauth]
+    Device:
+      type: object
+      additionalProperties: false
+      required: [deviceId, deviceType, channel, capabilities]
+      properties:
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
+        channel:
+          $ref: "#/components/schemas/DeviceChannel"
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/DeviceCapability"
+        appVersion:
+          type: string
+        platform:
+          type: string
+    VoiceIdentityHint:
+      type: object
+      additionalProperties: false
+      properties:
+        profileId:
+          type: [string, "null"]
+        confidence:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+        identified:
+          type: boolean
+    Chat:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        title:
+          type: [string, "null"]
+    Message:
+      type: object
+      additionalProperties: false
+      required: [id, chatId, seq, role, content, createdAt]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        seq:
+          type: integer
+          format: int64
+          minimum: 1
+        role:
+          type: string
+          enum: [user, assistant, system, tool]
+        content:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    ExecutionStatus:
+      type: string
+      enum: [queued, running, waiting_option, cancelling, completed, failed, cancelled]
+    Execution:
+      type: object
+      additionalProperties: false
+      required: [id, chatId, status, startedAt, cancelRequested]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        userMessageId:
+          anyOf:
+            - $ref: "#/components/schemas/UUID"
+            - type: "null"
+        assistantMessageId:
+          anyOf:
+            - $ref: "#/components/schemas/UUID"
+            - type: "null"
+        status:
+          $ref: "#/components/schemas/ExecutionStatus"
+        requestId:
+          type: [string, "null"]
+        clientMessageId:
+          type: [string, "null"]
+        model:
+          type: [string, "null"]
+        provider:
+          type: [string, "null"]
+        startedAt:
+          $ref: "#/components/schemas/DateTime"
+        finishedAt:
+          anyOf:
+            - $ref: "#/components/schemas/DateTime"
+            - type: "null"
+        cancelRequested:
+          type: boolean
+        errorCode:
+          type: [string, "null"]
+        errorMessage:
+          type: [string, "null"]
+        usage:
+          anyOf:
+            - $ref: "#/components/schemas/ExecutionUsage"
+            - type: "null"
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    ExecutionUsage:
+      type: object
+      additionalProperties: false
+      required: [promptTokens, completionTokens, totalTokens, precachedTokens]
+      properties:
+        promptTokens:
+          type: integer
+          minimum: 0
+        completionTokens:
+          type: integer
+          minimum: 0
+        totalTokens:
+          type: integer
+          minimum: 0
+        precachedTokens:
+          type: integer
+          minimum: 0
+    ErrorCode:
+      type: string
+      enum:
+        - invalid_request
+        - unauthorized
+        - chat_not_found
+        - execution_not_found
+        - option_not_found
+        - idempotency_conflict
+        - chat_already_has_active_execution
+        - feature_disabled
+        - command_rejected
+        - internal_error
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"

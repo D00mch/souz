@@ -1,0 +1,66 @@
+asyncapi: 3.0.0
+info:
+  title: Orion-Souz WebSocket Protocol
+  version: 1.0.0-draft
+  description: Bidirectional chat WebSocket. The application described here is Souz.
+servers:
+  production:
+    host: souz.example.ru
+    protocol: wss
+channels:
+  chat:
+    address: /v1/chats/{chatId}/ws
+    parameters:
+      chatId:
+        description: Souz chat UUID.
+    bindings:
+      ws:
+        headers:
+          type: object
+          additionalProperties: false
+          required: [X-Souz-Proxy-Auth, X-User-Id]
+          properties:
+            X-Souz-Proxy-Auth:
+              type: string
+            X-User-Id:
+              type: string
+              description: Authoritative Souz user ID; for Orion this is the validated SberID.UUID.
+        query:
+          type: object
+          additionalProperties: false
+          properties:
+            afterSeq:
+              type: integer
+              format: int64
+              minimum: 0
+operations:
+  sendServerFrames:
+    action: send
+    channel:
+      $ref: "#/channels/chat"
+    messages:
+      - $ref: "#/components/messages/SouzServerEvent"
+      - $ref: "#/components/messages/CommandAck"
+  receiveOrionCommands:
+    action: receive
+    channel:
+      $ref: "#/channels/chat"
+    messages:
+      - $ref: "#/components/messages/OrionCommand"
+components:
+  messages:
+    SouzServerEvent:
+      name: SouzServerEvent
+      title: Souz event
+      payload:
+        $ref: "./schemas/events.yaml#/components/schemas/SouzServerEvent"
+    OrionCommand:
+      name: OrionCommand
+      title: Orion command
+      payload:
+        $ref: "./schemas/commands.yaml#/components/schemas/OrionCommand"
+    CommandAck:
+      name: CommandAck
+      title: Command acknowledgement
+      payload:
+        $ref: "./schemas/commands.yaml#/components/schemas/CommandAck"
