@@ -10,6 +10,7 @@ import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.LocalModelDownloadPromptUi
@@ -66,6 +67,7 @@ data class SettingsState(
     val voiceInputReviewEnabled: Boolean = false,
     val useEnglishVersion: Boolean = false,
     val useEnglishInterface: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val safeModeEnabled: Boolean = false,
     val activeAgentId: AgentId = AgentId.default,
     val availableAgents: List<AgentId> = AgentId.entries,
@@ -106,7 +108,9 @@ data class SettingsState(
     val telegramCodeHint: String? = null,
     val telegramPasswordHint: String? = null,
     val telegramAuthBusy: Boolean = false,
+    val telegramOperationBusy: Boolean = false,
     val telegramAuthError: String? = null,
+    val telegramAuthInfo: String? = null,
     val isTelegramSupported: Boolean = true,
     val isTelegramBotActive: Boolean = false,
     val showBotDeleteConfirmation: Boolean = false,
@@ -140,6 +144,7 @@ sealed interface SettingsEvent : VMEvent {
     data class InputVoiceInputReviewEnabled(val enabled: Boolean): SettingsEvent
     data class InputUseEnglishVersion(val enabled: Boolean): SettingsEvent
     data class InputUseEnglishInterface(val enabled: Boolean): SettingsEvent
+    data class SelectThemeMode(val mode: ThemeMode) : SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectAgent(val agentId: AgentId): SettingsEvent
     object ConfirmAgentSwitch : SettingsEvent
@@ -162,6 +167,8 @@ sealed interface SettingsEvent : VMEvent {
     object SubmitTelegramPhone : SettingsEvent
     object SubmitTelegramCode : SettingsEvent
     object SubmitTelegramPassword : SettingsEvent
+    object RequestTelegramCodeAgain : SettingsEvent
+    object RestartTelegramAuth : SettingsEvent
     object TelegramLogout : SettingsEvent
     object ChooseVoice : SettingsEvent
     object ResetSystemPrompt: SettingsEvent

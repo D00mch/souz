@@ -13,7 +13,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -26,6 +25,7 @@ import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.AppTheme
+import ru.souz.ui.souzColors
 import ru.souz.ui.graphlog.GraphSessionsScreen
 import ru.souz.ui.graphlog.GraphVisualizationScreen
 import ru.souz.ui.common.RealLiquidGlassCard
@@ -138,7 +138,10 @@ fun SettingsScreen(
                     )
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(stringResource(Res.string.error_session_not_found), color = Color.White)
+                        Text(
+                            stringResource(Res.string.error_session_not_found),
+                            color = MaterialTheme.souzColors.settings.content,
+                        )
                         Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text(stringResource(Res.string.button_back)) }
                     }
                 }
@@ -152,9 +155,8 @@ fun SettingsScreen(
                 TelegramSettingsScreen(
                     state = state,
                     onClose = { viewModel.send(SettingsEvent.BackToSettings) },
+                    onEvent = viewModel::send,
                     onStartWork = { viewModel.send(SettingsEvent.GoToMain) },
-                    onCreateControlBot = { viewModel.send(SettingsEvent.CreateControlBot) },
-                    onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
                     onConfirmDisconnectControlBot = { viewModel.send(SettingsEvent.ConfirmDisconnectTelegramBot) },
                     onCancelDisconnectControlBot = { viewModel.send(SettingsEvent.CancelDisconnectTelegramBot) },
                 )
@@ -171,8 +173,6 @@ fun SettingsScreenMain(
     onOpenTools: () -> Unit,
     onShowSnack: (String) -> Unit
 ) {
-    val windowInfo = LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
     val clipboardManager = LocalClipboardManager.current
 
     Box(
@@ -181,7 +181,6 @@ fun SettingsScreenMain(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused
         ) {
             Row(
                 modifier = Modifier
@@ -200,7 +199,7 @@ fun SettingsScreenMain(
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(1.dp)
-                        .background(SettingsUiColors.sidebarBorder)
+                        .background(MaterialTheme.souzColors.settings.sidebarBorder)
                 )
 
                 // Content Area
@@ -233,6 +232,7 @@ fun SettingsScreenMain(
                             onVoiceInputReviewEnabledChange = { viewModel.send(SettingsEvent.InputVoiceInputReviewEnabled(it)) },
                             onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
                             onUseEnglishInterfaceChange = { viewModel.send(SettingsEvent.InputUseEnglishInterface(it)) },
+                            onThemeModeChange = { viewModel.send(SettingsEvent.SelectThemeMode(it)) },
                             onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                             onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
                             onClose = onClose
@@ -316,7 +316,7 @@ fun SettingsScreenPreview() {
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(1.dp)
-                        .background(SettingsUiColors.sidebarBorder)
+                        .background(MaterialTheme.souzColors.settings.sidebarBorder)
                 )
 
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {

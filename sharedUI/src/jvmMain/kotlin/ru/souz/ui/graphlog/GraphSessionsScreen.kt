@@ -16,19 +16,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.souz.agent.session.GraphSession
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.glassColors
+import ru.souz.ui.souzColors
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import java.text.SimpleDateFormat
@@ -44,8 +43,6 @@ fun GraphSessionsScreen(
     onSelectSession: (GraphSession) -> Unit,
 ) {
     val sessions by remember { mutableStateOf(sessionRepository.loadAll()) }
-    val windowInfo = LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
@@ -69,7 +66,6 @@ fun GraphSessionsScreen(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused
         ) {
             Column(
                 modifier = Modifier
@@ -137,6 +133,7 @@ private fun SessionCard(
     session: GraphSession,
     onClick: () -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.graph
     val dateFormat = remember { SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()) }
     val startDate = remember(session.startTime) { dateFormat.format(Date(session.startTime)) }
     
@@ -154,7 +151,7 @@ private fun SessionCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(colors.itemBackground)
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
@@ -193,7 +190,7 @@ private fun SessionCard(
             Text(
                 text = nodePath,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF82B1FF).copy(alpha = 0.8f),
+                color = colors.inputText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

@@ -42,7 +42,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
@@ -119,9 +118,6 @@ fun ToolsScreen(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
-    // Получаем фокус окна
-    val windowInfo = LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
@@ -145,7 +141,6 @@ fun ToolsScreen(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused // Передаем статус фокуса
         ) {
             val scrollState = rememberScrollState(state.scrollPosition)
 

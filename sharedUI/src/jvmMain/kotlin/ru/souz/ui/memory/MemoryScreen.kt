@@ -36,6 +36,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -57,7 +59,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,8 +68,8 @@ import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.compose.localDI
 import ru.souz.memory.MemoryMaintenanceBlockReason
 import ru.souz.memory.MemoryMaintenanceMode
+import ru.souz.ui.memoryColors
 import ru.souz.ui.common.DraggableWindowArea
-import ru.souz.ui.common.LiquidGlassPreset
 import ru.souz.ui.common.RealLiquidGlassCard
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.button_close
@@ -125,8 +126,6 @@ fun MemoryScreen(
     onClose: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
-    val isFocused = LocalWindowInfo.current.isWindowFocused
-
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
@@ -153,8 +152,6 @@ fun MemoryScreen(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused,
-            preset = LiquidGlassPreset.Hero,
         ) {
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -250,19 +247,19 @@ private fun MemoryHeader(
                 Icon(
                     imageVector = Icons.Rounded.Psychology,
                     contentDescription = null,
-                    tint = MemoryUiColors.Accent,
+                    tint = MaterialTheme.memoryColors.accent,
                     modifier = Modifier.size(18.dp),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = stringResource(Res.string.memory_title),
-                        color = MemoryUiColors.TextPrimary,
+                        color = MaterialTheme.memoryColors.textPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
                         text = stringResource(Res.string.memory_subtitle),
-                        color = MemoryUiColors.TextPrimary.copy(alpha = 0.35f),
+                        color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.35f),
                         fontSize = 11.5.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -282,13 +279,13 @@ private fun MemoryHeader(
                     Icon(
                         imageVector = Icons.Rounded.Close,
                         contentDescription = stringResource(Res.string.button_close),
-                        tint = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                        tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.3f),
                         modifier = Modifier.size(18.dp),
                     )
                 }
             }
         }
-        HorizontalDivider(color = MemoryUiColors.Divider)
+        HorizontalDivider(color = MaterialTheme.memoryColors.divider)
     }
 }
 
@@ -300,9 +297,9 @@ private fun AccentGhostButton(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(8.dp),
-        color = MemoryUiColors.Accent.copy(alpha = 0.12f),
-        contentColor = MemoryUiColors.Accent,
-        border = BorderStroke(1.dp, MemoryUiColors.Accent.copy(alpha = 0.25f)),
+        color = MaterialTheme.memoryColors.accent.copy(alpha = 0.12f),
+        contentColor = MaterialTheme.memoryColors.accent,
+        border = BorderStroke(1.dp, MaterialTheme.memoryColors.accent.copy(alpha = 0.25f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -323,7 +320,7 @@ private fun MemoryDreamerFooter(
     var expanded by remember { mutableStateOf(false) }
 
     Column {
-        HorizontalDivider(color = MemoryUiColors.Divider.copy(alpha = 0.85f))
+        HorizontalDivider(color = MaterialTheme.memoryColors.divider.copy(alpha = 0.85f))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -341,10 +338,10 @@ private fun MemoryDreamerFooter(
                     onDismissRequest = { expanded = false },
                     modifier = Modifier.width(320.dp),
                     shape = RoundedCornerShape(12.dp),
-                    containerColor = MemoryUiColors.Popover,
+                    containerColor = MaterialTheme.memoryColors.popover,
                     tonalElevation = 0.dp,
                     shadowElevation = 8.dp,
-                    border = BorderStroke(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f)),
+                    border = BorderStroke(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f)),
                 ) {
                     DreamerPopover(
                         state = state,
@@ -379,14 +376,14 @@ private fun DreamerFooterButton(
         )
         Text(
             text = "${stringResource(Res.string.memory_dreamer_title)} · ${dreamerModeLabel(state.mode)}",
-            color = MemoryUiColors.TextPrimary.copy(alpha = if (hovered) 0.6f else 0.4f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = if (hovered) 0.6f else 0.4f),
             fontSize = 11.5.sp,
             fontWeight = FontWeight.Medium,
         )
         Icon(
             imageVector = Icons.Rounded.Settings,
             contentDescription = null,
-            tint = MemoryUiColors.TextPrimary.copy(alpha = if (hovered) 0.55f else 0.32f),
+            tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = if (hovered) 0.55f else 0.32f),
             modifier = Modifier.size(12.dp),
         )
     }
@@ -408,7 +405,7 @@ private fun DreamerPopover(
         ) {
             Text(
                 text = stringResource(Res.string.memory_dreamer_title),
-                color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+                color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.9f),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
             )
@@ -418,7 +415,7 @@ private fun DreamerPopover(
                     state.pendingClusters,
                     state.blockedClusters,
                 ),
-                color = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.3f),
                 fontSize = 11.sp,
             )
         }
@@ -443,10 +440,10 @@ private fun DreamerPopover(
                 onClick = { onAction(MemoryAction.RunDreamerNow) },
                 enabled = state.canRunNow,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MemoryUiColors.Accent,
-                    contentColor = MemoryUiColors.Screen,
-                    disabledContainerColor = MemoryUiColors.TextPrimary.copy(alpha = 0.08f),
-                    disabledContentColor = MemoryUiColors.TextPrimary.copy(alpha = 0.28f),
+                    containerColor = MaterialTheme.memoryColors.accent,
+                    contentColor = MaterialTheme.memoryColors.screen,
+                    disabledContainerColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.08f),
+                    disabledContentColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.28f),
                 ),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
                 shape = RoundedCornerShape(8.dp),
@@ -465,12 +462,12 @@ private fun DreamerPopover(
                 Icon(
                     imageVector = Icons.Rounded.Schedule,
                     contentDescription = null,
-                    tint = MemoryUiColors.Warning,
+                    tint = MaterialTheme.memoryColors.warning.content,
                     modifier = Modifier.size(13.dp),
                 )
                 Text(
                     text = stringResource(Res.string.memory_dreamer_running),
-                    color = MemoryUiColors.Warning,
+                    color = MaterialTheme.memoryColors.warning.content,
                     fontSize = 11.5.sp,
                 )
             }
@@ -488,8 +485,8 @@ private fun DreamerModelSelector(
         Surface(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.05f),
-            contentColor = MemoryUiColors.TextPrimary.copy(alpha = 0.7f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f),
+            contentColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.7f),
             shape = RoundedCornerShape(8.dp),
         ) {
             Row(
@@ -516,9 +513,9 @@ private fun DreamerModelSelector(
             onDismissRequest = { expanded = false },
             modifier = Modifier.width(296.dp),
             shape = RoundedCornerShape(8.dp),
-            containerColor = MemoryUiColors.Popover,
+            containerColor = MaterialTheme.memoryColors.popover,
             tonalElevation = 0.dp,
-            border = BorderStroke(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f)),
+            border = BorderStroke(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f)),
         ) {
             listOf(null to stringResource(Res.string.memory_dreamer_model_auto))
                 .plus(state.availableModels.map { it.alias to it.displayName })
@@ -552,7 +549,7 @@ private fun MemoryModeSegments(
             .fillMaxWidth()
             .height(34.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MemoryUiColors.TextPrimary.copy(alpha = 0.05f))
+            .background(MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f))
             .padding(2.dp),
     ) {
         listOf(
@@ -565,13 +562,13 @@ private fun MemoryModeSegments(
                     .weight(1f)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(6.dp))
-                    .background(if (active) MemoryUiColors.TextPrimary.copy(alpha = 0.1f) else MemoryUiColors.Transparent)
+                    .background(if (active) MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f) else Color.Transparent)
                     .clickable { onSelected(mode) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label,
-                    color = MemoryUiColors.TextPrimary.copy(alpha = if (active) 0.8f else 0.3f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = if (active) 0.8f else 0.3f),
                     fontSize = 11.sp,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                 )
@@ -589,7 +586,7 @@ private fun MemoryDreamerStatusText(
     Text(
         text = status,
         modifier = modifier,
-        color = MemoryUiColors.TextPrimary.copy(alpha = 0.32f),
+        color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.32f),
         fontSize = 11.sp,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -627,10 +624,11 @@ private fun dreamerModeLabel(mode: MemoryMaintenanceMode): String = when (mode) 
     MemoryMaintenanceMode.LOCAL_ONLY -> stringResource(Res.string.memory_dreamer_mode_local)
 }
 
+@Composable
 private fun dreamerDotColor(state: MemoryMaintenanceUiState) = when {
-    state.isRunningNow -> MemoryUiColors.Warning
-    state.mode == MemoryMaintenanceMode.OFF -> MemoryUiColors.TextPrimary.copy(alpha = 0.25f)
-    else -> MemoryUiColors.Accent
+    state.isRunningNow -> MaterialTheme.memoryColors.warning.content
+    state.mode == MemoryMaintenanceMode.OFF -> MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.25f)
+    else -> MaterialTheme.memoryColors.accent
 }
 
 @Composable

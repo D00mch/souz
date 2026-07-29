@@ -5,15 +5,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
 import ru.souz.db.REGION_EN
@@ -25,6 +22,7 @@ import ru.souz.service.speech.LocalMacOsSpeechHost
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
 import ru.souz.tool.config.ToolSoundConfig
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.LocalModelDownloadPromptUi
 import ru.souz.ui.common.LocalModelDownloadStateUi
 import ru.souz.ui.common.LocalModelUiCoordinator
@@ -170,6 +168,8 @@ class DesktopPrivacyPolicyOpener : PrivacyPolicyOpener {
 class DesktopSettingsHostPreferences(
     private val readUseEnglishInterface: () -> Boolean? = { ConfigStore.get<Boolean>(USE_ENGLISH_INTERFACE) },
     private val writeUseEnglishInterface: (Boolean) -> Unit = { ConfigStore.put(USE_ENGLISH_INTERFACE, it) },
+    private val readThemeMode: () -> String? = { ConfigStore.get<String>(THEME_MODE) },
+    private val writeThemeMode: (String) -> Unit = { ConfigStore.put(THEME_MODE, it) },
     val originalLocale: Locale = Locale.getDefault(),
     private val systemDisplayLocale: Locale = Locale.getDefault(Locale.Category.DISPLAY),
     private val systemFormatLocale: Locale = Locale.getDefault(Locale.Category.FORMAT),
@@ -178,6 +178,8 @@ class DesktopSettingsHostPreferences(
         readUseEnglishInterface()
             ?: (systemDisplayLocale.language != "ru")
     )
+    private val themeModeState = MutableStateFlow(ThemeMode.fromStorage(readThemeMode()))
+    override val themeMode: StateFlow<ThemeMode> = themeModeState
 
     override var voiceSpeed: Int
         get() = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
@@ -192,6 +194,11 @@ class DesktopSettingsHostPreferences(
             applyInterfaceLanguage(value)
             useEnglishInterfaceState = value
         }
+
+    override fun setThemeMode(mode: ThemeMode) {
+        writeThemeMode(mode.name)
+        themeModeState.value = mode
+    }
 
     override fun isLocalMacOsSpeechAvailable(): Boolean =
         LocalMacOsSpeechHost.isCurrentHost()
@@ -211,6 +218,7 @@ class DesktopSettingsHostPreferences(
 
     companion object {
         private const val USE_ENGLISH_INTERFACE = "USE_ENGLISH_INTERFACE"
+        private const val THEME_MODE = "THEME_MODE"
     }
 }
 
@@ -218,9 +226,7 @@ class DesktopTelegramSettingsHost(
     private val telegramService: TelegramUiService,
     private val telegramControlBot: TelegramControlBot,
 ) : TelegramSettingsHost {
-    override val authState = telegramService.authState.map(TelegramAuthState::toHostState).asStateFlowLike(
-        initial = telegramService.authState.value.toHostState(),
-    )
+    override val authState = telegramService.authState.map(TelegramAuthState::toHostState)
 
     override fun isSupported(): Boolean = telegramService.isSupported()
     override suspend fun submitPhoneNumber(phoneNumber: String) = telegramService.submitPhoneNumber(phoneNumber)
@@ -237,14 +243,6 @@ class DesktopTelegramSettingsHost(
     override fun restartControlBotPolling() = telegramControlBot.restartPolling()
     override fun stopControlBotPolling() = telegramControlBot.stopPolling()
     override fun isControlBotActive(): Boolean = ConfigStore.get<String>(ConfigStore.TG_BOT_TOKEN) != null
-}
-
-private fun <T> Flow<T>.asStateFlowLike(initial: T): StateFlow<T> {
-    val state = MutableStateFlow(initial)
-    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-        collect { state.value = it }
-    }
-    return state
 }
 
 private fun TelegramAuthState.toHostState(): TelegramHostAuthState =

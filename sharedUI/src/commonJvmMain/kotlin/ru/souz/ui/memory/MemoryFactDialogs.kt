@@ -30,6 +30,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,6 +53,7 @@ import org.jetbrains.compose.resources.stringResource
 import ru.souz.memory.MemoryEvidenceDetail
 import ru.souz.memory.MemoryFactKind
 import ru.souz.memory.MemoryFactStatus
+import ru.souz.ui.memoryColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.button_close
 import souz.sharedui.generated.resources.dialog_cancel
@@ -93,8 +95,8 @@ internal fun MemoryFactDetailsPanel(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp))
-            .background(MemoryUiColors.Panel)
-            .border(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.08f), RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp))
+            .background(MaterialTheme.memoryColors.panel)
+            .border(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.08f), RoundedCornerShape(topEnd = 18.dp, bottomEnd = 18.dp))
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -105,7 +107,7 @@ internal fun MemoryFactDetailsPanel(
         ) {
             Text(
                 text = stringResource(Res.string.memory_details_title).uppercase(),
-                color = MemoryUiColors.TextPrimary.copy(alpha = 0.4f),
+                color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.4f),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.8.sp,
@@ -114,7 +116,7 @@ internal fun MemoryFactDetailsPanel(
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = stringResource(Res.string.button_close),
-                    tint = MemoryUiColors.TextPrimary.copy(alpha = 0.45f),
+                    tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.45f),
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -151,7 +153,7 @@ private fun MemoryFactDetailsContent(
         ) {
             Text(
                 text = fact.title,
-                color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+                color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.9f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 lineHeight = 19.sp,
@@ -166,18 +168,18 @@ private fun MemoryFactDetailsContent(
                 if (fact.pinned) {
                     MemorySmallBadge(
                         text = stringResource(Res.string.memory_badge_pinned),
-                        color = MemoryUiColors.Accent,
+                        color = MaterialTheme.memoryColors.accent,
                     )
                 }
                 MemorySmallBadge(
                     text = createdByLabel(fact.createdBy),
-                    color = MemoryUiColors.TextPrimary.copy(alpha = 0.4f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.4f),
                 )
             }
 
             Text(
                 text = fact.body,
-                color = MemoryUiColors.TextPrimary.copy(alpha = 0.6f),
+                color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.6f),
                 fontSize = 12.5.sp,
                 lineHeight = 19.sp,
             )
@@ -191,7 +193,7 @@ private fun MemoryFactDetailsContent(
             ) {
                 Text(
                     text = stringResource(Res.string.memory_details_confidence),
-                    color = MemoryUiColors.TextPrimary.copy(alpha = 0.35f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.35f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -201,7 +203,7 @@ private fun MemoryFactDetailsContent(
             EvidenceSection(details.evidence)
         }
 
-        HorizontalDivider(color = MemoryUiColors.Divider)
+        HorizontalDivider(color = MaterialTheme.memoryColors.divider)
 
         DetailActionButton(
             text = stringResource(Res.string.memory_action_edit),
@@ -268,7 +270,7 @@ private fun MetaCell(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
             text = label.uppercase(),
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.25f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.25f),
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -276,7 +278,7 @@ private fun MetaCell(
         )
         Text(
             text = value,
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.74f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.74f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -290,7 +292,7 @@ private fun EvidenceSection(evidence: List<MemoryEvidenceDetail>) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = stringResource(Res.string.memory_details_evidence).uppercase(),
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.4f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.4f),
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -299,7 +301,7 @@ private fun EvidenceSection(evidence: List<MemoryEvidenceDetail>) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MemoryUiColors.TextPrimary.copy(alpha = 0.04f))
+                    .background(MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.04f))
                     .padding(horizontal = 10.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -307,12 +309,12 @@ private fun EvidenceSection(evidence: List<MemoryEvidenceDetail>) {
                 Icon(
                     imageVector = Icons.Rounded.CheckCircleOutline,
                     contentDescription = null,
-                    tint = MemoryUiColors.TextPrimary.copy(alpha = 0.35f),
+                    tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.35f),
                     modifier = Modifier.size(15.dp),
                 )
                 Text(
                     text = stringResource(Res.string.memory_evidence_empty),
-                    color = MemoryUiColors.TextPrimary.copy(alpha = 0.4f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.4f),
                     fontSize = 12.sp,
                 )
             }
@@ -329,14 +331,14 @@ private fun MemoryEvidenceCard(evidence: MemoryEvidenceDetail) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(MemoryUiColors.TextPrimary.copy(alpha = 0.04f))
-            .border(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.04f))
+            .border(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
             text = evidenceText,
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.62f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.62f),
             fontSize = 12.sp,
             lineHeight = 17.sp,
         )
@@ -346,7 +348,7 @@ private fun MemoryEvidenceCard(evidence: MemoryEvidenceDetail) {
                 evidence.sourceEvent.sourceRef,
                 evidence.sourceEvent.createdAt.shortMemoryLabel(),
             ).joinToString(" · "),
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.32f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.32f),
             fontSize = 10.5.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -384,8 +386,8 @@ private fun DetailActionButton(
     Surface(
         onClick = onClick,
         modifier = modifier.height(36.dp),
-        color = if (accent) MemoryUiColors.Accent.copy(alpha = 0.12f) else MemoryUiColors.TextPrimary.copy(alpha = 0.07f),
-        contentColor = if (accent) MemoryUiColors.Accent else MemoryUiColors.TextPrimary.copy(alpha = 0.76f),
+        color = if (accent) MaterialTheme.memoryColors.accent.copy(alpha = 0.12f) else MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.07f),
+        contentColor = if (accent) MaterialTheme.memoryColors.accent else MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.76f),
         shape = RoundedCornerShape(8.dp),
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -419,10 +421,10 @@ internal fun MemoryFactEditorDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.width(520.dp),
-            color = MemoryUiColors.Panel,
-            contentColor = MemoryUiColors.TextPrimary,
+            color = MaterialTheme.memoryColors.panel,
+            contentColor = MaterialTheme.memoryColors.textPrimary,
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f)),
+            border = BorderStroke(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f)),
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -439,7 +441,7 @@ internal fun MemoryFactEditorDialog(
                         } else {
                             stringResource(Res.string.memory_editor_edit_title)
                         },
-                        color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+                        color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.9f),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -447,7 +449,7 @@ internal fun MemoryFactEditorDialog(
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = stringResource(Res.string.button_close),
-                            tint = MemoryUiColors.TextPrimary.copy(alpha = 0.45f),
+                            tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.45f),
                             modifier = Modifier.size(17.dp),
                         )
                     }
@@ -490,19 +492,19 @@ internal fun MemoryFactEditorDialog(
                 ) {
                     MemoryMenuField(
                         selectedText = kind.label(),
-                        selectedColor = kind.kindStyle().color,
+                        selectedColor = kind.kindStyle().content,
                         modifier = Modifier.weight(1f),
                         options = MemoryFactKind.entries.map { entry ->
-                            MemoryMenuOption(entry.label(), entry.kindStyle().color) { kind = entry }
+                            MemoryMenuOption(entry.label(), entry.kindStyle().content) { kind = entry }
                         },
                     )
                     Surface(
                         onClick = { pinned = !pinned },
                         modifier = Modifier.size(width = 40.dp, height = 34.dp),
-                        color = if (pinned) MemoryUiColors.Accent.copy(alpha = 0.12f) else MemoryUiColors.TextPrimary.copy(alpha = 0.05f),
-                        contentColor = if (pinned) MemoryUiColors.Accent else MemoryUiColors.TextPrimary.copy(alpha = 0.45f),
+                        color = if (pinned) MaterialTheme.memoryColors.accent.copy(alpha = 0.12f) else MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f),
+                        contentColor = if (pinned) MaterialTheme.memoryColors.accent else MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, if (pinned) MemoryUiColors.Accent.copy(alpha = 0.25f) else MemoryUiColors.TextPrimary.copy(alpha = 0.07f)),
+                        border = BorderStroke(1.dp, if (pinned) MaterialTheme.memoryColors.accent.copy(alpha = 0.25f) else MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.07f)),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.PushPin, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -513,7 +515,7 @@ internal fun MemoryFactEditorDialog(
                 if (showValidationErrors && validationMessage != null) {
                     Text(
                         text = validationMessage,
-                        color = MemoryUiColors.Danger,
+                        color = MaterialTheme.memoryColors.danger.content,
                         fontSize = 12.sp,
                     )
                 }
@@ -526,7 +528,7 @@ internal fun MemoryFactEditorDialog(
                     TextButton(onClick = onDismiss) {
                         Text(
                             text = stringResource(Res.string.dialog_cancel),
-                            color = MemoryUiColors.TextPrimary.copy(alpha = 0.65f),
+                            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.65f),
                         )
                     }
                     Spacer(Modifier.width(10.dp))
@@ -551,10 +553,10 @@ internal fun MemoryFactEditorDialog(
                         },
                         enabled = !isSaving && title.isNotBlank() && body.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MemoryUiColors.Accent,
-                            contentColor = MemoryUiColors.Screen,
-                            disabledContainerColor = MemoryUiColors.TextPrimary.copy(alpha = 0.08f),
-                            disabledContentColor = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                            containerColor = MaterialTheme.memoryColors.accent,
+                            contentColor = MaterialTheme.memoryColors.screen,
+                            disabledContainerColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.08f),
+                            disabledContentColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.3f),
                         ),
                         shape = RoundedCornerShape(8.dp),
                     ) {
@@ -592,10 +594,10 @@ internal fun MemoryConfirmDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.width(420.dp),
-            color = MemoryUiColors.Panel,
-            contentColor = MemoryUiColors.TextPrimary,
+            color = MaterialTheme.memoryColors.panel,
+            contentColor = MaterialTheme.memoryColors.textPrimary,
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f)),
+            border = BorderStroke(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f)),
         ) {
             Column(
                 modifier = Modifier.padding(22.dp),
@@ -608,19 +610,19 @@ internal fun MemoryConfirmDialog(
                     Icon(
                         imageVector = Icons.Rounded.WarningAmber,
                         contentDescription = null,
-                        tint = MemoryUiColors.Danger,
+                        tint = MaterialTheme.memoryColors.danger.content,
                         modifier = Modifier.size(20.dp),
                     )
                     Text(
                         text = title,
-                        color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+                        color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.9f),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
                 Text(
                     text = message,
-                    color = MemoryUiColors.TextPrimary.copy(alpha = 0.62f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.62f),
                     fontSize = 12.5.sp,
                     lineHeight = 18.sp,
                 )
@@ -632,15 +634,15 @@ internal fun MemoryConfirmDialog(
                     TextButton(onClick = onDismiss) {
                         Text(
                             text = stringResource(Res.string.dialog_cancel),
-                            color = MemoryUiColors.TextPrimary.copy(alpha = 0.65f),
+                            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.65f),
                         )
                     }
                     Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = onConfirm,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MemoryUiColors.Danger,
-                            contentColor = MemoryUiColors.Screen,
+                            containerColor = MaterialTheme.memoryColors.danger.container,
+                            contentColor = MaterialTheme.memoryColors.danger.content,
                         ),
                         shape = RoundedCornerShape(8.dp),
                     ) {
