@@ -34,7 +34,7 @@ class LlmBuildProfile(
         else -> model.provider in availableProviders
     }
 
-    fun findModelByAlias(alias: String): LLMModel? = availableModels.firstOrNull { it.alias == alias }
+    fun findModelByAlias(alias: String): LLMModel? = findLLMModel(alias)?.takeIf(::isModelAvailable)
 
     fun defaultModelForProvider(provider: LlmProvider): LLMModel? = when (provider) {
         LlmProvider.LOCAL -> localProviderAvailability.defaultGigaModel()

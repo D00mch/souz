@@ -5,8 +5,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import ru.souz.llms.LLMModel
 
 class RequestParsingTest {
+    @Test
+    fun `parseModel accepts legacy GigaChat aliases`() {
+        assertEquals(LLMModel.Max, parseModel("GigaChat-Max", fieldName = "defaultModel"))
+        assertEquals(LLMModel.Pro, parseModel("GigaChat-Pro", fieldName = "defaultModel"))
+    }
+
     @Test
     fun `parseLocale canonicalizes legacy BCP47 language tags`() {
         assertEquals(Locale.forLanguageTag("he-IL"), parseLocale("iw-IL", fieldName = "locale"))

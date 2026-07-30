@@ -238,17 +238,24 @@ class AiTunnelChatAPI(
                     }
                 }
 
-                LLMMessageRole.assistant -> {
+                LLMMessageRole.assistant, LLMMessageRole.function_in_progress -> {
                     // Check if this is a tool call (GigaChat format: has functionsStateId + content JSON)
                     val functionsStateId = msg.functionsStateId
                     if (functionsStateId != null) {
                         try {
-                            val contentJson = restJsonMapper.readTree(msg.content)
-                            val name = contentJson["name"]?.asText()
-                            val argumentsNode = contentJson["arguments"]
+                            val requestFunctionCall = msg.functionCall ?: run {
+                                val contentJson = restJsonMapper.readTree(msg.content)
+                                val name = contentJson["name"]?.asText()
+                                val argumentsNode = contentJson["arguments"]
+                                if (name != null && argumentsNode != null) {
+                                    LLMRequest.FunctionCall(name, restJsonMapper.writeValueAsString(argumentsNode))
+                                } else {
+                                    null
+                                }
+                            }
 
-                            if (name != null && argumentsNode != null) {
-                                val arguments = restJsonMapper.writeValueAsString(argumentsNode)
+                            if (requestFunctionCall != null) {
+                                val name = requestFunctionCall.name
                                 lastToolCallIds[name] = functionsStateId
 
                                 return@map buildMap {
@@ -259,7 +266,7 @@ class AiTunnelChatAPI(
                                         put("type", "function")
                                         put("function", buildMap {
                                             put("name", name)
-                                            put("arguments", arguments)
+                                            put("arguments", requestFunctionCall.arguments)
                                         })
                                     }))
                                 }
@@ -274,7 +281,7 @@ class AiTunnelChatAPI(
 
                     // Regular assistant message
                     buildMap {
-                        put("role", msg.role.name)
+                        put("role", "assistant")
                         put("content", msg.content.ifBlank { null }) // OpenAI prefers null over empty string
                         msg.name?.let { put("name", it) }
                     }

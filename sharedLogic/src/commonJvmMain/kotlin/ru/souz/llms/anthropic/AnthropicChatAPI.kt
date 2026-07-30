@@ -335,7 +335,8 @@ class AnthropicChatAPI(
             .filter { it.role != LLMMessageRole.system }
             .map { msg ->
                 when (msg.role) {
-                    LLMMessageRole.assistant -> buildAssistantMessage(msg, lastToolCallIds)
+                    LLMMessageRole.assistant, LLMMessageRole.function_in_progress ->
+                        buildAssistantMessage(msg, lastToolCallIds)
                     LLMMessageRole.function -> buildFunctionResultMessage(msg, lastToolCallIds)
                     else -> mapOf(
                         "role" to "user",
@@ -376,7 +377,7 @@ class AnthropicChatAPI(
     ): Map<String, Any> {
         val toolUseId = msg.functionsStateId
         if (toolUseId != null) {
-            parseAssistantToolCall(msg.content)?.let { toolCall ->
+            msg.toParsedToolCall()?.let { toolCall ->
                 lastToolCallIds[toolCall.name] = toolUseId
                 return mapOf(
                     "role" to "assistant",
@@ -476,6 +477,13 @@ class AnthropicChatAPI(
             }
             ParsedToolCall(name = name, arguments = args)
         }.getOrNull()
+    }
+
+    private fun LLMRequest.Message.toParsedToolCall(): ParsedToolCall? {
+        functionCall?.let {
+            return ParsedToolCall(it.name, parseFunctionArguments(it.arguments))
+        }
+        return parseAssistantToolCall(content)
     }
 
     private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {

@@ -258,28 +258,34 @@ class OpenAIChatAPI(
         fun parseAssistantToolCall(msg: LLMRequest.Message): Map<String, Any?>? {
             val functionsStateId = msg.functionsStateId ?: return null
             return try {
-                val contentJson = restJsonMapper.readTree(msg.content)
-                val name = contentJson["name"]?.asText()
-                val argumentsNode = contentJson["arguments"]
-                if (name != null && argumentsNode != null) {
+                val requestFunctionCall = msg.functionCall ?: run {
+                    val contentJson = restJsonMapper.readTree(msg.content)
+                    val name = contentJson["name"]?.asText()
+                    val argumentsNode = contentJson["arguments"]
+                    if (name != null && argumentsNode != null) {
+                        LLMRequest.FunctionCall(name, restJsonMapper.writeValueAsString(argumentsNode))
+                    } else {
+                        null
+                    }
+                }
+                if (requestFunctionCall != null) {
                     val idBudget = remainingToolResultIds[functionsStateId] ?: 0
-                    val nameBudget = remainingToolResultNames[name] ?: 0
+                    val nameBudget = remainingToolResultNames[requestFunctionCall.name] ?: 0
                     if (idBudget <= 0 && nameBudget <= 0) {
                         return null
                     }
                     if (idBudget > 0) {
                         remainingToolResultIds[functionsStateId] = idBudget - 1
                     } else {
-                        remainingToolResultNames[name] = nameBudget - 1
+                        remainingToolResultNames[requestFunctionCall.name] = nameBudget - 1
                     }
-                    val arguments = restJsonMapper.writeValueAsString(argumentsNode)
-                    pendingToolCallIdsByName.getOrPut(name) { ArrayDeque() }.addLast(functionsStateId)
+                    pendingToolCallIdsByName.getOrPut(requestFunctionCall.name) { ArrayDeque() }.addLast(functionsStateId)
                     buildMap {
                         put("id", functionsStateId)
                         put("type", "function")
                         put("function", buildMap {
-                            put("name", name)
-                            put("arguments", arguments)
+                            put("name", requestFunctionCall.name)
+                            put("arguments", requestFunctionCall.arguments)
                         })
                     }
                 } else {
@@ -326,7 +332,7 @@ class OpenAIChatAPI(
                     }
                 }
 
-                LLMMessageRole.assistant -> {
+                LLMMessageRole.assistant, LLMMessageRole.function_in_progress -> {
                     val toolCall = parseAssistantToolCall(msg)
                     if (toolCall != null) {
                         val assistantMessage = currentToolCallAssistant?.takeIf { pendingToolCallIds.isNotEmpty() }
@@ -349,7 +355,7 @@ class OpenAIChatAPI(
                         }
                         emit(
                             mutableMapOf<String, Any?>(
-                                "role" to msg.role.name,
+                                "role" to "assistant",
                                 "content" to normalizedContent,
                             ).apply {
                                 msg.name?.let { put("name", it) }
