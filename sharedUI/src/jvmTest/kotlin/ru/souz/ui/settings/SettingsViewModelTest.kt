@@ -176,6 +176,7 @@ class SettingsViewModelTest {
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
         val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
+        var calendarListProviderCalls = 0
 
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
@@ -199,7 +200,12 @@ class SettingsViewModelTest {
             bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
             bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
             bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
-            bindSingleton<CalendarListProvider> { { emptyList() } }
+            bindSingleton<CalendarListProvider> {
+                {
+                    calendarListProviderCalls += 1
+                    listOf("Work")
+                }
+            }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
 
@@ -232,6 +238,7 @@ class SettingsViewModelTest {
         assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
         assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
         assertIs<ApiKeyFieldState.StoredHidden>(state.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT))
+        assertEquals(0, calendarListProviderCalls)
 
         verify(exactly = 0) { settingsProvider.gigaChatKey }
         verify(exactly = 0) { settingsProvider.qwenChatKey }

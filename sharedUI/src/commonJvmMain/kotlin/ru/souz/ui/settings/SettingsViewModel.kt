@@ -345,7 +345,6 @@ class SettingsViewModel(
                 flushPendingKeySaves()
                 refreshFromProvider()
                 fetchBalance()
-                fetchCalendars()
             }
             ChooseVoice -> {
                 runCatching { speechPlayer.chooseVoice() }
@@ -939,6 +938,7 @@ class SettingsViewModel(
     }
 
     private fun fetchCalendars() = viewModelScope.launch(Dispatchers.IO) {
+        if (currentState.isLoadingCalendars) return@launch
         setState { copy(isLoadingCalendars = true) }
 
         val result = runCatching {

@@ -318,6 +318,7 @@ fun ModelsSettingsContent(
 fun GeneralSettingsContent(
     state: SettingsState,
     onDefaultCalendarChange: (String?) -> Unit,
+    onCalendarDropdownOpen: () -> Unit,
     onUseStreamingChange: (Boolean) -> Unit,
     onNotificationSoundEnabledChange: (Boolean) -> Unit,
     onVoiceInputReviewEnabledChange: (Boolean) -> Unit,
@@ -398,6 +399,7 @@ fun GeneralSettingsContent(
                 selectedCalendar = state.defaultCalendar,
                 availableCalendars = state.availableCalendars,
                 isLoading = state.isLoadingCalendars,
+                onDropdownOpen = onCalendarDropdownOpen,
                 onCalendarSelected = onDefaultCalendarChange
             )
 
@@ -1466,6 +1468,7 @@ fun CalendarDropdown(
     selectedCalendar: String?,
     availableCalendars: List<String>,
     isLoading: Boolean,
+    onDropdownOpen: () -> Unit,
     onCalendarSelected: (String?) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -1484,7 +1487,12 @@ fun CalendarDropdown(
         Box {
             SettingsHoverTooltip(text = stringResource(Res.string.hint_calendar_usage)) {
                 OutlinedButton(
-                    onClick = { expanded = !expanded },
+                    onClick = {
+                        if (!expanded && availableCalendars.isEmpty() && !isLoading) {
+                            onDropdownOpen()
+                        }
+                        expanded = !expanded
+                    },
                     modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = MaterialTheme.souzColors.settings.inputBackground,
@@ -2167,6 +2175,7 @@ private fun GeneralSettingsContentPreview() {
         GeneralSettingsContent(
             state = PreviewSettingsState,
             onDefaultCalendarChange = {},
+            onCalendarDropdownOpen = {},
             onUseStreamingChange = {},
             onNotificationSoundEnabledChange = {},
             onVoiceInputReviewEnabledChange = {},
