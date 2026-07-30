@@ -77,7 +77,7 @@ class GigaRestChatAPI(
     private val uuid = UUID.randomUUID().toString() // for cache to work
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val body = body.rmFnIds()
+        val body = body.toGigaChatRequest()
         val response = client.post(URL) {
             header("X-Session-ID", uuid)
             setBody(body)
@@ -112,7 +112,7 @@ class GigaRestChatAPI(
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         try {
-            val body = body.rmFnIds()
+            val body = body.toGigaChatRequest()
             client.sse(
                 urlString = URL,
                 request = {
@@ -262,6 +262,28 @@ class GigaRestChatAPI(
         private const val FILES_URL = "$BASE_URL/files"
     }
 }
+
+internal fun LLMRequest.Chat.toGigaChatRequest(): LLMRequest.Chat = rmFnIds().copy(
+    functions = functions.map { fn ->
+        fn.copy(
+            parameters = fn.parameters.toGigaSchema(),
+            returnParameters = fn.returnParameters?.toGigaSchema(),
+        )
+    }
+)
+
+private fun LLMRequest.Parameters.toGigaSchema(): LLMRequest.Parameters = copy(
+    properties = properties.mapValues { it.value.toGigaSchemaProperty() }
+)
+
+private fun LLMRequest.Property.toGigaSchemaProperty(): LLMRequest.Property = copy(
+    items = items?.toGigaSchemaProperty(),
+    properties = if (type == "object") {
+        properties.orEmpty().mapValues { it.value.toGigaSchemaProperty() }
+    } else {
+        properties?.mapValues { it.value.toGigaSchemaProperty() }
+    },
+)
 
 internal fun parseGigaStreamChunk(data: String): LLMResponse.Chat {
     val node = restJsonMapper.readTree(data)

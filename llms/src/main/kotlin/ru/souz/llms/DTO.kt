@@ -146,8 +146,9 @@ enum class LLMModel(
     val provider: LlmProvider,
 ) {
     Lite("GigaChat Lite", "GigaChat-2", LlmProvider.GIGA),
-    Pro("GigaChat Pro", "GigaChat-Pro", LlmProvider.GIGA),
-    Max("GigaChat Max", "GigaChat-Max", LlmProvider.GIGA),
+    Pro("GigaChat Pro", "GigaChat-2-Pro", LlmProvider.GIGA),
+    Max("GigaChat Max", "GigaChat-2-Max", LlmProvider.GIGA),
+    Ultra("GigaChat Ultra", "GigaChat-3-Ultra", LlmProvider.GIGA),
     QwenFlash("Qwen Flash", "qwen-flash", LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", LlmProvider.QWEN),
     Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", LlmProvider.QWEN),
@@ -281,6 +282,8 @@ object LLMRequest {
         @field:JsonProperty("enum") val enum: List<String>? = null,
         @field:JsonInclude(JsonInclude.Include.NON_NULL)
         val items: Property? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        val properties: Map<String, Property>? = null,
     )
 
     data class FewShotExample(

@@ -393,6 +393,7 @@ internal object EmptyMcpToolProvider : McpToolProvider {
 
 const val SOUZ_AGENT_INTEGRATION_TESTS_ON = "SOUZ_AGENT_INTEGRATION_TESTS_ON"
 const val SOUZ_AGENT_INTEGRATION_TEST_AGENT = "SOUZ_AGENT_INTEGRATION_TEST_AGENT"
+const val SOUZ_AGENT_INTEGRATION_TEST_MODEL = "SOUZ_AGENT_INTEGRATION_TEST_MODEL"
 
 private fun isAgentScenarioIntegrationTestsEnabled(envValue: String?): Boolean =
     envValue.equals("true", ignoreCase = true)
@@ -403,6 +404,19 @@ internal fun parseScenarioAgentId(rawValue: String?): AgentId = when (rawValue?.
     else -> error(
         "Unsupported $SOUZ_AGENT_INTEGRATION_TEST_AGENT='$rawValue'. " +
             "Expected '${AgentId.GRAPH.storageValue}' or '${AgentId.SKILLS_GRAPH.storageValue}'."
+    )
+}
+
+internal fun scenarioIntegrationModel(defaultModel: LLMModel): LLMModel {
+    val rawValue = readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_MODEL)
+        ?: readSystemProperty(SOUZ_AGENT_INTEGRATION_TEST_MODEL)
+        ?: return defaultModel
+    return LLMModel.entries.firstOrNull { model ->
+        rawValue.equals(model.name, ignoreCase = true) ||
+            rawValue.equals(model.alias, ignoreCase = true)
+    } ?: error(
+        "Unsupported $SOUZ_AGENT_INTEGRATION_TEST_MODEL='$rawValue'. " +
+            "Expected one of ${LLMModel.entries.joinToString { "${it.name}/${it.alias}" }}."
     )
 }
 

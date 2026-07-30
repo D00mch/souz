@@ -45,12 +45,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
                             .toGigaSchemaType()
                         put(
                             kProperty.name,
-                            LLMRequest.Property(
-                                type = type,
-                                description = description,
-                                enum = enumValues,
-                                items = if (type == "array") LLMRequest.Property(itemType) else null,
-                            )
+                            gigaProperty(type, description, enumValues, itemType)
                         )
                     }
                 },
@@ -63,7 +58,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
             returnParameters = LLMRequest.Parameters(
                 type = toolSetup.returnParameters.type,
                 properties = toolSetup.returnParameters.properties.mapValues {
-                    LLMRequest.Property(it.value.type, it.value.description)
+                    gigaProperty(it.value.type, it.value.description)
                 },
             ),
         )
@@ -146,3 +141,17 @@ internal fun Any?.toGigaSchemaType(): String = when (this) {
     is KClass<*> if isSubclassOf(Enum::class) -> "string"
     else -> "object"
 }
+
+@PublishedApi
+internal fun gigaProperty(
+    type: String,
+    description: String? = null,
+    enumValues: List<String>? = null,
+    itemType: String? = null,
+): LLMRequest.Property = LLMRequest.Property(
+    type = type,
+    description = description,
+    enum = enumValues,
+    items = if (type == "array") gigaProperty(itemType ?: "object") else null,
+    properties = if (type == "object") emptyMap() else null,
+)

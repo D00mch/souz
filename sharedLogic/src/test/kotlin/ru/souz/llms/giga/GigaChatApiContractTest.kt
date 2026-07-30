@@ -50,6 +50,40 @@ class GigaChatApiContractTest {
     }
 
     @Test
+    fun `chat request normalizes nested object schemas for giga`() {
+        val request = LLMRequest.Chat(
+            model = "GigaChat-2-Max",
+            messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            functions = listOf(
+                LLMRequest.Function(
+                    name = "lookup",
+                    parameters = LLMRequest.Parameters(
+                        type = "object",
+                        properties = mapOf(
+                            "payload" to LLMRequest.Property("object", "Input payload")
+                        ),
+                    ),
+                    returnParameters = LLMRequest.Parameters(
+                        type = "object",
+                        properties = mapOf(
+                            "error" to LLMRequest.Property("object", "Structured error")
+                        ),
+                    ),
+                )
+            ),
+        ).toGigaChatRequest()
+
+        assertEquals(
+            emptyMap(),
+            request.functions.single().parameters.properties.getValue("payload").properties,
+        )
+        assertEquals(
+            emptyMap(),
+            request.functions.single().returnParameters!!.properties.getValue("error").properties,
+        )
+    }
+
+    @Test
     fun `assistant tool call history keeps function call outside content`() {
         val message = LLMResponse.Choice(
             message = LLMResponse.Message(

@@ -19,6 +19,7 @@ import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
+import ru.souz.tool.ReturnProperty
 import ru.souz.tool.ToolSetup
 import ru.souz.runtime.files.FilesToolUtil
 import java.io.File
@@ -62,6 +63,26 @@ class GigaToolTest {
             """.trimIndent(),
             jsonParams
         )
+    }
+
+    @Test
+    fun `object return properties include explicit schema properties`() {
+        val tool = object : ToolSetup<TestInput> {
+            override val name: String = "ObjectResult"
+            override val description: String = "Returns an object field"
+            override val fewShotExamples: List<FewShotExample> = emptyList()
+            override val returnParameters: ReturnParameters = ReturnParameters(
+                properties = mapOf("error" to ReturnProperty("object", "Structured error"))
+            )
+
+            override fun invoke(input: TestInput, meta: ToolInvocationMeta): String = input.value
+            override suspend fun suspendInvoke(input: TestInput, meta: ToolInvocationMeta): String = input.value
+        }
+
+        val errorProperty = tool.toGiga<TestInput>().fn.returnParameters!!.properties.getValue("error")
+
+        assertEquals("object", errorProperty.type)
+        assertEquals(emptyMap(), errorProperty.properties)
     }
 
     @Test
