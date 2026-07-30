@@ -247,7 +247,7 @@ class QwenChatAPI(
                 }
 
                 else -> buildMap {
-                    put("role", msg.role.name)
+                    put("role", if (msg.role == LLMMessageRole.function_in_progress) "assistant" else msg.role.name)
                     put("content", msg.content)
                     msg.name?.let { put("name", it) }
                 }

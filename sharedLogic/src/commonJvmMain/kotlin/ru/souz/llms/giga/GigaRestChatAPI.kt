@@ -1,6 +1,7 @@
 package ru.souz.llms.giga
 
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -125,7 +126,7 @@ class GigaRestChatAPI(
                     if (data == null || data == "[DONE]") {
                         return@collect
                     }
-                    send(parseStreamChunk(data))
+                    send(parseGigaStreamChunk(data))
                 }
             }
         } catch (e: ClientRequestException) {
@@ -193,66 +194,6 @@ class GigaRestChatAPI(
         LLMResponse.Balance.Error(-1, "Connection error: ${t.message}")
     }
 
-    private fun parseStreamChunk(data: String): LLMResponse.Chat {
-        val node = restJsonMapper.readTree(data)
-        val choicesNode = node["choices"] ?: emptyList()
-
-        val choices = choicesNode.mapNotNull { choice ->
-            val finishReasonText = choice["finish_reason"]?.asText()
-            if (finishReasonText.equals("stop", ignoreCase = true)) {
-                l.info("finishReason: $finishReasonText")
-                return@mapNotNull null
-            }
-
-            val delta = choice["delta"] ?: return@mapNotNull null
-            val functionCallNode = delta["function_call"]
-            val functionCall = if (functionCallNode != null && !functionCallNode.isNull) {
-                val name = functionCallNode["name"]?.asText() ?: ""
-                val argsText = functionCallNode["arguments"]?.toString() ?: "{}"
-                val args: Map<String, Any> = restJsonMapper.readValue(argsText)
-                LLMResponse.FunctionCall(name, args)
-            } else null
-
-            val content = delta["content"]?.asText() ?: ""
-            val roleStr = delta["role"]?.asText()
-            val role = roleStr?.takeIf { it.isNotBlank() }?.let { LLMMessageRole.valueOf(it) }
-                ?: LLMMessageRole.assistant
-
-            LLMResponse.Choice(
-                message = LLMResponse.Message(
-                    content = content,
-                    role = role,
-                    functionCall = functionCall,
-                    functionsStateId = delta["functions_state_id"]?.asText(),
-                ),
-                index = choice["index"]?.asInt() ?: 0,
-                finishReason = finishReasonText?.toFinishReason(),
-            )
-        }
-
-        val usageNode = node["usage"]
-        val usage = if (usageNode != null && !usageNode.isNull) {
-            LLMResponse.Usage(
-                promptTokens = usageNode["prompt_tokens"]?.asInt() ?: 0,
-                completionTokens = usageNode["completion_tokens"]?.asInt() ?: 0,
-                totalTokens = usageNode["total_tokens"]?.asInt() ?: 0,
-                precachedTokens = usageNode["precached_prompt_tokens"]?.asInt() ?: 0,
-            )
-        } else {
-            LLMResponse.Usage(0, 0, 0, 0)
-        }
-
-        val model = node["model"]?.asText() ?: ""
-        val created = node["created"]?.asLong() ?: 0L
-
-        return LLMResponse.Chat.Ok(
-            choices = choices,
-            created = created,
-            model = model,
-            usage = usage,
-        )
-    }
-
     private suspend fun uploadImage(file: File): LLMResponse.UploadFile {
         val mime = withContext(Dispatchers.IO) {
             Files.probeContentType(file.toPath())
@@ -314,12 +255,74 @@ class GigaRestChatAPI(
     }
 
     companion object {
-        private const val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
-        private const val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
-        private const val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
-        private const val FILES_URL = "https://gigachat.devices.sberbank.ru/api/v1/files"
+        private const val BASE_URL = "https://api.giga.chat/v1"
+        private const val URL = "$BASE_URL/chat/completions"
+        private const val EMBEDDINGS_URL = "$BASE_URL/embeddings"
+        private const val BALANCE_URL = "$BASE_URL/balance"
+        private const val FILES_URL = "$BASE_URL/files"
     }
 }
+
+internal fun parseGigaStreamChunk(data: String): LLMResponse.Chat {
+    val node = restJsonMapper.readTree(data)
+    val choicesNode = node["choices"] ?: emptyList<JsonNode>()
+
+    val choices = choicesNode.mapNotNull { choice ->
+        val finishReasonText = choice["finish_reason"]?.asText()
+        val delta = choice["delta"] ?: choice["message"] ?: return@mapNotNull null
+        val functionCall = delta["function_call"]?.takeUnless { it.isNull }?.toGigaFunctionCall()
+
+        val role = delta["role"]?.asText()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { LLMMessageRole.valueOf(it) }.getOrNull() }
+            ?: LLMMessageRole.assistant
+
+        LLMResponse.Choice(
+            message = LLMResponse.Message(
+                content = delta["content"]?.asText() ?: "",
+                role = role,
+                functionCall = functionCall,
+                functionsStateId = delta["functions_state_id"]?.asText(),
+                reasoningContent = delta["reasoning_content"]?.asText(),
+                created = delta["created"]?.asLong(),
+                name = delta["name"]?.asText(),
+            ),
+            index = choice["index"]?.asInt() ?: 0,
+            finishReason = finishReasonText?.toFinishReason(),
+        )
+    }
+
+    return LLMResponse.Chat.Ok(
+        choices = choices,
+        created = node["created"]?.asLong() ?: 0L,
+        model = node["model"]?.asText() ?: "",
+        usage = node["usage"]?.takeUnless { it.isNull }?.toGigaUsage() ?: LLMResponse.Usage(0, 0, 0, 0),
+    )
+}
+
+private fun JsonNode.toGigaFunctionCall(): LLMResponse.FunctionCall {
+    val name = this["name"]?.asText() ?: ""
+    val arguments = this["arguments"]?.toGigaFunctionArguments() ?: emptyMap()
+    return LLMResponse.FunctionCall(name, arguments)
+}
+
+private fun JsonNode.toGigaFunctionArguments(): Map<String, Any> {
+    val argumentsNode = if (isTextual) restJsonMapper.readTree(asText()) else this
+    if (!argumentsNode.isObject) return emptyMap()
+    return restJsonMapper.convertValue(argumentsNode, Map::class.java)
+        .entries
+        .mapNotNull { (key, value) ->
+            if (key is String && value != null) key to value else null
+        }
+        .toMap()
+}
+
+private fun JsonNode.toGigaUsage(): LLMResponse.Usage = LLMResponse.Usage(
+    promptTokens = this["prompt_tokens"]?.asInt() ?: 0,
+    completionTokens = this["completion_tokens"]?.asInt() ?: 0,
+    totalTokens = this["total_tokens"]?.asInt() ?: 0,
+    precachedTokens = this["precached_prompt_tokens"]?.asInt() ?: 0,
+)
 
 private fun contentDispositionFileName(value: String): String? =
     value.split(';')

@@ -38,19 +38,20 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
                             } else {
                                 null
                             }
-                        val type = when (classifier) {
-                            String::class -> "string"
-                            Boolean::class -> "boolean"
-                            Int::class, Long::class, Double::class -> "number"
-                            List::class, Set::class, Array::class -> "array"
-                            Map::class -> "object"
-                            else -> when (classifier) {
-                                is KClass<*> if classifier.isSubclassOf(Collection::class) -> "array"
-                                is KClass<*> if classifier.isSubclassOf(Enum::class) -> "string"
-                                else -> "object"
-                            }
-                        }
-                        put(kProperty.name, LLMRequest.Property(type, description, enumValues))
+                        val type = classifier.toGigaSchemaType()
+                        val itemType = kProperty.returnType.arguments.firstOrNull()
+                            ?.type
+                            ?.classifier
+                            .toGigaSchemaType()
+                        put(
+                            kProperty.name,
+                            LLMRequest.Property(
+                                type = type,
+                                description = description,
+                                enum = enumValues,
+                                items = if (type == "array") LLMRequest.Property(itemType) else null,
+                            )
+                        )
                     }
                 },
                 required = Input::class.primaryConstructor?.parameters
@@ -131,4 +132,17 @@ fun Throwable.toGigaToolMessage(name: String?): LLMRequest.Message {
         content = restJsonMapper.writeValueAsString(mapOf("result" to msg)),
         name = name,
     )
+}
+
+@PublishedApi
+internal fun Any?.toGigaSchemaType(): String = when (this) {
+    String::class -> "string"
+    Boolean::class -> "boolean"
+    Int::class, Long::class -> "integer"
+    Float::class, Double::class -> "number"
+    List::class, Set::class, Array::class -> "array"
+    Map::class -> "object"
+    is KClass<*> if isSubclassOf(Collection::class) -> "array"
+    is KClass<*> if isSubclassOf(Enum::class) -> "string"
+    else -> "object"
 }

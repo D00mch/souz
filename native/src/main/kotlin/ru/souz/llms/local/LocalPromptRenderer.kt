@@ -210,7 +210,7 @@ class LocalPromptRenderer {
         contextBudget: Int,
     ): RenderedMessage = when (message.role) {
         LLMMessageRole.user -> RenderedMessage(role = "user", content = renderUserMessage(message))
-        LLMMessageRole.assistant -> RenderedMessage(
+        LLMMessageRole.assistant, LLMMessageRole.function_in_progress -> RenderedMessage(
             role = "assistant",
             content = renderAssistantMessage(message),
         )
@@ -242,23 +242,28 @@ class LocalPromptRenderer {
     }
 
     private fun renderAssistantMessage(message: LLMRequest.Message): String {
-        val toolCallJson = message.functionsStateId?.let {
-            runCatching { restJsonMapper.readValue<Map<String, Any>>(message.content) }.getOrNull()
+        val toolCall = message.functionsStateId?.let {
+            message.functionCall ?: runCatching {
+                val contentJson = restJsonMapper.readValue<Map<String, Any>>(message.content)
+                val name = contentJson["name"]?.toString()
+                val arguments = contentJson["arguments"]?.let { args ->
+                    if (args is String) args else restJsonMapper.writeValueAsString(args)
+                }
+                if (name != null && arguments != null) LLMRequest.FunctionCall(name, arguments) else null
+            }.getOrNull()
         }
-        if (toolCallJson == null) {
+        if (toolCall == null) {
             return message.content.trim()
         }
 
-        val toolName = toolCallJson["name"]?.toString().orEmpty()
-        val arguments = toolCallJson["arguments"]
         return restJsonMapper.writeValueAsString(
             mapOf(
                 "type" to "tool_calls",
                 "calls" to listOf(
                     mapOf(
                         "id" to message.functionsStateId,
-                        "name" to toolName,
-                        "arguments" to (arguments ?: emptyMap<String, Any>()),
+                        "name" to toolCall.name,
+                        "arguments" to restJsonMapper.readTree(toolCall.arguments),
                     )
                 )
             )

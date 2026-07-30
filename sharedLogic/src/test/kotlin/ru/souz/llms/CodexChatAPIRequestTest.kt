@@ -81,11 +81,13 @@ class CodexChatAPIRequestTest {
 
         val historyMessage = assertNotNull(choice.toMessage())
         assertEquals("call_123", historyMessage.functionsStateId)
+        assertTrue(historyMessage.content.isEmpty())
+        assertEquals("RunSkillCommand", historyMessage.functionCall?.name)
         assertEquals(
             restJsonMapper.readTree(
-                """{"name":"RunSkillCommand","arguments":{"skillId":"InternetSearch","arguments":{"query":"Kotlin coroutines"}}}"""
+                """{"skillId":"InternetSearch","arguments":{"query":"Kotlin coroutines"}}"""
             ),
-            restJsonMapper.readTree(historyMessage.content),
+            restJsonMapper.readTree(historyMessage.functionCall?.arguments),
         )
 
         val inputItem = invokeMapMessageToInputItem(api, historyMessage)

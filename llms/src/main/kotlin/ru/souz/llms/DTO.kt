@@ -1,7 +1,13 @@
 package ru.souz.llms
 
 import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.databind.DeserializationContext
+import com.fasterxml.jackson.databind.JsonDeserializer
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import java.util.*
 
 object LLMResponse {
@@ -34,10 +40,14 @@ object LLMResponse {
         val role: LLMMessageRole,
         @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
         @field:JsonProperty("functions_state_id") val functionsStateId: String?,
+        @field:JsonProperty("reasoning_content") val reasoningContent: String? = null,
+        val created: Long? = null,
+        val name: String? = null,
     )
 
     data class FunctionCall(
         val name: String,
+        @field:JsonDeserialize(using = FunctionCallArgumentsDeserializer::class)
         val arguments: Map<String, Any>
     )
 
@@ -204,12 +214,21 @@ object LLMRequest {
         val model: String = LLMModel.Max.alias,
         val messages: List<Message>,
         @field:JsonProperty("function_call")
-        val functionCall: String = "auto",
+        val functionCall: Any = "auto",
         val functions: List<Function> = emptyList(),
         val temperature: Float? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("top_p") val topP: Float? = null,
         val stream: Boolean = false,
+        @field:JsonProperty("max_tokens")
         val maxTokens: Int = DEFAULT_MAX_TOKENS,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("repetition_penalty") val repetitionPenalty: Float? = null,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("reasoning_effort") val reasoningEffort: String? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("response_format") val responseFormat: Map<String, Any?>? = null,
         @get:JsonIgnore
         @field:JsonIgnore
         val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
@@ -233,26 +252,35 @@ object LLMRequest {
         @field:JsonProperty("functions_state_id") val functionsStateId: String? = null,
         val attachments: List<String>? = null,
         val name: String? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
+    )
+
+    data class FunctionCall(
+        val name: String,
+        val arguments: String,
     )
 
     data class Function(
         val name: String,
-        val description: String,
-        val parameters: Parameters,
+        val description: String = "",
+        val parameters: Parameters = Parameters("object", emptyMap()),
         @field:JsonProperty("few_shot_examples") val fewShotExamples: List<FewShotExample>? = null,
         @field:JsonProperty("return_parameters") val returnParameters: Parameters? = null,
     )
 
     data class Parameters(
         val type: String,
-        val properties: Map<String, Property>,
+        val properties: Map<String, Property> = emptyMap(),
         val required: List<String> = emptyList()
     )
 
     data class Property(
         val type: String,
         val description: String? = null,
-        @field:JsonProperty("enum") val enum: List<String>? = null
+        @field:JsonProperty("enum") val enum: List<String>? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        val items: Property? = null,
     )
 
     data class FewShotExample(
@@ -270,7 +298,7 @@ object LLMRequest {
 }
 
 @Suppress("EnumEntryName")
-enum class LLMMessageRole { system, user, assistant, function }
+enum class LLMMessageRole { system, user, assistant, function, function_in_progress }
 
 @Suppress("unused")
 class LLMException(body: LLMResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
@@ -290,15 +318,38 @@ operator fun LLMResponse.Usage.plus(usage: LLMResponse.Usage): LLMResponse.Usage
 fun LLMResponse.Choice.toMessage(): LLMRequest.Message? {
     val msg = this.message
     val content: String = when {
-        msg.functionCall != null -> restJsonMapper.writeValueAsString(
-            mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
-        )
+        msg.functionCall != null -> msg.content
         msg.content.isNotBlank() -> msg.content
         else -> return null
     }
     return LLMRequest.Message(
         role = msg.role,
         content = content,
-        functionsStateId = msg.functionsStateId
+        functionsStateId = msg.functionsStateId,
+        functionCall = msg.functionCall?.let {
+            LLMRequest.FunctionCall(
+                name = it.name,
+                arguments = restJsonMapper.writeValueAsString(it.arguments),
+            )
+        },
     )
+}
+
+class FunctionCallArgumentsDeserializer : JsonDeserializer<Map<String, Any>>() {
+    override fun deserialize(parser: JsonParser, ctxt: DeserializationContext): Map<String, Any> {
+        val codec = parser.codec
+        val node = codec.readTree<JsonNode>(parser)
+        val argumentsNode = if (node.isTextual) {
+            restJsonMapper.readTree(node.asText())
+        } else {
+            node
+        }
+        if (!argumentsNode.isObject) return emptyMap()
+        return restJsonMapper.convertValue(argumentsNode, Map::class.java)
+            .entries
+            .mapNotNull { (key, value) ->
+                if (key is String && value != null) key to value else null
+            }
+            .toMap()
+    }
 }

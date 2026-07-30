@@ -58,7 +58,7 @@ class GigaToolTest {
         val jsonParams = restJsonMapper.writeValueAsString(fn.parameters)
         assertEquals(
             """
-{"type":"object","properties":{"path":{"type":"string","description":"Relative path to list files from","enum":null},"depth":{"type":"number","description":"Max depth to traverse (1 = direct children only; <=0 = unlimited)","enum":null}},"required":[]}
+{"type":"object","properties":{"path":{"type":"string","description":"Relative path to list files from","enum":null},"depth":{"type":"integer","description":"Max depth to traverse (1 = direct children only; <=0 = unlimited)","enum":null}},"required":[]}
             """.trimIndent(),
             jsonParams
         )
