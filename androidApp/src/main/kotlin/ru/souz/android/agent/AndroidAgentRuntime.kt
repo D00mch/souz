@@ -28,10 +28,14 @@ import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
 import ru.souz.android.python.ChaquopyPythonSkillRunner
 import ru.souz.android.settings.AndroidSettingsProvider
+import ru.souz.android.tool.AndroidToolAvailabilityPolicy
 import ru.souz.android.tool.AndroidToolsFactory
-import ru.souz.android.tool.ToolAndroidInput
+import ru.souz.android.tool.ToolKinopoiskMovie
 import ru.souz.android.tool.ToolMediaControl
 import ru.souz.android.tool.ToolOpenAndroid
+import ru.souz.android.tool.ToolSberAssistantCommand
+import ru.souz.android.tool.ToolSberLauncherSearch
+import ru.souz.android.tool.ToolSberTvChannel
 import ru.souz.android.tool.ToolShowAndroidApps
 import ru.souz.db.SettingsProvider
 import ru.souz.di.sharedUiCommonJvmDiModule
@@ -67,6 +71,7 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ImmediateToolPermissionBroker
+import ru.souz.tool.ToolAvailabilityPolicy
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolsSettings
 import ru.souz.tool.ToolsSettingsState
@@ -152,26 +157,34 @@ class AndroidAgentRuntime(
             bindSingleton<UserMessageClassifier>(tag = DiTags.LOCAL_CLASSIFIER) { AndroidNoopClassifier }
             bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance<SettingsProvider>()) }
             bindSingleton { DeferredToolModifyPermissionBroker(instance<SettingsProvider>(), instance<FilesToolUtil>()) }
+            bindSingleton<ToolAvailabilityPolicy> { AndroidToolAvailabilityPolicy }
             bindSingleton<ToolsSettingsStore> {
                 AndroidToolsSettingsStore(
                     context = appContext,
                     objectMapper = instance(tag = DiTags.LOG_OBJECT_MAPPER),
                 )
             }
-            bindSingleton { ToolsSettings(instance(), instance()) }
+            bindSingleton { ToolsSettings(instance(), instance(), instance()) }
 
             import(portableRuntimeToolsDiModule(bindAgentToolCatalog = false))
             bindSingleton { ToolShowAndroidApps(appContext) }
             bindSingleton { ToolOpenAndroid(appContext) }
             bindSingleton { ToolMediaControl(appContext) }
-            bindSingleton { ToolAndroidInput(appContext) }
+            bindSingleton { ToolSberAssistantCommand(appContext) }
+            bindSingleton { ToolSberLauncherSearch(appContext) }
+            bindSingleton { ToolSberTvChannel(appContext) }
+            bindSingleton { ToolKinopoiskMovie(appContext) }
             bindSingleton {
                 AndroidToolsFactory(
                     portableToolsFactory = instance(),
                     toolShowApps = instance(),
                     toolOpen = instance(),
                     toolMediaControl = instance(),
-                    toolAndroidInput = instance(),
+                    toolSberAssistantCommand = instance(),
+                    toolSberLauncherSearch = instance(),
+                    toolSberTvChannel = instance(),
+                    toolKinopoiskMovie = instance(),
+                    availabilityPolicy = instance(),
                 )
             }
             bindSingleton<AgentToolCatalog> { instance<AndroidToolsFactory>() }

@@ -82,12 +82,12 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
     override var regionProfile: String
         get() {
             val raw = string(APP_LANGUAGE)?.trim()?.lowercase()
-            val normalized = if (raw == REGION_RU) REGION_RU else REGION_EN
+            val normalized = if (raw == REGION_EN) REGION_EN else REGION_RU
             if (raw != normalized) putString(APP_LANGUAGE, normalized)
             return normalized
         }
         set(value) {
-            putString(APP_LANGUAGE, if (value.trim().lowercase() == REGION_RU) REGION_RU else REGION_EN)
+            putString(APP_LANGUAGE, if (value.trim().lowercase() == REGION_EN) REGION_EN else REGION_RU)
         }
 
     override var activeAgentId: AgentId

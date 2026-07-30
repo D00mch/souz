@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.UUID
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,6 +53,18 @@ class AndroidPortableFileToolsTest {
                 fileSystem.delete(fileSystem.resolvePath(testDirectory), recursively = true)
             }
         }
+    }
+
+    @Test
+    fun catalogExcludesTemporarilyDisabledAndroidCategories() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val runtime = AndroidAgentRuntime(context, AndroidSettingsProvider(context))
+        val catalog = runtime.di.direct.instance<AgentToolCatalog>()
+
+        assertFalse(catalog.toolsByCategory.containsKey(ToolCategory.IMAGE_GENERATION))
+        assertFalse(catalog.toolsByCategory.containsKey(ToolCategory.DESKTOP))
+        assertFalse(catalog.toolsByCategory.values.any { tools -> "GenerateImage" in tools })
+        assertFalse(catalog.toolsByCategory.values.any { tools -> "AndroidInput" in tools })
     }
 
     private companion object {

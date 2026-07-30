@@ -28,38 +28,248 @@ import ru.souz.tool.InputParamDescription
 import ru.souz.tool.PortableRuntimeToolsFactory
 import ru.souz.tool.ReturnParameters
 import ru.souz.tool.ReturnProperty
+import ru.souz.tool.ToolAvailabilityPolicy
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolSetup
 import java.util.Locale
 
 private const val STAR_LAUNCHER_CATEGORY = "ru.sberdevices.category.STAR_LAUNCHER"
+private const val MEDIA_CONTROL_FALLBACK_DELAY_MS = 150L
+private const val ASSISTANT_PACKAGE = "ru.sberdevices.assistant"
+private const val STAR_LAUNCHER_PACKAGE = "ru.sberdevices.starlauncher"
+private const val TV_PACKAGE = "ru.sberdevices.tv"
+private const val KINOPOISK_PACKAGE = "ru.kinopoisk.tv"
 
 class AndroidToolsFactory(
     private val portableToolsFactory: PortableRuntimeToolsFactory,
     private val toolShowApps: ToolShowAndroidApps,
     private val toolOpen: ToolOpenAndroid,
     private val toolMediaControl: ToolMediaControl,
-    private val toolAndroidInput: ToolAndroidInput,
+    private val toolSberAssistantCommand: ToolSberAssistantCommand,
+    private val toolSberLauncherSearch: ToolSberLauncherSearch,
+    private val toolSberTvChannel: ToolSberTvChannel,
+    private val toolKinopoiskMovie: ToolKinopoiskMovie,
+    private val availabilityPolicy: ToolAvailabilityPolicy = AndroidToolAvailabilityPolicy,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
-        ToolCategory.entries.associateWith { category ->
-            val base = portableToolsFactory.toolsByCategory[category].orEmpty()
-            val androidTools = when (category) {
-                ToolCategory.APPLICATIONS -> listOf(
-                    toolShowApps.toGiga(),
-                    toolOpen.toGiga(),
-                    toolMediaControl.toGiga(),
-                )
+        ToolCategory.entries
+            .filterNot(availabilityPolicy::isCategoryForceDisabled)
+            .associateWith { category ->
+                val base = portableToolsFactory.toolsByCategory[category].orEmpty()
+                val androidTools = when (category) {
+                    ToolCategory.APPLICATIONS -> listOf(
+                        toolShowApps.toGiga(),
+                        toolOpen.toGiga(),
+                        toolMediaControl.toGiga(),
+                        toolSberAssistantCommand.toGiga(),
+                        toolSberLauncherSearch.toGiga(),
+                        toolSberTvChannel.toGiga(),
+                        toolKinopoiskMovie.toGiga(),
+                    )
 
-                ToolCategory.DESKTOP -> listOf(
-                    toolAndroidInput.toGiga(),
-                )
-
-                else -> emptyList()
-            }.associateBy { it.fn.name }
-            base + androidTools
-        }
+                    else -> emptyList()
+                }.associateBy { it.fn.name }
+                base + androidTools
+            }
     }
+}
+
+class ToolSberAssistantCommand(
+    context: Context,
+) : ToolSetup<ToolSberAssistantCommand.Input> {
+    private val appContext = context.applicationContext
+    private val packageManager: PackageManager = appContext.packageManager
+
+    data class Input(
+        @InputParamDescription("Russian text command to send to the Sber assistant, as if the user said it by voice.")
+        val text: String,
+    )
+
+    override val name: String = "SberAssistantCommand"
+    override val description: String =
+        "Sends a text command to the Sber assistant through assistant://send_text. Requires the app to be signed " +
+            "with a key accepted for ru.sberdevices.assistant.ASSISTANT_DEEPLINKS."
+
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Поставь на паузу через ассистента",
+            params = mapOf("text" to "пауза"),
+        ),
+        FewShotExample(
+            request = "Открой фильм Холоп",
+            params = mapOf("text" to "открой фильм Холоп"),
+        ),
+    )
+
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf("result" to ReturnProperty("string", "Assistant deeplink launch status.")),
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val text = input.text.trim()
+        if (text.isEmpty()) return "Error: text must not be empty"
+        val uri = Uri.Builder()
+            .scheme("assistant")
+            .authority("send_text")
+            .appendQueryParameter("text", text)
+            .build()
+        return startViewUri(appContext, packageManager, uri, ASSISTANT_PACKAGE)
+    }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+}
+
+class ToolSberLauncherSearch(
+    context: Context,
+) : ToolSetup<ToolSberLauncherSearch.Input> {
+    private val appContext = context.applicationContext
+    private val packageManager: PackageManager = appContext.packageManager
+
+    data class Input(
+        @InputParamDescription("Search query to show in Sber Star Launcher.")
+        val query: String,
+        @InputParamDescription("Search verticals. Defaults to video, music, smartapp, and search.")
+        val verticals: List<String> = listOf("video", "music", "smartapp", "search"),
+    )
+
+    override val name: String = "SberLauncherSearch"
+    override val description: String =
+        "Opens Sber Star Launcher search results through launcher_search://open. Use for broad video, music, " +
+            "smart app, or web search result pages when direct content deeplinks are unavailable."
+
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Поищи Эминема на телевизоре",
+            params = mapOf("query" to "Эминем"),
+        ),
+        FewShotExample(
+            request = "Найди фильм 1+1",
+            params = mapOf("query" to "1+1", "verticals" to listOf("video", "search")),
+        ),
+    )
+
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf("result" to ReturnProperty("string", "Launcher search deeplink launch status.")),
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val query = input.query.trim()
+        if (query.isEmpty()) return "Error: query must not be empty"
+        val verticals = input.verticals
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .ifEmpty { listOf("video", "music", "smartapp", "search") }
+        val uri = Uri.Builder()
+            .scheme("launcher_search")
+            .authority("open")
+            .appendQueryParameter("query", query)
+            .appendQueryParameter("verticals", verticals.joinToString(","))
+            .build()
+        return startViewUri(appContext, packageManager, uri, STAR_LAUNCHER_PACKAGE)
+    }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+}
+
+class ToolSberTvChannel(
+    context: Context,
+) : ToolSetup<ToolSberTvChannel.Input> {
+    private val appContext = context.applicationContext
+    private val packageManager: PackageManager = appContext.packageManager
+
+    data class Input(
+        @InputParamDescription("TV channel title, for example Карусель, СТС, ОТР, Спас.")
+        val title: String,
+    )
+
+    override val name: String = "SberTvChannel"
+    override val description: String =
+        "Opens a Sber TV channel by title through content://ru.sberdevices.tv/providers-channel."
+
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Включи канал Карусель",
+            params = mapOf("title" to "Карусель"),
+        ),
+        FewShotExample(
+            request = "Включи СТС",
+            params = mapOf("title" to "СТС"),
+        ),
+    )
+
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf("result" to ReturnProperty("string", "TV channel deeplink launch status.")),
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val title = input.title.trim()
+        if (title.isEmpty()) return "Error: title must not be empty"
+        val uri = Uri.Builder()
+            .scheme("content")
+            .authority("ru.sberdevices.tv")
+            .path("providers-channel")
+            .appendQueryParameter("title", title)
+            .build()
+        return startViewUri(appContext, packageManager, uri, TV_PACKAGE)
+    }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+}
+
+class ToolKinopoiskMovie(
+    context: Context,
+) : ToolSetup<ToolKinopoiskMovie.Input> {
+    private val appContext = context.applicationContext
+    private val packageManager: PackageManager = appContext.packageManager
+
+    data class Input(
+        @InputParamDescription("Kinopoisk film ID. For example, 1+1 / Intouchables is 535341.")
+        val filmId: String,
+        @InputParamDescription("What to open: details card, playback, or trailer.")
+        val action: KinopoiskAction = KinopoiskAction.OPEN,
+    )
+
+    enum class KinopoiskAction {
+        OPEN,
+        PLAY,
+        TRAILER,
+    }
+
+    override val name: String = "KinopoiskMovie"
+    override val description: String =
+        "Opens a Kinopoisk movie by known Kinopoisk film ID through kpatv://film?filmId=..."
+
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Открой фильм 1+1 в Кинопоиске",
+            params = mapOf("filmId" to "535341", "action" to KinopoiskAction.OPEN),
+        ),
+        FewShotExample(
+            request = "Включи 1+1 в Кинопоиске",
+            params = mapOf("filmId" to "535341", "action" to KinopoiskAction.PLAY),
+        ),
+    )
+
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf("result" to ReturnProperty("string", "Kinopoisk deeplink launch status.")),
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val filmId = input.filmId.trim()
+        if (filmId.isEmpty()) return "Error: filmId must not be empty"
+        val builder = Uri.Builder()
+            .scheme("kpatv")
+            .authority("film")
+            .appendQueryParameter("filmId", filmId)
+        when (input.action) {
+            KinopoiskAction.OPEN -> Unit
+            KinopoiskAction.PLAY -> builder.appendQueryParameter("action", "play")
+            KinopoiskAction.TRAILER -> builder.appendQueryParameter("action", "trailer")
+        }
+        return startViewUri(appContext, packageManager, builder.build(), KINOPOISK_PACKAGE)
+    }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 class ToolShowAndroidApps(
@@ -132,7 +342,9 @@ class ToolOpenAndroid(
 
     override val name: String = "Open"
     override val description: String =
-        "Opens an Android app, component, or deep link. Supports normal launcher, Android TV leanback, and Sber Star Launcher activities."
+        "Opens an Android app, component, or deep link. Supports normal launcher, Android TV leanback, " +
+            "and Sber Star Launcher activities. Use music://start to start music playback; use MediaControl " +
+            "for pause, stop, next, and previous commands on active playback."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
@@ -141,6 +353,10 @@ class ToolOpenAndroid(
         ),
         FewShotExample(
             request = "Открой персональную волну в музыке",
+            params = mapOf("target" to "music://start"),
+        ),
+        FewShotExample(
+            request = "Включи музыку",
             params = mapOf("target" to "music://start"),
         ),
     )
@@ -238,25 +454,19 @@ class ToolMediaControl(
         val command: MediaCommand,
     )
 
-    enum class MediaCommand {
-        PLAY,
-        PAUSE,
-        PLAY_PAUSE,
-        STOP,
-        NEXT,
-        PREVIOUS,
-        FAST_FORWARD,
-        REWIND,
-    }
-
     override val name: String = "MediaControl"
     override val description: String =
-        "Sends Android media key commands to the active media session. Use this for music playback control."
+        "Sends Android media key commands to the active media session. Use this for active music playback " +
+            "controls such as pause, stop, next, and previous. Use Open with music://start to start music playback."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
             request = "Поставь музыку на паузу",
             params = mapOf("command" to MediaCommand.PAUSE),
+        ),
+        FewShotExample(
+            request = "Останови музыку",
+            params = mapOf("command" to MediaCommand.STOP),
         ),
         FewShotExample(
             request = "Следующий трек",
@@ -271,22 +481,41 @@ class ToolMediaControl(
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val keyCode = when (input.command) {
-            MediaCommand.PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY
-            MediaCommand.PAUSE -> KeyEvent.KEYCODE_MEDIA_PAUSE
-            MediaCommand.PLAY_PAUSE -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
-            MediaCommand.STOP -> KeyEvent.KEYCODE_MEDIA_STOP
-            MediaCommand.NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
-            MediaCommand.PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
-            MediaCommand.FAST_FORWARD -> KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
-            MediaCommand.REWIND -> KeyEvent.KEYCODE_MEDIA_REWIND
+        val plan = mediaCommandDispatchPlan(input.command)
+        val sentCommands = mutableListOf(plan.primaryCommand)
+        dispatchMediaKey(plan.primaryCommand)
+
+        val fallbackCommand = plan.fallbackCommandIfStillActive
+        if (fallbackCommand != null) {
+            SystemClock.sleep(MEDIA_CONTROL_FALLBACK_DELAY_MS)
+            if (audioManager.isMusicActive) {
+                sentCommands += fallbackCommand
+                dispatchMediaKey(fallbackCommand)
+            }
         }
-        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
-        return "Sent media command ${input.command}"
+
+        val fallbackNote = if (sentCommands.size > 1) " via ${sentCommands.joinToString(" then ") { it.name }}" else ""
+        return "Sent media command ${input.command}$fallbackNote"
     }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+
+    private fun dispatchMediaKey(command: MediaCommand) {
+        val keyCode = command.toAndroidKeyCode()
+        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+    }
+
+    private fun MediaCommand.toAndroidKeyCode(): Int = when (this) {
+        MediaCommand.PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY
+        MediaCommand.PAUSE -> KeyEvent.KEYCODE_MEDIA_PAUSE
+        MediaCommand.PLAY_PAUSE -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+        MediaCommand.STOP -> KeyEvent.KEYCODE_MEDIA_STOP
+        MediaCommand.NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
+        MediaCommand.PREVIOUS -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+        MediaCommand.FAST_FORWARD -> KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
+        MediaCommand.REWIND -> KeyEvent.KEYCODE_MEDIA_REWIND
+    }
 }
 
 class ToolAndroidInput(
@@ -514,6 +743,30 @@ private fun PackageManager.getApplicationInfoCompat(packageName: String): Applic
     } else {
         @Suppress("DEPRECATION")
         getApplicationInfo(packageName, 0)
+    }
+
+private fun startViewUri(
+    context: Context,
+    packageManager: PackageManager,
+    uri: Uri,
+    packageName: String? = null,
+): String =
+    runCatching {
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+            .addFlags(openFlags())
+        packageName?.let(intent::setPackage)
+
+        val resolved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.resolveActivity(intent, 0)
+        } ?: error("No Android activity resolves $uri")
+
+        context.startActivity(intent)
+        "Started $uri via ${resolved.activityInfo.packageName}/${resolved.activityInfo.name}"
+    }.getOrElse { error ->
+        "Error opening '$uri': ${error.message ?: error::class.java.simpleName}"
     }
 
 private val ApplicationInfo.isSystemApp: Boolean

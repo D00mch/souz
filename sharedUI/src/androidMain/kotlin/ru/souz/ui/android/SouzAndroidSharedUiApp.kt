@@ -1,8 +1,11 @@
 package ru.souz.ui.android
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +26,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
@@ -30,6 +35,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Psychology
@@ -62,18 +68,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.DI
 import org.kodein.di.compose.localDI
@@ -85,6 +103,7 @@ import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.LocalModelDownloadProgressDialog
 import ru.souz.ui.common.LocalModelDownloadPromptDialog
+import ru.souz.ui.common.RegionProfileToggle
 import ru.souz.ui.common.ToolModifyPatchPreview
 import ru.souz.ui.main.MainEffect
 import ru.souz.ui.main.MainEvent
@@ -119,11 +138,36 @@ import souz.sharedui.generated.resources.label_codex_connected
 import souz.sharedui.generated.resources.label_codex_disconnect
 import souz.sharedui.generated.resources.label_codex_polling
 import souz.sharedui.generated.resources.label_codex_user_code
+import souz.sharedui.generated.resources.label_context_size
 import souz.sharedui.generated.resources.label_copy
+import souz.sharedui.generated.resources.label_key_aitunnel
+import souz.sharedui.generated.resources.label_key_anthropic
+import souz.sharedui.generated.resources.label_key_gigachat
+import souz.sharedui.generated.resources.label_key_openai
+import souz.sharedui.generated.resources.label_key_qwen
+import souz.sharedui.generated.resources.label_key_salutespeech
 import souz.sharedui.generated.resources.label_model
+import souz.sharedui.generated.resources.label_system_prompt
+import souz.sharedui.generated.resources.label_temperature
+import souz.sharedui.generated.resources.model_picker_no_models
 import souz.sharedui.generated.resources.permission_modify_file
 import souz.sharedui.generated.resources.provider_codex_desc
 import souz.sharedui.generated.resources.provider_codex_title
+import souz.sharedui.generated.resources.setting_language_profile_desc
+import souz.sharedui.generated.resources.setting_language_profile_title
+import souz.sharedui.generated.resources.settings_action_clear
+import souz.sharedui.generated.resources.settings_action_done
+import souz.sharedui.generated.resources.settings_action_edit
+import souz.sharedui.generated.resources.settings_action_hide_secret
+import souz.sharedui.generated.resources.settings_action_save
+import souz.sharedui.generated.resources.settings_action_show_secret
+import souz.sharedui.generated.resources.settings_edit_field_title
+import souz.sharedui.generated.resources.settings_section_keys
+import souz.sharedui.generated.resources.settings_section_models
+import souz.sharedui.generated.resources.settings_models_configure
+import souz.sharedui.generated.resources.settings_models_empty
+import souz.sharedui.generated.resources.settings_title
+import souz.sharedui.generated.resources.settings_value_not_set
 
 @Composable
 fun SouzAndroidSharedUiApp(di: DI) {
@@ -246,9 +290,17 @@ private fun AndroidChatScreen(
     var searchOpen by remember(state.chatSessionId) { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val searchEnabled = searchOpen && state.chatSearch.normalizedQuery.isNotEmpty()
+    val hasUsableChatModel = state.selectedModel.isNotBlank() &&
+        state.selectedModel in state.availableModelAliases
     val canSend = !state.isProcessing &&
         !state.isAwaitingToolReview &&
+        hasUsableChatModel &&
         input.trim().isNotEmpty()
+    val currentModelLabel = if (state.availableModelAliases.isEmpty()) {
+        stringResource(Res.string.model_picker_no_models)
+    } else {
+        state.selectedModel
+    }
 
     LaunchedEffect(state.chatMessages.size, state.isProcessing, searchEnabled) {
         if (searchEnabled) return@LaunchedEffect
@@ -313,7 +365,7 @@ private fun AndroidChatScreen(
                         Column {
                             Text("Souz")
                             Text(
-                                text = state.selectedModel.ifBlank { "No model selected" },
+                                text = currentModelLabel,
                                 style = MaterialTheme.typography.labelSmall,
                             )
                         }
@@ -383,6 +435,7 @@ private fun AndroidChatScreen(
                     selectedContextSize = state.selectedContextSize,
                     onModelChange = onModelChange,
                     onContextChange = onContextChange,
+                    onOpenSettings = onOpenSettings,
                 )
 
                 AndroidMessageInput(
@@ -437,9 +490,36 @@ private fun AndroidChatMessages(
     onSendSuggestion: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
+    val scrollStepPx = with(LocalDensity.current) { 320.dp.toPx() }
+
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) {
+                    return@onPreviewKeyEvent false
+                }
+                val scrollDelta = when (event.key) {
+                    Key.DirectionUp -> -scrollStepPx
+                    Key.DirectionDown -> scrollStepPx
+                    Key.PageUp -> -scrollStepPx * 2
+                    Key.PageDown -> scrollStepPx * 2
+                    else -> return@onPreviewKeyEvent false
+                }
+                val canScroll = if (scrollDelta < 0) {
+                    listState.canScrollBackward
+                } else {
+                    listState.canScrollForward
+                }
+                if (!canScroll) {
+                    return@onPreviewKeyEvent false
+                }
+                scope.launch { listState.animateScrollBy(scrollDelta) }
+                true
+            },
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -542,7 +622,9 @@ private fun AndroidModelAndContextSelector(
     selectedContextSize: Int,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
+    val hasModels = availableModelAliases.isNotEmpty()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -552,11 +634,19 @@ private fun AndroidModelAndContextSelector(
         AndroidDropdownSelector(
             modifier = Modifier.weight(1f),
             label = stringResource(Res.string.label_model),
-            value = modelDisplayName(selectedModelAlias),
+            value = if (hasModels) modelDisplayName(selectedModelAlias) else stringResource(Res.string.model_picker_no_models),
             options = availableModelAliases,
             optionLabel = ::modelDisplayName,
             onSelect = onModelChange,
         )
+        if (!hasModels) {
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = stringResource(Res.string.settings_models_configure),
+                )
+            }
+        }
         AndroidDropdownSelector(
             modifier = Modifier.width(132.dp),
             label = stringResource(Res.string.label_context),
@@ -578,8 +668,15 @@ private fun <T> AndroidDropdownSelector(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val hasOptions = options.isNotEmpty()
+
+    LaunchedEffect(hasOptions) {
+        if (!hasOptions) expanded = false
+    }
+
     Box(modifier = modifier) {
         OutlinedButton(
+            enabled = hasOptions,
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -602,7 +699,7 @@ private fun <T> AndroidDropdownSelector(
             }
         }
         DropdownMenu(
-            expanded = expanded,
+            expanded = expanded && hasOptions,
             onDismissRequest = { expanded = false },
         ) {
             options.forEach { option ->
@@ -628,40 +725,42 @@ private fun AndroidMessageInput(
     onCancel: () -> Unit,
     onSend: () -> Unit,
 ) {
-    Column(
+    val submit = {
+        if (canSend) {
+            onSend()
+        }
+        Unit
+    }
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+            placeholder = { Text(stringResource(Res.string.chat_input_placeholder)) },
+            minLines = 1,
+            maxLines = 8,
+        )
+        IconButton(
+            enabled = isProcessing || canSend,
+            onClick = {
+                when {
+                    isProcessing -> onCancel()
+                    canSend -> submit()
+                }
+            },
         ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = enabled,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(stringResource(Res.string.chat_input_placeholder)) },
-                minLines = 1,
-                maxLines = 8,
+            Icon(
+                imageVector = if (isProcessing) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
+                contentDescription = null,
             )
-            IconButton(
-                enabled = isProcessing || canSend,
-                onClick = {
-                    when {
-                        isProcessing -> onCancel()
-                        canSend -> onSend()
-                    }
-                },
-            ) {
-                Icon(
-                    imageVector = if (isProcessing) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
-                    contentDescription = null,
-                )
-            }
         }
     }
 }
@@ -886,10 +985,16 @@ private fun AndroidSettingsRoute(
         viewModel.send(SettingsEvent.RefreshFromProvider)
     }
 
+    val closeSettings = {
+        viewModel.send(SettingsEvent.GoToMain)
+        Unit
+    }
+    BackHandler(onBack = closeSettings)
+
     AndroidSettingsScreen(
         state = state,
         snackbarHostState = snackbarHostState,
-        onBack = onBack,
+        onBack = closeSettings,
         onEvent = viewModel::send,
     )
 }
@@ -906,7 +1011,7 @@ private fun AndroidSettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(stringResource(Res.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Rounded.ArrowBack, contentDescription = null)
@@ -923,37 +1028,82 @@ private fun AndroidSettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Models", style = MaterialTheme.typography.titleMedium)
-            state.availableLlmModels.forEach { model ->
-                val selected = model == state.gigaModel
-                if (selected) {
-                    Button(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) { Text(model.displayName) }
-                } else {
-                    TextButton(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) { Text(model.displayName) }
+            Text(
+                text = stringResource(Res.string.setting_language_profile_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(Res.string.setting_language_profile_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            RegionProfileToggle(
+                useEnglishProfile = state.useEnglishVersion,
+                onProfileChange = { enabled -> onEvent(SettingsEvent.InputUseEnglishVersion(enabled)) },
+            )
+
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(Res.string.settings_section_models), style = MaterialTheme.typography.titleMedium)
+            if (state.availableLlmModels.isEmpty()) {
+                Text(
+                    text = stringResource(Res.string.settings_models_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                state.availableLlmModels.forEach { model ->
+                    val selected = model == state.gigaModel
+                    if (selected) {
+                        Button(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) { Text(model.displayName) }
+                    } else {
+                        TextButton(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) { Text(model.displayName) }
+                    }
                 }
             }
 
-            OutlinedTextField(
+            AndroidTextSettingRow(
+                label = stringResource(Res.string.label_context_size),
                 value = state.contextSizeInput,
                 onValueChange = { onEvent(SettingsEvent.InputContextSize(it)) },
-                label = { Text("Context size") },
-                modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
+            AndroidTextSettingRow(
+                label = stringResource(Res.string.label_temperature),
                 value = state.temperatureInput,
                 onValueChange = { onEvent(SettingsEvent.InputTemperature(it)) },
-                label = { Text("Temperature") },
-                modifier = Modifier.fillMaxWidth(),
             )
 
             Spacer(Modifier.height(8.dp))
-            Text("API keys", style = MaterialTheme.typography.titleMedium)
-            AndroidKeyField("GigaChat", state.gigaChatKey) { onEvent(SettingsEvent.InputGigaChatKey(it)) }
-            AndroidKeyField("Qwen", state.qwenChatKey) { onEvent(SettingsEvent.InputQwenChatKey(it)) }
-            AndroidKeyField("AI Tunnel", state.aiTunnelKey) { onEvent(SettingsEvent.InputAiTunnelKey(it)) }
-            AndroidKeyField("Anthropic", state.anthropicKey) { onEvent(SettingsEvent.InputAnthropicKey(it)) }
-            AndroidKeyField("OpenAI", state.openaiKey) { onEvent(SettingsEvent.InputOpenAiKey(it)) }
-            AndroidKeyField("SaluteSpeech", state.saluteSpeechKey) { onEvent(SettingsEvent.InputSaluteSpeechKey(it)) }
+            Text(stringResource(Res.string.settings_section_keys), style = MaterialTheme.typography.titleMedium)
+            AndroidSecretSettingRow(
+                label = stringResource(Res.string.label_key_gigachat),
+                value = state.gigaChatKey,
+                onValueChange = { onEvent(SettingsEvent.InputGigaChatKey(it)) },
+            )
+            AndroidSecretSettingRow(
+                label = stringResource(Res.string.label_key_qwen),
+                value = state.qwenChatKey,
+                onValueChange = { onEvent(SettingsEvent.InputQwenChatKey(it)) },
+            )
+            AndroidSecretSettingRow(
+                label = stringResource(Res.string.label_key_aitunnel),
+                value = state.aiTunnelKey,
+                onValueChange = { onEvent(SettingsEvent.InputAiTunnelKey(it)) },
+            )
+            AndroidSecretSettingRow(
+                label = stringResource(Res.string.label_key_anthropic),
+                value = state.anthropicKey,
+                onValueChange = { onEvent(SettingsEvent.InputAnthropicKey(it)) },
+            )
+            AndroidSecretSettingRow(
+                label = stringResource(Res.string.label_key_openai),
+                value = state.openaiKey,
+                onValueChange = { onEvent(SettingsEvent.InputOpenAiKey(it)) },
+            )
+            AndroidSecretSettingRow(
+                label = stringResource(Res.string.label_key_salutespeech),
+                value = state.saluteSpeechKey,
+                onValueChange = { onEvent(SettingsEvent.InputSaluteSpeechKey(it)) },
+            )
             if (ApiKeyField.CODEX in state.availableApiKeyFields) {
                 AndroidCodexAuthCard(
                     connected = state.codexConnected,
@@ -965,38 +1115,287 @@ private fun AndroidSettingsScreen(
                 )
             }
 
-            OutlinedTextField(
+            AndroidTextSettingRow(
+                label = stringResource(Res.string.label_system_prompt),
                 value = state.systemPrompt,
                 onValueChange = { onEvent(SettingsEvent.InputSystemPrompt(it)) },
-                label = { Text("System prompt") },
-                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
                 minLines = 4,
+                previewMaxLines = 2,
             )
 
             Button(
                 onClick = { onEvent(SettingsEvent.GoToMain) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Done")
+                Text(stringResource(Res.string.settings_action_done))
             }
         }
     }
 }
 
 @Composable
-private fun AndroidKeyField(
+private fun AndroidTextSettingRow(
+    label: String,
+    value: String,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    previewMaxLines: Int = 1,
+    onValueChange: (String) -> Unit,
+) {
+    var showEditor by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf(TextFieldValue()) }
+
+    if (showEditor) {
+        AlertDialog(
+            onDismissRequest = { showEditor = false },
+            title = { Text(stringResource(Res.string.settings_edit_field_title, label)) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        label = { Text(label) },
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = VisualTransformation.None,
+                        singleLine = singleLine,
+                        minLines = minLines,
+                    )
+                    TextButton(
+                        onClick = {
+                            draft = TextFieldValue(
+                                text = "",
+                                selection = TextRange.Zero,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(Res.string.settings_action_clear))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onValueChange(draft.text)
+                        showEditor = false
+                    },
+                ) {
+                    Text(stringResource(Res.string.settings_action_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditor = false }) {
+                    Text(stringResource(Res.string.dialog_cancel))
+                }
+            },
+        )
+    }
+
+    AndroidSettingRow(
+        label = label,
+        value = value,
+        previewMaxLines = previewMaxLines,
+        onEdit = {
+            draft = TextFieldValue(
+                text = value,
+                selection = TextRange(0, value.length),
+            )
+            showEditor = true
+        },
+    )
+}
+
+@Composable
+private fun AndroidSecretSettingRow(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
 ) {
-    OutlinedTextField(
+    var showEditor by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf(TextFieldValue()) }
+
+    if (showEditor) {
+        AndroidSecretSettingEditorDialog(
+            label = label,
+            value = draft,
+            onValueChange = { updated -> draft = updated },
+            onDismiss = { showEditor = false },
+            onSave = {
+                onValueChange(draft.text)
+                showEditor = false
+            },
+        )
+    }
+
+    AndroidSettingRow(
+        label = label,
         value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        modifier = Modifier.fillMaxWidth(),
-        visualTransformation = PasswordVisualTransformation(),
-        singleLine = true,
+        secret = true,
+        onEdit = {
+            draft = TextFieldValue(
+                text = value,
+                selection = TextRange(0, value.length),
+            )
+            showEditor = true
+        },
     )
+}
+
+@Composable
+private fun AndroidSettingRow(
+    label: String,
+    value: String,
+    secret: Boolean = false,
+    previewMaxLines: Int = 1,
+    onEdit: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedButton(
+            onClick = onEdit,
+            modifier = Modifier
+                .width(210.dp)
+                .heightIn(min = 52.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Edit,
+                contentDescription = stringResource(Res.string.settings_action_edit),
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = label,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        AndroidValuePreview(
+            value = value,
+            secret = secret,
+            maxLines = previewMaxLines,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun AndroidSecretSettingEditorDialog(
+    label: String,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+) {
+    var reveal by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        modifier = Modifier.imePadding(),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.settings_edit_field_title, label)) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    label = { Text(label) },
+                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSave() }),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { reveal = !reveal }) {
+                        Text(
+                            if (reveal) {
+                                stringResource(Res.string.settings_action_hide_secret)
+                            } else {
+                                stringResource(Res.string.settings_action_show_secret)
+                            },
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            onValueChange(
+                                TextFieldValue(
+                                    text = "",
+                                    selection = TextRange.Zero,
+                                ),
+                            )
+                        },
+                    ) {
+                        Text(stringResource(Res.string.settings_action_clear))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onSave) {
+                Text(stringResource(Res.string.settings_action_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.dialog_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AndroidValuePreview(
+    value: String,
+    secret: Boolean,
+    maxLines: Int,
+    modifier: Modifier = Modifier,
+    revealSecret: Boolean = false,
+    fixedSecretMask: Boolean = true,
+    useMonospace: Boolean = false,
+) {
+    val displayValue = when {
+        value.isBlank() -> stringResource(Res.string.settings_value_not_set)
+        secret && !revealSecret -> if (fixedSecretMask) "********" else "*".repeat(value.length)
+        else -> value
+    }
+    val shape = RoundedCornerShape(8.dp)
+
+    Surface(
+        modifier = modifier
+            .heightIn(min = 52.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = shape,
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = displayValue,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = if (useMonospace) FontFamily.Monospace else null,
+                color = if (value.isBlank()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable

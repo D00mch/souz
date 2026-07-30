@@ -89,6 +89,14 @@
     <string name="label_system_prompt">System prompt</string>
     <string name="button_reset">Reset</string>
     <string name="hint_system_prompt_reset">Reset system prompt to default</string>
+    <string name="settings_action_done">Done</string>
+    <string name="settings_action_clear">Clear</string>
+    <string name="settings_action_edit">Edit</string>
+    <string name="settings_action_show_secret">Show</string>
+    <string name="settings_action_hide_secret">Hide</string>
+    <string name="settings_action_save">Save</string>
+    <string name="settings_edit_field_title">Edit %1$s</string>
+    <string name="settings_value_not_set">Not set</string>
 
     <!-- General Settings -->
     <string name="setting_streaming_title">Streaming mode</string>
@@ -292,6 +300,7 @@
     <string name="button_sending_logs">Sending logs...</string>
     <string name="snack_logs_path_copied">Path to logs copied</string>
     <string name="error_failed_open_privacy_policy">Failed to open privacy policy</string>
+    <string name="error_no_chat_model_configured">Configure an API key before sending a message.</string>
     
     <!-- Calendars -->
     <string name="label_default_calendar">Default calendar</string>
@@ -309,6 +318,9 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Model</string>
+    <string name="model_picker_no_models">No models available</string>
+    <string name="settings_models_configure">Configure models</string>
+    <string name="settings_models_empty">Configure a GigaChat, Qwen, or AI Tunnel API key to enable models for this profile.</string>
     <string name="content_desc_select_agent">Select agent</string>
     <string name="label_embeddings_model">Embeddings model</string>
     <string name="label_voice_recognition_model">Voice recognition model</string>
@@ -565,6 +577,7 @@
     <string name="chat_action_list_notes">Listing notes</string>
     <string name="chat_action_search_notes">Searching notes: %1$s</string>
     <string name="chat_action_show_apps">Listing apps: %1$s</string>
+    <string name="chat_action_media_control">Controlling media: %1$s</string>
     <string name="chat_action_create_plot">Creating plot from: %1$s</string>
     <string name="chat_action_upload_file">Uploading file: %1$s</string>
     <string name="chat_action_download_file">Downloading file: %1$s</string>

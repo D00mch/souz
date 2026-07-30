@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.ApplicationExtension
+import org.gradle.api.GradleException
 import java.io.File
 
 plugins {
@@ -45,6 +46,41 @@ extensions.configure<ApplicationExtension>("android") {
     namespace = "ru.souz.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
+    val signingStorePath = providers.gradleProperty("souz.android.signing.storeFile")
+        .orElse(providers.environmentVariable("SOUZ_ANDROID_SIGNING_STORE_FILE"))
+        .orNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+    val signingStorePassword = providers.gradleProperty("souz.android.signing.storePassword")
+        .orElse(providers.environmentVariable("SOUZ_ANDROID_SIGNING_STORE_PASSWORD"))
+        .orNull
+    val signingKeyAlias = providers.gradleProperty("souz.android.signing.keyAlias")
+        .orElse(providers.environmentVariable("SOUZ_ANDROID_SIGNING_KEY_ALIAS"))
+        .orNull
+    val signingKeyPassword = providers.gradleProperty("souz.android.signing.keyPassword")
+        .orElse(providers.environmentVariable("SOUZ_ANDROID_SIGNING_KEY_PASSWORD"))
+        .orNull
+
+    val configuredSigning = signingStorePath
+        ?.let { path ->
+            val store = File(path)
+            if (!store.isFile || !store.canRead()) {
+                throw GradleException("Configured Android signing store is not readable: $path")
+            }
+            if (signingStorePassword.isNullOrBlank()) {
+                throw GradleException("Configured Android signing store password is blank")
+            }
+            if (signingKeyAlias.isNullOrBlank()) {
+                throw GradleException("Configured Android signing key alias is blank")
+            }
+            signingConfigs.create("configuredDebug") {
+                storeFile = store
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword ?: signingStorePassword
+            }
+        }
+
     defaultConfig {
         applicationId = "ru.souz.android"
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -60,6 +96,12 @@ extensions.configure<ApplicationExtension>("android") {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    configuredSigning?.let { signing ->
+        buildTypes.named("debug") {
+            signingConfig = signing
+        }
     }
 }
 

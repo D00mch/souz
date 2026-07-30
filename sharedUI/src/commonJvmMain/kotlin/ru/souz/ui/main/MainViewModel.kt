@@ -85,14 +85,18 @@ class MainViewModel(
             val randomTip = startTips.randomOrNull() ?: ""
             val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
             val selectedModel = pickConfiguredOrDefaultModel(availableModels)
-            val downloadPrompt = localModelUiHost.downloadPromptFor(selectedModel)
-            if (downloadPrompt == null) {
+            val downloadPrompt = if (selectedModel == null) {
+                null
+            } else {
+                localModelUiHost.downloadPromptFor(selectedModel)
+            }
+            if (selectedModel != null && downloadPrompt == null) {
                 applySelectedModel(selectedModel)
             }
 
             setState {
                 copy(
-                    selectedModel = selectedModel.alias,
+                    selectedModel = selectedModel?.alias.orEmpty(),
                     availableModelAliases = availableModels.map { it.alias },
                     selectedContextSize = settingsProvider.contextSize,
                     displayedText = randomTip,
@@ -120,13 +124,15 @@ class MainViewModel(
                                     pendingVoiceInputDraftToken = pendingVoiceInputDraftToken + 1,
                                 )
                             }
-                        } else {
+                        } else if (hasUsableChatModel()) {
                             chatUseCase.sendChatMessage(
                                 scope = viewModelScope,
                                 isVoice = true,
                                 chatMessage = recognizedText,
                                 requestSource = ChatRequestSource.VOICE_INPUT,
                             )
+                        } else {
+                            send(MainEffect.ShowError(noChatModelErrorMessage()))
                         }
                     }
                 },
@@ -136,6 +142,10 @@ class MainViewModel(
 
         viewModelScope.launch {
             chatCommandInputSource.incomingMessages.collect { msg ->
+                if (!hasUsableChatModel()) {
+                    msg.responseDeferred.complete("Error: ${noChatModelErrorMessage()}")
+                    return@collect
+                }
                 chatUseCase.sendChatMessage(
                     scope = this,
                     isVoice = msg.isVoice,
@@ -219,6 +229,10 @@ class MainViewModel(
                     attachedFiles = attachments,
                 )
                 if (composedMessage.isBlank()) return@vmLaunch
+                if (!hasUsableChatModel()) {
+                    send(MainEffect.ShowError(noChatModelErrorMessage()))
+                    return@vmLaunch
+                }
 
                 setState { copy(attachedFiles = emptyList()) }
                 chatUseCase.sendChatMessage(
@@ -514,14 +528,18 @@ class MainViewModel(
     private suspend fun refreshSettings() {
         val availableModels = settingsProvider.availableLlmModels(llmBuildProfile)
         val selectedModel = pickConfiguredOrDefaultModel(availableModels)
-        val downloadPrompt = localModelUiHost.downloadPromptFor(selectedModel)
-        if (downloadPrompt == null) {
+        val downloadPrompt = if (selectedModel == null) {
+            null
+        } else {
+            localModelUiHost.downloadPromptFor(selectedModel)
+        }
+        if (selectedModel != null && downloadPrompt == null) {
             applySelectedModel(selectedModel)
         }
 
         setState {
             copy(
-                selectedModel = selectedModel.alias,
+                selectedModel = selectedModel?.alias.orEmpty(),
                 availableModelAliases = availableModels.map { it.alias },
                 selectedContextSize = settingsProvider.contextSize,
                 localModelDownloadPrompt = downloadPrompt,
@@ -530,10 +548,17 @@ class MainViewModel(
     }
 
     private fun pickConfiguredOrDefaultModel(availableModels: List<LLMModel>) = when {
-        availableModels.isEmpty() -> settingsProvider.gigaModel
+        availableModels.isEmpty() -> null
         settingsProvider.gigaModel in availableModels -> settingsProvider.gigaModel
         else -> settingsProvider.defaultLlmModel(llmBuildProfile) ?: availableModels.first()
     }
+
+    private fun hasUsableChatModel(): Boolean =
+        currentState.selectedModel.isNotBlank() &&
+            currentState.selectedModel in currentState.availableModelAliases
+
+    private suspend fun noChatModelErrorMessage(): String =
+        getString(Res.string.error_no_chat_model_configured)
 
     private fun applySelectedModel(model: LLMModel) {
         val previousEmbeddingsModel = settingsProvider.embeddingsModel

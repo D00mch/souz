@@ -48,6 +48,7 @@ class ChatAgentActionFormatter {
             "ListNotes" -> getString(Res.string.chat_action_list_notes)
             "SearchNotes" -> format(Res.string.chat_action_search_notes, textArg(args, "query"))
             "ShowApps" -> format(Res.string.chat_action_show_apps, appStateLabel(textArg(args, "state")))
+            "MediaControl" -> format(Res.string.chat_action_media_control, humanize(textArg(args, "command")))
             "CreatePlot" -> format(Res.string.chat_action_create_plot, pathArg(args, "path", "output"))
             "UploadFile" -> format(Res.string.chat_action_upload_file, pathArg(args, "filePath"))
             "DownloadFile" -> format(Res.string.chat_action_download_file, textArg(args, "fileId"))

@@ -90,6 +90,26 @@ class LocalRegexClassifierTest {
     }
 
     @Test
+    fun `classifies media launch and controls as applications`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val cases = listOf(
+            "Включи музыку",
+            "Запусти музыку",
+            "Останови музыку",
+            "Поставь музыку на паузу",
+            "Следующий трек",
+            "pause music",
+            "stop music",
+            "next track",
+        )
+
+        for (text in cases) {
+            val categories = classifier.classify(body(text)).categories
+            assertEquals(ToolCategory.APPLICATIONS, categories.first(), text)
+        }
+    }
+
+    @Test
     fun `returns null on tie`() = runBlocking {
         val classifier = LocalRegexClassifier
         val categories = classifier.classify(body("прочитай readme и открой example.com"))

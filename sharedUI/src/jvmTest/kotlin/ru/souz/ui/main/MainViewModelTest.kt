@@ -3,6 +3,7 @@
 package ru.souz.ui.main
 
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -16,6 +17,8 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -42,6 +45,7 @@ import org.kodein.di.with
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.chat_action_web_search
+import souz.sharedui.generated.resources.error_no_chat_model_configured
 import souz.sharedui.generated.resources.onboarding_display_text
 import souz.sharedui.generated.resources.onboarding_input_permission_request
 import souz.sharedui.generated.resources.voice_error_local_macos_audio_too_long
@@ -121,6 +125,7 @@ class MainViewModelTest {
         mockkStatic("org.jetbrains.compose.resources.StringArrayResourcesKt")
         coEvery { getString(any()) } answers { firstArg<Any>().toString() }
         coEvery { getString(Res.string.chat_action_web_search) } returns "Ищу в интернете: %1\$s"
+        coEvery { getString(Res.string.error_no_chat_model_configured) } returns "Configure an API key before sending a message."
         coEvery { getStringArray(any()) } returns listOf("tip")
 
     }
@@ -750,6 +755,77 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `startup clears selected model when no provider keys are configured`() = runTest(mainDispatcher) {
+        val harness = createHarness(configuredModel = LLMModel.QwenMax)
+
+        try {
+            val state = awaitState(harness.viewModel) { it.displayedText == "tip" }
+
+            assertEquals("", state.selectedModel)
+            assertEquals(emptyList(), state.availableModelAliases)
+            verify(exactly = 0) { harness.settingsProvider.gigaModel = any() }
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `send message without available model shows error and preserves attachments`() = runTest(mainDispatcher) {
+        val harness = createHarness(configuredModel = LLMModel.QwenMax)
+        val effect = CompletableDeferred<MainEffect>()
+        val collector = launch {
+            harness.viewModel.effects.collect { effect.complete(it) }
+        }
+
+        try {
+            val state = awaitState(harness.viewModel) { it.displayedText == "tip" }
+            val attachment = ChatAttachedFile(
+                path = "/tmp/request.txt",
+                displayName = "request.txt",
+                sizeBytes = 12,
+                type = ChatAttachmentType.DOCUMENT,
+            )
+            forceUiState(harness.viewModel, state.copy(attachedFiles = listOf(attachment)))
+
+            harness.viewModel.handleEvent(MainEvent.SendChatMessage("hello"))
+            advanceUntilIdle()
+
+            assertEquals(listOf(attachment), harness.viewModel.uiState.value.attachedFiles)
+            assertEquals(
+                MainEffect.ShowError("Configure an API key before sending a message."),
+                effect.await(),
+            )
+            coVerify(exactly = 0) { harness.agentFacade.execute(any(), any()) }
+        } finally {
+            collector.cancel()
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `external command without available model completes with error and does not execute agent`() = runTest(mainDispatcher) {
+        val harness = createHarness(configuredModel = LLMModel.QwenMax)
+
+        try {
+            awaitState(harness.viewModel) { it.displayedText == "tip" }
+            val response = CompletableDeferred<String>()
+
+            harness.incomingMessages.emit(
+                TelegramControlIncomingMessage(
+                    text = "hello from bot",
+                    responseDeferred = response,
+                )
+            )
+            advanceUntilIdle()
+
+            assertEquals("Error: Configure an API key before sending a message.", response.await())
+            coVerify(exactly = 0) { harness.agentFacade.execute(any(), any()) }
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `selecting missing local model opens download prompt in main chat`() = runTest(mainDispatcher) {
         val harness = createHarness(
             qwenChatKey = "qwen-key",
@@ -1343,6 +1419,7 @@ class MainViewModelTest {
         return TestHarness(
             viewModel = viewModel,
             isSpeakingFlow = speakingFlow,
+            agentFacade = agentFacade,
             settingsProvider = settingsProvider,
             speechPlayer = speechPlayer,
             incomingMessages = incomingMessages,
@@ -1371,6 +1448,7 @@ class MainViewModelTest {
     private data class TestHarness(
         val viewModel: MainViewModel,
         val isSpeakingFlow: MutableStateFlow<Boolean>,
+        val agentFacade: AgentFacade,
         val settingsProvider: SettingsProvider,
         val speechPlayer: UiSpeechPlayer,
         val incomingMessages: MutableSharedFlow<TelegramControlIncomingMessage>,

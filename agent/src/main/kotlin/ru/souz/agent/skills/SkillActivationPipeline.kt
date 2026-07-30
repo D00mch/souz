@@ -12,6 +12,7 @@ import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.selection.LlmSkillSelector
 import ru.souz.agent.skills.selection.SkillSelectionInput
+import ru.souz.agent.skills.selection.SkillSelectionMessage
 import ru.souz.agent.skills.selection.SkillSelector
 import ru.souz.agent.skills.validation.LlmSkillValidator
 import ru.souz.agent.skills.validation.SkillLlmValidationVerdict
@@ -29,6 +30,8 @@ import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.json.JsonUtils
 import java.time.Clock
 import java.time.Instant
@@ -125,6 +128,7 @@ class SkillActivationPipeline(
         val selection = selector.select(
             SkillSelectionInput(
                 userMessage = state.input.context.input,
+                recentConversation = recentConversationForSelection(state.input.context),
                 availableSkills = availableSkills,
             )
         )
@@ -427,6 +431,52 @@ class SkillActivationPipeline(
         supportingFiles = files.map { it.normalizedPath }.filterNot { it == SKILL_MD_PATH },
     )
 
+    private fun recentConversationForSelection(context: AgentContext<String>): List<SkillSelectionMessage> {
+        val window = if (context.input.isShortFollowUpLikeMessage()) {
+            EXPANDED_SELECTION_HISTORY_WINDOW
+        } else {
+            DEFAULT_SELECTION_HISTORY_WINDOW
+        }
+        return context.history
+            .filterNot { it.role == LLMMessageRole.system }
+            .filterNot { it.isInjectedContextMessageForSelection() }
+            .dropCurrentUserTurn(context.input)
+            .takeLast(window)
+            .map { message ->
+                SkillSelectionMessage(
+                    role = message.role.name.lowercase(),
+                    content = message.content.trimForSelectionPrompt(),
+                )
+            }
+            .filter { it.content.isNotBlank() }
+    }
+
+    private fun List<LLMRequest.Message>.dropCurrentUserTurn(userText: String): List<LLMRequest.Message> {
+        val lastMessage = lastOrNull() ?: return this
+        if (lastMessage.role != LLMMessageRole.user) return this
+        if (lastMessage.content != userText) return this
+        return dropLast(1)
+    }
+
+    private fun LLMRequest.Message.isInjectedContextMessageForSelection(): Boolean =
+        role == LLMMessageRole.user && content.startsWith(INJECTED_CONTEXT_PREFIX)
+
+    private fun String.isShortFollowUpLikeMessage(): Boolean {
+        val normalized = trim()
+        if (normalized.isBlank()) return false
+        if (normalized.length <= SHORT_SELECTION_CHAR_THRESHOLD) return true
+        return SELECTION_WORD_REGEX.findAll(normalized).count() <= SHORT_SELECTION_WORD_THRESHOLD
+    }
+
+    private fun String.trimForSelectionPrompt(): String {
+        val normalized = trim()
+        return if (normalized.length <= MAX_SELECTION_HISTORY_MESSAGE_CHARS) {
+            normalized
+        } else {
+            normalized.take(MAX_SELECTION_HISTORY_MESSAGE_CHARS) + "..."
+        }
+    }
+
     private fun errorFinding(code: String, message: String): SkillValidationFinding = SkillValidationFinding(
         code = code,
         message = message,
@@ -728,6 +778,14 @@ class SkillActivationPipeline(
         static ?: error("Static validation is missing in phase $phase")
 
     companion object {
+        private const val DEFAULT_SELECTION_HISTORY_WINDOW = 3
+        private const val EXPANDED_SELECTION_HISTORY_WINDOW = 6
+        private const val SHORT_SELECTION_CHAR_THRESHOLD = 24
+        private const val SHORT_SELECTION_WORD_THRESHOLD = 4
+        private const val MAX_SELECTION_HISTORY_MESSAGE_CHARS = 1200
+        private const val INJECTED_CONTEXT_PREFIX = "<context>\nBackground information."
+        private val SELECTION_WORD_REGEX = Regex("""[\p{L}\p{N}]+(?:['’_-][\p{L}\p{N}]+)*""")
+
         internal fun from(
             registryRepository: SkillRegistryRepository,
             llmApi: LLMChatAPI,

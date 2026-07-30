@@ -85,6 +85,14 @@
     <string name="label_system_prompt">Системный промпт</string>
     <string name="button_reset">Сбросить</string>
     <string name="hint_system_prompt_reset">Сбросить системный промпт к значению по умолчанию</string>
+    <string name="settings_action_done">Готово</string>
+    <string name="settings_action_clear">Очистить</string>
+    <string name="settings_action_edit">Редактировать</string>
+    <string name="settings_action_show_secret">Показать</string>
+    <string name="settings_action_hide_secret">Скрыть</string>
+    <string name="settings_action_save">Сохранить</string>
+    <string name="settings_edit_field_title">Редактировать %1$s</string>
+    <string name="settings_value_not_set">Не задано</string>
 
     <!-- General Settings -->
     <string name="setting_streaming_title">Streaming-режим</string>
@@ -288,6 +296,7 @@
     <string name="button_sending_logs">Отправка логов...</string>
     <string name="snack_logs_path_copied">Путь к логам скопирован</string>
     <string name="error_failed_open_privacy_policy">Не удалось открыть политику конфиденциальности</string>
+    <string name="error_no_chat_model_configured">Добавьте API-ключ перед отправкой сообщения.</string>
     
     <!-- Calendars -->
     <string name="label_default_calendar">Календарь по умолчанию</string>
@@ -305,6 +314,9 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Модель</string>
+    <string name="model_picker_no_models">Нет доступных моделей</string>
+    <string name="settings_models_configure">Настроить модели</string>
+    <string name="settings_models_empty">Добавьте ключ GigaChat, Qwen или AI Tunnel, чтобы включить модели для этого профиля.</string>
     <string name="content_desc_select_agent">Выбрать агента</string>
     <string name="label_embeddings_model">Модель эмбеддингов</string>
     <string name="label_voice_recognition_model">Модель распознавания речи</string>
@@ -567,6 +579,7 @@
     <string name="chat_action_list_notes">Показываю список заметок</string>
     <string name="chat_action_search_notes">Ищу заметки: %1$s</string>
     <string name="chat_action_show_apps">Показываю приложения: %1$s</string>
+    <string name="chat_action_media_control">Управляю медиаплеером: %1$s</string>
     <string name="chat_action_create_plot">Строю график по данным: %1$s</string>
     <string name="chat_action_upload_file">Загружаю файл: %1$s</string>
     <string name="chat_action_download_file">Скачиваю файл: %1$s</string>
