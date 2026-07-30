@@ -37,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
@@ -57,7 +56,7 @@ import ru.souz.ui.components.LabeledTextField
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import ru.souz.ui.settings.CodexOAuthUiState
-import ru.souz.ui.settings.SettingsUiColors
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 
@@ -72,12 +71,6 @@ private object SetupSpacing {
     val elementSpacing = 12.dp
     val labelToFieldSpacing = 6.dp
 }
-
-private val SetupFieldBackground = SettingsUiColors.inputBackground
-private val SetupBorder = SettingsUiColors.inputBorder
-private val SetupStrongTextColor = SettingsUiColors.inputText
-private val SetupLabelColor = SettingsUiColors.labelText
-private val SetupHintColor = SettingsUiColors.labelTextSecondary
 
 @Composable
 fun SetupScreen(
@@ -144,7 +137,6 @@ fun SetupScreenContent(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = LocalWindowInfo.current.isWindowFocused
         ) {
             Column(
                 modifier = Modifier
@@ -170,7 +162,7 @@ fun SetupScreenContent(
                                 lineHeight = 38.sp,
                                 fontWeight = FontWeight.Bold
                             ),
-                            color = SetupStrongTextColor
+                            color = MaterialTheme.souzColors.settings.content
                         )
                         Text(
                             text = if (hasNoKeys) {
@@ -193,7 +185,7 @@ fun SetupScreenContent(
                             color = if (hasNoKeys && !state.supportsLocalInference) {
                                 MaterialTheme.colorScheme.error
                             } else {
-                                SetupHintColor
+                                MaterialTheme.souzColors.settings.secondaryContent
                             }
                         )
                     }
@@ -202,7 +194,7 @@ fun SetupScreenContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(1.dp)
-                        .background(SettingsUiColors.sidebarBorder)
+                        .background(MaterialTheme.souzColors.settings.sidebarBorder)
                 )
 
                 Column(
@@ -225,7 +217,7 @@ fun SetupScreenContent(
                                 lineHeight = 16.sp,
                                 fontWeight = FontWeight.Medium
                             ),
-                            color = SetupLabelColor
+                            color = MaterialTheme.souzColors.settings.content
                         )
                         Text(
                             text = stringResource(Res.string.setting_language_profile_desc),
@@ -233,7 +225,7 @@ fun SetupScreenContent(
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
                             ),
-                            color = SetupHintColor
+                            color = MaterialTheme.souzColors.settings.secondaryContent
                         )
                         LanguageToggle(
                             useEnglish = state.useEnglishVersion,
@@ -326,7 +318,7 @@ fun SetupScreenContent(
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
                             ),
-                            color = SetupHintColor
+                            color = MaterialTheme.souzColors.settings.secondaryContent
                         )
                         OutlinedButton(
                             onClick = onChooseVoice,
@@ -334,10 +326,10 @@ fun SetupScreenContent(
                                 .fillMaxWidth()
                                 .height(SetupControlHeight),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = SetupFieldBackground,
-                                contentColor = SetupStrongTextColor
+                                containerColor = MaterialTheme.souzColors.settings.inputBackground,
+                                contentColor = MaterialTheme.souzColors.settings.content
                             ),
-                            border = BorderStroke(1.dp, SetupBorder),
+                            border = BorderStroke(1.dp, MaterialTheme.souzColors.settings.inputBorder),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
@@ -347,7 +339,7 @@ fun SetupScreenContent(
                                     lineHeight = 20.sp,
                                     fontWeight = FontWeight.Medium
                                 ),
-                                color = SetupStrongTextColor
+                                color = MaterialTheme.souzColors.settings.content
                             )
                         }
                     }
@@ -358,12 +350,12 @@ fun SetupScreenContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(SetupControlHeight),
-                        border = BorderStroke(1.dp, SettingsUiColors.buttonBorder),
+                        border = BorderStroke(1.dp, MaterialTheme.souzColors.settings.secondaryActionBorder),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = SettingsUiColors.activeItemBackground,
-                            contentColor = SettingsUiColors.activeItemText,
-                            disabledContainerColor = SettingsUiColors.buttonBackground,
-                            disabledContentColor = SettingsUiColors.labelTextSecondary
+                            containerColor = MaterialTheme.souzColors.settings.selectedNavigationBackground,
+                            contentColor = MaterialTheme.souzColors.settings.selectedNavigationContent,
+                            disabledContainerColor = MaterialTheme.souzColors.settings.secondaryActionContainer,
+                            disabledContentColor = MaterialTheme.souzColors.settings.secondaryContent
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -456,7 +448,7 @@ private fun KeyProvidersSection(
                 lineHeight = 28.sp,
                 fontWeight = FontWeight.SemiBold
             ),
-            color = SetupStrongTextColor
+            color = MaterialTheme.souzColors.settings.content
         )
 
         availableProviders.forEach { provider ->
@@ -476,9 +468,9 @@ private fun ProviderLinkCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth(),
-        color = SetupFieldBackground,
+        color = MaterialTheme.souzColors.settings.inputBackground,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, SetupBorder)
+        border = BorderStroke(1.dp, MaterialTheme.souzColors.settings.inputBorder)
     ) {
         Column(
             modifier = Modifier
@@ -490,27 +482,27 @@ private fun ProviderLinkCard(
             Text(
                 text = stringResource(provider.title),
                 style = MaterialTheme.typography.titleSmall,
-                color = SetupStrongTextColor
+                color = MaterialTheme.souzColors.settings.content
             )
             Text(
                 text = stringResource(provider.description),
                 style = MaterialTheme.typography.bodySmall,
-                color = SetupLabelColor
+                color = MaterialTheme.souzColors.settings.content
             )
             Text(
                 text = stringResource(provider.details),
                 style = MaterialTheme.typography.bodySmall,
-                color = SetupHintColor
+                color = MaterialTheme.souzColors.settings.secondaryContent
             )
             OutlinedButton(
                 onClick = onOpen,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(SetupControlHeight),
-                border = BorderStroke(1.dp, SetupBorder),
+                border = BorderStroke(1.dp, MaterialTheme.souzColors.settings.inputBorder),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = SetupFieldBackground,
-                    contentColor = SetupStrongTextColor
+                    containerColor = MaterialTheme.souzColors.settings.inputBackground,
+                    contentColor = MaterialTheme.souzColors.settings.content
                 ),
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -521,7 +513,7 @@ private fun ProviderLinkCard(
                         lineHeight = 16.sp,
                         fontWeight = FontWeight.Medium
                     ),
-                    color = SetupStrongTextColor
+                    color = MaterialTheme.souzColors.settings.content
                 )
             }
         }
@@ -536,10 +528,10 @@ private fun SetupCodexCard(
     onCancel: () -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
 ) {
-    val fieldBackground = SettingsUiColors.inputBackground
-    val fieldBorder = SettingsUiColors.inputBorder
-    val strongText = SettingsUiColors.inputText
-    val hintText = SettingsUiColors.labelTextSecondary
+    val fieldBackground = MaterialTheme.souzColors.settings.inputBackground
+    val fieldBorder = MaterialTheme.souzColors.settings.inputBorder
+    val strongText = MaterialTheme.souzColors.settings.content
+    val hintText = MaterialTheme.souzColors.settings.secondaryContent
 
     Surface(
         modifier = Modifier.fillMaxWidth(),

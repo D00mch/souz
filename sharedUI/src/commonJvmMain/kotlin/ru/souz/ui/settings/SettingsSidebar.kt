@@ -1,12 +1,12 @@
 package ru.souz.ui.settings
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -43,13 +44,8 @@ fun SettingsSidebar(
         modifier = modifier
             .fillMaxHeight()
             .width(258.dp)
-            .background(SettingsUiColors.sidebarBackground),
+            .background(MaterialTheme.souzColors.settings.sidebarBackground),
     ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(Color.White.copy(alpha = 0.018f))
-        )
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.Top
@@ -63,14 +59,14 @@ fun SettingsSidebar(
                     text = stringResource(Res.string.settings_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Medium,
-                    color = SettingsUiColors.hoverItemText
+                    color = MaterialTheme.souzColors.settings.hoverContent
                 )
             }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(SettingsUiColors.sidebarBorder)
+                    .background(MaterialTheme.souzColors.settings.sidebarBorder)
             )
 
             Column(
@@ -99,20 +95,18 @@ private fun SettingsSidebarItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
-    val backgroundColor by animateColorAsState(
-        targetValue = when {
-            isActive -> SettingsUiColors.activeItemBackground
-            isHovered -> SettingsUiColors.hoverItemBackground
-            else -> Color.Transparent
-        }
-    )
-    val contentColor by animateColorAsState(
-        targetValue = when {
-            isActive -> SettingsUiColors.activeItemText
-            isHovered -> SettingsUiColors.hoverItemText
-            else -> SettingsUiColors.inactiveItemText
-        }
-    )
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val colors = MaterialTheme.souzColors.settings
+    val backgroundColor = when {
+        isActive -> colors.selectedNavigationBackground
+        isHovered || isPressed -> colors.hoverBackground
+        else -> Color.Transparent
+    }
+    val contentColor = when {
+        isActive -> colors.selectedNavigationContent
+        isHovered || isPressed -> colors.hoverContent
+        else -> colors.navigationContent
+    }
 
     Row(
         modifier = Modifier
@@ -120,7 +114,7 @@ private fun SettingsSidebarItem(
             .clip(RoundedCornerShape(12.dp))
             .background(backgroundColor)
             .hoverable(interactionSource = interactionSource)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)

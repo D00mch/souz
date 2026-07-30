@@ -31,17 +31,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.kodein.di.compose.localDI
 import ru.souz.ui.glassColors
+import ru.souz.ui.souzColors
 import ru.souz.ui.common.RealLiquidGlassCard
 import org.jetbrains.compose.resources.stringResource
 import souz.sharedui.generated.resources.Res
@@ -80,9 +78,7 @@ private fun FoldersManagementScreen(
     onRemoveFolder: (String) -> Unit,
     onClose: () -> Unit,
 ) {
-    val windowInfo = LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
-    val accent = MaterialTheme.colorScheme.primary
+    val folderColors = MaterialTheme.souzColors.neutralAttachment
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -90,7 +86,6 @@ private fun FoldersManagementScreen(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused
         ) {
             Column(
                 modifier = Modifier
@@ -107,7 +102,7 @@ private fun FoldersManagementScreen(
                         text = stringResource(Res.string.folders_title),
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = 0.95f),
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
 
@@ -115,8 +110,8 @@ private fun FoldersManagementScreen(
                         onClick = onBrowseFolder,
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.textButtonColors(
-                            containerColor = accent.copy(alpha = 0.18f),
-                            contentColor = accent
+                            containerColor = folderColors.background,
+                            contentColor = folderColors.content,
                         ),
                         modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
                     ) {
@@ -162,12 +157,12 @@ private fun FoldersManagementScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        color = Color(0x1AFFFFFF),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
                                         shape = RoundedCornerShape(18.dp)
                                     )
                                     .border(
                                         width = 1.dp,
-                                        color = Color(0x2EFFFFFF),
+                                        color = MaterialTheme.colorScheme.outlineVariant,
                                         shape = RoundedCornerShape(18.dp)
                                     )
                                     .padding(horizontal = 18.dp, vertical = 22.dp)
@@ -175,7 +170,7 @@ private fun FoldersManagementScreen(
                                 Text(
                                     text = stringResource(Res.string.folder_list_empty),
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.65f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -184,7 +179,6 @@ private fun FoldersManagementScreen(
                     items(state.forbiddenFolders, key = { it.path }) { item ->
                         ForbiddenFolderCard(
                             item = item,
-                            accentColor = accent,
                             onRemove = { onRemoveFolder(item.path) }
                         )
                     }
@@ -193,7 +187,7 @@ private fun FoldersManagementScreen(
                 Text(
                     text = stringResource(Res.string.hint_folders_default),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.55f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -203,24 +197,19 @@ private fun FoldersManagementScreen(
 @Composable
 private fun ForbiddenFolderCard(
     item: ForbiddenFolderItem,
-    accentColor: Color,
     onRemove: () -> Unit,
 ) {
     val shape = RoundedCornerShape(18.dp)
+    val colors = MaterialTheme.souzColors.neutralAttachment
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                brush = Brush.horizontalGradient(
-                    colors = listOf(
-                        Color(0x2D1E2531),
-                        Color(0x52232D3A)
-                    )
-                ),
+                color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = shape
             )
-            .border(1.dp, Color.White.copy(alpha = 0.22f), shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -229,12 +218,12 @@ private fun ForbiddenFolderCard(
             modifier = Modifier
                 .size(56.dp)
                 .background(
-                    color = accentColor.copy(alpha = 0.18f),
+                    color = colors.background,
                     shape = RoundedCornerShape(16.dp)
                 )
                 .border(
                     width = 1.dp,
-                    color = accentColor.copy(alpha = 0.55f),
+                    color = colors.border,
                     shape = RoundedCornerShape(16.dp)
                 ),
             contentAlignment = Alignment.Center
@@ -242,7 +231,7 @@ private fun ForbiddenFolderCard(
             Icon(
                 imageVector = Icons.Rounded.Folder,
                 contentDescription = null,
-                tint = accentColor,
+                tint = colors.content,
                 modifier = Modifier.size(30.dp)
             )
         }
@@ -254,13 +243,13 @@ private fun ForbiddenFolderCard(
                 text = item.title,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White.copy(alpha = 0.95f)
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = item.path,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontFamily = FontFamily.Monospace
             )
         }
@@ -271,14 +260,14 @@ private fun ForbiddenFolderCard(
                 .size(34.dp)
                 .pointerHoverIcon(PointerIcon.Hand)
                 .background(
-                    color = Color.White.copy(alpha = 0.08f),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
                     shape = RoundedCornerShape(10.dp)
                 )
         ) {
             Icon(
                 imageVector = Icons.Rounded.Close,
                 contentDescription = stringResource(Res.string.tooltip_remove_folder),
-                tint = Color.White.copy(alpha = 0.78f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )
         }

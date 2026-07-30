@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,37 +55,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import org.jetbrains.compose.resources.stringResource
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.dialog_cancel
 import souz.sharedui.generated.resources.dialog_confirm
-
-private object ConfirmDialogColors {
-    val backdrop = Color(0x99000000)
-    val dialogBg = Color(0xF21A1A1D)
-    val dialogBorder = Color(0x1FFFFFFF)
-    val iconBg = Color(0x33FFFFFF)
-    val iconBorder = Color(0x26FFFFFF)
-    val iconColorInfo = Color(0xFF38BDF8)
-    val iconColorWarning = Color(0xFFFBBF24)
-    val iconColorSuccess = Color(0xFF4ADE80)
-    val titleColor = Color(0xE6FFFFFF)
-    val descriptionColor = Color(0x80FFFFFF)
-    val detailsBg = Color(0x08FFFFFF)
-    val detailsBorder = Color(0x0FFFFFFF)
-    val detailsText = Color(0x99FFFFFF)
-    val actionsBorder = Color(0x0FFFFFFF)
-    val cancelBg = Color(0x0DFFFFFF)
-    val cancelBorder = Color(0x14FFFFFF)
-    val cancelText = Color(0xB3FFFFFF)
-    val cancelHoverBg = Color(0x14FFFFFF)
-    val cancelHoverBorder = Color(0x1FFFFFFF)
-    val cancelHoverText = Color(0xE6FFFFFF)
-    val confirmBg = Color(0x1FFFFFFF)
-    val confirmBorder = Color(0x26FFFFFF)
-    val confirmText = Color(0xFFFFFFFF)
-    val confirmHoverBg = Color(0x26FFFFFF)
-    val confirmHoverBorder = Color(0x33FFFFFF)
-}
 
 enum class ConfirmDialogType {
     INFO,
@@ -110,6 +84,7 @@ fun ConfirmDialog(
     details: String? = null,
     dismissOnBackdropClick: Boolean = true,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     ConfirmDialogInternal(
         isOpen = isOpen,
         icon = when (variant) {
@@ -117,8 +92,8 @@ fun ConfirmDialog(
             DialogVariant.WARNING -> Icons.Outlined.Warning
         },
         iconTint = when (variant) {
-            DialogVariant.INFO -> ConfirmDialogColors.iconColorInfo
-            DialogVariant.WARNING -> ConfirmDialogColors.iconColorWarning
+            DialogVariant.INFO -> colors.info
+            DialogVariant.WARNING -> colors.warning
         },
         title = title,
         description = description,
@@ -151,15 +126,16 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     val icon = when (type) {
         ConfirmDialogType.INFO -> Icons.Outlined.Info
         ConfirmDialogType.WARNING -> Icons.Outlined.Warning
         ConfirmDialogType.SUCCESS -> Icons.Rounded.Check
     }
     val iconTint = when (type) {
-        ConfirmDialogType.INFO -> ConfirmDialogColors.iconColorInfo
-        ConfirmDialogType.WARNING -> ConfirmDialogColors.iconColorWarning
-        ConfirmDialogType.SUCCESS -> ConfirmDialogColors.iconColorSuccess
+        ConfirmDialogType.INFO -> colors.info
+        ConfirmDialogType.WARNING -> colors.warning
+        ConfirmDialogType.SUCCESS -> colors.success
     }
 
     ConfirmDialogInternal(
@@ -201,6 +177,7 @@ private fun ConfirmDialogInternal(
 ) {
     if (!isOpen) return
 
+    val colors = MaterialTheme.souzColors.dialog
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
@@ -228,7 +205,7 @@ private fun ConfirmDialogInternal(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(ConfirmDialogColors.backdrop)
+                .background(colors.backdrop)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -259,8 +236,8 @@ private fun ConfirmDialogInternal(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
-                    .background(ConfirmDialogColors.dialogBg, shape)
-                    .border(1.dp, ConfirmDialogColors.dialogBorder, shape),
+                    .background(colors.background, shape)
+                    .border(1.dp, colors.border, shape),
             ) {
                 Column(
                     modifier = Modifier
@@ -285,7 +262,7 @@ private fun ConfirmDialogInternal(
                             fontSize = 16.sp,
                             lineHeight = 22.sp,
                             fontWeight = FontWeight.Medium,
-                            color = ConfirmDialogColors.titleColor,
+                            color = colors.content,
                             textAlign = TextAlign.Center,
                         )
 
@@ -294,7 +271,7 @@ private fun ConfirmDialogInternal(
                                 text = description,
                                 fontSize = 14.sp,
                                 lineHeight = 20.sp,
-                                color = ConfirmDialogColors.descriptionColor,
+                                color = colors.secondaryContent,
                                 textAlign = TextAlign.Center,
                             )
                         }
@@ -305,12 +282,12 @@ private fun ConfirmDialogInternal(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
-                                    color = ConfirmDialogColors.detailsBg,
+                                    color = colors.subtleBackground,
                                     shape = RoundedCornerShape(12.dp),
                                 )
                                 .border(
                                     width = 1.dp,
-                                    color = ConfirmDialogColors.detailsBorder,
+                                    color = colors.subtleBorder,
                                     shape = RoundedCornerShape(12.dp),
                                 )
                                 .padding(12.dp),
@@ -326,7 +303,7 @@ private fun ConfirmDialogInternal(
                                     text = detailsText.orEmpty(),
                                     fontSize = 12.sp,
                                     lineHeight = 18.sp,
-                                    color = ConfirmDialogColors.detailsText,
+                                    color = colors.secondaryContent,
                                     fontFamily = FontFamily.Monospace,
                                 )
                             }
@@ -338,7 +315,7 @@ private fun ConfirmDialogInternal(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(1.dp)
-                        .background(ConfirmDialogColors.actionsBorder),
+                        .background(colors.subtleBorder),
                 )
 
                 Row(
@@ -373,11 +350,12 @@ private fun DialogIcon(
     icon: ImageVector,
     tint: Color,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     Box(
         modifier = Modifier
             .size(48.dp)
-            .background(ConfirmDialogColors.iconBg, CircleShape)
-            .border(1.dp, ConfirmDialogColors.iconBorder, CircleShape),
+            .background(colors.subtleBackground, CircleShape)
+            .border(1.dp, colors.subtleBorder, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -397,18 +375,19 @@ private fun DialogButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val background by animateColorAsState(
         targetValue = when {
-            !enabled && primary -> ConfirmDialogColors.confirmBg.copy(alpha = 0.5f)
-            !enabled -> ConfirmDialogColors.cancelBg.copy(alpha = 0.5f)
-            primary && isHovered -> ConfirmDialogColors.confirmHoverBg
-            primary -> ConfirmDialogColors.confirmBg
-            isHovered -> ConfirmDialogColors.cancelHoverBg
-            else -> ConfirmDialogColors.cancelBg
+            !enabled && primary -> colors.primaryActionBackground.copy(alpha = 0.5f)
+            !enabled -> colors.secondaryActionBackground.copy(alpha = 0.5f)
+            primary && isHovered -> colors.primaryActionHoverBackground
+            primary -> colors.primaryActionBackground
+            isHovered -> colors.secondaryActionHoverBackground
+            else -> colors.secondaryActionBackground
         },
         animationSpec = tween(150),
         label = "confirm_dialog_button_bg",
@@ -416,12 +395,12 @@ private fun DialogButton(
 
     val border by animateColorAsState(
         targetValue = when {
-            !enabled && primary -> ConfirmDialogColors.confirmBorder.copy(alpha = 0.5f)
-            !enabled -> ConfirmDialogColors.cancelBorder.copy(alpha = 0.5f)
-            primary && isHovered -> ConfirmDialogColors.confirmHoverBorder
-            primary -> ConfirmDialogColors.confirmBorder
-            isHovered -> ConfirmDialogColors.cancelHoverBorder
-            else -> ConfirmDialogColors.cancelBorder
+            !enabled && primary -> colors.primaryActionBackground.copy(alpha = 0.5f)
+            !enabled -> colors.subtleBorder.copy(alpha = 0.5f)
+            primary && isHovered -> colors.primaryActionHoverBackground
+            primary -> colors.primaryActionBackground
+            isHovered -> colors.border
+            else -> colors.subtleBorder
         },
         animationSpec = tween(150),
         label = "confirm_dialog_button_border",
@@ -429,11 +408,11 @@ private fun DialogButton(
 
     val textColor by animateColorAsState(
         targetValue = when {
-            !enabled && primary -> ConfirmDialogColors.confirmText.copy(alpha = 0.5f)
-            !enabled -> ConfirmDialogColors.cancelText.copy(alpha = 0.5f)
-            primary -> ConfirmDialogColors.confirmText
-            isHovered -> ConfirmDialogColors.cancelHoverText
-            else -> ConfirmDialogColors.cancelText
+            !enabled && primary -> colors.primaryActionContent.copy(alpha = 0.5f)
+            !enabled -> colors.secondaryContent.copy(alpha = 0.5f)
+            primary -> colors.primaryActionContent
+            isHovered -> colors.content
+            else -> colors.secondaryContent
         },
         animationSpec = tween(150),
         label = "confirm_dialog_button_text",

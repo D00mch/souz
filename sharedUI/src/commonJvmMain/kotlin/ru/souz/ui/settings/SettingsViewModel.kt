@@ -73,6 +73,11 @@ class SettingsViewModel(
     private var pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
 
     init {
+        viewModelScope.launch {
+            settingsHostPreferences.themeMode.collectLatest { themeMode ->
+                setState { copy(themeMode = themeMode) }
+            }
+        }
         viewModelScope.launch(settingsDispatcher) {
             val host = telegramSettingsHost
             val isSupported = host.isSupported()
@@ -100,6 +105,9 @@ class SettingsViewModel(
                         telegramPasswordHint = auth.passwordHint,
                         telegramAuthBusy = auth.isBusy,
                         telegramAuthError = auth.errorMessage,
+                        telegramAuthInfo = if (
+                            auth.errorMessage != null || auth.step == TelegramHostAuthStep.CONNECTED
+                        ) null else telegramAuthInfo,
                         telegramCodeInput = if (auth.step == TelegramHostAuthStep.CONNECTED) "" else telegramCodeInput,
                         telegramPasswordInput = if (auth.step == TelegramHostAuthStep.CONNECTED) "" else telegramPasswordInput,
                     )
@@ -154,6 +162,9 @@ class SettingsViewModel(
             is InputUseEnglishInterface -> {
                 settingsHostPreferences.useEnglishInterface = event.enabled
                 setState { copy(useEnglishInterface = event.enabled) }
+            }
+            is SelectThemeMode -> {
+                settingsHostPreferences.setThemeMode(event.mode)
             }
             is ToggleApiKeyVisibility -> toggleApiKeyVisibility(event.field)
             StartCodexOAuth -> {
@@ -310,12 +321,24 @@ class SettingsViewModel(
                 }
                 setState { copy(voiceSpeedInput = normalized, voiceSpeed = newSpeed ?: voiceSpeed) }
             }
-            is InputTelegramPhone -> setState { copy(telegramPhoneInput = event.value) }
-            is InputTelegramCode -> setState { copy(telegramCodeInput = event.value) }
-            is InputTelegramPassword -> setState { copy(telegramPasswordInput = event.value) }
+            is InputTelegramPhone -> setState {
+                copy(
+                    telegramPhoneInput = event.value.filter { it.isDigit() || it == '+' },
+                    telegramAuthError = null,
+                    telegramAuthInfo = null,
+                )
+            }
+            is InputTelegramCode -> setState {
+                copy(telegramCodeInput = event.value, telegramAuthError = null, telegramAuthInfo = null)
+            }
+            is InputTelegramPassword -> setState {
+                copy(telegramPasswordInput = event.value, telegramAuthError = null, telegramAuthInfo = null)
+            }
             SubmitTelegramPhone -> submitTelegramPhone()
             SubmitTelegramCode -> submitTelegramCode()
             SubmitTelegramPassword -> submitTelegramPassword()
+            RequestTelegramCodeAgain -> requestTelegramCodeAgain()
+            RestartTelegramAuth -> restartTelegramAuth()
             TelegramLogout -> telegramLogout()
             RefreshFromProvider -> {
                 flushPendingTextSettingSaves()
@@ -364,53 +387,81 @@ class SettingsViewModel(
         }
     }
 
-    private fun createTelegramBot() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching {
-            setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramSettingsHost.createControlBot(forceNew = true)
-        }.onSuccess {
-            setState { copy(telegramAuthBusy = false, isTelegramBotActive = true) }
-            telegramSettingsHost.restartControlBotPolling()
+    private suspend fun createTelegramBot() {
+        runTelegramOperation(
+            fallbackError = getString(Res.string.error_failed_to_create_bot),
+            action = {
+                createControlBot(forceNew = true)
+                restartControlBotPolling()
+            },
+        ) {
+            setState { copy(isTelegramBotActive = true) }
             send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_created_success_message)))
-        }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_create_bot)
-            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
 
-    private fun checkBotBeforeDisconnect() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching {
-            setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramSettingsHost.fetchActiveBotUsernameFromBotFather()
-        }.onSuccess { activeUsername ->
+    private suspend fun checkBotBeforeDisconnect() {
+        runTelegramOperation(
+            fallbackError = getString(Res.string.error_failed_to_delete_bot),
+            action = {
+                val activeUsername = fetchActiveBotUsernameFromBotFather()
+                if (activeUsername == null) {
+                    deleteControlBot(forceNew = true)
+                    stopControlBotPolling()
+                }
+                activeUsername
+            },
+        ) { activeUsername ->
             if (activeUsername != null) {
-                setState { 
+                setState {
                     copy(
-                        telegramAuthBusy = false,
                         showBotDeleteConfirmation = true,
-                        botNameToDelete = activeUsername
+                        botNameToDelete = activeUsername,
                     )
                 }
             } else {
-                disconnectBot()
+                setState { copy(isTelegramBotActive = false) }
+                send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_deleted_success_message)))
             }
-        }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
-            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
 
-    private fun disconnectBot() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching {
-            setState { copy(telegramAuthBusy = true, telegramAuthError = null, showBotDeleteConfirmation = false) }
-            telegramSettingsHost.deleteControlBot(forceNew = true)
-        }.onSuccess {
-            telegramSettingsHost.stopControlBotPolling()
-            setState { copy(isTelegramBotActive = false, telegramAuthBusy = false) }
+    private suspend fun disconnectBot() {
+        runTelegramOperation(
+            fallbackError = getString(Res.string.error_failed_to_delete_bot),
+            action = {
+                deleteControlBot(forceNew = true)
+                stopControlBotPolling()
+            },
+        ) {
+            setState { copy(isTelegramBotActive = false, showBotDeleteConfirmation = false) }
             send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_deleted_success_message)))
-        }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
-            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
+        }
+    }
+
+    private suspend fun <T> runTelegramOperation(
+        fallbackError: String,
+        action: suspend TelegramSettingsHost.() -> T,
+        onSuccess: suspend (T) -> Unit = {},
+    ) {
+        if (currentState.telegramOperationBusy || currentState.telegramAuthBusy) return
+        setState {
+            copy(
+                telegramOperationBusy = true,
+                telegramAuthError = null,
+                telegramAuthInfo = null,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                onSuccess(withContext(settingsDispatcher) { telegramSettingsHost.action() })
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                setState { copy(telegramAuthError = error.message ?: fallbackError) }
+            } finally {
+                setState { copy(telegramOperationBusy = false) }
+            }
         }
     }
 
@@ -609,6 +660,7 @@ class SettingsViewModel(
                 voiceInputReviewEnabled = keysProvider.voiceInputReviewEnabled,
                 useEnglishVersion = keysProvider.regionProfile == REGION_EN,
                 useEnglishInterface = settingsHostPreferences.useEnglishInterface,
+                themeMode = settingsHostPreferences.themeMode.value,
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 activeAgentId = activeAgentId,
                 availableAgents = availableAgents,
@@ -1061,57 +1113,89 @@ class SettingsViewModel(
         }
     }
 
-    private fun submitTelegramPhone() = viewModelScope.launch(Dispatchers.IO) {
+    private suspend fun submitTelegramPhone() {
         val phone = currentState.telegramPhoneInput.trim()
         if (phone.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_phone)
-            setState { copy(telegramAuthError = errorMsg) }
-            return@launch
+            setTelegramAuthError(getString(Res.string.error_enter_phone))
+            return
         }
 
-        runCatching { telegramSettingsHost.submitPhoneNumber(phone) }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_request_code)
-                setState { copy(telegramAuthError = errorMsg) }
-            }
+        runTelegramOperation(
+            action = { submitPhoneNumber(phone) },
+            fallbackError = getString(Res.string.error_failed_request_code),
+        )
     }
 
-    private fun submitTelegramCode() = viewModelScope.launch(Dispatchers.IO) {
+    private suspend fun submitTelegramCode() {
         val code = currentState.telegramCodeInput.trim()
         if (code.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_code)
-            setState { copy(telegramAuthError = errorMsg) }
-            return@launch
+            setTelegramAuthError(getString(Res.string.error_enter_code))
+            return
         }
 
-        runCatching { telegramSettingsHost.submitLoginCode(code) }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_code)
-                setState { copy(telegramAuthError = errorMsg) }
-            }
+        runTelegramOperation(
+            action = { submitLoginCode(code) },
+            fallbackError = getString(Res.string.error_failed_verify_code),
+        )
     }
 
-    private fun submitTelegramPassword() = viewModelScope.launch(Dispatchers.IO) {
+    private suspend fun submitTelegramPassword() {
         val password = currentState.telegramPasswordInput
         if (password.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_password)
-            setState { copy(telegramAuthError = errorMsg) }
-            return@launch
+            setTelegramAuthError(getString(Res.string.error_enter_password))
+            return
         }
 
-        runCatching { telegramSettingsHost.submitTwoFaPassword(password) }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_password)
-                setState { copy(telegramAuthError = errorMsg) }
-            }
+        runTelegramOperation(
+            action = { submitTwoFaPassword(password) },
+            fallbackError = getString(Res.string.error_failed_verify_password),
+        )
     }
 
-    private fun telegramLogout() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching { telegramSettingsHost.logout() }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_logout)
-                setState { copy(telegramAuthError = errorMsg) }
+    private suspend fun requestTelegramCodeAgain() {
+        val phone = currentState.telegramPhoneInput.trim()
+        if (phone.isBlank()) {
+            setTelegramAuthError(getString(Res.string.error_enter_phone))
+            return
+        }
+
+        runTelegramOperation(
+            action = { requestCodeAgain(phone) },
+            fallbackError = getString(Res.string.error_failed_request_code),
+            onSuccess = {
+                val message = getString(Res.string.telegram_info_code_requested_again)
+                setState {
+                    copy(
+                        telegramCodeInput = "",
+                        telegramPasswordInput = "",
+                        telegramAuthInfo = message,
+                    )
+                }
+            },
+        )
+    }
+
+    private suspend fun restartTelegramAuth() = runTelegramOperation(
+        action = { cancelAuth() },
+        fallbackError = getString(Res.string.error_failed_request_code),
+        onSuccess = {
+            setState {
+                copy(
+                    telegramCodeInput = "",
+                    telegramPasswordInput = "",
+                    telegramAuthInfo = null,
+                )
             }
+        },
+    )
+
+    private suspend fun telegramLogout() = runTelegramOperation(
+        action = { logout() },
+        fallbackError = getString(Res.string.error_failed_logout),
+    )
+
+    private suspend fun setTelegramAuthError(message: String) {
+        setState { copy(telegramAuthError = message, telegramAuthInfo = null) }
     }
 
     override fun onCleared() {

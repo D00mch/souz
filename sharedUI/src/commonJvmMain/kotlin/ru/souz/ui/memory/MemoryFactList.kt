@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +57,9 @@ import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.stringResource
 import ru.souz.memory.MemoryFact
 import ru.souz.memory.MemoryFactKind
+import ru.souz.ui.MemoryKindColors
+import ru.souz.ui.memoryColors
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.memory_action_delete
 import souz.sharedui.generated.resources.memory_empty
@@ -64,37 +68,18 @@ import souz.sharedui.generated.resources.memory_filter_kind_all
 import souz.sharedui.generated.resources.memory_filter_query
 import souz.sharedui.generated.resources.memory_loading
 
-internal object MemoryUiColors {
-    val Screen = Color(0xFF161616)
-    val Panel = Color(0xFF1A1A1A)
-    val Popover = Color(0xFF1E1E1E)
-    val Card = Color.White.copy(alpha = 0.04f)
-    val CardHover = Color.White.copy(alpha = 0.06f)
-    val SelectedCard = Color(0xFF00D9B3).copy(alpha = 0.07f)
-    val CardBorder = Color.White.copy(alpha = 0.06f)
-    val SelectedBorder = Color(0xFF00D9B3).copy(alpha = 0.25f)
-    val Accent = Color(0xFF00D9B3)
-    val Divider = Color.White.copy(alpha = 0.07f)
-    val TextPrimary = Color.White
-    val Warning = Color(0xFFFBBF24)
-    val Danger = Color(0xFFFB923C)
-    val Transparent = Color.Transparent
-}
-
-internal data class MemoryKindStyle(
-    val color: Color,
-    val background: Color,
-)
-
-internal fun MemoryFactKind.kindStyle(): MemoryKindStyle =
-    when (this) {
-        MemoryFactKind.SEMANTIC -> MemoryKindStyle(Color(0xFF63B3ED), Color(0xFF63B3ED).copy(alpha = 0.12f))
-        MemoryFactKind.PREFERENCE -> MemoryKindStyle(Color(0xFF00D9B3), Color(0xFF00D9B3).copy(alpha = 0.12f))
-        MemoryFactKind.PROCEDURE -> MemoryKindStyle(Color(0xFFA78BFA), Color(0xFFA78BFA).copy(alpha = 0.12f))
-        MemoryFactKind.PROJECT_RULE -> MemoryKindStyle(Color(0xFFFB923C), Color(0xFFFB923C).copy(alpha = 0.12f))
-        MemoryFactKind.EPISODE_NOTE -> MemoryKindStyle(Color(0xFF94A3B8), Color(0xFF94A3B8).copy(alpha = 0.12f))
-        MemoryFactKind.PROJECT_DECISION -> MemoryKindStyle(Color(0xFFFBBF24), Color(0xFFFBBF24).copy(alpha = 0.12f))
+@Composable
+internal fun MemoryFactKind.kindStyle(): MemoryKindColors {
+    val colors = MaterialTheme.souzColors.memory
+    return when (this) {
+        MemoryFactKind.SEMANTIC -> colors.semantic
+        MemoryFactKind.PREFERENCE -> colors.preference
+        MemoryFactKind.PROCEDURE -> colors.procedure
+        MemoryFactKind.PROJECT_RULE -> colors.projectRule
+        MemoryFactKind.EPISODE_NOTE -> colors.episodeNote
+        MemoryFactKind.PROJECT_DECISION -> colors.projectDecision
     }
+}
 
 @Composable
 internal fun MemoryFilters(
@@ -127,7 +112,7 @@ internal fun MemoryFilters(
             )
             Text(
                 text = visibleCount.toString(),
-                color = MemoryUiColors.TextPrimary.copy(alpha = 0.2f),
+                color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.2f),
                 fontSize = 11.sp,
             )
         }
@@ -146,18 +131,18 @@ private fun MemorySearchField(
             .fillMaxWidth(),
         singleLine = true,
         textStyle = TextStyle(
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.84f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.84f),
             fontSize = 12.5.sp,
         ),
-        cursorBrush = SolidColor(MemoryUiColors.Accent),
+        cursorBrush = SolidColor(MaterialTheme.memoryColors.accent),
         decorationBox = { innerTextField ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(40.dp)
                     .clip(RoundedCornerShape(11.dp))
-                    .background(MemoryUiColors.TextPrimary.copy(alpha = 0.05f))
-                    .border(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f), RoundedCornerShape(11.dp))
+                    .background(MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f))
+                    .border(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f), RoundedCornerShape(11.dp))
                     .padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -165,7 +150,7 @@ private fun MemorySearchField(
                 Icon(
                     imageVector = Icons.Rounded.Search,
                     contentDescription = null,
-                    tint = MemoryUiColors.TextPrimary.copy(alpha = 0.32f),
+                    tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.32f),
                     modifier = Modifier.size(16.dp),
                 )
                 Box(
@@ -175,7 +160,7 @@ private fun MemorySearchField(
                     if (query.isBlank()) {
                         Text(
                             text = stringResource(Res.string.memory_filter_query),
-                            color = MemoryUiColors.TextPrimary.copy(alpha = 0.28f),
+                            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.28f),
                             fontSize = 12.5.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -194,7 +179,7 @@ private fun MemorySearchField(
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = null,
-                            tint = MemoryUiColors.TextPrimary.copy(alpha = 0.35f),
+                            tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.35f),
                             modifier = Modifier.size(14.dp),
                         )
                     }
@@ -213,16 +198,16 @@ private fun MemoryKindDropdown(
     val allLabel = stringResource(Res.string.memory_filter_kind_all)
     MemoryMenuField(
         selectedText = selectedKind?.label() ?: allLabel,
-        selectedColor = selectedKind?.kindStyle()?.color ?: MemoryUiColors.TextPrimary.copy(alpha = 0.5f),
+        selectedColor = selectedKind?.kindStyle()?.content ?: MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.5f),
         modifier = modifier,
         options = listOf(
             MemoryMenuOption(
                 title = allLabel,
-                color = MemoryUiColors.TextPrimary.copy(alpha = 0.5f),
+                color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.5f),
                 action = { onSelect(null) },
             )
         ) + MemoryFactKind.entries.map { kind ->
-            MemoryMenuOption(kind.label(), kind.kindStyle().color) { onSelect(kind) }
+            MemoryMenuOption(kind.label(), kind.kindStyle().content) { onSelect(kind) }
         },
     )
 }
@@ -236,7 +221,7 @@ private fun MemoryStatusSegments(
         modifier = Modifier
             .height(32.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(MemoryUiColors.TextPrimary.copy(alpha = 0.05f))
+            .background(MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f))
             .padding(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -246,14 +231,14 @@ private fun MemoryStatusSegments(
                 modifier = Modifier
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(6.dp))
-                    .background(if (active) MemoryUiColors.TextPrimary.copy(alpha = 0.1f) else MemoryUiColors.Transparent)
+                    .background(if (active) MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f) else Color.Transparent)
                     .clickable { onSelected(status) }
                     .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = status.label(),
-                    color = MemoryUiColors.TextPrimary.copy(alpha = if (active) 0.8f else 0.3f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = if (active) 0.8f else 0.3f),
                     fontSize = 10.5.sp,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
@@ -309,11 +294,11 @@ private fun MemoryFactCard(
     val hovered by interactionSource.collectIsHoveredAsState()
     val shape = RoundedCornerShape(12.dp)
     val background = when {
-        selected -> MemoryUiColors.SelectedCard
-        hovered -> MemoryUiColors.CardHover
-        else -> MemoryUiColors.Card
+        selected -> MaterialTheme.memoryColors.selectedCard
+        hovered -> MaterialTheme.memoryColors.cardHover
+        else -> MaterialTheme.memoryColors.card
     }
-    val border = if (selected) MemoryUiColors.SelectedBorder else MemoryUiColors.CardBorder
+    val border = if (selected) MaterialTheme.memoryColors.selectedBorder else MaterialTheme.memoryColors.cardBorder
 
     Column(
         modifier = Modifier
@@ -343,13 +328,13 @@ private fun MemoryFactCard(
                     Icon(
                         imageVector = Icons.Rounded.PushPin,
                         contentDescription = null,
-                        tint = MemoryUiColors.Accent,
+                        tint = MaterialTheme.memoryColors.accent,
                         modifier = Modifier.size(12.dp),
                     )
                 }
                 Text(
                     text = fact.title,
-                    color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.9f),
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -363,7 +348,7 @@ private fun MemoryFactCard(
             ) {
                 Text(
                     text = fact.updatedAt.shortMemoryLabel(),
-                    color = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.3f),
                     fontSize = 11.sp,
                 )
                 if (hovered) {
@@ -377,7 +362,7 @@ private fun MemoryFactCard(
                         Icon(
                             imageVector = Icons.Rounded.Delete,
                             contentDescription = stringResource(Res.string.memory_action_delete),
-                            tint = MemoryUiColors.TextPrimary.copy(alpha = 0.45f),
+                            tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.45f),
                             modifier = Modifier.size(13.dp),
                         )
                     }
@@ -389,7 +374,7 @@ private fun MemoryFactCard(
 
         Text(
             text = fact.body.preview(),
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.45f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.45f),
             fontSize = 11.5.sp,
             lineHeight = 16.sp,
             maxLines = 1,
@@ -408,7 +393,7 @@ private fun MemoryFactCard(
                 KindBadge(fact.kind)
                 Text(
                     text = fact.scope.memoryLabel(),
-                    color = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                    color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.3f),
                     fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -426,7 +411,7 @@ internal fun KindBadge(kind: MemoryFactKind) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
-            .background(style.background)
+            .background(style.container)
             .padding(horizontal = 7.dp, vertical = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -434,11 +419,11 @@ internal fun KindBadge(kind: MemoryFactKind) {
         Box(
             modifier = Modifier
                 .size(6.dp)
-                .background(style.color, RoundedCornerShape(999.dp)),
+                .background(style.content, RoundedCornerShape(999.dp)),
         )
         Text(
             text = kind.label(),
-            color = style.color,
+            color = style.content,
             fontSize = 10.5.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -466,7 +451,7 @@ internal fun ConfidenceBar(
                 .width(width)
                 .height(height)
                 .clip(RoundedCornerShape(999.dp))
-                .background(MemoryUiColors.TextPrimary.copy(alpha = 0.1f)),
+                .background(MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f)),
         ) {
             Box(
                 modifier = Modifier
@@ -487,24 +472,28 @@ internal fun ConfidenceBar(
     }
 }
 
-internal fun confidenceColor(confidence: Float): Color =
-    when {
-        confidence >= 0.85f -> MemoryUiColors.Accent
-        confidence >= 0.65f -> MemoryUiColors.Warning
-        else -> MemoryUiColors.Danger
+@Composable
+internal fun confidenceColor(confidence: Float): Color {
+    val colors = MaterialTheme.souzColors.memory
+    return when {
+        confidence >= 0.85f -> MaterialTheme.memoryColors.accent
+        confidence >= 0.65f -> colors.warning.content
+        else -> colors.danger.content
     }
+}
 
 @Composable
 internal fun MemoryInlineError(
     message: String,
     onDismiss: () -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.memory
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(MemoryUiColors.Danger.copy(alpha = 0.12f))
-            .border(1.dp, MemoryUiColors.Danger.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+            .background(colors.danger.container)
+            .border(1.dp, colors.danger.content.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .padding(horizontal = 12.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -512,12 +501,12 @@ internal fun MemoryInlineError(
         Text(
             text = message,
             modifier = Modifier.weight(1f),
-            color = MemoryUiColors.Danger,
+            color = colors.danger.content,
             fontSize = 12.sp,
         )
         Text(
             text = stringResource(Res.string.memory_error_inline_dismiss),
-            color = MemoryUiColors.Danger,
+            color = colors.danger.content,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.clickable(onClick = onDismiss),
@@ -535,7 +524,7 @@ internal fun MemoryCenteredText(
     ) {
         Text(
             text = text,
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.45f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.45f),
             fontSize = 13.sp,
         )
     }
@@ -543,20 +532,20 @@ internal fun MemoryCenteredText(
 
 @Composable
 internal fun memoryTextFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = MemoryUiColors.TextPrimary.copy(alpha = 0.86f),
-    unfocusedTextColor = MemoryUiColors.TextPrimary.copy(alpha = 0.86f),
-    focusedBorderColor = MemoryUiColors.Accent.copy(alpha = 0.4f),
-    unfocusedBorderColor = MemoryUiColors.TextPrimary.copy(alpha = 0.1f),
-    focusedContainerColor = MemoryUiColors.TextPrimary.copy(alpha = 0.05f),
-    unfocusedContainerColor = MemoryUiColors.TextPrimary.copy(alpha = 0.05f),
-    focusedLabelColor = MemoryUiColors.Accent,
-    unfocusedLabelColor = MemoryUiColors.TextPrimary.copy(alpha = 0.35f),
-    cursorColor = MemoryUiColors.Accent,
+    focusedTextColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.86f),
+    unfocusedTextColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.86f),
+    focusedBorderColor = MaterialTheme.memoryColors.accent.copy(alpha = 0.4f),
+    unfocusedBorderColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f),
+    focusedContainerColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f),
+    unfocusedContainerColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f),
+    focusedLabelColor = MaterialTheme.memoryColors.accent,
+    unfocusedLabelColor = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.35f),
+    cursorColor = MaterialTheme.memoryColors.accent,
 )
 
 internal data class MemoryMenuOption(
     val title: String,
-    val color: Color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+    val color: Color,
     val action: () -> Unit,
 )
 
@@ -565,7 +554,7 @@ internal fun MemoryMenuField(
     selectedText: String,
     options: List<MemoryMenuOption>,
     modifier: Modifier = Modifier,
-    selectedColor: Color = MemoryUiColors.TextPrimary.copy(alpha = 0.9f),
+    selectedColor: Color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.9f),
 ) {
     var expanded by remember(selectedText, options.size) { mutableStateOf(false) }
 
@@ -575,9 +564,9 @@ internal fun MemoryMenuField(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(32.dp),
-            color = MemoryUiColors.TextPrimary.copy(alpha = 0.05f),
+            color = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.05f),
             shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.06f)),
+            border = BorderStroke(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.06f)),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp),
@@ -596,7 +585,7 @@ internal fun MemoryMenuField(
                     imageVector = Icons.Rounded.KeyboardArrowDown,
                     contentDescription = null,
                     modifier = Modifier.size(15.dp),
-                    tint = MemoryUiColors.TextPrimary.copy(alpha = 0.3f),
+                    tint = MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.3f),
                 )
             }
         }
@@ -605,8 +594,8 @@ internal fun MemoryMenuField(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             modifier = Modifier
-                .background(MemoryUiColors.Popover, RoundedCornerShape(10.dp))
-                .border(1.dp, MemoryUiColors.TextPrimary.copy(alpha = 0.1f), RoundedCornerShape(10.dp)),
+                .background(MaterialTheme.memoryColors.popover, RoundedCornerShape(10.dp))
+                .border(1.dp, MaterialTheme.memoryColors.textPrimary.copy(alpha = 0.1f), RoundedCornerShape(10.dp)),
         ) {
             options.forEach { option ->
                 DropdownMenuItem(

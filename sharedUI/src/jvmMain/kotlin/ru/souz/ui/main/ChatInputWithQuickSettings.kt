@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -100,61 +101,22 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.delay
 import kotlin.math.max
 import ru.souz.llms.LLMModel
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
-private val AccentTurquoise = Color(0xFF12E0B5)
-private val AccentTurquoiseDark = Color(0xFF0EA889)
-
-private val GlassBackground = Color(0xD9202226)
-private val GlassBackgroundDark = Color(0xE61F2026)
-private val GlassBorder = Color(0x1AFFFFFF)
-private val GlassBorderLight = Color(0x1AFFFFFF)
-private val GlassDivider = Color(0x14FFFFFF)
-
-private val TextPrimary = Color(0xE6FFFFFF)
-private val TextSecondary = Color(0x99FFFFFF)
-private val TextTertiary = Color(0x66FFFFFF)
-private val TextDisabled = Color(0x40FFFFFF)
-
-private val HoverBackground = Color(0x0DFFFFFF)
-private val ActiveBackground = Color(0x1A12E0B5)
-private val SelectMenuSelectedBackground = Color(0x2E3F434A)
-private val SelectMenuSelectedText = Color(0xE6FFFFFF)
-private val ControlTextMuted = Color(0x80FFFFFF)
-private val ControlTextHover = Color(0xB3FFFFFF)
 private val ControlButtonSize = 32.dp
 private val ControlIconSize = 16.dp
 private val VoiceButtonSize = 32.dp
 private val VoiceIconSize = 16.dp
 private val StopIconSize = 10.dp
-private val SendButtonInactiveBackground = Color(0x0FFFFFFF)
-private val SendButtonInactiveBorder = Color(0x00000000)
-private val SendButtonInactiveIcon = Color(0x33FFFFFF)
-private val SendButtonActiveBorder = Color(0x26FFFFFF)
-private val SendButtonActiveIcon = Color(0xFF1E2228)
-private val SendButtonActiveGlow = Color(0x4DFFFFFF)
-private val StopButtonBackground = Color(0xE61E1E28)
-private val StopButtonBorder = Color(0x26FFFFFF)
-private val StopButtonIcon = Color(0xE6FFFFFF)
-private val StopButtonPulseRing = Color(0x33FFFFFF)
-private val ControlTooltipBackground = Color(0xE6000000)
-private val ControlTooltipBorder = Color(0x33FFFFFF)
 private val VoiceStopColor = Color(0xFFEF4444)
 private val VoiceStopBackground = Color(0x33EF4444)
 private val VoiceStopBorder = Color(0x66EF4444)
 private val VoiceHoverBorder = Color.Transparent
-private val VoiceListeningBackground = Color(0x0FFFFFFF)
-private val VoiceIdleIcon = Color(0x4DFFFFFF)
 private val EaseInOut = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 private val BounceEasing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
-private val SendButtonActiveGradient = Brush.linearGradient(
-    colors = listOf(
-        Color(0xFFFFFFFF),
-        Color(0xFFF0F2F6)
-    )
-)
 
 private val ContextOptions = listOf(8_000, 16_000, 32_000, 64_000, 96_000, 128_000)
 
@@ -218,14 +180,14 @@ internal fun ChatInputWithQuickSettings(
             .clip(containerShape)
             .border(
                 1.dp,
-                if (isFileDragActive) Color(0x6612E0B5) else GlassBorder,
+                if (isFileDragActive) Color(0x6612E0B5) else MaterialTheme.colorScheme.outlineVariant,
                 containerShape
             )
     ) {
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(GlassBackground)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
                 .blur(40.dp)
         )
 
@@ -264,7 +226,7 @@ internal fun ChatInputWithQuickSettings(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .height(1.dp)
-                    .background(GlassDivider)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
             )
 
             AttachedFilesPreview(
@@ -319,7 +281,7 @@ internal fun ChatInputWithQuickSettings(
                     if (value.text.isEmpty()) {
                         Text(
                             text = placeholder,
-                            color = TextDisabled,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f),
                             fontSize = 14.sp,
                             maxLines = 1,
                             softWrap = false,
@@ -333,13 +295,13 @@ internal fun ChatInputWithQuickSettings(
                         onValueChange = onValueChange,
                         enabled = enabled,
                         textStyle = TextStyle(
-                            color = TextPrimary,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 14.sp,
                             lineHeight = 20.sp
                         ),
                         singleLine = false,
                         maxLines = 8,
-                        cursorBrush = SolidColor(AccentTurquoise),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester)
@@ -401,8 +363,8 @@ private fun AttachFilesButton(
 
     val backgroundColor = when {
         !enabled -> Color.Transparent
-        isPressed -> Color(0x14FFFFFF)
-        isHovered || hasFiles -> Color(0x0FFFFFFF)
+        isPressed -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+        isHovered || hasFiles -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
         else -> Color.Transparent
     }
     val borderColor = when {
@@ -410,9 +372,9 @@ private fun AttachFilesButton(
         else -> Color.Transparent
     }
     val iconColor = when {
-        !enabled -> Color(0x2EFFFFFF)
-        isHovered -> Color(0x80FFFFFF)
-        else -> Color(0x4DFFFFFF)
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+        isHovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Box(
@@ -464,7 +426,7 @@ private fun AttachFilesButton(
                     .offset(x = 4.dp, y = (-4).dp)
                     .size(16.dp)
                     .clip(CircleShape)
-                    .background(AccentTurquoise)
+                    .background(MaterialTheme.colorScheme.primary)
                     .border(2.dp, Color(0xFF141820), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -494,8 +456,8 @@ private fun AttachedFilesPreview(
     Box(
         modifier = modifier
             .clip(shape)
-            .background(Color(0x14141820))
-            .border(1.dp, Color(0x1AFFFFFF), shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         FlowRow(
@@ -554,8 +516,8 @@ private fun FileAttachmentItem(
         modifier = Modifier
             .widthIn(max = 280.dp)
             .clip(shape)
-            .background(Color(0x0AFFFFFF))
-            .border(1.dp, Color(0x1AFFFFFF), shape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -583,14 +545,14 @@ private fun FileAttachmentItem(
             Text(
                 text = file.displayName,
                 fontSize = 12.sp,
-                color = Color(0xCCFFFFFF),
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = formatAttachmentFileSize(file.sizeBytes),
                 fontSize = 10.sp,
-                color = Color(0x66FFFFFF),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
         }
@@ -599,6 +561,7 @@ private fun FileAttachmentItem(
             size = 20.dp,
             corner = RoundedCornerShape(4.dp),
             iconSize = 12.dp,
+            defaultIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
             onClick = { onRemove(file.path) }
         )
     }
@@ -622,7 +585,7 @@ private fun ImageAttachmentItem(
         modifier = Modifier
             .size(64.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0x0AFFFFFF))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .hoverable(interactionSource = interactionSource)
     ) {
         if (bitmap != null) {
@@ -758,9 +721,9 @@ private fun VoiceToggleButton(
     val iconColor by animateColorAsState(
         targetValue = when {
             isSpeaking -> VoiceStopColor
-            isListening -> Color(0xB3FFFFFF)
-            isHovered -> Color(0x80FFFFFF)
-            else -> VoiceIdleIcon
+            isListening -> MaterialTheme.colorScheme.primary
+            isHovered -> MaterialTheme.colorScheme.onSurface
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
         },
         animationSpec = tween(220),
         label = "voiceIconColor"
@@ -768,8 +731,8 @@ private fun VoiceToggleButton(
     val background by animateColorAsState(
         targetValue = when {
             isSpeaking -> VoiceStopBackground
-            isListening -> VoiceListeningBackground
-            isHovered -> Color(0x0FFFFFFF)
+            isListening -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+            isHovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
             else -> Color.Transparent
         },
         animationSpec = tween(220),
@@ -938,24 +901,24 @@ private fun SendMessageButton(
     )
 
     val backgroundBrush = when {
-        isProcessing -> Brush.linearGradient(colors = listOf(StopButtonBackground, StopButtonBackground))
-        isActive -> SendButtonActiveGradient
+        isProcessing -> Brush.linearGradient(colors = listOf(MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.errorContainer))
+        isActive -> SolidColor(MaterialTheme.colorScheme.primary)
         else -> Brush.linearGradient(
             colors = listOf(
-                SendButtonInactiveBackground,
-                SendButtonInactiveBackground
+                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.surfaceVariant
             )
         )
     }
     val borderColor = when {
-        isProcessing -> StopButtonBorder
-        isActive -> SendButtonActiveBorder
-        else -> SendButtonInactiveBorder
+        isProcessing -> MaterialTheme.colorScheme.error.copy(alpha = 0.24f)
+        isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+        else -> MaterialTheme.colorScheme.outlineVariant
     }
     val iconColor = when {
-        isProcessing -> StopButtonIcon
-        isActive -> SendButtonActiveIcon
-        else -> SendButtonInactiveIcon
+        isProcessing -> MaterialTheme.colorScheme.onErrorContainer
+        isActive -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
     }
 
     Box(
@@ -972,7 +935,7 @@ private fun SendMessageButton(
                         scaleY = pulseScale
                         alpha = pulseAlpha
                     }
-                    .border(2.dp, StopButtonPulseRing, CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f), CircleShape)
             )
         }
 
@@ -982,8 +945,8 @@ private fun SendMessageButton(
                 .shadow(
                     elevation = if (isActive && !isProcessing) 10.dp else 0.dp,
                     shape = CircleShape,
-                    ambientColor = SendButtonActiveGlow,
-                    spotColor = SendButtonActiveGlow,
+                    ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+                    spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
                     clip = false
                 )
                 .scale(scale)
@@ -1046,6 +1009,7 @@ private fun ControlTooltip(
     visible: Boolean,
     text: String,
 ) {
+    val colors = MaterialTheme.souzColors.tooltip
     val popupTransitionState = remember { MutableTransitionState(false) }
     val density = LocalDensity.current
     val popupPositionProvider = remember(density) {
@@ -1090,19 +1054,19 @@ private fun ControlTooltip(
                     Box(
                         modifier = Modifier
                             .matchParentSize()
-                            .background(ControlTooltipBackground)
+                            .background(colors.background)
                             .blur(20.dp)
                     )
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(ControlTooltipBackground)
-                            .border(1.dp, ControlTooltipBorder, RoundedCornerShape(12.dp))
+                            .background(colors.background)
+                            .border(1.dp, colors.border, RoundedCornerShape(12.dp))
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
                             text = text,
-                            color = Color(0xE6FFFFFF),
+                            color = colors.content,
                             fontSize = 12.sp,
                             maxLines = 1,
                             softWrap = false
@@ -1196,7 +1160,11 @@ private fun <T> QuickDropdown(
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(if (isHovered || expanded) Color(0x1AFFFFFF) else Color(0x0FFFFFFF))
+                .background(
+                    MaterialTheme.colorScheme.onSurface.copy(
+                        alpha = if (isHovered || expanded) 0.1f else 0.06f,
+                    )
+                )
                 .hoverable(interactionSource = interactionSource)
                 .clickable { onExpandedChange(!expanded) }
                 .padding(horizontal = 7.dp, vertical = 1.4.dp),
@@ -1207,19 +1175,19 @@ private fun <T> QuickDropdown(
                 Icon(
                     imageVector = leadingIcon,
                     contentDescription = null,
-                    tint = if (isHovered || expanded) ControlTextHover else ControlTextMuted,
+                    tint = if (isHovered || expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(8.dp)
                 )
             }
             Text(
                 text = label,
                 fontSize = 11.sp,
-                color = if (isHovered || expanded) ControlTextHover else ControlTextMuted
+                color = if (isHovered || expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Icon(
                 imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = stringResource(Res.string.content_desc_open_label).format(label),
-                tint = if (isHovered || expanded) ControlTextHover else ControlTextMuted,
+                tint = if (isHovered || expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(8.dp)
             )
         }
@@ -1255,15 +1223,15 @@ private fun <T> QuickDropdown(
                             modifier = Modifier
                                 .matchParentSize()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(GlassBackgroundDark)
+                                .background(MaterialTheme.colorScheme.surface)
                                 .blur(10.dp)
                         )
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(GlassBackgroundDark)
-                                .border(1.dp, GlassBorderLight, RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surface)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
                         ) {
                             LazyColumn(
                                 modifier = Modifier
@@ -1277,11 +1245,11 @@ private fun <T> QuickDropdown(
                                     val itemInteractionSource = remember { MutableInteractionSource() }
                                     val itemHovered by itemInteractionSource.collectIsHoveredAsState()
                                     val backgroundColor = when {
-                                        selected -> SelectMenuSelectedBackground
-                                        itemHovered -> HoverBackground
+                                        selected -> MaterialTheme.colorScheme.primaryContainer
+                                        itemHovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
                                         else -> Color.Transparent
                                     }
-                                    val textColor = if (selected) SelectMenuSelectedText else TextSecondary
+                                    val textColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
                                     Box(
                                         modifier = Modifier

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,8 +66,7 @@ import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import java.util.Locale
 import org.jetbrains.compose.resources.stringResource
-import ru.souz.ui.common.LocalModelDownloadPromptUi
-import ru.souz.ui.common.LocalModelDownloadStateUi
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.local_model_download_cancel
 import souz.sharedui.generated.resources.local_model_download_detail_license
@@ -148,40 +148,6 @@ private fun formatBytes(bytes: Long): String {
     return String.format(Locale.US, "%.${precision}f %s", value, units[unitIndex])
 }
 
-private object LocalModelDownloadProgressColors {
-    val backdrop = Color(0x99000000)
-    val dialogBg = Color(0xF21A1A1D)
-    val dialogBorder = Color(0x1FFFFFFF)
-    val divider = Color(0x0FFFFFFF)
-    val iconBg = Color(0x14FFFFFF)
-    val iconBorder = Color(0x1FFFFFFF)
-    val iconColor = Color(0xB3FFFFFF)
-    val pulseRing = Color(0x66FFFFFF)
-    val title = Color(0xE6FFFFFF)
-    val description = Color(0x80FFFFFF)
-    val modelName = Color(0xB3FFFFFF)
-    val progressMain = Color(0xE6FFFFFF)
-    val progressSecondary = Color(0x66FFFFFF)
-    val trackBg = Color(0x0FFFFFFF)
-    val trackBorder = Color(0x14FFFFFF)
-    val fillStart = Color(0x4DFFFFFF)
-    val fillEnd = Color(0x33FFFFFF)
-    val shimmer = Color(0x33FFFFFF)
-    val storageBg = Color(0x08FFFFFF)
-    val storageBorder = Color(0x0FFFFFFF)
-    val storageLabel = Color(0x66FFFFFF)
-    val storagePath = Color(0x99FFFFFF)
-    val cancelBg = Color(0x0DFFFFFF)
-    val cancelBorder = Color(0x14FFFFFF)
-    val cancelText = Color(0xB3FFFFFF)
-    val cancelHoverBg = Color(0x14FFFFFF)
-    val cancelHoverBorder = Color(0x1FFFFFFF)
-    val cancelHoverText = Color(0xE6FFFFFF)
-    val closeHoverBg = Color(0x14FFFFFF)
-    val closeColor = Color(0x66FFFFFF)
-    val closeHoverColor = Color(0x99FFFFFF)
-}
-
 private data class DownloadSpeedSnapshot(
     val bytesDownloaded: Long,
     val timestampNanos: Long,
@@ -192,6 +158,7 @@ private fun LocalModelDownloadProgressOverlay(
     state: LocalModelDownloadStateUi,
     onCancel: () -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     var visible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -220,7 +187,7 @@ private fun LocalModelDownloadProgressOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(LocalModelDownloadProgressColors.backdrop)
+                .background(colors.backdrop)
                 .blur(12.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -250,15 +217,15 @@ private fun LocalModelDownloadProgressOverlay(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(LocalModelDownloadProgressColors.dialogBg, dialogShape)
+                    .background(colors.background, dialogShape)
                     .blur(48.dp)
             )
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(LocalModelDownloadProgressColors.dialogBg, dialogShape)
-                    .border(1.dp, LocalModelDownloadProgressColors.dialogBorder, dialogShape)
+                    .background(colors.background, dialogShape)
+                    .border(1.dp, colors.border, dialogShape)
             ) {
                 LocalModelDownloadHeader(
                     modelName = state.prompt.profileDisplayName,
@@ -269,7 +236,7 @@ private fun LocalModelDownloadProgressOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(1.dp)
-                        .background(LocalModelDownloadProgressColors.divider)
+                        .background(colors.subtleBorder)
                 )
 
                 LocalModelDownloadBody(state = state)
@@ -284,14 +251,15 @@ private fun LocalModelDownloadHeader(
     modelName: String,
     onCancel: () -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     val title = stringResource(Res.string.local_model_download_progress_title)
     val messageTemplate = stringResource(Res.string.local_model_download_progress_message)
     val messageParts = remember(messageTemplate) { messageTemplate.split("%1\$s", limit = 2) }
-    val description = remember(messageTemplate, messageParts, modelName) {
+    val description = remember(messageTemplate, messageParts, modelName, colors.content) {
         if (messageParts.size == 2) {
             buildAnnotatedString {
                 append(messageParts[0])
-                withStyle(SpanStyle(color = LocalModelDownloadProgressColors.modelName)) {
+                withStyle(SpanStyle(color = colors.content)) {
                     append(modelName)
                 }
                 append(messageParts[1])
@@ -321,13 +289,13 @@ private fun LocalModelDownloadHeader(
                 fontSize = 15.sp,
                 lineHeight = 20.sp,
                 fontWeight = FontWeight.Medium,
-                color = LocalModelDownloadProgressColors.title,
+                color = colors.content,
             )
             Text(
                 text = description,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
-                color = LocalModelDownloadProgressColors.description,
+                color = colors.secondaryContent,
             )
         }
 
@@ -337,6 +305,7 @@ private fun LocalModelDownloadHeader(
 
 @Composable
 private fun AnimatedDownloadIcon() {
+    val colors = MaterialTheme.souzColors.dialog
     val infiniteTransition = rememberInfiniteTransition()
     val offsetY by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -363,12 +332,12 @@ private fun AnimatedDownloadIcon() {
                 .size(48.dp)
                 .graphicsLayer { translationY = offsetY }
                 .background(
-                    color = LocalModelDownloadProgressColors.iconBg,
+                    color = colors.subtleBackground,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 )
                 .border(
                     width = 1.dp,
-                    color = LocalModelDownloadProgressColors.iconBorder,
+                    color = colors.subtleBorder,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 ),
             contentAlignment = Alignment.Center,
@@ -376,7 +345,7 @@ private fun AnimatedDownloadIcon() {
             Icon(
                 imageVector = Icons.Outlined.Download,
                 contentDescription = null,
-                tint = LocalModelDownloadProgressColors.iconColor,
+                tint = colors.secondaryContent,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -385,6 +354,7 @@ private fun AnimatedDownloadIcon() {
 
 @Composable
 private fun DownloadIconPulseRing() {
+    val colors = MaterialTheme.souzColors.dialog
     val infiniteTransition = rememberInfiniteTransition()
     val scale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -413,7 +383,7 @@ private fun DownloadIconPulseRing() {
             }
             .border(
                 width = 2.dp,
-                color = LocalModelDownloadProgressColors.pulseRing,
+                color = colors.primaryActionBackground.copy(alpha = 0.4f),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
             )
     )
@@ -423,6 +393,7 @@ private fun DownloadIconPulseRing() {
 private fun LocalModelDownloadCloseButton(
     onClick: () -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
 
@@ -430,7 +401,7 @@ private fun LocalModelDownloadCloseButton(
         modifier = Modifier
             .size(32.dp)
             .background(
-                color = if (isHovered) LocalModelDownloadProgressColors.closeHoverBg else Color.Transparent,
+                color = if (isHovered) colors.subtleBackground else Color.Transparent,
                 shape = androidx.compose.foundation.shape.CircleShape,
             )
             .pointerHoverIcon(PointerIcon.Hand)
@@ -445,9 +416,9 @@ private fun LocalModelDownloadCloseButton(
             imageVector = Icons.Outlined.Close,
             contentDescription = stringResource(Res.string.local_model_download_cancel),
             tint = if (isHovered) {
-                LocalModelDownloadProgressColors.closeHoverColor
+                colors.content
             } else {
-                LocalModelDownloadProgressColors.closeColor
+                colors.secondaryContent
             },
             modifier = Modifier.size(16.dp),
         )
@@ -456,6 +427,7 @@ private fun LocalModelDownloadCloseButton(
 
 @Composable
 private fun LocalModelDownloadBody(state: LocalModelDownloadStateUi) {
+    val colors = MaterialTheme.souzColors.dialog
     val currentTarget = state.prompt.downloads.firstOrNull { profile ->
         profile.displayName == state.progress.activeProfileName
     } ?: state.prompt.downloads.firstOrNull()
@@ -502,7 +474,7 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadStateUi) {
                             text = activeProfileName,
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
-                            color = LocalModelDownloadProgressColors.progressSecondary,
+                            color = colors.secondaryContent,
                         )
                     }
                     Text(
@@ -510,13 +482,13 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadStateUi) {
                         fontSize = 13.sp,
                         lineHeight = 18.sp,
                         fontWeight = FontWeight.Medium,
-                        color = LocalModelDownloadProgressColors.progressMain,
+                        color = colors.content,
                     )
                     Text(
                         text = speedBytesPerSecond?.let(::formatDataRate) ?: " ",
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
-                        color = LocalModelDownloadProgressColors.progressSecondary,
+                        color = colors.secondaryContent,
                     )
                 }
 
@@ -529,7 +501,7 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadStateUi) {
                     fontSize = 15.sp,
                     lineHeight = 20.sp,
                     fontWeight = FontWeight.Medium,
-                    color = LocalModelDownloadProgressColors.progressMain,
+                    color = colors.content,
                 )
             }
 
@@ -545,6 +517,7 @@ private fun LocalModelDownloadBody(state: LocalModelDownloadStateUi) {
 
 @Composable
 private fun LocalModelDownloadProgressBar(progress: Float?) {
+    val colors = MaterialTheme.souzColors.dialog
     val animatedProgress by animateFloatAsState(
         targetValue = progress ?: 0f,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
@@ -556,8 +529,8 @@ private fun LocalModelDownloadProgressBar(progress: Float?) {
             .fillMaxWidth()
             .height(8.dp)
             .clip(shape)
-            .background(LocalModelDownloadProgressColors.trackBg)
-            .border(1.dp, LocalModelDownloadProgressColors.trackBorder, shape),
+            .background(colors.subtleBackground)
+            .border(1.dp, colors.subtleBorder, shape),
     ) {
         if (progress != null) {
             if (animatedProgress > 0f) {
@@ -569,8 +542,8 @@ private fun LocalModelDownloadProgressBar(progress: Float?) {
                         .background(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
-                                    LocalModelDownloadProgressColors.fillStart,
-                                    LocalModelDownloadProgressColors.fillEnd,
+                                    colors.progressStart,
+                                    colors.progressEnd,
                                 ),
                             ),
                         )
@@ -604,8 +577,8 @@ private fun LocalModelDownloadProgressBar(progress: Float?) {
                         .background(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
-                                    LocalModelDownloadProgressColors.fillStart,
-                                    LocalModelDownloadProgressColors.fillEnd,
+                                    colors.progressStart,
+                                    colors.progressEnd,
                                 ),
                             ),
                         )
@@ -619,6 +592,7 @@ private fun LocalModelDownloadProgressBar(progress: Float?) {
 
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.ProgressBarShimmer() {
+    val colors = MaterialTheme.souzColors.dialog
     BoxWithConstraints(
         modifier = Modifier.matchParentSize()
     ) {
@@ -642,7 +616,7 @@ private fun androidx.compose.foundation.layout.BoxScope.ProgressBarShimmer() {
                     brush = Brush.horizontalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            LocalModelDownloadProgressColors.shimmer,
+                            colors.primaryActionContent.copy(alpha = 0.2f),
                             Color.Transparent,
                         ),
                     ),
@@ -656,14 +630,15 @@ private fun LocalModelDownloadStorageCard(
     label: String,
     path: String,
 ) {
+    val colors = MaterialTheme.souzColors.dialog
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(LocalModelDownloadProgressColors.storageBg)
-            .border(1.dp, LocalModelDownloadProgressColors.storageBorder, shape)
+            .background(colors.subtleBackground)
+            .border(1.dp, colors.subtleBorder, shape)
             .padding(14.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -672,14 +647,14 @@ private fun LocalModelDownloadStorageCard(
                 fontSize = 11.sp,
                 lineHeight = 14.sp,
                 letterSpacing = 0.5.sp,
-                color = LocalModelDownloadProgressColors.storageLabel,
+                color = colors.secondaryContent,
             )
             Text(
                 text = path,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
                 fontFamily = FontFamily.Monospace,
-                color = LocalModelDownloadProgressColors.storagePath,
+                color = colors.content,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -689,31 +664,32 @@ private fun LocalModelDownloadStorageCard(
 
 @Composable
 private fun LocalModelDownloadFooter(onCancel: () -> Unit) {
+    val colors = MaterialTheme.souzColors.dialog
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val background by animateColorAsState(
         targetValue = if (isHovered) {
-            LocalModelDownloadProgressColors.cancelHoverBg
+            colors.secondaryActionHoverBackground
         } else {
-            LocalModelDownloadProgressColors.cancelBg
+            colors.secondaryActionBackground
         },
         animationSpec = tween(150),
     )
     val border by animateColorAsState(
         targetValue = if (isHovered) {
-            LocalModelDownloadProgressColors.cancelHoverBorder
+            colors.border
         } else {
-            LocalModelDownloadProgressColors.cancelBorder
+            colors.subtleBorder
         },
         animationSpec = tween(150),
     )
     val textColor by animateColorAsState(
         targetValue = if (isHovered) {
-            LocalModelDownloadProgressColors.cancelHoverText
+            colors.content
         } else {
-            LocalModelDownloadProgressColors.cancelText
+            colors.secondaryContent
         },
         animationSpec = tween(150),
     )

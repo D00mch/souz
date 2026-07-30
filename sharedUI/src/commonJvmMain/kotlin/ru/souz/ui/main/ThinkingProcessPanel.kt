@@ -69,23 +69,26 @@ fun ThinkingProcessPanel(
 
     // Reuse visual style from MainScreen's liquid card but opaque
     val noiseBrush = rememberNoiseBrush()
+    val panelBackground = MaterialTheme.colorScheme.surface
+    val panelGradient = MaterialTheme.colorScheme.secondaryContainer
+    val panelBorder = MaterialTheme.colorScheme.outlineVariant
     
     Box(
         modifier = modifier
             .width(400.dp)
             .fillMaxHeight()
             .clip(RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp))
-            .background(Color.Black) // Solid base
+            .background(panelBackground)
     ) {
         // Opaque background layer with noise
         Canvas(modifier = Modifier.matchParentSize()) {
-             drawRect(color = Color(0xFF0F0F0F)) // Deep dark solid background
-             drawRect(brush = noiseBrush, alpha = 0.15f) // Subtle noise
+             drawRect(color = panelBackground)
+             drawRect(brush = noiseBrush, alpha = 0.08f)
              
              // Subtle gradients for "premium" feel
              drawRect(
                  brush = Brush.radialGradient(
-                     colors = listOf(Color(0xFF1E1E2E), Color.Transparent),
+                     colors = listOf(panelGradient, Color.Transparent),
                      center = Offset(size.width, 0f),
                      radius = size.width
                  ),
@@ -100,7 +103,7 @@ fun ThinkingProcessPanel(
                 .border(
                     width = 1.dp,
                     brush = Brush.horizontalGradient(
-                        colors = listOf(Color.White.copy(0.1f), Color.Transparent)
+                        colors = listOf(panelBorder, Color.Transparent)
                     ),
                     shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
                 )
@@ -120,7 +123,7 @@ fun ThinkingProcessPanel(
                     Text(
                         text = stringResource(Res.string.thinking_panel_title),
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -130,20 +133,20 @@ fun ThinkingProcessPanel(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(0.05f))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
                         .clickable(onClick = onClose),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                         contentDescription = stringResource(Res.string.action_close),
-                        tint = Color.White.copy(0.7f),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            HorizontalDivider(color = Color.White.copy(0.08f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -213,7 +216,7 @@ fun ThinkingItem(
     status: ItemStatus,
     timestamp: String
 ) {
-    val containerColor = Color(0xFF1E212B) // Slightly lighter dark
+    val containerColor = MaterialTheme.colorScheme.surfaceVariant
     
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -226,19 +229,24 @@ fun ThinkingItem(
                      modifier = Modifier
                          .size(32.dp)
                          .clip(RoundedCornerShape(8.dp))
-                         .background(Color.White.copy(0.1f)),
+                         .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)),
                      contentAlignment = Alignment.Center
                  ) {
                      Icon(
                          imageVector = icon,
                          contentDescription = null,
-                         tint = Color.White.copy(0.9f),
+                         tint = MaterialTheme.colorScheme.onSurface,
                          modifier = Modifier.size(16.dp)
                      )
                  }
                  // Vertical line connector could be here
                  Spacer(Modifier.height(4.dp))
-                 Box(Modifier.width(1.dp).weight(1f).background(Color.White.copy(0.1f)))
+                 Box(
+                     Modifier
+                         .width(1.dp)
+                         .weight(1f)
+                         .background(MaterialTheme.colorScheme.outlineVariant)
+                 )
              }
              
              Spacer(Modifier.width(12.dp))
@@ -249,7 +257,7 @@ fun ThinkingItem(
                          .fillMaxWidth()
                          .clip(RoundedCornerShape(12.dp))
                          .background(containerColor)
-                         .border(1.dp, Color.White.copy(0.05f), RoundedCornerShape(12.dp))
+                         .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
                          .padding(12.dp)
                  ) {
                      Column {
@@ -261,13 +269,13 @@ fun ThinkingItem(
                              Text(
                                  text = title,
                                  style = MaterialTheme.typography.titleSmall,
-                                 color = Color.White,
+                                 color = MaterialTheme.colorScheme.onSurface,
                                  fontWeight = FontWeight.Bold
                              )
                              Text(
                                  text = timestamp,
                                  style = MaterialTheme.typography.bodySmall,
-                                 color = Color.White.copy(0.3f),
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                  fontSize = 10.sp
                              )
                          }
@@ -278,7 +286,7 @@ fun ThinkingItem(
                          val parts = remember(content) { ru.souz.ui.common.parseMarkdownContent(content) }
                          val codeStyle = MaterialTheme.typography.bodyMedium.copy(
                              fontFamily = FontFamily.Monospace,
-                             color = Color(0xFFE0E0E0),
+                             color = MaterialTheme.colorScheme.onSurface,
                              fontSize = 12.sp
                          )
 
@@ -289,7 +297,7 @@ fun ThinkingItem(
                                          Text(
                                              text = part.content,
                                              style = MaterialTheme.typography.bodyMedium,
-                                             color = Color.White.copy(0.8f),
+                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                                              lineHeight = 18.sp,
                                              overflow = TextOverflow.Ellipsis
                                          )
@@ -312,27 +320,27 @@ fun ThinkingItem(
                                  Icon(
                                      imageVector = Icons.Rounded.CheckCircleOutline,
                                      contentDescription = null,
-                                     tint = Color.Gray,
+                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                      modifier = Modifier.size(14.dp)
                                  )
                                   Spacer(Modifier.width(4.dp))
                                   Text(
                                      text = stringResource(Res.string.thinking_status_completed),
                                      style = MaterialTheme.typography.bodySmall,
-                                     color = Color.Gray,
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                      fontSize = 11.sp
                                  )
                              } else {
                                   CircularProgressIndicator(
                                       modifier = Modifier.size(12.dp),
-                                      color = Color.Gray,
+                                      color = MaterialTheme.colorScheme.onSurfaceVariant,
                                       strokeWidth = 1.dp
                                   )
                                   Spacer(Modifier.width(4.dp))
                                   Text(
                                      text = stringResource(Res.string.thinking_status_in_progress),
                                      style = MaterialTheme.typography.bodySmall,
-                                     color = Color.Gray,
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                      fontSize = 11.sp
                                  )
                              }
@@ -352,12 +360,13 @@ private fun formatTime(millis: Long): String {
 
 @Composable
 fun rememberNoiseBrush(): androidx.compose.ui.graphics.Brush {
-    return remember {
+    val noiseColor = MaterialTheme.colorScheme.onSurface
+    return remember(noiseColor) {
         val size = 256
         val imageBitmap = androidx.compose.ui.graphics.ImageBitmap(size, size)
         val canvas = androidx.compose.ui.graphics.Canvas(imageBitmap)
         val paint = androidx.compose.ui.graphics.Paint().apply {
-            color = Color.White
+            color = noiseColor
             alpha = 0.2f
         }
         val rnd = Random(System.currentTimeMillis())
