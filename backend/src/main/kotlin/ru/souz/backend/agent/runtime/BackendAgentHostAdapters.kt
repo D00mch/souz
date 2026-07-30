@@ -17,6 +17,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.findLLMModel
 import ru.souz.tool.ToolCategory
 
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
@@ -71,9 +72,7 @@ class BackendConversationSettingsProvider(
     }
 
     private fun parseModel(rawModel: String): LLMModel? =
-        LLMModel.entries.firstOrNull { model ->
-            model.alias.equals(rawModel, ignoreCase = true) || model.name.equals(rawModel, ignoreCase = true)
-        }
+        findLLMModel(rawModel)
 
     private fun localeToRegionProfile(locale: String): String {
         val language = runCatching { Locale.forLanguageTag(locale).language.lowercase() }

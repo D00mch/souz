@@ -216,23 +216,23 @@ class CodexChatAPI(
     private fun mapMessageToInputItem(msg: LLMRequest.Message): Map<String, Any?>? {
         return when (msg.role) {
             LLMMessageRole.user -> mapOf("type" to "message", "role" to "user", "content" to msg.content)
-            LLMMessageRole.assistant -> {
+            LLMMessageRole.assistant, LLMMessageRole.function_in_progress -> {
                 if (msg.functionsStateId != null) {
                     // assistant tool call
-                    val parsed = runCatching {
-                        restJsonMapper.readValue<Map<String, Any>>(msg.content)
+                    val functionCall = msg.functionCall ?: runCatching {
+                        val parsed = restJsonMapper.readValue<Map<String, Any>>(msg.content)
+                        val name = parsed["name"] as? String
+                        val arguments = parsed["arguments"]?.let { args ->
+                            if (args is String) args else restJsonMapper.writeValueAsString(args)
+                        }
+                        if (name != null && arguments != null) LLMRequest.FunctionCall(name, arguments) else null
                     }.getOrNull()
-                    if (parsed != null) {
+                    if (functionCall != null) {
                         mapOf(
                             "type" to "function_call",
                             "call_id" to msg.functionsStateId,
-                            "name" to (parsed["name"] as? String ?: ""),
-                            "arguments" to (
-                                parsed["arguments"]?.let { args ->
-                                    if (args is String) args
-                                    else restJsonMapper.writeValueAsString(args)
-                                } ?: "{}"
-                            ),
+                            "name" to functionCall.name,
+                            "arguments" to functionCall.arguments,
                         )
                     } else {
                         mapOf("type" to "message", "role" to "assistant", "content" to msg.content)

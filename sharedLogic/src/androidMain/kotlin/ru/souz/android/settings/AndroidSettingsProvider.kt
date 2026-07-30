@@ -15,6 +15,7 @@ import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.findLLMModel
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -225,7 +226,7 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
     }
 
     private fun modelFromAlias(value: String): LLMModel? =
-        LLMModel.entries.firstOrNull { it.alias.equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true) }
+        findLLMModel(value)
 
     private fun embeddingsModelFromAlias(value: String): EmbeddingsModel? =
         EmbeddingsModel.entries.firstOrNull { it.alias.equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true) }

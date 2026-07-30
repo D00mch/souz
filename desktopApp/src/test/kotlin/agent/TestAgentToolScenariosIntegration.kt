@@ -39,11 +39,12 @@ import ru.souz.tool.textReplace.ToolGetClipboard
  * Tools are mocked: we verify that LLM calls the required tools with the expected parameters.
  * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` before running these integration tests.
  * Select `graph` (default) or `skills` with [SOUZ_AGENT_INTEGRATION_TEST_AGENT].
+ * Override the model with [SOUZ_AGENT_INTEGRATION_TEST_MODEL].
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentToolScenariosIntegrationTest {
 
-    private val selectedModel = LLMModel.AnthropicHaiku45
+    private val selectedModel = scenarioIntegrationModel(LLMModel.AnthropicHaiku45)
     private val support = AgentScenarioTestSupport(selectedModel)
     private val runTest = support::runTest
     private val filesUtil: FilesToolUtil

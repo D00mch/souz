@@ -31,6 +31,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.findLLMModel
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.giga.GigaRestChatAPI
@@ -393,6 +394,7 @@ internal object EmptyMcpToolProvider : McpToolProvider {
 
 const val SOUZ_AGENT_INTEGRATION_TESTS_ON = "SOUZ_AGENT_INTEGRATION_TESTS_ON"
 const val SOUZ_AGENT_INTEGRATION_TEST_AGENT = "SOUZ_AGENT_INTEGRATION_TEST_AGENT"
+const val SOUZ_AGENT_INTEGRATION_TEST_MODEL = "SOUZ_AGENT_INTEGRATION_TEST_MODEL"
 
 private fun isAgentScenarioIntegrationTestsEnabled(envValue: String?): Boolean =
     envValue.equals("true", ignoreCase = true)
@@ -403,6 +405,16 @@ internal fun parseScenarioAgentId(rawValue: String?): AgentId = when (rawValue?.
     else -> error(
         "Unsupported $SOUZ_AGENT_INTEGRATION_TEST_AGENT='$rawValue'. " +
             "Expected '${AgentId.GRAPH.storageValue}' or '${AgentId.SKILLS_GRAPH.storageValue}'."
+    )
+}
+
+internal fun scenarioIntegrationModel(defaultModel: LLMModel): LLMModel {
+    val rawValue = readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_MODEL)
+        ?: readSystemProperty(SOUZ_AGENT_INTEGRATION_TEST_MODEL)
+        ?: return defaultModel
+    return findLLMModel(rawValue) ?: error(
+        "Unsupported $SOUZ_AGENT_INTEGRATION_TEST_MODEL='$rawValue'. " +
+            "Expected one of ${LLMModel.entries.joinToString { "${it.name}/${it.alias}" }}."
     )
 }
 

@@ -1,7 +1,13 @@
 package ru.souz.llms
 
 import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.databind.DeserializationContext
+import com.fasterxml.jackson.databind.JsonDeserializer
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
 import java.util.*
 
 object LLMResponse {
@@ -34,10 +40,14 @@ object LLMResponse {
         val role: LLMMessageRole,
         @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
         @field:JsonProperty("functions_state_id") val functionsStateId: String?,
+        @field:JsonProperty("reasoning_content") val reasoningContent: String? = null,
+        val created: Long? = null,
+        val name: String? = null,
     )
 
     data class FunctionCall(
         val name: String,
+        @field:JsonDeserialize(using = FunctionCallArgumentsDeserializer::class)
         val arguments: Map<String, Any>
     )
 
@@ -134,21 +144,25 @@ enum class LLMModel(
     val displayName: String,
     val alias: String,
     val provider: LlmProvider,
+    val legacyAliases: Set<String> = emptySet(),
 ) {
-    Lite("GigaChat Lite", "GigaChat-2", LlmProvider.GIGA),
-    Pro("GigaChat Pro", "GigaChat-Pro", LlmProvider.GIGA),
-    Max("GigaChat Max", "GigaChat-Max", LlmProvider.GIGA),
+    Lite("GigaChat Lite", "GigaChat-2", LlmProvider.GIGA, setOf("GigaChat")),
+    Pro("GigaChat Pro", "GigaChat-2-Pro", LlmProvider.GIGA, setOf("GigaChat-Pro")),
+    Max("GigaChat Max", "GigaChat-2-Max", LlmProvider.GIGA, setOf("GigaChat-Max")),
+    Ultra("GigaChat Ultra", "GigaChat-3-Ultra", LlmProvider.GIGA),
     QwenFlash("Qwen Flash", "qwen-flash", LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", LlmProvider.QWEN),
     Qwen3OpenSource("Qwen3 open source", "qwen3-vl-32b-instruct", LlmProvider.QWEN),
     QwenMax("Qwen Max", "qwen-max", LlmProvider.QWEN),
     AiTunnelGpt4oMini("AiT.gpt-4o-mini", "gpt-4o-mini", LlmProvider.AI_TUNNEL),
-    AiTunnelGpt52Codex("AiT.gpt-5.2-codex", "gpt-5.2-codex", LlmProvider.AI_TUNNEL),
+    AiTunnelGpt54Mini("AiT.gpt-5.4-mini", "gpt-5.4-mini", LlmProvider.AI_TUNNEL),
     AiTunnelGpt5Nano("AiT.gpt-5-nano", "gpt-5-nano", LlmProvider.AI_TUNNEL),
-    AiTunnelGemini3Flash("AiT.gemini-3-flash-preview", "gemini-3-flash-preview", LlmProvider.AI_TUNNEL),
-    AiTunnelClaudeOpus("AiT.claude-opus-4.6", "claude-opus-4.6", LlmProvider.AI_TUNNEL),
+    AiTunnelGemini36Flash("AiT.gemini-3.6-flash", "gemini-3.6-flash", LlmProvider.AI_TUNNEL),
+    AiTunnelGemini35FlashLite("AiT.gemini-3.5-flash-lite", "gemini-3.5-flash-lite", LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeOpus48("AiT.claude-opus-4.8", "claude-opus-4.8", LlmProvider.AI_TUNNEL),
     AiTunnelClaudeHaiku("AiT.claude-haiku-4.5", "claude-haiku-4.5", LlmProvider.AI_TUNNEL),
-    AiTunnelGrok("AiT.grok-4.1-fast", "grok-4.1-fast", LlmProvider.AI_TUNNEL),
+    AiTunnelClaudeFable5("AiT.claude-fable-5", "claude-fable-5", LlmProvider.AI_TUNNEL),
+    AiTunnelKimiK3("AiT.kimi-k3", "kimi-k3", LlmProvider.AI_TUNNEL),
     OpenAIGpt52("OpenAI GPT-5.2", "gpt-5.2", LlmProvider.OPENAI),
     OpenAIGpt5Mini("OpenAI GPT-5 mini", "gpt-5-mini", LlmProvider.OPENAI),
     OpenAIGpt5Nano("OpenAI GPT-5 nano", "gpt-5-nano", LlmProvider.OPENAI),
@@ -165,6 +179,16 @@ enum class LLMModel(
     CodexGpt55("GPT-5.5 (Codex)", "gpt-5.5", LlmProvider.CODEX),
     CodexGpt54("GPT-5.4 (Codex)", "gpt-5.4", LlmProvider.CODEX),
     CodexGpt53("GPT-5.3 Codex", "gpt-5.3-codex", LlmProvider.CODEX),
+}
+
+fun findLLMModel(value: String): LLMModel? {
+    val normalized = value.trim()
+    if (normalized.isEmpty()) return null
+    return LLMModel.entries.firstOrNull { model ->
+        model.name.equals(normalized, ignoreCase = true) ||
+            model.alias.equals(normalized, ignoreCase = true) ||
+            model.legacyAliases.any { it.equals(normalized, ignoreCase = true) }
+    }
 }
 
 enum class EmbeddingsModel(
@@ -204,18 +228,27 @@ object LLMRequest {
         val model: String = LLMModel.Max.alias,
         val messages: List<Message>,
         @field:JsonProperty("function_call")
-        val functionCall: String = "auto",
+        val functionCall: Any = "auto",
         val functions: List<Function> = emptyList(),
         val temperature: Float? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("top_p") val topP: Float? = null,
         val stream: Boolean = false,
+        @field:JsonProperty("max_tokens")
         val maxTokens: Int = DEFAULT_MAX_TOKENS,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("repetition_penalty") val repetitionPenalty: Float? = null,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("reasoning_effort") val reasoningEffort: String? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("response_format") val responseFormat: Map<String, Any?>? = null,
         @get:JsonIgnore
         @field:JsonIgnore
         val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
     ) {
         /**
-         * OpenAI expects function to provide call IDs, but Giga and Qwen does not.
+         * OpenAI-compatible providers expect function results to provide call IDs, but Giga does not.
          */
         fun rmFnIds(): Chat = copy(
             messages = messages.map { m ->
@@ -233,26 +266,37 @@ object LLMRequest {
         @field:JsonProperty("functions_state_id") val functionsStateId: String? = null,
         val attachments: List<String>? = null,
         val name: String? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        @field:JsonProperty("function_call") val functionCall: FunctionCall? = null,
+    )
+
+    data class FunctionCall(
+        val name: String,
+        val arguments: String,
     )
 
     data class Function(
         val name: String,
-        val description: String,
-        val parameters: Parameters,
+        val description: String = "",
+        val parameters: Parameters = Parameters("object", emptyMap()),
         @field:JsonProperty("few_shot_examples") val fewShotExamples: List<FewShotExample>? = null,
         @field:JsonProperty("return_parameters") val returnParameters: Parameters? = null,
     )
 
     data class Parameters(
         val type: String,
-        val properties: Map<String, Property>,
+        val properties: Map<String, Property> = emptyMap(),
         val required: List<String> = emptyList()
     )
 
     data class Property(
         val type: String,
         val description: String? = null,
-        @field:JsonProperty("enum") val enum: List<String>? = null
+        @field:JsonProperty("enum") val enum: List<String>? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        val items: Property? = null,
+        @field:JsonInclude(JsonInclude.Include.NON_NULL)
+        val properties: Map<String, Property>? = null,
     )
 
     data class FewShotExample(
@@ -270,7 +314,7 @@ object LLMRequest {
 }
 
 @Suppress("EnumEntryName")
-enum class LLMMessageRole { system, user, assistant, function }
+enum class LLMMessageRole { system, user, assistant, function, function_in_progress }
 
 @Suppress("unused")
 class LLMException(body: LLMResponse.Chat.Error, override val cause: Throwable? = null) : Exception(cause)
@@ -290,15 +334,38 @@ operator fun LLMResponse.Usage.plus(usage: LLMResponse.Usage): LLMResponse.Usage
 fun LLMResponse.Choice.toMessage(): LLMRequest.Message? {
     val msg = this.message
     val content: String = when {
-        msg.functionCall != null -> restJsonMapper.writeValueAsString(
-            mapOf("name" to msg.functionCall.name, "arguments" to msg.functionCall.arguments)
-        )
+        msg.functionCall != null -> msg.content
         msg.content.isNotBlank() -> msg.content
         else -> return null
     }
     return LLMRequest.Message(
         role = msg.role,
         content = content,
-        functionsStateId = msg.functionsStateId
+        functionsStateId = msg.functionsStateId,
+        functionCall = msg.functionCall?.let {
+            LLMRequest.FunctionCall(
+                name = it.name,
+                arguments = restJsonMapper.writeValueAsString(it.arguments),
+            )
+        },
     )
+}
+
+class FunctionCallArgumentsDeserializer : JsonDeserializer<Map<String, Any>>() {
+    override fun deserialize(parser: JsonParser, ctxt: DeserializationContext): Map<String, Any> {
+        val codec = parser.codec
+        val node = codec.readTree<JsonNode>(parser)
+        val argumentsNode = if (node.isTextual) {
+            restJsonMapper.readTree(node.asText())
+        } else {
+            node
+        }
+        if (!argumentsNode.isObject) return emptyMap()
+        return restJsonMapper.convertValue(argumentsNode, Map::class.java)
+            .entries
+            .mapNotNull { (key, value) ->
+                if (key is String && value != null) key to value else null
+            }
+            .toMap()
+    }
 }

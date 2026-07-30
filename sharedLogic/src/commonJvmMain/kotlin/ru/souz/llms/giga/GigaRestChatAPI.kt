@@ -1,5 +1,8 @@
 package ru.souz.llms.giga
 
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -20,6 +23,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -76,10 +80,10 @@ class GigaRestChatAPI(
     private val uuid = UUID.randomUUID().toString() // for cache to work
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val body = body.rmFnIds()
+        val requestBody = body.toGigaChatRequest()
         val response = client.post(URL) {
             header("X-Session-ID", uuid)
-            setBody(body)
+            setBody(requestBody)
         }
         when {
             response.status.isSuccess() -> {
@@ -111,12 +115,12 @@ class GigaRestChatAPI(
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         try {
-            val body = body.rmFnIds()
+            val requestBody = body.toGigaChatRequest()
             client.sse(
                 urlString = URL,
                 request = {
                     method = HttpMethod.Post
-                    setBody(body.copy(stream = true))
+                    setBody(requestBody.copy(stream = true))
                     header("X-Session-ID", uuid)
                 }
             ) {
@@ -125,7 +129,7 @@ class GigaRestChatAPI(
                     if (data == null || data == "[DONE]") {
                         return@collect
                     }
-                    send(parseStreamChunk(data))
+                    send(parseGigaStreamChunk(data))
                 }
             }
         } catch (e: ClientRequestException) {
@@ -193,66 +197,6 @@ class GigaRestChatAPI(
         LLMResponse.Balance.Error(-1, "Connection error: ${t.message}")
     }
 
-    private fun parseStreamChunk(data: String): LLMResponse.Chat {
-        val node = restJsonMapper.readTree(data)
-        val choicesNode = node["choices"] ?: emptyList()
-
-        val choices = choicesNode.mapNotNull { choice ->
-            val finishReasonText = choice["finish_reason"]?.asText()
-            if (finishReasonText.equals("stop", ignoreCase = true)) {
-                l.info("finishReason: $finishReasonText")
-                return@mapNotNull null
-            }
-
-            val delta = choice["delta"] ?: return@mapNotNull null
-            val functionCallNode = delta["function_call"]
-            val functionCall = if (functionCallNode != null && !functionCallNode.isNull) {
-                val name = functionCallNode["name"]?.asText() ?: ""
-                val argsText = functionCallNode["arguments"]?.toString() ?: "{}"
-                val args: Map<String, Any> = restJsonMapper.readValue(argsText)
-                LLMResponse.FunctionCall(name, args)
-            } else null
-
-            val content = delta["content"]?.asText() ?: ""
-            val roleStr = delta["role"]?.asText()
-            val role = roleStr?.takeIf { it.isNotBlank() }?.let { LLMMessageRole.valueOf(it) }
-                ?: LLMMessageRole.assistant
-
-            LLMResponse.Choice(
-                message = LLMResponse.Message(
-                    content = content,
-                    role = role,
-                    functionCall = functionCall,
-                    functionsStateId = delta["functions_state_id"]?.asText(),
-                ),
-                index = choice["index"]?.asInt() ?: 0,
-                finishReason = finishReasonText?.toFinishReason(),
-            )
-        }
-
-        val usageNode = node["usage"]
-        val usage = if (usageNode != null && !usageNode.isNull) {
-            LLMResponse.Usage(
-                promptTokens = usageNode["prompt_tokens"]?.asInt() ?: 0,
-                completionTokens = usageNode["completion_tokens"]?.asInt() ?: 0,
-                totalTokens = usageNode["total_tokens"]?.asInt() ?: 0,
-                precachedTokens = usageNode["precached_prompt_tokens"]?.asInt() ?: 0,
-            )
-        } else {
-            LLMResponse.Usage(0, 0, 0, 0)
-        }
-
-        val model = node["model"]?.asText() ?: ""
-        val created = node["created"]?.asLong() ?: 0L
-
-        return LLMResponse.Chat.Ok(
-            choices = choices,
-            created = created,
-            model = model,
-            usage = usage,
-        )
-    }
-
     private suspend fun uploadImage(file: File): LLMResponse.UploadFile {
         val mime = withContext(Dispatchers.IO) {
             Files.probeContentType(file.toPath())
@@ -314,12 +258,177 @@ class GigaRestChatAPI(
     }
 
     companion object {
-        private const val URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
-        private const val EMBEDDINGS_URL = "https://gigachat.devices.sberbank.ru/api/v1/embeddings"
-        private const val BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
-        private const val FILES_URL = "https://gigachat.devices.sberbank.ru/api/v1/files"
+        private const val BASE_URL = "https://api.giga.chat/v1"
+        private const val URL = "$BASE_URL/chat/completions"
+        private const val EMBEDDINGS_URL = "$BASE_URL/embeddings"
+        private const val BALANCE_URL = "$BASE_URL/balance"
+        private const val FILES_URL = "$BASE_URL/files"
     }
 }
+
+internal data class GigaChatRequest(
+    val model: String,
+    val messages: List<GigaMessage>,
+    @field:JsonProperty("function_call")
+    val functionCall: Any = "auto",
+    val functions: List<LLMRequest.Function> = emptyList(),
+    val temperature: Float? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    @field:JsonProperty("top_p") val topP: Float? = null,
+    val stream: Boolean = false,
+    @field:JsonProperty("max_tokens")
+    val maxTokens: Int = DEFAULT_MAX_TOKENS,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    @field:JsonProperty("repetition_penalty") val repetitionPenalty: Float? = null,
+    @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    @field:JsonProperty("reasoning_effort") val reasoningEffort: String? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    @field:JsonProperty("response_format") val responseFormat: Map<String, Any?>? = null,
+)
+
+internal data class GigaMessage(
+    val role: LLMMessageRole,
+    val content: String,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    @field:JsonProperty("functions_state_id") val functionsStateId: String? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    val attachments: List<String>? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    val name: String? = null,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    @field:JsonProperty("function_call") val functionCall: GigaFunctionCall? = null,
+)
+
+internal data class GigaFunctionCall(
+    val name: String,
+    val arguments: JsonNode,
+)
+
+internal fun LLMRequest.Chat.toGigaChatRequest(): GigaChatRequest {
+    val body = rmFnIds()
+    return GigaChatRequest(
+        model = body.model,
+        messages = body.messages.map { it.toGigaMessage() },
+        functionCall = body.functionCall,
+        functions = body.functions.map { fn ->
+            fn.copy(
+                parameters = fn.parameters.toGigaSchema(),
+                returnParameters = fn.returnParameters?.toGigaSchema(),
+            )
+        },
+        temperature = body.temperature,
+        topP = body.topP,
+        stream = body.stream,
+        maxTokens = body.maxTokens,
+        repetitionPenalty = body.repetitionPenalty,
+        updateInterval = body.updateInterval,
+        reasoningEffort = body.reasoningEffort,
+        responseFormat = body.responseFormat,
+    )
+}
+
+private fun LLMRequest.Message.toGigaMessage(): GigaMessage = GigaMessage(
+    role = role,
+    content = content,
+    functionsStateId = functionsStateId,
+    attachments = attachments,
+    name = name,
+    functionCall = functionCall?.toGigaFunctionCall(),
+)
+
+private fun LLMRequest.FunctionCall.toGigaFunctionCall(): GigaFunctionCall =
+    GigaFunctionCall(
+        name = name,
+        arguments = arguments.toGigaFunctionArgumentsNode(),
+    )
+
+private fun String.toGigaFunctionArgumentsNode(): JsonNode =
+    runCatching { restJsonMapper.readTree(this) }
+        .getOrNull()
+        ?.takeIf { it.isObject }
+        ?: restJsonMapper.createObjectNode()
+
+private fun LLMRequest.Parameters.toGigaSchema(): LLMRequest.Parameters = copy(
+    properties = properties.mapValues { it.value.toGigaSchemaProperty() }
+)
+
+private fun LLMRequest.Property.toGigaSchemaProperty(): LLMRequest.Property = copy(
+    items = if (type == "array") {
+        items?.toGigaSchemaProperty() ?: gigaUnconstrainedObjectProperty()
+    } else {
+        items?.toGigaSchemaProperty()
+    },
+    properties = if (type == "object") {
+        properties.orEmpty().mapValues { it.value.toGigaSchemaProperty() }
+    } else {
+        properties?.mapValues { it.value.toGigaSchemaProperty() }
+    },
+)
+
+private fun gigaUnconstrainedObjectProperty(): LLMRequest.Property =
+    LLMRequest.Property(type = "object", properties = emptyMap())
+
+internal fun parseGigaStreamChunk(data: String): LLMResponse.Chat {
+    val node = restJsonMapper.readTree(data)
+    val choicesNode = node["choices"] ?: emptyList<JsonNode>()
+
+    val choices = choicesNode.mapNotNull { choice ->
+        val finishReasonText = choice["finish_reason"]?.asText()
+        val delta = choice["delta"] ?: choice["message"] ?: return@mapNotNull null
+        val functionCall = delta["function_call"]?.takeUnless { it.isNull }?.toGigaFunctionCall()
+
+        val role = delta["role"]?.asText()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { LLMMessageRole.valueOf(it) }.getOrNull() }
+            ?: LLMMessageRole.assistant
+
+        LLMResponse.Choice(
+            message = LLMResponse.Message(
+                content = delta["content"]?.asText() ?: "",
+                role = role,
+                functionCall = functionCall,
+                functionsStateId = delta["functions_state_id"]?.asText(),
+                reasoningContent = delta["reasoning_content"]?.asText(),
+                created = delta["created"]?.asLong(),
+                name = delta["name"]?.asText(),
+            ),
+            index = choice["index"]?.asInt() ?: 0,
+            finishReason = finishReasonText?.toFinishReason(),
+        )
+    }
+
+    return LLMResponse.Chat.Ok(
+        choices = choices,
+        created = node["created"]?.asLong() ?: 0L,
+        model = node["model"]?.asText() ?: "",
+        usage = node["usage"]?.takeUnless { it.isNull }?.toGigaUsage() ?: LLMResponse.Usage(0, 0, 0, 0),
+    )
+}
+
+private fun JsonNode.toGigaFunctionCall(): LLMResponse.FunctionCall {
+    val name = this["name"]?.asText() ?: ""
+    val arguments = this["arguments"]?.toGigaFunctionArguments() ?: emptyMap()
+    return LLMResponse.FunctionCall(name, arguments)
+}
+
+private fun JsonNode.toGigaFunctionArguments(): Map<String, Any> {
+    val argumentsNode = if (isTextual) restJsonMapper.readTree(asText()) else this
+    if (!argumentsNode.isObject) return emptyMap()
+    return restJsonMapper.convertValue(argumentsNode, Map::class.java)
+        .entries
+        .mapNotNull { (key, value) ->
+            if (key is String && value != null) key to value else null
+        }
+        .toMap()
+}
+
+private fun JsonNode.toGigaUsage(): LLMResponse.Usage = LLMResponse.Usage(
+    promptTokens = this["prompt_tokens"]?.asInt() ?: 0,
+    completionTokens = this["completion_tokens"]?.asInt() ?: 0,
+    totalTokens = this["total_tokens"]?.asInt() ?: 0,
+    precachedTokens = this["precached_prompt_tokens"]?.asInt() ?: 0,
+)
 
 private fun contentDispositionFileName(value: String): String? =
     value.split(';')

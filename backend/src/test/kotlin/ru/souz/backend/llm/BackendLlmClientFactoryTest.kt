@@ -88,6 +88,29 @@ class BackendLlmClientFactoryTest {
         )
     }
 
+    @Test
+    fun `legacy giga aliases route to giga provider`() = runTest {
+        val builder = RecordingProviderChatApiBuilder()
+        val factory = BackendLlmClientFactory(
+            credentialResolver = StaticProviderCredentialResolver(
+                serverManaged = mapOf(LlmProvider.GIGA to "server-giga-key"),
+                userManaged = emptyMap(),
+            ),
+            providerClientFactory = builder,
+            localChatApi = NoopChatApi(),
+        )
+
+        factory.create(
+            BackendLlmExecutionContext(
+                userId = "user-a",
+                executionId = "exec-a",
+                settingsProvider = TestSettingsProvider().apply { gigaModel = LLMModel.OpenAIGpt52 },
+            )
+        ).message(sampleRequest("GigaChat-Max"))
+
+        assertEquals(LlmProvider.GIGA, builder.invocations.single().provider)
+    }
+
     private fun sampleRequest(model: String): LLMRequest.Chat =
         LLMRequest.Chat(
             model = model,

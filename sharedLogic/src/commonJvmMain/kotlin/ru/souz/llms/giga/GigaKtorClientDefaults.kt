@@ -20,6 +20,7 @@ fun HttpClientConfig<CIOEngineConfig>.gigaDefaults(settingsProvider: SettingsPro
     this.defaultRequest {
         header(HttpHeaders.ContentType, "application/json")
         header(HttpHeaders.Accept, "application/json")
+        header(HttpHeaders.UserAgent, "Souz")
         header("RqUID", UUID.randomUUID().toString())
     }
     install(HttpTimeout) {

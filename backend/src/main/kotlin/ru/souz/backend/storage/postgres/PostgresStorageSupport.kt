@@ -43,6 +43,7 @@ import ru.souz.backend.user.model.UserRecord
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.findLLMModel
 
 internal const val ACTIVE_EXECUTION_CONSTRAINT: String = "agent_executions_one_active_per_chat_idx"
 internal const val PRIMARY_KEY_CONSTRAINT: String = "agent_conversation_state_pkey"
@@ -448,9 +449,7 @@ internal fun parseToolCallStatus(raw: String): ToolCallStatus =
     ToolCallStatus.entries.first { it.value == raw || it.name.equals(raw, ignoreCase = true) }
 
 internal fun String?.toModelOrNull(): LLMModel? =
-    this?.let { raw ->
-        LLMModel.entries.firstOrNull { it.alias == raw || it.name.equals(raw, ignoreCase = true) }
-    }
+    this?.let(::findLLMModel)
 
 internal fun String?.toProviderOrNull(): LlmProvider? =
     this?.let { raw ->

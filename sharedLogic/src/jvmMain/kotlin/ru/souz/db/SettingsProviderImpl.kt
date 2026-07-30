@@ -8,6 +8,7 @@ import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
+import ru.souz.llms.findLLMModel
 import ru.souz.llms.local.LocalBridgeLoader
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalHostInfoProvider
@@ -159,9 +160,7 @@ class SettingsProviderImpl(
 
     override var gigaModel: LLMModel
         get() = _gigaModelDelegate?.let { value ->
-            LLMModel.entries.firstOrNull { model ->
-                model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
-            }
+            findLLMModel(value)
         }?.let(::normalizeGigaModel)
             ?: defaultLlmModel()
         set(value) {
@@ -170,9 +169,7 @@ class SettingsProviderImpl(
 
     override var ambientAnalysisModel: LLMModel
         get() = _ambientAnalysisModelDelegate?.let { value ->
-            LLMModel.entries.firstOrNull { model ->
-                model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
-            }
+            findLLMModel(value)
         }?.let(::normalizeAmbientAnalysisModel)
             ?: defaultAmbientAnalysisModel()
         set(value) {

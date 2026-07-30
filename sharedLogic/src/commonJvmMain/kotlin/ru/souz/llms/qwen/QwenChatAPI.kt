@@ -90,7 +90,6 @@ class QwenChatAPI(
     }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val body = body.rmFnIds()
         val response = client.post(CHAT_COMPLETIONS_URL) {
             setBody(buildChatRequest(body))
         }
@@ -114,7 +113,6 @@ class QwenChatAPI(
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
-        val body = body.rmFnIds()
         try {
             val model = resolveChatModel(body.model)
             val streamAccumulator = QwenStreamAccumulator(
@@ -233,7 +231,7 @@ class QwenChatAPI(
         }
     }
 
-    private fun buildMessages(messages: List<LLMRequest.Message>): List<Map<String, Any>> =
+    private fun buildMessages(messages: List<LLMRequest.Message>): List<Map<String, Any?>> =
         messages.map { msg ->
             when (msg.role) {
                 LLMMessageRole.function -> {
@@ -247,8 +245,26 @@ class QwenChatAPI(
                 }
 
                 else -> buildMap {
-                    put("role", msg.role.name)
-                    put("content", msg.content)
+                    put("role", if (msg.role == LLMMessageRole.function_in_progress) "assistant" else msg.role.name)
+                    val functionCall = msg.functionCall
+                    if (functionCall != null) {
+                        put("content", null)
+                        put(
+                            "tool_calls",
+                            listOf(
+                                mapOf(
+                                    "id" to (msg.functionsStateId ?: functionCall.name),
+                                    "type" to "function",
+                                    "function" to mapOf(
+                                        "name" to functionCall.name,
+                                        "arguments" to functionCall.arguments,
+                                    ),
+                                )
+                            )
+                        )
+                    } else {
+                        put("content", msg.content)
+                    }
                     msg.name?.let { put("name", it) }
                 }
             }
