@@ -75,7 +75,7 @@ inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
                 val toolResult = toolSetup.suspendInvoke(input, meta)
                 LLMRequest.Message(
                     role = LLMMessageRole.function,
-                    content = restJsonMapper.writeValueAsString(toolResult),
+                    content = toolResult.toGigaFunctionResultContent(),
                     name = functionCall.name,
                 )
             } catch (e: CancellationException) {
@@ -105,7 +105,7 @@ inline fun <reified Input : Any> ToolSetupWithAttachments<Input>.toGiga(): LLMTo
                 val toolResult = toolSetup.suspendInvoke(input, meta)
                 LLMRequest.Message(
                     role = LLMMessageRole.function,
-                    content = restJsonMapper.writeValueAsString(toolResult),
+                    content = toolResult.toGigaFunctionResultContent(),
                     attachments = toolSetup.attachments,
                     name = functionCall.name,
                 )
@@ -127,6 +127,19 @@ fun Throwable.toGigaToolMessage(name: String?): LLMRequest.Message {
         content = restJsonMapper.writeValueAsString(mapOf("result" to msg)),
         name = name,
     )
+}
+
+@PublishedApi
+internal fun String.toGigaFunctionResultContent(): String {
+    val result = trim()
+    if (result.isNotEmpty()) {
+        val parsed = runCatching { restJsonMapper.readTree(result) }.getOrNull()
+        if (parsed?.isObject == true) return result
+        if (parsed != null && !parsed.isNull) {
+            return restJsonMapper.writeValueAsString(mapOf("result" to parsed))
+        }
+    }
+    return restJsonMapper.writeValueAsString(mapOf("result" to this))
 }
 
 @PublishedApi

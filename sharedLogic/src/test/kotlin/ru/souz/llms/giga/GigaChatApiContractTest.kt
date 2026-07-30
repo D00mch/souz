@@ -84,6 +84,41 @@ class GigaChatApiContractTest {
     }
 
     @Test
+    fun `chat request adds array item schemas for giga`() {
+        val request = LLMRequest.Chat(
+            model = "GigaChat-2-Max",
+            messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            functions = listOf(
+                LLMRequest.Function(
+                    name = "lookup",
+                    parameters = LLMRequest.Parameters(
+                        type = "object",
+                        properties = mapOf(
+                            "ids" to LLMRequest.Property("array", "IDs")
+                        ),
+                    ),
+                    returnParameters = LLMRequest.Parameters(
+                        type = "object",
+                        properties = mapOf(
+                            "matches" to LLMRequest.Property("array", "Matches")
+                        ),
+                    ),
+                )
+            ),
+        ).toGigaChatRequest()
+
+        val parameterItems = request.functions.single().parameters.properties.getValue("ids").items
+        val returnItems = request.functions.single().returnParameters!!.properties.getValue("matches").items
+
+        assertNotNull(parameterItems)
+        assertEquals("object", parameterItems.type)
+        assertEquals(emptyMap(), parameterItems.properties)
+        assertNotNull(returnItems)
+        assertEquals("object", returnItems.type)
+        assertEquals(emptyMap(), returnItems.properties)
+    }
+
+    @Test
     fun `assistant tool call history keeps function call outside content`() {
         val message = LLMResponse.Choice(
             message = LLMResponse.Message(
@@ -101,6 +136,41 @@ class GigaChatApiContractTest {
         assertEquals("state-1", message.functionsStateId)
         assertEquals("weather_forecast", message.functionCall?.name)
         assertEquals("""{"city":"Moscow"}""", message.functionCall?.arguments)
+    }
+
+    @Test
+    fun `giga chat request replays assistant function arguments as json object`() {
+        val request = LLMRequest.Chat(
+            model = "GigaChat-2-Max",
+            messages = listOf(
+                LLMRequest.Message(LLMMessageRole.user, "find report"),
+                LLMRequest.Message(
+                    role = LLMMessageRole.assistant,
+                    content = "",
+                    functionsStateId = "state-1",
+                    functionCall = LLMRequest.FunctionCall(
+                        name = "FindFilesByName",
+                        arguments = """{"fileName":"public-note.txt"}""",
+                    ),
+                ),
+                LLMRequest.Message(
+                    role = LLMMessageRole.function,
+                    content = """{"result":["~/tmp/public-note.txt"]}""",
+                    functionsStateId = "state-1",
+                    name = "FindFilesByName",
+                ),
+            ),
+            functions = listOf(LLMRequest.Function(name = "FindFilesByName")),
+        ).toGigaChatRequest()
+        val messages = restJsonMapper.readTree(restJsonMapper.writeValueAsString(request))["messages"]
+        val assistant = messages[1]
+        val function = messages[2]
+
+        assertEquals("state-1", assistant["functions_state_id"].asText())
+        assertTrue(assistant["function_call"]["arguments"].isObject)
+        assertEquals("public-note.txt", assistant["function_call"]["arguments"]["fileName"].asText())
+        assertFalse(function.has("functions_state_id"))
+        assertEquals("""{"result":["~/tmp/public-note.txt"]}""", function["content"].asText())
     }
 
     @Test

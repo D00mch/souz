@@ -26,6 +26,7 @@ import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class GigaToolTest {
     private val settingsProvider = mockk<SettingsProvider> {
@@ -83,6 +84,56 @@ class GigaToolTest {
 
         assertEquals("object", errorProperty.type)
         assertEquals(emptyMap(), errorProperty.properties)
+    }
+
+    @Test
+    fun `successful raw string tool result is wrapped as giga json object`() = runBlocking {
+        val tool = object : ToolSetup<TestInput> {
+            override val name: String = "RawResult"
+            override val description: String = "Returns raw text"
+            override val fewShotExamples: List<FewShotExample> = emptyList()
+            override val returnParameters: ReturnParameters = ReturnParameters(properties = emptyMap())
+
+            override fun invoke(input: TestInput, meta: ToolInvocationMeta): String = input.value
+            override suspend fun suspendInvoke(input: TestInput, meta: ToolInvocationMeta): String = input.value
+        }
+
+        val result = tool.toGiga<TestInput>().invoke(
+            LLMResponse.FunctionCall(
+                name = "RawResult",
+                arguments = mapOf("value" to "plain result"),
+            )
+        )
+        val content = restJsonMapper.readTree(result.content)
+
+        assertEquals(LLMMessageRole.function, result.role)
+        assertEquals("plain result", content["result"].asText())
+    }
+
+    @Test
+    fun `successful json object tool result is preserved for giga`() = runBlocking {
+        val tool = object : ToolSetup<TestInput> {
+            override val name: String = "ObjectResult"
+            override val description: String = "Returns JSON object text"
+            override val fewShotExamples: List<FewShotExample> = emptyList()
+            override val returnParameters: ReturnParameters = ReturnParameters(properties = emptyMap())
+
+            override fun invoke(input: TestInput, meta: ToolInvocationMeta): String = """{"value":"${input.value}"}"""
+            override suspend fun suspendInvoke(input: TestInput, meta: ToolInvocationMeta): String =
+                """{"value":"${input.value}"}"""
+        }
+
+        val result = tool.toGiga<TestInput>().invoke(
+            LLMResponse.FunctionCall(
+                name = "ObjectResult",
+                arguments = mapOf("value" to "hello"),
+            )
+        )
+        val content = restJsonMapper.readTree(result.content)
+
+        assertEquals(LLMMessageRole.function, result.role)
+        assertEquals("hello", content["value"].asText())
+        assertFalse(content.has("result"))
     }
 
     @Test
