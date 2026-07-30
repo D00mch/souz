@@ -2,7 +2,7 @@
 
 Draft public contract for Client integrations with Souz Cloud.
 
-The canonical frame trace is [examples/happy-path.jsonl](examples/happy-path.jsonl). This document records the rules that are not obvious from that trace. [openapi.yaml](openapi.yaml) keeps the only REST endpoint machine-readable.
+The canonical frame trace is [examples/happy-path.jsonl](examples/happy-path.jsonl). This document records the rules that are not obvious from that trace. [openapi.yaml](openapi.yaml) keeps the REST endpoint and reusable WebSocket frame schemas machine-readable.
 
 ## Boundary
 
@@ -13,7 +13,7 @@ Public client profiles:
 - `backend`: server-to-server profile using `X-Souz-Proxy-Auth` and `X-User-Id`.
 - `mobile_app`: direct app profile using `Authorization: Bearer ...`; Souz resolves the authoritative user from the token.
 
-`clientType` is declared in `POST /v1/chats` and `/v1/chats/{chatId}/ws?clientType=...`. The WebSocket `clientType` must match the chat's stored `clientType` and the presented auth profile.
+`clientType` is declared in `POST /v1/chats` and `/v1/chats/{chatId}/ws?clientType=...`. The create-chat auth profile must match the requested `clientType`: proxy headers create `backend` chats, bearer auth creates `mobile_app` chats. The WebSocket `clientType` must match the chat's stored `clientType` and the presented auth profile.
 
 ## Flow
 
@@ -49,7 +49,7 @@ Create-chat idempotency is scoped by `(userId, requestId)`. The normalized paylo
 
 Route: `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`
 
-`afterSeq` is optional and exclusive. On connect, Souz sends events with `seq > afterSeq` in order, then live frames. `seq` is chat-local, monotonic, and used for replay and deduplication. A separate `eventId` is not used.
+`afterSeq` is optional and exclusive. If omitted, Souz treats it as `0` and replays every durable event in the chat. On connect, Souz sends events with `seq > afterSeq` in order, then live frames. `seq` is chat-local, monotonic, and used for replay and deduplication. A separate `eventId` is not used.
 
 Client frames:
 
@@ -64,6 +64,35 @@ Souz frames:
 - terminal `event` with `type = thread.completed | thread.failed | thread.cancelled`.
 
 Tool `target` is only `souz` or `client`. The connected Client side can be `backend` or `mobile_app`, but that does not create a third tool target.
+
+## Frame Reference
+
+The authoritative schema names are in `openapi.yaml` components. All frames have `additionalProperties = false`.
+
+Client-to-Souz frames:
+
+- `MessageSubmit`: `{kind: "message.submit", chatId, requestId, threadId?, payload}`.
+- `SucceededToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "succeeded", result}`.
+- `FailedToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "failed", error}`.
+- `CancelledToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "cancelled", error}`.
+- `TimedOutToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "timed_out", error}`.
+- `ThreadCancel`: `{kind: "thread.cancel", chatId, requestId, threadId, reason?}`.
+
+Souz-to-Client acknowledgements:
+
+- `AcceptedMessageSubmitAck`: `{kind: "ack", chatId, requestId, status: "accepted", duplicate, submission, thread, error: null, receivedAt}`.
+- `RejectedMessageSubmitAck`: `{kind: "ack", chatId, requestId, status: "rejected", duplicate, thread: null, error, receivedAt}`.
+- `AcceptedToolResultAck`: `{kind: "ack", chatId, toolCallId, threadId, status: "accepted", duplicate, error: null, receivedAt}`.
+- `RejectedToolResultAck`: `{kind: "ack", chatId, toolCallId, threadId, status: "rejected", duplicate, error, receivedAt}`.
+- `AcceptedThreadCancelAck`: `{kind: "ack", chatId, requestId, threadId, status: "accepted", duplicate, error: null, receivedAt}`.
+- `RejectedThreadCancelAck`: `{kind: "ack", chatId, requestId, threadId, status: "rejected", duplicate, error, receivedAt}`.
+
+Souz-to-Client events:
+
+- `ToolCallStartedEvent`: `{kind: "event", seq, type: "tool.call.started", chatId, threadId, payload, createdAt}`.
+- `ThreadCompletedEvent`: `{kind: "event", seq, type: "thread.completed", chatId, threadId, payload: {response}, createdAt}`.
+- `ThreadFailedEvent`: `{kind: "event", seq, type: "thread.failed", chatId, threadId, payload: {error}, createdAt}`.
+- `ThreadCancelledEvent`: `{kind: "event", seq, type: "thread.cancelled", chatId, threadId, payload: {reason?}, createdAt}`.
 
 ## Threads
 
