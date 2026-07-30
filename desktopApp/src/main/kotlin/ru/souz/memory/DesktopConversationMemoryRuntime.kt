@@ -49,6 +49,18 @@ class DesktopConversationMemoryRuntime(
         )
     }
 
+    override suspend fun searchMemory(request: MemorySearchRequest): MemorySearchResult {
+        val context = contextProvider.current(request.context.conversationId?.value)
+        val scopes = listOfNotNull(
+            globalMemoryScope(),
+            context.sessionId?.let(MemoryScope::session),
+        )
+        return memoryService.searchMemory(
+            request.copy(context = context),
+            overrideScopes = scopes,
+        )
+    }
+
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
         val context = contextProvider.current(input.conversationId)
         captureService.captureAfterTurn(

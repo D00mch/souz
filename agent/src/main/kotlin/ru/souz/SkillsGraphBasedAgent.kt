@@ -2,6 +2,7 @@ package ru.souz
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.flow.Flow
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
@@ -20,7 +21,6 @@ import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 
 /**
  * Agent graph whose model always sees only the core skill-discovery, Knowledge, and execution tools.
@@ -35,12 +35,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesMemory: NodesMemory,
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
-    getSkillByNameTool: LLMToolSetup,
-    getSkillsByCategoryTool: LLMToolSetup,
-    getSkillsNamesByCategoryTool: LLMToolSetup,
-    getKnowledgeTool: LLMToolSetup,
-    searchKnowledgeTool: LLMToolSetup,
-    runtimeCommandTool: LLMToolSetup,
+    private val coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
@@ -48,14 +43,6 @@ class SkillsGraphBasedAgent internal constructor(
 ) : TraceableAgent {
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
 
-    private val alwaysInlineResultTools = listOf(
-        getSkillByNameTool,
-        getSkillsByCategoryTool,
-        getSkillsNamesByCategoryTool,
-        getKnowledgeTool,
-        searchKnowledgeTool,
-    )
-    private val coreTools = alwaysInlineResultTools + runtimeCommandTool
     private val graph: Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
         val memoryRecall = nodesMemory.recall()
@@ -69,7 +56,7 @@ class SkillsGraphBasedAgent internal constructor(
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
         val toolUse = nodesToolUseWithKnowledge.node(
-            alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
+            alwaysInlineToolNames = coreTools.alwaysInlineResultToolNames,
         )
         val finalizeTurn = nodesMemory.finalizeTurn(
             summarization = nodesSummarization.summarize(),
@@ -104,7 +91,7 @@ class SkillsGraphBasedAgent internal constructor(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
-        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, coreTools)
+        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, coreTools.skillsGraphTools)
         return executionDelegate.executeWithTrace(graph = graph, ctx = restrictedContext, onStep = onStep)
     }
 

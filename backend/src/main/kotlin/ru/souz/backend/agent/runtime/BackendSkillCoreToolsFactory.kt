@@ -1,5 +1,6 @@
 package ru.souz.backend.agent.runtime
 
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
@@ -11,28 +12,20 @@ import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.ToolRunSkillCommand
 
-data class BackendSkillCoreTools(
-    val getSkillByNameTool: LLMToolSetup,
-    val getSkillsByCategoryTool: LLMToolSetup,
-    val getSkillsNamesByCategoryTool: LLMToolSetup,
-    val getKnowledgeTool: LLMToolSetup,
-    val searchKnowledgeTool: LLMToolSetup,
-    val runtimeCommandTool: LLMToolSetup,
-)
-
-/** Creates the skills-oriented graph's filtered tools for one backend request. */
+/** Creates request-scoped core tools for both backend agent graphs. */
 class BackendSkillCoreToolsFactory(
     private val skillRegistryRepository: SkillRegistryRepository,
     private val legacyCommandTool: LLMToolSetup,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
+    private val searchMemoryTool: LLMToolSetup,
     private val commandTool: ToolRunSkillCommand,
 ) {
     fun create(
         toolCatalog: AgentToolCatalog,
         toolsFilter: AgentToolsFilter,
         approvalGate: SkillApprovalGate,
-    ): BackendSkillCoreTools {
+    ): AgentCoreTools {
         val getSkillByName = ToolGetSkillByName(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
@@ -44,7 +37,7 @@ class BackendSkillCoreToolsFactory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
         )
-        return BackendSkillCoreTools(
+        return AgentCoreTools(
             getSkillByNameTool = getSkillByName,
             getSkillsByCategoryTool = ToolGetSkillsByCategory(
                 getSkillByName = getSkillByName,
@@ -53,6 +46,7 @@ class BackendSkillCoreToolsFactory(
             getSkillsNamesByCategoryTool = getSkillsNamesByCategory,
             getKnowledgeTool = getKnowledgeTool,
             searchKnowledgeTool = searchKnowledgeTool,
+            searchMemoryTool = searchMemoryTool,
             runtimeCommandTool = ToolInvokeSkill(
                 toolCatalog = toolCatalog,
                 toolsFilter = toolsFilter,

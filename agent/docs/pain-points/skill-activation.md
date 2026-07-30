@@ -6,7 +6,7 @@ Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inve
 
 `GetSkillByName` and generic `RunSkillCommand` are the only paths that load full file-backed bundle content for model use. Both require cached or fresh approval through the shared approval gate before returning `SKILL.md` or executing bundled commands. Validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle invalidates other cached validations for that skill and policy. Changing validation rules requires a new policy version.
 
-Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` tools remain outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all six. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand` in addition to classified direct tools. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
+Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` tools remain outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all seven. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` in addition to classified direct tools. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
 
 ## Why this is fragile
 

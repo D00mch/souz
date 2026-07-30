@@ -237,8 +237,9 @@ class MemoryService(
         val context = legacyMemoryContext()
         val selected = selectMemoryFacts(
             context = context,
-            query = query,
-            maxFacts = limit,
+            semanticQuery = query,
+            lexicalHints = listOf(query),
+            maxFacts = limit.coerceIn(1, MAX_AUTOMATIC_RECALL_FACTS),
             maxPromptTokens = 700,
             overrideScopes = scopes,
         ).selected
@@ -257,8 +258,9 @@ class MemoryService(
     ): MemoryRetrievalResult {
         val selection = selectMemoryFacts(
             context = request.context,
-            query = request.query,
-            maxFacts = request.maxFacts ?: 8,
+            semanticQuery = request.query,
+            lexicalHints = listOf(request.query),
+            maxFacts = (request.maxFacts ?: 8).coerceIn(1, MAX_AUTOMATIC_RECALL_FACTS),
             maxPromptTokens = request.maxPromptTokens ?: 700,
             overrideScopes = overrideScopes,
         )
@@ -279,6 +281,34 @@ class MemoryService(
         )
     }
 
+    suspend fun searchMemory(
+        request: MemorySearchRequest,
+        overrideScopes: List<MemoryScope>? = null,
+    ): MemorySearchResult {
+        require(request.maxFacts in 1..MemorySearchPolicy.MAX_FACTS)
+        val selection = selectMemoryFacts(
+            context = request.context,
+            semanticQuery = request.semanticQuery,
+            lexicalHints = request.lexicalHints,
+            maxFacts = request.maxFacts,
+            maxPromptTokens = EXPLICIT_SEARCH_TOKEN_BUDGET,
+            overrideScopes = overrideScopes,
+        )
+        return MemorySearchResult(
+            facts = selection.selected.map { selected ->
+                val fact = selected.fact
+                MemorySearchFact(
+                    factId = fact.id,
+                    scope = fact.scope.normalized().type,
+                    kind = fact.kind.name,
+                    title = fact.title,
+                    body = fact.body,
+                    score = selected.score,
+                )
+            }
+        )
+    }
+
     private data class MemorySelection(
         val selected: List<RetrievedMemoryFact>,
         val trace: MemoryRetrievalTrace,
@@ -286,7 +316,8 @@ class MemoryService(
 
     private suspend fun selectMemoryFacts(
         context: MemoryContext,
-        query: String,
+        semanticQuery: String,
+        lexicalHints: List<String>,
         maxFacts: Int,
         maxPromptTokens: Int,
         overrideScopes: List<MemoryScope>? = null,
@@ -295,20 +326,34 @@ class MemoryService(
             .flatMap(MemoryScope::compatibilityScopes)
             .distinct()
         val normalizedScopes = scopes.map(MemoryScope::normalized).toSet()
-        val limit = maxFacts.coerceIn(1, 32)
         val tokenBudget = maxPromptTokens.coerceAtLeast(80)
         if (scopes.isEmpty()) return MemorySelection(emptyList(), MemoryRetrievalTrace())
-        val trimmedQuery = query.trim()
-        val exact = exactCandidates(context.ownerId, scopes, trimmedQuery, 20)
-        val lexical = try {
-            repo.lexicalSearchFacts(context.ownerId, scopes, trimmedQuery, 40)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
+        val trimmedSemanticQuery = semanticQuery.trim()
+        val normalizedLexicalHints = lexicalHints
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        val lexicalQuery = normalizedLexicalHints.joinToString(" ")
+        val exact = exactCandidates(
+            context.ownerId,
+            scopes,
+            normalizedLexicalHints,
+            lexicalQuery,
+            20,
+        )
+        val lexical = if (lexicalQuery.isBlank()) {
             emptyList()
+        } else {
+            try {
+                repo.lexicalSearchFacts(context.ownerId, scopes, lexicalQuery, 40)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emptyList()
+            }
         }
-        val dense = denseCandidates(context.ownerId, scopes, trimmedQuery, 40)
-        val priority = priorityCandidates(context.ownerId, scopes, trimmedQuery, 20)
+        val dense = denseCandidates(context.ownerId, scopes, trimmedSemanticQuery, 40)
+        val priority = priorityCandidates(context.ownerId, scopes, lexicalQuery.ifBlank { trimmedSemanticQuery }, 20)
 
         val fused = weightedRrf(
             "exact" to (3.0 to exact),
@@ -322,7 +367,7 @@ class MemoryService(
             .filter { it.fact.retention != MemoryRetention.SESSION_LIFETIME || it.fact.scope.normalized() in normalizedScopes }
             .sortedWith(compareByDescending<FusedCandidate> { heuristicScore(it, context) }.thenByDescending { it.fact.updatedAt })
             .distinctBy { it.fact.canonicalKey ?: it.fact.contentHash }
-            .takeForPrompt(limit, tokenBudget)
+            .takeForPrompt(maxFacts, tokenBudget)
             .map { RetrievedMemoryFact(it.fact, heuristicScore(it, context).toFloat(), it.sources) }
             .toList()
         repo.recordRetrieval(selected.map { it.fact.id })
@@ -465,16 +510,17 @@ class MemoryService(
     private suspend fun exactCandidates(
         ownerId: MemoryOwnerId,
         scopes: List<MemoryScope>,
-        query: String,
+        lexicalHints: List<String>,
+        lexicalQuery: String,
         limit: Int,
     ): List<MemoryFactSearchHit> {
-        val key = normalizeCanonicalKey(query)
-        val byKey = if (key != null) {
-            scopes.mapNotNull { repo.findActiveFactByCanonicalKey(ownerId, it, key) }
-        } else {
-            emptyList()
+        val canonicalKeys = lexicalHints
+            .mapNotNull(::normalizeCanonicalKey)
+            .distinct()
+        val byKey = canonicalKeys.flatMap { key ->
+            scopes.mapNotNull { scope -> repo.findActiveFactByCanonicalKey(ownerId, scope, key) }
         }
-        val identifiers = query.normalizedTerms().filter { it.length >= 3 }.take(8)
+        val identifiers = lexicalQuery.normalizedTerms().filter { it.length >= 3 }.take(8)
         val byText = scopes
             .flatMap { repo.listFacts(MemoryFactFilter(ownerId = ownerId, scope = it, limit = 100)) }
             .filter { fact ->
@@ -634,6 +680,11 @@ class MemoryService(
         appendLine(body)
         appendLine("kind=$kind")
         appendLine("scope=${scope.type}:${scope.id}")
+    }
+
+    private companion object {
+        const val MAX_AUTOMATIC_RECALL_FACTS = 32
+        const val EXPLICIT_SEARCH_TOKEN_BUDGET = 1_400
     }
 }
 

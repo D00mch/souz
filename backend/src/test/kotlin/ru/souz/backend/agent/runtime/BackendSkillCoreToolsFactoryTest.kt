@@ -26,6 +26,7 @@ import ru.souz.agent.skills.validation.SkillRiskLevel
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.testCoreTool
 import ru.souz.llms.LLMMessageRole
@@ -41,6 +42,7 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.ToolRunSkillCommand
 
 class BackendSkillCoreToolsFactoryTest {
@@ -78,6 +80,7 @@ class BackendSkillCoreToolsFactoryTest {
             legacyCommandTool = commandTool.toGiga(),
             getKnowledgeTool = testCoreTool("GetKnowledge"),
             searchKnowledgeTool = testCoreTool("SearchKnowledge"),
+            searchMemoryTool = ToolSearchMemory(NoopConversationMemoryRuntime),
             commandTool = commandTool,
         )
         val mutableEnabledTools = linkedSetOf("EnabledTool")
@@ -112,6 +115,7 @@ class BackendSkillCoreToolsFactoryTest {
                 "GetSkillsNamesByCategory",
                 "GetKnowledge",
                 "SearchKnowledge",
+                "SearchMemory",
                 "RunSkillCommand",
             ),
             listOf(
@@ -120,6 +124,7 @@ class BackendSkillCoreToolsFactoryTest {
                 coreTools.getSkillsNamesByCategoryTool.fn.name,
                 coreTools.getKnowledgeTool.fn.name,
                 coreTools.searchKnowledgeTool.fn.name,
+                coreTools.searchMemoryTool.fn.name,
                 coreTools.runtimeCommandTool.fn.name,
             ),
         )

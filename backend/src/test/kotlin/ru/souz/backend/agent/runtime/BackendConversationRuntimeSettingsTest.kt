@@ -59,6 +59,7 @@ class BackendConversationRuntimeSettingsTest {
                 "GetSkillsNamesByCategory",
                 "GetKnowledge",
                 "SearchKnowledge",
+                "SearchMemory",
                 "RunSkillCommand",
             ),
             api.finalRequests.single().functions.map { it.name },
@@ -305,6 +306,7 @@ private val CLASSIC_SKILL_CORE_TOOLS = listOf(
     "GetSkillByName",
     "GetKnowledge",
     "SearchKnowledge",
+    "SearchMemory",
     "RunSkillCommand",
 )
 

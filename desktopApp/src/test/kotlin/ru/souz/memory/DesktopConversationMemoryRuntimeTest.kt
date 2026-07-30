@@ -12,6 +12,44 @@ import kotlin.test.assertEquals
 
 class DesktopConversationMemoryRuntimeTest {
     @Test
+    fun `search replaces caller owner and uses global plus current session scopes`() = runTest {
+        val memoryService = mockk<MemoryService>()
+        val requestSlot = slot<MemorySearchRequest>()
+        val scopesSlot = slot<List<MemoryScope>>()
+        coEvery {
+            memoryService.searchMemory(capture(requestSlot), capture(scopesSlot))
+        } returns MemorySearchResult()
+        val runtime = DesktopConversationMemoryRuntime(
+            memoryService = memoryService,
+            captureService = mockk(relaxed = true),
+            contextProvider = DesktopMemoryContextProvider(
+                ownerProvider = MemoryOwnerProvider { MemoryOwnerId("desktop-owner") },
+                projectContextProvider = object : DesktopMemoryProjectContextProvider {
+                    override fun currentProjectId(): ProjectId = ProjectId("project-3")
+                },
+            ),
+        )
+
+        runtime.searchMemory(
+            MemorySearchRequest(
+                MemoryContext(
+                    MemoryOwnerId("caller-owner"), ConversationId("conversation-7"),
+                    MemorySessionId("wrong-session"), ProjectId("caller-project"),
+                ),
+                "User testing preferences", listOf("tests first"), 4,
+            )
+        )
+
+        assertEquals("desktop-owner", requestSlot.captured.context.ownerId.value)
+        assertEquals("conversation-7", requestSlot.captured.context.conversationId?.value)
+        assertEquals("conversation-7", requestSlot.captured.context.sessionId?.value)
+        assertEquals(
+            listOf(globalMemoryScope(), MemoryScope.session(MemorySessionId("conversation-7"))),
+            scopesSlot.captured,
+        )
+    }
+
+    @Test
     fun `captureCompletedTurn does not use desktop conversation id as chat scope`() = runTest {
         val memoryService = mockk<MemoryService>(relaxed = true)
         val captureService = mockk<MemoryCaptureService>()

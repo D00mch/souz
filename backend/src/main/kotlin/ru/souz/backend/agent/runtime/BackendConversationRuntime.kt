@@ -174,7 +174,7 @@ class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
         )
-        val skillCoreTools = skillCoreToolsFactory.create(
+        val coreTools = skillCoreToolsFactory.create(
             toolCatalog = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,
             approvalGate = skillApprovalGate,
@@ -191,12 +191,7 @@ class BackendConversationRuntimeFactory(
                 timeZone = request.timeZone,
             ),
             mcpToolProvider = BackendNoopMcpToolProvider,
-            getSkillByNameTool = skillCoreTools.getSkillByNameTool,
-            getSkillsByCategoryTool = skillCoreTools.getSkillsByCategoryTool,
-            getSkillsNamesByCategoryTool = skillCoreTools.getSkillsNamesByCategoryTool,
-            getKnowledgeTool = skillCoreTools.getKnowledgeTool,
-            searchKnowledgeTool = skillCoreTools.searchKnowledgeTool,
-            runtimeCommandTool = skillCoreTools.runtimeCommandTool,
+            coreTools = coreTools,
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,

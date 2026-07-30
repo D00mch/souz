@@ -455,6 +455,50 @@ class MemoryCoreTest {
     }
 
     @Test
+    fun `structured search separates semantic and lexical queries without unrelated pinned facts`() = runTest {
+        val fixture = createFixture()
+        val currentSession = MemoryScope.session(MemorySessionId("conversation-1"))
+        val foreignSession = MemoryScope.session(MemorySessionId("conversation-2"))
+        val global = fixture.createManual(
+            "Red green workflow", "Use TDD before changing production code.",
+            globalScope(), MemoryFactKind.PREFERENCE,
+        )
+        val current = fixture.createManual(
+            "Current implementation state", "The current task follows TDD.",
+            currentSession, MemoryFactKind.EPISODE_NOTE,
+        )
+        fixture.createManual(
+            "Other implementation state", "The other task also follows TDD.",
+            foreignSession, MemoryFactKind.EPISODE_NOTE,
+        )
+        val unrelatedPinned = fixture.createManual(
+            "Favorite food", "The user likes ramen.",
+            globalScope(), MemoryFactKind.PREFERENCE, pinned = true,
+        )
+        fixture.embedder.resetCounts()
+        val context = MemoryContext(
+            fixture.owner, ConversationId("conversation-1"), MemorySessionId("conversation-1"), null
+        )
+
+        val result = fixture.memoryService.searchMemory(
+            request = MemorySearchRequest(context, "Preferred development workflow", listOf("TDD"), 8),
+            overrideScopes = context.allowedRetrievalScopes(),
+        )
+
+        assertEquals("Preferred development workflow", fixture.embedder.lastQueryText)
+        assertEquals("TDD", fixture.repository.lastLexicalQuery)
+        assertEquals(setOf(global.id, current.id), result.facts.map { it.factId }.toSet())
+        assertEquals(setOf("global", "session"), result.facts.map { it.scope }.toSet())
+
+        val semanticOnly = fixture.memoryService.searchMemory(
+            request = MemorySearchRequest(context, "Preferred development workflow"),
+            overrideScopes = context.allowedRetrievalScopes(),
+        )
+
+        assertTrue(semanticOnly.facts.none { it.factId == unrelatedPinned.id })
+    }
+
+    @Test
     fun `explicit forget strips command connectors before exact matching`() = runTest {
         val fixture = createFixture()
         val requests = listOf(
@@ -1355,23 +1399,40 @@ class MemoryCoreTest {
         owner: MemoryOwnerId = MemoryOwnerId(LEGACY_OWNER_ID),
     ): Fixture = Files.createTempDirectory("souz-memory-test-").resolve("memory.db")
         .let { dbPath ->
-            SqliteMemoryRepository(dbPath).let { repository ->
-            FakeEmbeddingClient().let { embedder ->
-                MemoryService(repository, embedder).let { service ->
-                    Fixture(dbPath, owner, repository, embedder, service, MemoryCaptureService(service, writer))
+            RecordingMemoryRepository(SqliteMemoryRepository(dbPath)).let { repository ->
+                FakeEmbeddingClient().let { embedder ->
+                    MemoryService(repository, embedder).let { service ->
+                        Fixture(dbPath, owner, repository, embedder, service, MemoryCaptureService(service, writer))
+                    }
                 }
             }
         }
-    }
 
     private data class Fixture(
         val dbPath: Path,
         val owner: MemoryOwnerId,
-        val repository: MemoryRepository,
+        val repository: RecordingMemoryRepository,
         val embedder: FakeEmbeddingClient,
         val memoryService: MemoryService,
         val captureService: MemoryCaptureService,
     )
+
+    private class RecordingMemoryRepository(
+        private val delegate: MemoryRepository,
+    ) : MemoryRepository by delegate {
+        var lastLexicalQuery: String? = null
+            private set
+
+        override suspend fun lexicalSearchFacts(
+            ownerId: MemoryOwnerId,
+            scopes: List<MemoryScope>,
+            query: String,
+            limit: Int,
+        ): List<MemoryFactSearchHit> {
+            lastLexicalQuery = query
+            return delegate.lexicalSearchFacts(ownerId, scopes, query, limit)
+        }
+    }
 
     private suspend fun Fixture.createManual(
         title: String,
@@ -1707,9 +1768,12 @@ class MemoryCoreTest {
             private set
         var documentCallCount = 0
             private set
+        var lastQueryText: String? = null
+            private set
 
         override suspend fun embedQuery(text: String): FloatArray {
             queryCallCount++
+            lastQueryText = text
             return embed(text)
         }
 
@@ -1725,6 +1789,7 @@ class MemoryCoreTest {
         fun resetCounts() {
             queryCallCount = 0
             documentCallCount = 0
+            lastQueryText = null
         }
 
         private fun embed(text: String): FloatArray =
