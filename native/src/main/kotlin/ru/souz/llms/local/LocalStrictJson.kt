@@ -66,9 +66,13 @@ class LocalStrictJsonParser {
         usage: LLMResponse.Usage,
         nativeFinishReason: String = "stop",
         created: Long = System.currentTimeMillis(),
+        allowRawOutput: Boolean = false,
     ): LLMResponse.Chat {
         val finishReason = nativeFinishReason.toFinishReason()
-        val trimmed = normalizeRawText(rawText)
+        val trimmed = if (allowRawOutput) rawText.trim() else normalizeRawText(rawText)
+        if (allowRawOutput) {
+            return plainTextFinal(trimmed, requestModel, usage, finishReason, created)
+        }
         val node = runCatching { restJsonMapper.readTree(trimmed) }
             .getOrElse { error ->
                 tryRecoverMalformedToolCalls(trimmed)?.let { recovered ->
@@ -133,7 +137,13 @@ class LocalStrictJsonParser {
         return when (type) {
             "final" -> parseFinal(node, requestModel, usage, finishReason, created)
             "tool_calls" -> parseToolCalls(node, requestModel, usage, created)
-            else -> LLMResponse.Chat.Error(-1, "Local provider JSON has unsupported type: $type")
+            else -> plainTextFinal(
+                text = trimmed,
+                requestModel = requestModel,
+                usage = usage,
+                finishReason = finishReason,
+                created = created,
+            )
         }
     }
 

@@ -1,48 +1,25 @@
-## Project Structure
+# Agent
 
-```text
-GraphBasedAgent.kt                    # Standard tool-calling graph agent
-agent/
-   ├── Agent.kt                       # Public agent contracts and execution result models
-   ├── AgentContextFactory.kt         # Stateless initial-context builder from host contracts
-   ├── AgentExecutor.kt               # Stateless graph execution entry point
-   ├── AgentFacade.kt                 # Active-agent selection, context lifecycle, and top-level execution entry point
-   ├── AgentId.kt                     # Supported agent identifiers and defaults
-   ├── AgentModule.kt                 # Single DI module that wires agent internals
-   ├── SystemPromptResolver.kt        # Default system prompt selection by agent/model/profile
-   ├── TraceableAgent.kt              # Internal tracing contract used by concrete agents
-   ├── graph/                         # Internal adapter from agent state to :graph-engine
-   ├── skills/                        # Skill bundle selection, validation, activation, and registry storage
-   │   ├── SkillActivationPipeline.kt # Explicit skill-selection/validation/activation state machine
-   │   ├── activation/                # Activated-skill models, skill ids, and history/context injection
-   │   ├── bundle/                    # Skill bundle parsing, normalization, and canonical hashing
-   │   ├── registry/                  # User-scoped stored skill metadata and validation-cache repository contracts
-   │   ├── selection/                 # Metadata-based and LLM-backed skill selection strategies
-   │   └── validation/                # Structural, static, and LLM validation with persisted verdict records
-   ├── spi/                           # Host-facing service provider interfaces
-   ├── state/                         # AgentContext and related state/settings wrappers
-   ├── nodes/                         # Graph node implementations
-   │   ├── NodesClassification.kt     # Category classification and tool narrowing
-   │   ├── NodesCommon.kt             # History shaping, tool execution, and prompt enrichment
-   │   ├── NodesErrorHandling.kt      # User-facing error mapping
-   │   ├── NodesLLM.kt                # LLM request and streaming response handling
-   │   ├── NodesMCP.kt                # MCP tool injection node
-   │   ├── NodesSkills.kt             # Prompt-only skill activation node between classification and MCP
-   │   └── NodesSummarization.kt      # History summarization and save-point logic
-   ├── runtime/                       # Execution helpers used by agent nodes/impls
-   │   ├── AgentToolExecutor.kt       # Tool invocation bridge with structured telemetry logging
-   │   ├── GraphExecutionDelegate.kt  # Active job tracking and traced graph execution
-   ├── session/                       # Persisted graph session models and services
-   │   ├── GraphSession.kt            # Session and per-step persistence models
-   │   ├── GraphSessionRepository.kt  # Filesystem-backed session storage
-   │   └── GraphSessionService.kt     # Session lifecycle and per-step capture
-db/                                   # Shared stored-data model used by prompt enrichment
-tool/                                 # Shared tool enums and classifier contract
+Before changing this module, read its [pain-point index](docs/pain-points.md) and the topics relevant to the change.
+
+## Purpose and boundaries
+
+- `:agent` owns the provider-agnostic agent contracts, graph orchestration, execution state, session tracing, and skill activation.
+- It depends on `:graph-engine` for graph execution and `:llms` for shared chat, tool, and provider contracts. The adapter under `ru.souz.agent.graph` is internal.
+- Hosts supply settings, tools, runtime services, and other integrations through `ru.souz.agent.spi`; keep UI, application DI, and concrete desktop/backend services outside this module.
+
+## Invariants
+
+- `AgentFacade` is a stateful, single-active-execution entry point. Starting a turn or changing its agent or context cancels the current execution. Model, prompt, temperature, and context-size setters currently update state in place, so callers must not use them concurrently with execution unless that lifecycle is changed and tested explicitly.
+- Preserve the classic graph's turn setup order: history input, memory recall, direct-tool classification, Skill inventory/core tools, MCP tools, context enrichment, then LLM execution. The skills-oriented agent restricts every incoming context to its fixed core tools before graph execution, then runs history input, memory recall, Skill inventory, and context enrichment without classifying or injecting MCP tools.
+- Memory recall removes structurally marked memory from the previous turn and inserts fresh memory before other turn setup. Completed-turn memory capture belongs to graph finalization: snapshot the turn before optional history summarization and schedule capture only after finalization succeeds; capture remains asynchronous and failure-isolated.
+- Skill discovery uses compact user-scoped inventory data: enabled tool-backed Skill IDs and escaped file-backed Skill IDs only. `GetSkillByName` and generic `RunSkillCommand` load full file-backed bundles on demand and require cached or fresh approval before returning instructions or executing bundled commands. Validation identity is user-, skill-, bundle-, and policy-scoped.
+- Propagate coroutine cancellation. Error handling may degrade optional integrations, but must not convert cancellation into a normal result.
+
+## Verification
+
+Run the module suite from the repository root:
+
+```bash
+./gradlew :agent:test
 ```
-
-Notes:
-- `:agent` contains both the public agent contract layer and the concrete implementations.
-- `:graph-engine` is the lower-level boundary; the `agent/graph` package is an internal adapter over it.
-- The `skills` package owns standalone skill-bundle activation: selection runs on stored metadata, full bundles load only for selected ids, validation approvals are cached by user + skill id + bundle hash + policy version, and the main `GraphBasedAgent` now runs prompt-only activation on every turn after classification and before MCP tool injection.
-- Shared `ru.souz.llms` DTOs and chat/tool contracts now live in the separate `:llms` module.
-- `AgentFacade` remains the intended stateful desktop entry point, now delegating to `AgentContextFactory` and `AgentExecutor`.

@@ -1,18 +1,18 @@
 package ru.souz.backend.config
 
-import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import ru.souz.agent.AgentId
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendPostgresConfig
 import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.app.BackendServerConfig
 import ru.souz.backend.common.BackendConfigurationException
-import ru.souz.backend.storage.StorageMode
 
 class BackendFeatureFlagsTest {
     @Test
@@ -23,7 +23,6 @@ class BackendFeatureFlagsTest {
         assertFalse(flags.streamingMessages)
         assertFalse(flags.toolEvents)
         assertFalse(flags.options)
-        assertFalse(flags.durableEventReplay)
         assertFalse(flags.telegramBot)
     }
 
@@ -39,7 +38,6 @@ class BackendFeatureFlagsTest {
                 properties = mapOf(
                     "souz.backend.feature.toolEvents" to "true",
                     "souz.backend.feature.options" to "true",
-                    "souz.backend.feature.durableEventReplay" to "true",
                 ),
             )
         )
@@ -48,97 +46,162 @@ class BackendFeatureFlagsTest {
         assertTrue(flags.streamingMessages)
         assertTrue(flags.toolEvents)
         assertTrue(flags.options)
-        assertTrue(flags.durableEventReplay)
         assertTrue(flags.telegramBot)
-    }
-}
-
-class StorageModeTest {
-    @Test
-    fun `storage mode defaults to memory`() {
-        assertEquals(StorageMode.MEMORY, StorageMode.load(MapBackendConfigSource()))
-    }
-
-    @Test
-    fun `storage mode reads config and accepts postgres`() {
-        val filesystem = StorageMode.load(
-            MapBackendConfigSource(env = mapOf("SOUZ_STORAGE_MODE" to "filesystem"))
-        )
-        val postgres = StorageMode.load(
-            MapBackendConfigSource(properties = mapOf("souz.backend.storageMode" to "postgres"))
-        )
-
-        assertEquals(StorageMode.FILESYSTEM, filesystem)
-        assertEquals(StorageMode.POSTGRES, postgres)
-        assertEquals(StorageMode.FILESYSTEM, filesystem.requireSupported())
-        assertEquals(StorageMode.POSTGRES, postgres.requireSupported())
-    }
-
-    @Test
-    fun `storage mode rejects unknown values`() {
-        val error = assertFailsWith<BackendConfigurationException> {
-            StorageMode.load(
-                MapBackendConfigSource(env = mapOf("SOUZ_STORAGE_MODE" to "mariadb"))
-            )
-        }
-
-        assertTrue(error.message.orEmpty().contains("mariadb"))
     }
 }
 
 class BackendAppConfigTest {
     @Test
-    fun `filesystem config defaults data dir and validates`() {
-        val config = BackendAppConfig.load(
-            MapBackendConfigSource(
-                env = mapOf(
-                    "SOUZ_STORAGE_MODE" to "filesystem",
-                    "SOUZ_MASTER_KEY" to "test-master-key",
-                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
-                )
-            )
-        ).validate()
-
-        assertEquals(StorageMode.FILESYSTEM, config.storageMode)
-        assertEquals(Path.of("data"), config.dataDir)
-        assertEquals("test-master-key", config.masterKey)
-    }
-
-    @Test
-    fun `filesystem config reads data dir from env and property`() {
+    fun `backend agent defaults to graph and reads env or property`() {
+        val defaultConfig = BackendAppConfig.load(
+            MapBackendConfigSource(env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"))
+        )
         val envConfig = BackendAppConfig.load(
             MapBackendConfigSource(
                 env = mapOf(
-                    "SOUZ_STORAGE_MODE" to "filesystem",
-                    "SOUZ_BACKEND_DATA_DIR" to "/tmp/souz-env-data",
-                    "SOUZ_MASTER_KEY" to "env-master-key",
-                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
-                )
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                    "SOUZ_BACKEND_AGENT" to " skills ",
+                ),
+                properties = mapOf("souz.backend.agent" to "graph"),
             )
         )
         val propertyConfig = BackendAppConfig.load(
             MapBackendConfigSource(
-                properties = mapOf(
-                    "souz.backend.storageMode" to "filesystem",
-                    "souz.backend.dataDir" to "/tmp/souz-prop-data",
-                    "souz.masterKey" to "prop-master-key",
-                    "souz.telegram.tokenEncryptionKey" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
-                )
+                env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"),
+                properties = mapOf("souz.backend.agent" to "SKILLS"),
             )
         )
 
-        assertEquals(Path.of("/tmp/souz-env-data"), envConfig.dataDir)
-        assertEquals(Path.of("/tmp/souz-prop-data"), propertyConfig.dataDir)
-        assertEquals("env-master-key", envConfig.masterKey)
-        assertEquals("prop-master-key", propertyConfig.masterKey)
+        assertEquals(AgentId.GRAPH, defaultConfig.agentId)
+        assertEquals(AgentId.SKILLS_GRAPH, envConfig.agentId)
+        assertEquals(AgentId.SKILLS_GRAPH, propertyConfig.agentId)
+    }
+
+    @Test
+    fun `backend agent rejects unsupported values`() {
+        val error = assertFailsWith<BackendConfigurationException> {
+            BackendAppConfig.load(
+                MapBackendConfigSource(
+                    env = mapOf(
+                        "SOUZ_MASTER_KEY" to "test-master-key",
+                        "SOUZ_BACKEND_AGENT" to "desktop",
+                    )
+                )
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("SOUZ_BACKEND_AGENT"))
+        assertTrue(error.message.orEmpty().contains("graph, skills"))
+    }
+
+    @Test
+    fun `server config reads defaults and explicit settings`() {
+        val defaultConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"),
+            )
+        ).validate()
+        val envConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_BACKEND_HOST" to " 0.0.0.0 ",
+                    "SOUZ_BACKEND_PORT" to "9090",
+                    "SOUZ_BACKEND_PROXY_TOKEN" to " proxy-secret ",
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                ),
+            )
+        ).validate()
+        val propertyConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                properties = mapOf(
+                    "souz.backend.host" to "backend.internal",
+                    "souz.backend.port" to "8181",
+                    "souz.backend.proxyToken" to " property-secret ",
+                    "souz.masterKey" to "test-master-key",
+                ),
+            )
+        ).validate()
+        val blankTokenConfig = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_BACKEND_PROXY_TOKEN" to "   ",
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                ),
+            )
+        ).validate()
+
+        assertEquals(
+            BackendServerConfig(host = "127.0.0.1", port = 8080, proxyToken = null),
+            defaultConfig.server,
+        )
+        assertEquals(
+            BackendServerConfig(host = "0.0.0.0", port = 9090, proxyToken = "proxy-secret"),
+            envConfig.server,
+        )
+        assertEquals(
+            BackendServerConfig(host = "backend.internal", port = 8181, proxyToken = "property-secret"),
+            propertyConfig.server,
+        )
+        assertNull(blankTokenConfig.server.proxyToken)
+    }
+
+    @Test
+    fun `server config rejects malformed and out of range ports`() {
+        val malformedPort = assertFailsWith<BackendConfigurationException> {
+            BackendAppConfig.load(
+                MapBackendConfigSource(
+                    env = mapOf(
+                        "SOUZ_BACKEND_PORT" to "not-a-port",
+                        "SOUZ_MASTER_KEY" to "test-master-key",
+                    ),
+                )
+            )
+        }
+
+        assertTrue(malformedPort.message.orEmpty().contains("SOUZ_BACKEND_PORT"))
+        listOf(0, 65_536).forEach { invalidPort ->
+            val error = assertFailsWith<BackendConfigurationException> {
+                BackendServerConfig(
+                    host = "127.0.0.1",
+                    port = invalidPort,
+                    proxyToken = null,
+                ).validate()
+            }
+            assertTrue(error.message.orEmpty().contains("between 1 and 65535"))
+        }
+    }
+
+    @Test
+    fun `server config rejects blank host from config source`() {
+        val sources = listOf(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_BACKEND_HOST" to "   ",
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                ),
+            ),
+            MapBackendConfigSource(
+                properties = mapOf(
+                    "souz.backend.host" to "   ",
+                    "souz.masterKey" to "test-master-key",
+                ),
+            ),
+        )
+
+        sources.forEach { source ->
+            val error = assertFailsWith<BackendConfigurationException> {
+                BackendAppConfig.load(source).validate()
+            }
+
+            assertTrue(error.message.orEmpty().contains("SOUZ_BACKEND_HOST"))
+        }
     }
 
     @Test
     fun `postgres config reads defaults and explicit db settings`() {
-        val defaultConfig = BackendAppConfig.load(
+        val config = BackendAppConfig.load(
             MapBackendConfigSource(
                 env = mapOf(
-                    "SOUZ_STORAGE_MODE" to "postgres",
                     "SOUZ_MASTER_KEY" to "postgres-master-key",
                     "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                 )
@@ -147,7 +210,6 @@ class BackendAppConfigTest {
         val propertyConfig = BackendAppConfig.load(
             MapBackendConfigSource(
                 properties = mapOf(
-                    "souz.backend.storageMode" to "postgres",
                     "souz.backend.db.host" to "db.internal",
                     "souz.backend.db.port" to "5544",
                     "souz.backend.db.name" to "souz_prod",
@@ -162,7 +224,6 @@ class BackendAppConfigTest {
             )
         ).validate()
 
-        assertEquals(StorageMode.POSTGRES, defaultConfig.storageMode)
         assertEquals(
             BackendPostgresConfig(
                 host = "127.0.0.1",
@@ -174,7 +235,7 @@ class BackendAppConfigTest {
                 maxPoolSize = 10,
                 connectionTimeoutMs = 30_000L,
             ),
-            defaultConfig.postgres,
+            config.postgres,
         )
         assertEquals(
             BackendPostgresConfig(
@@ -189,23 +250,8 @@ class BackendAppConfigTest {
             ),
             propertyConfig.postgres,
         )
-        assertEquals("postgres-master-key", defaultConfig.masterKey)
+        assertEquals("postgres-master-key", config.masterKey)
         assertEquals("postgres-prop-master-key", propertyConfig.masterKey)
-    }
-
-    @Test
-    fun `filesystem config leaves postgres settings unset`() {
-        val config = BackendAppConfig.load(
-            MapBackendConfigSource(
-                env = mapOf(
-                    "SOUZ_STORAGE_MODE" to "filesystem",
-                    "SOUZ_MASTER_KEY" to "test-master-key",
-                    "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
-                )
-            )
-        ).validate()
-
-        assertNull(config.postgres)
     }
 
     @Test
@@ -213,7 +259,6 @@ class BackendAppConfigTest {
         val config = BackendAppConfig.load(
             MapBackendConfigSource(
                 env = mapOf(
-                    "SOUZ_STORAGE_MODE" to "memory",
                     "SOUZ_MASTER_KEY" to "test-master-key",
                     "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                     "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS" to "3",
@@ -252,9 +297,7 @@ class BackendAppConfigTest {
     fun `backend config requires explicit master key for encrypted user provider keys`() {
         val error = assertFailsWith<BackendConfigurationException> {
             BackendAppConfig.load(
-                MapBackendConfigSource(
-                    env = mapOf("SOUZ_STORAGE_MODE" to "memory")
-                )
+                MapBackendConfigSource()
             ).validate()
         }
 
@@ -266,7 +309,6 @@ class BackendAppConfigTest {
         val config = BackendAppConfig.load(
             MapBackendConfigSource(
                 env = mapOf(
-                    "SOUZ_STORAGE_MODE" to "memory",
                     "SOUZ_MASTER_KEY" to "test-master-key",
                 )
             )
@@ -282,7 +324,6 @@ class BackendAppConfigTest {
             BackendAppConfig.load(
                 MapBackendConfigSource(
                     env = mapOf(
-                        "SOUZ_STORAGE_MODE" to "memory",
                         "SOUZ_MASTER_KEY" to "test-master-key",
                         "ENABLE_BACKEND_TG_FEATURE" to "true",
                     )
@@ -299,7 +340,6 @@ class BackendAppConfigTest {
             BackendAppConfig.load(
                 MapBackendConfigSource(
                     env = mapOf(
-                        "SOUZ_STORAGE_MODE" to "memory",
                         "SOUZ_MASTER_KEY" to "test-master-key",
                         "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                         "SOUZ_BACKEND_LIMIT_PER_USER_REQUESTS_PER_MINUTE" to "0",
@@ -311,7 +351,6 @@ class BackendAppConfigTest {
             BackendAppConfig.load(
                 MapBackendConfigSource(
                     env = mapOf(
-                        "SOUZ_STORAGE_MODE" to "memory",
                         "SOUZ_MASTER_KEY" to "test-master-key",
                         "TELEGRAM_TOKEN_ENCRYPTION_KEY" to TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
                     ),

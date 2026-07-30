@@ -11,12 +11,15 @@ import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.kodein.di.DI
@@ -33,6 +36,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalModelProfiles
@@ -40,7 +44,9 @@ import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
+import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.BackgroundIndexRefresher
 import ru.souz.ui.host.DesktopLocalModelUiHost
@@ -63,6 +69,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -85,14 +92,29 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `init normalizes unavailable llm, embeddings, and voice models to available providers`() = runTest(dispatcher) {
+    fun `route refresh normalizes unavailable llm embeddings and voice models without eager init reads`() = runTest(dispatcher) {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
-        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
+        every { localProviderAvailability.isProviderAvailable() } returns true
+        every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
+        every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
+        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
         val supportsSalute = llmBuildProfile.supportsSaluteSpeechRecognition
+        every { settingsProvider.hasKey(any<LlmProvider>()) } answers {
+            firstArg<LlmProvider>() == LlmProvider.QWEN
+        }
+        every { settingsProvider.hasKey(any<VoiceRecognitionProvider>()) } answers {
+            val provider = firstArg<VoiceRecognitionProvider>()
+            if (supportsSalute) {
+                provider == VoiceRecognitionProvider.SALUTE_SPEECH
+            } else {
+                provider == VoiceRecognitionProvider.OPENAI
+            }
+        }
         val configuredVoiceRecognitionModel = if (supportsSalute) {
             VoiceRecognitionModel.OpenAIGpt4oTranscribe
         } else {
@@ -113,6 +135,11 @@ class SettingsViewModelTest {
         every { settingsProvider.openaiKey } returns if (supportsSalute) "" else "openai-key"
         every { settingsProvider.saluteSpeechKey } returns if (supportsSalute) "salute-key" else ""
         every { settingsProvider.gigaModel } returns configuredModel
+        var ambientAnalysisModelValue = LLMModel.Max
+        every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
+        every { settingsProvider.ambientAnalysisModel = any() } answers {
+            ambientAnalysisModelValue = firstArg()
+        }
         every { settingsProvider.embeddingsModel } answers { embeddingsModelValue }
         every { settingsProvider.embeddingsModel = any() } answers { embeddingsModelValue = firstArg() }
         every { settingsProvider.voiceRecognitionModel } answers { voiceRecognitionModelValue }
@@ -145,10 +172,12 @@ class SettingsViewModelTest {
         every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
         val telegramControlBot = mockk<TelegramControlBot>(relaxed = true)
+        var telegramHostCreated = false
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
         val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
+        var calendarListProviderCalls = 0
 
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
@@ -164,7 +193,309 @@ class SettingsViewModelTest {
             bindSingleton<LocalModelUiHost> {
                 DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
             }
-            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramControlBot) }
+            bindSingleton<TelegramSettingsHost> {
+                telegramHostCreated = true
+                DesktopTelegramSettingsHost(telegramService, telegramControlBot)
+            }
+            bindSingleton<SupportLogService> { NoopSupportLogService }
+            bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
+            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+            bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
+            bindSingleton<CalendarListProvider> {
+                {
+                    calendarListProviderCalls += 1
+                    listOf("Work")
+                }
+            }
+            bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
+        }
+
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val viewModel = SettingsViewModel(di, settingsDispatcher = dispatcher)
+        assertEquals(false, telegramHostCreated)
+        advanceUntilIdle()
+        assertTrue(telegramHostCreated)
+        assertEquals(TelegramAuthStepUi.PHONE, viewModel.uiState.value.telegramAuthStep)
+
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        val expectedLlmModel = settingsProvider.defaultLlmModel(llmBuildProfile)
+        assertNotNull(expectedLlmModel, "Expected at least one available llm model")
+        val expectedAmbientAnalysisModel = settingsProvider.defaultAmbientAnalysisModel(llmBuildProfile)
+        assertNotNull(expectedAmbientAnalysisModel, "Expected at least one available ambient model")
+        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel(llmBuildProfile)
+        assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
+        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel(llmBuildProfile)
+        assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
+
+        val state = viewModel.uiState.value
+        assertEquals(expectedLlmModel, state.gigaModel)
+        assertEquals(expectedAmbientAnalysisModel, state.ambientAnalysisModel)
+        assertEquals(expectedAmbientAnalysisModel, ambientAnalysisModelValue)
+        assertTrue(state.availableAmbientAnalysisModels.all { it.provider == LlmProvider.LOCAL })
+        assertEquals(expectedEmbeddingsModel, state.embeddingsModel)
+        assertEquals(expectedEmbeddingsModel, embeddingsModelValue)
+        assertEquals(expectedVoiceRecognitionModel, state.voiceRecognitionModel)
+        assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
+        assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
+        assertIs<ApiKeyFieldState.StoredHidden>(state.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT))
+        assertEquals(0, calendarListProviderCalls)
+
+        verify(exactly = 0) { settingsProvider.gigaChatKey }
+        verify(exactly = 0) { settingsProvider.qwenChatKey }
+        verify(exactly = 0) { settingsProvider.aiTunnelKey }
+        verify(exactly = 0) { settingsProvider.anthropicKey }
+        verify(exactly = 0) { settingsProvider.openaiKey }
+        verify(exactly = 0) { settingsProvider.saluteSpeechKey }
+
+        verify(exactly = 1) { agentFacade.setModel(expectedLlmModel) }
+        coVerify(exactly = 1) { desktopInfoRepository.rebuildIndexNow() }
+
+        viewModel.handleEvent(SettingsEvent.ToggleApiKeyVisibility(ApiKeyField.QWEN_CHAT))
+        advanceUntilIdle()
+
+        assertEquals(
+            ApiKeyFieldState.Editable(value = "qwen-key", revealed = true),
+            viewModel.uiState.value.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT),
+        )
+        verify(exactly = 1) { settingsProvider.qwenChatKey }
+
+        viewModel.handleEvent(SettingsEvent.InputApiKey(ApiKeyField.QWEN_CHAT, "updated-qwen-key"))
+        every { settingsProvider.mcpServersJson = "invalid" } throws IllegalStateException("save failed")
+        viewModel.handleEvent(SettingsEvent.InputMcpServersJson("invalid"))
+        viewModel.handleEvent(SettingsEvent.GoToMain)
+        advanceUntilIdle()
+
+        assertIs<ApiKeyFieldState.StoredHidden>(
+            viewModel.uiState.value.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT),
+        )
+        verify(exactly = 1) { settingsProvider.qwenChatKey = "updated-qwen-key" }
+        verify(exactly = 1) { agentFacade.setModel(expectedLlmModel) }
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+
+        every { settingsProvider.qwenChatKey } throws IllegalStateException("decrypt failed")
+        viewModel.handleEvent(SettingsEvent.ToggleApiKeyVisibility(ApiKeyField.QWEN_CHAT))
+        advanceUntilIdle()
+
+        assertEquals(
+            ApiKeyFieldState.Editable(value = "", revealed = true),
+            viewModel.uiState.value.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT),
+        )
+        verify(exactly = 2) { settingsProvider.qwenChatKey }
+    }
+
+    @Test
+    fun `interface language change preserves active settings section`() = runTest(dispatcher) {
+        val settingsHostPreferences = InMemorySettingsHostPreferences()
+        val viewModel = SettingsViewModel(
+            di = DI {
+                bindSingleton<TelegramSettingsHost> { ru.souz.ui.host.NoopTelegramSettingsHost }
+                bindSingleton<SettingsHostPreferences> { settingsHostPreferences }
+            },
+            settingsDispatcher = dispatcher,
+        )
+
+        viewModel.handleEvent(SettingsEvent.SelectSettingsSection(SettingsSection.GENERAL))
+        viewModel.handleEvent(SettingsEvent.InputUseEnglishInterface(true))
+
+        assertEquals(SettingsSection.GENERAL, viewModel.uiState.value.activeSection)
+        assertTrue(viewModel.uiState.value.useEnglishInterface)
+        assertTrue(settingsHostPreferences.useEnglishInterface)
+    }
+
+    @Test
+    fun `theme selection updates observable preferences`() = runTest(dispatcher) {
+        val settingsHostPreferences = InMemorySettingsHostPreferences()
+        val viewModel = createViewModel(
+            telegramHost = ru.souz.ui.host.NoopTelegramSettingsHost,
+            preferences = settingsHostPreferences,
+        )
+
+        viewModel.handleEvent(SettingsEvent.SelectThemeMode(ThemeMode.LIGHT))
+        advanceUntilIdle()
+
+        assertEquals(ThemeMode.LIGHT, viewModel.uiState.value.themeMode)
+        assertEquals(ThemeMode.LIGHT, settingsHostPreferences.themeMode.value)
+
+        settingsHostPreferences.setThemeMode(ThemeMode.DARK)
+        advanceUntilIdle()
+
+        assertEquals(ThemeMode.DARK, viewModel.uiState.value.themeMode)
+    }
+
+    @Test
+    fun `telegram auth is single-flight without blocking settings events`() = runTest(dispatcher) {
+        val authState = MutableStateFlow(
+            ru.souz.ui.host.TelegramHostAuthState(
+                step = ru.souz.ui.host.TelegramHostAuthStep.PHONE,
+            )
+        )
+        val finishOperation = CompletableDeferred<Unit>()
+        val telegramHost = mockk<TelegramSettingsHost>(relaxed = true)
+        every { telegramHost.isSupported() } returns true
+        every { telegramHost.authState } returns authState
+        coEvery { telegramHost.submitPhoneNumber(any()) } coAnswers {
+            finishOperation.await()
+        }
+        val preferences = InMemorySettingsHostPreferences()
+        val viewModel = createViewModel(telegramHost, preferences)
+        advanceUntilIdle()
+
+        viewModel.handleEvent(SettingsEvent.InputTelegramPhone("+79990000000"))
+        viewModel.send(SettingsEvent.SubmitTelegramPhone)
+        runCurrent()
+
+        viewModel.send(SettingsEvent.SubmitTelegramPhone)
+        viewModel.send(SettingsEvent.SelectThemeMode(ThemeMode.LIGHT))
+        runCurrent()
+
+        try {
+            coVerify(exactly = 1) { telegramHost.submitPhoneNumber("+79990000000") }
+            assertEquals(ThemeMode.LIGHT, preferences.themeMode.value)
+        } finally {
+            finishOperation.complete(Unit)
+            advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun `telegram bot operation exposes final state`() = runTest(dispatcher) {
+        val telegramHost = mockk<TelegramSettingsHost>(relaxed = true)
+        every { telegramHost.isSupported() } returns true
+        every { telegramHost.authState } returns MutableStateFlow(
+            ru.souz.ui.host.TelegramHostAuthState(
+                step = ru.souz.ui.host.TelegramHostAuthStep.PHONE,
+            )
+        )
+        val finishBotOperation = CompletableDeferred<Unit>()
+        coEvery { telegramHost.createControlBot(forceNew = true) } coAnswers {
+            finishBotOperation.await()
+        }
+        val viewModel = createViewModel(telegramHost)
+        advanceUntilIdle()
+
+        viewModel.send(SettingsEvent.CreateControlBot)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.telegramOperationBusy)
+        viewModel.send(SettingsEvent.CreateControlBot)
+        runCurrent()
+        coVerify(exactly = 1) { telegramHost.createControlBot(forceNew = true) }
+
+        finishBotOperation.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(false, viewModel.uiState.value.telegramOperationBusy)
+        assertTrue(viewModel.uiState.value.isTelegramBotActive)
+    }
+
+    @Test
+    fun `telegram secondary auth actions are handled by view model`() = runTest(dispatcher) {
+        val telegramHost = mockk<TelegramSettingsHost>(relaxed = true)
+        every { telegramHost.isSupported() } returns true
+        every { telegramHost.authState } returns MutableStateFlow(
+            ru.souz.ui.host.TelegramHostAuthState(
+                step = ru.souz.ui.host.TelegramHostAuthStep.CODE,
+            )
+        )
+        val viewModel = createViewModel(telegramHost)
+        advanceUntilIdle()
+
+        viewModel.handleEvent(SettingsEvent.InputTelegramPhone("+7 (999) 000-00-00"))
+        viewModel.handleEvent(SettingsEvent.RequestTelegramCodeAgain)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { telegramHost.requestCodeAgain("+79990000000") }
+        assertNotNull(viewModel.uiState.value.telegramAuthInfo)
+
+        viewModel.handleEvent(SettingsEvent.RestartTelegramAuth)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { telegramHost.cancelAuth() }
+        assertEquals("", viewModel.uiState.value.telegramCodeInput)
+        assertEquals("", viewModel.uiState.value.telegramPasswordInput)
+    }
+
+    private fun createViewModel(
+        telegramHost: TelegramSettingsHost,
+        preferences: SettingsHostPreferences = InMemorySettingsHostPreferences(),
+    ) = SettingsViewModel(
+        di = DI {
+            bindSingleton<TelegramSettingsHost> { telegramHost }
+            bindSingleton<SettingsHostPreferences> { preferences }
+        },
+        settingsDispatcher = dispatcher,
+    )
+
+    @Test
+    fun `selecting ambient analysis model updates separate local setting without changing agent model`() = runTest(dispatcher) {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.regionProfile } returns REGION_RU
+        every { settingsProvider.regionProfile = any() } just runs
+        every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
+        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
+        every { settingsProvider.gigaModel } returns LLMModel.QwenMax
+        var ambientAnalysisModelValue = LLMModel.LocalQwen3_4B_Instruct_2507
+        every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
+        every { settingsProvider.ambientAnalysisModel = any() } answers {
+            ambientAnalysisModelValue = firstArg()
+        }
+        every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
+        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
+        every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
+        every { settingsProvider.supportEmail } returns null
+        every { settingsProvider.mcpServersJson } returns null
+        every { settingsProvider.defaultCalendar } returns null
+        every { settingsProvider.useFewShotExamples } returns false
+        every { settingsProvider.useStreaming } returns false
+        every { settingsProvider.notificationSoundEnabled } returns true
+        every { settingsProvider.safeModeEnabled } returns true
+        every { settingsProvider.requestTimeoutMillis } returns 40_000L
+        every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
+        every { settingsProvider.temperature } returns 0.7f
+
+        val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
+        every { localProviderAvailability.isProviderAvailable() } returns true
+        every { localProviderAvailability.availableGigaModels() } returns listOf(
+            LLMModel.LocalQwen3_4B_Instruct_2507,
+            LLMModel.LocalGemma4_E2B_It,
+        )
+        every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
+        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
+        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
+
+        val localModelStore = mockk<LocalModelStore>(relaxed = true)
+        every { localModelStore.isPresent(any()) } returns true
+        val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
+        val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
+        coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
+
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
+        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
+
+        val telegramService = mockk<TelegramUiService>(relaxed = true)
+        every { telegramService.isSupported() } returns true
+        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
+        val telegramBotController = mockk<TelegramControlBot>(relaxed = true)
+
+        val di = DI {
+            bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton { localModelStore }
+            bindSingleton { localLlamaRuntime }
+            bindSingleton<LocalModelUiHost> {
+                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
+            }
+            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
+            bindSingleton<LLMChatAPI> { mockk(relaxed = true) }
+            bindSingleton<AgentFacade> { agentFacade }
+            bindSingleton<TelegramUiService> { telegramService }
+            bindSingleton<TelegramControlBot> { telegramBotController }
+            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramBotController) }
             bindSingleton<SupportLogService> { NoopSupportLogService }
             bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
             bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
@@ -175,24 +506,14 @@ class SettingsViewModelTest {
 
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        viewModel.handleEvent(SettingsEvent.SelectAmbientAnalysisModel(LLMModel.LocalGemma4_E2B_It))
+        advanceUntilIdle()
 
-        val expectedLlmModel = settingsProvider.defaultLlmModel(llmBuildProfile)
-        assertNotNull(expectedLlmModel, "Expected at least one available llm model")
-        val expectedEmbeddingsModel = settingsProvider.defaultEmbeddingsModel(llmBuildProfile)
-        assertNotNull(expectedEmbeddingsModel, "Expected at least one available embeddings model")
-        val expectedVoiceRecognitionModel = settingsProvider.defaultVoiceRecognitionModel(llmBuildProfile)
-        assertNotNull(expectedVoiceRecognitionModel, "Expected at least one available voice recognition model")
-
-        val state = viewModel.uiState.value
-        assertEquals(expectedLlmModel, state.gigaModel)
-        assertEquals(expectedEmbeddingsModel, state.embeddingsModel)
-        assertEquals(expectedEmbeddingsModel, embeddingsModelValue)
-        assertEquals(expectedVoiceRecognitionModel, state.voiceRecognitionModel)
-        assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
-        assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
-
-        verify(exactly = 1) { agentFacade.setModel(expectedLlmModel) }
-        coVerify(exactly = 1) { desktopInfoRepository.rebuildIndexNow() }
+        assertEquals(LLMModel.LocalGemma4_E2B_It, ambientAnalysisModelValue)
+        assertEquals(LLMModel.LocalGemma4_E2B_It, viewModel.uiState.value.ambientAnalysisModel)
+        verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
     }
 
     @Test
@@ -211,6 +532,13 @@ class SettingsViewModelTest {
         every { settingsProvider.anthropicKey } returns ""
         every { settingsProvider.openaiKey } returns ""
         every { settingsProvider.saluteSpeechKey } returns ""
+        every { settingsProvider.hasKey(any<LlmProvider>()) } answers {
+            when (firstArg<LlmProvider>()) {
+                LlmProvider.QWEN -> qwenKey.isNotBlank()
+                LlmProvider.LOCAL -> true
+                else -> false
+            }
+        }
         every { settingsProvider.codexAccessToken } returns null
         every { settingsProvider.gigaModel } returns LLMModel.Max
         every { settingsProvider.embeddingsModel } answers { embeddingsModelValue }
@@ -263,7 +591,9 @@ class SettingsViewModelTest {
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
 
-        viewModel.handleEvent(SettingsEvent.InputQwenChatKey("qwen-key"))
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        viewModel.handleEvent(SettingsEvent.InputApiKey(ApiKeyField.QWEN_CHAT, "qwen-key"))
         viewModel.handleEvent(SettingsEvent.GoToMain)
         advanceUntilIdle()
 
@@ -281,7 +611,10 @@ class SettingsViewModelTest {
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
+        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
         every { settingsProvider.gigaModel } returns LLMModel.QwenMax
+        every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
         every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
@@ -347,7 +680,8 @@ class SettingsViewModelTest {
 
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
-
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
         viewModel.handleEvent(SettingsEvent.SelectModel(LLMModel.LocalQwen3_4B_Instruct_2507))
         advanceUntilIdle()
 
@@ -362,12 +696,15 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `init opens download prompt when persisted local model misses linked embeddings`() = runTest(dispatcher) {
+    fun `route refresh opens download prompt when persisted local model misses linked embeddings`() = runTest(dispatcher) {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
+        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
+        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
         every { settingsProvider.gigaModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
+        every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
         every { settingsProvider.embeddingsModel } returns LocalEmbeddingProfiles.default().embeddingsModel
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
         every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
@@ -447,7 +784,8 @@ class SettingsViewModelTest {
 
         val viewModel = SettingsViewModel(di)
         advanceUntilIdle()
-
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
         val state = viewModel.uiState.value
         assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
         assertEquals(listOf(LocalEmbeddingProfiles.default().id), state.localModelDownloadPrompt?.downloads?.map { it.id })

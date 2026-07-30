@@ -68,6 +68,7 @@ object DesktopStructuredLoggingSession {
 enum class ChatRequestSource(val wireName: String) {
     CHAT_UI("chat_ui"),
     VOICE_INPUT("voice_input"),
+    AMBIENT_AGENT("ambient_agent"),
     TELEGRAM_BOT("telegram_bot"),
 }
 
@@ -80,6 +81,7 @@ enum class ChatRequestStatus(val wireName: String) {
 enum class ChatConversationCloseReason(val wireName: String) {
     NEW_CONVERSATION("new_conversation"),
     CLEAR_CONTEXT("clear_context"),
+    DELETED("deleted"),
     VIEW_MODEL_CLEARED("view_model_cleared"),
 }
 
@@ -302,7 +304,7 @@ class ChatObservabilityTracker(
         return previous.currentConversationId
     }
 
-    fun finishCurrentConversation(reason: ChatConversationCloseReason) {
+    fun finishCurrentConversation(reason: ChatConversationCloseReason): String? {
         val previous = state.getAndUpdate { current ->
             val conversationId = current.currentConversationId ?: return@getAndUpdate current
             val hasActiveRequests = (current.activeRequestCounts[conversationId] ?: 0) > 0
@@ -320,12 +322,13 @@ class ChatObservabilityTracker(
                 },
             )
         }
-        val conversationId = previous.currentConversationId ?: return
+        val conversationId = previous.currentConversationId ?: return null
         if ((previous.activeRequestCounts[conversationId] ?: 0) == 0) {
             previous.metricsByConversationId[conversationId]?.let { metrics ->
                 onConversationFinished(conversationId, metrics, reason)
             }
         }
+        return conversationId
     }
 
     fun markConversationRequestStarted(conversationId: String) {

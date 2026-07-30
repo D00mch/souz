@@ -1,41 +1,19 @@
 # Desktop App
 
-The `:desktopApp` module contains the runnable desktop entry points, desktop DI composition root, OS integrations, desktop-only tools/services, and Compose Desktop packaging/distribution configuration for Souz.
+`:desktopApp` is the runnable Compose Desktop host. It owns process lifecycle and DI composition, OS integrations, desktop-only tools and services, desktop persistence adapters, and packaging resources.
 
-It depends on `:sharedLogic` and `:sharedUI`. Keep Compose screens, view models, UI adapters, and UI tests in `:sharedUI`; keep backend-safe runtime logic in `:sharedLogic`; keep OS-bound desktop services/tools and app composition wiring here.
+Before changing this module, read the [pain-point index](docs/pain-points.md) and the topics relevant to the area.
 
-Desktop-only persistence such as the SQLite working-memory repository belongs here when the shared layer only needs contracts/services.
+## Boundaries
 
-## Project Structure
+- Keep screens, ViewModels, UI host-port contracts, and UI tests in `:sharedUI`; keep portable runtime logic in `:sharedLogic`.
+- Keep the desktop composition root and lifecycle ownership here. Platform services may implement shared contracts, but shared modules must not depend on desktop implementations.
+- OS-bound browser, mail, calendar, automation, audio, native-key, indexing, and Telegram integrations belong here.
+- Desktop-only persistence belongs here when shared layers depend only on its contracts.
+- Preserve the build's native-resource preparation, signing, and distribution boundaries when changing packaged resources.
 
-```text
-desktopApp/
-├── build.gradle.kts                    # Compose Desktop application/package tasks
-├── proguard-rules.pro                  # Release shrinker rules
-├── AGENTS.md
-└── src/
-    └── main/
-        ├── kotlin/ru/souz/
-        │   ├── db/                      # Desktop indexing/data extraction
-        │   ├── di/                      # Desktop composition root
-        │   ├── memory/                  # Desktop SQLite memory repository and runtime bridge
-        │   ├── service/                 # Audio, image capture, keys, permissions, TDLight Telegram
-        │   ├── tool/                    # Browser/calendar/mail/notes/desktop/application/text/Telegram tools
-        │   ├── Main.kt                 # Windowed Compose Desktop entry point
-        │   └── TextMain.kt             # Text-mode agent entry point
-        ├── proto/                      # Giga voice protobuf schema
-        └── resources/
-            ├── certs/                  # Bundled trust certificates
-            ├── common/                 # Shared native libraries/resources
-            ├── darwin-arm64/           # macOS arm64 native libraries
-            ├── darwin-x64/             # macOS x64 native libraries
-            ├── scripts/                # Bundled helper/build scripts
-            └── support/                # Support and policy HTML assets
-```
+## Verification
 
-## Notes
-
-- Run the desktop app with `./gradlew :desktopApp:run`.
-- Run desktop host/tool/service tests with `./gradlew :desktopApp:test`.
-- Release/distribution tasks such as `createReleaseDistributable`, `packageReleaseDmg`, and `notarizeReleaseDmg` live under `:desktopApp`.
-- Desktop sandbox wiring is provided by `:sharedUI`/`:sharedLogic`; Docker mode is opt-in through `SOUZ_SANDBOX_MODE=docker`.
+- Run the app: `./gradlew :desktopApp:run`
+- Run host/tool/service tests: `./gradlew :desktopApp:test`
+- Build a release distribution: `./gradlew :desktopApp:createReleaseDistributable`

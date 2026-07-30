@@ -7,9 +7,9 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import org.kodein.di.bindSingleton
-import ru.souz.agent.AgentId
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.giga.toGiga
 import ru.souz.service.telegram.TelegramService
 import ru.souz.tool.ToolRunBashCommand
 import ru.souz.runtime.files.FilesToolUtil
@@ -23,13 +23,13 @@ import ru.souz.tool.web.ToolInternetSearch
 /**
  * Integration scenarios that make real LLM calls.
  * Set [SOUZ_AGENT_INTEGRATION_TESTS_ON] to `true` before running these integration tests.
+ * Select `graph` (default) or `skills` with [SOUZ_AGENT_INTEGRATION_TEST_AGENT].
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphAgentComplexScenarios {
 
-    private val selectedModel = LLMModel.LocalGemma4_E4B_It
-    private val agentType = AgentId.GRAPH
-    private val support = AgentScenarioTestSupport(selectedModel, agentType)
+    private val selectedModel = LLMModel.AnthropicHaiku45
+    private val support = AgentScenarioTestSupport(selectedModel)
     private val runTest = support::runTest
     private val filesUtil: FilesToolUtil
         get() = support.filesUtil
@@ -39,7 +39,7 @@ class GraphAgentComplexScenarios {
 
     @AfterEach
     fun clearMocks() {
-        clearAllMocks()
+        clearAllMocks(answers = false)
         unmockkAll()
     }
 
@@ -49,7 +49,7 @@ class GraphAgentComplexScenarios {
     @ParameterizedTest(name = "scenario1_readFileThenSendEmailIfNoSecret[{index}] {0}")
     @ValueSource(
         strings = [
-            "Прочти public-note.txt. Если в тексте нет слова secret, создай письмо на audit@example.com с темой " +
+            "Найди и прочти public-note.txt. Если в тексте нет слова secret, создай письмо на audit@example.com с темой " +
                     "Public Note и вставь в тело текст файла.",
             "Сделай по шагам: 1) найди и прочти файл public-note.txt; 2) если в нём нет слова secret, " +
                     "подготовь email для audit@example.com с темой Public Note и исходным текстом файла",
@@ -70,11 +70,14 @@ class GraphAgentComplexScenarios {
         every { toolMailSendNewMessage.invoke(any(), any()) } returns "Sent"
         coEvery { toolMailSendNewMessage.suspendInvoke(any(), any()) } returns "Sent"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolFindFilesByName> { toolFindFilesByName }
-            bindSingleton<ToolExtractText> { toolExtractText }
-            bindSingleton<ToolMailSendNewMessage> { toolMailSendNewMessage }
-        }
+        runScenarioWithMocks(
+            userPrompt = userPrompt,
+            mockedTools = listOf(
+                toolFindFilesByName.toGiga(),
+                toolExtractText.toGiga(),
+                toolMailSendNewMessage.toGiga(),
+            ),
+        )
 
         coVerifyOrder {
             toolFindFilesByName.suspendInvoke(match { it.fileName.contains("public-note.txt") }, any())
@@ -87,7 +90,7 @@ class GraphAgentComplexScenarios {
                     it.recipientAddress.contains("audit@example.com", ignoreCase = true) &&
                         (it.subject?.contains("Public Note", ignoreCase = true) == true) &&
                         (it.content == safeFileText) &&
-                        (it.content?.contains("secret", ignoreCase = true) != true)
+                        !it.content.contains("secret", ignoreCase = true)
                 }, any())
         }
     }
@@ -177,11 +180,14 @@ class GraphAgentComplexScenarios {
         every { toolCreateNote.invoke(any(), any()) } returns "Created"
         coEvery { toolCreateNote.suspendInvoke(any(), any()) } returns "Created"
 
-        runScenarioWithMocks(userPrompt) {
-            bindSingleton<ToolInternetSearch> { toolInternetSearch }
-            bindSingleton<ToolTelegramSearch> { toolTelegramSearch }
-            bindSingleton<ToolCreateNote> { toolCreateNote }
-        }
+        runScenarioWithMocks(
+            userPrompt = userPrompt,
+            mockedTools = listOf(
+                toolInternetSearch.toGiga(),
+                toolTelegramSearch.toGiga(),
+                toolCreateNote.toGiga(),
+            ),
+        )
 
         coVerifyOrder {
             toolInternetSearch.suspendInvoke(match {
@@ -217,7 +223,7 @@ class GraphAgentComplexScenarios {
 
     private suspend fun runScenarioWithMocks(
         userPrompt: String,
+        mockedTools: List<LLMToolSetup>,
         useFewShotExamples: Boolean = false,
-        overrides: org.kodein.di.DI.MainBuilder.() -> Unit,
-    ) = support.runScenarioWithMocks(userPrompt, useFewShotExamples, overrides)
+    ) = support.runScenarioWithMocks(userPrompt, mockedTools, useFewShotExamples)
 }

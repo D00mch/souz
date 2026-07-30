@@ -13,7 +13,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -22,11 +21,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.flow.debounce
 import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.ui.AppTheme
+import ru.souz.ui.souzColors
 import ru.souz.ui.graphlog.GraphSessionsScreen
 import ru.souz.ui.graphlog.GraphVisualizationScreen
 import ru.souz.ui.common.RealLiquidGlassCard
@@ -49,19 +48,20 @@ fun SettingsScreen(
     val sessionRepository: GraphSessionRepository by di.instance()
 
     LaunchedEffect(viewModel) {
-        @Suppress("OPT_IN_USAGE")
-        viewModel.effects.debounce(2000).collect { effect ->
+        viewModel.effects.collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> onClose()
+                SettingsEffect.OpenTools -> onOpenTools()
                 SettingsEffect.NotifyOnSystemPrompt -> onShowSnack(getString(Res.string.snack_saved_system_prompt))
                 is SettingsEffect.ShowSnackbar -> onShowSnack(effect.message)
             }
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel) {
         viewModel.send(SettingsEvent.RefreshFromProvider)
     }
+
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(state.currentScreen) {
         focusRequester.requestFocus()
@@ -98,7 +98,7 @@ fun SettingsScreen(
                         return@onPreviewKeyEvent true
                     }
                     when (state.currentScreen) {
-                        SettingsSubScreen.MAIN -> onClose()
+                        SettingsSubScreen.MAIN -> viewModel.send(SettingsEvent.GoToMain)
                         SettingsSubScreen.VISUALIZATION -> viewModel.send(SettingsEvent.BackToSessions)
                         SettingsSubScreen.SESSIONS,
                         SettingsSubScreen.FOLDERS,
@@ -111,12 +111,12 @@ fun SettingsScreen(
             }
     ) {
         when (state.currentScreen) {
-            SettingsSubScreen.MAIN -> {
+            SettingsSubScreen.MAIN -> key(state.useEnglishInterface) {
                 SettingsScreenMain(
                     state = state,
                     viewModel = viewModel,
-                    onClose = onClose,
-                    onOpenTools = onOpenTools,
+                    onClose = { viewModel.send(SettingsEvent.GoToMain) },
+                    onOpenTools = { viewModel.send(SettingsEvent.OpenTools) },
                     onShowSnack = onShowSnack
                 )
             }
@@ -138,7 +138,10 @@ fun SettingsScreen(
                     )
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(stringResource(Res.string.error_session_not_found), color = Color.White)
+                        Text(
+                            stringResource(Res.string.error_session_not_found),
+                            color = MaterialTheme.souzColors.settings.content,
+                        )
                         Button(onClick = { viewModel.send(SettingsEvent.BackToSessions) }) { Text(stringResource(Res.string.button_back)) }
                     }
                 }
@@ -152,9 +155,8 @@ fun SettingsScreen(
                 TelegramSettingsScreen(
                     state = state,
                     onClose = { viewModel.send(SettingsEvent.BackToSettings) },
-                    onStartWork = onClose,
-                    onCreateControlBot = { viewModel.send(SettingsEvent.CreateControlBot) },
-                    onDisconnectControlBot = { viewModel.send(SettingsEvent.DisconnectTelegramBot) },
+                    onEvent = viewModel::send,
+                    onStartWork = { viewModel.send(SettingsEvent.GoToMain) },
                     onConfirmDisconnectControlBot = { viewModel.send(SettingsEvent.ConfirmDisconnectTelegramBot) },
                     onCancelDisconnectControlBot = { viewModel.send(SettingsEvent.CancelDisconnectTelegramBot) },
                 )
@@ -171,8 +173,6 @@ fun SettingsScreenMain(
     onOpenTools: () -> Unit,
     onShowSnack: (String) -> Unit
 ) {
-    val windowInfo = LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
     val clipboardManager = LocalClipboardManager.current
 
     Box(
@@ -181,7 +181,6 @@ fun SettingsScreenMain(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused
         ) {
             Row(
                 modifier = Modifier
@@ -200,7 +199,7 @@ fun SettingsScreenMain(
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(1.dp)
-                        .background(SettingsUiColors.sidebarBorder)
+                        .background(MaterialTheme.souzColors.settings.sidebarBorder)
                 )
 
                 // Content Area
@@ -214,6 +213,7 @@ fun SettingsScreenMain(
                         SettingsSection.MODELS -> ModelsSettingsContent(
                             state = state,
                             onModelChange = { viewModel.send(SettingsEvent.SelectModel(it)) },
+                            onAmbientAnalysisModelChange = { viewModel.send(SettingsEvent.SelectAmbientAnalysisModel(it)) },
                             onEmbeddingsModelChange = { viewModel.send(SettingsEvent.SelectEmbeddingsModel(it)) },
                             onVoiceRecognitionModelChange = { viewModel.send(SettingsEvent.SelectVoiceRecognitionModel(it)) },
                             onTemperatureInput = { viewModel.send(SettingsEvent.InputTemperature(it)) },
@@ -227,22 +227,21 @@ fun SettingsScreenMain(
                         SettingsSection.GENERAL -> GeneralSettingsContent(
                             state = state,
                             onDefaultCalendarChange = { viewModel.send(SettingsEvent.SelectDefaultCalendar(it)) },
+                            onCalendarDropdownOpen = { viewModel.send(SettingsEvent.FetchCalendars) },
                             onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
                             onNotificationSoundEnabledChange = { viewModel.send(SettingsEvent.InputNotificationSoundEnabled(it)) },
                             onVoiceInputReviewEnabledChange = { viewModel.send(SettingsEvent.InputVoiceInputReviewEnabled(it)) },
                             onUseEnglishVersionChange = { viewModel.send(SettingsEvent.InputUseEnglishVersion(it)) },
+                            onUseEnglishInterfaceChange = { viewModel.send(SettingsEvent.InputUseEnglishInterface(it)) },
+                            onThemeModeChange = { viewModel.send(SettingsEvent.SelectThemeMode(it)) },
                             onChooseVoice = { viewModel.send(SettingsEvent.ChooseVoice) },
                             onVoiceSpeedInput = { viewModel.send(SettingsEvent.InputVoiceSpeed(it)) },
                             onClose = onClose
                         )
                         SettingsSection.KEYS -> KeysSettingsContent(
                             state = state,
-                            onGigaChatKeyInput = { viewModel.send(SettingsEvent.InputGigaChatKey(it)) },
-                            onQwenChatKeyInput = { viewModel.send(SettingsEvent.InputQwenChatKey(it)) },
-                            onAiTunnelKeyInput = { viewModel.send(SettingsEvent.InputAiTunnelKey(it)) },
-                            onAnthropicKeyInput = { viewModel.send(SettingsEvent.InputAnthropicKey(it)) },
-                            onOpenAiKeyInput = { viewModel.send(SettingsEvent.InputOpenAiKey(it)) },
-                            onSaluteSpeechKeyInput = { viewModel.send(SettingsEvent.InputSaluteSpeechKey(it)) },
+                            onApiKeyInput = { field, value -> viewModel.send(SettingsEvent.InputApiKey(field, value)) },
+                            onApiKeyVisibilityToggle = { viewModel.send(SettingsEvent.ToggleApiKeyVisibility(it)) },
                             onOpenProviderLink = { viewModel.send(SettingsEvent.OpenProviderLink(it)) },
                             onStartCodexOAuth = { viewModel.send(SettingsEvent.StartCodexOAuth) },
                             onDisconnectCodex = { viewModel.send(SettingsEvent.DisconnectCodex) },
@@ -318,13 +317,14 @@ fun SettingsScreenPreview() {
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(1.dp)
-                        .background(SettingsUiColors.sidebarBorder)
+                        .background(MaterialTheme.souzColors.settings.sidebarBorder)
                 )
 
                 Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     ModelsSettingsContent(
                         state = previewState,
                         onModelChange = {},
+                        onAmbientAnalysisModelChange = {},
                         onEmbeddingsModelChange = {},
                         onVoiceRecognitionModelChange = {},
                         onTemperatureInput = {},

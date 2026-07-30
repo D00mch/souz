@@ -1,8 +1,11 @@
 package ru.souz.backend.app
 
-import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.direct
@@ -10,30 +13,16 @@ import org.kodein.di.instance
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.llm.LlmClientFactory
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.settings.repository.UserSettingsRepository
-import ru.souz.backend.storage.StorageMode
-import ru.souz.backend.storage.filesystem.FilesystemAgentEventRepository
-import ru.souz.backend.storage.filesystem.FilesystemAgentExecutionRepository
-import ru.souz.backend.storage.filesystem.FilesystemAgentStateRepository
-import ru.souz.backend.storage.filesystem.FilesystemChatRepository
-import ru.souz.backend.storage.filesystem.FilesystemOptionRepository
-import ru.souz.backend.storage.filesystem.FilesystemMessageRepository
-import ru.souz.backend.storage.filesystem.FilesystemTelegramBotBindingRepository
-import ru.souz.backend.storage.filesystem.FilesystemUserRepository
-import ru.souz.backend.storage.filesystem.FilesystemUserProviderKeyRepository
-import ru.souz.backend.storage.filesystem.FilesystemUserSettingsRepository
-import ru.souz.backend.storage.memory.MemoryAgentEventRepository
-import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
-import ru.souz.backend.storage.memory.MemoryUserRepository
-import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
@@ -44,62 +33,22 @@ import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
-import ru.souz.backend.storage.postgres.newPostgresSchema
-import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.telegram.TelegramBotBindingRepository
+import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
+import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.db.SettingsProvider
+import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 
 class BackendDiModuleTest {
     @Test
-    fun `filesystem mode binds filesystem repositories`() {
-        val appConfig = BackendAppConfig(
-            featureFlags = BackendFeatureFlags(),
-            storageMode = StorageMode.FILESYSTEM,
-            proxyToken = null,
-            dataDir = Files.createTempDirectory("backend-di-filesystem"),
-            masterKey = "test-master-key",
-        )
-        val di = DI {
-            import(
-                backendDiModule(
-                    systemPrompt = "test-system-prompt",
-                    appConfig = appConfig,
-                )
-            )
-        }
-
-        assertIs<FilesystemUserRepository>(di.direct.instance<UserRepository>())
-        assertIs<FilesystemChatRepository>(di.direct.instance<ChatRepository>())
-        assertIs<FilesystemMessageRepository>(di.direct.instance<MessageRepository>())
-        assertIs<FilesystemAgentStateRepository>(di.direct.instance<AgentStateRepository>())
-        assertIs<FilesystemAgentExecutionRepository>(di.direct.instance<AgentExecutionRepository>())
-        assertIs<FilesystemOptionRepository>(di.direct.instance<OptionRepository>())
-        assertIs<FilesystemAgentEventRepository>(di.direct.instance<AgentEventRepository>())
-        assertIs<FilesystemUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
-        assertIs<FilesystemUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-        assertIs<FilesystemTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
-        assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
-        assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
-        assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
-    }
-
-    @Test
-    fun `postgres mode binds postgres repositories when durable replay is enabled`() {
-        val appConfig = postgresAppConfig(
-            schema = newPostgresSchema("backend_di_durable"),
-            durableEventReplay = true,
-        )
-        val di = DI {
-            import(
-                backendDiModule(
-                    systemPrompt = "test-system-prompt",
-                    appConfig = appConfig,
-                )
-            )
-        }
-        val dataSource = di.direct.instance<HikariDataSource>()
+    fun `backend binds only postgres repositories and keeps filesystem skill registry`() {
+        val appConfig = testAppConfig()
+        val dataSource = HikariDataSource()
+        val di = testDi(appConfig, dataSource)
 
         try {
+            assertIs<HikariDataSource>(di.direct.instance<HikariDataSource>())
             assertIs<PostgresUserRepository>(di.direct.instance<UserRepository>())
             assertIs<PostgresChatRepository>(di.direct.instance<ChatRepository>())
             assertIs<PostgresMessageRepository>(di.direct.instance<MessageRepository>())
@@ -113,69 +62,90 @@ class BackendDiModuleTest {
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
             assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
+            assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
+
+            val httpDependencies = di.direct.instance<BackendHttpDependencies>()
+            assertSame(httpDependencies, di.direct.instance<BackendHttpDependencies>())
+            assertSame(di.direct.instance<BackendFeatureFlags>(), httpDependencies.featureFlags)
+            assertEquals("test-proxy-token", httpDependencies.trustedProxyToken())
+            assertEquals(
+                di.direct.instance<SettingsProvider>().gigaModel.alias,
+                httpDependencies.selectedModel(),
+            )
+            assertNotNull(httpDependencies.onboardingService)
+            assertNotNull(httpDependencies.userSettingsService)
+            assertNotNull(httpDependencies.providerKeyService)
+            assertNotNull(httpDependencies.chatService)
+            assertNotNull(httpDependencies.messageService)
+            assertNotNull(httpDependencies.executionService)
+            assertNotNull(httpDependencies.optionService)
+            assertNotNull(httpDependencies.eventService)
+            assertNull(httpDependencies.telegramBotBindingService)
         } finally {
             dataSource.close()
         }
     }
 
     @Test
-    fun `postgres mode keeps live event flow in memory when durable replay is disabled`() {
-        val appConfig = postgresAppConfig(
-            schema = newPostgresSchema("backend_di_live"),
-            durableEventReplay = false,
+    fun `http dependencies include telegram binding when feature is enabled`() {
+        val appConfig = testAppConfig(
+            featureFlags = BackendFeatureFlags(telegramBot = true),
+            telegramTokenEncryptionKey = TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY,
         )
-        val di = DI {
-            import(
-                backendDiModule(
-                    systemPrompt = "test-system-prompt",
-                    appConfig = appConfig,
-                )
-            )
-        }
-        val dataSource = di.direct.instance<HikariDataSource>()
+        val dataSource = HikariDataSource()
+        val di = testDi(appConfig, dataSource)
 
         try {
-            assertIs<PostgresUserRepository>(di.direct.instance<UserRepository>())
-            assertIs<PostgresChatRepository>(di.direct.instance<ChatRepository>())
-            assertIs<PostgresMessageRepository>(di.direct.instance<MessageRepository>())
-            assertIs<PostgresAgentStateRepository>(di.direct.instance<AgentStateRepository>())
-            assertIs<PostgresAgentExecutionRepository>(di.direct.instance<AgentExecutionRepository>())
-            assertIs<PostgresOptionRepository>(di.direct.instance<OptionRepository>())
-            assertIs<MemoryAgentEventRepository>(di.direct.instance<AgentEventRepository>())
-            assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
-            assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-            assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
-            assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
-            assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
-            assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
+            val httpDependencies = di.direct.instance<BackendHttpDependencies>()
+
+            assertSame(
+                di.direct.instance<TelegramBotBindingService>(),
+                httpDependencies.telegramBotBindingService,
+            )
         } finally {
             dataSource.close()
         }
     }
 
-    @Test
-    fun `memory mode binds in memory provider key repository and quota services`() {
-        val appConfig = BackendAppConfig(
-            featureFlags = BackendFeatureFlags(),
-            storageMode = StorageMode.MEMORY,
-            proxyToken = null,
-            dataDir = Files.createTempDirectory("backend-di-memory"),
-            masterKey = "test-master-key",
-        )
-        val di = DI {
-            import(
-                backendDiModule(
-                    systemPrompt = "test-system-prompt",
-                    appConfig = appConfig,
-                )
+    private fun testDi(
+        appConfig: BackendAppConfig,
+        dataSource: HikariDataSource,
+    ): DI = DI {
+        import(
+            backendDiModule(
+                systemPrompt = "test-system-prompt",
+                appConfig = appConfig,
+                dataSourceFactory = { dataSource },
             )
-        }
+        )
+    }
 
-        assertIs<MemoryUserRepository>(di.direct.instance<UserRepository>())
-        assertIs<MemoryUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
-        assertIs<MemoryTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
-        assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
-        assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
-        assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
+    private fun testAppConfig(
+        featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
+        telegramTokenEncryptionKey: String? = null,
+    ): BackendAppConfig = BackendAppConfig(
+        featureFlags = featureFlags,
+        server = BackendServerConfig(
+            host = "127.0.0.1",
+            port = 8080,
+            proxyToken = "test-proxy-token",
+        ),
+        postgres = BackendPostgresConfig(
+            host = "127.0.0.1",
+            port = 5432,
+            database = "souz",
+            user = "souz",
+            password = null,
+            schema = "public",
+            maxPoolSize = 4,
+            connectionTimeoutMs = 30_000L,
+        ),
+        masterKey = "test-master-key",
+        telegramTokenEncryptionKey = telegramTokenEncryptionKey,
+    )
+
+    private companion object {
+        const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY =
+            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
     }
 }

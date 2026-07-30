@@ -10,41 +10,64 @@ import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
-import ru.souz.agent.nodes.NodesSkills
+import ru.souz.agent.nodes.NodesMemory
+import ru.souz.agent.nodes.NodesSkillInventory
+import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
-import ru.souz.agent.nodes.SKILLS_ACTIVATION_NODE_NAME
+import ru.souz.agent.nodes.INJECTED_MEMORY_MESSAGE_NAME
+import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
+import ru.souz.agent.nodes.isInjectedMemoryContextMessage
 import ru.souz.agent.graph.Node
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
+import ru.souz.memory.CompletedTurnMemoryInput
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.MemoryRetrievalRequest
+import ru.souz.memory.MemoryRetrievalResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class GraphBasedAgentTest {
     @Test
-    fun `graph executes skills activation between classification and MCP on every turn`() = runTest {
+    fun `graph recalls fresh memory before classification and follows required turn order`() = runTest {
         val nodesLLM = mockk<NodesLLM>()
         val nodesCommon = mockk<NodesCommon>()
         val nodesClassify = mockk<NodesClassification>()
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMCP = mockk<NodesMCP>()
-        val nodesSkills = mockk<NodesSkills>()
-        val executed = mutableListOf<String>()
+        val nodesSkillInventory = mockk<NodesSkillInventory>()
+        val nodesToolUseWithKnowledge = mockk<NodesToolUseWithKnowledge>()
+        val nodesMemory = NodesMemory(
+            memoryRuntime = object : ConversationMemoryRuntime {
+                override suspend fun retrieveMemory(
+                    request: MemoryRetrievalRequest,
+                ): MemoryRetrievalResult = MemoryRetrievalResult(renderedPromptBlock = "Fresh memory")
+
+                override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) = Unit
+            },
+            captureScope = backgroundScope,
+        )
 
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesCommon.inputToHistory() } returns passthroughStringNode("Input->History", executed)
-        every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME, executed)
-        every { nodesSkills.node(SKILLS_ACTIVATION_NODE_NAME) } returns passthroughStringNode(SKILLS_ACTIVATION_NODE_NAME, executed)
-        every { nodesMCP.nodeProvideMcpTools("MCP Node") } returns passthroughStringNode("MCP Node", executed)
-        every { nodesCommon.nodeAppendAdditionalData() } returns passthroughStringNode("appendActualInformation", executed)
-        every { nodesLLM.chat("LLM") } returns chatNode("LLM", executed)
-        every { nodesErrorHandling.chatErrorToFinish() } returns errorNode(executed)
-        every { nodesCommon.toolUse() } returns toolUseNode(executed)
-        every { nodesSummarization.summarize() } returns summaryNode(executed)
+        every { nodesCommon.inputToHistory() } returns Node("Input->History") { ctx ->
+            ctx.map(history = ctx.history + LLMRequest.Message(LLMMessageRole.user, ctx.input))
+        }
+        every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
+        every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME) } returns passthroughStringNode(SKILL_INVENTORY_NODE_NAME)
+        every { nodesMCP.nodeProvideMcpTools("MCP Node") } returns passthroughStringNode("MCP Node")
+        every { nodesCommon.nodeAppendAdditionalData() } returns passthroughStringNode("appendActualInformation")
+        every { nodesLLM.chat("LLM") } returns chatNode("LLM")
+        every { nodesErrorHandling.chatErrorToFinish() } returns errorNode()
+        every { nodesToolUseWithKnowledge.node(any(), any()) } returns toolUseNode()
+        every { nodesSummarization.summarize() } returns summaryNode()
 
         val agent = GraphBasedAgent(
             logObjectMapper = restJsonMapper,
@@ -54,39 +77,57 @@ class GraphBasedAgentTest {
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMCP,
-            nodesSkills = nodesSkills,
+            nodesSkillInventory = nodesSkillInventory,
+            nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
+            nodesMemory = nodesMemory,
+            getSkillByNameTool = dummyTool("GetSkillByName"),
+            getKnowledgeTool = dummyTool("GetKnowledge"),
+            searchKnowledgeTool = dummyTool("SearchKnowledge"),
+            runtimeCommandTool = dummyTool("RunSkillCommand"),
         )
-
-        repeat(2) {
-            val result = agent.executeWithTrace(baseContext())
-            assertEquals("final", result.output)
-        }
-
         val expectedRun = listOf(
             "Input->History",
+            "Memory recall",
             CLASSIFY_NODE_NAME,
-            SKILLS_ACTIVATION_NODE_NAME,
+            SKILL_INVENTORY_NODE_NAME,
             "MCP Node",
             "appendActualInformation",
             "LLM",
-            "Summary",
+            "Memory-aware finalization",
         )
-        assertEquals(expectedRun + expectedRun, executed)
+        val context = baseContext().copy(
+            input = "Current question",
+            history = listOf(
+                LLMRequest.Message(LLMMessageRole.system, "system"),
+                LLMRequest.Message(
+                    role = LLMMessageRole.user,
+                    content = "<souz_memory_context>\nPrevious memory\n</souz_memory_context>",
+                    name = INJECTED_MEMORY_MESSAGE_NAME,
+                ),
+                LLMRequest.Message(LLMMessageRole.user, "Previous question"),
+                LLMRequest.Message(LLMMessageRole.assistant, "Previous answer"),
+            ),
+        )
+        val executed = mutableListOf<String>()
+        var historyAtClassification: List<LLMRequest.Message>? = null
+
+        val result = agent.executeWithTrace(context) { _, node, from, _ ->
+            val nodeName = node.name.removePrefix("Node ").substringBefore(';')
+            if (nodeName in expectedRun) executed += nodeName
+            if (nodeName == CLASSIFY_NODE_NAME) historyAtClassification = from.history
+        }
+
+        assertEquals("final", result.output)
+        assertEquals(expectedRun, executed)
+        val classifierHistory = requireNotNull(historyAtClassification)
+        assertFalse(classifierHistory.any { it.content.contains("Previous memory") })
+        assertTrue(classifierHistory.any { it.content.contains("Fresh memory") })
+        assertEquals(1, classifierHistory.count(LLMRequest.Message::isInjectedMemoryContextMessage))
     }
 
-    private fun passthroughStringNode(
-        name: String,
-        executed: MutableList<String>,
-    ): Node<String, String> = Node(name) { ctx ->
-        executed += name
-        ctx
-    }
+    private fun passthroughStringNode(name: String): Node<String, String> = Node(name) { it }
 
-    private fun chatNode(
-        name: String,
-        executed: MutableList<String>,
-    ): Node<String, LLMResponse.Chat> = Node(name) { ctx ->
-        executed += name
+    private fun chatNode(name: String): Node<String, LLMResponse.Chat> = Node(name) { ctx ->
         ctx.map {
             LLMResponse.Chat.Ok(
                 choices = listOf(
@@ -107,19 +148,27 @@ class GraphBasedAgentTest {
         }
     }
 
-    private fun summaryNode(executed: MutableList<String>): Node<LLMResponse.Chat.Ok, String> = Node("Summary") { ctx ->
-        executed += "Summary"
+    private fun summaryNode(): Node<LLMResponse.Chat.Ok, String> = Node("Summary") { ctx ->
         ctx.map { "final" }
     }
 
-    private fun toolUseNode(executed: MutableList<String>): Node<LLMResponse.Chat.Ok, String> = Node("toolUse") { ctx ->
-        executed += "toolUse"
+    private fun toolUseNode(): Node<LLMResponse.Chat.Ok, String> = Node("toolUse") { ctx ->
         ctx.map { "tool-result" }
     }
 
-    private fun errorNode(executed: MutableList<String>): Node<LLMResponse.Chat, String> = Node("Chat.Error->Finish") { ctx ->
-        executed += "Chat.Error->Finish"
+    private fun errorNode(): Node<LLMResponse.Chat, String> = Node("Chat.Error->Finish") { ctx ->
         ctx.map { "error" }
+    }
+
+    private fun dummyTool(name: String): LLMToolSetup = object : LLMToolSetup {
+        override val fn = LLMRequest.Function(
+            name = name,
+            description = name,
+            parameters = LLMRequest.Parameters("object", emptyMap()),
+        )
+
+        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+            LLMRequest.Message(LLMMessageRole.function, "{}", name = functionCall.name)
     }
 
     private fun baseContext(): AgentContext<String> = AgentContext(

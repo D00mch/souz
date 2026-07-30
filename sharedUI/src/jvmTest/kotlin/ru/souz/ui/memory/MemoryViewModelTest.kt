@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -22,14 +23,23 @@ import ru.souz.memory.MemoryFactFilter
 import ru.souz.memory.MemoryFactKind
 import ru.souz.memory.MemoryFactPatch
 import ru.souz.memory.MemoryFactStatus
+import ru.souz.memory.MemoryOwnerId
+import ru.souz.memory.MemoryOwnerProvider
+import ru.souz.memory.MemoryMaintenanceBlockReason
+import ru.souz.memory.MemoryMaintenanceController
+import ru.souz.memory.MemoryMaintenanceMode
+import ru.souz.memory.MemoryMaintenancePreferences
+import ru.souz.memory.MemoryMaintenanceStatus
 import ru.souz.memory.MemoryScope
 import ru.souz.memory.MemoryService
 import ru.souz.memory.MemorySourceEvent
+import ru.souz.llms.LLMModel
 import java.time.Instant
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -64,7 +74,7 @@ class MemoryViewModelTest {
         assertEquals(listOf("fact-1", "fact-2"), state.facts.map { it.id })
         assertFalse(state.isLoading)
         assertNull(state.error)
-        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
+        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter(ownerId = MemoryOwnerId("desktop-owner"))) }
     }
 
     @Test
@@ -92,6 +102,7 @@ class MemoryViewModelTest {
                         MemoryFactStatus.RETIRED,
                     ),
                     kinds = setOf(MemoryFactKind.PROJECT_RULE),
+                    ownerId = MemoryOwnerId("desktop-owner"),
                     scope = MemoryScope("chat", "chat-42"),
                     query = "kotlin",
                 )
@@ -116,7 +127,7 @@ class MemoryViewModelTest {
                     kind = MemoryFactKind.PREFERENCE,
                     scopeType = "global",
                     scopeId = "global",
-                    slotKey = "pref",
+                    canonicalKey = "user.preference.language",
                     pinned = true,
                 )
             )
@@ -130,12 +141,13 @@ class MemoryViewModelTest {
                     kind = MemoryFactKind.PREFERENCE,
                     title = "Remember this",
                     body = "Manual fact body",
-                    slotKey = "pref",
+                    ownerId = MemoryOwnerId("desktop-owner"),
+                    canonicalKey = "user.preference.language",
                     pinned = true,
                 )
             )
         }
-        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
+        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter(ownerId = MemoryOwnerId("desktop-owner"))) }
         assertNull(viewModel.uiState.value.editor)
         assertFalse(viewModel.uiState.value.isSaving)
         assertEquals(listOf("fact-created"), viewModel.uiState.value.facts.map { it.id })
@@ -159,7 +171,7 @@ class MemoryViewModelTest {
                     kind = existing.kind,
                     scopeType = "chat",
                     scopeId = "chat-1",
-                    slotKey = "",
+                    canonicalKey = "",
                     pinned = existing.pinned,
                 )
             )
@@ -174,12 +186,12 @@ class MemoryViewModelTest {
                     kind = existing.kind,
                     title = "Updated title",
                     body = existing.body,
-                    clearSlotKey = true,
+                    clearCanonicalKey = true,
                     pinned = existing.pinned,
                 )
             )
         }
-        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
+        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter(ownerId = MemoryOwnerId("desktop-owner"))) }
         assertEquals("Updated title", viewModel.uiState.value.facts.single().title)
     }
 
@@ -195,7 +207,7 @@ class MemoryViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 1) { service.updateFact("fact-1", MemoryFactPatch(pinned = true)) }
-        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
+        coVerify(exactly = 1) { service.listFacts(MemoryFactFilter(ownerId = MemoryOwnerId("desktop-owner"))) }
     }
 
     @Test
@@ -228,7 +240,7 @@ class MemoryViewModelTest {
                 PendingMemoryConfirm.Kind.Retire -> coVerify(exactly = 1) { service.retireFact("fact-1") }
                 PendingMemoryConfirm.Kind.Delete -> coVerify(exactly = 1) { service.deleteFact("fact-1") }
             }
-            coVerify(exactly = 1) { service.listFacts(MemoryFactFilter()) }
+            coVerify(exactly = 1) { service.listFacts(MemoryFactFilter(ownerId = MemoryOwnerId("desktop-owner"))) }
             assertNull(viewModel.uiState.value.confirm)
         }
     }
@@ -283,10 +295,182 @@ class MemoryViewModelTest {
         assertTrue(state.facts.isEmpty())
     }
 
-    private fun createViewModel(service: MemoryService): MemoryViewModel =
+    @Test
+    fun `load facts rethrows cancellation without setting error`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } throws CancellationException("cancelled")
+
+        val viewModel = createViewModel(service)
+
+        assertFailsWith<CancellationException> {
+            viewModel.handleEvent(MemoryAction.Load)
+        }
+
+        val state = viewModel.uiState.value
+        assertNull(state.error)
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun `dreamer run now delegates only when maintenance is runnable`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                pendingClusters = 1,
+                blockedReason = null,
+            )
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+        viewModel.onAction(MemoryAction.RunDreamerNow)
+        advanceUntilIdle()
+
+        assertEquals(MemoryMaintenanceMode.LOCAL_ONLY, viewModel.uiState.value.maintenance.mode)
+        assertEquals(1, controller.runNowCount)
+        assertEquals(Instant.parse("2026-05-24T12:00:00Z"), viewModel.uiState.value.maintenance.lastAttemptedAt)
+        assertEquals(MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS, viewModel.uiState.value.maintenance.blockedReason)
+        assertNull(viewModel.uiState.value.maintenance.lastCompletedAt)
+    }
+
+    @Test
+    fun `dreamer run outcome does not report stale completion after retry`() {
+        val attemptedAt = Instant.parse("2026-07-10T20:04:06Z")
+        val staleCompletion = Instant.parse("2026-06-22T09:20:07Z")
+
+        val retry = MemoryMaintenanceUiState(
+            preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+            pendingClusters = 1,
+            blockedReason = null,
+            lastAttemptedAt = attemptedAt,
+            lastCompletedAt = staleCompletion,
+        )
+        val completed = retry.copy(
+            pendingClusters = 0,
+            lastCompletedAt = attemptedAt.plusSeconds(1),
+        )
+        val unchanged = retry.copy(pendingClusters = 0)
+
+        assertEquals(MemoryMaintenanceRunOutcome.RETRY_SCHEDULED, retry.runOutcome)
+        assertEquals(MemoryMaintenanceRunOutcome.COMPLETED, completed.runOutcome)
+        assertEquals(MemoryMaintenanceRunOutcome.NO_CHANGES, unchanged.runOutcome)
+    }
+
+    @Test
+    fun `dreamer model selection is persisted`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                availableModels = listOf(
+                    LLMModel.LocalQwen3_4B_Instruct_2507,
+                    LLMModel.LocalGemma4_E2B_It,
+                ),
+                blockedReason = MemoryMaintenanceBlockReason.NO_PENDING_CLUSTERS,
+            )
+        )
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+
+        viewModel.onAction(MemoryAction.SelectDreamerModel(LLMModel.LocalGemma4_E2B_It.alias))
+        advanceUntilIdle()
+
+        assertEquals(LLMModel.LocalGemma4_E2B_It.alias, controller.savedPreferences?.modelAlias)
+        assertEquals(
+            listOf(LLMModel.LocalQwen3_4B_Instruct_2507, LLMModel.LocalGemma4_E2B_It),
+            viewModel.uiState.value.maintenance.availableModels,
+        )
+    }
+
+    @Test
+    fun `dreamer run now rethrows cancellation without setting error`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                pendingClusters = 1,
+                blockedReason = null,
+            ),
+            runFailure = CancellationException("cancelled"),
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.handleEvent(MemoryAction.Load)
+        advanceUntilIdle()
+
+        assertFailsWith<CancellationException> {
+            viewModel.handleEvent(MemoryAction.RunDreamerNow)
+        }
+
+        assertNull(viewModel.uiState.value.error)
+        assertFalse(viewModel.uiState.value.maintenance.isRunningNow)
+    }
+
+    @Test
+    fun `dreamer run now is ignored when deterministic work is unavailable`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>()
+        coEvery { service.listFacts(any()) } returns emptyList()
+        val controller = FakeMaintenanceController(
+            initialStatus = MemoryMaintenanceStatus(
+                preferences = MemoryMaintenancePreferences(mode = MemoryMaintenanceMode.LOCAL_ONLY),
+                pendingClusters = 1,
+                blockedReason = MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS,
+            )
+        )
+
+        val viewModel = createViewModel(service, controller)
+        viewModel.onAction(MemoryAction.Load)
+        advanceUntilIdle()
+        viewModel.onAction(MemoryAction.RunDreamerNow)
+        advanceUntilIdle()
+
+        assertEquals(0, controller.runNowCount)
+        assertFalse(viewModel.uiState.value.maintenance.canRunNow)
+    }
+
+    @Test
+    fun `invalid canonical key is rejected before save`() = runTest(dispatcher) {
+        val service = mockk<MemoryService>(relaxed = true)
+        val viewModel = createViewModel(service)
+
+        viewModel.onAction(
+            MemoryAction.SaveFact(
+                MemoryEditorInput(
+                    factId = null,
+                    title = "Remember this",
+                    body = "Manual fact body",
+                    kind = MemoryFactKind.PREFERENCE,
+                    scopeType = "global",
+                    scopeId = "global",
+                    canonicalKey = "plain-key",
+                    pinned = false,
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals("Invalid canonical key", viewModel.uiState.value.error)
+        coVerify(exactly = 0) { service.createManualFact(any()) }
+    }
+
+    private fun createViewModel(
+        service: MemoryService,
+        maintenanceController: MemoryMaintenanceController? = null,
+        ownerProvider: MemoryOwnerProvider = MemoryOwnerProvider { MemoryOwnerId("desktop-owner") },
+    ): MemoryViewModel =
         MemoryViewModel(
             DI {
                 bindSingleton<MemoryService> { service }
+                bindSingleton<MemoryOwnerProvider> { ownerProvider }
+                maintenanceController?.let { controller ->
+                    bindSingleton<MemoryMaintenanceController> { controller }
+                }
             }
         )
 
@@ -311,4 +495,46 @@ class MemoryViewModelTest {
         updatedAt = Instant.parse("2026-05-24T11:15:30Z"),
         supersedesFactId = null,
     )
+
+    private class FakeMaintenanceController(
+        initialStatus: MemoryMaintenanceStatus = MemoryMaintenanceStatus(
+            preferences = MemoryMaintenancePreferences(),
+            blockedReason = MemoryMaintenanceBlockReason.DREAMER_DISABLED,
+        ),
+        private val runFailure: Throwable? = null,
+    ) : MemoryMaintenanceController {
+        var savedPreferences: MemoryMaintenancePreferences? = null
+            private set
+        var runNowCount: Int = 0
+            private set
+        private var currentStatus = initialStatus
+
+        override suspend fun status(): MemoryMaintenanceStatus = currentStatus
+
+        override suspend fun savePreferences(preferences: MemoryMaintenancePreferences): MemoryMaintenanceStatus {
+            savedPreferences = preferences
+            currentStatus = currentStatus.copy(
+                preferences = preferences,
+                blockedReason = if (preferences.mode == MemoryMaintenanceMode.OFF) {
+                    MemoryMaintenanceBlockReason.DREAMER_DISABLED
+                } else if (currentStatus.pendingClusters > 0) {
+                    null
+                } else {
+                    MemoryMaintenanceBlockReason.NO_PENDING_CLUSTERS
+                },
+            )
+            return currentStatus
+        }
+
+        override suspend fun runNow(): MemoryMaintenanceStatus {
+            runFailure?.let { throw it }
+            runNowCount += 1
+            currentStatus = currentStatus.copy(
+                lastAttemptedAt = Instant.parse("2026-05-24T12:00:00Z"),
+                lastCompletedAt = null,
+                blockedReason = MemoryMaintenanceBlockReason.NO_DETERMINISTIC_ACTIONS,
+            )
+            return currentStatus
+        }
+    }
 }

@@ -1,6 +1,7 @@
 package ru.souz.ui.settings
 
 import ru.souz.agent.AgentId
+import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMModel
@@ -9,6 +10,7 @@ import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.LocalModelDownloadPromptUi
@@ -41,8 +43,6 @@ enum class TelegramAuthStepUi {
     ERROR,
 }
 
-
-
 enum class SettingsSection(val title: StringResource, val icon: String? = null) {
     MODELS(Res.string.settings_section_models),
     GENERAL(Res.string.settings_section_general),
@@ -53,12 +53,7 @@ enum class SettingsSection(val title: StringResource, val icon: String? = null) 
 }
 
 data class SettingsState(
-    val gigaChatKey: String = "",
-    val qwenChatKey: String = "",
-    val aiTunnelKey: String = "",
-    val anthropicKey: String = "",
-    val openaiKey: String = "",
-    val saluteSpeechKey: String = "",
+    val apiKeyFields: Map<ApiKeyField, ApiKeyFieldState> = emptyMap(),
     val codexConnected: Boolean = false,
     val codexOAuthState: CodexOAuthUiState = CodexOAuthUiState.Idle,
     val availableApiKeyFields: Set<ApiKeyField> = emptySet(),
@@ -71,18 +66,22 @@ data class SettingsState(
     val notificationSoundEnabled: Boolean = true,
     val voiceInputReviewEnabled: Boolean = false,
     val useEnglishVersion: Boolean = false,
+    val useEnglishInterface: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val safeModeEnabled: Boolean = false,
     val activeAgentId: AgentId = AgentId.default,
     val availableAgents: List<AgentId> = AgentId.entries,
     val gigaModel: LLMModel = LLMModel.Max,
+    val ambientAnalysisModel: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507,
     val embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
     val voiceRecognitionModel: VoiceRecognitionModel = VoiceRecognitionModel.SaluteSpeech,
     val availableLlmModels: List<LLMModel> = emptyList(),
+    val availableAmbientAnalysisModels: List<LLMModel> = emptyList(),
     val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),
     val availableVoiceRecognitionModels: List<VoiceRecognitionModel> = emptyList(),
     val systemPrompt: String = "",
-    val requestTimeoutMillis: Long = 10_000L,
-    val requestTimeoutInput: String = "10000",
+    val requestTimeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MILLIS,
+    val requestTimeoutInput: String = DEFAULT_REQUEST_TIMEOUT_MILLIS.toString(),
     val contextSize: Int = DEFAULT_MAX_TOKENS,
     val contextSizeInput: String = DEFAULT_MAX_TOKENS.toString(),
     val temperature: Float = 0.7f,
@@ -109,7 +108,9 @@ data class SettingsState(
     val telegramCodeHint: String? = null,
     val telegramPasswordHint: String? = null,
     val telegramAuthBusy: Boolean = false,
+    val telegramOperationBusy: Boolean = false,
     val telegramAuthError: String? = null,
+    val telegramAuthInfo: String? = null,
     val isTelegramSupported: Boolean = true,
     val isTelegramBotActive: Boolean = false,
     val showBotDeleteConfirmation: Boolean = false,
@@ -128,13 +129,10 @@ data class SettingsState(
 
 sealed interface SettingsEvent : VMEvent {
     object GoToMain : SettingsEvent
+    object OpenTools : SettingsEvent
     object RefreshFromProvider : SettingsEvent
-    data class InputGigaChatKey(val key: String): SettingsEvent
-    data class InputQwenChatKey(val key: String): SettingsEvent
-    data class InputAiTunnelKey(val key: String): SettingsEvent
-    data class InputAnthropicKey(val key: String): SettingsEvent
-    data class InputOpenAiKey(val key: String): SettingsEvent
-    data class InputSaluteSpeechKey(val key: String): SettingsEvent
+    data class InputApiKey(val field: ApiKeyField, val value: String): SettingsEvent
+    data class ToggleApiKeyVisibility(val field: ApiKeyField) : SettingsEvent
     object StartCodexOAuth : SettingsEvent
     object CancelCodexOAuth : SettingsEvent
     object DisconnectCodex : SettingsEvent
@@ -145,11 +143,14 @@ sealed interface SettingsEvent : VMEvent {
     data class InputNotificationSoundEnabled(val enabled: Boolean): SettingsEvent
     data class InputVoiceInputReviewEnabled(val enabled: Boolean): SettingsEvent
     data class InputUseEnglishVersion(val enabled: Boolean): SettingsEvent
+    data class InputUseEnglishInterface(val enabled: Boolean): SettingsEvent
+    data class SelectThemeMode(val mode: ThemeMode) : SettingsEvent
     data class InputSafeModeEnabled(val enabled: Boolean): SettingsEvent
     data class SelectAgent(val agentId: AgentId): SettingsEvent
     object ConfirmAgentSwitch : SettingsEvent
     object CancelAgentSwitch : SettingsEvent
     data class SelectModel(val model: LLMModel): SettingsEvent
+    data class SelectAmbientAnalysisModel(val model: LLMModel): SettingsEvent
     object ConfirmLocalModelDownload : SettingsEvent
     object CancelLocalModelDownload : SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
@@ -166,6 +167,8 @@ sealed interface SettingsEvent : VMEvent {
     object SubmitTelegramPhone : SettingsEvent
     object SubmitTelegramCode : SettingsEvent
     object SubmitTelegramPassword : SettingsEvent
+    object RequestTelegramCodeAgain : SettingsEvent
+    object RestartTelegramAuth : SettingsEvent
     object TelegramLogout : SettingsEvent
     object ChooseVoice : SettingsEvent
     object ResetSystemPrompt: SettingsEvent
@@ -192,6 +195,7 @@ sealed interface SettingsEvent : VMEvent {
 
 sealed interface SettingsEffect : VMSideEffect {
     object CloseScreen: SettingsEffect
+    object OpenTools: SettingsEffect
     object NotifyOnSystemPrompt: SettingsEffect
     data class ShowSnackbar(val message: String): SettingsEffect
 }

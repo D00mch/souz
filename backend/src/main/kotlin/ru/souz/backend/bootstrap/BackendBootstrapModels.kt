@@ -5,17 +5,12 @@ import ru.souz.backend.config.BackendFeatureFlags
 data class BootstrapResponse(
     val user: BootstrapUser,
     val features: BackendFeatureFlags,
-    val storage: BootstrapStorage,
     val capabilities: BootstrapCapabilities,
     val settings: BootstrapSettings,
 )
 
 data class BootstrapUser(
     val id: String,
-)
-
-data class BootstrapStorage(
-    val mode: String,
 )
 
 data class BootstrapCapabilities(

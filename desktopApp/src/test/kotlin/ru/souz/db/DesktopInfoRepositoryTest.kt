@@ -20,6 +20,7 @@ import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalModelStore
 
@@ -61,6 +62,7 @@ class DesktopInfoRepositoryTest {
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
+        every { settingsProvider.hasKey(LlmProvider.GIGA) } returns true
         every { settingsProvider.gigaChatKey } returns "giga-key"
 
         val repository = DesktopInfoRepository(api, VectorDB, extractor, settingsProvider)
@@ -121,6 +123,7 @@ class DesktopInfoRepositoryTest {
         var embeddingsModel = EmbeddingsModel.GigaEmbeddings
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.embeddingsModel } answers { embeddingsModel }
+        every { settingsProvider.hasKey(LlmProvider.GIGA) } returns true
         every { settingsProvider.gigaChatKey } returns "giga-key"
         every { settingsProvider.qwenChatKey } returns "qwen-key"
 

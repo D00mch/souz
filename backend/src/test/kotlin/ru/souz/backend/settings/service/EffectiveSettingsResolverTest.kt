@@ -12,8 +12,8 @@ import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.model.UserSettings
-import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
-import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
+import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
+import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup

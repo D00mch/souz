@@ -1,5 +1,5 @@
 [versions]
-agp = "9.0.0"
+agp = "9.1.1"
 android-compileSdk = "36"
 android-minSdk = "26"
 android-targetSdk = "36"
@@ -8,7 +8,7 @@ chaquopy = "17.0.0"
 commonsCsv = "1.10.0"
 composeHotReload = "1.0.0-rc04"
 composeMultiplatform = "1.9.3"
-jackson = "2.17.0"
+jackson = "2.21.3"
 jnativehook = "2.2.2"
 jna = "5.14.0"
 sqlite-jdbc = "3.45.1.0"
@@ -17,9 +17,9 @@ junitJupiter = "6.0.2"
 javaDiffUtils = "4.15"
 kdroidfilter-platformtools = "0.6.1"
 kodeinDi = "7.26.1"
-kotlin = "2.3.10"
-kotlinx-coroutines = "1.10.2"
-ktor = "3.2.2"
+kotlin = "2.4.10"
+kotlinx-coroutines = "1.11.0"
+ktor = "3.5.1"
 letsPlot-core = "4.0.0"
 letsPlot-kotlin = "4.6.0"
 logback = "1.5.18"
@@ -27,7 +27,7 @@ log4j = "2.24.3"
 lucene = "9.9.2"
 markdown = "0.27.0"
 mockk = "1.13.11"
-slfj = "2.0.17"
+slfj = "2.0.18"
 tika = "3.2.3"
 poi = "5.2.5"
 tdlight-java = "3.4.4+td.1.8.52"
@@ -37,6 +37,7 @@ icu4j = "78.2"
 flyway = "10.20.1"
 hikari = "5.1.0"
 postgresql = "42.7.4"
+re2j = "1.8"
 testcontainers = "1.20.4"
 
 
@@ -66,6 +67,9 @@ ktor-clientContentNegotiation = { module = "io.ktor:ktor-client-content-negotiat
 ktor-clientLogging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
 ktor-serializationKotlinxJson = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 ktor-serializationJackson = { module = "io.ktor:ktor-serialization-jackson", version.ref = "ktor" }
+ktor-serverSwagger = { module = "io.ktor:ktor-server-swagger", version.ref = "ktor" }
+ktor-serverRoutingOpenapi = { module = "io.ktor:ktor-server-routing-openapi", version.ref = "ktor" }
+ktor-openapiSchemaReflect = { module = "io.ktor:ktor-openapi-schema-reflect", version.ref = "ktor" }
 letsPlot-common = { module = "org.jetbrains.lets-plot:lets-plot-common", version.ref = "letsPlot-core" }
 letsPlot-kotlin = { module = "org.jetbrains.lets-plot:lets-plot-kotlin-jvm", version.ref = "letsPlot-kotlin" }
 letsPlot-imageExport = { module = "org.jetbrains.lets-plot:lets-plot-image-export", version.ref = "letsPlot-core" }
@@ -77,6 +81,7 @@ mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 platformtools-darkmodedetector = { module = "io.github.kdroidfilter:platformtools.darkmodedetector", version.ref = "kdroidfilter-platformtools" }
 slfj = { module = "org.slf4j:jul-to-slf4j", version.ref = "slfj" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slfj" }
+slf4j-jcl = { module = "org.slf4j:jcl-over-slf4j", version.ref = "slfj" }
 tika-core = { module = "org.apache.tika:tika-core", version.ref = "tika" }
 tika-parsersStandardPackage = { module = "org.apache.tika:tika-parsers-standard-package", version.ref = "tika" }
 compose-ui-tooling-preview-desktop = { module = "org.jetbrains.compose.ui:ui-tooling-preview-desktop", version.ref = "composeMultiplatform" }
@@ -89,6 +94,7 @@ flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 hikari-cp = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
 postgresql-jdbc = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+re2j = { module = "com.google.re2j:re2j", version.ref = "re2j" }
 testcontainers-junitJupiter = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
 
@@ -116,3 +122,4 @@ composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMul
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+ktor = { id = "io.ktor.plugin", version.ref = "ktor" }

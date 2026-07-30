@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -94,16 +96,18 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.kodein.di.DI
+import org.kodein.di.instance
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import ru.souz.llms.LLMModel
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.AppTheme
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
 import ru.souz.ui.common.LocalModelDownloadProgressDialog
 import ru.souz.ui.common.LocalModelDownloadPromptDialog
-import ru.souz.ui.common.RegionProfileToggle
+import ru.souz.ui.common.LanguageToggle
 import ru.souz.ui.common.ToolModifyPatchPreview
 import ru.souz.ui.main.MainEffect
 import ru.souz.ui.main.MainEvent
@@ -116,10 +120,13 @@ import ru.souz.ui.main.ThinkingProcessPanel
 import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.main.search.ChatMessageSearchProjection
 import ru.souz.ui.settings.CodexOAuthUiState
+import ru.souz.ui.settings.ApiKeyFieldState
+import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 import ru.souz.ui.settings.SettingsEffect
 import ru.souz.ui.settings.SettingsEvent
 import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
+import ru.souz.ui.host.SettingsHostPreferences
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.action_open_graph_sessions
 import souz.sharedui.generated.resources.chat_input_placeholder
@@ -172,7 +179,12 @@ import souz.sharedui.generated.resources.settings_value_not_set
 @Composable
 fun SouzAndroidSharedUiApp(di: DI) {
     withDI(di) {
-        AppTheme {
+        val settingsHostPreferences: SettingsHostPreferences by localDI().instance()
+        val themeMode by settingsHostPreferences.themeMode.collectAsState()
+        AppTheme(
+            themeMode = themeMode,
+            systemDark = isSystemInDarkTheme(),
+        ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
@@ -975,13 +987,14 @@ private fun AndroidSettingsRoute(
         viewModel.effects.collect { effect ->
             when (effect) {
                 SettingsEffect.CloseScreen -> onBack()
+                SettingsEffect.OpenTools -> Unit
                 SettingsEffect.NotifyOnSystemPrompt -> Unit
                 is SettingsEffect.ShowSnackbar -> snackbarHostState.showSnackbar(effect.message)
             }
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel) {
         viewModel.send(SettingsEvent.RefreshFromProvider)
     }
 
@@ -1028,6 +1041,17 @@ private fun AndroidSettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = state.themeMode == mode,
+                        onClick = { onEvent(SettingsEvent.SelectThemeMode(mode)) },
+                        label = { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                    )
+                }
+            }
+
             Text(
                 text = stringResource(Res.string.setting_language_profile_title),
                 style = MaterialTheme.typography.titleMedium,
@@ -1037,9 +1061,9 @@ private fun AndroidSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            RegionProfileToggle(
-                useEnglishProfile = state.useEnglishVersion,
-                onProfileChange = { enabled -> onEvent(SettingsEvent.InputUseEnglishVersion(enabled)) },
+            LanguageToggle(
+                useEnglish = state.useEnglishVersion,
+                onLanguageChange = { enabled -> onEvent(SettingsEvent.InputUseEnglishVersion(enabled)) },
             )
 
             Spacer(Modifier.height(6.dp))
@@ -1074,36 +1098,24 @@ private fun AndroidSettingsScreen(
 
             Spacer(Modifier.height(8.dp))
             Text(stringResource(Res.string.settings_section_keys), style = MaterialTheme.typography.titleMedium)
-            AndroidSecretSettingRow(
-                label = stringResource(Res.string.label_key_gigachat),
-                value = state.gigaChatKey,
-                onValueChange = { onEvent(SettingsEvent.InputGigaChatKey(it)) },
-            )
-            AndroidSecretSettingRow(
-                label = stringResource(Res.string.label_key_qwen),
-                value = state.qwenChatKey,
-                onValueChange = { onEvent(SettingsEvent.InputQwenChatKey(it)) },
-            )
-            AndroidSecretSettingRow(
-                label = stringResource(Res.string.label_key_aitunnel),
-                value = state.aiTunnelKey,
-                onValueChange = { onEvent(SettingsEvent.InputAiTunnelKey(it)) },
-            )
-            AndroidSecretSettingRow(
-                label = stringResource(Res.string.label_key_anthropic),
-                value = state.anthropicKey,
-                onValueChange = { onEvent(SettingsEvent.InputAnthropicKey(it)) },
-            )
-            AndroidSecretSettingRow(
-                label = stringResource(Res.string.label_key_openai),
-                value = state.openaiKey,
-                onValueChange = { onEvent(SettingsEvent.InputOpenAiKey(it)) },
-            )
-            AndroidSecretSettingRow(
-                label = stringResource(Res.string.label_key_salutespeech),
-                value = state.saluteSpeechKey,
-                onValueChange = { onEvent(SettingsEvent.InputSaluteSpeechKey(it)) },
-            )
+            listOf(
+                ApiKeyField.GIGA_CHAT to stringResource(Res.string.label_key_gigachat),
+                ApiKeyField.QWEN_CHAT to stringResource(Res.string.label_key_qwen),
+                ApiKeyField.AI_TUNNEL to stringResource(Res.string.label_key_aitunnel),
+                ApiKeyField.ANTHROPIC to stringResource(Res.string.label_key_anthropic),
+                ApiKeyField.OPENAI to stringResource(Res.string.label_key_openai),
+                ApiKeyField.SALUTE_SPEECH to stringResource(Res.string.label_key_salutespeech),
+            ).forEach { (field, label) ->
+                state.apiKeyFields[field]?.let { fieldState ->
+                    AndroidSecretSettingRow(
+                        label = label,
+                        state = fieldState,
+                        field = field,
+                        onValueChange = { value -> onEvent(SettingsEvent.InputApiKey(field, value)) },
+                        onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
+                    )
+                }
+            }
             if (ApiKeyField.CODEX in state.availableApiKeyFields) {
                 AndroidCodexAuthCard(
                     connected = state.codexConnected,
@@ -1210,13 +1222,21 @@ private fun AndroidTextSettingRow(
 @Composable
 private fun AndroidSecretSettingRow(
     label: String,
-    value: String,
+    state: ApiKeyFieldState,
+    field: ApiKeyField,
     onValueChange: (String) -> Unit,
+    onToggleVisibility: (ApiKeyField) -> Unit,
 ) {
     var showEditor by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf(TextFieldValue()) }
+    val editable = state as? ApiKeyFieldState.Editable
+    val previewValue = when (state) {
+        is ApiKeyFieldState.Editable -> state.value
+        ApiKeyFieldState.Revealing,
+        ApiKeyFieldState.StoredHidden -> HIDDEN_API_KEY_MASK
+    }
 
-    if (showEditor) {
+    if (showEditor && editable != null) {
         AndroidSecretSettingEditorDialog(
             label = label,
             value = draft,
@@ -1231,14 +1251,19 @@ private fun AndroidSecretSettingRow(
 
     AndroidSettingRow(
         label = label,
-        value = value,
+        value = previewValue,
         secret = true,
+        busy = state == ApiKeyFieldState.Revealing,
         onEdit = {
-            draft = TextFieldValue(
-                text = value,
-                selection = TextRange(0, value.length),
-            )
-            showEditor = true
+            if (editable == null) {
+                onToggleVisibility(field)
+            } else {
+                draft = TextFieldValue(
+                    text = editable.value,
+                    selection = TextRange(0, editable.value.length),
+                )
+                showEditor = true
+            }
         },
     )
 }
@@ -1249,6 +1274,7 @@ private fun AndroidSettingRow(
     value: String,
     secret: Boolean = false,
     previewMaxLines: Int = 1,
+    busy: Boolean = false,
     onEdit: () -> Unit,
 ) {
     Row(
@@ -1281,6 +1307,12 @@ private fun AndroidSettingRow(
             maxLines = previewMaxLines,
             modifier = Modifier.weight(1f),
         )
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+            )
+        }
     }
 }
 

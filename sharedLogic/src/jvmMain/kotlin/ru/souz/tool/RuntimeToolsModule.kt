@@ -179,7 +179,6 @@ class RuntimeToolsFactory(
         ToolCategory.CHAT,
         ToolCategory.TELEGRAM,
         ToolCategory.DESKTOP,
-        ToolCategory.PRESENTATION,
         ToolCategory.HELP -> emptyList()
     }
 }

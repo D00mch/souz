@@ -20,14 +20,19 @@ import kotlinx.coroutines.cancel
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 import org.slf4j.LoggerFactory
+import org.kodein.di.bindSingleton
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import org.kodein.di.instance
+import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.db.SettingsProvider
+import ru.souz.di.DesktopAgentRuntimeEnvironment
 import ru.souz.di.mainDiModule
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.observability.DesktopStructuredLogger
+import ru.souz.ui.host.DesktopSettingsHostPreferences
+import ru.souz.ui.host.SettingsHostPreferences
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
 import java.awt.Dimension
@@ -40,16 +45,22 @@ private val startupLog = LoggerFactory.getLogger("AppStartup")
 
 fun main() {
     logStartupPlatformInfo()
+    val settingsHostPreferences = DesktopSettingsHostPreferences()
+    val agentRuntimeEnvironment = DesktopAgentRuntimeEnvironment(settingsHostPreferences.originalLocale)
+    settingsHostPreferences.applyInterfaceLanguage()
 
     application(exitProcessOnExit = false) {
         withDI({
             import(mainDiModule, allowOverride = true)
+            bindSingleton<SettingsHostPreferences>(overrides = true) { settingsHostPreferences }
+            bindSingleton<AgentRuntimeEnvironment>(overrides = true) { agentRuntimeEnvironment }
         }) {
             val di = localDI()
             val settingsProvider: SettingsProvider by di.instance()
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
             val localLlamaRuntime: LocalLlamaRuntime by di.instance()
+            val memoryMaintenanceBackgroundRunner: ru.souz.memory.DesktopMemoryMaintenanceBackgroundRunner by di.instance()
             val log: DesktopStructuredLogger by di.instance()
             val appScope: kotlinx.coroutines.CoroutineScope by di.instance()
             val closeServices: () -> Unit = remember(
@@ -80,11 +91,13 @@ fun main() {
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
+                val memoryMaintenanceJob = memoryMaintenanceBackgroundRunner.start()
                 log.appOpened()
                 val shutdownHook = Thread(Runnable { closeServices() }, "souz-shutdown-hook")
                 Runtime.getRuntime().addShutdownHook(shutdownHook)
 
                 onDispose {
+                    memoryMaintenanceJob.cancel()
                     runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
                         .onFailure { error ->
                             if (error !is IllegalStateException) {
@@ -129,7 +142,9 @@ fun main() {
             Window(
                 onCloseRequest = onWindowClose,
                 visible = windowController.isWindowVisible,
-                title = org.jetbrains.compose.resources.stringResource(Res.string.app_name),
+                title = key(settingsHostPreferences.useEnglishInterface) {
+                    org.jetbrains.compose.resources.stringResource(Res.string.app_name)
+                },
                 icon = jvmPainterResource("icon-light.png"),
                 state = windowState,
                 transparent = true,

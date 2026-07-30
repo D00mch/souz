@@ -6,6 +6,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import ru.souz.agent.AgentId
+import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
@@ -13,6 +14,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.VoiceRecognitionProvider
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -71,6 +73,23 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         get() = secretString(SALUTE_SPEECH_KEY)
         set(value) = putSecretString(SALUTE_SPEECH_KEY, value)
 
+    override fun hasKey(provider: LlmProvider): Boolean = when (provider) {
+        LlmProvider.GIGA -> hasSecret(GIGA_CHAT_KEY)
+        LlmProvider.QWEN -> hasSecret(QWEN_CHAT_KEY)
+        LlmProvider.AI_TUNNEL -> hasSecret(AI_TUNNEL_KEY)
+        LlmProvider.ANTHROPIC -> hasSecret(ANTHROPIC_KEY)
+        LlmProvider.OPENAI -> hasSecret(OPENAI_KEY)
+        LlmProvider.LOCAL -> true
+        LlmProvider.CODEX -> hasSecret(CODEX_ACCESS_TOKEN)
+    }
+
+    override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
+        VoiceRecognitionProvider.SALUTE_SPEECH -> hasSecret(SALUTE_SPEECH_KEY)
+        VoiceRecognitionProvider.AI_TUNNEL -> hasSecret(AI_TUNNEL_KEY)
+        VoiceRecognitionProvider.OPENAI -> hasSecret(OPENAI_KEY)
+        VoiceRecognitionProvider.LOCAL_MACOS -> true
+    }
+
     override var supportEmail: String?
         get() = string(SUPPORT_EMAIL)
         set(value) = putString(SUPPORT_EMAIL, value)
@@ -98,6 +117,15 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         get() = modelFromAlias(chatModelAlias) ?: defaultLlmModel()
         set(value) {
             chatModelAlias = value.alias
+        }
+
+    override var ambientAnalysisModel: LLMModel
+        get() = string(AMBIENT_ANALYSIS_MODEL)
+            ?.let(::modelFromAlias)
+            ?.takeIf { it.provider == LlmProvider.LOCAL }
+            ?: defaultAmbientAnalysisModel()
+        set(value) {
+            putString(AMBIENT_ANALYSIS_MODEL, value.takeIf { it.provider == LlmProvider.LOCAL }?.alias)
         }
 
     var chatModelAlias: String
@@ -133,7 +161,7 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         set(value) = putBoolean(ONBOARDING_COMPLETED, value)
 
     override var requestTimeoutMillis: Long
-        get() = long(REQUEST_TIMEOUT_MILLIS, 40_000L)
+        get() = long(REQUEST_TIMEOUT_MILLIS, DEFAULT_REQUEST_TIMEOUT_MILLIS)
         set(value) = putLong(REQUEST_TIMEOUT_MILLIS, value)
 
     override var contextSize: Int
@@ -188,14 +216,12 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
             ?: LLMModel.OpenAIGpt5Nano
     }
 
+    private fun defaultAmbientAnalysisModel(): LLMModel =
+        LLMModel.LocalQwen3_4B_Instruct_2507
+
     private fun hasConfiguredAccess(provider: LlmProvider): Boolean = when (provider) {
-        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
         LlmProvider.LOCAL -> false
-        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
+        else -> hasKey(provider)
     }
 
     private fun modelFromAlias(value: String): LLMModel? =
@@ -211,6 +237,8 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
 
     private fun secretString(key: String): String? =
         prefs.getString(key, null)?.let(secretCodec::decrypt)
+
+    private fun hasSecret(key: String): Boolean = !prefs.getString(key, null).isNullOrBlank()
 
     private fun boolean(key: String, default: Boolean): Boolean =
         prefs.getString(key, null)?.toBooleanStrictOrNull() ?: default
@@ -264,6 +292,7 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         const val ACTIVE_AGENT_ID = "ACTIVE_AGENT_ID"
         const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         const val CHAT_MODEL_ALIAS = "CHAT_MODEL_ALIAS"
+        const val AMBIENT_ANALYSIS_MODEL = "AMBIENT_ANALYSIS_MODEL"
         const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
         const val ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED"
         const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"

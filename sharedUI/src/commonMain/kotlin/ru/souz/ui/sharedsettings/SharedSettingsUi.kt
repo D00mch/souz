@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +27,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -45,6 +48,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.souz.ui.components.LabeledTextField
+import ru.souz.ui.settings.ApiKeyFieldState
+import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
+import ru.souz.ui.souzColors
 
 data class SharedModelOptionUi(
     val id: String,
@@ -89,8 +95,7 @@ data class SharedModelsSettingsUiState(
 data class SharedApiKeyFieldUi(
     val id: String,
     val label: String,
-    val value: String,
-    val isSecret: Boolean = true,
+    val state: ApiKeyFieldState,
 )
 
 data class SharedProviderLinkUi(
@@ -180,6 +185,7 @@ sealed interface SharedSettingsEvent {
     data object ResetSystemPrompt : SharedSettingsEvent
     data object RefreshBalance : SharedSettingsEvent
     data class ApiKeyChanged(val id: String, val value: String) : SharedSettingsEvent
+    data class ApiKeyVisibilityToggled(val id: String) : SharedSettingsEvent
     data class OpenProviderLink(val id: String) : SharedSettingsEvent
     data class StartAuth(val id: String) : SharedSettingsEvent
     data class DisconnectAuth(val id: String) : SharedSettingsEvent
@@ -187,10 +193,14 @@ sealed interface SharedSettingsEvent {
     data object Save : SharedSettingsEvent
 }
 
-private val SharedPanelBackground = Color(0x0DFFFFFF)
-private val SharedPanelBorder = Color(0x14FFFFFF)
-private val SharedTextStrong = Color.White.copy(alpha = 0.9f)
-private val SharedTextMuted = Color.White.copy(alpha = 0.62f)
+private val sharedPanelBackground: Color
+    @Composable get() = MaterialTheme.souzColors.settings.inputBackground
+private val sharedPanelBorder: Color
+    @Composable get() = MaterialTheme.souzColors.settings.inputBorder
+private val sharedTextStrong: Color
+    @Composable get() = MaterialTheme.souzColors.settings.content
+private val sharedTextMuted: Color
+    @Composable get() = MaterialTheme.souzColors.settings.secondaryContent
 private val SharedControlHeight = 42.dp
 private val SharedShape = RoundedCornerShape(12.dp)
 
@@ -246,7 +256,7 @@ fun SharedSettingsPanel(
             Text(
                 text = status,
                 style = MaterialTheme.typography.bodySmall,
-                color = SharedTextMuted,
+                color = sharedTextMuted,
             )
         }
     }
@@ -325,7 +335,7 @@ fun SharedModelsSettingsContent(
             Text(
                 text = state.systemPromptLabel,
                 style = MaterialTheme.typography.titleSmall,
-                color = SharedTextStrong,
+                color = sharedTextStrong,
             )
             TextButton(onClick = { onEvent(SharedSettingsEvent.ResetSystemPrompt) }) {
                 Text(state.resetSystemPromptLabel)
@@ -367,9 +377,9 @@ fun SharedKeysSettingsContent(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = SharedPanelBackground,
+            color = sharedPanelBackground,
             shape = SharedShape,
-            border = BorderStroke(1.dp, SharedPanelBorder),
+            border = BorderStroke(1.dp, sharedPanelBorder),
         ) {
             Column(
                 modifier = Modifier.padding(12.dp),
@@ -378,28 +388,54 @@ fun SharedKeysSettingsContent(
                 Text(
                     text = state.configuredCountText,
                     style = MaterialTheme.typography.titleSmall,
-                    color = SharedTextStrong,
+                    color = sharedTextStrong,
                 )
                 Text(
                     text = state.chatHint,
                     style = MaterialTheme.typography.bodySmall,
-                    color = SharedTextMuted,
+                    color = sharedTextMuted,
                 )
                 Text(
                     text = state.voiceHint,
                     style = MaterialTheme.typography.bodySmall,
-                    color = SharedTextMuted,
+                    color = sharedTextMuted,
                 )
             }
         }
 
         state.keyFields.forEach { field ->
+            val editable = field.state as? ApiKeyFieldState.Editable
             LabeledTextField(
                 label = field.label,
-                value = field.value,
-                onValueChange = { onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, it)) },
+                value = editable?.value ?: HIDDEN_API_KEY_MASK,
+                onValueChange = { value ->
+                    if (editable != null) onEvent(SharedSettingsEvent.ApiKeyChanged(field.id, value))
+                },
                 modifier = Modifier.fillMaxWidth(),
-                visualTransformation = if (field.isSecret) PasswordVisualTransformation() else VisualTransformation.None,
+                visualTransformation = if (editable?.revealed == false) {
+                    PasswordVisualTransformation()
+                } else {
+                    VisualTransformation.None
+                },
+                readOnly = editable == null,
+                trailingContent = {
+                    if (field.state == ApiKeyFieldState.Revealing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        IconButton(onClick = {
+                            onEvent(SharedSettingsEvent.ApiKeyVisibilityToggled(field.id))
+                        }) {
+                            Icon(
+                                imageVector = if (editable?.revealed == true) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (editable?.revealed == true) "Hide API key" else "Show API key",
+                                tint = sharedTextMuted,
+                            )
+                        }
+                    }
+                },
             )
         }
 
@@ -411,11 +447,11 @@ fun SharedKeysSettingsContent(
         }
 
         if (state.providerLinks.isNotEmpty()) {
-            HorizontalDivider(color = SharedPanelBorder)
+            HorizontalDivider(color = sharedPanelBorder)
             Text(
                 text = state.providerLinksTitle,
                 style = MaterialTheme.typography.titleMedium,
-                color = SharedTextStrong,
+                color = sharedTextStrong,
             )
             state.providerLinks.forEach { provider ->
                 SharedProviderLinkCard(
@@ -436,13 +472,13 @@ private fun SharedSettingsHeading(
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
-            color = SharedTextStrong,
+            color = sharedTextStrong,
         )
         if (subtitle.isNotBlank()) {
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = SharedTextMuted,
+                color = sharedTextMuted,
             )
         }
     }
@@ -470,7 +506,7 @@ private fun SharedDropdownField(
                 lineHeight = 18.sp,
                 fontWeight = FontWeight.Medium,
             ),
-            color = SharedTextMuted,
+            color = sharedTextMuted,
         )
         Box {
             OutlinedButton(
@@ -480,10 +516,10 @@ private fun SharedDropdownField(
                     .fillMaxWidth()
                     .height(SharedControlHeight),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = SharedPanelBackground,
-                    contentColor = SharedTextStrong,
+                    containerColor = sharedPanelBackground,
+                    contentColor = sharedTextStrong,
                 ),
-                border = BorderStroke(1.dp, SharedPanelBorder),
+                border = BorderStroke(1.dp, sharedPanelBorder),
                 shape = SharedShape,
                 contentPadding = PaddingValues(horizontal = 12.dp),
             ) {
@@ -498,7 +534,7 @@ private fun SharedDropdownField(
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
                         ),
-                        color = SharedTextStrong,
+                        color = sharedTextStrong,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
@@ -507,7 +543,7 @@ private fun SharedDropdownField(
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
                         contentDescription = null,
-                        tint = SharedTextStrong,
+                        tint = sharedTextStrong,
                     )
                 }
             }
@@ -515,8 +551,8 @@ private fun SharedDropdownField(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
-                    .background(Color(0xF21A1A1D), SharedShape)
-                    .border(1.dp, SharedPanelBorder, SharedShape),
+                    .background(sharedPanelBackground, SharedShape)
+                    .border(1.dp, sharedPanelBorder, SharedShape),
             ) {
                 options.forEach { option ->
                     DropdownMenuItem(
@@ -525,13 +561,13 @@ private fun SharedDropdownField(
                                 Text(
                                     text = option.label,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = SharedTextStrong,
+                                    color = sharedTextStrong,
                                 )
                                 if (!option.detail.isNullOrBlank()) {
                                     Text(
                                         text = option.detail,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = SharedTextMuted,
+                                        color = sharedTextMuted,
                                     )
                                 }
                             }
@@ -554,9 +590,9 @@ private fun SharedProviderLinkCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = SharedPanelBackground,
+        color = sharedPanelBackground,
         shape = SharedShape,
-        border = BorderStroke(1.dp, SharedPanelBorder),
+        border = BorderStroke(1.dp, sharedPanelBorder),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -565,28 +601,28 @@ private fun SharedProviderLinkCard(
             Text(
                 text = provider.title,
                 style = MaterialTheme.typography.titleSmall,
-                color = SharedTextStrong,
+                color = sharedTextStrong,
             )
             Text(
                 text = provider.description,
                 style = MaterialTheme.typography.bodySmall,
-                color = SharedTextMuted,
+                color = sharedTextMuted,
             )
             Text(
                 text = provider.details,
                 style = MaterialTheme.typography.bodySmall,
-                color = SharedTextMuted,
+                color = sharedTextMuted,
             )
             OutlinedButton(
                 onClick = onOpen,
                 modifier = Modifier.fillMaxWidth(),
-                border = BorderStroke(1.dp, SharedPanelBorder),
+                border = BorderStroke(1.dp, sharedPanelBorder),
                 shape = RoundedCornerShape(10.dp),
             ) {
                 Text(
                     text = provider.url,
                     style = MaterialTheme.typography.labelMedium,
-                    color = SharedTextStrong,
+                    color = sharedTextStrong,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -602,9 +638,9 @@ private fun SharedAuthAccountCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = SharedPanelBackground,
+        color = sharedPanelBackground,
         shape = SharedShape,
-        border = BorderStroke(1.dp, SharedPanelBorder),
+        border = BorderStroke(1.dp, sharedPanelBorder),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -613,12 +649,12 @@ private fun SharedAuthAccountCard(
             Text(
                 text = state.title,
                 style = MaterialTheme.typography.titleSmall,
-                color = SharedTextStrong,
+                color = sharedTextStrong,
             )
             Text(
                 text = state.description,
                 style = MaterialTheme.typography.bodySmall,
-                color = SharedTextMuted,
+                color = sharedTextMuted,
             )
 
             when (state) {
@@ -626,10 +662,10 @@ private fun SharedAuthAccountCard(
                     OutlinedButton(
                         onClick = { onEvent(SharedSettingsEvent.StartAuth(state.id)) },
                         modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, SharedPanelBorder),
+                        border = BorderStroke(1.dp, sharedPanelBorder),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Text(state.connectLabel, color = SharedTextStrong)
+                        Text(state.connectLabel, color = sharedTextStrong)
                     }
                 }
 
@@ -637,15 +673,15 @@ private fun SharedAuthAccountCard(
                     Text(
                         text = state.connectedLabel,
                         style = MaterialTheme.typography.bodySmall,
-                        color = SharedTextMuted,
+                        color = sharedTextMuted,
                     )
                     OutlinedButton(
                         onClick = { onEvent(SharedSettingsEvent.DisconnectAuth(state.id)) },
                         modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, SharedPanelBorder),
+                        border = BorderStroke(1.dp, sharedPanelBorder),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Text(state.disconnectLabel, color = SharedTextStrong)
+                        Text(state.disconnectLabel, color = sharedTextStrong)
                     }
                 }
 
@@ -658,16 +694,16 @@ private fun SharedAuthAccountCard(
                             text = state.userCode,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = SharedTextStrong,
+                            color = sharedTextStrong,
                             modifier = Modifier.weight(1f),
                         )
                         OutlinedButton(
                             onClick = { onEvent(SharedSettingsEvent.CopyAuthCode(state.id, state.userCode)) },
-                            border = BorderStroke(1.dp, SharedPanelBorder),
+                            border = BorderStroke(1.dp, sharedPanelBorder),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                         ) {
-                            Text(state.copyLabel, color = SharedTextStrong)
+                            Text(state.copyLabel, color = sharedTextStrong)
                         }
                     }
                     Text(
@@ -686,7 +722,7 @@ private fun SharedAuthAccountCard(
                         Text(
                             text = state.pollingLabel,
                             style = MaterialTheme.typography.bodySmall,
-                            color = SharedTextMuted,
+                            color = sharedTextMuted,
                         )
                     }
                 }
@@ -700,10 +736,10 @@ private fun SharedAuthAccountCard(
                     OutlinedButton(
                         onClick = { onEvent(SharedSettingsEvent.StartAuth(state.id)) },
                         modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, SharedPanelBorder),
+                        border = BorderStroke(1.dp, sharedPanelBorder),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        Text(state.connectLabel, color = SharedTextStrong)
+                        Text(state.connectLabel, color = sharedTextStrong)
                     }
                 }
             }
@@ -718,9 +754,9 @@ private fun SharedBalanceSection(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = SharedPanelBackground,
+        color = sharedPanelBackground,
         shape = SharedShape,
-        border = BorderStroke(1.dp, SharedPanelBorder),
+        border = BorderStroke(1.dp, sharedPanelBorder),
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -734,7 +770,7 @@ private fun SharedBalanceSection(
                 Text(
                     text = state.balanceTitle,
                     style = MaterialTheme.typography.titleSmall,
-                    color = SharedTextStrong,
+                    color = sharedTextStrong,
                 )
                 TextButton(
                     onClick = onRefresh,
@@ -750,7 +786,7 @@ private fun SharedBalanceSection(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("Loading", color = SharedTextMuted)
+                        Text("Loading", color = sharedTextMuted)
                     }
                 }
 
@@ -766,7 +802,7 @@ private fun SharedBalanceSection(
                     Text(
                         text = "",
                         style = MaterialTheme.typography.bodySmall,
-                        color = SharedTextMuted,
+                        color = sharedTextMuted,
                     )
                 }
 
@@ -776,8 +812,8 @@ private fun SharedBalanceSection(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text(item.label, color = SharedTextMuted)
-                            Text(item.value, color = SharedTextStrong)
+                            Text(item.label, color = sharedTextMuted)
+                            Text(item.value, color = sharedTextStrong)
                         }
                     }
                 }
@@ -797,15 +833,22 @@ private fun SharedSettingsTabButton(
     Box(
         modifier = modifier
             .height(36.dp)
-            .background(if (selected) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.06f), shape)
-            .border(1.dp, if (selected) Color.White.copy(alpha = 0.24f) else SharedPanelBorder, shape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer else sharedPanelBackground,
+                shape,
+            )
+            .border(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.24f) else sharedPanelBorder,
+                shape,
+            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = if (selected) SharedTextStrong else SharedTextMuted,
+            color = if (selected) sharedTextStrong else sharedTextMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 10.dp),

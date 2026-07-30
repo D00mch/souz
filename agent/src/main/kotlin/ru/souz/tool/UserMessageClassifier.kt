@@ -156,12 +156,6 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
         )
 
-        ToolCategory.PRESENTATION -> listOf(
-            WeightedRegex(Regex("презентац|слайд|pptx|powerpoint|keynote|выступлени|доклад|presentation|slide"), 1.5),
-            WeightedRegex(Regex("создай презентац|сделай слайд|напиши презентац|слайды"), 2.0),
-            WeightedRegex(Regex("прочитай презентац|анализ слайд|что в презентац"), 1.7),
-        )
-
         ToolCategory.HELP -> listOf(
             WeightedRegex(Regex("что (ты )?(умеешь|можешь|знаешь делать)|что ты делаешь|какие .* функци|какие .* возможност"), 2.0),
             WeightedRegex(Regex("как (тебя |тобой )?пользоваться|что ты за приложение|чем .* помочь"), 1.5),

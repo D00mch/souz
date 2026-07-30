@@ -11,6 +11,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.testCoreTool
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.config.BackendFeatureFlags
@@ -23,11 +24,13 @@ import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
-import ru.souz.backend.storage.memory.MemoryUserProviderKeyRepository
-import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
+import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
+import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.restJsonMapper
+import ru.souz.tool.ToolCategory
 
 class AgentExecutionRequestFactoryTest {
     @Test
@@ -50,7 +53,7 @@ class AgentExecutionRequestFactoryTest {
                 userSettingsRepository = MemoryUserSettingsRepository(),
                 userProviderKeyRepository = MemoryUserProviderKeyRepository(),
                 featureFlags = featureFlags,
-                toolCatalog = BackendNoopAgentToolCatalog,
+                toolCatalog = toolCatalog("ListFiles", "InternetSearch"),
                 localModelAvailability = unavailableLocalModels(),
             ),
             featureFlags = featureFlags,
@@ -73,6 +76,7 @@ class AgentExecutionRequestFactoryTest {
                 interfaceLanguage = "en",
                 requestTimeoutMillis = 45_000L,
                 useFewShotExamples = false,
+                enabledTools = setOf("ListFiles"),
             ),
         )
 
@@ -96,6 +100,7 @@ class AgentExecutionRequestFactoryTest {
         assertEquals("en", effectiveSettings.interfaceLanguage)
         assertEquals(45_000L, effectiveSettings.requestTimeoutMillis)
         assertFalse(effectiveSettings.useFewShotExamples)
+        assertEquals(setOf("ListFiles"), effectiveSettings.enabledTools)
 
         val execution = prepared.execution
         assertEquals(AgentExecutionStatus.QUEUED, execution.status)
@@ -111,6 +116,7 @@ class AgentExecutionRequestFactoryTest {
         assertEquals("false", execution.metadata.getValue("showToolEvents"))
         assertEquals("45000", execution.metadata.getValue("requestTimeoutMillis"))
         assertEquals("false", execution.metadata.getValue("useFewShotExamples"))
+        assertEquals("[\"ListFiles\"]", execution.metadata.getValue("enabledTools"))
 
         val runtimeRequest = prepared.runtimeRequest
         assertEquals("Summarize this chat.", runtimeRequest.prompt)
@@ -124,6 +130,7 @@ class AgentExecutionRequestFactoryTest {
         assertEquals(true, runtimeRequest.streamingMessages)
         assertEquals(45_000L, runtimeRequest.requestTimeoutMillis)
         assertEquals(false, runtimeRequest.useFewShotExamples)
+        assertEquals(setOf("ListFiles"), runtimeRequest.enabledTools)
     }
 
     @Test
@@ -161,6 +168,7 @@ class AgentExecutionRequestFactoryTest {
                 "showToolEvents" to "true",
                 "requestTimeoutMillis" to "46000",
                 "useFewShotExamples" to "false",
+                "enabledTools" to "[\"ListFiles\",\"InternetSearch\"]",
             ),
         )
         val option = Option(
@@ -199,6 +207,7 @@ class AgentExecutionRequestFactoryTest {
         assertEquals(true, request.streamingMessages)
         assertEquals(46_000L, request.requestTimeoutMillis)
         assertEquals(false, request.useFewShotExamples)
+        assertEquals(setOf("ListFiles", "InternetSearch"), request.enabledTools)
         assertTrue(request.prompt.startsWith("__option_answer__ "))
 
         val payload = restJsonMapper.readTree(request.prompt.removePrefix("__option_answer__ "))
@@ -234,4 +243,10 @@ class AgentExecutionRequestFactoryTest {
 
             override fun defaultGigaModel(): LLMModel? = null
         }
+}
+
+private fun toolCatalog(vararg toolNames: String): AgentToolCatalog = object : AgentToolCatalog {
+    override val toolsByCategory = mapOf(
+        ToolCategory.FILES to toolNames.associateWith(::testCoreTool)
+    )
 }

@@ -1,32 +1,17 @@
 # Agent Module
 
-This package contains the standalone agent runtime extracted from the desktop app.
+`:agent` contains the provider-agnostic runtime that composes typed graph execution, shared LLM contracts, host services, and optional skills into an agent turn.
 
 ## Responsibilities
 
-- Own the graph-based agent runtime and execution flow.
-- Own agent-specific models, graph/session mechanics, and node orchestration.
-- Define the SPI boundary that the host application implements.
+- Own agent contracts, context construction, graph orchestration, execution, session tracing, and skill activation.
+- Adapt `:graph-engine` to agent state and use the shared request, response, and tool contracts from `:llms`.
+- Define the SPI boundary implemented by desktop, Android, backend, and test hosts.
 
 ## Boundaries
 
-- `agent` depends on shared agent-facing contracts and DTOs moved into the `:agent` module.
-- `agent` does not depend on Compose UI, application DI wiring, or concrete host services from `:sharedUI`/`:desktopApp`.
-- Host integrations such as settings, telemetry/observability, MCP discovery, localization, and desktop context are accessed through `spi/`.
+- Keep Compose UI, application DI, and concrete host services in their owning modules.
+- Supply settings, tools, telemetry, localization, MCP discovery, and runtime context through `ru.souz.agent.spi` rather than adding host dependencies.
+- Use `AgentFacade` for a stateful single-user conversation and `AgentExecutionKernelFactory` for request-scoped execution.
 
-## Host Contract
-
-The host application is expected to provide implementations for:
-
-- `AgentSettingsProvider`
-- `AgentToolCatalog`
-- `AgentToolsFilter`
-- `AgentDesktopInfoRepository`
-- `AgentTelemetry`
-- `AgentErrorMessages`
-- `McpToolProvider`
-- `DefaultBrowserProvider`
-
-## Structure
-
-See [AGENTS.md](/Users/dumch/work/souz/agent/src/main/kotlin/ru/souz/agent/AGENTS.md) for the package layout.
+See [AGENTS.md](AGENTS.md) for maintenance constraints and verification guidance.

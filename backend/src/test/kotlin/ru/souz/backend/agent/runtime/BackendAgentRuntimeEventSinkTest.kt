@@ -22,12 +22,12 @@ import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.options.repository.OptionRepository
-import ru.souz.backend.storage.memory.MemoryAgentEventRepository
-import ru.souz.backend.storage.memory.MemoryAgentExecutionRepository
-import ru.souz.backend.storage.memory.MemoryChatRepository
-import ru.souz.backend.storage.memory.MemoryMessageRepository
-import ru.souz.backend.storage.memory.MemoryOptionRepository
-import ru.souz.backend.storage.memory.MemoryToolCallRepository
+import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
+import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
+import ru.souz.backend.testutil.repository.MemoryChatRepository
+import ru.souz.backend.testutil.repository.MemoryMessageRepository
+import ru.souz.backend.testutil.repository.MemoryOptionRepository
+import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
@@ -175,7 +175,7 @@ class BackendAgentRuntimeEventSinkTest {
     }
 
     @Test
-    fun `tool call lifecycle uses the same repository context values`() = runTest {
+    fun `tool call lifecycle forwards exact repository context values`() = runTest {
         val toolCallRepository = RecordingToolCallRepository()
         val fixture = sinkFixture(toolCallRepository = toolCallRepository)
 
@@ -195,6 +195,13 @@ class BackendAgentRuntimeEventSinkTest {
             )
         )
         fixture.sink.emit(
+            AgentRuntimeEvent.ToolCallStarted(
+                toolCallId = "call-2",
+                name = "search",
+                arguments = emptyMap(),
+            )
+        )
+        fixture.sink.emit(
             AgentRuntimeEvent.ToolCallFailed(
                 toolCallId = "call-2",
                 name = "search",
@@ -203,12 +210,22 @@ class BackendAgentRuntimeEventSinkTest {
             )
         )
 
-        val startedContext = toolCallRepository.startedContexts.single()
-        assertEquals(startedContext, toolCallRepository.finishedContexts.single())
-        assertEquals(
-            startedContext.copy(toolCallId = "call-2"),
-            toolCallRepository.failedContexts.single(),
+        val call1Context = ToolCallContext(
+            userId = fixture.chat.userId,
+            chatId = fixture.chat.id.toString(),
+            executionId = fixture.execution.id.toString(),
+            toolCallId = "call-1",
         )
+        val call2Context = ToolCallContext(
+            userId = fixture.chat.userId,
+            chatId = fixture.chat.id.toString(),
+            executionId = fixture.execution.id.toString(),
+            toolCallId = "call-2",
+        )
+
+        assertEquals(listOf(call1Context, call2Context), toolCallRepository.startedContexts)
+        assertEquals(listOf(call1Context), toolCallRepository.finishedContexts)
+        assertEquals(listOf(call2Context), toolCallRepository.failedContexts)
     }
 }
 

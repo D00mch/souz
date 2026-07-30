@@ -5,20 +5,20 @@ import com.github.kwhat.jnativehook.GlobalScreen
 import com.github.kwhat.jnativehook.NativeHookException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.locks.ReentrantLock
 import javax.sound.sampled.AudioFormat
 import javax.sound.sampled.AudioSystem
 import javax.sound.sampled.DataLine
 import javax.sound.sampled.TargetDataLine
-import kotlin.concurrent.withLock
 import kotlin.system.exitProcess
 
 class ActiveSoundRecorderImpl(
@@ -29,45 +29,58 @@ class ActiveSoundRecorderImpl(
     private val lineBufferBytes: Int = 16384,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) : ActiveSoundRecorder {
-
-    private val prepared = AtomicBoolean(false)
+    override val sampleRateHz: Int = sampleRate.toInt()
+    override val channels: Int = channels
+    override val bitsPerSample: Int = sampleSizeBits
 
     private val format = AudioFormat(sampleRate, sampleSizeBits, channels, true, false)
     private val bytesPerSample = sampleSizeBits / 8
     private val samplesPerFrame = (sampleRate * frameMillis / 1000f).toInt()
     private val frameBytes = samplesPerFrame * bytesPerSample * channels
 
-    private val channelLock = ReentrantLock()
+    private val stateMutex = Mutex()
 
+    private var prepared = false
     private var captureJob: Job? = null
     private var line: TargetDataLine? = null
-
-    // Active recording sink (null when not recording)
-    private val activeChannelRef = AtomicReference<Channel<ByteArray>?>(null)
+    private var activeChannel: Channel<ByteArray>? = null
 
     override fun prepare() {
-        if (prepared.get()) return
-        channelLock.withLock {
-            if (prepared.get()) return
+        lockedBlocking {
+            if (prepared) return@lockedBlocking
             val info = DataLine.Info(TargetDataLine::class.java, format)
             val localLine = AudioSystem.getLine(info) as TargetDataLine
             localLine.open(format, maxOf(lineBufferBytes, frameBytes * 8))
             line = localLine
-            prepared.set(true)
+            prepared = true
         }
     }
 
     override fun startRecording() {
-        if (!prepared.get()) prepare() // idempotent
-        val localLine = line ?: throw IllegalStateException("Recorder is not prepared")
+        prepare()
         val ch = Channel<ByteArray>(capacity = 3072)
-
-        channelLock.withLock {
-            activeChannelRef.getAndSet(ch)?.close()
+        val localLine = lockedBlocking {
+            val localLine = line ?: throw IllegalStateException("Recorder is not prepared")
+            if (activeChannel != null) {
+                throw IllegalStateException("Microphone capture is already active")
+            }
+            activeChannel = ch
+            localLine
         }
-        localLine.flush()
-        localLine.start()
-        startCaptureLoopIfNeeded(localLine)
+
+        try {
+            localLine.flush()
+            localLine.start()
+            startCaptureLoopIfNeeded(localLine)
+        } catch (error: Throwable) {
+            lockedBlocking {
+                if (activeChannel == ch) {
+                    activeChannel = null
+                }
+            }
+            ch.close()
+            throw error
+        }
     }
 
     private fun startCaptureLoopIfNeeded(localLine: TargetDataLine) {
@@ -83,16 +96,16 @@ class ActiveSoundRecorderImpl(
                 if (filled == buf.size) {
                     val frame = buf.copyOf()
                     filled = 0
-                    channelLock.withLock {
-                        activeChannelRef.get()?.trySend(frame)
-                    }
+                    stateMutex.withLock { activeChannel }?.trySend(frame)
                 }
             }
         }
     }
 
     override suspend fun stopRecording(): ByteArray {
-        val ch = channelLock.withLock { activeChannelRef.getAndSet(null) } ?: return ByteArray(0)
+        val ch = stateMutex.withLock {
+            activeChannel.also { activeChannel = null }
+        } ?: return ByteArray(0)
         line?.stop()
         line?.flush()
         ch.close() // stop producers to this channel
@@ -110,9 +123,19 @@ class ActiveSoundRecorderImpl(
         return out
     }
 
+    override fun frames(): Flow<ByteArray> = flow {
+        val ch = stateMutex.withLock { activeChannel }
+            ?: throw IllegalStateException("Microphone capture is not active")
+        for (frame in ch) {
+            emit(frame)
+        }
+    }
+
     /** Optional: call when app exits to release the mic. */
     suspend fun close() {
-        activeChannelRef.getAndSet(null)?.close()
+        stateMutex.withLock {
+            activeChannel.also { activeChannel = null }
+        }?.close()
         line?.apply {
             stop()
             flush()
@@ -121,9 +144,19 @@ class ActiveSoundRecorderImpl(
         captureJob?.cancelAndJoin()
         scope.cancel()
     }
+
+    private fun <T> lockedBlocking(block: () -> T): T =
+        runBlocking {
+            stateMutex.withLock {
+                block()
+            }
+        }
 }
 
 interface ActiveSoundRecorder {
+    val sampleRateHz: Int
+    val channels: Int
+    val bitsPerSample: Int
 
     /**
      * Open the microphone line and create internal capture resources.
@@ -136,6 +169,9 @@ interface ActiveSoundRecorder {
 
     /** Stop capturing and return the recorded audio. */
     suspend fun stopRecording(): ByteArray
+
+    /** Stream raw PCM frames while recording is active. */
+    fun frames(): Flow<ByteArray>
 }
 
 private fun rawToWav(
@@ -148,12 +184,12 @@ private fun rawToWav(
     val byteRate = (sampleRate * sampleSizeInBits * channels / 8).toInt()
     val blockAlign = (sampleSizeInBits * channels / 8).toShort()
     val bitsPerSample = sampleSizeInBits.toShort()
-    
+
     // Write WAV header
     out.write("RIFF".toByteArray())
     writeInt(out, 36 + rawData.size) // ChunkSize
     out.write("WAVE".toByteArray())
-    
+
     // Write format subchunk
     out.write("fmt ".toByteArray())
     writeInt(out, 16) // Subchunk1Size
@@ -163,12 +199,12 @@ private fun rawToWav(
     writeInt(out, byteRate)
     writeShort(out, blockAlign.toInt())
     writeShort(out, bitsPerSample.toInt())
-    
+
     // Write data subchunk
     out.write("data".toByteArray())
     writeInt(out, rawData.size) // Subchunk2Size
     out.write(rawData)
-    
+
     return out.toByteArray()
 }
 

@@ -270,6 +270,24 @@ class LocalInferenceSupportTest {
     }
 
     @Test
+    fun `raw json requests bypass the local response envelope`() {
+        val renderer = LocalPromptRenderer()
+        val chat = LLMRequest.Chat(
+            model = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            messages = listOf(
+                LLMRequest.Message(LLMMessageRole.system, "Return JSON array only."),
+                LLMRequest.Message(LLMMessageRole.user, "Find duplicates."),
+            ),
+            localOutputFormat = LLMRequest.LocalOutputFormat.RAW,
+        )
+
+        val prompt = renderer.render(chat, LocalModelProfiles.QWEN3_4B_INSTRUCT_2507)
+
+        assertTrue(chat.prefersPlainTextLocalOutput())
+        assertFalse(prompt.contains("Return exactly one JSON object and nothing else."))
+    }
+
+    @Test
     fun `gemma classification prompts use plain text local output mode`() {
         val renderer = LocalPromptRenderer()
         val chat = LLMRequest.Chat(
@@ -313,6 +331,37 @@ class LocalInferenceSupportTest {
         val ok = assertIs<LLMResponse.Chat.Ok>(result)
         assertEquals("hello", ok.choices.single().message.content)
         assertEquals(LLMMessageRole.assistant, ok.choices.single().message.role)
+    }
+
+    @Test
+    fun `strict json parser preserves explicitly requested raw output`() {
+        val parser = LocalStrictJsonParser()
+        val raw = """[{"title":"Combined"}]"""
+
+        val result = parser.parse(
+            rawText = raw,
+            requestModel = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+            allowRawOutput = true,
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(raw, ok.choices.single().message.content)
+    }
+
+    @Test
+    fun `strict json parser treats application json response as final content`() {
+        val parser = LocalStrictJsonParser()
+        val ambientJson = """{"type":"ambient_analysis","task_candidates":[]}"""
+
+        val result = parser.parse(
+            rawText = ambientJson,
+            requestModel = LocalModelProfiles.GEMMA4_E2B_IT.gigaModel.alias,
+            usage = LLMResponse.Usage(10, 5, 15, 0),
+        )
+
+        val ok = assertIs<LLMResponse.Chat.Ok>(result)
+        assertEquals(ambientJson, ok.choices.single().message.content)
     }
 
     @Test

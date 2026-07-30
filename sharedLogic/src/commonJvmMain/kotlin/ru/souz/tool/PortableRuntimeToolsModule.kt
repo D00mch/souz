@@ -4,11 +4,14 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
+import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -29,6 +32,13 @@ import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadFile
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.knowledge.KnowledgeRetriever
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.ToolRunSkillCommand
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
@@ -90,11 +100,71 @@ fun portableRuntimeToolsDiModule(
         bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
     }
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
+    import(portableSkillToolsDiModule(skillStorageScope = skillStorageScope))
+}
+
+fun portableSkillToolsDiModule(
+    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
+): DI.Module = DI.Module("portableSkillTools") {
+    bindSingleton { SandboxConversationKnowledgeStore(instance()) }
+    bindSingleton<ConversationKnowledgeStore> { instance<SandboxConversationKnowledgeStore>() }
+    bindSingleton {
         ToolRunSkillCommand(
             sandboxResolver = instance(),
             skillStorageScope = skillStorageScope,
-        ).toGiga()
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
+        instance<ToolRunSkillCommand>().toGiga()
+    }
+    bindSingleton {
+        ToolGetSkillByName(
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+            repository = instance(),
+            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
+            approvalGate = instanceOrNull<SkillApprovalGate>(),
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL) {
+        instance<ToolGetSkillByName>()
+    }
+    bindSingleton {
+        ToolGetSkillsNamesByCategory(
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL) {
+        instance<ToolGetSkillsNamesByCategory>()
+    }
+    bindSingleton {
+        ToolGetSkillsByCategory(
+            getSkillByName = instance(),
+            getSkillsNamesByCategory = instance(),
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL) {
+        instance<ToolGetSkillsByCategory>()
+    }
+    bindSingleton { KnowledgeRetriever(instance()) }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
+        ToolGetKnowledge(retriever = instance())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
+        ToolSearchKnowledge(retriever = instance())
+    }
+    bindSingleton {
+        ToolInvokeSkill(
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+            repository = instance(),
+            commandTool = instance(),
+            approvalGate = instanceOrNull<SkillApprovalGate>(),
+        )
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL) {
+        instance<ToolInvokeSkill>()
     }
 }
 
@@ -168,7 +238,6 @@ class PortableRuntimeToolsFactory(
         ToolCategory.CHAT,
         ToolCategory.TELEGRAM,
         ToolCategory.DESKTOP,
-        ToolCategory.PRESENTATION,
         ToolCategory.HELP -> emptyList()
     }
 }

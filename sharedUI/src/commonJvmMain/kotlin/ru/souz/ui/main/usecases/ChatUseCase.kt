@@ -15,7 +15,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentSideEffect
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.state.AgentContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
@@ -45,14 +47,17 @@ class ChatUseCase internal constructor(
     private val observabilityTracker: ChatObservabilityTracker,
     private val log: DesktopStructuredLogger,
     private val tokenLogging: TokenLogging,
+    private val memoryConversationCleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
+    private val conversationKnowledgeStore: ConversationKnowledgeStore,
+    private val chatAgentActionFormatter: ChatAgentActionFormatter = ChatAgentActionFormatter(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val l = LoggerFactory.getLogger(ChatUseCase::class.java)
-    private val chatAgentActionFormatter = ChatAgentActionFormatter()
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeRequestMutex = Mutex()
     private var activeChatRequestId: Long = 0L
     private var activeRequestMessages: ActiveRequestMessages? = null
+    private var activeConversationMeta: ToolInvocationMeta? = null
 
     private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
     val outputs: Flow<MainUseCaseOutput> = _outputs.asSharedFlow()
@@ -93,10 +98,14 @@ class ChatUseCase internal constructor(
         try {
             emitRequestStarted(session)
             session.sideEffectsJob = subscribeOnTaskSideEffects(scope, session.pendingBotMessage)
-            l.info("About to execute agent with user input {}", userText)
+            l.info(
+                "About to execute agent request: source={} chars={}",
+                requestSource,
+                userText.length,
+            )
 
             val response = executeAgentRequest(session, userText)
-            val completedResponse = buildCompletedResponse(session, response, onResult)
+            val completedResponse = buildCompletedResponse(session, response.output, onResult)
                 ?: return
 
             handleRequestSuccess(
@@ -164,8 +173,36 @@ class ChatUseCase internal constructor(
         agentFacade.clearContext()
     }
 
-    fun finishCurrentConversation(reason: ChatConversationCloseReason) {
-        observabilityTracker.finishCurrentConversation(reason)
+    suspend fun finishCurrentConversation(reason: ChatConversationCloseReason): ToolInvocationMeta? {
+        return closeAndCaptureConversation(reason)
+    }
+
+    private fun closeCurrentConversation(reason: ChatConversationCloseReason): String? {
+        return observabilityTracker.finishCurrentConversation(reason)
+    }
+
+    suspend fun cleanupConversation(meta: ToolInvocationMeta) {
+        val conversationId = meta.conversationId?.takeIf(String::isNotBlank) ?: return
+        try {
+            memoryConversationCleanup.cleanupConversation(conversationId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            l.warn("Memory conversation cleanup failed for conversationId={}", conversationId, error)
+        }
+
+        try {
+            conversationKnowledgeStore.clearConversation(meta)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            l.warn(
+                "Knowledge conversation cleanup failed for userId={} conversationId={}",
+                meta.userId,
+                conversationId,
+                error,
+            )
+        }
     }
 
     fun setContext(ctx: AgentContext<String>) {
@@ -182,14 +219,25 @@ class ChatUseCase internal constructor(
         agentFacade.setContextSize(size)
     }
 
-    fun onCleared() {
-        finishCurrentConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
+    fun onCleared(): ToolInvocationMeta? {
+        val conversationMeta = closeAndCaptureConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
         cancelActiveJob()
         toolModifyReviewUseCase.clearPendingReviewBlocking(discardBrokerState = true)
+        return conversationMeta
+    }
+
+    private fun closeAndCaptureConversation(reason: ChatConversationCloseReason): ToolInvocationMeta? {
+        val conversationId = closeCurrentConversation(reason) ?: return null
+        val meta = activeConversationMeta
+            ?.takeIf { it.conversationId == conversationId }
+            ?: agentFacade.currentContext.value.toolInvocationMeta.copy(conversationId = conversationId)
+        activeConversationMeta = null
+        return meta
     }
 
     private fun subscribeOnTaskSideEffects(scope: CoroutineScope, msg: ChatMessage): Job {
+        val agentId = agentFacade.activeAgentId.value
         val job = scope.launch {
             var isCodeBlockStarted = false
             var accumulatedText = ""
@@ -227,7 +275,8 @@ class ChatUseCase internal constructor(
                         }
                     }
                     is AgentSideEffect.Fn -> {
-                        val action = chatAgentActionFormatter.format(effect.call)
+                        val action = chatAgentActionFormatter.format(agentId, effect.call)
+                            ?: return@collect
                         emitState {
                             copy(
                                 agentActions = (agentActions + action)
@@ -283,21 +332,26 @@ class ChatUseCase internal constructor(
         observabilityTracker.markConversationRequestStarted(conversationId)
         tokenLogging.startRequest(requestContext.requestId)
 
+        val userMessage = ChatMessage(
+            text = displayMessage.trim(),
+            isUser = true,
+            isVoice = isVoice,
+            attachedFiles = attachedFiles,
+        )
+        val pendingBotMessage = ChatMessage(
+            text = "",
+            isUser = false,
+            isVoice = isVoice,
+        )
+        val executionMeta = executionMeta(requestContext, userMessage, pendingBotMessage)
         val session = ChatRequestSession(
             requestId = requestId,
             requestContext = requestContext,
-            userMessage = ChatMessage(
-                text = displayMessage.trim(),
-                isUser = true,
-                isVoice = isVoice,
-                attachedFiles = attachedFiles,
-            ),
-            pendingBotMessage = ChatMessage(
-                text = "",
-                isUser = false,
-                isVoice = isVoice,
-            ),
+            userMessage = userMessage,
+            pendingBotMessage = pendingBotMessage,
+            executionMeta = executionMeta,
         )
+        activeConversationMeta = session.executionMeta
         updateActiveRequestMessages(session)
         return session
     }
@@ -337,25 +391,29 @@ class ChatUseCase internal constructor(
     private suspend fun executeAgentRequest(
         session: ChatRequestSession,
         userText: String,
-    ): String = withContext(
+    ): AgentExecutionResult = withContext(
         ioDispatcher +
             session.requestContext.asCoroutineContext() +
             tokenLogging.requestContextElement(session.requestContext.requestId)
     ) {
-        agentFacade.execute(
+        agentFacade.executeForResult(
             input = userText,
-            toolInvocationMetaOverride = executionMeta(session),
+            toolInvocationMetaOverride = session.executionMeta,
         )
     }
 
-    private fun executionMeta(session: ChatRequestSession): ToolInvocationMeta {
+    private fun executionMeta(
+        requestContext: ChatRequestLogContext,
+        userMessage: ChatMessage,
+        pendingBotMessage: ChatMessage,
+    ): ToolInvocationMeta {
         val current = agentFacade.currentContext.value.toolInvocationMeta
         return current.copy(
-            conversationId = session.requestContext.conversationId,
-            requestId = session.requestContext.requestId,
+            conversationId = requestContext.conversationId,
+            requestId = requestContext.requestId,
             attributes = current.attributes + mapOf(
-                "userMessageId" to session.userMessage.id,
-                "assistantMessageId" to session.pendingBotMessage.id,
+                "userMessageId" to userMessage.id,
+                "assistantMessageId" to pendingBotMessage.id,
             ),
         )
     }
@@ -626,6 +684,7 @@ class ChatUseCase internal constructor(
         val requestContext: ChatRequestLogContext,
         val userMessage: ChatMessage,
         val pendingBotMessage: ChatMessage,
+        val executionMeta: ToolInvocationMeta,
     ) {
         var currentPendingMessageId: String = pendingBotMessage.id
         var requestStatus: ChatRequestStatus = ChatRequestStatus.SUCCESS

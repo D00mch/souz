@@ -7,7 +7,16 @@ import ru.souz.memory.MemoryFactFilter
 import ru.souz.memory.MemoryFactKind
 import ru.souz.memory.MemoryFactPatch
 import ru.souz.memory.MemoryFactStatus
+import ru.souz.memory.MemoryMaintenanceBlockReason
+import ru.souz.memory.MemoryMaintenanceMode
+import ru.souz.memory.MemoryMaintenancePreferences
+import ru.souz.memory.MemoryMaintenanceStatus
+import ru.souz.memory.MemoryMaintenanceWorkerState
+import ru.souz.memory.MemoryOwnerId
 import ru.souz.memory.MemoryScope
+import ru.souz.memory.normalizeCanonicalKey
+import ru.souz.llms.LLMModel
+import java.time.Instant
 import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
@@ -23,7 +32,44 @@ data class MemoryUiState(
     val error: String? = null,
     val editor: MemoryEditorState? = null,
     val confirm: PendingMemoryConfirm? = null,
+    val maintenance: MemoryMaintenanceUiState = MemoryMaintenanceUiState(),
 ) : VMState
+
+data class MemoryMaintenanceUiState(
+    val preferences: MemoryMaintenancePreferences = MemoryMaintenancePreferences(),
+    val pendingClusters: Int = 0,
+    val blockedClusters: Int = 0,
+    val workerState: MemoryMaintenanceWorkerState = MemoryMaintenanceWorkerState.IDLE,
+    val blockedReason: MemoryMaintenanceBlockReason? = MemoryMaintenanceBlockReason.DREAMER_DISABLED,
+    val lastAttemptedAt: Instant? = null,
+    val lastCompletedAt: Instant? = null,
+    val isRunningNow: Boolean = false,
+    val lastErrorCode: String? = null,
+    val availableModels: List<LLMModel> = emptyList(),
+) {
+    val mode: MemoryMaintenanceMode get() = preferences.mode
+    val isEnabled: Boolean get() = mode != MemoryMaintenanceMode.OFF
+    val canRunNow: Boolean get() = isEnabled && !isRunningNow && pendingClusters > 0 && blockedReason == null
+    val selectedModel: LLMModel? get() = availableModels.firstOrNull { it.alias == preferences.modelAlias }
+    val runOutcome: MemoryMaintenanceRunOutcome
+        get() = when {
+            isRunningNow -> MemoryMaintenanceRunOutcome.RUNNING
+            lastErrorCode != null -> MemoryMaintenanceRunOutcome.ERROR
+            lastAttemptedAt == null -> MemoryMaintenanceRunOutcome.IDLE
+            lastCompletedAt?.isBefore(lastAttemptedAt) == false -> MemoryMaintenanceRunOutcome.COMPLETED
+            pendingClusters > 0 -> MemoryMaintenanceRunOutcome.RETRY_SCHEDULED
+            else -> MemoryMaintenanceRunOutcome.NO_CHANGES
+        }
+}
+
+enum class MemoryMaintenanceRunOutcome {
+    IDLE,
+    RUNNING,
+    ERROR,
+    RETRY_SCHEDULED,
+    COMPLETED,
+    NO_CHANGES,
+}
 
 data class MemoryFiltersUi(
     val status: MemoryStatusFilter = MemoryStatusFilter.ACTIVE,
@@ -56,7 +102,7 @@ data class MemoryEditorInput(
     val kind: MemoryFactKind,
     val scopeType: String,
     val scopeId: String,
-    val slotKey: String?,
+    val canonicalKey: String?,
     val pinned: Boolean,
 )
 
@@ -85,14 +131,19 @@ sealed interface MemoryAction : VMEvent {
     data object CancelConfirmAction : MemoryAction
     data object CloseDialog : MemoryAction
     data object ClearError : MemoryAction
+    data class SelectDreamerMode(val mode: MemoryMaintenanceMode) : MemoryAction
+    data class SelectDreamerModel(val modelAlias: String?) : MemoryAction
+    data object RunDreamerNow : MemoryAction
+    data object RefreshDreamerStatus : MemoryAction
 }
 
 sealed interface MemoryEffect : VMSideEffect {
     data class ShowError(val message: String) : MemoryEffect
 }
 
-fun MemoryFiltersUi.toDomainFilter(): MemoryFactFilter =
+fun MemoryFiltersUi.toDomainFilter(ownerId: MemoryOwnerId? = null): MemoryFactFilter =
     MemoryFactFilter(
+        ownerId = ownerId,
         statuses = when (status) {
             MemoryStatusFilter.ACTIVE -> setOf(MemoryFactStatus.ACTIVE)
             MemoryStatusFilter.RETIRED -> setOf(MemoryFactStatus.RETIRED)
@@ -110,25 +161,26 @@ fun MemoryFiltersUi.toDomainFilter(): MemoryFactFilter =
         query = query.trim().takeIf(String::isNotBlank),
     )
 
-fun MemoryEditorInput.toCreateInput(): CreateMemoryFactInput =
+fun MemoryEditorInput.toCreateInput(ownerId: MemoryOwnerId): CreateMemoryFactInput =
     CreateMemoryFactInput(
+        ownerId = ownerId,
         scope = MemoryScope(scopeType.trim(), scopeId.trim()),
         kind = kind,
         title = title.trim(),
         body = body.trim(),
-        slotKey = slotKey?.trim()?.ifBlank { null },
+        canonicalKey = normalizeCanonicalKey(canonicalKey),
         pinned = pinned,
     )
 
 fun MemoryEditorInput.toPatch(): MemoryFactPatch {
-    val trimmedSlotKey = slotKey?.trim()
+    val trimmedCanonicalKey = canonicalKey?.trim()
     return MemoryFactPatch(
         scope = MemoryScope(scopeType.trim(), scopeId.trim()),
         kind = kind,
         title = title.trim(),
         body = body.trim(),
-        slotKey = trimmedSlotKey?.ifBlank { null },
-        clearSlotKey = trimmedSlotKey.isNullOrBlank(),
+        canonicalKey = normalizeCanonicalKey(trimmedCanonicalKey),
+        clearCanonicalKey = trimmedCanonicalKey.isNullOrBlank(),
         pinned = pinned,
     )
 }
@@ -143,7 +195,7 @@ fun MemoryFactDetails.toEditorState(): MemoryEditorState =
             kind = fact.kind,
             scopeType = fact.scope.type,
             scopeId = fact.scope.id,
-            slotKey = fact.slotKey,
+            canonicalKey = fact.canonicalKey,
             pinned = fact.pinned,
         ),
     )
@@ -158,10 +210,27 @@ fun newMemoryEditorState(): MemoryEditorState =
             kind = MemoryFactKind.SEMANTIC,
             scopeType = "global",
             scopeId = "global",
-            slotKey = null,
+            canonicalKey = null,
             pinned = false,
         ),
     )
 
 fun List<MemoryFact>.sortedForUi(): List<MemoryFact> =
     sortedWith(compareByDescending<MemoryFact> { it.pinned }.thenByDescending { it.updatedAt })
+
+fun MemoryMaintenanceStatus.toUiState(isRunningNow: Boolean = false): MemoryMaintenanceUiState =
+    MemoryMaintenanceUiState(
+        preferences = preferences,
+        pendingClusters = pendingClusters,
+        blockedClusters = blockedClusters,
+        workerState = workerState,
+        blockedReason = blockedReason,
+        lastAttemptedAt = lastAttemptedAt,
+        lastCompletedAt = lastCompletedAt,
+        isRunningNow = isRunningNow,
+        lastErrorCode = lastErrorCode,
+        availableModels = availableModels,
+    )
+
+fun MemoryMaintenanceUiState.toPreferences(): MemoryMaintenancePreferences =
+    preferences

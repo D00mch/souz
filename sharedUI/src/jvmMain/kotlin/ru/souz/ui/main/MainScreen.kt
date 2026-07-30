@@ -66,18 +66,19 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.DefaultMarkdownColors
 import com.mikepenz.markdown.model.DefaultMarkdownTypography
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import org.kodein.di.compose.localDI
+import ru.souz.ambient.AmbientModeState
 import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
+import ru.souz.ui.AppTheme
 import ru.souz.ui.common.*
 import ru.souz.ui.main.search.*
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.*
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.*
@@ -91,26 +92,7 @@ private val MacTrafficButtonSize = 12.dp
 private val MacTrafficRowSpacing = 8.dp
 private val TopActionButtonSize = 32.dp
 private val TopActionIconSize = 16.dp
-private val ChatUserBubbleBackgroundStart = Color(0x5C3F434A)
-private val ChatUserBubbleBackgroundEnd = Color(0x53363A40)
-private val ChatUserBubbleBorderStart = Color(0x3DFFFFFF)
-private val ChatUserBubbleBorderEnd = Color(0x14FFFFFF)
-private val ChatUserTextColor = Color(0xE6FFFFFF)
-private val ChatUserTimestampColor = Color(0x40FFFFFF)
-private val ChatAssistantTextColor = Color(0xD9FFFFFF)
-private val ChatAssistantTimestampColor = Color(0x40FFFFFF)
-private val ChatHoverIconColor = Color(0x40FFFFFF)
-private val ChatHoverIconHoverColor = Color(0x80FFFFFF)
-private val ChatHoverButtonBackground = Color(0x0FFFFFFF)
-private val ChatSelectionHandleColor = Color(0xFFFFFFFF)
-private val ChatSelectionBackgroundColor = Color(0x66FFFFFF)
-private val ChatSearchHighlightColor = Color(0x26FFFFFF)
-private val ChatSearchActiveHighlightColor = Color(0x40FFFFFF)
-private val FinderPathChipBackground = Color(0x2625CAB0)
-private val FinderPathChipBorder = Color(0x8812E0B5)
-private val FinderPathChipTextColor = Color(0xFF12E0B5)
 private val MessageAttachmentPreviewSize = 64.dp
-private val MessageAttachmentNameColor = Color(0x99FFFFFF)
 private val ToolPermissionDialogMaxWidth = 920.dp
 private val ToolPermissionCompactDialogMaxWidth = 360.dp
 private const val ToolPermissionDialogMaxHeightFraction = 1f
@@ -120,80 +102,6 @@ private enum class MacTrafficKind {
     Close,
     Minimize,
     Maximize,
-}
-
-@Composable
-fun MainScreen(
-    onOpenSettings: () -> Unit,
-    onOpenMemory: () -> Unit,
-    onCloseWindow: () -> Unit,
-    onMinimizeWindow: () -> Unit,
-    onToggleMaximizeWindow: () -> Unit,
-    onShowSnack: (String) -> Unit = {},
-    isOnline: Boolean = true,
-) {
-    val di = localDI()
-    val viewModel = viewModel { createMainViewModel(di) }
-    val state by viewModel.uiState.collectAsState()
-
-    LaunchedEffect(viewModel) {
-        viewModel.effects.collect { effect ->
-            when (effect) {
-                MainEffect.Hide -> onCloseWindow()
-                is MainEffect.ShowError -> onShowSnack(effect.message)
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.send(MainEvent.RefreshSettings)
-    }
-
-    MainScreenContent(
-        state = state,
-        isOnline = isOnline,
-        onStartListening = { viewModel.send(MainEvent.StartListening) },
-        onStopListening = { viewModel.send(MainEvent.StopListening) },
-        onClose = onCloseWindow,
-        onMinimize = onMinimizeWindow,
-        onToggleMaximize = onToggleMaximizeWindow,
-        onRequestNewConversation = { viewModel.send(MainEvent.RequestNewConversation) },
-        onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
-        onDismissNewConversationDialog = { viewModel.send(MainEvent.DismissNewConversationDialog) },
-        onOpenSettings = onOpenSettings,
-        onOpenMemory = onOpenMemory,
-        onStopSpeech = { viewModel.send(MainEvent.StopSpeech) },
-        onShowLastText = { viewModel.send(MainEvent.ShowLastText) },
-        onToggleThinkingPanel = { viewModel.send(MainEvent.ToggleThinkingPanel) },
-        onShowSnack = onShowSnack,
-        onChatModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
-        onConfirmLocalModelDownload = { viewModel.send(MainEvent.ConfirmLocalModelDownload) },
-        onCancelLocalModelDownload = { viewModel.send(MainEvent.CancelLocalModelDownload) },
-        onChatContextSizeChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
-        onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
-        onAttachDroppedTransferable = { viewModel.onAttachDroppedPayload(it) },
-        onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
-        onSendChatMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
-        onClearContext = { viewModel.send(MainEvent.UserPressStop) },
-        onConsumePendingVoiceInputDraft = { token ->
-            viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
-        },
-        onToggleToolModifyReviewSelection = { messageId, itemId ->
-            viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
-        },
-        onResolveToolModifyReview = { messageId, action ->
-            viewModel.send(MainEvent.ResolveToolModifyReview(messageId, action))
-        },
-        onApproveToolPermission = { viewModel.send(MainEvent.ApproveToolPermission) },
-        onRejectToolPermission = { viewModel.send(MainEvent.RejectToolPermission) },
-        onSelectApprovalCandidate = { viewModel.send(MainEvent.SelectApprovalCandidate(it)) },
-        onCancelSelectionDialog = { viewModel.send(MainEvent.CancelSelectionDialog) },
-        onOpenPath = { viewModel.send(MainEvent.OpenPath(it)) },
-        onUpdateChatSearchQuery = { viewModel.send(MainEvent.UpdateChatSearchQuery(it)) },
-        onSelectNextChatSearchResult = { viewModel.send(MainEvent.SelectNextChatSearchResult) },
-        onSelectPreviousChatSearchResult = { viewModel.send(MainEvent.SelectPreviousChatSearchResult) },
-        searchProjectionProvider = { viewModel.chatSearchProjectionFor(it) },
-    )
 }
 
 @Composable
@@ -234,10 +142,12 @@ fun MainScreenContent(
     onUpdateChatSearchQuery: (String) -> Unit = {},
     onSelectNextChatSearchResult: () -> Unit = {},
     onSelectPreviousChatSearchResult: () -> Unit = {},
+    onToggleAmbientMode: () -> Unit = {},
+    onAcceptAmbientSuggestion: (String) -> Unit = {},
+    onRejectAmbientSuggestion: (String) -> Unit = {},
+    onDismissAmbientSuggestion: (String) -> Unit = {},
     searchProjectionProvider: (String) -> ChatMessageSearchProjection? = { null },
 ) {
-    val windowInfo = LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
     val window = LocalWindowScope.current?.window
     val searchPanelState = rememberChatSearchPanelState(resetKey = state.chatSessionId)
 
@@ -279,8 +189,6 @@ fun MainScreenContent(
     ) {
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = isFocused,
-            preset = LiquidGlassPreset.Hero
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 DraggableWindowArea {
@@ -290,16 +198,11 @@ fun MainScreenContent(
                             .height(56.dp)
                             .zIndex(2f)
                     ) {
-                    Text(
-                        text = stringAppName,
+                    AmbientWindowTitle(
+                        title = stringAppName,
+                        ambientMode = state.ambientMode,
+                        onToggleAmbientMode = onToggleAmbientMode,
                         modifier = Modifier.align(Alignment.Center),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        style = TextStyle(
-                            color = Color(0x99FFFFFF),
-                            fontSize = 13.sp,
-                            letterSpacing = 0.65.sp,
-                            fontWeight = FontWeight.Medium
-                        )
                     )
 
                     Row(
@@ -330,7 +233,7 @@ fun MainScreenContent(
                         Box(
                             modifier = Modifier
                                 .size(width = 1.dp, height = 16.dp)
-                                .background(Color(0x14FFFFFF))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                         )
                         Spacer(Modifier.width(12.dp))
                         Box(
@@ -435,7 +338,7 @@ fun MainScreenContent(
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(Color(0x0FFFFFFF))
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
                     )
                     }
                 }
@@ -458,6 +361,9 @@ fun MainScreenContent(
                     isListening = state.isListening,
                     isOnline = isOnline,
                     isSpeaking = state.isSpeaking,
+                    isSandboxed = state.isSandboxed,
+                    voiceInputDisabledReason = state.voiceInputDisabledReason,
+                    ambientSuggestions = state.ambientSuggestions,
                     onModelChange = onChatModelChange,
                     onContextChange = onChatContextSizeChange,
                     onPickAttachments = onPickChatAttachments,
@@ -473,6 +379,9 @@ fun MainScreenContent(
                     onResolveToolModifyReview = onResolveToolModifyReview,
                     onShowSnack = onShowSnack,
                     onOpenPath = onOpenPath,
+                    onAcceptAmbientSuggestion = onAcceptAmbientSuggestion,
+                    onRejectAmbientSuggestion = onRejectAmbientSuggestion,
+                    onDismissAmbientSuggestion = onDismissAmbientSuggestion,
                     searchProjectionProvider = searchProjectionProvider,
                     modifier = Modifier
                         .weight(1f)
@@ -534,7 +443,7 @@ fun MainScreenContent(
                                     text = paramsString,
                                     fontSize = 12.sp,
                                     fontFamily = FontFamily.Monospace,
-                                    color = Color(0x80FFFFFF),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 18.sp,
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -654,15 +563,15 @@ private fun SelectionCandidateRow(
     val borderColor by animateColorAsState(
         targetValue = when {
             selected -> Color(0xFFF59E0B)
-            isHovered -> Color(0x66FFFFFF)
-            else -> Color(0x1AFFFFFF)
+            isHovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            else -> MaterialTheme.colorScheme.outlineVariant
         }
     )
     val backgroundColor by animateColorAsState(
         targetValue = when {
             selected -> Color(0x26F59E0B)
-            isHovered -> Color(0x14FFFFFF)
-            else -> Color(0x0DFFFFFF)
+            isHovered -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+            else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
         }
     )
 
@@ -688,7 +597,7 @@ private fun SelectionCandidateRow(
         ) {
             Text(
                 text = title,
-                color = Color(0xF2FFFFFF),
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -708,7 +617,7 @@ private fun SelectionCandidateRow(
         meta?.takeIf { it.isNotBlank() }?.let { metaText ->
             Text(
                 text = metaText,
-                color = Color(0x99FFFFFF),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -718,7 +627,7 @@ private fun SelectionCandidateRow(
         preview?.takeIf { it.isNotBlank() }?.let { previewText ->
             Text(
                 text = previewText,
-                color = Color(0x80FFFFFF),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -727,14 +636,15 @@ private fun SelectionCandidateRow(
     }
 }
 
+@Composable
 private fun chatMarkdownColors(textColor: Color) = DefaultMarkdownColors(
     text = textColor,
-    codeText = Color(0xFFE0E0E0),
-    codeBackground = Color(0x66000000),
-    inlineCodeText = Color(0xFF81D4FA),
-    inlineCodeBackground = Color(0x1AFFFFFF),
+    codeText = MaterialTheme.colorScheme.onSurface,
+    codeBackground = MaterialTheme.colorScheme.surfaceVariant,
+    inlineCodeText = MaterialTheme.colorScheme.primary,
+    inlineCodeBackground = MaterialTheme.colorScheme.primaryContainer,
     dividerColor = textColor.copy(alpha = 0.2f),
-    linkText = Color(0xFF82B1FF)
+    linkText = MaterialTheme.colorScheme.secondary,
 )
 
 @Composable
@@ -771,12 +681,18 @@ private fun chatMarkdownTypography(
         text = baseStyle,
         paragraph = baseStyle,
         code = codeStyle,
-        inlineCode = codeStyle.copy(color = Color(0xFF81D4FA), background = Color(0x1AFFFFFF)),
+        inlineCode = codeStyle.copy(
+            color = MaterialTheme.colorScheme.primary,
+            background = MaterialTheme.colorScheme.primaryContainer,
+        ),
         quote = baseStyle.copy(color = Color.Gray, fontStyle = FontStyle.Italic),
         bullet = baseStyle.copy(fontWeight = FontWeight.Bold),
         list = baseStyle,
         ordered = baseStyle,
-        link = baseStyle.copy(color = Color(0xFF82B1FF), textDecoration = TextDecoration.Underline)
+        link = baseStyle.copy(
+            color = MaterialTheme.colorScheme.secondary,
+            textDecoration = TextDecoration.Underline,
+        )
     )
 }
 
@@ -786,6 +702,247 @@ private val timestampFormatter = java.text.SimpleDateFormat("HH:mm", java.util.L
 
 private fun formatTimestamp(timestamp: Long): String =
     timestampFormatter.format(java.util.Date(timestamp))
+
+@Composable
+private fun AmbientWindowTitle(
+    title: String,
+    ambientMode: AmbientModeState,
+    onToggleAmbientMode: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pulse = rememberInfiniteTransition()
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 0.58f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (ambientMode.analyzing) 780 else 1_200),
+            repeatMode = RepeatMode.Reverse,
+        )
+    )
+    val staticColor by animateColorAsState(
+        targetValue = when {
+            ambientMode.errorMessage != null -> Color(0xFFE87979)
+            ambientMode.starting -> Color(0xFFFFD166)
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    )
+    val titleColor = when {
+        ambientMode.listening || ambientMode.analyzing -> Color(0xFFFFC857).copy(alpha = pulseAlpha)
+        else -> staticColor
+    }
+
+    Text(
+        text = title,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onToggleAmbientMode,
+            )
+            .pointerHoverIcon(PointerIcon.Hand)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        style = TextStyle(
+            color = titleColor,
+            fontSize = 13.sp,
+            letterSpacing = 0.65.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    )
+}
+
+@Composable
+private fun AmbientSuggestionShelf(
+    suggestions: List<AmbientSuggestionUiModel>,
+    onAccept: (String) -> Unit,
+    onReject: (String) -> Unit,
+    onDismiss: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primary = suggestions.firstOrNull()
+    AnimatedVisibility(
+        visible = primary != null,
+        enter = fadeIn(animationSpec = tween(durationMillis = 160)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 120)),
+        modifier = modifier,
+    ) {
+        if (primary != null) {
+            AmbientSuggestionCard(
+                suggestion = primary,
+                extraCount = (suggestions.size - 1).coerceAtLeast(0),
+                onAccept = { onAccept(primary.id) },
+                onReject = { onReject(primary.id) },
+                onDismiss = { onDismiss(primary.id) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmbientSuggestionCard(
+    suggestion: AmbientSuggestionUiModel,
+    extraCount: Int,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = MaterialTheme.souzColors.ambientSuggestion
+    val shape = RoundedCornerShape(8.dp)
+    val suggestionPrompt = stringResource(Res.string.ambient_suggestion_prompt).format(suggestion.taskText)
+    val rejectText = stringResource(Res.string.ambient_suggestion_reject)
+    val acceptText = stringResource(Res.string.ambient_suggestion_accept)
+    Column(
+        modifier = Modifier
+            .clip(shape)
+            .background(colors.background)
+            .border(1.dp, colors.border, shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Rounded.AutoAwesome,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = suggestionPrompt,
+                color = colors.content,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (extraCount > 0) {
+                Text(
+                    text = "+$extraCount",
+                    color = colors.accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            AmbientSuggestionCountdown(suggestion = suggestion)
+            AmbientIconTextButton(
+                text = "",
+                icon = Icons.Rounded.Close,
+                tint = colors.secondaryContent,
+                background = Color.Transparent,
+                onClick = onDismiss,
+                compact = true,
+            )
+        }
+
+        Text(
+            text = suggestion.taskText,
+            color = colors.secondaryContent,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+            AmbientIconTextButton(
+                text = rejectText,
+                icon = Icons.Rounded.Close,
+                tint = colors.secondaryContent,
+                background = colors.secondaryActionBackground,
+                onClick = onReject,
+            )
+            AmbientIconTextButton(
+                text = acceptText,
+                icon = Icons.Rounded.Check,
+                tint = colors.accentContent,
+                background = colors.accent,
+                onClick = onAccept,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AmbientSuggestionCountdown(
+    suggestion: AmbientSuggestionUiModel,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.souzColors.ambientSuggestion
+    val nowMs by produceState(
+        initialValue = System.currentTimeMillis(),
+        suggestion.id,
+        suggestion.expiresAtMs,
+    ) {
+        while (value < suggestion.expiresAtMs) {
+            delay(100L)
+            value = System.currentTimeMillis()
+        }
+    }
+    val remainingFraction = suggestion.remainingFraction(nowMs)
+    Canvas(modifier = modifier.size(18.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        drawCircle(
+            color = colors.secondaryContent.copy(alpha = 0.25f),
+            style = Stroke(width = strokeWidth),
+        )
+        drawArc(
+            color = colors.accent,
+            startAngle = -90f,
+            sweepAngle = 360f * remainingFraction,
+            useCenter = false,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
+private fun AmbientIconTextButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    background: Color,
+    onClick: () -> Unit,
+    compact: Boolean = false,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        modifier = Modifier
+            .height(if (compact) 28.dp else 32.dp)
+            .clip(shape)
+            .background(background)
+            .clickable(onClick = onClick)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .padding(horizontal = if (compact) 6.dp else 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (text.isBlank()) 0.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(if (compact) 16.dp else 15.dp),
+        )
+        if (text.isNotBlank()) {
+            Text(
+                text = text,
+                color = tint,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
 
 @Composable
 fun ChatModeContent(
@@ -806,6 +963,9 @@ fun ChatModeContent(
     isListening: Boolean,
     isOnline: Boolean,
     isSpeaking: Boolean,
+    isSandboxed: Boolean,
+    voiceInputDisabledReason: String?,
+    ambientSuggestions: List<AmbientSuggestionUiModel>,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
     onPickAttachments: () -> Unit,
@@ -821,6 +981,9 @@ fun ChatModeContent(
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
     onShowSnack: (String) -> Unit,
     onOpenPath: (String) -> Unit,
+    onAcceptAmbientSuggestion: (String) -> Unit,
+    onRejectAmbientSuggestion: (String) -> Unit,
+    onDismissAmbientSuggestion: (String) -> Unit,
     searchProjectionProvider: (String) -> ChatMessageSearchProjection?,
     modifier: Modifier = Modifier
 ) {
@@ -955,6 +1118,16 @@ fun ChatModeContent(
             }
         }
 
+        AmbientSuggestionShelf(
+            suggestions = ambientSuggestions,
+            onAccept = onAcceptAmbientSuggestion,
+            onReject = onRejectAmbientSuggestion,
+            onDismiss = onDismissAmbientSuggestion,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 6.dp, end = 6.dp, top = 8.dp)
+        )
+
         ConnectionStatusNotification(
             isOnline = isOnline,
             modifier = Modifier
@@ -978,10 +1151,12 @@ fun ChatModeContent(
             isProcessing = isProcessing,
             isListening = isListening,
             speakingMessageId = speakingMessageId,
+            voiceInputDisabledReason = voiceInputDisabledReason,
             onStartListening = onStartListening,
             onStopListening = onStopListening,
             onStopSpeaking = onStopSpeech,
             enabled = !isProcessing && !isAwaitingToolReview,
+            isSandboxed = isSandboxed,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
             availableModelAliases = availableModelAliases,
@@ -1052,8 +1227,24 @@ private fun ChatBubble(
     onToggleToolModifyReviewSelection: (String, Long) -> Unit,
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val chatColors = MaterialTheme.souzColors.chat
     val hoverInteractionSource = remember { MutableInteractionSource() }
     val isHovered by hoverInteractionSource.collectIsHoveredAsState()
+    val scope = rememberCoroutineScope()
+    var copied by remember(message.id) { mutableStateOf(false) }
+    var copyNonce by remember(message.id) { mutableStateOf(0) }
+    val onCopied: () -> Unit = {
+        copied = true
+        val clickId = copyNonce + 1
+        copyNonce = clickId
+        scope.launch {
+            delay(2000)
+            if (copyNonce == clickId) {
+                copied = false
+            }
+        }
+    }
 
     var shouldReveal by remember(message.id) { mutableStateOf(false) }
     LaunchedEffect(message.id) { shouldReveal = true }
@@ -1083,14 +1274,14 @@ private fun ChatBubble(
     val messageSearchProjection = searchProjection ?: remember(message.id, message.text, message.isUser) {
         ChatSearchProjector().project(message)
     }
-    val highlightColor = ChatSearchHighlightColor
-    val activeHighlightColor = ChatSearchActiveHighlightColor
+    val highlightColor = scheme.tertiary.copy(alpha = 0.18f)
+    val activeHighlightColor = scheme.tertiary.copy(alpha = 0.3f)
 
     if (message.isUser) {
         val bubbleShape = RoundedCornerShape(16.dp)
         val customSelectionColors = TextSelectionColors(
-            handleColor = ChatSelectionHandleColor,
-            backgroundColor = ChatSelectionBackgroundColor
+            handleColor = scheme.primary,
+            backgroundColor = scheme.primary.copy(alpha = 0.26f),
         )
         val partProjection = messageSearchProjection.parts.firstOrNull() as? PlainTextSearchPartProjection
         val partMatchRanges = if (searchEnabled && partProjection != null) {
@@ -1127,22 +1318,10 @@ private fun ChatBubble(
                 Box(
                     modifier = Modifier
                         .clip(bubbleShape)
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    ChatUserBubbleBackgroundStart,
-                                    ChatUserBubbleBackgroundEnd
-                                )
-                            )
-                        )
+                        .background(chatColors.userBubbleBackground)
                         .border(
                             width = 1.dp,
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    ChatUserBubbleBorderStart,
-                                    ChatUserBubbleBorderEnd
-                                )
-                            ),
+                            color = chatColors.userBubbleBorder,
                             shape = bubbleShape
                         )
                 ) {
@@ -1162,7 +1341,7 @@ private fun ChatBubble(
                                 SelectionContainer {
                                     Text(
                                         text = highlightedUserText,
-                                        color = ChatUserTextColor,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 14.sp,
                                         lineHeight = 22.4.sp,
                                     )
@@ -1179,41 +1358,38 @@ private fun ChatBubble(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(22.dp),
+                        .height(24.dp),
                     contentAlignment = Alignment.CenterEnd
                 ) {
-                    Text(
-                        text = formatTimestamp(message.timestamp),
-                        color = ChatUserTimestampColor,
-                        fontSize = 11.sp,
+                    Row(
                         modifier = Modifier
-                            .alpha(userTimestampAlpha)
-                    )
+                            .alpha(userTimestampAlpha),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatTimestamp(message.timestamp),
+                            color = scheme.onSurfaceVariant.copy(alpha = 0.62f),
+                            fontSize = 11.sp,
+                        )
+                        if (message.text.isNotBlank()) {
+                            ChatMessageCopyButton(
+                                messageText = message.text,
+                                copied = copied,
+                                onCopied = onCopied,
+                                buttonSize = 20.4.dp,
+                            )
+                        }
+                    }
                 }
             }
         }
     } else {
-        val clipboardManager = LocalClipboardManager.current
-        val scope = rememberCoroutineScope()
-        var copied by remember(message.id) { mutableStateOf(false) }
-        var copyNonce by remember(message.id) { mutableStateOf(0) }
-
         val attachmentPathKeys = remember(message.attachedFiles) {
             message.attachedFiles.map { it.path.lowercase(Locale.ROOT) }.toSet()
         }
         val clickablePaths = message.finderPaths
             .filterNot { it.path.lowercase(Locale.ROOT) in attachmentPathKeys }
-
-        val copyInteractionSource = remember { MutableInteractionSource() }
-        val isCopyHovered by copyInteractionSource.collectIsHoveredAsState()
-        val copyIconColor by animateColorAsState(
-            targetValue = if (isCopyHovered) ChatHoverIconHoverColor else ChatHoverIconColor,
-            animationSpec = tween(durationMillis = 150)
-        )
-        val copyBackgroundColor by animateColorAsState(
-            targetValue = if (isCopyHovered) ChatHoverButtonBackground else Color.Transparent,
-            animationSpec = tween(durationMillis = 150)
-        )
 
         Box(modifier = contentModifier) {
             Column(
@@ -1241,20 +1417,20 @@ private fun ChatBubble(
                 if (message.text.isNotBlank()) {
                     val baseFontSize = 14.sp
                     val baseStyle = TextStyle(
-                        color = ChatAssistantTextColor,
+                        color = scheme.onSurface,
                         fontSize = baseFontSize,
                         lineHeight = 22.4.sp
                     )
                     val codeStyle = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = baseFontSize * 0.9,
-                        color = Color(0xFFE0E0E0)
+                        color = scheme.onSurface,
                     )
                     val typography = chatMarkdownTypography(baseStyle, codeStyle, HeadingScale.SMALL)
                     val colors = chatMarkdownColors(baseStyle.color)
                     val customSelectionColors = TextSelectionColors(
-                        handleColor = ChatSelectionHandleColor,
-                        backgroundColor = ChatSelectionBackgroundColor
+                        handleColor = scheme.primary,
+                        backgroundColor = scheme.primary.copy(alpha = 0.26f),
                     )
                     val linkSpanStyle = SpanStyle(
                         color = typography.link.color,
@@ -1383,46 +1559,73 @@ private fun ChatBubble(
                 ) {
                     Text(
                         text = formatTimestamp(message.timestamp),
-                        color = ChatAssistantTimestampColor,
+                        color = scheme.onSurfaceVariant.copy(alpha = 0.62f),
                         fontSize = 11.sp
                     )
                     if (message.text.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(copyBackgroundColor)
-                                .hoverable(interactionSource = copyInteractionSource)
-                                .pointerHoverIcon(PointerIcon.Hand)
-                                .clickable(
-                                    interactionSource = copyInteractionSource,
-                                    indication = null,
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(message.text))
-                                        copied = true
-                                        val clickId = copyNonce + 1
-                                        copyNonce = clickId
-                                        scope.launch {
-                                            delay(2000)
-                                            if (copyNonce == clickId) {
-                                                copied = false
-                                            }
-                                        }
-                                    }
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
-                                contentDescription = null,
-                                tint = copyIconColor,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
+                        ChatMessageCopyButton(
+                            messageText = message.text,
+                            copied = copied,
+                            onCopied = onCopied,
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ChatMessageCopyButton(
+    messageText: String,
+    copied: Boolean,
+    onCopied: () -> Unit,
+    buttonSize: Dp = 24.dp,
+) {
+    val clipboardManager = LocalClipboardManager.current
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val iconColor by animateColorAsState(
+        targetValue = if (isHovered) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+        },
+        animationSpec = tween(durationMillis = 150)
+    )
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isHovered) {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 150)
+    )
+
+    Box(
+        modifier = Modifier
+            .size(buttonSize)
+            .clip(RoundedCornerShape(6.dp))
+            .background(backgroundColor)
+            .hoverable(interactionSource = interactionSource)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(messageText))
+                    onCopied()
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(14.dp)
+        )
     }
 }
 
@@ -1451,14 +1654,14 @@ private fun AgentActionRow(
     inProgress: Boolean,
 ) {
     val tint = if (inProgress) {
-        Color.White.copy(alpha = 0.82f)
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f)
     } else {
-        Color.White.copy(alpha = 0.66f)
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f)
     }
     val containerColor = if (inProgress) {
-        Color.White.copy(alpha = 0.07f)
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
     } else {
-        Color.White.copy(alpha = 0.05f)
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
     }
 
     Row(
@@ -1558,7 +1761,7 @@ private fun MessageAttachmentTile(
 
         Text(
             text = file.displayName,
-            color = MessageAttachmentNameColor,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 10.sp,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1575,19 +1778,21 @@ private fun FinderPathChip(
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(14.dp)
+    val colors = MaterialTheme.souzColors.chat
+    val tooltipColors = MaterialTheme.souzColors.tooltip
     TooltipArea(
         delayMillis = 250,
         tooltip = {
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xE6000000))
-                    .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                    .background(tooltipColors.background)
+                    .border(1.dp, tooltipColors.border, RoundedCornerShape(10.dp))
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = path,
-                    color = Color(0xF2FFFFFF),
+                    color = tooltipColors.content,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -1597,8 +1802,8 @@ private fun FinderPathChip(
         Row(
             modifier = Modifier
                 .clip(shape)
-                .background(FinderPathChipBackground)
-                .border(1.dp, FinderPathChipBorder, shape)
+                .background(colors.pathChipBackground)
+                .border(1.dp, colors.pathChipBorder, shape)
                 .pointerHoverIcon(PointerIcon.Hand)
                 .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -1608,12 +1813,12 @@ private fun FinderPathChip(
             Icon(
                 imageVector = if (isDirectory) Icons.Rounded.Folder else Icons.Rounded.Description,
                 contentDescription = null,
-                tint = FinderPathChipTextColor,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp)
             )
             Text(
                 text = displayName,
-                color = FinderPathChipTextColor,
+                color = colors.pathChipContent,
                 fontSize = 14.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold
@@ -1712,10 +1917,10 @@ private fun TopToolbarIconButton(
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
     val background by animateColorAsState(
-        targetValue = if (hovered) Color(0x0FFFFFFF) else Color.Transparent
+        targetValue = if (hovered) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f) else Color.Transparent
     )
     val iconTint by animateColorAsState(
-        targetValue = if (hovered) Color(0x99FFFFFF) else Color(0x66FFFFFF)
+        targetValue = MaterialTheme.colorScheme.onSurface.copy(alpha = if (hovered) 0.6f else 0.4f)
     )
 
     Box(
@@ -1741,7 +1946,7 @@ private fun TopToolbarIconButton(
 @Preview
 @Composable
 fun PreviewSmartFocusGlass() {
-    MaterialTheme {
+    AppTheme {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(
@@ -1758,7 +1963,7 @@ fun PreviewSmartFocusGlass() {
 @Preview
 @Composable
 fun PreviewChatMode() {
-    MaterialTheme {
+    AppTheme {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(
@@ -1780,7 +1985,7 @@ fun PreviewChatMode() {
 @Preview
 @Composable
 fun PreviewChatModeEmpty() {
-    MaterialTheme {
+    AppTheme {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(

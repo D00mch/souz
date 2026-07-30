@@ -1,7 +1,6 @@
 package ru.souz.ui.settings
 
 import ru.souz.db.SettingsProvider
-import ru.souz.db.hasKey
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
@@ -16,11 +15,24 @@ fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): LLMModel
     val availableModels = this.availableLlmModels(llmBuildProfile)
     if (availableModels.isEmpty()) return null
 
+    val availableProviders = availableModels.mapTo(linkedSetOf()) { it.provider }
     val preferredProvider = llmBuildProfile.providerPriorities()
-        .firstOrNull(this::hasKey)
+        .firstOrNull { it in availableProviders }
 
     return preferredProvider
         ?.let(llmBuildProfile::defaultModelForProvider)
+        ?.takeIf { model -> model in availableModels }
+        ?: availableModels.first()
+}
+
+fun SettingsProvider.availableAmbientAnalysisModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
+    llmBuildProfile.availableModels.filter { model -> model.provider == LlmProvider.LOCAL }
+
+fun SettingsProvider.defaultAmbientAnalysisModel(llmBuildProfile: LlmBuildProfile): LLMModel? {
+    val availableModels = this.availableAmbientAnalysisModels(llmBuildProfile)
+    if (availableModels.isEmpty()) return null
+
+    return llmBuildProfile.defaultModelForProvider(LlmProvider.LOCAL)
         ?.takeIf { model -> model in availableModels }
         ?: availableModels.first()
 }

@@ -24,7 +24,6 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
 import ru.souz.android.python.ChaquopyPythonSkillRunner
 import ru.souz.android.settings.AndroidSettingsProvider
@@ -198,7 +197,6 @@ class AndroidAgentRuntime(
                     logObjectMapperTag = DiTags.LOG_OBJECT_MAPPER,
                     apiClassifierTag = DiTags.API_CLASSIFIER,
                     localClassifierTag = DiTags.LOCAL_CLASSIFIER,
-                    skillCommandToolTag = SkillToolBindingTags.COMMAND_TOOL,
                     graphSessionRepositoryTag = DiTags.GRAPH_SESSION_REPOSITORY,
                 )
             )

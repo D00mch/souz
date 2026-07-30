@@ -15,8 +15,8 @@ import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.MessageCreatedPayload
 import ru.souz.backend.events.model.MessageDeltaPayload
-import ru.souz.backend.storage.memory.MemoryAgentEventRepository
-import ru.souz.backend.storage.memory.MemoryChatRepository
+import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
+import ru.souz.backend.testutil.repository.MemoryChatRepository
 import ru.souz.backend.testutil.rawEventPayload
 
 class AgentEventServiceTest {

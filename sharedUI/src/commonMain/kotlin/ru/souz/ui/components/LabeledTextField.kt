@@ -21,20 +21,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.souz.ui.souzColors
 
-private val LabeledFieldTextColor = Color.White.copy(alpha = 0.9f)
-private val LabeledFieldLabelColor = Color.White.copy(alpha = 0.7f)
-private val LabeledFieldBackgroundColor = Color(0x0DFFFFFF)
-private val LabeledFieldBorderColor = Color(0x14FFFFFF)
-private val LabeledFieldFocusBorderColor = Color(0x33FFFFFF)
-private val LabeledFieldAccentColor = Color(0xE6FFFFFF)
 private val LabeledFieldSingleLineHeight = 42.dp
 private val LabeledFieldMultiLineMinHeight = 72.dp
 private val LabeledFieldShape = RoundedCornerShape(12.dp)
@@ -50,12 +44,16 @@ fun LabeledTextField(
     isError: Boolean = false,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     height: Dp? = null,
+    readOnly: Boolean = false,
+    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    val textColor = if (isError) MaterialTheme.colorScheme.error else LabeledFieldTextColor
-    val borderColor = if (isError) MaterialTheme.colorScheme.error else LabeledFieldBorderColor
-    val focusedBorderColor = if (isError) MaterialTheme.colorScheme.error else LabeledFieldFocusBorderColor
-    val labelColor = if (isError) MaterialTheme.colorScheme.error else LabeledFieldLabelColor
+    val scheme = MaterialTheme.colorScheme
+    val settingsColors = MaterialTheme.souzColors.settings
+    val textColor = if (isError) scheme.error else scheme.onSurface
+    val borderColor = if (isError) scheme.error else settingsColors.inputBorder
+    val focusedBorderColor = if (isError) scheme.error else scheme.outline
+    val labelColor = if (isError) scheme.error else scheme.onSurfaceVariant
     val currentBorderColor = if (isFocused) focusedBorderColor else borderColor
 
     Column(
@@ -85,7 +83,7 @@ fun LabeledTextField(
                         Modifier.heightIn(min = LabeledFieldMultiLineMinHeight)
                     },
                 )
-                .background(LabeledFieldBackgroundColor, LabeledFieldShape)
+                .background(settingsColors.inputBackground, LabeledFieldShape)
                 .border(1.dp, currentBorderColor, LabeledFieldShape),
             contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
         ) {
@@ -96,18 +94,21 @@ fun LabeledTextField(
                         fontSize = 14.sp,
                         lineHeight = 20.sp,
                     ),
-                    color = LabeledFieldLabelColor,
+                    color = scheme.onSurfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
-                            horizontal = 12.dp,
-                            vertical = if (singleLine) 0.dp else 10.dp,
+                            start = 12.dp,
+                            end = if (trailingContent == null) 12.dp else 48.dp,
+                            top = if (singleLine) 0.dp else 10.dp,
+                            bottom = if (singleLine) 0.dp else 10.dp,
                         ),
                 )
             }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
+                readOnly = readOnly,
                 singleLine = singleLine,
                 visualTransformation = visualTransformation,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -115,15 +116,27 @@ fun LabeledTextField(
                     lineHeight = 20.sp,
                     color = textColor,
                 ),
-                cursorBrush = SolidColor(if (isError) MaterialTheme.colorScheme.error else LabeledFieldAccentColor),
+                cursorBrush = SolidColor(if (isError) scheme.error else scheme.primary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { isFocused = it.isFocused }
                     .padding(
-                        horizontal = 12.dp,
-                        vertical = if (singleLine) 0.dp else 10.dp,
+                        start = 12.dp,
+                        end = if (trailingContent == null) 12.dp else 48.dp,
+                        top = if (singleLine) 0.dp else 10.dp,
+                        bottom = if (singleLine) 0.dp else 10.dp,
                     ),
             )
+            trailingContent?.let { content ->
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    content()
+                }
+            }
         }
     }
 }

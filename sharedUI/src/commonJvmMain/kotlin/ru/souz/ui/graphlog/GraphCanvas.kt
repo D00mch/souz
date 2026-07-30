@@ -37,7 +37,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -52,7 +51,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import ru.souz.agent.session.GraphStepRecord
+import ru.souz.ui.GraphColors
 import ru.souz.ui.glassColors
+import ru.souz.ui.souzColors
 
 @Composable
 fun GraphCanvas(
@@ -113,6 +114,7 @@ private fun GraphCanvasContent(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val colors = MaterialTheme.souzColors.graph
     val nodeSizeDp = 90.dp
     val nodeSizePx = with(density) { nodeSizeDp.toPx() }
     val contentInsetPx = with(density) { 53.dp.toPx() }
@@ -125,7 +127,7 @@ private fun GraphCanvasContent(
         (ys.minOrNull() ?: 0f) to (ys.maxOrNull() ?: 1f)
     }
 
-    BoxWithConstraints(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier.background(colors.canvasBackground)) {
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
 
@@ -158,6 +160,7 @@ private fun GraphCanvasContent(
                     fromPos = edge.fromPos,
                     toPos = edge.toPos,
                     highlighted = edge.isHighlighted,
+                    colors = colors,
                 )
             }
         }
@@ -241,6 +244,7 @@ fun DrawScope.drawCurvedEdge(
     fromPos: ResolvedPos,
     toPos: ResolvedPos,
     highlighted: Boolean,
+    colors: GraphColors,
 ) {
     val path = Path()
     path.moveTo(start.x, start.y)
@@ -248,8 +252,8 @@ fun DrawScope.drawCurvedEdge(
     val control = calculateControlPoint(start, end, fromPos, toPos)
     path.quadraticTo(control.x, control.y, end.x, end.y)
 
-    val color = if (highlighted) Color(0xFF00E5FF) else Color.Gray.copy(alpha = 0.3f)
-    val alpha = if (highlighted) 0.5f else 0.2f
+    val color = if (highlighted) colors.highlightedEdge else colors.edge
+    val alpha = if (highlighted) 0.8f else 0.45f
     val strokeWidth = if (highlighted) 2.dp.toPx() else 1.dp.toPx()
 
     drawPath(
@@ -267,7 +271,7 @@ fun CircularNodeItem(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val glowColor = Color(0xFF00E5FF)
+    val colors = MaterialTheme.souzColors.graph
 
     Box(
         modifier = Modifier
@@ -281,8 +285,8 @@ fun CircularNodeItem(
                     .matchParentSize()
                     .offset(x = 3.dp, y = 3.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.05f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.1f), CircleShape),
+                    .background(colors.itemBackground)
+                    .border(0.5.dp, colors.nodeBorder, CircleShape),
             )
         }
 
@@ -291,21 +295,21 @@ fun CircularNodeItem(
                 .matchParentSize()
                 .clip(CircleShape)
                 .background(
-                    if (isSelected) glowColor.copy(alpha = 0.1f)
-                    else Color(0xFF1E1E1E).copy(alpha = 0.95f),
+                    if (isSelected) colors.selectedNodeBackground
+                    else colors.nodeBackground,
                 )
                 .border(
                     if (isSelected) 2.dp else 1.dp,
-                    if (isSelected) glowColor else Color.White.copy(alpha = 0.2f),
+                    if (isSelected) colors.selectedNodeBorder else colors.nodeBorder,
                     CircleShape,
                 )
-                .shadow(if (isSelected) 12.dp else 0.dp, CircleShape, spotColor = glowColor),
+                .shadow(if (isSelected) 12.dp else 0.dp, CircleShape, spotColor = colors.selectedNodeBorder),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isSelected) glowColor else Color.White.copy(alpha = 0.9f),
+                color = if (isSelected) colors.selectedNodeContent else colors.nodeContent,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
@@ -321,14 +325,14 @@ fun CircularNodeItem(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .clip(CircleShape)
-                    .background(Color(0xFF2C2C2C))
-                    .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                    .background(colors.badgeBackground)
+                    .border(1.dp, colors.badgeBorder, CircleShape)
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             ) {
                 Text(
                     text = "$count",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
+                    color = colors.badgeContent,
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp,
                 )
@@ -344,6 +348,7 @@ fun TimelineStrip(
     onStepClick: (GraphStepRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.souzColors.graph
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -387,8 +392,8 @@ fun TimelineStrip(
                         .padding(horizontal = 2.dp)
                         .clip(RoundedCornerShape(2.dp))
                         .background(
-                            if (isSelected) Color(0xFF00E5FF)
-                            else Color.White.copy(alpha = 0.2f),
+                            if (isSelected) colors.highlightedEdge
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                         )
                         .clickable { onStepClick(step) },
                 )

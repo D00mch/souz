@@ -26,7 +26,7 @@ class AgentFacade internal constructor(
 ) {
     private val l = LoggerFactory.getLogger(AgentFacade::class.java)
 
-    val availableAgents: List<AgentId> = executor.availableAgents
+    val availableAgents: List<AgentId> = contextFactory.availableAgents
 
     private val _activeAgentId = MutableStateFlow(contextFactory.normalizeAgentId(settingsProvider.activeAgentId))
     val activeAgentId: StateFlow<AgentId> = _activeAgentId.asStateFlow()
@@ -34,12 +34,16 @@ class AgentFacade internal constructor(
     private val _currentContext = MutableStateFlow(contextFactory.create(_activeAgentId.value))
     val currentContext: StateFlow<AgentContext<String>> = _currentContext.asStateFlow()
 
+    private val _isExecuting = MutableStateFlow(false)
+    val isExecuting: StateFlow<Boolean> = _isExecuting.asStateFlow()
+
     val sideEffects: Flow<AgentSideEffect> = _activeAgentId.flatMapLatest { id ->
         merge(
             executor.sideEffects(id).map { AgentSideEffect.Text(it) },
             agentToolExecutor.toolInvocations.map { AgentSideEffect.Fn(it) },
         )
     }
+    private var executionGeneration: Long = 0
 
     fun setActiveAgent(agentId: AgentId) {
         val normalized = contextFactory.normalizeAgentId(agentId)
@@ -97,14 +101,23 @@ class AgentFacade internal constructor(
     }
 
     fun cancelActiveJob() {
+        executionGeneration += 1
         executor.cancelActiveJob(_activeAgentId.value)
+        _isExecuting.value = false
     }
 
     suspend fun execute(
         input: String,
         toolInvocationMetaOverride: ToolInvocationMeta? = null,
-    ): String {
+    ): String = executeForResult(input, toolInvocationMetaOverride).output
+
+    suspend fun executeForResult(
+        input: String,
+        toolInvocationMetaOverride: ToolInvocationMeta? = null,
+    ): AgentExecutionResult {
         cancelActiveJob()
+        val generation = executionGeneration
+        _isExecuting.value = true
         sessionService.startTask(input)
         return try {
             val baseContext = _currentContext.value
@@ -120,10 +133,13 @@ class AgentFacade internal constructor(
                 sessionService.onStep(step, node, from, to)
             }
             _currentContext.emit(result.context.copy(toolInvocationMeta = baseContext.toolInvocationMeta))
-            result.output
+            result
         } finally {
             runCatching { sessionService.finishTask() }
                 .onFailure { e -> l.warn("sessionService fail", e) }
+            if (generation == executionGeneration) {
+                _isExecuting.value = false
+            }
         }
     }
 }

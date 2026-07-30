@@ -7,8 +7,20 @@ import org.kodein.di.instance
 import org.kodein.di.scoped
 import org.kodein.di.singleton
 import org.kodein.di.with
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import ru.souz.ambient.AmbientBlockAnalyzer
+import ru.souz.ambient.AmbientSemanticBlock
+import ru.souz.ambient.AmbientSpeechAvailability
+import ru.souz.ambient.AmbientTaskCandidate
+import ru.souz.ambient.AmbientTranscriptEvent
+import ru.souz.ambient.AmbientTranscriptionService
+import ru.souz.ambient.AmbientTranscriptionState
+import ru.souz.ambient.SemanticBlockBuilder
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.tool.SelectionApprovalSource
+import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.ui.common.FileSystemPathMetadataProvider
 import ru.souz.ui.common.PathMetadataProvider
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
@@ -36,6 +48,7 @@ import ru.souz.ui.host.SupportLogService
 import ru.souz.ui.host.TelegramSettingsHost
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiSpeechPlayer
+import ru.souz.ui.main.ChatAgentActionFormatter
 import ru.souz.ui.main.usecases.AttachmentMetadataProvider
 import ru.souz.ui.main.usecases.ChatAttachmentsUseCase
 import ru.souz.ui.main.usecases.ChatUseCase
@@ -44,9 +57,11 @@ import ru.souz.ui.main.usecases.DroppedFilePathExtractor
 import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.NoopVoiceInputController
 import ru.souz.ui.main.usecases.NoopDroppedFilePathExtractor
+import ru.souz.ui.main.usecases.NoopMemoryConversationCleanup
 import ru.souz.ui.main.usecases.NoopPathPicker
 import ru.souz.ui.main.usecases.PathPicker
 import ru.souz.ui.main.mainViewModelDiScope
+import ru.souz.ui.main.usecases.MemoryConversationCleanup
 import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.ToolModifyReviewUseCase
@@ -77,7 +92,11 @@ fun sharedUiCommonJvmDiModule(): DI.Module = DI.Module("sharedUiCommonJvm") {
     bindSingleton<SupportLogService> { NoopSupportLogService }
     bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
     bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+    bindSingleton<AmbientTranscriptionService> { NoopAmbientTranscriptionService }
+    bindSingleton<AmbientBlockAnalyzer> { NoopAmbientBlockAnalyzer }
+    bindSingleton { SemanticBlockBuilder() }
     bindSingleton<Set<SelectionApprovalSource>> { emptySet() }
+    bindSingleton<MemoryConversationCleanup> { NoopMemoryConversationCleanup }
     bindSingleton { ApiKeyAvailabilityUseCase(instance()) }
     bindSingleton { FinderPathExtractor(instance(), instance()) }
 }
@@ -97,6 +116,9 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
             attachmentMetadataProvider = instance(),
         )
     }
+    bind<ChatObservabilityTracker>() with scoped(mainViewModelDiScope).singleton {
+        ChatObservabilityTracker(log = instance())
+    }
     bind<ChatUseCase>() with scoped(mainViewModelDiScope).singleton {
         ChatUseCase(
             agentFacade = instance(),
@@ -105,9 +127,14 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
             finderPathExtractor = instance(),
             chatAttachmentsUseCase = instance(),
             toolModifyReviewUseCase = instance(),
-            observabilityTracker = ChatObservabilityTracker(log = instance()),
+            observabilityTracker = instance(),
             log = instance(),
             tokenLogging = instance(),
+            memoryConversationCleanup = instance(),
+            conversationKnowledgeStore = instance<ConversationKnowledgeStore>(),
+            chatAgentActionFormatter = ChatAgentActionFormatter(
+                instance<ToolInvokeSkill>()::delegatedToolName,
+            ),
             ioDispatcher = context.ioDispatcher,
         )
     }
@@ -123,4 +150,22 @@ fun sharedUiMainViewModelUseCasesDiModule(): DI.Module = DI.Module("sharedUiMain
     bind<VoiceInputController>() with scoped(mainViewModelDiScope).singleton {
         NoopVoiceInputController
     }
+}
+
+private object NoopAmbientTranscriptionService : AmbientTranscriptionService {
+    override val transcriptEvents = MutableSharedFlow<AmbientTranscriptEvent>()
+    override val state = MutableStateFlow<AmbientTranscriptionState>(AmbientTranscriptionState.Stopped)
+
+    override suspend fun availability(locale: String): AmbientSpeechAvailability =
+        AmbientSpeechAvailability.LiveBackendUnavailable
+
+    override suspend fun start(locale: String): AmbientSpeechAvailability =
+        AmbientSpeechAvailability.LiveBackendUnavailable
+
+    override suspend fun stop() = Unit
+    override suspend fun clearTranscript() = Unit
+}
+
+private object NoopAmbientBlockAnalyzer : AmbientBlockAnalyzer {
+    override suspend fun analyze(block: AmbientSemanticBlock): AmbientTaskCandidate? = null
 }

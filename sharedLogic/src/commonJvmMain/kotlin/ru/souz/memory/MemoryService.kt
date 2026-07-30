@@ -1,12 +1,15 @@
 package ru.souz.memory
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.restJsonMapper
+import kotlin.math.roundToInt
 
 interface EmbeddingClient {
     val model: String
@@ -60,8 +63,11 @@ class MemoryService(
         val scope = input.scope.normalized()
         val cleanTitle = MemorySanitizer.redact(input.title.trim())
         val cleanBody = MemorySanitizer.redact(input.body.trim())
+        val canonicalKey = controlledCanonicalKey(input.canonicalKey)
+        val existing = canonicalKey?.let { repo.findActiveFactByCanonicalKey(input.ownerId, scope, it) }
         val sourceEventId = repo.insertSourceEvent(
             NewMemorySourceEvent(
+                ownerId = input.ownerId,
                 scope = scope,
                 sourceType = "manual",
                 sourceRef = null,
@@ -80,16 +86,19 @@ class MemoryService(
         return withSourceEventCleanup(sourceEventId) {
             createFact(
                 input = NewMemoryFact(
+                    ownerId = input.ownerId,
                     scope = scope,
                     kind = input.kind,
                     title = cleanTitle,
                     body = cleanBody,
-                    slotKey = input.slotKey?.trim()?.ifBlank { null },
+                    canonicalKey = canonicalKey,
                     status = MemoryFactStatus.ACTIVE,
+                    retention = retentionForScope(scope),
                     confidence = input.confidence,
+                    importance = input.importance,
                     pinned = input.pinned,
                     createdBy = "user",
-                    supersedesFactId = null,
+                    supersedesFactId = existing?.id,
                 ),
                 evidence = listOf(
                     MemoryEvidenceRef(
@@ -102,40 +111,56 @@ class MemoryService(
     }
 
     suspend fun createCapturedFact(input: CreateCapturedFactInput): MemoryFact {
+        return tryCreateCapturedFact(input) ?: error("Memory fact is blocked by tombstone")
+    }
+
+    suspend fun tryCreateCapturedFact(input: CreateCapturedFactInput): MemoryFact? {
         val scope = input.scope.normalized()
         val cleanTitle = MemorySanitizer.redact(input.title.trim())
         val cleanBody = MemorySanitizer.redact(input.body.trim())
         val cleanEvidence = MemorySanitizer.redact(input.evidenceText.trim())
-        val existing = input.slotKey
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-            ?.let { repo.findActiveFactBySlotKey(scope, it) }
-        return createFact(
-            input = NewMemoryFact(
-                scope = scope,
-                kind = input.kind,
-                title = cleanTitle,
-                body = cleanBody,
-                slotKey = input.slotKey?.trim()?.ifBlank { null },
-                status = MemoryFactStatus.ACTIVE,
-                confidence = input.confidence,
-                pinned = input.pinned,
-                createdBy = "writer",
-                supersedesFactId = existing?.id,
-            ),
-            evidence = listOf(
-                MemoryEvidenceRef(
-                    sourceEventId = input.sourceEventId,
-                    evidenceText = cleanEvidence,
-                )
-            ),
-        )
+        val canonicalKey = controlledCanonicalKey(input.canonicalKey)
+        if (isScopeClosedForCapture(input.ownerId, scope)) return null
+        val existing = canonicalKey?.let { repo.findActiveFactByCanonicalKey(input.ownerId, scope, it) }
+        if (repo.hasTombstone(input.ownerId, listOf(scope), canonicalKey, cleanTitle.normalizedSubjectKey())) {
+            return null
+        }
+        return try {
+            createFact(
+                input = NewMemoryFact(
+                    ownerId = input.ownerId,
+                    scope = scope,
+                    kind = input.kind,
+                    title = cleanTitle,
+                    body = cleanBody,
+                    canonicalKey = canonicalKey,
+                    status = MemoryFactStatus.ACTIVE,
+                    retention = retentionForScope(scope),
+                    confidence = input.confidence,
+                    importance = input.importance,
+                    pinned = input.pinned,
+                    createdBy = "writer",
+                    supersedesFactId = existing?.id,
+                ),
+                evidence = listOf(
+                    MemoryEvidenceRef(
+                        sourceEventId = input.sourceEventId,
+                        evidenceText = cleanEvidence,
+                    )
+                ),
+            )
+        } catch (_: MemoryScopeClosedForCaptureException) {
+            null
+        }
     }
 
     suspend fun saveRedactedSourceEvent(input: MemoryCaptureInput, redactedText: String): String =
         repo.insertSourceEvent(
             NewMemorySourceEvent(
-                scope = input.primaryScope.normalized(),
+                ownerId = input.context.ownerId,
+                scope = input.context.sessionId?.let { MemoryScope.session(it) }
+                    ?: input.context.projectId?.let { MemoryScope.project(it) }
+                    ?: globalMemoryScope(),
                 sourceType = "turn",
                 sourceRef = input.assistantMessageId ?: input.conversationId,
                 text = redactedText,
@@ -159,23 +184,48 @@ class MemoryService(
     ): MemoryFact {
         val normalizedPatch = patch.copy(scope = patch.scope?.normalized())
         val existing = repo.getFact(factId) ?: error("Memory fact not found: $factId")
-        val updated = existing.applyPatch(normalizedPatch)
-        val embedding = if (normalizedPatch.affectsEmbedding()) {
-            embedder.embedDocument(updated.embeddingText())
+        val patched = existing.applyPatch(normalizedPatch)
+        val replaced = if (patched.status == MemoryFactStatus.ACTIVE) {
+            patched.canonicalKey
+                ?.let { repo.findActiveFactByCanonicalKey(patched.ownerId, patched.scope, it) }
+                ?.takeUnless { it.id == patched.id }
         } else {
             null
         }
-        return repo.updateFact(
+        val updated = replaced?.let { patched.copy(supersedesFactId = it.id) } ?: patched
+        val saved = repo.updateFact(
             fact = updated,
             expectedUpdatedAt = existing.updatedAt,
-            embedding = embedding,
-            embeddingModel = embedding?.let { embedder.model },
         )
+        if (normalizedPatch.affectsEmbedding()) {
+            enqueueAndTryEmbedding(saved)
+        }
+        return saved
     }
 
     suspend fun retireFact(factId: String) = repo.retireFact(factId)
 
     suspend fun deleteFact(factId: String) = repo.deleteFact(factId)
+
+    suspend fun deleteFactsByScope(ownerId: MemoryOwnerId, scope: MemoryScope) =
+        repo.deleteFactsByScope(ownerId, scope)
+
+    suspend fun closeScopeForCapture(ownerId: MemoryOwnerId, scope: MemoryScope) =
+        repo.createTombstone(
+            ownerId = ownerId,
+            scope = scope.normalized(),
+            canonicalKey = null,
+            subjectKey = MEMORY_SCOPE_CLOSED_SUBJECT_KEY,
+            reason = "scope_closed",
+        )
+
+    suspend fun isScopeClosedForCapture(ownerId: MemoryOwnerId, scope: MemoryScope): Boolean =
+        repo.hasTombstone(
+            ownerId = ownerId,
+            scopes = listOf(scope.normalized()),
+            canonicalKey = null,
+            subjectKey = MEMORY_SCOPE_CLOSED_SUBJECT_KEY,
+        )
 
     suspend fun deleteSourceEventIfUnused(sourceEventId: String) = repo.deleteSourceEventIfUnused(sourceEventId)
 
@@ -184,55 +234,110 @@ class MemoryService(
         query: String,
         limit: Int = 5,
     ): MemoryBlock {
-        if (scopes.isEmpty()) return MemoryBlock(emptyList(), "", emptyList())
-        val distinctScopes = scopes.flatMap(MemoryScope::compatibilityScopes).distinct()
-        val queryEmbedding = query.trim()
-            .takeIf(String::isNotBlank)
-            ?.let { embedder.embedQuery(it) }
+        val context = legacyMemoryContext()
+        val selected = selectMemoryFacts(
+            context = context,
+            query = query,
+            maxFacts = limit,
+            maxPromptTokens = 700,
+            overrideScopes = scopes,
+        ).selected
+        val hits = selected.map { MemoryFactSearchHit(it.fact, it.score) }
+        val rendered = renderMemoryPrompt(hits)
+        return MemoryBlock(
+            facts = hits.map(MemoryFactSearchHit::fact),
+            rendered = rendered,
+            hits = hits,
+        )
+    }
 
-        try {
-            repo.getFactsWithoutEmbedding(
-                scopes = distinctScopes,
-                model = embedder.model,
-                expectedDimension = queryEmbedding?.size,
-                limit = 5,
-            ).forEach { fact ->
-                try {
-                    repo.replaceEmbedding(fact.id, embedder.model, embedder.embedDocument(fact.embeddingText()))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
+    suspend fun retrieveMemory(
+        request: MemoryRetrievalRequest,
+        overrideScopes: List<MemoryScope>? = null,
+    ): MemoryRetrievalResult {
+        val selection = selectMemoryFacts(
+            context = request.context,
+            query = request.query,
+            maxFacts = request.maxFacts ?: 8,
+            maxPromptTokens = request.maxPromptTokens ?: 700,
+            overrideScopes = overrideScopes,
+        )
+        val hits = selection.selected.map { MemoryFactSearchHit(it.fact, it.score) }
+        val rendered = renderMemoryPrompt(hits)
+        return MemoryRetrievalResult(
+            renderedPromptBlock = rendered.ifBlank { null },
+            facts = selection.selected.map {
+                MemoryPromptFact(
+                    factId = it.fact.id,
+                    scope = "${it.fact.scope.type}:${it.fact.scope.id}",
+                    score = it.score,
+                )
+            },
+            trace = selection.trace.copy(
+                promptTokenEstimate = estimatePromptTokens(rendered),
+            ),
+        )
+    }
+
+    private data class MemorySelection(
+        val selected: List<RetrievedMemoryFact>,
+        val trace: MemoryRetrievalTrace,
+    )
+
+    private suspend fun selectMemoryFacts(
+        context: MemoryContext,
+        query: String,
+        maxFacts: Int,
+        maxPromptTokens: Int,
+        overrideScopes: List<MemoryScope>? = null,
+    ): MemorySelection {
+        val scopes = (overrideScopes ?: context.allowedRetrievalScopes())
+            .flatMap(MemoryScope::compatibilityScopes)
+            .distinct()
+        val normalizedScopes = scopes.map(MemoryScope::normalized).toSet()
+        val limit = maxFacts.coerceIn(1, 32)
+        val tokenBudget = maxPromptTokens.coerceAtLeast(80)
+        if (scopes.isEmpty()) return MemorySelection(emptyList(), MemoryRetrievalTrace())
+        val trimmedQuery = query.trim()
+        val exact = exactCandidates(context.ownerId, scopes, trimmedQuery, 20)
+        val lexical = try {
+            repo.lexicalSearchFacts(context.ownerId, scopes, trimmedQuery, 40)
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: Exception) {
-        }
-
-        val pinnedFacts = distinctScopes
-            .flatMap { repo.listFacts(MemoryFactFilter(scope = it, pinned = true, limit = limit)) }
-            .asSequence()
-            .distinctBy(MemoryFact::id)
-            .sortedByDescending(MemoryFact::updatedAt)
-            .take(limit)
-            .toList()
-        val pinnedIds = pinnedFacts.mapTo(linkedSetOf(), MemoryFact::id)
-        val semanticHits = if (queryEmbedding == null) {
             emptyList()
-        } else {
-            repo.searchFacts(
-                scopes = distinctScopes,
-                model = embedder.model,
-                queryEmbedding = queryEmbedding,
-                limit = limit + pinnedFacts.size,
-            ).filter { it.score > 0f && it.fact.id !in pinnedIds }
         }
-        val hits = buildList {
-            pinnedFacts.forEach { fact -> add(MemoryFactSearchHit(fact, 1f)) }
-            addAll(semanticHits)
-        }.take(limit)
-        val facts = hits.map(MemoryFactSearchHit::fact)
-        return MemoryBlock(facts = facts, rendered = renderMemoryPrompt(hits), hits = hits)
+        val dense = denseCandidates(context.ownerId, scopes, trimmedQuery, 40)
+        val priority = priorityCandidates(context.ownerId, scopes, trimmedQuery, 20)
+
+        val fused = weightedRrf(
+            "exact" to (3.0 to exact),
+            "lexical" to (1.4 to lexical),
+            "dense" to (1.0 to dense),
+            "priority" to (0.7 to priority),
+        )
+        val selected = fused
+            .asSequence()
+            .filter { it.fact.status == MemoryFactStatus.ACTIVE }
+            .filter { it.fact.retention != MemoryRetention.SESSION_LIFETIME || it.fact.scope.normalized() in normalizedScopes }
+            .sortedWith(compareByDescending<FusedCandidate> { heuristicScore(it, context) }.thenByDescending { it.fact.updatedAt })
+            .distinctBy { it.fact.canonicalKey ?: it.fact.contentHash }
+            .takeForPrompt(limit, tokenBudget)
+            .map { RetrievedMemoryFact(it.fact, heuristicScore(it, context).toFloat(), it.sources) }
+            .toList()
+        repo.recordRetrieval(selected.map { it.fact.id })
+        return MemorySelection(
+            selected = selected,
+            trace = MemoryRetrievalTrace(
+                candidateCountBySource = mapOf(
+                    "exact" to exact.size,
+                    "lexical" to lexical.size,
+                    "dense" to dense.size,
+                    "priority" to priority.size,
+                ),
+                selectedFactIds = selected.map { it.fact.id },
+            ),
+        )
     }
 
     private suspend fun createFact(
@@ -242,38 +347,277 @@ class MemoryService(
         val factId = repo.insertFact(
             input = input,
             evidence = evidence,
-            embedding = embedder.embedDocument(input.embeddingText()),
-            embeddingModel = embedder.model,
         )
-        return repo.getFact(factId) ?: error("Memory fact not found after insert: $factId")
+        val fact = repo.getFact(factId) ?: error("Memory fact not found after insert: $factId")
+        enqueueAndTryEmbedding(fact)
+        return repo.getFact(factId) ?: fact
     }
 
+    @Suppress("DEPRECATION")
     private fun MemoryFact.applyPatch(patch: MemoryFactPatch): MemoryFact {
-        val nextSlotKey = when {
-            patch.clearSlotKey -> null
-            patch.slotKey != null -> patch.slotKey.trim().ifBlank { null }
-            else -> slotKey
+        val nextCanonicalKey = when {
+            patch.clearCanonicalKey || patch.clearSlotKey -> null
+            patch.canonicalKey != null -> controlledCanonicalKey(patch.canonicalKey)
+            patch.slotKey != null -> controlledCanonicalKey(patch.slotKey)
+            else -> canonicalKey
         }
+        val nextTitle = patch.title?.trim()?.ifBlank { title }?.let(MemorySanitizer::redact) ?: title
+        val nextBody = patch.body?.trim()?.ifBlank { body }?.let(MemorySanitizer::redact) ?: body
+        val nextKind = patch.kind ?: kind
+        val nextScope = patch.scope ?: scope
         return copy(
-            scope = patch.scope ?: scope,
-            kind = patch.kind ?: kind,
-            title = patch.title?.trim()?.ifBlank { title } ?: title,
-            body = patch.body?.trim()?.ifBlank { body } ?: body,
-            slotKey = nextSlotKey,
+            scope = nextScope,
+            kind = nextKind,
+            title = nextTitle,
+            body = nextBody,
+            canonicalKey = nextCanonicalKey,
+            retention = if (patch.scope != null) retentionForScope(nextScope) else retention,
             confidence = patch.confidence ?: confidence,
+            importance = patch.importance ?: importance,
             pinned = patch.pinned ?: pinned,
+            contentHash = stableMemoryContentHash(nextTitle, nextBody, nextKind, nextCanonicalKey),
             updatedAt = java.time.Instant.now(),
         )
     }
 
+    @Suppress("DEPRECATION")
     private fun MemoryFactPatch.affectsEmbedding(): Boolean =
-        scope != null || kind != null || title != null || body != null
+        scope != null || kind != null || title != null || body != null || canonicalKey != null || slotKey != null || clearCanonicalKey || clearSlotKey
+
+    private fun controlledCanonicalKey(raw: String?): String? =
+        normalizeCanonicalKey(raw)
+
+    private suspend fun enqueueAndTryEmbedding(fact: MemoryFact) {
+        repo.enqueueEmbeddingJob(fact.id, fact.ownerId, embedder.model, fact.contentHash)
+        try {
+            repo.replaceEmbedding(
+                factId = fact.id,
+                model = embedder.model,
+                embedding = embedder.embedDocument(fact.embeddingText()),
+                contentHash = fact.contentHash,
+            )
+            repo.markEmbeddingJobCompleted(fact.id, embedder.model, fact.contentHash)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            repo.markEmbeddingJobFailed(fact.id, embedder.model, fact.contentHash, e::class.simpleName ?: "embedding_error")
+        }
+    }
+
+    suspend fun forgetFromText(
+        context: MemoryContext,
+        text: String,
+        hardDelete: Boolean = false,
+    ): Int {
+        val scopes = context.allowedRetrievalScopes()
+        val query = text.removeForgetMarkers()
+        val match = confidentForgetMatch(context.ownerId, scopes, query) ?: return 0
+        if (hardDelete) {
+            repo.deleteFact(match.id)
+        } else {
+            repo.retireFact(match.id)
+            repo.createTombstone(
+                ownerId = match.ownerId,
+                scope = match.scope,
+                canonicalKey = match.canonicalKey,
+                subjectKey = match.title.normalizedSubjectKey(),
+                reason = "explicit_forget",
+            )
+        }
+        return 1
+    }
+
+    private suspend fun confidentForgetMatch(
+        ownerId: MemoryOwnerId,
+        scopes: List<MemoryScope>,
+        query: String,
+    ): MemoryFact? {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return null
+
+        normalizeCanonicalKey(normalizedQuery)?.let { key ->
+            val matches = scopes
+                .mapNotNull { scope -> repo.findActiveFactByCanonicalKey(ownerId, scope, key) }
+                .distinctBy(MemoryFact::id)
+            return matches.singleOrNull()
+        }
+
+        val lowerQuery = normalizedQuery.lowercase()
+        val matches = scopes
+            .flatMap { scope ->
+                repo.listFacts(
+                    MemoryFactFilter(
+                        ownerId = ownerId,
+                        scope = scope,
+                        statuses = setOf(MemoryFactStatus.ACTIVE),
+                        limit = 100,
+                    )
+                )
+            }
+            .filter { fact ->
+                fact.title.trim().lowercase() == lowerQuery ||
+                    fact.canonicalKey?.trim()?.lowercase() == lowerQuery
+            }
+            .distinctBy(MemoryFact::id)
+        return matches.singleOrNull()
+    }
+
+    private suspend fun exactCandidates(
+        ownerId: MemoryOwnerId,
+        scopes: List<MemoryScope>,
+        query: String,
+        limit: Int,
+    ): List<MemoryFactSearchHit> {
+        val key = normalizeCanonicalKey(query)
+        val byKey = if (key != null) {
+            scopes.mapNotNull { repo.findActiveFactByCanonicalKey(ownerId, it, key) }
+        } else {
+            emptyList()
+        }
+        val identifiers = query.normalizedTerms().filter { it.length >= 3 }.take(8)
+        val byText = scopes
+            .flatMap { repo.listFacts(MemoryFactFilter(ownerId = ownerId, scope = it, limit = 100)) }
+            .filter { fact ->
+                identifiers.any { term ->
+                    fact.title.lowercase().contains(term) ||
+                        fact.body.lowercase().contains(term) ||
+                        fact.canonicalKey.orEmpty().lowercase().contains(term)
+                }
+            }
+        return (byKey + byText)
+            .distinctBy(MemoryFact::id)
+            .take(limit)
+            .mapIndexed { index, fact -> MemoryFactSearchHit(fact, 1f - index * 0.01f) }
+    }
+
+    private suspend fun denseCandidates(
+        ownerId: MemoryOwnerId,
+        scopes: List<MemoryScope>,
+        query: String,
+        limit: Int,
+    ): List<MemoryFactSearchHit> {
+        if (query.isBlank()) return emptyList()
+        val queryEmbedding = try {
+            embedder.embedQuery(query)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return repo.searchFacts(
+            ownerId = ownerId,
+            scopes = scopes,
+            model = embedder.model,
+            queryEmbedding = queryEmbedding,
+            limit = limit,
+        ).filter { it.score >= 0.15f }
+    }
+
+    private suspend fun priorityCandidates(
+        ownerId: MemoryOwnerId,
+        scopes: List<MemoryScope>,
+        query: String,
+        limit: Int,
+    ): List<MemoryFactSearchHit> {
+        val terms = query.normalizedTerms().toSet()
+        return scopes
+            .flatMap { scope ->
+                repo.listFacts(MemoryFactFilter(ownerId = ownerId, scope = scope, pinned = true, limit = limit))
+            }
+            .distinctBy(MemoryFact::id)
+            .mapNotNull { fact ->
+                val relevance = lexicalOverlap(terms, fact)
+                if (query.isBlank() || relevance > 0f) MemoryFactSearchHit(fact, 0.65f + relevance) else null
+            }
+            .sortedByDescending(MemoryFactSearchHit::score)
+            .take(limit)
+    }
+
+    private data class FusedCandidate(
+        val fact: MemoryFact,
+        val score: Double,
+        val sources: Set<String>,
+    )
+
+    private fun weightedRrf(vararg sources: Pair<String, Pair<Double, List<MemoryFactSearchHit>>>): List<FusedCandidate> {
+        val scores = linkedMapOf<String, Pair<MemoryFact, Double>>()
+        val sourceNames = linkedMapOf<String, MutableSet<String>>()
+        sources.forEach { (sourceName, weightedHits) ->
+            val (weight, hits) = weightedHits
+            hits.distinctBy { it.fact.id }.forEachIndexed { index, hit ->
+                val rank = index + 1
+                val increment = weight / (60.0 + rank)
+                val current = scores[hit.fact.id]?.second ?: 0.0
+                scores[hit.fact.id] = hit.fact to current + increment
+                sourceNames.getOrPut(hit.fact.id) { linkedSetOf() }.add(sourceName)
+            }
+        }
+        return scores.values
+            .map { (fact, score) -> FusedCandidate(fact, score, sourceNames.getValue(fact.id)) }
+            .sortedByDescending(FusedCandidate::score)
+    }
+
+    private fun heuristicScore(candidate: FusedCandidate, context: MemoryContext): Double {
+        val fact = candidate.fact
+        var score = candidate.score
+        score += fact.confidence.coerceIn(0f, 1f) * 0.04
+        score += fact.importance.coerceIn(0f, 1f) * 0.05
+        if (fact.pinned) score += 0.03
+        if (fact.scope.type == "project" && context.projectId?.value == fact.scope.id) score += 0.06
+        if (fact.scope.type == "session" && context.sessionId?.value == fact.scope.id) score += 0.04
+        return score
+    }
+
+    private fun Sequence<FusedCandidate>.takeForPrompt(limit: Int, tokenBudget: Int): Sequence<FusedCandidate> = sequence {
+        var used = 0
+        var count = 0
+        for (candidate in this@takeForPrompt) {
+            val tokens = estimatePromptTokens("${candidate.fact.title}: ${candidate.fact.body}")
+            if (count >= limit) break
+            if (used + tokens > tokenBudget && count > 0) continue
+            used += tokens
+            count++
+            yield(candidate)
+        }
+    }
+
+    private fun estimatePromptTokens(text: String): Int = (text.length / 4.0).roundToInt().coerceAtLeast(1)
+
+    private fun String.normalizedTerms(): List<String> =
+        lowercase().split(Regex("""[^\p{L}\p{N}_./:-]+""")).filter { it.isNotBlank() }
+
+    private fun lexicalOverlap(terms: Set<String>, fact: MemoryFact): Float {
+        if (terms.isEmpty()) return 0f
+        val factText = "${fact.title} ${fact.body} ${fact.canonicalKey.orEmpty()}".lowercase()
+        return terms.count { factText.contains(it) }.toFloat() / terms.size
+    }
+
+    private fun String.normalizedSubjectKey(): String? =
+        lowercase().normalizedTerms().filter { it.length >= 3 }.take(6).joinToString(".").ifBlank { null }
+
+    private fun String.removeForgetMarkers(): String {
+        val command = FORGET_COMMAND.find(this) ?: return trim()
+        return substring(command.range.last + 1).trim()
+    }
 
     private suspend fun <T> withSourceEventCleanup(sourceEventId: String, block: suspend () -> T): T = try {
         block()
-    } catch (error: Exception) {
-        runCatching { repo.deleteSourceEventIfUnused(sourceEventId) }
+    } catch (error: CancellationException) {
+        cleanupSourceEvent(sourceEventId)
         throw error
+    } catch (error: Exception) {
+        cleanupSourceEvent(sourceEventId)
+        throw error
+    }
+
+    private suspend fun cleanupSourceEvent(sourceEventId: String) {
+        try {
+            withContext(NonCancellable) {
+                repo.deleteSourceEventIfUnused(sourceEventId)
+            }
+        } catch (_: Exception) {
+            // Best-effort cleanup; keep the original write failure visible.
+        }
     }
 
     private fun NewMemoryFact.embeddingText(): String = embeddingText(title, body, kind, scope)
@@ -292,3 +636,7 @@ class MemoryService(
         appendLine("scope=${scope.type}:${scope.id}")
     }
 }
+
+private val FORGET_COMMAND = Regex(
+    """(?iuU)\b(?:forget(?:\s+about)?(?:\s+(?:that|what|this|it|everything|all\s+this))?|delete\s+(?:from\s+memory|this\s+memory)|remember\s+no\s+longer|забудь(?:,\s*что|\s+что|\s+(?:это|вс[её](?:\s+это)?|об\s+этом))?|удали\s+из\s+памяти|полностью\s+удали|больше\s+не\s+считай)\b[\s,:;-]*"""
+)

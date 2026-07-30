@@ -11,6 +11,7 @@ import ru.souz.llms.VoiceRecognitionProvider
 
 const val REGION_RU = "ru"
 const val REGION_EN = "en"
+const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 400_000L
 
 interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var gigaChatKey: String?
@@ -28,6 +29,7 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     override var regionProfile: String
     override var activeAgentId: AgentId
     override var gigaModel: LLMModel
+    var ambientAnalysisModel: LLMModel
     var useFewShotExamples: Boolean
     override var useStreaming: Boolean
     var notificationSoundEnabled: Boolean
@@ -45,21 +47,21 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var voiceRecognitionModel: VoiceRecognitionModel
     var mcpServersJson: String?
     var mcpServersFile: String?
-}
 
-fun SettingsProvider.hasKey(provider: LlmProvider): Boolean = when (provider) {
-    LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-    LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-    LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-    LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-    LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-    LlmProvider.LOCAL -> true
-    LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
-}
+    fun hasKey(provider: LlmProvider): Boolean = when (provider) {
+        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
+        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
+        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
+        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
+        LlmProvider.LOCAL -> true
+        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
+    }
 
-fun SettingsProvider.hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
-    VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
-    VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-    VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
-    VoiceRecognitionProvider.LOCAL_MACOS -> true
+    fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
+        VoiceRecognitionProvider.SALUTE_SPEECH -> !saluteSpeechKey.isNullOrBlank()
+        VoiceRecognitionProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
+        VoiceRecognitionProvider.OPENAI -> !openaiKey.isNullOrBlank()
+        VoiceRecognitionProvider.LOCAL_MACOS -> true
+    }
 }

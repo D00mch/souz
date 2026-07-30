@@ -25,7 +25,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileReader
 import java.nio.charset.StandardCharsets
-import java.util.*
 
 enum class ChartType {
     BAR, LINE, SCATTER, PIE
@@ -58,7 +57,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
     override val description: String = "Create a plot from a CSV or Excel file. " +
             "Handles paths with '~'. " +
             "Supports Bar, Line, Scatter, and Pie charts. " +
-            "Returns the path to the saved PNG image, which can be used in 'PresentationCreate'."
+            "Returns the path to the saved PNG image."
 
     override val fewShotExamples = listOf(
         FewShotExample(
@@ -92,7 +91,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
             throw ForbiddenFolder(outputFile.path)
         }
 
-        val extension = inputFile.name.substringAfterLast('.', "").lowercase(Locale.getDefault())
+        val extension = inputFile.name.substringAfterLast('.', "").lowercase()
 
         val dataResult = when (extension) {
             "csv" -> filesToolUtil.withReadableLocalPath(inputFile, meta) { localPath ->

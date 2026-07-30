@@ -27,9 +27,6 @@
     <string name="quick_action_documents_label">Документы</string>
     <string name="quick_action_documents_description">Создать или найти файл</string>
     <string name="quick_action_documents_message">Помоги в работе с файлами на компьютере</string>
-    <string name="quick_action_presentation_label">Презентация</string>
-    <string name="quick_action_presentation_description">Создать презентацию</string>
-    <string name="quick_action_presentation_message">Помоги создать презентацию</string>
     <string name="quick_action_analytics_label">Аналитика</string>
     <string name="quick_action_analytics_description">Графики и данные</string>
     <string name="quick_action_analytics_message">Помоги в работе с данными</string>
@@ -103,6 +100,13 @@
     <string name="setting_voice_input_review_desc">Вставлять распознанный текст в поле ввода чата вместо немедленной отправки</string>
     <string name="setting_language_profile_title">Региональный профиль</string>
     <string name="setting_language_profile_desc">В России доступны специальные модели</string>
+    <string name="setting_interface_language_title">Язык интерфейса</string>
+    <string name="setting_theme_title">Оформление</string>
+    <string name="setting_theme_system">Системная</string>
+    <string name="setting_theme_light">Светлая</string>
+    <string name="setting_theme_dark">Тёмная</string>
+    <string name="interface_language_ru_label">Русский</string>
+    <string name="interface_language_en_label">English</string>
     <string name="region_profile_ru_label">Русский (RU)</string>
     <string name="region_profile_en_label">English (EN)</string>
     <string name="label_voice_speed">Скорость речи</string>
@@ -167,6 +171,8 @@
     <string name="label_agent">Агент</string>
     <string name="agent_option_graph_title">Graph-агент</string>
     <string name="agent_option_graph_description">Классический графовый поток с итеративными вызовами инструментов и суммаризацией.</string>
+    <string name="agent_option_skills_graph_title">Skills Graph-агент</string>
+    <string name="agent_option_skills_graph_description">Графовый поток с поиском навыков, временным хранилищем знаний и запуском команд навыков.</string>
     <string name="agent_switch_dialog_title">Сменить активного агента?</string>
     <string name="agent_switch_dialog_message">Текущая работа будет отменена, а активный контекст беседы будет очищен.</string>
     <string name="agent_switch_dialog_confirm">Сменить</string>
@@ -206,17 +212,17 @@
 
     <!-- Memory Screen -->
     <string name="memory_title">Memory</string>
-    <string name="memory_subtitle">Управляйте сохранёнными фактами и просматривайте их подтверждения</string>
+    <string name="memory_subtitle">Сохранённые факты и контекст</string>
     <string name="memory_create">Создать факт</string>
     <string name="memory_loading">Загрузка воспоминаний...</string>
     <string name="memory_empty">Фактов памяти пока нет.</string>
     <string name="memory_section_pinned">Закрепленные</string>
     <string name="memory_section_other">Другие факты</string>
-    <string name="memory_filter_query">Поиск</string>
+    <string name="memory_filter_query">Поиск по фактам...</string>
     <string name="memory_filter_status">Статус</string>
     <string name="memory_filter_kind">Тип</string>
     <string name="memory_filter_scope">Контекст</string>
-    <string name="memory_filter_kind_all">Все типы</string>
+    <string name="memory_filter_kind_all">Все</string>
     <string name="memory_scope_all">Все контексты</string>
     <string name="memory_scope_global">Глобальный</string>
     <string name="memory_scope_chat_format">Чат: %s</string>
@@ -229,7 +235,7 @@
     <string name="memory_action_unpin">Открепить</string>
     <string name="memory_action_retire">В архив</string>
     <string name="memory_action_delete">Удалить</string>
-    <string name="memory_details_title">Детали факта</string>
+    <string name="memory_details_title">Детали</string>
     <string name="memory_details_loading">Загрузка деталей...</string>
     <string name="memory_details_select">Выберите факт для просмотра деталей.</string>
     <string name="memory_details_evidence">Подтверждения</string>
@@ -239,14 +245,14 @@
     <string name="memory_details_created_by">Создан</string>
     <string name="memory_details_created_at">Создан в</string>
     <string name="memory_details_updated_at">Обновлен в</string>
-    <string name="memory_details_slot_key">Ключ слота</string>
+    <string name="memory_details_slot_key">Канонический ключ</string>
     <string name="memory_details_supersedes">Заменяет факт</string>
     <string name="memory_editor_create_title">Создать факт памяти</string>
     <string name="memory_editor_edit_title">Редактировать факт памяти</string>
     <string name="memory_editor_title">Заголовок</string>
     <string name="memory_editor_body">Содержимое</string>
     <string name="memory_editor_kind">Тип</string>
-    <string name="memory_editor_slot_key">Ключ слота</string>
+    <string name="memory_editor_slot_key">Канонический ключ</string>
     <string name="memory_editor_pinned">Закреплен</string>
     <string name="memory_button_save">Сохранить</string>
     <string name="memory_button_saving">Сохранение...</string>
@@ -263,6 +269,20 @@
     <string name="memory_kind_project_rule">Правило проекта</string>
     <string name="memory_kind_episode_note">Эпизод</string>
     <string name="memory_kind_project_decision">Решение проекта</string>
+    <string name="memory_dreamer_title">Dreamer</string>
+    <string name="memory_dreamer_mode_off">Выкл</string>
+    <string name="memory_dreamer_mode_local">Локально</string>
+    <string name="memory_dreamer_model_auto">Автовыбор модели</string>
+    <string name="memory_dreamer_pending_blocked">Ожидают %1$d · Блок %2$d</string>
+    <string name="memory_dreamer_run">Запустить</string>
+    <string name="memory_dreamer_running">Запуск</string>
+    <string name="memory_dreamer_completed">Готово · %1$s</string>
+    <string name="memory_dreamer_retry">Повтор · %1$s</string>
+    <string name="memory_dreamer_no_changes">Без изменений · %1$s</string>
+    <string name="memory_dreamer_error">Ошибка %1$s</string>
+    <string name="memory_dreamer_block_disabled">выключен</string>
+    <string name="memory_dreamer_block_pending">нет задач</string>
+    <string name="memory_dreamer_block_actions">нет deterministic actions</string>
     <string name="memory_created_by_manual">Вручную</string>
     <string name="memory_created_by_auto">Авто</string>
     <string name="memory_created_by_system">Система</string>
@@ -297,6 +317,8 @@
     <string name="snack_logs_path_copied">Путь к логам скопирован</string>
     <string name="error_failed_open_privacy_policy">Не удалось открыть политику конфиденциальности</string>
     <string name="error_no_chat_model_configured">Добавьте API-ключ перед отправкой сообщения.</string>
+    <string name="error_failed_reveal_api_key">Не удалось показать API-ключ</string>
+    <string name="error_failed_save_api_key">Не удалось сохранить API-ключ</string>
     
     <!-- Calendars -->
     <string name="label_default_calendar">Календарь по умолчанию</string>
@@ -317,6 +339,7 @@
     <string name="model_picker_no_models">Нет доступных моделей</string>
     <string name="settings_models_configure">Настроить модели</string>
     <string name="settings_models_empty">Добавьте ключ GigaChat, Qwen или AI Tunnel, чтобы включить модели для этого профиля.</string>
+    <string name="label_ambient_analysis_model">Ambient модель</string>
     <string name="content_desc_select_agent">Выбрать агента</string>
     <string name="label_embeddings_model">Модель эмбеддингов</string>
     <string name="label_voice_recognition_model">Модель распознавания речи</string>
@@ -399,6 +422,14 @@
     <string name="voice_status_recording_started">Запись запущена</string>
     <string name="voice_status_processing_input">Обработка входа</string>
     <string name="voice_status_speech_not_recognized">Речь не распознана</string>
+    <string name="voice_error_microphone_busy_ambient">Микрофон занят ambient mode.</string>
+    <string name="ambient_error_missing_analysis_model">Сначала скачайте ambient модель в настройках.</string>
+    <string name="ambient_error_stt_unavailable">Ambient распознавание речи недоступно.</string>
+    <string name="ambient_error_microphone_unavailable">Микрофон недоступен для ambient mode.</string>
+    <string name="ambient_error_speech_permission_denied">Нет разрешения macOS Speech Recognition.</string>
+    <string name="ambient_suggestion_prompt">Помочь: «%s»?</string>
+    <string name="ambient_suggestion_reject">Не сейчас</string>
+    <string name="ambient_suggestion_accept">Сделать</string>
     <string name="voice_error_empty_audio">Аудио не записалось. Удерживайте кнопку микрофона чуть дольше и попробуйте снова.</string>
     <string name="voice_error_microphone_unavailable">Не удалось запустить запись с микрофона. Разрешите доступ в Настройки macOS &gt; Конфиденциальность и безопасность &gt; Микрофон и перезапустите приложение.</string>
     <string name="voice_error_missing_key">Добавьте ключ API для выбранной модели распознавания речи в Настройки > Мои ключи, чтобы использовать голосовые команды</string>
@@ -608,9 +639,8 @@
     <string name="chat_action_telegram_saved_messages">Сохраняю в Избранное Telegram</string>
     <string name="chat_action_take_screenshot">Делаю скриншот: %1$s</string>
     <string name="chat_action_start_screen_recording">Открываю запись экрана</string>
-    <string name="chat_action_presentation_create">Создаю презентацию: %1$s</string>
-    <string name="chat_action_presentation_read">Читаю презентацию: %1$s</string>
     <string name="chat_action_generic_tool">Запускаю инструмент: %1$s</string>
+    <string name="chat_action_skill">Использую навык: %1$s</string>
     <string name="chat_action_value_history">история</string>
     <string name="chat_action_value_bookmarks">закладки</string>
     <string name="chat_action_value_tabs">вкладки</string>

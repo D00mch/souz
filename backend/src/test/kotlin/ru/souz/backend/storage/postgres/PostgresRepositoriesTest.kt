@@ -19,7 +19,6 @@ import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Disabled
 import ru.souz.agent.AgentId
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationSession
@@ -55,29 +54,12 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 
-@Disabled
 class PostgresRepositoriesTest {
-    @Test
-    fun `fresh schema bootstrap applies postgres migrations in unique order and creates tool_calls`() {
-        val schema = newPostgresSchema("postgres_fresh_bootstrap")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
-
-        dataSource.use {
-            assertEquals(
-                listOf("1", "2", "3", "4", "5", "6"),
-                appliedMigrationVersions(it),
-            )
-            assertTrue(tableExists(it, "tool_calls"))
-            assertFalse(foreignKeyExists(it, "agent_executions", "user_message_id"))
-            assertFalse(foreignKeyExists(it, "agent_executions", "assistant_message_id"))
-            assertFalse(foreignKeyExists(it, "agent_events", "execution_id"))
-        }
-    }
 
     @Test
     fun `user settings repository tolerates legacy partial settings json`() = runTest {
         val schema = newPostgresSchema("postgres_legacy_settings_json")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
         val userRepository = PostgresUserRepository(dataSource)
         val settingsRepository = PostgresUserSettingsRepository(dataSource)
 
@@ -133,7 +115,7 @@ class PostgresRepositoriesTest {
     @Test
     fun `user settings repository saves and restores explicit created and updated timestamps`() = runTest {
         val schema = newPostgresSchema("postgres_user_settings_timestamps")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
         val userRepository = PostgresUserRepository(dataSource)
         val settingsRepository = PostgresUserSettingsRepository(dataSource)
         val settings = UserSettings(
@@ -200,7 +182,7 @@ class PostgresRepositoriesTest {
     @Test
     fun `provider key repository ignores invalid provider rows`() = runTest {
         val schema = newPostgresSchema("postgres_invalid_provider_rows")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
         val userRepository = PostgresUserRepository(dataSource)
         val repository = PostgresUserProviderKeyRepository(dataSource)
 
@@ -249,7 +231,7 @@ class PostgresRepositoriesTest {
     @Test
     fun `user repository upserts single user row and throttles last seen updates`() = runTest {
         val schema = newPostgresSchema("postgres_users")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres!!)
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
         val repository = PostgresUserRepository(dataSource)
 
         dataSource.use {
@@ -363,7 +345,7 @@ class PostgresRepositoriesTest {
         val userId = "opaque/user:42@example.com"
         val chat = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:00:00Z"))
 
-        postgresRepositories(schema, durableEvents = true).use { repositories ->
+        postgresRepositories(schema).use { repositories ->
             repositories.userRepository.ensureUser(userId)
             repositories.chatRepository.create(chat)
             val firstMessage = repositories.messageRepository.append(
@@ -444,7 +426,7 @@ class PostgresRepositoriesTest {
             assertEquals(listOf(firstEvent, secondEvent), repositories.eventRepository.listByChat(userId, chat.id))
         }
 
-        postgresRepositories(schema, durableEvents = true).use { repositories ->
+        postgresRepositories(schema).use { repositories ->
             val assistantPlaceholder = repositories.messageRepository.list(userId, chat.id).single { it.role == ChatRole.ASSISTANT }
             val execution = repositories.executionRepository.findActive(userId, chat.id)
             val option = repositories.optionRepository.listByExecution(userId, chat.id, execution!!.id).single()
@@ -497,7 +479,7 @@ class PostgresRepositoriesTest {
             assertEquals(3L, thirdEvent.seq)
         }
 
-        postgresRepositories(schema, durableEvents = true).use { repositories ->
+        postgresRepositories(schema).use { repositories ->
             val storedState = repositories.stateRepository.get(userId, chat.id)
             val execution = repositories.executionRepository.listByChat(userId, chat.id).single()
             val option = repositories.optionRepository.listByExecution(userId, chat.id, execution.id).single()
@@ -606,13 +588,13 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `durable event replay from db survives restart when enabled`() = runTest {
+    fun `durable event replay from db survives restart`() = runTest {
         val schema = newPostgresSchema("postgres_durable_events")
         val userId = "user-events"
         val chat = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T12:00:00Z"))
         val executionId = UUID.randomUUID()
 
-        postgresRepositories(schema, durableEvents = true).use { repositories ->
+        postgresRepositories(schema).use { repositories ->
             repositories.userRepository.ensureUser(userId)
             repositories.chatRepository.create(chat)
             repositories.eventRepository.append(
@@ -631,7 +613,7 @@ class PostgresRepositoriesTest {
             )
         }
 
-        postgresRepositories(schema, durableEvents = true).use { repositories ->
+        postgresRepositories(schema).use { repositories ->
             val service = AgentEventService(
                 chatRepository = repositories.chatRepository,
                 eventRepository = repositories.eventRepository,
@@ -701,11 +683,8 @@ class PostgresRepositoriesTest {
         }
     }
 
-    private fun postgresRepositories(
-        schema: String,
-        durableEvents: Boolean = false,
-    ): PostgresRepositoryBundle {
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema, durableEvents).postgres!!)
+    private fun postgresRepositories(schema: String): PostgresRepositoryBundle {
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
         return PostgresRepositoryBundle(
             dataSource = dataSource,
             userRepository = PostgresUserRepository(dataSource),

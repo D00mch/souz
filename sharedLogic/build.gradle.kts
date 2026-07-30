@@ -50,6 +50,7 @@ kotlin {
                 implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
                 implementation(libs.java.diffUtils)
                 implementation(libs.jsoup)
+                implementation(libs.re2j)
                 implementation(libs.slf4j.api)
             }
         }
@@ -75,6 +76,7 @@ kotlin {
                 implementation(libs.lucene.core)
                 implementation(libs.logback)
                 implementation(libs.slfj)
+                implementation(libs.slf4j.jcl)
                 implementation(libs.log4j.to.slf4j)
                 implementation("org.jetbrains.skiko:skiko-awt:0.9.22.2")
                 runtimeOnly(skikoAwtRuntimeModule())

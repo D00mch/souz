@@ -1,9 +1,11 @@
 package ru.souz.memory
 
 enum class ExplicitMemoryIntent {
-    SAVE,
-    SKIP,
-    NONE
+    NONE,
+    REMEMBER_SIGNAL,
+    DO_NOT_CAPTURE_THIS_TURN,
+    FORGET_EXISTING,
+    DELETE_EXISTING,
 }
 
 fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
@@ -16,7 +18,15 @@ fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
         "don't save",
         "do not save",
     )
-    if (negatives.any { normalized.contains(it) }) return ExplicitMemoryIntent.SKIP
+    if (negatives.any { normalized.contains(it) }) return ExplicitMemoryIntent.DO_NOT_CAPTURE_THIS_TURN
+
+    val deletes = listOf(
+        "удали из памяти",
+        "полностью удали",
+        "delete from memory",
+        "delete this memory",
+    )
+    if (deletes.any { normalized.contains(it) }) return ExplicitMemoryIntent.DELETE_EXISTING
 
     val positives = listOf(
         "запомни, что",
@@ -28,41 +38,29 @@ fun parseExplicitMemoryIntent(text: String): ExplicitMemoryIntent {
         "с этого момента",
         "не забудь",
     )
-    if (positives.any { normalized.contains(it) }) return ExplicitMemoryIntent.SAVE
-    if (normalized.isExplicitForgetIntent()) return ExplicitMemoryIntent.SKIP
+    if (positives.any { normalized.contains(it) }) return ExplicitMemoryIntent.REMEMBER_SIGNAL
+    if (normalized.isExplicitForgetIntent()) return ExplicitMemoryIntent.FORGET_EXISTING
     return ExplicitMemoryIntent.NONE
 }
 
 fun buildExplicitRememberCandidate(input: MemoryCaptureInput): MemoryFactCandidate? {
-    if (parseExplicitMemoryIntent(input.userMessage) != ExplicitMemoryIntent.SAVE) return null
+    if (parseExplicitMemoryIntent(input.userMessage) != ExplicitMemoryIntent.REMEMBER_SIGNAL) return null
     val body = input.userMessage.trim()
         .removeExplicitRememberMarkers()
         .takeIf(String::isNotBlank)
         ?: return null
     return MemoryFactCandidate(
         shouldSave = true,
-        kind = inferExplicitMemoryKind(body),
+        kind = MemoryFactKind.SEMANTIC,
         title = body.substringBefore('\n').substringBefore('.').trim().take(96).ifBlank { "Remembered note" },
         body = body,
-        scope = input.primaryScope,
-        slotKey = body.toMemorySlotKeyOrNull(),
+        requestedScope = RequestedMemoryScope.GLOBAL,
+        canonicalKey = null,
         confidence = 0.75f,
         evidenceText = input.userMessage.trim().take(240),
     )
 }
 
-private fun inferExplicitMemoryKind(text: String): MemoryFactKind {
-    val normalized = text.lowercase()
-    return when {
-        listOf("prefer", "предпоч", "хочу", "please use", "используй").any(normalized::contains) ->
-            MemoryFactKind.PREFERENCE
-        listOf("always", "всегда", "rule", "правило", "policy").any(normalized::contains) ->
-            MemoryFactKind.PROJECT_RULE
-        listOf("procedure", "workflow", "процед", "шаг").any(normalized::contains) ->
-            MemoryFactKind.PROCEDURE
-        else -> MemoryFactKind.SEMANTIC
-    }
-}
 
 private fun String.removeExplicitRememberMarkers(): String {
     val normalized = trim()
@@ -71,6 +69,8 @@ private fun String.removeExplicitRememberMarkers(): String {
         "remember",
         "from now on",
         "с этого момента",
+        "не забудь, что",
+        "не забудь",
         "запомни, что",
         "запомни",
         "запиши",
@@ -85,12 +85,6 @@ private fun String.removeExplicitRememberMarkers(): String {
         .trimStart(':', '-', ',', ' ')
 }
 
-private fun String.toMemorySlotKeyOrNull(): String? =
-    lowercase()
-        .replace(Regex("[^a-z0-9]+"), "_")
-        .trim('_')
-        .takeIf { it.length in 4..64 }
-
 private fun String.isExplicitForgetIntent(): Boolean {
     val trimmed = trim()
     if (trimmed == "forget" || trimmed == "забудь") return true
@@ -98,8 +92,11 @@ private fun String.isExplicitForgetIntent(): Boolean {
 }
 
 private val EXPLICIT_FORGET_PATTERNS = listOf(
+    Regex("""(?U)\bforget\s+(?:that|what|about)\b"""),
     Regex("""(?U)\bforget\s+(?:this|that|it|everything|all this)\b"""),
     Regex("""(?U)\bforget\s+about\s+(?:this|that|it)\b"""),
+    Regex("""(?U)\bзабудь,\s*что\b"""),
+    Regex("""(?U)\bзабудь\s+что\b"""),
     Regex("""(?U)\bзабудь\s+(?:это|все|всё|все это|всё это)\b"""),
     Regex("""(?U)\bзабудь\s+об\s+этом\b"""),
 )

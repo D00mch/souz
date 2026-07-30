@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import ru.souz.agent.session.GraphSession
 import ru.souz.agent.session.GraphStepRecord
 import ru.souz.ui.glassColors
+import ru.souz.ui.souzColors
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import kotlin.math.roundToInt
@@ -155,7 +156,6 @@ fun GraphVisualizationScreen(
         // Main Background
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = true
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header - Draggable area for window
@@ -309,13 +309,14 @@ fun SideDetailsPanel(
     onToggleSubgraph: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val colors = MaterialTheme.souzColors.graph
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black.copy(alpha = 0.5f))
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .background(colors.panelBackground)
+            .border(1.dp, colors.panelBorder, RoundedCornerShape(16.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -330,7 +331,7 @@ fun SideDetailsPanel(
             Text(
                 text = "SUBGRAPHS",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray,
+                color = colors.secondaryText,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -346,16 +347,16 @@ fun SideDetailsPanel(
                              else Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(16.dp))
                         },
                         colors = FilterChipDefaults.filterChipColors(
-                            containerColor = Color.White.copy(alpha = 0.05f),
-                            labelColor = Color.White,
-                            selectedContainerColor = Color(0xFF00E5FF).copy(alpha = 0.2f),
-                            selectedLabelColor = Color(0xFF00E5FF)
+                            containerColor = colors.itemBackground,
+                            labelColor = colors.primaryText,
+                            selectedContainerColor = colors.selectedItemBackground,
+                            selectedLabelColor = colors.selectedNodeContent,
                         )
                     )
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = colors.divider)
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -364,7 +365,7 @@ fun SideDetailsPanel(
                 Text(
                     text = "Select a node",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = colors.secondaryText,
                 )
             }
         } else {
@@ -372,16 +373,16 @@ fun SideDetailsPanel(
                 text = selectedNode.label,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = colors.primaryText,
             )
             Text(
                 text = "${selectedNode.visitCount} executions",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f)
+                color = colors.secondaryText,
             )
             
             Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = colors.divider)
             Spacer(modifier = Modifier.height(16.dp))
 
             Column(
@@ -408,6 +409,7 @@ fun ExpandableStepItem(
     isExpanded: Boolean,
     onToggle: () -> Unit
 ) {
+    val colors = MaterialTheme.souzColors.graph
     val clipboardManager = LocalClipboardManager.current
     var isCopied by remember { mutableStateOf(false) }
     val activeToolsDiff = remember(step.data) { extractActiveToolsDiff(step.data) }
@@ -459,8 +461,12 @@ fun ExpandableStepItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isExpanded) Color.White.copy(alpha = 0.08f) else Color.Transparent)
-            .border(1.dp, if (isExpanded) Color(0xFF00E5FF).copy(0.3f) else Color.White.copy(0.05f), RoundedCornerShape(8.dp))
+            .background(if (isExpanded) colors.selectedItemBackground else Color.Transparent)
+            .border(
+                1.dp,
+                if (isExpanded) colors.selectedNodeBorder.copy(alpha = 0.3f) else colors.panelBorder,
+                RoundedCornerShape(8.dp),
+            )
     ) {
         Row(
             modifier = Modifier
@@ -474,7 +480,7 @@ fun ExpandableStepItem(
                 text = "Execution #${step.stepIndex}",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.9f),
+                color = colors.primaryText,
                 modifier = Modifier.weight(1f)
             )
             
@@ -489,7 +495,7 @@ fun ExpandableStepItem(
                 Icon(
                     imageVector = if (isCopied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                     contentDescription = if (isCopied) "Copied" else "Copy content",
-                    tint = if (isCopied) Color(0xFF66BB6A) else Color.White.copy(alpha = 0.5f),
+                    tint = if (isCopied) colors.positiveText else colors.secondaryText,
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -497,7 +503,7 @@ fun ExpandableStepItem(
             Icon(
                 imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.6f),
+                tint = colors.secondaryText,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -514,13 +520,13 @@ fun ExpandableStepItem(
                     if (classifyStep) {
                         if (selectedCategories.isNotEmpty()) {
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("CATEGORIES", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                                Text("CATEGORIES", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                                 Text(
                                     text = selectedCategories.joinToString(", "),
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFFA5D6A7)
+                                        color = colors.outputText,
                                     )
                                 )
                             }
@@ -531,7 +537,7 @@ fun ExpandableStepItem(
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 "ACTIVE TOOLS CHANGED",
-                                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText),
                             )
                             if (activeToolsDiff.added.isNotEmpty()) {
                                 Text(
@@ -539,7 +545,7 @@ fun ExpandableStepItem(
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFFB9F6CA)
+                                        color = colors.positiveText,
                                     )
                                 )
                             }
@@ -549,7 +555,7 @@ fun ExpandableStepItem(
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFFFF8A80)
+                                        color = colors.negativeText,
                                     )
                                 )
                             }
@@ -560,31 +566,31 @@ fun ExpandableStepItem(
                     val addedHistory = step.addedHistory
 
                     if (!classifyStep && !outputSummary.isNullOrEmpty() && step.inputSummary != outputSummary) {
-                        Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                        Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                         DiffContent(original = step.inputSummary, revised = outputSummary)
                     } else if (!classifyStep || outputSummary.isNullOrEmpty()) {
                         // Input
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                             Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                             Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                              Text(
                                  text = step.inputSummary.trim().ifEmpty { "-" }, 
                                  style = TextStyle(
                                      fontFamily = FontFamily.Monospace, 
                                      fontSize = 11.sp, 
-                                     color = Color(0xFF81D4FA)
+                                     color = colors.inputText,
                                  )
                              )
                         }
 
                         if (!outputSummary.isNullOrEmpty() && !classifyStep) {
                              Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                 Text("OUTPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                                 Text("OUTPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                                  Text(
                                      text = outputSummary.trim(), 
                                      style = TextStyle(
                                          fontFamily = FontFamily.Monospace, 
                                          fontSize = 11.sp, 
-                                         color = Color(0xFFA5D6A7)
+                                         color = colors.outputText,
                                      )
                                  )
                              }
@@ -593,12 +599,12 @@ fun ExpandableStepItem(
 
                     if (!addedHistory.isNullOrEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                            Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFF101010), RoundedCornerShape(4.dp))
-                                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                    .background(colors.codeBackground, RoundedCornerShape(4.dp))
+                                    .border(1.dp, colors.panelBorder, RoundedCornerShape(4.dp))
                                     .padding(8.dp)
                             ) {
                                 Text(
@@ -606,7 +612,7 @@ fun ExpandableStepItem(
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 10.sp,
-                                        color = Color(0xFFFFCC80)
+                                        color = colors.historyText,
                                     )
                                 )
                             }
@@ -620,6 +626,7 @@ fun ExpandableStepItem(
 
 @Composable
 fun DiffContent(original: String, revised: String) {
+    val colors = MaterialTheme.souzColors.graph
     val diff = remember(original, revised) {
         val generator = com.github.difflib.text.DiffRowGenerator.create()
             .showInlineDiffs(true)
@@ -638,7 +645,7 @@ fun DiffContent(original: String, revised: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+            .background(colors.codeBackground, RoundedCornerShape(4.dp))
             .padding(8.dp)
     ) {
         diff.forEach { row ->
@@ -648,19 +655,19 @@ fun DiffContent(original: String, revised: String) {
              if (oldLine == newLine) {
                  Text(
                      text = "  $oldLine",
-                     style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color.Gray.copy(0.5f))
+                     style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.secondaryText),
                  )
              } else {
                  if (oldLine.isNotBlank()) {
                      Text(
                         text = "- $oldLine",
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFFFF8A80))
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.negativeText),
                      )
                  }
                  if (newLine.isNotBlank()) {
                      Text(
                         text = "+ $newLine",
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFFB9F6CA))
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.positiveText),
                      )
                  }
              }

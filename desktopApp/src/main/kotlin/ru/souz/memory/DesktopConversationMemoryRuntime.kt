@@ -1,51 +1,67 @@
 package ru.souz.memory
 
+import ru.souz.db.ConfigStore
+import java.util.UUID
+
+interface DesktopMemoryProjectContextProvider {
+    fun currentProjectId(): ProjectId?
+}
+
+object NoopDesktopMemoryProjectContextProvider : DesktopMemoryProjectContextProvider {
+    override fun currentProjectId(): ProjectId? = null
+}
+
+class DesktopMemoryOwnerProvider : MemoryOwnerProvider {
+    override fun currentOwnerId(): MemoryOwnerId {
+        ConfigStore.get<String>(OWNER_KEY)?.trim()?.takeIf(String::isNotBlank)?.let { return MemoryOwnerId(it) }
+        val generated = UUID.randomUUID().toString()
+        ConfigStore.put(OWNER_KEY, generated)
+        return MemoryOwnerId(generated)
+    }
+
+    private companion object {
+        private const val OWNER_KEY = "MEMORY_LOCAL_OWNER_ID"
+    }
+}
+
+class DesktopMemoryContextProvider(
+    private val projectContextProvider: DesktopMemoryProjectContextProvider = NoopDesktopMemoryProjectContextProvider,
+    private val ownerProvider: MemoryOwnerProvider = DesktopMemoryOwnerProvider(),
+) {
+    fun current(conversationId: String?): MemoryContext = MemoryContext(
+        ownerId = ownerProvider.currentOwnerId(),
+        conversationId = conversationId?.let(::ConversationId),
+        sessionId = conversationId?.let(::MemorySessionId),
+        projectId = projectContextProvider.currentProjectId(),
+    )
+}
+
 class DesktopConversationMemoryRuntime(
     private val memoryService: MemoryService,
     private val captureService: MemoryCaptureService,
+    private val contextProvider: DesktopMemoryContextProvider = DesktopMemoryContextProvider(),
 ) : ConversationMemoryRuntime {
-    override suspend fun retrieveMemory(
-        userMessage: String,
-        conversationId: String?,
-    ): MemoryPromptAugmentationResult {
-        val block = memoryService.retrieveForPrompt(
-            scopes = scopes(conversationId),
-            query = userMessage,
+    override suspend fun retrieveMemory(request: MemoryRetrievalRequest): MemoryRetrievalResult {
+        val context = contextProvider.current(request.context.conversationId?.value)
+        return memoryService.retrieveMemory(
+            request.copy(context = context),
+            overrideScopes = context.allowedRetrievalScopes(),
         )
-        if (block.rendered.isBlank()) return MemoryPromptAugmentationResult(renderedBlock = "", emptyList())
-        val facts = block.hits.map { hit ->
-            MemoryPromptFact(
-                factId = hit.fact.id,
-                scope = "${hit.fact.scope.type}:${hit.fact.scope.id}",
-                score = hit.score,
-            )
-        }
-        return MemoryPromptAugmentationResult(renderedBlock = block.rendered, facts = facts)
     }
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
+        val context = contextProvider.current(input.conversationId)
         captureService.captureAfterTurn(
             MemoryCaptureInput(
-                scopes = scopes(input.conversationId),
-                primaryScope = primaryScope(input.conversationId),
+                context = context,
+                scopes = context.allowedRetrievalScopes(),
                 userMessage = input.userMessage,
                 assistantMessage = input.assistantMessage,
+                evidence = input.evidence,
                 conversationId = input.conversationId,
                 userMessageId = input.userMessageId,
                 assistantMessageId = input.assistantMessageId,
             )
         )
-    }
-
-    private fun scopes(conversationId: String?): List<MemoryScope> = buildList {
-        add(GLOBAL_SCOPE)
-        conversationId?.let { add(MemoryScope(type = "chat", id = it)) }
-    }
-
-    private fun primaryScope(conversationId: String?): MemoryScope =
-        conversationId?.let { MemoryScope(type = "chat", id = it) } ?: GLOBAL_SCOPE
-
-    private companion object {
-        val GLOBAL_SCOPE = MemoryScope(type = "global", id = "global")
     }
 }

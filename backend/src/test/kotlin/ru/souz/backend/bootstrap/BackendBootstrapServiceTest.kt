@@ -11,8 +11,7 @@ import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.security.RequestIdentity
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
-import ru.souz.backend.storage.StorageMode
-import ru.souz.backend.storage.memory.MemoryUserSettingsRepository
+import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -53,7 +52,6 @@ class BackendBootstrapServiceTest {
             ),
             toolCatalog = testToolCatalog(),
             featureFlags = BackendFeatureFlags(),
-            storageMode = StorageMode.MEMORY,
             localModelAvailability = unavailableLocalModels(),
             userProviderKeyRepository = providerKeyRepository,
         )

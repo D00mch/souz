@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,17 +66,6 @@ import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.chat_search_placeholder
 
 private const val ChatSearchAnimationDurationMillis = 200
-
-private val ChatSearchPanelBackground = Color(0x0FFFFFFF)
-private val ChatSearchPanelBorder = Color(0x14FFFFFF)
-private val ChatSearchInputText = Color(0xE6FFFFFF)
-private val ChatSearchPlaceholder = Color(0x4DFFFFFF)
-private val ChatSearchBadgeBackground = Color(0x14FFFFFF)
-private val ChatSearchBadgeBorder = Color(0x0FFFFFFF)
-private val ChatSearchBadgeText = Color(0x99FFFFFF)
-private val ChatSearchButton = Color(0x66FFFFFF)
-private val ChatSearchButtonHoverBackground = Color(0x14FFFFFF)
-private val ChatSearchButtonHover = Color(0xB3FFFFFF)
 
 @Stable
 class ChatSearchPanelState {
@@ -121,6 +111,7 @@ internal fun CompactChatSearchPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = MaterialTheme.colorScheme
     var isRendered by remember { mutableStateOf(panelState.isOpen) }
     var fieldValue by rememberSaveable { mutableStateOf(TextFieldValue(searchState.query)) }
     val focusRequester = remember { FocusRequester() }
@@ -174,10 +165,10 @@ internal fun CompactChatSearchPanel(
             .height(32.dp)
             .alpha(panelAlpha)
             .clip(RoundedCornerShape(8.dp))
-            .background(ChatSearchPanelBackground)
+            .background(colors.surface)
             .border(
                 width = 1.dp,
-                color = ChatSearchPanelBorder,
+                color = colors.outlineVariant,
                 shape = RoundedCornerShape(8.dp),
             )
             .padding(horizontal = 8.dp),
@@ -191,9 +182,9 @@ internal fun CompactChatSearchPanel(
                 onQueryChange(updated.text)
             },
             singleLine = true,
-            cursorBrush = SolidColor(ChatSearchInputText),
+            cursorBrush = SolidColor(colors.onSurface),
             textStyle = TextStyle(
-                color = ChatSearchInputText,
+                color = colors.onSurface,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
             ),
@@ -229,7 +220,7 @@ internal fun CompactChatSearchPanel(
                     if (fieldValue.text.isEmpty()) {
                         Text(
                             text = placeholderText,
-                            color = ChatSearchPlaceholder,
+                            color = colors.onSurfaceVariant,
                             fontSize = 12.sp,
                         )
                     }
@@ -242,10 +233,10 @@ internal fun CompactChatSearchPanel(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
-                    .background(ChatSearchBadgeBackground)
+                    .background(colors.surfaceVariant)
                     .border(
                         width = 1.dp,
-                        color = ChatSearchBadgeBorder,
+                        color = colors.outlineVariant,
                         shape = RoundedCornerShape(4.dp),
                     )
                     .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -256,7 +247,7 @@ internal fun CompactChatSearchPanel(
                     } else {
                         "0/0"
                     },
-                    color = ChatSearchBadgeText,
+                    color = colors.onSurfaceVariant,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                 )
@@ -292,8 +283,16 @@ private fun SearchPanelIconButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
-    val background = if (isHovered && enabled) ChatSearchButtonHoverBackground else Color.Transparent
-    val iconTint = if (isHovered && enabled) ChatSearchButtonHover else ChatSearchButton
+    val background = if (isHovered && enabled) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+    } else {
+        Color.Transparent
+    }
+    val iconTint = if (isHovered && enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
     Box(
         modifier = Modifier

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import ru.souz.llms.LLMModel
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.LocalModelDownloadPromptUi
 import ru.souz.ui.common.LocalModelDownloadStateUi
 
@@ -174,7 +175,7 @@ data class TelegramHostAuthState(
 )
 
 interface TelegramSettingsHost {
-    val authState: StateFlow<TelegramHostAuthState>
+    val authState: Flow<TelegramHostAuthState>
 
     fun isSupported(): Boolean
     suspend fun submitPhoneNumber(phoneNumber: String)
@@ -239,12 +240,24 @@ object NoopPrivacyPolicyOpener : PrivacyPolicyOpener {
 
 interface SettingsHostPreferences {
     var voiceSpeed: Int
+    var useEnglishInterface: Boolean
+    val themeMode: StateFlow<ThemeMode>
+    fun setThemeMode(mode: ThemeMode)
     fun isLocalMacOsSpeechAvailable(): Boolean
 }
 
 class InMemorySettingsHostPreferences(
     override var voiceSpeed: Int = 230,
+    override var useEnglishInterface: Boolean = false,
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     private val localMacOsSpeechAvailable: Boolean = false,
 ) : SettingsHostPreferences {
+    private val themeModeState = MutableStateFlow(themeMode)
+    override val themeMode: StateFlow<ThemeMode> = themeModeState
+
+    override fun setThemeMode(mode: ThemeMode) {
+        themeModeState.value = mode
+    }
+
     override fun isLocalMacOsSpeechAvailable(): Boolean = localMacOsSpeechAvailable
 }

@@ -12,12 +12,16 @@ import kotlin.test.assertEquals
 
 class DesktopConversationMemoryRuntimeTest {
     @Test
-    fun `captureCompletedTurn uses chat scope as primary scope when conversation id is present`() = runTest {
+    fun `captureCompletedTurn does not use desktop conversation id as chat scope`() = runTest {
         val memoryService = mockk<MemoryService>(relaxed = true)
         val captureService = mockk<MemoryCaptureService>()
         val inputSlot = slot<MemoryCaptureInput>()
         coEvery { captureService.captureAfterTurn(capture(inputSlot)) } returns emptyList()
-        val runtime = DesktopConversationMemoryRuntime(memoryService, captureService)
+        val runtime = DesktopConversationMemoryRuntime(
+            memoryService,
+            captureService,
+            DesktopMemoryContextProvider(NoopDesktopMemoryProjectContextProvider),
+        )
 
         runtime.captureCompletedTurn(
             CompletedTurnMemoryInput(
@@ -26,14 +30,33 @@ class DesktopConversationMemoryRuntimeTest {
                 assistantMessageId = "assistant-1",
                 userMessage = "remember this",
                 assistantMessage = "ok",
+                evidence = listOf(
+                    CompletedTurnEvidence(
+                        kind = CompletedTurnEvidenceKind.TOOL_OUTPUT,
+                        sourceName = "ToolTelegramGetHistory",
+                        text = "Tool output with next steps.",
+                    )
+                ),
             )
         )
 
-        assertEquals(MemoryScope("chat", "chat-42"), inputSlot.captured.primaryScope)
+        assertEquals("chat-42", inputSlot.captured.context.conversationId?.value)
+        assertEquals("chat-42", inputSlot.captured.context.sessionId?.value)
         assertEquals(
-            listOf(MemoryScope("global", "global"), MemoryScope("chat", "chat-42")),
-            inputSlot.captured.scopes,
+            listOf(
+                CompletedTurnEvidence(
+                    kind = CompletedTurnEvidenceKind.TOOL_OUTPUT,
+                    sourceName = "ToolTelegramGetHistory",
+                    text = "Tool output with next steps.",
+                )
+            ),
+            inputSlot.captured.evidence,
         )
+        assertEquals(
+            listOf("global", "session"),
+            inputSlot.captured.scopes.map { it.type },
+        )
+        assertEquals("chat-42", inputSlot.captured.scopes.single { it.type == "session" }.id)
         coVerify(exactly = 1) { captureService.captureAfterTurn(any()) }
     }
 }

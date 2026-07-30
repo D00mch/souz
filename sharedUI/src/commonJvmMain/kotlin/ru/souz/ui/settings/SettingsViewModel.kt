@@ -1,6 +1,8 @@
 package ru.souz.ui.settings
 
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -21,11 +23,12 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.codex.CodexOAuthState
 import ru.souz.ui.BaseViewModel
+import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
-import ru.souz.ui.common.usecases.ApiKeyValues
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.ExternalLinkOpener
 import ru.souz.ui.host.LocalModelUiHost
@@ -42,6 +45,7 @@ import org.jetbrains.compose.resources.getString
 
 class SettingsViewModel(
     override val di: DI,
+    private val settingsDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1),
 ) : BaseViewModel<SettingsState, SettingsEvent, SettingsEffect>(), DIAware {
 
     private val l = LoggerFactory.getLogger(SettingsViewModel::class.java)
@@ -58,30 +62,33 @@ class SettingsViewModel(
     private val settingsHostPreferences: SettingsHostPreferences by di.instance()
     private val externalLinkOpener: ExternalLinkOpener by di.instance()
     private val speechPlayer: UiSpeechPlayer by di.instance()
-    private val pendingKeyDrafts = mutableMapOf<DeferredSettingsKey, String>()
-    private val pendingKeySaveJobs = mutableMapOf<DeferredSettingsKey, Job>()
+    private val pendingKeyDrafts = mutableMapOf<ApiKeyField, String>()
+    private val pendingKeySaveJobs = mutableMapOf<ApiKeyField, Job>()
     private val pendingTextSettingDrafts = mutableMapOf<DeferredTextSetting, String>()
     private val pendingTextSettingSaveJobs = mutableMapOf<DeferredTextSetting, Job>()
     private val codexOAuthService: CodexOAuthService by di.instance()
     private var codexOAuthJob: Job? = null
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private var pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
 
     init {
         viewModelScope.launch {
+            settingsHostPreferences.themeMode.collectLatest { themeMode ->
+                setState { copy(themeMode = themeMode) }
+            }
+        }
+        viewModelScope.launch(settingsDispatcher) {
+            val host = telegramSettingsHost
+            val isSupported = host.isSupported()
+            val isBotActive = host.isControlBotActive()
             setState {
                 copy(
-                    isTelegramSupported = telegramSettingsHost.isSupported(),
-                    isTelegramBotActive = telegramSettingsHost.isControlBotActive(),
+                    isTelegramSupported = isSupported,
+                    isTelegramBotActive = isBotActive,
                 )
             }
-            refreshFromProvider()
-            fetchBalance()
-            fetchCalendars()
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            telegramSettingsHost.authState.collectLatest { auth ->
+            host.authState.collectLatest { auth ->
                 setState {
                     copy(
                         telegramAuthStep = when (auth.step) {
@@ -98,6 +105,9 @@ class SettingsViewModel(
                         telegramPasswordHint = auth.passwordHint,
                         telegramAuthBusy = auth.isBusy,
                         telegramAuthError = auth.errorMessage,
+                        telegramAuthInfo = if (
+                            auth.errorMessage != null || auth.step == TelegramHostAuthStep.CONNECTED
+                        ) null else telegramAuthInfo,
                         telegramCodeInput = if (auth.step == TelegramHostAuthStep.CONNECTED) "" else telegramCodeInput,
                         telegramPasswordInput = if (auth.step == TelegramHostAuthStep.CONNECTED) "" else telegramPasswordInput,
                     )
@@ -111,15 +121,7 @@ class SettingsViewModel(
     override suspend fun handleEvent(event: SettingsEvent) {
         l.debug("handleEvent: {}", event)
         when(event) {
-            is InputGigaChatKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.GIGA_CHAT, event.key)
-            }
-            is InputQwenChatKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.QWEN_CHAT, event.key)
-            }
-            is InputSaluteSpeechKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.SALUTE_SPEECH, event.key)
-            }
+            is InputApiKey -> handleDeferredKeyInput(event.field, event.value)
             is OpenProviderLink -> {
                 externalLinkOpener.open(event.provider.url)
                     .onFailure { error ->
@@ -157,15 +159,14 @@ class SettingsViewModel(
                     fetchBalance()
                 }
             }
-            is InputAiTunnelKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.AI_TUNNEL, event.key)
+            is InputUseEnglishInterface -> {
+                settingsHostPreferences.useEnglishInterface = event.enabled
+                setState { copy(useEnglishInterface = event.enabled) }
             }
-            is InputAnthropicKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.ANTHROPIC, event.key)
+            is SelectThemeMode -> {
+                settingsHostPreferences.setThemeMode(event.mode)
             }
-            is InputOpenAiKey -> {
-                handleDeferredKeyInput(DeferredSettingsKey.OPENAI, event.key)
-            }
+            is ToggleApiKeyVisibility -> toggleApiKeyVisibility(event.field)
             StartCodexOAuth -> {
                 codexOAuthJob?.cancel()
                 codexOAuthJob = viewModelScope.launch {
@@ -221,6 +222,7 @@ class SettingsViewModel(
                 if (event.model !in currentState.availableLlmModels) return
                 val downloadPrompt = localModelUiHost.downloadPromptFor(event.model)
                 if (downloadPrompt != null) {
+                    pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
                     setState {
                         copy(
                             localModelDownloadPrompt = downloadPrompt,
@@ -230,6 +232,21 @@ class SettingsViewModel(
                     return
                 }
                 applySelectedModel(event.model)
+            }
+            is SelectAmbientAnalysisModel -> {
+                if (event.model !in currentState.availableAmbientAnalysisModels) return
+                val downloadPrompt = localModelUiHost.downloadPromptFor(event.model)
+                if (downloadPrompt != null) {
+                    pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AMBIENT_ANALYSIS
+                    setState {
+                        copy(
+                            localModelDownloadPrompt = downloadPrompt,
+                            localModelDownloadState = null,
+                        )
+                    }
+                    return
+                }
+                applySelectedAmbientAnalysisModel(event.model)
             }
             ConfirmLocalModelDownload -> confirmLocalModelDownload()
             CancelLocalModelDownload -> cancelLocalModelDownload()
@@ -304,17 +321,30 @@ class SettingsViewModel(
                 }
                 setState { copy(voiceSpeedInput = normalized, voiceSpeed = newSpeed ?: voiceSpeed) }
             }
-            is InputTelegramPhone -> setState { copy(telegramPhoneInput = event.value) }
-            is InputTelegramCode -> setState { copy(telegramCodeInput = event.value) }
-            is InputTelegramPassword -> setState { copy(telegramPasswordInput = event.value) }
+            is InputTelegramPhone -> setState {
+                copy(
+                    telegramPhoneInput = event.value.filter { it.isDigit() || it == '+' },
+                    telegramAuthError = null,
+                    telegramAuthInfo = null,
+                )
+            }
+            is InputTelegramCode -> setState {
+                copy(telegramCodeInput = event.value, telegramAuthError = null, telegramAuthInfo = null)
+            }
+            is InputTelegramPassword -> setState {
+                copy(telegramPasswordInput = event.value, telegramAuthError = null, telegramAuthInfo = null)
+            }
             SubmitTelegramPhone -> submitTelegramPhone()
             SubmitTelegramCode -> submitTelegramCode()
             SubmitTelegramPassword -> submitTelegramPassword()
+            RequestTelegramCodeAgain -> requestTelegramCodeAgain()
+            RestartTelegramAuth -> restartTelegramAuth()
             TelegramLogout -> telegramLogout()
             RefreshFromProvider -> {
                 flushPendingTextSettingSaves()
-                flushPendingKeySaves()
+                flushPendingKeySaves(refreshAfterSave = false)
                 refreshFromProvider()
+                fetchBalance()
             }
             ChooseVoice -> {
                 runCatching { speechPlayer.chooseVoice() }
@@ -330,10 +360,9 @@ class SettingsViewModel(
             OpenPrivacyPolicy -> openPrivacyPolicy()
             RefreshBalance -> fetchBalance()
             GoToMain -> {
-                flushPendingTextSettingSaves()
-                flushPendingKeySaves()
-                send(SettingsEffect.CloseScreen)
+                leaveSettings(SettingsEffect.CloseScreen)
             }
+            OpenTools -> leaveSettings(SettingsEffect.OpenTools)
             is SelectDefaultCalendar -> {
                 keysProvider.defaultCalendar = event.name
                 setState { copy(defaultCalendar = event.name) }
@@ -357,58 +386,87 @@ class SettingsViewModel(
         }
     }
 
-    private fun createTelegramBot() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching {
-            setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramSettingsHost.createControlBot(forceNew = true)
-        }.onSuccess {
-            setState { copy(telegramAuthBusy = false, isTelegramBotActive = true) }
-            telegramSettingsHost.restartControlBotPolling()
+    private suspend fun createTelegramBot() {
+        runTelegramOperation(
+            fallbackError = getString(Res.string.error_failed_to_create_bot),
+            action = {
+                createControlBot(forceNew = true)
+                restartControlBotPolling()
+            },
+        ) {
+            setState { copy(isTelegramBotActive = true) }
             send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_created_success_message)))
-        }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_create_bot)
-            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
 
-    private fun checkBotBeforeDisconnect() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching {
-            setState { copy(telegramAuthBusy = true, telegramAuthError = null) }
-            telegramSettingsHost.fetchActiveBotUsernameFromBotFather()
-        }.onSuccess { activeUsername ->
+    private suspend fun checkBotBeforeDisconnect() {
+        runTelegramOperation(
+            fallbackError = getString(Res.string.error_failed_to_delete_bot),
+            action = {
+                val activeUsername = fetchActiveBotUsernameFromBotFather()
+                if (activeUsername == null) {
+                    deleteControlBot(forceNew = true)
+                    stopControlBotPolling()
+                }
+                activeUsername
+            },
+        ) { activeUsername ->
             if (activeUsername != null) {
-                setState { 
+                setState {
                     copy(
-                        telegramAuthBusy = false,
                         showBotDeleteConfirmation = true,
-                        botNameToDelete = activeUsername
+                        botNameToDelete = activeUsername,
                     )
                 }
             } else {
-                disconnectBot()
+                setState { copy(isTelegramBotActive = false) }
+                send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_deleted_success_message)))
             }
-        }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
-            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
         }
     }
 
-    private fun disconnectBot() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching {
-            setState { copy(telegramAuthBusy = true, telegramAuthError = null, showBotDeleteConfirmation = false) }
-            telegramSettingsHost.deleteControlBot(forceNew = true)
-        }.onSuccess {
-            telegramSettingsHost.stopControlBotPolling()
-            setState { copy(isTelegramBotActive = false, telegramAuthBusy = false) }
+    private suspend fun disconnectBot() {
+        runTelegramOperation(
+            fallbackError = getString(Res.string.error_failed_to_delete_bot),
+            action = {
+                deleteControlBot(forceNew = true)
+                stopControlBotPolling()
+            },
+        ) {
+            setState { copy(isTelegramBotActive = false, showBotDeleteConfirmation = false) }
             send(SettingsEffect.ShowSnackbar(getString(Res.string.bot_deleted_success_message)))
-        }.onFailure { error ->
-            val errorMsg = error.message ?: getString(Res.string.error_failed_to_delete_bot)
-            setState { copy(telegramAuthError = errorMsg, telegramAuthBusy = false) }
+        }
+    }
+
+    private suspend fun <T> runTelegramOperation(
+        fallbackError: String,
+        action: suspend TelegramSettingsHost.() -> T,
+        onSuccess: suspend (T) -> Unit = {},
+    ) {
+        if (currentState.telegramOperationBusy || currentState.telegramAuthBusy) return
+        setState {
+            copy(
+                telegramOperationBusy = true,
+                telegramAuthError = null,
+                telegramAuthInfo = null,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                onSuccess(withContext(settingsDispatcher) { telegramSettingsHost.action() })
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                setState { copy(telegramAuthError = error.message ?: fallbackError) }
+            } finally {
+                setState { copy(telegramOperationBusy = false) }
+            }
         }
     }
 
     override suspend fun handleSideEffect(effect: SettingsEffect) = when (effect) {
         SettingsEffect.CloseScreen,
+        SettingsEffect.OpenTools,
         SettingsEffect.NotifyOnSystemPrompt,
         is SettingsEffect.ShowSnackbar -> l.debug("ignore effect: {}", effect)
     }
@@ -439,6 +497,23 @@ class SettingsViewModel(
         )
     }
 
+    private suspend fun applySelectedAmbientAnalysisModel(model: LLMModel) {
+        keysProvider.ambientAnalysisModel = model
+        val effectiveModel = keysProvider.ambientAnalysisModel
+        setState {
+            copy(
+                ambientAnalysisModel = effectiveModel,
+                localModelDownloadPrompt = null,
+            )
+        }
+        localModelPreloadJob = localModelUiHost.schedulePreload(
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            currentJob = localModelPreloadJob,
+            model = effectiveModel,
+        )
+    }
+
     private suspend fun confirmLocalModelDownload() {
         localModelDownloadJob = localModelUiHost.startDownload(
             scope = viewModelScope,
@@ -454,7 +529,11 @@ class SettingsViewModel(
                 }
             },
             onSuccess = { prompt ->
-                applySelectedModel(prompt.model)
+                when (pendingLocalModelSelectionTarget) {
+                    LocalModelSelectionTarget.AGENT -> applySelectedModel(prompt.model)
+                    LocalModelSelectionTarget.AMBIENT_ANALYSIS -> applySelectedAmbientAnalysisModel(prompt.model)
+                }
+                pendingLocalModelSelectionTarget = LocalModelSelectionTarget.AGENT
                 setState { copy(localModelDownloadState = null) }
             },
             onError = { error ->
@@ -487,18 +566,22 @@ class SettingsViewModel(
         )
     }
 
-    private suspend fun refreshFromProvider() {
+    private suspend fun refreshFromProvider() = withContext(settingsDispatcher) {
         val voiceSpeed = settingsHostPreferences.voiceSpeed
-        val gigaChatKey = pendingKeyDrafts[DeferredSettingsKey.GIGA_CHAT] ?: keysProvider.gigaChatKey.orEmpty()
-        val qwenChatKey = pendingKeyDrafts[DeferredSettingsKey.QWEN_CHAT] ?: keysProvider.qwenChatKey.orEmpty()
-        val aiTunnelKey = pendingKeyDrafts[DeferredSettingsKey.AI_TUNNEL] ?: keysProvider.aiTunnelKey.orEmpty()
-        val anthropicKey = pendingKeyDrafts[DeferredSettingsKey.ANTHROPIC] ?: keysProvider.anthropicKey.orEmpty()
-        val openAiKey = pendingKeyDrafts[DeferredSettingsKey.OPENAI] ?: keysProvider.openaiKey.orEmpty()
-        val saluteSpeechKey = pendingKeyDrafts[DeferredSettingsKey.SALUTE_SPEECH] ?: (keysProvider.saluteSpeechKey ?: "")
         val mcpServersJson = pendingTextSettingDrafts[DeferredTextSetting.MCP_SERVERS_JSON] ?: (keysProvider.mcpServersJson ?: "")
         val supportEmail = pendingTextSettingDrafts[DeferredTextSetting.SUPPORT_EMAIL]
             ?: (keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL)
         val apiKeyAvailability = apiKeyAvailabilityUseCase.availability()
+        val apiKeyFields = apiKeyAvailability.fields
+            .asSequence()
+            .filterNot { it == ApiKeyField.CODEX }
+            .associateWith { field ->
+                when (val current = currentState.apiKeyFields[field]) {
+                    is ApiKeyFieldState.Editable,
+                    ApiKeyFieldState.Revealing -> current
+                    else -> initialApiKeyState(field)
+                }
+            }
 
         val availableLlmModels = keysProvider.availableLlmModels(llmBuildProfile)
         val configuredLlmModel = keysProvider.gigaModel
@@ -506,6 +589,15 @@ class SettingsViewModel(
             configured = configuredLlmModel,
             available = availableLlmModels,
         ) { keysProvider.defaultLlmModel(llmBuildProfile) }
+        val availableAmbientAnalysisModels = keysProvider.availableAmbientAnalysisModels(llmBuildProfile)
+        val configuredAmbientAnalysisModel = keysProvider.ambientAnalysisModel
+        val selectedAmbientAnalysisModel = pickConfiguredOrDefault(
+            configured = configuredAmbientAnalysisModel,
+            available = availableAmbientAnalysisModels,
+        ) { keysProvider.defaultAmbientAnalysisModel(llmBuildProfile) }
+        if (selectedAmbientAnalysisModel != configuredAmbientAnalysisModel) {
+            keysProvider.ambientAnalysisModel = selectedAmbientAnalysisModel
+        }
         val downloadPrompt = localModelUiHost.downloadPromptFor(selectedLlmModel)
         val selectedPrompt = if (downloadPrompt == null) {
             agentFacade.setModel(selectedLlmModel)
@@ -545,27 +637,16 @@ class SettingsViewModel(
             keysProvider.voiceRecognitionModel = selectedVoiceRecognitionModel
         }
 
-        val codexConnected = !keysProvider.codexAccessToken.isNullOrBlank()
-        val configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(
-            values = ApiKeyValues(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openaiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
-                codexConnected = codexConnected,
-            ),
+        val codexConnected = keysProvider.hasKey(LlmProvider.CODEX)
+        val configuredKeysCount = configuredKeysCount(
+            apiKeyFields,
+            codexConnected,
+            apiKeyAvailability.fields,
         )
 
         setState {
             copy(
-                gigaChatKey = gigaChatKey,
-                qwenChatKey = qwenChatKey,
-                aiTunnelKey = aiTunnelKey,
-                anthropicKey = anthropicKey,
-                openaiKey = openAiKey,
-                saluteSpeechKey = saluteSpeechKey,
+                apiKeyFields = apiKeyFields,
                 codexConnected = codexConnected,
                 availableApiKeyFields = apiKeyAvailability.fields,
                 availableApiKeyProviders = apiKeyAvailability.providers,
@@ -577,14 +658,18 @@ class SettingsViewModel(
                 notificationSoundEnabled = keysProvider.notificationSoundEnabled,
                 voiceInputReviewEnabled = keysProvider.voiceInputReviewEnabled,
                 useEnglishVersion = keysProvider.regionProfile == REGION_EN,
+                useEnglishInterface = settingsHostPreferences.useEnglishInterface,
+                themeMode = settingsHostPreferences.themeMode.value,
                 safeModeEnabled = keysProvider.safeModeEnabled,
                 activeAgentId = activeAgentId,
                 availableAgents = availableAgents,
                 gigaModel = selectedLlmModel,
+                ambientAnalysisModel = selectedAmbientAnalysisModel,
                 embeddingsModel = selectedEmbeddingsModel,
                 voiceRecognitionModel = selectedVoiceRecognitionModel,
                 localModelDownloadPrompt = downloadPrompt,
                 availableLlmModels = availableLlmModels,
+                availableAmbientAnalysisModels = availableAmbientAnalysisModels,
                 availableEmbeddingsModels = availableEmbeddingsModels,
                 availableVoiceRecognitionModels = availableVoiceRecognitionModels,
                 requestTimeoutMillis = keysProvider.requestTimeoutMillis,
@@ -602,7 +687,8 @@ class SettingsViewModel(
         }
     }
 
-    private suspend fun handleDeferredKeyInput(field: DeferredSettingsKey, value: String) {
+    private suspend fun handleDeferredKeyInput(field: ApiKeyField, value: String) {
+        if (currentState.apiKeyFields[field] !is ApiKeyFieldState.Editable) return
         pendingKeyDrafts[field] = value
         setDeferredKeyState(field, value)
         pendingKeySaveJobs.remove(field)?.cancel()
@@ -613,31 +699,29 @@ class SettingsViewModel(
         }
     }
 
-    private suspend fun setDeferredKeyState(field: DeferredSettingsKey, value: String) {
+    private suspend fun setDeferredKeyState(field: ApiKeyField, value: String) {
         setState {
-            val updated = when (field) {
-                DeferredSettingsKey.GIGA_CHAT -> copy(gigaChatKey = value)
-                DeferredSettingsKey.QWEN_CHAT -> copy(qwenChatKey = value)
-                DeferredSettingsKey.AI_TUNNEL -> copy(aiTunnelKey = value)
-                DeferredSettingsKey.ANTHROPIC -> copy(anthropicKey = value)
-                DeferredSettingsKey.OPENAI -> copy(openaiKey = value)
-                DeferredSettingsKey.SALUTE_SPEECH -> copy(saluteSpeechKey = value)
-            }
-            updated.copy(
-                configuredKeysCount = apiKeyAvailabilityUseCase.configuredKeysCount(updated.toApiKeyValues()),
+            val current = apiKeyFields[field] as? ApiKeyFieldState.Editable
+                ?: return@setState this
+            val updatedFields = apiKeyFields + (
+                field to current.copy(value = value)
+            )
+            copy(
+                apiKeyFields = updatedFields,
+                configuredKeysCount = configuredKeysCount(updatedFields, codexConnected),
             )
         }
     }
 
-    private suspend fun persistDeferredKeySave(field: DeferredSettingsKey) {
+    private suspend fun persistDeferredKeySave(field: ApiKeyField) {
         val value = pendingKeyDrafts[field] ?: return
-        withContext(Dispatchers.IO) {
-            applyDeferredKeyToProvider(field, value)
-        }
+        val wasConfigured = hasApiKey(field)
+        if (!persistApiKey(field, value)) return
+        val configurationChanged = wasConfigured != hasApiKey(field)
         if (pendingKeyDrafts[field] == value) {
             pendingKeyDrafts.remove(field)
         }
-        if (field.requiresRefreshAfterSave) {
+        if (field.requiresRefreshAfterSave && configurationChanged) {
             flushPendingSystemPromptSave()
             refreshFromProvider()
         }
@@ -646,7 +730,7 @@ class SettingsViewModel(
         }
     }
 
-    private suspend fun flushPendingKeySaves() {
+    private suspend fun flushPendingKeySaves(refreshAfterSave: Boolean = true) {
         if (pendingKeyDrafts.isEmpty() && pendingKeySaveJobs.isEmpty()) return
 
         val jobs = pendingKeySaveJobs.values.toList()
@@ -656,26 +740,140 @@ class SettingsViewModel(
         val draftsToPersist = pendingKeyDrafts.toMap()
         if (draftsToPersist.isEmpty()) return
 
-        withContext(Dispatchers.IO) {
-            draftsToPersist.forEach { (field, value) ->
-                applyDeferredKeyToProvider(field, value)
-            }
+        val saveResults = draftsToPersist.mapNotNull { (field, value) ->
+            val wasConfigured = hasApiKey(field)
+            if (!persistApiKey(field, value)) return@mapNotNull null
+            PendingKeySaveResult(
+                field = field,
+                value = value,
+                configurationChanged = wasConfigured != hasApiKey(field),
+            )
         }
-
-        draftsToPersist.forEach { (field, value) ->
+        saveResults.forEach { (field, value) ->
             if (pendingKeyDrafts[field] == value) {
                 pendingKeyDrafts.remove(field)
             }
         }
-
-        if (draftsToPersist.keys.any { it.requiresRefreshAfterSave }) {
-            flushPendingSystemPromptSave()
-            refreshFromProvider()
-        }
-        if (draftsToPersist.keys.any { it.requiresBalanceRefreshAfterSave }) {
-            fetchBalance()
+        if (refreshAfterSave && saveResults.isNotEmpty()) {
+            if (saveResults.any { it.field.requiresRefreshAfterSave && it.configurationChanged }) {
+                flushPendingSystemPromptSave()
+                refreshFromProvider()
+            }
+            if (saveResults.any { it.field.requiresBalanceRefreshAfterSave }) {
+                fetchBalance()
+            }
         }
     }
+
+    private suspend fun toggleApiKeyVisibility(field: ApiKeyField) {
+        if (field == ApiKeyField.CODEX || field !in currentState.availableApiKeyFields) return
+        when (val state = currentState.apiKeyFields[field] ?: initialApiKeyState(field)) {
+            ApiKeyFieldState.StoredHidden -> revealApiKey(field)
+
+            ApiKeyFieldState.Revealing -> Unit
+
+            is ApiKeyFieldState.Editable -> {
+                if (state.revealed) {
+                    flushPendingKeySave(field)
+                    updateApiKeyField(field, initialApiKeyState(field))
+                } else {
+                    updateApiKeyField(field, state.copy(revealed = true))
+                }
+            }
+        }
+    }
+
+    private suspend fun revealApiKey(field: ApiKeyField) {
+        updateApiKeyField(field, ApiKeyFieldState.Revealing)
+        try {
+            updateApiKeyField(
+                field,
+                ApiKeyFieldState.Editable(value = readApiKey(field), revealed = true),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            l.warn("Failed to reveal API key for {}", field, error)
+            updateApiKeyField(field, ApiKeyFieldState.Editable("", revealed = true))
+            send(SettingsEffect.ShowSnackbar(getString(Res.string.error_failed_reveal_api_key)))
+        }
+    }
+
+    private suspend fun flushPendingKeySave(field: ApiKeyField) {
+        pendingKeySaveJobs.remove(field)?.cancelAndJoin()
+        persistDeferredKeySave(field)
+    }
+
+    private suspend fun persistApiKey(field: ApiKeyField, value: String): Boolean = try {
+        withContext(settingsDispatcher) {
+            val storedValue = value.takeUnless(String::isBlank)
+            when (field) {
+                ApiKeyField.GIGA_CHAT -> keysProvider.gigaChatKey = storedValue
+                ApiKeyField.QWEN_CHAT -> keysProvider.qwenChatKey = storedValue
+                ApiKeyField.AI_TUNNEL -> keysProvider.aiTunnelKey = storedValue
+                ApiKeyField.ANTHROPIC -> keysProvider.anthropicKey = storedValue
+                ApiKeyField.OPENAI -> keysProvider.openaiKey = storedValue
+                ApiKeyField.SALUTE_SPEECH -> keysProvider.saluteSpeechKey = storedValue
+                ApiKeyField.CODEX -> error("Codex credentials are OAuth-controlled")
+            }
+        }
+        true
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        l.warn("Failed to persist API key for {}", field, error)
+        send(SettingsEffect.ShowSnackbar(getString(Res.string.error_failed_save_api_key)))
+        false
+    }
+
+    private suspend fun readApiKey(field: ApiKeyField): String = withContext(settingsDispatcher) {
+        when (field) {
+            ApiKeyField.GIGA_CHAT -> keysProvider.gigaChatKey
+            ApiKeyField.QWEN_CHAT -> keysProvider.qwenChatKey
+            ApiKeyField.AI_TUNNEL -> keysProvider.aiTunnelKey
+            ApiKeyField.ANTHROPIC -> keysProvider.anthropicKey
+            ApiKeyField.OPENAI -> keysProvider.openaiKey
+            ApiKeyField.SALUTE_SPEECH -> keysProvider.saluteSpeechKey
+            ApiKeyField.CODEX -> error("Codex credentials are OAuth-controlled")
+        } ?: error("Configured API key could not be read")
+    }
+
+    private fun initialApiKeyState(field: ApiKeyField): ApiKeyFieldState =
+        if (hasApiKey(field)) ApiKeyFieldState.StoredHidden else ApiKeyFieldState.Editable("", false)
+
+    private fun hasApiKey(field: ApiKeyField): Boolean = when (field) {
+        ApiKeyField.GIGA_CHAT -> keysProvider.hasKey(LlmProvider.GIGA)
+        ApiKeyField.QWEN_CHAT -> keysProvider.hasKey(LlmProvider.QWEN)
+        ApiKeyField.AI_TUNNEL -> keysProvider.hasKey(LlmProvider.AI_TUNNEL)
+        ApiKeyField.ANTHROPIC -> keysProvider.hasKey(LlmProvider.ANTHROPIC)
+        ApiKeyField.OPENAI -> keysProvider.hasKey(LlmProvider.OPENAI)
+        ApiKeyField.SALUTE_SPEECH -> keysProvider.hasKey(VoiceRecognitionProvider.SALUTE_SPEECH)
+        ApiKeyField.CODEX -> keysProvider.hasKey(LlmProvider.CODEX)
+    }
+
+    private suspend fun leaveSettings(effect: SettingsEffect) {
+        setState { copy(apiKeyFields = apiKeyFields.mapValues { (_, state) -> state.concealed() }) }
+        flushPendingKeySaves()
+        flushPendingTextSettingSaves()
+        send(effect)
+    }
+
+    private suspend fun updateApiKeyField(field: ApiKeyField, state: ApiKeyFieldState) {
+        setState {
+            val updatedFields = apiKeyFields + (field to state)
+            copy(
+                apiKeyFields = updatedFields,
+                configuredKeysCount = configuredKeysCount(updatedFields, codexConnected),
+            )
+        }
+    }
+
+    private fun configuredKeysCount(
+        fields: Map<ApiKeyField, ApiKeyFieldState>,
+        codexConnected: Boolean,
+        availableFields: Set<ApiKeyField> = currentState.availableApiKeyFields,
+    ): Int = fields.values.count(ApiKeyFieldState::isConfigured) +
+        if (codexConnected && ApiKeyField.CODEX in availableFields) 1 else 0
 
     private suspend fun handleDeferredTextSettingInput(field: DeferredTextSetting, value: String) {
         pendingTextSettingDrafts[field] = value
@@ -725,7 +923,12 @@ class SettingsViewModel(
         jobs.forEach { it.cancelAndJoin() }
 
         val fieldsToPersist = pendingTextSettingDrafts.keys.toList()
-        fieldsToPersist.forEach { field -> persistDeferredTextSettingSave(field) }
+        fieldsToPersist.forEach { field ->
+            runCatching { persistDeferredTextSettingSave(field) }.onFailure { error ->
+                if (error is CancellationException) throw error
+                l.warn("Failed to save $field", error)
+            }
+        }
     }
 
     private suspend fun flushPendingSystemPromptSave() {
@@ -742,26 +945,6 @@ class SettingsViewModel(
         pendingTextSettingDrafts.remove(DeferredTextSetting.SYSTEM_PROMPT)
     }
 
-    private fun applyDeferredKeyToProvider(field: DeferredSettingsKey, value: String) {
-        when (field) {
-            DeferredSettingsKey.GIGA_CHAT -> keysProvider.gigaChatKey = value
-            DeferredSettingsKey.QWEN_CHAT -> keysProvider.qwenChatKey = value
-            DeferredSettingsKey.AI_TUNNEL -> keysProvider.aiTunnelKey = value
-            DeferredSettingsKey.ANTHROPIC -> keysProvider.anthropicKey = value
-            DeferredSettingsKey.OPENAI -> keysProvider.openaiKey = value
-            DeferredSettingsKey.SALUTE_SPEECH -> keysProvider.saluteSpeechKey = value
-        }
-    }
-
-    private fun SettingsState.toApiKeyValues(): ApiKeyValues = ApiKeyValues(
-        gigaChatKey = gigaChatKey,
-        qwenChatKey = qwenChatKey,
-        aiTunnelKey = aiTunnelKey,
-        anthropicKey = anthropicKey,
-        openaiKey = openaiKey,
-        saluteSpeechKey = saluteSpeechKey,
-    )
-
     private fun <T> pickConfiguredOrDefault(
         configured: T,
         available: List<T>,
@@ -773,6 +956,7 @@ class SettingsViewModel(
     }
 
     private fun fetchCalendars() = viewModelScope.launch(Dispatchers.IO) {
+        if (currentState.isLoadingCalendars) return@launch
         setState { copy(isLoadingCalendars = true) }
 
         val result = runCatching {
@@ -847,7 +1031,7 @@ class SettingsViewModel(
 
         when (currentState.gigaModel.provider) {
             LlmProvider.GIGA -> {
-                if (currentState.gigaChatKey.isBlank()) {
+                if (!keysProvider.hasKey(LlmProvider.GIGA)) {
                     val errorMsg = getString(Res.string.error_gigachat_key_missing)
                     setState {
                         copy(
@@ -947,57 +1131,89 @@ class SettingsViewModel(
         }
     }
 
-    private fun submitTelegramPhone() = viewModelScope.launch(Dispatchers.IO) {
+    private suspend fun submitTelegramPhone() {
         val phone = currentState.telegramPhoneInput.trim()
         if (phone.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_phone)
-            setState { copy(telegramAuthError = errorMsg) }
-            return@launch
+            setTelegramAuthError(getString(Res.string.error_enter_phone))
+            return
         }
 
-        runCatching { telegramSettingsHost.submitPhoneNumber(phone) }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_request_code)
-                setState { copy(telegramAuthError = errorMsg) }
-            }
+        runTelegramOperation(
+            action = { submitPhoneNumber(phone) },
+            fallbackError = getString(Res.string.error_failed_request_code),
+        )
     }
 
-    private fun submitTelegramCode() = viewModelScope.launch(Dispatchers.IO) {
+    private suspend fun submitTelegramCode() {
         val code = currentState.telegramCodeInput.trim()
         if (code.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_code)
-            setState { copy(telegramAuthError = errorMsg) }
-            return@launch
+            setTelegramAuthError(getString(Res.string.error_enter_code))
+            return
         }
 
-        runCatching { telegramSettingsHost.submitLoginCode(code) }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_code)
-                setState { copy(telegramAuthError = errorMsg) }
-            }
+        runTelegramOperation(
+            action = { submitLoginCode(code) },
+            fallbackError = getString(Res.string.error_failed_verify_code),
+        )
     }
 
-    private fun submitTelegramPassword() = viewModelScope.launch(Dispatchers.IO) {
+    private suspend fun submitTelegramPassword() {
         val password = currentState.telegramPasswordInput
         if (password.isBlank()) {
-            val errorMsg = getString(Res.string.error_enter_password)
-            setState { copy(telegramAuthError = errorMsg) }
-            return@launch
+            setTelegramAuthError(getString(Res.string.error_enter_password))
+            return
         }
 
-        runCatching { telegramSettingsHost.submitTwoFaPassword(password) }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_verify_password)
-                setState { copy(telegramAuthError = errorMsg) }
-            }
+        runTelegramOperation(
+            action = { submitTwoFaPassword(password) },
+            fallbackError = getString(Res.string.error_failed_verify_password),
+        )
     }
 
-    private fun telegramLogout() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching { telegramSettingsHost.logout() }
-            .onFailure { error ->
-                val errorMsg = error.message ?: getString(Res.string.error_failed_logout)
-                setState { copy(telegramAuthError = errorMsg) }
+    private suspend fun requestTelegramCodeAgain() {
+        val phone = currentState.telegramPhoneInput.trim()
+        if (phone.isBlank()) {
+            setTelegramAuthError(getString(Res.string.error_enter_phone))
+            return
+        }
+
+        runTelegramOperation(
+            action = { requestCodeAgain(phone) },
+            fallbackError = getString(Res.string.error_failed_request_code),
+            onSuccess = {
+                val message = getString(Res.string.telegram_info_code_requested_again)
+                setState {
+                    copy(
+                        telegramCodeInput = "",
+                        telegramPasswordInput = "",
+                        telegramAuthInfo = message,
+                    )
+                }
+            },
+        )
+    }
+
+    private suspend fun restartTelegramAuth() = runTelegramOperation(
+        action = { cancelAuth() },
+        fallbackError = getString(Res.string.error_failed_request_code),
+        onSuccess = {
+            setState {
+                copy(
+                    telegramCodeInput = "",
+                    telegramPasswordInput = "",
+                    telegramAuthInfo = null,
+                )
             }
+        },
+    )
+
+    private suspend fun telegramLogout() = runTelegramOperation(
+        action = { logout() },
+        fallbackError = getString(Res.string.error_failed_logout),
+    )
+
+    private suspend fun setTelegramAuthError(message: String) {
+        setState { copy(telegramAuthError = message, telegramAuthInfo = null) }
     }
 
     override fun onCleared() {
@@ -1005,26 +1221,22 @@ class SettingsViewModel(
         localModelPreloadJob?.cancel()
     }
 
-    private enum class DeferredSettingsKey {
-        GIGA_CHAT,
-        QWEN_CHAT,
-        AI_TUNNEL,
-        ANTHROPIC,
-        OPENAI,
-        SALUTE_SPEECH;
-
-        val requiresRefreshAfterSave: Boolean
-            get() = this != SALUTE_SPEECH
-
-        val requiresBalanceRefreshAfterSave: Boolean
-            get() = this == GIGA_CHAT || this == QWEN_CHAT
-    }
-
     private enum class DeferredTextSetting {
         MCP_SERVERS_JSON,
         SUPPORT_EMAIL,
         SYSTEM_PROMPT,
     }
+
+    private enum class LocalModelSelectionTarget {
+        AGENT,
+        AMBIENT_ANALYSIS,
+    }
+
+    private data class PendingKeySaveResult(
+        val field: ApiKeyField,
+        val value: String,
+        val configurationChanged: Boolean,
+    )
 
     companion object {
         private const val KEY_INPUT_SAVE_DEBOUNCE_MS = 400L
@@ -1039,3 +1251,25 @@ private fun CodexOAuthState.toUiState(): CodexOAuthUiState = when (this) {
     is CodexOAuthState.Success -> CodexOAuthUiState.Done
     is CodexOAuthState.Error -> CodexOAuthUiState.Error(message)
 }
+
+private fun ApiKeyFieldState.isConfigured(): Boolean = when (this) {
+    ApiKeyFieldState.StoredHidden,
+    ApiKeyFieldState.Revealing -> true
+    is ApiKeyFieldState.Editable -> value.isNotBlank()
+}
+
+private fun ApiKeyFieldState.concealed(): ApiKeyFieldState = when (this) {
+    ApiKeyFieldState.StoredHidden -> this
+    ApiKeyFieldState.Revealing -> ApiKeyFieldState.StoredHidden
+    is ApiKeyFieldState.Editable -> if (value.isBlank()) {
+        copy(revealed = false)
+    } else {
+        ApiKeyFieldState.StoredHidden
+    }
+}
+
+private val ApiKeyField.requiresRefreshAfterSave: Boolean
+    get() = this != ApiKeyField.SALUTE_SPEECH && this != ApiKeyField.CODEX
+
+private val ApiKeyField.requiresBalanceRefreshAfterSave: Boolean
+    get() = this == ApiKeyField.GIGA_CHAT || this == ApiKeyField.QWEN_CHAT

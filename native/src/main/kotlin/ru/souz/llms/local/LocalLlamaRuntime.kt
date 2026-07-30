@@ -7,6 +7,7 @@ import kotlin.math.ceil
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +58,7 @@ class LocalLlamaRuntime(
             requestModel = body.model,
             usage = nativeResult.toUsage(),
             nativeFinishReason = nativeResult.finishReason,
+            allowRawOutput = body.prefersPlainTextLocalOutput(),
         )
     }
 
@@ -72,6 +74,7 @@ class LocalLlamaRuntime(
                     requestModel = body.model,
                     usage = result.toUsage(),
                     nativeFinishReason = result.finishReason,
+                    allowRawOutput = body.prefersPlainTextLocalOutput(),
                 )
             }.getOrElse { error ->
                 LLMResponse.Chat.Error(
@@ -303,9 +306,11 @@ class LocalLlamaRuntime(
     ): NativeGenerationResult {
         val requestJson = restJsonMapper.writeValueAsString(generationRequest)
         return suspendCancellableCoroutine { cont ->
+            val nativeOperationStarted = CompletableDeferred<Unit>()
             val job = scope.launch {
                 runCatching {
                     runtimeOperationMutex.withLock {
+                        nativeOperationStarted.complete(Unit)
                         if (stream) {
                             bridge.generateStream(runtime, modelHandle, requestJson) { event ->
                                 l.debug("Local native stream event: {}", event)
@@ -327,7 +332,9 @@ class LocalLlamaRuntime(
             }
 
             cont.invokeOnCancellation {
-                cancelActiveRequest()
+                if (nativeOperationStarted.isCompleted) {
+                    cancelActiveRequest()
+                }
                 job.cancel()
             }
         }

@@ -159,6 +159,10 @@ enum class LLMModel(
     LocalQwen3_4B_Instruct_2507("Local Qwen3 4B Instruct", "local-qwen3-4b-instruct-2507", LlmProvider.LOCAL),
     LocalGemma4_E2B_It("Local Gemma 4 E2B Instruct", "local-gemma-4-e2b-it", LlmProvider.LOCAL),
     LocalGemma4_E4B_It("Local Gemma 4 E4B Instruct", "local-gemma-4-e4b-it", LlmProvider.LOCAL),
+    CodexGpt56Sol("GPT-5.6 Sol (Codex)", "gpt-5.6-sol", LlmProvider.CODEX),
+    CodexGpt56Terra("GPT-5.6 Terra (Codex)", "gpt-5.6-terra", LlmProvider.CODEX),
+    CodexGpt56Luna("GPT-5.6 Luna (Codex)", "gpt-5.6-luna", LlmProvider.CODEX),
+    CodexGpt55("GPT-5.5 (Codex)", "gpt-5.5", LlmProvider.CODEX),
     CodexGpt54("GPT-5.4 (Codex)", "gpt-5.4", LlmProvider.CODEX),
     CodexGpt53("GPT-5.3 Codex", "gpt-5.3-codex", LlmProvider.CODEX),
 }
@@ -191,6 +195,11 @@ enum class VoiceRecognitionModel(
 }
 
 object LLMRequest {
+    enum class LocalOutputFormat {
+        ENVELOPE,
+        RAW,
+    }
+
     data class Chat(
         val model: String = LLMModel.Max.alias,
         val messages: List<Message>,
@@ -201,6 +210,9 @@ object LLMRequest {
         val stream: Boolean = false,
         val maxTokens: Int = DEFAULT_MAX_TOKENS,
         @field:JsonProperty("update_interval") val updateInterval: Int? = 0,
+        @get:JsonIgnore
+        @field:JsonIgnore
+        val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
     ) {
         /**
          * OpenAI expects function to provide call IDs, but Giga and Qwen does not.

@@ -42,7 +42,6 @@ import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PictureAsPdf
-import androidx.compose.material.icons.rounded.PresentToAll
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.TableChart
@@ -114,9 +113,6 @@ import souz.sharedui.generated.resources.quick_action_documents_message
 import souz.sharedui.generated.resources.quick_action_mail_description
 import souz.sharedui.generated.resources.quick_action_mail_label
 import souz.sharedui.generated.resources.quick_action_mail_message
-import souz.sharedui.generated.resources.quick_action_presentation_description
-import souz.sharedui.generated.resources.quick_action_presentation_label
-import souz.sharedui.generated.resources.quick_action_presentation_message
 import souz.sharedui.generated.resources.quick_action_search_description
 import souz.sharedui.generated.resources.quick_action_search_label
 import souz.sharedui.generated.resources.quick_action_search_message
@@ -844,13 +840,6 @@ private fun sharedEmptyChatQuickActions() = listOf(
         labelRes = Res.string.quick_action_documents_label,
         descriptionRes = Res.string.quick_action_documents_description,
         messageRes = Res.string.quick_action_documents_message,
-    ),
-    SharedQuickAction(
-        id = "presentation",
-        icon = Icons.Rounded.PresentToAll,
-        labelRes = Res.string.quick_action_presentation_label,
-        descriptionRes = Res.string.quick_action_presentation_description,
-        messageRes = Res.string.quick_action_presentation_message,
     ),
     SharedQuickAction(
         id = "analytics",

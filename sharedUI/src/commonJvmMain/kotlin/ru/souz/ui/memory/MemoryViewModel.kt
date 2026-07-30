@@ -1,9 +1,18 @@
 package ru.souz.ui.memory
 
+import kotlinx.coroutines.CancellationException
 import org.kodein.di.DI
 import org.kodein.di.DIAware
+import org.kodein.di.direct
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
+import ru.souz.memory.LegacyMemoryOwnerProvider
+import ru.souz.memory.MemoryMaintenanceController
+import ru.souz.memory.MemoryMaintenanceMode
+import ru.souz.memory.NoopMemoryMaintenanceController
+import ru.souz.memory.MemoryOwnerProvider
 import ru.souz.memory.MemoryService
+import ru.souz.memory.normalizeCanonicalKey
 import ru.souz.ui.BaseViewModel
 
 class MemoryViewModel(
@@ -11,6 +20,10 @@ class MemoryViewModel(
 ) : BaseViewModel<MemoryUiState, MemoryAction, MemoryEffect>(), DIAware {
 
     private val memoryService: MemoryService by di.instance()
+    private val ownerProvider: MemoryOwnerProvider =
+        di.direct.instanceOrNull<MemoryOwnerProvider>() ?: LegacyMemoryOwnerProvider
+    private val maintenanceController: MemoryMaintenanceController =
+        di.direct.instanceOrNull<MemoryMaintenanceController>() ?: NoopMemoryMaintenanceController
 
     override fun initialState(): MemoryUiState = MemoryUiState()
 
@@ -19,6 +32,7 @@ class MemoryViewModel(
     override suspend fun handleEvent(event: MemoryAction) {
         when (event) {
             MemoryAction.Load -> loadFacts()
+            MemoryAction.RefreshDreamerStatus -> refreshMaintenanceStatus()
             is MemoryAction.ChangeFilters -> changeFilters(event.filters)
             MemoryAction.OpenCreateDialog -> setState { copy(editor = newMemoryEditorState(), error = null) }
             is MemoryAction.OpenEditDialog -> openEditDialog(event.factId)
@@ -32,6 +46,9 @@ class MemoryViewModel(
             MemoryAction.CancelConfirmAction -> setState { copy(confirm = null) }
             MemoryAction.CloseDialog -> setState { copy(editor = null) }
             MemoryAction.ClearError -> setState { copy(error = null) }
+            is MemoryAction.SelectDreamerMode -> selectDreamerMode(event.mode)
+            is MemoryAction.SelectDreamerModel -> selectDreamerModel(event.modelAlias)
+            MemoryAction.RunDreamerNow -> runDreamerNow()
         }
     }
 
@@ -39,8 +56,8 @@ class MemoryViewModel(
 
     private suspend fun loadFacts() {
         setState { copy(isLoading = true, error = null) }
-        runCatching {
-            memoryService.listFacts(currentState.filters.toDomainFilter())
+        catchingNonCancellation(onCancellation = { setState { copy(isLoading = false) } }) {
+            memoryService.listFacts(currentState.filters.toDomainFilter(ownerProvider.currentOwnerId()))
         }.onSuccess { facts ->
             setState {
                 copy(
@@ -52,6 +69,17 @@ class MemoryViewModel(
             fail(error, "Failed to load memory")
             setState { copy(isLoading = false) }
         }
+        refreshMaintenanceStatus()
+    }
+
+    private suspend fun refreshMaintenanceStatus() {
+        catchingNonCancellation {
+            maintenanceController.status()
+        }.onSuccess { status ->
+            setState { copy(maintenance = status.toUiState()) }
+        }.onFailure { error ->
+            fail(error, "Failed to load Dreamer status")
+        }
     }
 
     private suspend fun changeFilters(filters: MemoryFiltersUi) {
@@ -61,7 +89,7 @@ class MemoryViewModel(
 
     private suspend fun openEditDialog(factId: String) {
         setState { copy(error = null) }
-        runCatching {
+        catchingNonCancellation {
             memoryService.getFactDetails(factId)?.toEditorState()
                 ?: error("Memory fact not found: $factId")
         }.onSuccess { editor ->
@@ -78,9 +106,9 @@ class MemoryViewModel(
         }
 
         setState { copy(isSaving = true, error = null) }
-        runCatching {
+        catchingNonCancellation(onCancellation = { setState { copy(isSaving = false) } }) {
             if (input.factId == null) {
-                memoryService.createManualFact(input.toCreateInput())
+                memoryService.createManualFact(input.toCreateInput(ownerProvider.currentOwnerId()))
             } else {
                 memoryService.updateFact(input.factId, input.toPatch())
             }
@@ -103,7 +131,17 @@ class MemoryViewModel(
                 error = null,
             )
         }
-        runCatching {
+        catchingNonCancellation(
+            onCancellation = {
+                setState {
+                    copy(
+                        detailsFactId = null,
+                        selectedFact = null,
+                        isDetailsLoading = false,
+                    )
+                }
+            }
+        ) {
             memoryService.getFactDetails(factId)
                 ?: error("Memory fact not found: $factId")
         }.onSuccess { details ->
@@ -139,7 +177,7 @@ class MemoryViewModel(
         factId: String,
         pinned: Boolean,
     ) {
-        runCatching {
+        catchingNonCancellation {
             memoryService.updateFact(factId, patch = ru.souz.memory.MemoryFactPatch(pinned = pinned))
         }.onSuccess {
             loadFacts()
@@ -165,7 +203,7 @@ class MemoryViewModel(
         val action = currentState.confirm ?: return
         setState { copy(confirm = null, error = null) }
 
-        runCatching {
+        catchingNonCancellation {
             when (action.kind) {
                 PendingMemoryConfirm.Kind.Delete -> memoryService.deleteFact(action.factId)
                 PendingMemoryConfirm.Kind.Retire -> memoryService.retireFact(action.factId)
@@ -206,6 +244,67 @@ class MemoryViewModel(
         input.body.isBlank() -> "Body is required"
         input.scopeType.isBlank() -> "Scope type is required"
         input.scopeId.isBlank() -> "Scope id is required"
+        input.canonicalKey?.trim()?.takeIf(String::isNotBlank)?.let(::normalizeCanonicalKey) == null &&
+            !input.canonicalKey.isNullOrBlank() -> "Invalid canonical key"
         else -> null
     }
+
+    private suspend fun selectDreamerMode(mode: MemoryMaintenanceMode) {
+        val current = currentState.maintenance
+        saveMaintenance(
+            current.copy(
+                preferences = current.preferences.copy(
+                    mode = mode,
+                ),
+            )
+        )
+    }
+
+    private suspend fun selectDreamerModel(modelAlias: String?) {
+        val current = currentState.maintenance
+        saveMaintenance(
+            current.copy(
+                preferences = current.preferences.copy(modelAlias = modelAlias),
+            )
+        )
+    }
+
+    private suspend fun saveMaintenance(next: MemoryMaintenanceUiState) {
+        catchingNonCancellation {
+            maintenanceController.savePreferences(next.toPreferences())
+        }.onSuccess { status ->
+            setState { copy(maintenance = status.toUiState()) }
+        }.onFailure { error ->
+            fail(error, "Failed to save Dreamer settings")
+        }
+    }
+
+    private suspend fun runDreamerNow() {
+        if (!currentState.maintenance.canRunNow) return
+        setState { copy(maintenance = maintenance.copy(isRunningNow = true)) }
+        catchingNonCancellation(
+            onCancellation = { setState { copy(maintenance = maintenance.copy(isRunningNow = false)) } }
+        ) {
+            maintenanceController.savePreferences(currentState.maintenance.toPreferences())
+            maintenanceController.runNow()
+        }.onSuccess { status ->
+            setState { copy(maintenance = status.toUiState(isRunningNow = false)) }
+        }.onFailure { error ->
+            fail(error, "Failed to run Dreamer")
+            setState { copy(maintenance = maintenance.copy(isRunningNow = false)) }
+        }
+    }
+
+    private suspend inline fun <T> catchingNonCancellation(
+        noinline onCancellation: suspend () -> Unit = {},
+        block: suspend () -> T,
+    ): Result<T> =
+        try {
+            Result.success(block())
+        } catch (error: CancellationException) {
+            onCancellation()
+            throw error
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
 }

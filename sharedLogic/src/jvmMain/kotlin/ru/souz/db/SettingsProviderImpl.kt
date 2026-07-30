@@ -7,6 +7,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.local.LocalBridgeLoader
 import ru.souz.llms.local.LocalEmbeddingProfiles
 import ru.souz.llms.local.LocalHostInfoProvider
@@ -30,6 +31,10 @@ class SettingsProviderImpl(
             }
         }
     private var _gigaModelDelegate: String? by keyDelegate(configKey = GIGA_MODEL, envKey = GIGA_MODEL)
+    private var _ambientAnalysisModelDelegate: String? by keyDelegate(
+        configKey = AMBIENT_ANALYSIS_MODEL,
+        envKey = AMBIENT_ANALYSIS_MODEL,
+    )
     private var _useStreamingDelegate: String? by keyDelegate(configKey = USE_STREAMING, envKey = USE_STREAMING)
     private var _notificationSoundEnabledDelegate: String? by keyDelegate(
         configKey = NOTIFICATION_SOUND_ENABLED,
@@ -113,6 +118,24 @@ class SettingsProviderImpl(
         get() = _codexExpiresAtDelegate?.toLongOrNull()
         set(value) { _codexExpiresAtDelegate = value?.toString() }
     override var saluteSpeechKey: String? by keyDelegate(configKey = SALUTE_SPEECH_KEY, envKey = "VOICE_KEY")
+
+    override fun hasKey(provider: LlmProvider): Boolean = when (provider) {
+        LlmProvider.GIGA -> hasConfiguredValue(GIGA_CHAT_KEY, "GIGA_KEY")
+        LlmProvider.QWEN -> hasConfiguredValue(QWEN_CHAT_KEY, "QWEN_KEY")
+        LlmProvider.AI_TUNNEL -> hasConfiguredValue(AI_TUNNEL_KEY, "AITUNNEL_KEY")
+        LlmProvider.ANTHROPIC -> hasConfiguredValue(ANTHROPIC_KEY, "ANTHROPIC_API_KEY")
+        LlmProvider.OPENAI -> hasConfiguredValue(OPENAI_KEY, "OPENAI_API_KEY")
+        LlmProvider.LOCAL -> true
+        LlmProvider.CODEX -> hasConfiguredValue(CODEX_ACCESS_TOKEN, CODEX_ACCESS_TOKEN)
+    }
+
+    override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
+        VoiceRecognitionProvider.SALUTE_SPEECH -> hasConfiguredValue(SALUTE_SPEECH_KEY, "VOICE_KEY")
+        VoiceRecognitionProvider.AI_TUNNEL -> hasConfiguredValue(AI_TUNNEL_KEY, "AITUNNEL_KEY")
+        VoiceRecognitionProvider.OPENAI -> hasConfiguredValue(OPENAI_KEY, "OPENAI_API_KEY")
+        VoiceRecognitionProvider.LOCAL_MACOS -> true
+    }
+
     override var supportEmail: String? by keyDelegate(configKey = SUPPORT_EMAIL, envKey = SUPPORT_EMAIL)
     override var defaultCalendar: String? by keyDelegate(configKey = DEFAULT_CALENDAR, envKey = DEFAULT_CALENDAR)
     override var regionProfile: String
@@ -143,6 +166,17 @@ class SettingsProviderImpl(
             ?: defaultLlmModel()
         set(value) {
             _gigaModelDelegate = normalizeGigaModel(value).alias
+        }
+
+    override var ambientAnalysisModel: LLMModel
+        get() = _ambientAnalysisModelDelegate?.let { value ->
+            LLMModel.entries.firstOrNull { model ->
+                model.name.equals(value, ignoreCase = true) || model.alias.equals(value, ignoreCase = true)
+            }
+        }?.let(::normalizeAmbientAnalysisModel)
+            ?: defaultAmbientAnalysisModel()
+        set(value) {
+            _ambientAnalysisModelDelegate = normalizeAmbientAnalysisModel(value).alias
         }
 
     override var useFewShotExamples: Boolean
@@ -194,7 +228,7 @@ class SettingsProviderImpl(
         }
 
     override var requestTimeoutMillis: Long
-        get() = _requestTimeoutDelegate?.toLongOrNull() ?: 40_000L
+        get() = _requestTimeoutDelegate?.toLongOrNull() ?: DEFAULT_REQUEST_TIMEOUT_MILLIS
         set(value) {
             _requestTimeoutDelegate = value.toString()
         }
@@ -281,7 +315,7 @@ class SettingsProviderImpl(
             .firstNotNullOfOrNull { provider ->
                 when (provider) {
                     LlmProvider.LOCAL -> availableLocalDefault
-                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(it.provider) }
+                    else -> defaults[provider]?.takeIf { hasKey(it.provider) }
                 }
             }
             ?: availableLocalDefault
@@ -297,21 +331,26 @@ class SettingsProviderImpl(
         }
     }
 
+    private fun defaultAmbientAnalysisModel(): LLMModel =
+        localProviderAvailability.defaultGigaModel()
+            ?: LLMModel.LocalQwen3_4B_Instruct_2507
+
+    private fun normalizeAmbientAnalysisModel(model: LLMModel): LLMModel = when {
+        model.provider != LlmProvider.LOCAL -> defaultAmbientAnalysisModel()
+        model !in localProviderAvailability.availableGigaModels() -> defaultAmbientAnalysisModel()
+        else -> model
+    }
+
     private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
         gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->
             LocalEmbeddingProfiles.default().embeddingsModel
         else -> null
     }
 
-    private fun hasConfiguredAccess(provider: LlmProvider): Boolean = when (provider) {
-        LlmProvider.GIGA -> !gigaChatKey.isNullOrBlank()
-        LlmProvider.QWEN -> !qwenChatKey.isNullOrBlank()
-        LlmProvider.AI_TUNNEL -> !aiTunnelKey.isNullOrBlank()
-        LlmProvider.ANTHROPIC -> !anthropicKey.isNullOrBlank()
-        LlmProvider.OPENAI -> !openaiKey.isNullOrBlank()
-        LlmProvider.LOCAL -> localProviderAvailability.isProviderAvailable()
-        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
-    }
+    private fun hasConfiguredValue(configKey: String, envKey: String, sysPropKey: String = envKey): Boolean =
+        configStore.contains(configKey) ||
+            !System.getenv(envKey).isNullOrBlank() ||
+            !System.getProperty(sysPropKey).isNullOrBlank()
 
     private fun keyDelegate(configKey: String, envKey: String, sysPropKey: String = envKey) =
         object : ReadWriteProperty<Any?, String?> {
@@ -352,6 +391,7 @@ class SettingsProviderImpl(
         private const val ACTIVE_AGENT_ID = "ACTIVE_AGENT_ID"
         private const val DEFAULT_CALENDAR = "DEFAULT_CALENDAR"
         private const val GIGA_MODEL = "GIGA_MODEL"
+        private const val AMBIENT_ANALYSIS_MODEL = "AMBIENT_ANALYSIS_MODEL"
         private const val NEEDS_ONBOARDING = "NEEDS_ONBOARDING"
         private const val ONBOARDING_COMPLETED = "ONBOARDING_COMPLETED"
         private const val REQUEST_TIMEOUT_MILLIS = "REQUEST_TIMEOUT_MILLIS"

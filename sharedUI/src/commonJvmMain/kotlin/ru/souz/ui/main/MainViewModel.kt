@@ -15,18 +15,25 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.state.AgentContext
+import ru.souz.ambient.AmbientBlockAnalyzer
+import ru.souz.ambient.AmbientModeState
+import ru.souz.ambient.AmbientSuggestion
+import ru.souz.ambient.AmbientSpeechAvailability
+import ru.souz.ambient.AmbientTranscriptionService
+import ru.souz.ambient.SemanticBlockBuilder
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
+import ru.souz.llms.ToolInvocationMeta
 import ru.souz.ui.BaseViewModel
 import ru.souz.ui.main.search.ChatMessageSearchProjection
 import ru.souz.ui.main.search.ChatSearchEngine
 import ru.souz.ui.main.search.ChatSearchState
+import ru.souz.ui.main.usecases.AmbientModeController
 import ru.souz.ui.main.usecases.ChatAttachmentsUseCase
 import ru.souz.ui.main.usecases.ChatUseCase
 import ru.souz.ui.main.usecases.MainUseCaseOutput
@@ -40,6 +47,7 @@ import ru.souz.ui.host.BackgroundIndexRefresher
 import ru.souz.ui.host.ChatCommandInputSource
 import ru.souz.ui.host.LocalModelUiHost
 import ru.souz.ui.host.PathOpener
+import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.settings.availableLlmModels
 import ru.souz.ui.settings.defaultLlmModel
 import kotlin.time.Duration.Companion.minutes
@@ -47,6 +55,7 @@ import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
+import java.util.Locale
 
 class MainViewModel(
     @Suppress("unused")
@@ -59,6 +68,11 @@ class MainViewModel(
     private val localModelUiHost: LocalModelUiHost,
     private val pathOpener: PathOpener,
     private val chatCommandInputSource: ChatCommandInputSource,
+    private val permissionPromptService: PermissionPromptService,
+    private val appScope: CoroutineScope,
+    private val ambientTranscriptionService: AmbientTranscriptionService,
+    private val ambientBlockAnalyzer: AmbientBlockAnalyzer,
+    private val ambientSemanticBlockBuilder: SemanticBlockBuilder,
     private val chatUseCase: ChatUseCase,
     private val toolModifyReviewUseCase: ToolModifyReviewUseCase,
     private val voiceInputUseCase: VoiceInputController,
@@ -76,9 +90,31 @@ class MainViewModel(
     private var startTips: List<String> = emptyList()
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
+    private var ambientModelPreloadJob: Job? = null
+    private val ambientModeController by lazy(kotlin.LazyThreadSafetyMode.NONE) {
+        AmbientModeController(
+            scope = viewModelScope,
+            transcription = ambientTranscriptionService,
+            blockBuilder = ambientSemanticBlockBuilder,
+            analyzer = ambientBlockAnalyzer,
+            executeCandidate = { candidate ->
+                chatUseCase.sendChatMessage(
+                    scope = viewModelScope,
+                    isVoice = true,
+                    chatMessage = candidate.taskText,
+                    requestSource = ChatRequestSource.AMBIENT_AGENT,
+                )
+            },
+            localeProvider = ::ambientLocale,
+            failureMessageProvider = ::ambientStartFailureMessage,
+            onStartRequested = ::scheduleAmbientModelPreload,
+        )
+    }
 
     init {
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectUseCaseOutputs() }
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectAmbientModeState() }
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) { collectAmbientSuggestions() }
 
         viewModelScope.launch {
             startTips = getStringArray(Res.array.start_tips)
@@ -102,6 +138,7 @@ class MainViewModel(
                     displayedText = randomTip,
                     chatStartTip = randomTip,
                     localModelDownloadPrompt = downloadPrompt,
+                    isSandboxed = permissionPromptService.isSandboxed,
                 )
             }
         }
@@ -136,6 +173,7 @@ class MainViewModel(
                         }
                     }
                 },
+                voiceInputStartBlocker = ::ambientVoiceInputBlockReason,
             )
         }
         viewModelScope.launchDbSetup(backgroundIndexRefresher)
@@ -184,7 +222,15 @@ class MainViewModel(
 
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
-            MainEvent.StartListening -> voiceInputUseCase.startRecording(viewModelScope, currentState.isListening)
+            MainEvent.StartListening -> {
+                val blockedReason = ambientVoiceInputBlockReason()
+                if (blockedReason != null) {
+                    setState { copy(statusMessage = blockedReason, isListening = false) }
+                    send(MainEffect.ShowError(blockedReason))
+                } else {
+                    voiceInputUseCase.startRecording(viewModelScope, currentState.isListening)
+                }
+            }
             MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
             is MainEvent.ConsumePendingVoiceInputDraft -> {
                 if (event.token == currentState.pendingVoiceInputDraftToken) {
@@ -286,6 +332,20 @@ class MainViewModel(
                     requestId = currentState.selectionDialog?.requestId,
                     selectedCandidateId = null,
                 )
+
+            MainEvent.ToggleAmbientMode -> toggleAmbientMode()
+
+            is MainEvent.AcceptAmbientSuggestion -> vmLaunch {
+                ambientModeController.acceptSuggestion(event.id)
+            }
+
+            is MainEvent.RejectAmbientSuggestion -> vmLaunch {
+                ambientModeController.rejectSuggestion(event.id)
+            }
+
+            is MainEvent.DismissAmbientSuggestion -> vmLaunch {
+                ambientModeController.dismissSuggestion(event.id)
+            }
         }
     }
 
@@ -324,6 +384,96 @@ class MainViewModel(
                 is MainUseCaseOutput.Effect -> send(output.effect)
             }
         }
+    }
+
+    private suspend fun collectAmbientModeState() {
+        ambientModeController.modeState.collect { mode ->
+            val voiceDisabledReason = if (mode.isVoiceInputBlocked()) {
+                getString(Res.string.voice_error_microphone_busy_ambient)
+            } else {
+                null
+            }
+            setState {
+                copy(
+                    ambientMode = mode,
+                    voiceInputDisabledReason = voiceDisabledReason,
+                    statusMessage = mode.errorMessage ?: statusMessage,
+                )
+            }
+        }
+    }
+
+    private suspend fun collectAmbientSuggestions() {
+        ambientModeController.suggestions.collect { suggestions ->
+            setState {
+                copy(
+                    ambientSuggestions = suggestions.map { it.toUiModel() },
+                )
+            }
+        }
+    }
+
+    private fun ambientLocale(): String =
+        when (settingsProvider.regionProfile.lowercase(Locale.ROOT)) {
+            "ru", "ru-ru", "russia" -> "ru-RU"
+            else -> "en-US"
+        }
+
+    private fun AmbientSuggestion.toUiModel(): AmbientSuggestionUiModel =
+        AmbientSuggestionUiModel(
+            id = id,
+            taskText = candidate.taskText,
+            createdAtMs = createdAtMs,
+            expiresAtMs = expiresAtMs,
+        )
+
+    private fun AmbientModeState.isVoiceInputBlocked(): Boolean =
+        enabled || starting || listening
+
+    private suspend fun ambientStartFailureMessage(availability: AmbientSpeechAvailability): String =
+        when (availability) {
+            AmbientSpeechAvailability.LiveBackendUnavailable ->
+                getString(Res.string.ambient_error_stt_unavailable)
+
+            AmbientSpeechAvailability.MicrophoneUnavailable ->
+                getString(Res.string.ambient_error_microphone_unavailable)
+
+            AmbientSpeechAvailability.SpeechRecognitionPermissionDenied ->
+                getString(Res.string.ambient_error_speech_permission_denied)
+
+            AmbientSpeechAvailability.Available,
+            AmbientSpeechAvailability.AlreadyRunning -> ""
+        }
+
+    private suspend fun ambientVoiceInputBlockReason(): String? =
+        if (ambientModeController.isMicrophoneBusyForVoiceInput) {
+            getString(Res.string.voice_error_microphone_busy_ambient)
+        } else {
+            null
+        }
+
+    private suspend fun toggleAmbientMode() {
+        if (ambientModeController.modeState.value.isVoiceInputBlocked()) {
+            ambientModeController.toggle()
+            return
+        }
+
+        val downloadPrompt = localModelUiHost.downloadPromptFor(settingsProvider.ambientAnalysisModel)
+        if (downloadPrompt != null) {
+            send(MainEffect.ShowError(getString(Res.string.ambient_error_missing_analysis_model)))
+            return
+        }
+
+        ambientModeController.toggle()
+    }
+
+    private fun scheduleAmbientModelPreload() {
+        ambientModelPreloadJob = localModelUiHost.schedulePreload(
+            scope = viewModelScope,
+            dispatcher = ioDispatchers,
+            currentJob = ambientModelPreloadJob,
+            model = settingsProvider.ambientAnalysisModel,
+        )
     }
 
     private suspend fun setStateAndReindexChatSearch(
@@ -396,8 +546,9 @@ class MainViewModel(
     }
 
     private suspend fun startNewConversation() {
-        chatUseCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
+        val conversationMeta = chatUseCase.finishCurrentConversation(ChatConversationCloseReason.NEW_CONVERSATION)
         chatUseCase.clearConversationContext()
+        launchConversationCleanup(conversationMeta)
 
         setStateAndRefreshChatSearch {
             copy(
@@ -589,8 +740,9 @@ class MainViewModel(
 
     private suspend fun clearContext() {
         val lastKnownAgentContext: AgentContext<String>? = chatUseCase.snapshotContext()
-        chatUseCase.finishCurrentConversation(ChatConversationCloseReason.CLEAR_CONTEXT)
+        val conversationMeta = chatUseCase.finishCurrentConversation(ChatConversationCloseReason.CLEAR_CONTEXT)
         chatUseCase.clearConversationContext()
+        launchConversationCleanup(conversationMeta)
 
         when (currentState.userExpectCloseOnX) {
             false -> {
@@ -639,17 +791,35 @@ class MainViewModel(
         }
     }
 
+    private fun launchConversationCleanup(conversationMeta: ToolInvocationMeta?) {
+        if (conversationMeta != null) {
+            viewModelScope.launch {
+                chatUseCase.cleanupConversation(conversationMeta)
+            }
+        }
+    }
+
     override fun onCleared() {
-        super.onCleared()
-        localModelPreloadJob?.cancel()
-        runBlocking {
-            permissionsUseCase.rejectPendingPermissionRequest(currentState.toolPermissionDialog?.requestId)
+        val pendingToolPermissionRequestId = currentState.toolPermissionDialog?.requestId
+        val pendingSelectionSourceId = currentState.selectionDialog?.sourceId
+        val pendingSelectionRequestId = currentState.selectionDialog?.requestId
+        ambientModeController.stopAsync(cleanupScope = appScope, clearSuggestions = true)
+        appScope.launch {
+            permissionsUseCase.rejectPendingPermissionRequest(pendingToolPermissionRequestId)
         }
         permissionsUseCase.rejectPendingSelectionDialog(
-            sourceId = currentState.selectionDialog?.sourceId,
-            requestId = currentState.selectionDialog?.requestId,
+            sourceId = pendingSelectionSourceId,
+            requestId = pendingSelectionRequestId,
         )
-        chatUseCase.onCleared()
+        super.onCleared()
+        localModelPreloadJob?.cancel()
+        ambientModelPreloadJob?.cancel()
+        val closedConversationMeta = chatUseCase.onCleared()
+        if (closedConversationMeta != null) {
+            appScope.launch {
+                chatUseCase.cleanupConversation(closedConversationMeta)
+            }
+        }
         permissionsUseCase.onCleared()
     }
 }

@@ -8,11 +8,16 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSkillRegistryRepository
+import ru.souz.backend.TestConversationKnowledgeStore
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.testSkillCoreToolsFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
@@ -78,6 +83,9 @@ private fun runtimeTurnRunner(failure: Throwable): BackendConversationRuntimeTur
             logObjectMapper = jacksonObjectMapper(),
             systemPrompt = "backend test prompt",
             skillRegistryRepository = TestSkillRegistryRepository,
+            skillCoreToolsFactory = testSkillCoreToolsFactory(),
+            knowledgeStore = TestConversationKnowledgeStore,
+            agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
     )
 }

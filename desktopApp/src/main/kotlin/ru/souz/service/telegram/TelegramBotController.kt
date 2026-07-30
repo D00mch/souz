@@ -22,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.db.ConfigStore
@@ -63,6 +66,11 @@ interface TelegramBotApi {
      * Sends text back to Telegram chat (`sendMessage`).
      */
     suspend fun sendMessage(token: String, chatId: Long, text: String)
+
+    /**
+     * Fire-and-forget "typing…" indicator (`sendChatAction`); Telegram expires it after ~5s.
+     */
+    suspend fun sendChatAction(token: String, chatId: Long, action: String = "typing") {}
 
     /**
      * Resolves Telegram Bot API file metadata by file id (`getFile`).
@@ -103,6 +111,13 @@ private class KtorTelegramBotApi : TelegramBotApi {
         client.post("https://api.telegram.org/bot$token/sendMessage") {
             parameter("chat_id", chatId)
             parameter("text", text)
+        }
+    }
+
+    override suspend fun sendChatAction(token: String, chatId: Long, action: String) {
+        client.post("https://api.telegram.org/bot$token/sendChatAction") {
+            parameter("chat_id", chatId)
+            parameter("action", action)
         }
     }
 
@@ -269,19 +284,56 @@ class TelegramBotController(
             logger.info("Received control command (chatId={}, textLength={})", chatId, text.length)
             botApi.sendMessage(token, chatId, "Processing command...")
 
-            val response = if (_incomingMessages.subscriptionCount.value > 0) {
-                val deferred = CompletableDeferred<String>()
-                _incomingMessages.emit(
-                    TelegramControlIncomingMessage(text = text, responseDeferred = deferred, isVoice = isVoice)
-                )
-                deferred.await()
-            } else {
-                agentFacade.execute(text)
+            val response = withTypingIndicator(token, chatId) {
+                if (_incomingMessages.subscriptionCount.value > 0) {
+                    val deferred = CompletableDeferred<String>()
+                    _incomingMessages.emit(
+                        TelegramControlIncomingMessage(text = text, responseDeferred = deferred, isVoice = isVoice)
+                    )
+                    deferred.await()
+                } else {
+                    agentFacade.execute(text)
+                }
             }
             botApi.sendMessage(token, chatId, response)
         } catch (e: Exception) {
             logger.error("Error processing control command ({})", e::class.simpleName)
             botApi.sendMessage(token, chatId, "Error processing command")
+        }
+    }
+
+    /**
+     * Sends the "typing" chat action immediately, then repeats it every
+     * [TYPING_REPEAT_INTERVAL_MS] — shorter than Telegram's own ~5s expiry — until [block]
+     * completes, so the indicator stays up continuously while the agent turn is running.
+     * Launched concurrently with [block] (never awaited) so this best-effort UI signal cannot
+     * delay starting it. [TYPING_MAX_DURATION_MS] is a safety net in case [block] hangs instead
+     * of completing or throwing.
+     */
+    private suspend fun <T> withTypingIndicator(token: String, chatId: Long, block: suspend () -> T): T =
+        coroutineScope {
+            val typingJob = launch {
+                withTimeoutOrNull(TYPING_MAX_DURATION_MS) {
+                    while (isActive) {
+                        sendChatActionSafely(token, chatId)
+                        delay(TYPING_REPEAT_INTERVAL_MS)
+                    }
+                }
+            }
+            try {
+                block()
+            } finally {
+                typingJob.cancelAndJoin()
+            }
+        }
+
+    private suspend fun sendChatActionSafely(token: String, chatId: Long) {
+        try {
+            botApi.sendChatAction(token, chatId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Telegram typing indicator send failed (chatId={})", chatId)
         }
     }
 
@@ -429,6 +481,8 @@ class TelegramBotController(
     private companion object {
         private const val DEFAULT_ATTACHMENT_PROMPT = "Обработай приложенный файл"
         private const val MAX_BOT_FILE_BYTES = 100L * 1024L * 1024L
+        private const val TYPING_REPEAT_INTERVAL_MS = 4_000L
+        private const val TYPING_MAX_DURATION_MS = 5 * 60 * 1_000L
     }
 }
 
@@ -441,14 +495,14 @@ data class TelegramUpdatesResponse(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramUpdate(
-    @JsonProperty("update_id")
+    @param:JsonProperty("update_id")
     val updateId: Long,
     val message: TelegramMessage? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramMessage(
-    @JsonProperty("message_id")
+    @param:JsonProperty("message_id")
     val messageId: Long,
     val from: TelegramUser? = null,
     val chat: TelegramChat,
@@ -460,24 +514,24 @@ data class TelegramMessage(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramDocument(
-    @JsonProperty("file_id")
+    @param:JsonProperty("file_id")
     val fileId: String,
-    @JsonProperty("file_name")
+    @param:JsonProperty("file_name")
     val fileName: String? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramVoice(
-    @JsonProperty("file_id")
+    @param:JsonProperty("file_id")
     val fileId: String,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramUser(
     val id: Long,
-    @JsonProperty("is_bot")
+    @param:JsonProperty("is_bot")
     val isBot: Boolean,
-    @JsonProperty("first_name")
+    @param:JsonProperty("first_name")
     val firstName: String? = null,
     val username: String? = null,
 )
@@ -497,11 +551,11 @@ data class TelegramBotFileResponse(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TelegramBotFile(
-    @JsonProperty("file_id")
+    @param:JsonProperty("file_id")
     val fileId: String,
-    @JsonProperty("file_path")
+    @param:JsonProperty("file_path")
     val filePath: String? = null,
-    @JsonProperty("file_size")
+    @param:JsonProperty("file_size")
     val fileSize: Long? = null,
 )
 

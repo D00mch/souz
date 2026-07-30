@@ -32,7 +32,7 @@ import ru.souz.backend.telegram.TelegramUpdate
 import ru.souz.backend.telegram.TelegramUpdatesResponse
 import ru.souz.backend.telegram.TelegramUser
 import ru.souz.backend.telegram.sha256Hex
-import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
+import ru.souz.backend.testutil.repository.MemoryTelegramBotBindingRepository
 
 class BackendTelegramRouteTest {
     private val json = jacksonObjectMapper()
@@ -54,18 +54,20 @@ class BackendTelegramRouteTest {
         }
         application {
             backendApplication(
-                bootstrapService = context.base.bootstrapService,
-                onboardingService = context.base.onboardingService,
-                userSettingsService = context.base.userSettingsService,
-                providerKeyService = context.base.userProviderKeyService,
-                chatService = context.base.chatService,
-                messageService = context.base.messageService,
-                executionService = context.base.executionService,
-                optionService = context.base.optionService,
-                eventService = context.base.eventService,
-                featureFlags = context.base.featureFlags,
-                selectedModel = { context.base.settingsProvider.gigaModel.alias },
-                trustedProxyToken = { "proxy-secret" },
+                BackendHttpDependencies(
+                    bootstrapService = context.base.bootstrapService,
+                    onboardingService = context.base.onboardingService,
+                    userSettingsService = context.base.userSettingsService,
+                    providerKeyService = context.base.userProviderKeyService,
+                    chatService = context.base.chatService,
+                    messageService = context.base.messageService,
+                    executionService = context.base.executionService,
+                    optionService = context.base.optionService,
+                    eventService = context.base.eventService,
+                    featureFlags = context.base.featureFlags,
+                    selectedModel = { context.base.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                )
             )
         }
 
@@ -319,44 +321,6 @@ class BackendTelegramRouteTest {
     }
 
     @Test
-    fun `put new token into same chat replaces hash and resets update id`() = testApplication {
-        val context = telegramRouteTestContext()
-        val chat = chat(userId = "user-a", title = "Owned")
-        context.telegramApi.allowToken("123456:first-token")
-        context.telegramApi.allowToken("123456:second-token")
-        runBlocking {
-            context.base.chatRepository.create(chat)
-            context.repository.upsertForChat(
-                userId = "user-a",
-                chatId = chat.id,
-                botToken = "123456:first-token",
-                botTokenHash = "old-hash",
-                linkSecretHash = "old-link-secret-hash",
-                now = Instant.parse("2026-05-04T09:00:00Z"),
-            )
-            val binding = context.repository.getByChat(chat.id)!!
-            context.repository.updateLastUpdateId(binding.id, 77L, Instant.parse("2026-05-04T09:05:00Z"))
-        }
-        installTelegramApplication(context)
-
-        val response = client.put(BackendHttpRoutes.chatTelegramBot(chat.id)) {
-            trustedHeaders("user-a")
-            contentType(ContentType.Application.Json)
-            setBody("""{"token":"123456:second-token"}""")
-        }
-        val payload = json.readTree(response.bodyAsText())
-        val stored = runBlocking { context.repository.getByChat(chat.id) }
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(payload["pendingLinkCommand"].asText().startsWith("/start "))
-        assertTrue(stored?.botTokenEncrypted?.isNotBlank() == true)
-        assertTrue(stored?.botTokenEncrypted != "123456:second-token")
-        assertEquals(0L, stored?.lastUpdateId)
-        assertTrue(stored?.botTokenHash != "old-hash")
-        assertTrue(stored?.linkSecretHash != "old-link-secret-hash")
-    }
-
-    @Test
     fun `delete telegram bot returns null for existing binding`() = testApplication {
         val context = telegramRouteTestContext()
         val chat = chat(userId = "user-a", title = "Owned")
@@ -430,19 +394,21 @@ private data class TelegramRouteTestContext(
 private fun ApplicationTestBuilder.installTelegramApplication(context: TelegramRouteTestContext) {
     application {
         backendApplication(
-            bootstrapService = context.base.bootstrapService,
-            onboardingService = context.base.onboardingService,
-            userSettingsService = context.base.userSettingsService,
-            providerKeyService = context.base.userProviderKeyService,
-            chatService = context.base.chatService,
-            messageService = context.base.messageService,
-            executionService = context.base.executionService,
-            optionService = context.base.optionService,
-            eventService = context.base.eventService,
-            featureFlags = context.base.featureFlags,
-            selectedModel = { context.base.settingsProvider.gigaModel.alias },
-            trustedProxyToken = { "proxy-secret" },
-            telegramBotBindingService = context.service,
+            BackendHttpDependencies(
+                bootstrapService = context.base.bootstrapService,
+                onboardingService = context.base.onboardingService,
+                userSettingsService = context.base.userSettingsService,
+                providerKeyService = context.base.userProviderKeyService,
+                chatService = context.base.chatService,
+                messageService = context.base.messageService,
+                executionService = context.base.executionService,
+                optionService = context.base.optionService,
+                eventService = context.base.eventService,
+                featureFlags = context.base.featureFlags,
+                selectedModel = { context.base.settingsProvider.gigaModel.alias },
+                trustedProxyToken = { "proxy-secret" },
+                telegramBotBindingService = context.service,
+            )
         )
     }
 }
@@ -534,6 +500,12 @@ private class FakeTelegramBotApi : TelegramBotApi {
         token: String,
         chatId: Long,
         text: String,
+    ) = Unit
+
+    override suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String,
     ) = Unit
 }
 

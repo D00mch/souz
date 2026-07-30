@@ -6,7 +6,7 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 
 /**
- * Combined persistence contract used by [ru.souz.agent.skills.SkillActivationPipeline].
+ * Combined persistence contract used by Skill discovery, approval, and execution.
  *
  * A single implementation owns both the user-visible skill catalog and the persisted
  * validation cache keyed by user, skill id, bundle hash, and policy version.
@@ -14,6 +14,14 @@ import ru.souz.agent.skills.validation.SkillValidationStatus
 interface SkillRegistryRepository {
     /** Returns metadata for every skill currently registered for the given user. */
     suspend fun listSkills(userId: String): List<StoredSkill>
+
+    /** Returns metadata-only entries for compact discovery inventory. */
+    suspend fun listSkillInventory(userId: String): List<SkillInventoryEntry> =
+        listSkills(userId).map { it.toInventoryEntry() }
+
+    /** Returns only opaque Skill IDs for prompt inventory. */
+    suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
+        listSkillInventory(userId).map { it.skillId }
 
     /** Looks up a registered skill by its canonical [SkillId]. */
     suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill?

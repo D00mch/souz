@@ -1,6 +1,5 @@
 package ru.souz.backend.telegram
 
-import java.nio.file.Files
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
@@ -11,8 +10,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.storage.filesystem.FilesystemTelegramBotBindingRepository
-import ru.souz.backend.storage.memory.MemoryTelegramBotBindingRepository
+import ru.souz.backend.testutil.repository.MemoryTelegramBotBindingRepository
 
 class TelegramBotBindingRepositoryTest {
     @Test
@@ -21,22 +19,8 @@ class TelegramBotBindingRepositoryTest {
     }
 
     @Test
-    fun `filesystem repository keeps one binding per chat and replaces token state`() = runTest {
-        assertChatScopedUpsertContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-chat"))
-        )
-    }
-
-    @Test
     fun `memory repository enforces unique token hash`() = runTest {
         assertUniqueTokenHashContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `filesystem repository enforces unique token hash`() = runTest {
-        assertUniqueTokenHashContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-token"))
-        )
     }
 
     @Test
@@ -45,22 +29,8 @@ class TelegramBotBindingRepositoryTest {
     }
 
     @Test
-    fun `filesystem repository listEnabled excludes disabled bindings`() = runTest {
-        assertEnabledListingContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-enabled"))
-        )
-    }
-
-    @Test
     fun `memory repository persists last update id`() = runTest {
         assertLastUpdateContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `filesystem repository persists last update id`() = runTest {
-        assertLastUpdateContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-update"))
-        )
     }
 
     @Test
@@ -69,22 +39,8 @@ class TelegramBotBindingRepositoryTest {
     }
 
     @Test
-    fun `filesystem repository keeps last update id monotonic for current lease owner`() = runTest {
-        assertLeaseScopedLastUpdateContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-update-owner"))
-        )
-    }
-
-    @Test
     fun `memory repository stores errors and can disable binding`() = runTest {
         assertMarkErrorContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `filesystem repository stores errors and can disable binding`() = runTest {
-        assertMarkErrorContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-error"))
-        )
     }
 
     @Test
@@ -93,23 +49,10 @@ class TelegramBotBindingRepositoryTest {
     }
 
     @Test
-    fun `filesystem repository clearError removes stored error state`() = runTest {
-        assertClearErrorContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-clear"))
-        )
-    }
-
-    @Test
     fun `memory repository persists telegram link metadata`() = runTest {
         assertClaimTelegramUserContract(MemoryTelegramBotBindingRepository())
     }
 
-    @Test
-    fun `filesystem repository persists telegram link metadata`() = runTest {
-        assertClaimTelegramUserContract(
-            FilesystemTelegramBotBindingRepository(Files.createTempDirectory("telegram-bindings-fs-link"))
-        )
-    }
 }
 
 internal suspend fun assertChatScopedUpsertContract(

@@ -1,9 +1,7 @@
 package ru.souz.agent.nodes
 
-import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
-import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
@@ -19,8 +17,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
-import ru.souz.memory.ConversationMemoryRuntime
-import ru.souz.memory.NoopConversationMemoryRuntime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -42,7 +38,6 @@ internal class NodesCommon(
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
-    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
 
@@ -92,7 +87,7 @@ internal class NodesCommon(
      * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
      */
     fun toolUse(name: String = "toolUse"): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = fnCallMessages(ctx)
+        val fnCallMessages = executeFunctionCalls(ctx).map { it.message }
         val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
         ctx.map(history = history) { ctx.history.last().content }
     }
@@ -105,14 +100,13 @@ internal class NodesCommon(
      * Modifies [AgentContext.history] when new data is added.
      */
     fun nodeAppendAdditionalData(name: String = "appendActualInformation"): Node<String, String> = Node(name) { ctx ->
-        val additionalMessage = appendActualInformation(
-            userText = ctx.input,
-            conversationId = ctx.toolInvocationMeta.conversationId,
-            eventSink = ctx.runtimeEventSink,
-        )
+        val additionalMessage = appendActualInformation(ctx.input)
 
+        val currentUserIndex = ctx.history.indexOfLast { it.role == LLMMessageRole.user }
         val newHistory = ctx.history
-            .filterNot(LLMRequest.Message::isInjectedContextMessage)
+            .filterIndexed { index, message ->
+                index == currentUserIndex || !message.isInjectedContextMessage()
+            }
             .toMutableList()
         additionalMessage?.let {
             l.info("Injecting additional context ({} chars)", it.content.length)
@@ -123,15 +117,12 @@ internal class NodesCommon(
 
     private suspend fun appendActualInformation(
         userText: String,
-        conversationId: String?,
-        eventSink: AgentRuntimeEventSink,
     ): LLMRequest.Message? {
         if (userText.isBlank()) return null
 
-        val memoryBlock = retrieveMemoryBlock(userText, conversationId, eventSink)
         val additionalData = loadAdditionalData(userText)
-        if (memoryBlock == null && additionalData.isEmpty()) return null
-        return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(memoryBlock, additionalData))
+        if (additionalData.isEmpty()) return null
+        return LLMRequest.Message(LLMMessageRole.user, buildContextMessage(additionalData))
     }
 
     private fun buildUserGeoLocationFact(): String? = try {
@@ -173,19 +164,24 @@ internal class NodesCommon(
         null
     }
 
-    private suspend fun fnCallMessages(ctx: AgentContext<LLMResponse.Chat.Ok>): List<LLMRequest.Message> =
+    internal suspend fun executeFunctionCalls(
+        ctx: AgentContext<LLMResponse.Chat.Ok>,
+    ): List<ExecutedToolCall> =
         ctx.input.choices.mapNotNull { choice ->
             val msg = choice.message
             val functionCall = msg.functionCall
             val functionsStateId = msg.functionsStateId
             if (functionCall != null && functionsStateId != null) {
-                executeTool(
-                    settings = ctx.settings,
+                ExecutedToolCall(
                     functionCall = functionCall,
-                    meta = ctx.toolInvocationMeta,
-                    toolCallId = functionsStateId,
-                    eventSink = ctx.runtimeEventSink,
-                ).copy(functionsStateId = functionsStateId)
+                    message = executeTool(
+                        settings = ctx.settings,
+                        functionCall = functionCall,
+                        meta = ctx.toolInvocationMeta,
+                        toolCallId = functionsStateId,
+                        eventSink = ctx.runtimeEventSink,
+                    ).copy(functionsStateId = functionsStateId),
+                )
             } else null
         }
 
@@ -202,31 +198,6 @@ internal class NodesCommon(
         toolCallId = toolCallId,
         eventSink = eventSink,
     )
-
-    private suspend fun retrieveMemoryBlock(
-        userText: String,
-        conversationId: String?,
-        eventSink: AgentRuntimeEventSink,
-    ): String? {
-        val memoryResult = try {
-            memoryRuntime.retrieveMemory(userText, conversationId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            l.warn("Memory retrieval failed: {}", e.message)
-            return null
-        }
-        val renderedBlock = memoryResult.renderedBlock.trim()
-        if (renderedBlock.isBlank()) return null
-        try {
-            eventSink.emit(AgentRuntimeEvent.MemoryPromptAugmented(renderedBlock, memoryResult.facts))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            l.warn("Memory augmentation trace failed: {}", e.message)
-        }
-        return renderedBlock
-    }
 
     private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
         try {
@@ -253,25 +224,20 @@ internal class NodesCommon(
         )
     }
 
-    private fun buildContextMessage(
-        memoryBlock: String?,
-        additionalData: List<StorredData>,
-    ): String = buildString {
+    private fun buildContextMessage(additionalData: List<StorredData>): String = buildString {
         append(INJECTED_CONTEXT_PREFIX)
-        memoryBlock?.let {
-            append(it)
-            append('\n')
-        }
-        if (additionalData.isNotEmpty()) {
-            if (memoryBlock != null) append("\nOther relevant context:\n")
-            additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
-        }
+        additionalData.forEach { append("- [${it.readableType()}]: ${it.text}\n") }
         append(INJECTED_CONTEXT_SUFFIX)
     }
 
     private fun StorredData.readableType(): String =
         type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
+
+internal data class ExecutedToolCall(
+    val functionCall: LLMResponse.FunctionCall,
+    val message: LLMRequest.Message,
+)
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
     val ctx = this

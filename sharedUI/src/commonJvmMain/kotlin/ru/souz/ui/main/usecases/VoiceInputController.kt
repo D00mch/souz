@@ -12,6 +12,7 @@ interface VoiceInputController {
         scope: CoroutineScope,
         stateProvider: () -> MainState,
         onRecognizedText: suspend (String) -> Unit,
+        voiceInputStartBlocker: suspend () -> String? = { null },
     )
 
     suspend fun startRecording(scope: CoroutineScope, isListening: Boolean)
@@ -25,6 +26,7 @@ object NoopVoiceInputController : VoiceInputController {
         scope: CoroutineScope,
         stateProvider: () -> MainState,
         onRecognizedText: suspend (String) -> Unit,
+        voiceInputStartBlocker: suspend () -> String?,
     ) = Unit
 
     override suspend fun startRecording(scope: CoroutineScope, isListening: Boolean) = Unit

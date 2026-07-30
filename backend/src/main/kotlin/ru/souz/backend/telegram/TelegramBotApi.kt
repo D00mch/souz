@@ -15,7 +15,7 @@ import java.net.http.HttpTimeoutException
 import java.time.Duration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 
 interface TelegramBotApi {
     suspend fun getMe(token: String): TelegramGetMeResponse
@@ -31,6 +31,13 @@ interface TelegramBotApi {
         token: String,
         chatId: Long,
         text: String,
+    )
+
+    /** Fire-and-forget "typing…" indicator (`sendChatAction`); Telegram expires it after ~5s. */
+    suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String = "typing",
     )
 
     suspend fun deleteWebhook(
@@ -96,6 +103,31 @@ internal class HttpTelegramBotApi : TelegramBotApi {
         }
     }
 
+    override suspend fun sendChatAction(
+        token: String,
+        chatId: Long,
+        action: String,
+    ) {
+        val response = request(
+            token = token,
+            methodName = "sendChatAction",
+            formParameters = mapOf(
+                "chat_id" to chatId.toString(),
+                "action" to action,
+            ),
+        ).bodyAs<TelegramMethodAckResponse>()
+            .normalizeHttpStatus()
+        if (!response.ok) {
+            throw TelegramBotApiHttpException(
+                methodName = "sendChatAction",
+                statusCode = response.errorCode ?: 500,
+                telegramErrorCode = response.errorCode,
+                description = response.description,
+                parameters = response.parameters,
+            )
+        }
+    }
+
     override suspend fun deleteWebhook(
         token: String,
         dropPendingUpdates: Boolean,
@@ -124,25 +156,25 @@ internal class HttpTelegramBotApi : TelegramBotApi {
         methodName: String,
         formParameters: Map<String, String>,
     ): TelegramRawResponse =
-        withContext(Dispatchers.IO) {
-            val request = buildRequest(token, methodName, formParameters)
-            try {
+        try {
+            runInterruptible(Dispatchers.IO) {
+                val request = buildRequest(token, methodName, formParameters)
                 client.send(request, HttpResponse.BodyHandlers.ofString()).let { response ->
                     TelegramRawResponse(
                         httpStatus = response.statusCode(),
                         body = response.body(),
                     )
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: HttpTimeoutException) {
-                throw TelegramBotApiTransportException("Telegram request timed out.", e)
-            } catch (e: IOException) {
-                throw TelegramBotApiTransportException("Telegram network request failed.", e)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw TelegramBotApiTransportException("Telegram request was interrupted.", e)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HttpTimeoutException) {
+            throw TelegramBotApiTransportException("Telegram request timed out.", e)
+        } catch (e: IOException) {
+            throw TelegramBotApiTransportException("Telegram network request failed.", e)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw TelegramBotApiTransportException("Telegram request was interrupted.", e)
         }
 
     private fun buildRequest(

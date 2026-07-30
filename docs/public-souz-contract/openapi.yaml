@@ -1,0 +1,652 @@
+openapi: 3.1.0
+info:
+  title: Client-Souz REST API
+  version: 1.0.0-draft
+  description: Minimal REST contract for creating a durable chat before connecting to its WebSocket.
+servers:
+  - url: https://souz.example.ru
+security:
+  - souzProxyAuth: []
+    souzUserIdentity: []
+  - mobileAppAuth: []
+paths:
+  /v1/chats:
+    post:
+      operationId: createClientChat
+      tags: [Client Chats]
+      summary: Create a chat
+      description: Creates a user-owned Souz chat before the client opens `/v1/chats/{chatId}/ws?clientType=...`. The request is idempotent by `(userId, requestId)`. The authentication profile must match `request.clientType`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChatRequest"
+      responses:
+        "200":
+          description: Existing chat creation result returned for an idempotent retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateChatResponse"
+        "201":
+          description: Chat created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateChatResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+components:
+  securitySchemes:
+    souzProxyAuth:
+      type: apiKey
+      in: header
+      name: X-Souz-Proxy-Auth
+    souzUserIdentity:
+      type: apiKey
+      in: header
+      name: X-User-Id
+      description: Authoritative Souz user ID for backend clients.
+    mobileAppAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: client-app-token
+      description: Mobile application auth profile. Souz resolves the authoritative user from this token.
+  responses:
+    BadRequest:
+      description: Invalid request headers, content type, or JSON body.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthorized:
+      description: Client authentication or user identity is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Conflict:
+      description: Request conflicts with idempotency state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    CreateChatRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, clientType]
+      properties:
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+          description: Client-generated idempotency key for this chat creation attempt. This scope is independent from `message.submit.requestId`.
+        clientType:
+          $ref: "#/components/schemas/ClientType"
+          description: Must match the presented authentication profile.
+        title:
+          type: [string, "null"]
+    CreateChatResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, duplicate, chat]
+      properties:
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        duplicate:
+          type: boolean
+          description: True when this response repeats a stored result for the same normalized create-chat payload.
+        chat:
+          $ref: "#/components/schemas/Chat"
+    ClientType:
+      type: string
+      enum: [backend, mobile_app]
+    Chat:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        title:
+          type: [string, "null"]
+    UUID:
+      type: string
+      format: uuid
+    DateTime:
+      type: string
+      format: date-time
+    NonEmptyString:
+      type: string
+      minLength: 1
+      pattern: "\\S"
+    ArbitraryJson:
+      description: Any JSON value.
+    DeviceType:
+      type: string
+      enum: [tv_box, smart_speaker, smartphone, unknown]
+    DeviceCapability:
+      type: string
+      enum: [speech, screen, device_tools, user_permissions, deep_links, oauth]
+    Device:
+      type: object
+      additionalProperties: false
+      required: [deviceId, deviceType, capabilities]
+      properties:
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/DeviceCapability"
+        appVersion:
+          type: string
+        platform:
+          type: string
+    ClientMessage:
+      description: Client-to-Souz WebSocket frame.
+      oneOf:
+        - $ref: "#/components/schemas/MessageSubmit"
+        - $ref: "#/components/schemas/SucceededToolResult"
+        - $ref: "#/components/schemas/FailedToolResult"
+        - $ref: "#/components/schemas/CancelledToolResult"
+        - $ref: "#/components/schemas/TimedOutToolResult"
+        - $ref: "#/components/schemas/ThreadCancel"
+    MessageSubmit:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, payload]
+      properties:
+        kind:
+          type: string
+          enum: [message.submit]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        threadId:
+          anyOf:
+            - $ref: "#/components/schemas/UUID"
+            - type: "null"
+        payload:
+          $ref: "#/components/schemas/MessageSubmitPayload"
+    MessageSubmitPayload:
+      type: object
+      additionalProperties: false
+      required: [device, content]
+      properties:
+        device:
+          $ref: "#/components/schemas/Device"
+        content:
+          $ref: "#/components/schemas/RecognizedTextContent"
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+    RecognizedTextContent:
+      type: object
+      additionalProperties: false
+      required: [type, source, text]
+      properties:
+        type:
+          type: string
+          enum: [text]
+        source:
+          type: string
+          enum: [voice, text]
+        text:
+          $ref: "#/components/schemas/NonEmptyString"
+    RequestMeta:
+      type: object
+      additionalProperties: false
+      properties:
+        locale:
+          type: string
+        timeZone:
+          type: string
+        model:
+          type: string
+    SucceededToolResult:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, threadId, toolCallId, status, result]
+      properties:
+        kind:
+          type: string
+          enum: [tool.result]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [succeeded]
+        result:
+          $ref: "#/components/schemas/ArbitraryJson"
+    FailedToolResult:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, threadId, toolCallId, status, error]
+      properties:
+        kind:
+          type: string
+          enum: [tool.result]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [failed]
+        error:
+          $ref: "#/components/schemas/Error"
+    CancelledToolResult:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, threadId, toolCallId, status, error]
+      properties:
+        kind:
+          type: string
+          enum: [tool.result]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [cancelled]
+        error:
+          $ref: "#/components/schemas/Error"
+    TimedOutToolResult:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, threadId, toolCallId, status, error]
+      properties:
+        kind:
+          type: string
+          enum: [tool.result]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [timed_out]
+        error:
+          $ref: "#/components/schemas/Error"
+    ThreadCancel:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, threadId]
+      properties:
+        kind:
+          type: string
+          enum: [thread.cancel]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        reason:
+          type: string
+          enum: [user_requested, superseded, device_disconnected]
+    SouzFrame:
+      description: Souz-to-Client WebSocket frame.
+      oneOf:
+        - $ref: "#/components/schemas/SouzAck"
+        - $ref: "#/components/schemas/SouzServerEvent"
+    SouzAck:
+      oneOf:
+        - $ref: "#/components/schemas/AcceptedMessageSubmitAck"
+        - $ref: "#/components/schemas/RejectedMessageSubmitAck"
+        - $ref: "#/components/schemas/AcceptedToolResultAck"
+        - $ref: "#/components/schemas/RejectedToolResultAck"
+        - $ref: "#/components/schemas/AcceptedThreadCancelAck"
+        - $ref: "#/components/schemas/RejectedThreadCancelAck"
+    AcceptedMessageSubmitAck:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, status, duplicate, submission, thread, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [accepted]
+        duplicate:
+          type: boolean
+        submission:
+          $ref: "#/components/schemas/AcknowledgedSubmission"
+        thread:
+          $ref: "#/components/schemas/AcknowledgedThread"
+        error:
+          type: "null"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    RejectedMessageSubmitAck:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, status, duplicate, thread, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [rejected]
+        duplicate:
+          type: boolean
+        thread:
+          type: "null"
+        error:
+          $ref: "#/components/schemas/Error"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    AcknowledgedSubmission:
+      type: object
+      additionalProperties: false
+      required: [inputSeq]
+      properties:
+        inputSeq:
+          type: integer
+          format: int64
+          minimum: 1
+    AcknowledgedThread:
+      type: object
+      additionalProperties: false
+      required: [id, created, status, revision]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        created:
+          type: boolean
+        status:
+          type: string
+          enum: [running]
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+    AcceptedToolResultAck:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, toolCallId, threadId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        status:
+          type: string
+          enum: [accepted]
+        duplicate:
+          type: boolean
+        error:
+          type: "null"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    RejectedToolResultAck:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, toolCallId, threadId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        status:
+          type: string
+          enum: [rejected]
+        duplicate:
+          type: boolean
+        error:
+          $ref: "#/components/schemas/Error"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    AcceptedThreadCancelAck:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, threadId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        status:
+          type: string
+          enum: [accepted]
+        duplicate:
+          type: boolean
+        error:
+          type: "null"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    RejectedThreadCancelAck:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, threadId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        status:
+          type: string
+          enum: [rejected]
+        duplicate:
+          type: boolean
+        error:
+          $ref: "#/components/schemas/Error"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    SouzServerEvent:
+      oneOf:
+        - $ref: "#/components/schemas/ToolCallStartedEvent"
+        - $ref: "#/components/schemas/ThreadCompletedEvent"
+        - $ref: "#/components/schemas/ThreadFailedEvent"
+        - $ref: "#/components/schemas/ThreadCancelledEvent"
+    EventSeq:
+      type: integer
+      format: int64
+      minimum: 1
+    ToolCallStartedEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [tool.call.started]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ToolCallStartedPayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    ToolTarget:
+      type: string
+      enum: [souz, client]
+    ToolCallStartedPayload:
+      type: object
+      additionalProperties: false
+      required: [toolCallId, name, target, arguments]
+      properties:
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        name:
+          $ref: "#/components/schemas/NonEmptyString"
+        target:
+          $ref: "#/components/schemas/ToolTarget"
+        deviceId:
+          type: [string, "null"]
+        arguments:
+          $ref: "#/components/schemas/ArbitraryJson"
+        deadlineAt:
+          anyOf:
+            - $ref: "#/components/schemas/DateTime"
+            - type: "null"
+    ThreadCompletedEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [thread.completed]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ThreadCompletedPayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    ThreadCompletedPayload:
+      type: object
+      additionalProperties: false
+      required: [response]
+      properties:
+        response:
+          type: string
+    ThreadFailedEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [thread.failed]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ThreadFailedPayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    ThreadFailedPayload:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+    ThreadCancelledEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [thread.cancelled]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ThreadCancelledPayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    ThreadCancelledPayload:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+    ErrorCode:
+      type: string
+      enum:
+        - invalid_request
+        - unauthorized
+        - chat_not_found
+        - thread_not_found
+        - thread_already_terminal
+        - tool_call_not_found
+        - idempotency_conflict
+        - feature_disabled
+        - message_rejected
+        - internal_error
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"

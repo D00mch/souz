@@ -41,6 +41,7 @@ SWIFT_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" CLANG_MODULE_CACHE_PATH="$MODULE_CAC
   -emit-library \
   -target arm64-apple-macos12.0 \
   -sdk "$SDK_PATH" \
+  -framework AVFoundation \
   -framework Foundation \
   -framework Speech \
   -o "$ARM64_DIR/$LIB_NAME"
@@ -59,6 +60,7 @@ SWIFT_MODULE_CACHE_PATH="$MODULE_CACHE_DIR" CLANG_MODULE_CACHE_PATH="$MODULE_CAC
   -emit-library \
   -target x86_64-apple-macos12.0 \
   -sdk "$SDK_PATH" \
+  -framework AVFoundation \
   -framework Foundation \
   -framework Speech \
   -o "$X64_DIR/$LIB_NAME"

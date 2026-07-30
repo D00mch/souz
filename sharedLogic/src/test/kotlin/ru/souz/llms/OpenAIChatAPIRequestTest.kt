@@ -409,17 +409,17 @@ class OpenAIChatAPIRequestTest {
                 ),
                 functions = listOf(
                     LLMRequest.Function(
-                        name = "PresentationCreate",
-                        description = "Create slides",
+                        name = "BatchProcess",
+                        description = "Process records",
                         parameters = LLMRequest.Parameters(
                             type = "object",
                             properties = mapOf(
-                                "slides" to LLMRequest.Property(
+                                "records" to LLMRequest.Property(
                                     type = "array",
-                                    description = "Array of slide objects",
+                                    description = "Array of record objects",
                                 ),
                             ),
-                            required = listOf("slides"),
+                            required = listOf("records"),
                         ),
                     )
                 ),
@@ -436,9 +436,9 @@ class OpenAIChatAPIRequestTest {
         @Suppress("UNCHECKED_CAST")
         val properties = parameters["properties"] as Map<String, Any?>
         @Suppress("UNCHECKED_CAST")
-        val slides = properties["slides"] as Map<String, Any?>
-        assertEquals("array", slides["type"])
-        assertNotNull(slides["items"])
+        val records = properties["records"] as Map<String, Any?>
+        assertEquals("array", records["type"])
+        assertNotNull(records["items"])
     }
 
     @Test

@@ -6,7 +6,6 @@ import java.util.Locale
 import java.util.UUID
 import ru.souz.agent.AgentId
 import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.storage.memory.MemoryAgentStateRepository
 import ru.souz.llms.LLMRequest
 
 /** Persisted backend conversation snapshot used to resume the next agent turn. */
@@ -50,11 +49,6 @@ class AgentStateBackedSessionRepository(
         )
     }
 }
-
-/** In-memory implementation backed by the current agent state repository. */
-class InMemoryAgentSessionRepository(
-    stateRepository: AgentStateRepository = MemoryAgentStateRepository(),
-) : AgentSessionRepository by AgentStateBackedSessionRepository(stateRepository)
 
 private fun AgentConversationKey.chatId(): UUID = UUID.fromString(conversationId)
 
