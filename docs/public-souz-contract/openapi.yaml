@@ -1,0 +1,103 @@
+openapi: 3.1.0
+info:
+  title: Client-Souz REST API
+  version: 1.0.0-draft
+  description: REST contract for creating a durable chat before connecting to its WebSocket.
+servers:
+  - url: https://souz.example.ru
+security:
+  - souzProxyAuth: []
+    souzUserIdentity: []
+  - mobileAppAuth: []
+paths:
+  /v1/chats:
+    post:
+      operationId: createClientChat
+      tags: [Client Chats]
+      summary: Create a chat
+      description: Creates a user-owned Souz chat. The WebSocket route is defined by the AsyncAPI contract. The request is idempotent by `(userId, requestId)`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChatRequest"
+      responses:
+        "200":
+          description: Existing chat creation result returned for an idempotent retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateChatResponse"
+        "201":
+          description: Chat created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateChatResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+components:
+  securitySchemes:
+    souzProxyAuth:
+      type: apiKey
+      in: header
+      name: X-Souz-Proxy-Auth
+    souzUserIdentity:
+      type: apiKey
+      in: header
+      name: X-User-Id
+      description: Authoritative Souz user ID for backend clients.
+    mobileAppAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: client-app-token
+      description: Mobile application auth profile. Souz resolves the authoritative user from this token.
+  responses:
+    BadRequest:
+      description: Invalid request headers, content type, or JSON body.
+      content:
+        application/json:
+          schema:
+            $ref: "./schemas/common.yaml#/components/schemas/ErrorEnvelope"
+    Unauthorized:
+      description: Client authentication or user identity is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "./schemas/common.yaml#/components/schemas/ErrorEnvelope"
+    Conflict:
+      description: Request conflicts with idempotency state.
+      content:
+        application/json:
+          schema:
+            $ref: "./schemas/common.yaml#/components/schemas/ErrorEnvelope"
+  schemas:
+    CreateChatRequest:
+      type: object
+      additionalProperties: false
+      required: [requestId, clientType]
+      properties:
+        requestId:
+          $ref: "./schemas/common.yaml#/components/schemas/NonEmptyString"
+          description: Client-generated idempotency key for this chat creation attempt. This scope is independent from `message.submit.requestId`.
+        clientType:
+          $ref: "./schemas/common.yaml#/components/schemas/ClientType"
+        title:
+          type: [string, "null"]
+    CreateChatResponse:
+      type: object
+      additionalProperties: false
+      required: [requestId, duplicate, chat]
+      properties:
+        requestId:
+          $ref: "./schemas/common.yaml#/components/schemas/NonEmptyString"
+        duplicate:
+          type: boolean
+          description: True when this response repeats a stored result for the same normalized create-chat payload.
+        chat:
+          $ref: "./schemas/common.yaml#/components/schemas/Chat"

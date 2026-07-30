@@ -1,0 +1,84 @@
+components:
+  schemas:
+    UUID:
+      type: string
+      format: uuid
+    DateTime:
+      type: string
+      format: date-time
+    NonEmptyString:
+      type: string
+      minLength: 1
+      pattern: "\\S"
+    ArbitraryJson:
+      description: Any JSON value.
+    ClientType:
+      type: string
+      enum: [backend, mobile_app]
+      description: Public client profile used for authentication and capability routing.
+    DeviceType:
+      type: string
+      enum: [tv_box, smart_speaker, smartphone, unknown]
+    DeviceCapability:
+      type: string
+      enum: [speech, screen, device_tools, user_permissions, deep_links, oauth]
+    Device:
+      type: object
+      additionalProperties: false
+      required: [deviceId, deviceType, capabilities]
+      properties:
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/DeviceCapability"
+        appVersion:
+          type: string
+        platform:
+          type: string
+    Chat:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          $ref: "#/components/schemas/UUID"
+        title:
+          type: [string, "null"]
+    ErrorCode:
+      type: string
+      enum:
+        - invalid_request
+        - unauthorized
+        - chat_not_found
+        - thread_not_found
+        - thread_already_terminal
+        - tool_call_not_found
+        - idempotency_conflict
+        - chat_already_has_active_thread
+        - feature_disabled
+        - message_rejected
+        - internal_error
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"

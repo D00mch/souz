@@ -1,0 +1,140 @@
+components:
+  schemas:
+    SouzServerEvent:
+      $ref: "#/components/schemas/EventEnvelope"
+    EventEnvelope:
+      oneOf:
+        - $ref: "#/components/schemas/ToolCallStartedEvent"
+        - $ref: "#/components/schemas/ThreadCompletedEvent"
+        - $ref: "#/components/schemas/ThreadFailedEvent"
+        - $ref: "#/components/schemas/ThreadCancelledEvent"
+    ToolCallStartedEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [tool.call.started]
+        chatId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        threadId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ToolCallStartedPayload"
+        createdAt:
+          $ref: "./common.yaml#/components/schemas/DateTime"
+    ThreadCompletedEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [thread.completed]
+        chatId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        threadId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ThreadCompletedPayload"
+        createdAt:
+          $ref: "./common.yaml#/components/schemas/DateTime"
+    ThreadFailedEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [thread.failed]
+        chatId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        threadId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ThreadFailedPayload"
+        createdAt:
+          $ref: "./common.yaml#/components/schemas/DateTime"
+    ThreadCancelledEvent:
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [thread.cancelled]
+        chatId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        threadId:
+          $ref: "./common.yaml#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/ThreadCancelledPayload"
+        createdAt:
+          $ref: "./common.yaml#/components/schemas/DateTime"
+    EventSeq:
+      type: integer
+      format: int64
+      minimum: 1
+    ThreadCompletedPayload:
+      type: object
+      additionalProperties: false
+      required: [response]
+      properties:
+        response:
+          type: string
+    ThreadFailedPayload:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "./common.yaml#/components/schemas/Error"
+    ThreadCancelledPayload:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+    ToolTarget:
+      type: string
+      enum: [souz, client]
+    ToolCallStartedPayload:
+      type: object
+      additionalProperties: false
+      required: [toolCallId, name, target, arguments]
+      properties:
+        toolCallId:
+          $ref: "./common.yaml#/components/schemas/NonEmptyString"
+        name:
+          $ref: "./common.yaml#/components/schemas/NonEmptyString"
+        target:
+          $ref: "#/components/schemas/ToolTarget"
+        deviceId:
+          type: [string, "null"]
+        arguments:
+          $ref: "./common.yaml#/components/schemas/ArbitraryJson"
+        deadlineAt:
+          anyOf:
+            - $ref: "./common.yaml#/components/schemas/DateTime"
+            - type: "null"
