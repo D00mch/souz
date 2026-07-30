@@ -282,31 +282,32 @@ class MemoryService(
     }
 
     suspend fun searchMemory(
-        request: MemorySearchRequest,
+        context: MemoryContext,
+        semanticQuery: String,
+        lexicalHints: List<String> = emptyList(),
+        maxFacts: Int = MemorySearchPolicy.DEFAULT_MAX_FACTS,
         overrideScopes: List<MemoryScope>? = null,
-    ): MemorySearchResult {
-        require(request.maxFacts in 1..MemorySearchPolicy.MAX_FACTS)
+    ): List<ConversationMemoryRuntime.SearchFact> {
+        require(maxFacts in 1..MemorySearchPolicy.MAX_FACTS)
         val selection = selectMemoryFacts(
-            context = request.context,
-            semanticQuery = request.semanticQuery,
-            lexicalHints = request.lexicalHints,
-            maxFacts = request.maxFacts,
+            context = context,
+            semanticQuery = semanticQuery,
+            lexicalHints = lexicalHints,
+            maxFacts = maxFacts,
             maxPromptTokens = EXPLICIT_SEARCH_TOKEN_BUDGET,
             overrideScopes = overrideScopes,
         )
-        return MemorySearchResult(
-            facts = selection.selected.map { selected ->
-                val fact = selected.fact
-                MemorySearchFact(
-                    factId = fact.id,
-                    scope = fact.scope.normalized().type,
-                    kind = fact.kind.name,
-                    title = fact.title,
-                    body = fact.body,
-                    score = selected.score,
-                )
-            }
-        )
+        return selection.selected.map { selected ->
+            val fact = selected.fact
+            ConversationMemoryRuntime.SearchFact(
+                factId = fact.id,
+                scope = fact.scope.normalized().type,
+                kind = fact.kind.name,
+                title = fact.title,
+                body = fact.body,
+                score = selected.score,
+            )
+        }
     }
 
     private data class MemorySelection(

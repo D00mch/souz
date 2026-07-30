@@ -24,11 +24,13 @@ import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
+import ru.souz.tool.skills.ToolGetSkillsByCategory
 
 /** Result of one backend agent execution turn plus final usage data. */
 internal data class BackendConversationExecution(
@@ -130,6 +132,9 @@ class BackendConversationRuntimeFactory(
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
+    private val getKnowledgeTool: LLMToolSetup,
+    private val searchKnowledgeTool: LLMToolSetup,
+    private val searchMemoryTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: kotlinx.coroutines.CoroutineScope,
 ) {
@@ -174,7 +179,20 @@ class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
         )
-        val coreTools = skillCoreToolsFactory.create(
+        val getSkillByNameTool = skillCoreToolsFactory.createGetSkillByName(
+            toolCatalog = requestScopedToolCatalog,
+            toolsFilter = requestToolsFilter,
+            approvalGate = skillApprovalGate,
+        )
+        val getSkillsNamesByCategoryTool = skillCoreToolsFactory.createGetSkillsNamesByCategory(
+            toolCatalog = requestScopedToolCatalog,
+            toolsFilter = requestToolsFilter,
+        )
+        val getSkillsByCategoryTool = ToolGetSkillsByCategory(
+            getSkillByName = getSkillByNameTool,
+            getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
+        )
+        val runtimeCommandTool = skillCoreToolsFactory.createRuntimeCommand(
             toolCatalog = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,
             approvalGate = skillApprovalGate,
@@ -191,7 +209,13 @@ class BackendConversationRuntimeFactory(
                 timeZone = request.timeZone,
             ),
             mcpToolProvider = BackendNoopMcpToolProvider,
-            coreTools = coreTools,
+            getSkillByNameTool = getSkillByNameTool,
+            getSkillsByCategoryTool = getSkillsByCategoryTool,
+            getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,
+            getKnowledgeTool = getKnowledgeTool,
+            searchKnowledgeTool = searchKnowledgeTool,
+            searchMemoryTool = searchMemoryTool,
+            runtimeCommandTool = runtimeCommandTool,
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,

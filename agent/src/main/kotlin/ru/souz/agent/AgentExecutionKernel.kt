@@ -26,6 +26,7 @@ import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMToolSetup
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
@@ -44,7 +45,13 @@ class AgentExecutionKernelFactory(
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
-    private val coreTools: AgentCoreTools,
+    private val getSkillByNameTool: LLMToolSetup,
+    private val getSkillsByCategoryTool: LLMToolSetup,
+    private val getSkillsNamesByCategoryTool: LLMToolSetup,
+    private val getKnowledgeTool: LLMToolSetup,
+    private val searchKnowledgeTool: LLMToolSetup,
+    private val searchMemoryTool: LLMToolSetup,
+    private val runtimeCommandTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
@@ -102,7 +109,11 @@ class AgentExecutionKernelFactory(
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
-            coreTools = coreTools,
+            getSkillByNameTool = getSkillByNameTool,
+            getKnowledgeTool = getKnowledgeTool,
+            searchKnowledgeTool = searchKnowledgeTool,
+            searchMemoryTool = searchMemoryTool,
+            runtimeCommandTool = runtimeCommandTool,
         )
         val skillsGraphAgent = SkillsGraphBasedAgent(
             logObjectMapper = logObjectMapper,
@@ -113,7 +124,13 @@ class AgentExecutionKernelFactory(
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
-            coreTools = coreTools,
+            getSkillByNameTool = getSkillByNameTool,
+            getSkillsByCategoryTool = getSkillsByCategoryTool,
+            getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,
+            getKnowledgeTool = getKnowledgeTool,
+            searchKnowledgeTool = searchKnowledgeTool,
+            searchMemoryTool = searchMemoryTool,
+            runtimeCommandTool = runtimeCommandTool,
         )
         val executor = AgentExecutor(
             agentProvider = { agentId ->

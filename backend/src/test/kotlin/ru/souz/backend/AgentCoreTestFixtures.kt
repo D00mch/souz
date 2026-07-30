@@ -35,15 +35,15 @@ internal fun testSkillCoreToolsFactory(
 ): BackendSkillCoreToolsFactory = BackendSkillCoreToolsFactory(
     skillRegistryRepository = skillRegistryRepository,
     legacyCommandTool = testCoreTool("RunSkillCommand"),
-    getKnowledgeTool = testCoreTool("GetKnowledge"),
-    searchKnowledgeTool = testCoreTool("SearchKnowledge"),
-    searchMemoryTool = ToolSearchMemory(NoopConversationMemoryRuntime),
     commandTool = ToolRunSkillCommand(
         ToolInvocationRuntimeSandboxResolver {
             error("The test skill command sandbox is not configured.")
         }
     ),
 )
+
+internal fun testSearchMemoryTool(): LLMToolSetup =
+    ToolSearchMemory(NoopConversationMemoryRuntime)
 
 internal object TestConversationKnowledgeStore : ConversationKnowledgeStore {
     override suspend fun put(

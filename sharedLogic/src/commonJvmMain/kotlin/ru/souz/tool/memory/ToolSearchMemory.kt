@@ -12,9 +12,7 @@ import ru.souz.memory.ConversationId
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.MemoryContext
 import ru.souz.memory.MemoryOwnerId
-import ru.souz.memory.MemorySearchFact
 import ru.souz.memory.MemorySearchPolicy
-import ru.souz.memory.MemorySearchRequest
 import ru.souz.memory.MemorySessionId
 import ru.souz.memory.NoopConversationMemoryRuntime
 
@@ -73,7 +71,15 @@ class ToolSearchMemory(
             return errorResponse(functionCall.name, MEMORY_UNAVAILABLE, MEMORY_UNAVAILABLE_MESSAGE)
         }
         return try {
-            response(functionCall.name, memoryRuntime.searchMemory(request).facts)
+            response(
+                functionCall.name,
+                memoryRuntime.searchMemory(
+                    context = request.context,
+                    semanticQuery = request.semanticQuery,
+                    lexicalHints = request.lexicalHints,
+                    maxFacts = request.maxFacts,
+                ),
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -82,7 +88,7 @@ class ToolSearchMemory(
         }
     }
 
-    private fun Map<String, Any>.toRequest(meta: ToolInvocationMeta): MemorySearchRequest {
+    private fun Map<String, Any>.toRequest(meta: ToolInvocationMeta): SearchInput {
         val semanticQuery = (get("semanticQuery") as? String)
             ?.trim()
             ?.takeIf(String::isNotBlank)
@@ -100,7 +106,7 @@ class ToolSearchMemory(
         require(maxFacts in 1..MemorySearchPolicy.MAX_FACTS) {
             "maxFacts must be between 1 and ${MemorySearchPolicy.MAX_FACTS}."
         }
-        return MemorySearchRequest(meta.toMemoryContext(), semanticQuery, lexicalHints, maxFacts)
+        return SearchInput(meta.toMemoryContext(), semanticQuery, lexicalHints, maxFacts)
     }
 
     private fun Map<String, Any>.optionalInt(name: String): Int? {
@@ -117,14 +123,24 @@ class ToolSearchMemory(
 
     private fun response(
         name: String,
-        facts: List<MemorySearchFact> = emptyList(),
+        facts: List<ConversationMemoryRuntime.SearchFact> = emptyList(),
         error: ErrorResponse? = null,
     ) = LLMRequest.Message(LLMMessageRole.function, restJsonMapper.writeValueAsString(Response(facts, error)), name = name)
 
     private fun errorResponse(name: String, code: String, message: String) =
         response(name, error = ErrorResponse(code, message))
 
-    private data class Response(val facts: List<MemorySearchFact>, val error: ErrorResponse?)
+    private data class SearchInput(
+        val context: MemoryContext,
+        val semanticQuery: String,
+        val lexicalHints: List<String>,
+        val maxFacts: Int,
+    )
+
+    private data class Response(
+        val facts: List<ConversationMemoryRuntime.SearchFact>,
+        val error: ErrorResponse?,
+    )
 
     private data class ErrorResponse(val code: String, val message: String)
 

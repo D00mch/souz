@@ -14,11 +14,17 @@ class DesktopConversationMemoryRuntimeTest {
     @Test
     fun `search replaces caller owner and uses global plus current session scopes`() = runTest {
         val memoryService = mockk<MemoryService>()
-        val requestSlot = slot<MemorySearchRequest>()
+        val contextSlot = slot<MemoryContext>()
         val scopesSlot = slot<List<MemoryScope>>()
         coEvery {
-            memoryService.searchMemory(capture(requestSlot), capture(scopesSlot))
-        } returns MemorySearchResult()
+            memoryService.searchMemory(
+                capture(contextSlot),
+                "User testing preferences",
+                listOf("tests first"),
+                4,
+                capture(scopesSlot),
+            )
+        } returns emptyList()
         val runtime = DesktopConversationMemoryRuntime(
             memoryService = memoryService,
             captureService = mockk(relaxed = true),
@@ -31,18 +37,18 @@ class DesktopConversationMemoryRuntimeTest {
         )
 
         runtime.searchMemory(
-            MemorySearchRequest(
-                MemoryContext(
-                    MemoryOwnerId("caller-owner"), ConversationId("conversation-7"),
-                    MemorySessionId("wrong-session"), ProjectId("caller-project"),
-                ),
-                "User testing preferences", listOf("tests first"), 4,
-            )
+            context = MemoryContext(
+                MemoryOwnerId("caller-owner"), ConversationId("conversation-7"),
+                MemorySessionId("wrong-session"), ProjectId("caller-project"),
+            ),
+            semanticQuery = "User testing preferences",
+            lexicalHints = listOf("tests first"),
+            maxFacts = 4,
         )
 
-        assertEquals("desktop-owner", requestSlot.captured.context.ownerId.value)
-        assertEquals("conversation-7", requestSlot.captured.context.conversationId?.value)
-        assertEquals("conversation-7", requestSlot.captured.context.sessionId?.value)
+        assertEquals("desktop-owner", contextSlot.captured.ownerId.value)
+        assertEquals("conversation-7", contextSlot.captured.conversationId?.value)
+        assertEquals("conversation-7", contextSlot.captured.sessionId?.value)
         assertEquals(
             listOf(globalMemoryScope(), MemoryScope.session(MemorySessionId("conversation-7"))),
             scopesSlot.captured,

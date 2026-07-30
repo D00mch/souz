@@ -481,21 +481,25 @@ class MemoryCoreTest {
         )
 
         val result = fixture.memoryService.searchMemory(
-            request = MemorySearchRequest(context, "Preferred development workflow", listOf("TDD"), 8),
+            context = context,
+            semanticQuery = "Preferred development workflow",
+            lexicalHints = listOf("TDD"),
+            maxFacts = 8,
             overrideScopes = context.allowedRetrievalScopes(),
         )
 
         assertEquals("Preferred development workflow", fixture.embedder.lastQueryText)
         assertEquals("TDD", fixture.repository.lastLexicalQuery)
-        assertEquals(setOf(global.id, current.id), result.facts.map { it.factId }.toSet())
-        assertEquals(setOf("global", "session"), result.facts.map { it.scope }.toSet())
+        assertEquals(setOf(global.id, current.id), result.map { it.factId }.toSet())
+        assertEquals(setOf("global", "session"), result.map { it.scope }.toSet())
 
         val semanticOnly = fixture.memoryService.searchMemory(
-            request = MemorySearchRequest(context, "Preferred development workflow"),
+            context = context,
+            semanticQuery = "Preferred development workflow",
             overrideScopes = context.allowedRetrievalScopes(),
         )
 
-        assertTrue(semanticOnly.facts.none { it.factId == unrelatedPinned.id })
+        assertTrue(semanticOnly.none { it.factId == unrelatedPinned.id })
     }
 
     @Test

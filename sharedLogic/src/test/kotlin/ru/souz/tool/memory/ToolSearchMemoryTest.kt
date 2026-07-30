@@ -7,9 +7,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
-import ru.souz.memory.MemorySearchFact
-import ru.souz.memory.MemorySearchRequest
-import ru.souz.memory.MemorySearchResult
+import ru.souz.memory.MemoryContext
 import ru.souz.memory.NoopConversationMemoryRuntime
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,12 +18,20 @@ import kotlin.test.assertTrue
 class ToolSearchMemoryTest {
     @Test
     fun `search maps invocation metadata and serializes structured facts`() = runTest {
-        var captured: MemorySearchRequest? = null
+        var capturedContext: MemoryContext? = null
+        var capturedSemanticQuery: String? = null
+        var capturedLexicalHints: List<String>? = null
+        var capturedMaxFacts: Int? = null
         val tool = ToolSearchMemory(
-            runtime { request ->
-                captured = request
-                MemorySearchResult(
-                    listOf(MemorySearchFact("fact-1", "global", "PREFERENCE", "Tests first", "Tests first.", 0.87f))
+            runtime { context, semanticQuery, lexicalHints, maxFacts ->
+                capturedContext = context
+                capturedSemanticQuery = semanticQuery
+                capturedLexicalHints = lexicalHints
+                capturedMaxFacts = maxFacts
+                listOf(
+                    ConversationMemoryRuntime.SearchFact(
+                        "fact-1", "global", "PREFERENCE", "Tests first", "Tests first.", 0.87f
+                    )
                 )
             }
         )
@@ -43,12 +49,12 @@ class ToolSearchMemoryTest {
             ),
         )
 
-        assertEquals("owner-7", captured?.context?.ownerId?.value)
-        assertEquals("conversation-9", captured?.context?.conversationId?.value)
-        assertEquals("conversation-9", captured?.context?.sessionId?.value)
-        assertEquals("User testing preferences", captured?.semanticQuery)
-        assertEquals(listOf("tests first", "TDD"), captured?.lexicalHints)
-        assertEquals(4, captured?.maxFacts)
+        assertEquals("owner-7", capturedContext?.ownerId?.value)
+        assertEquals("conversation-9", capturedContext?.conversationId?.value)
+        assertEquals("conversation-9", capturedContext?.sessionId?.value)
+        assertEquals("User testing preferences", capturedSemanticQuery)
+        assertEquals(listOf("tests first", "TDD"), capturedLexicalHints)
+        assertEquals(4, capturedMaxFacts)
         restJsonMapper.readTree(message.content).also { body ->
             assertEquals("fact-1", body["facts"].single()["factId"].asText())
             assertEquals("global", body["facts"].single()["scope"].asText())
@@ -80,36 +86,38 @@ class ToolSearchMemoryTest {
             Case("limit above range", validArguments + ("maxFacts" to 17)),
             Case("non-integer limit", validArguments + ("maxFacts" to 2.5)),
         ).forEach { case ->
-            var captured: MemorySearchRequest? = null
+            var capturedHints: List<String>? = null
+            var capturedMaxFacts: Int? = null
             val message = ToolSearchMemory(
-                runtime { request ->
-                    captured = request
-                    MemorySearchResult()
+                runtime { _, _, lexicalHints, maxFacts ->
+                    capturedHints = lexicalHints
+                    capturedMaxFacts = maxFacts
+                    emptyList()
                 }
             ).invoke(LLMResponse.FunctionCall(ToolSearchMemory.NAME, case.arguments))
             val error = restJsonMapper.readTree(message.content)["error"]
 
             if (case.expectedHints != null) {
                 assertTrue(error.isNull, case.name)
-                assertEquals(case.expectedHints, captured?.lexicalHints, case.name)
-                assertEquals(8, captured?.maxFacts, case.name)
+                assertEquals(case.expectedHints, capturedHints, case.name)
+                assertEquals(8, capturedMaxFacts, case.name)
             } else {
                 assertEquals("invalid_arguments", error["code"]?.asText(), case.name)
-                assertNull(captured, case.name)
+                assertNull(capturedHints, case.name)
             }
         }
         assertEquals(
             listOf("semanticQuery", "lexicalHints"),
-            ToolSearchMemory(runtime { MemorySearchResult() }).fn.parameters.required,
+            ToolSearchMemory(runtime { _, _, _, _ -> emptyList() }).fn.parameters.required,
         )
     }
 
     @Test
     fun `unavailable and runtime failure return structured safe errors`() = runTest {
         val unavailable = ToolSearchMemory(NoopConversationMemoryRuntime).invoke(functionCall())
-        val failed = ToolSearchMemory(
-            runtime { error("sqlite failed at /private/user/memory.db") }
-        ).invoke(functionCall())
+        val failed = ToolSearchMemory(runtime { _, _, _, _ ->
+            error("sqlite failed at /private/user/memory.db")
+        }).invoke(functionCall())
 
         assertEquals("memory_unavailable", restJsonMapper.readTree(unavailable.content)["error"]["code"].asText())
         restJsonMapper.readTree(failed.content)["error"].also { error ->
@@ -121,7 +129,9 @@ class ToolSearchMemoryTest {
     @Test
     fun `runtime cancellation propagates`() = runTest {
         assertFailsWith<CancellationException> {
-            ToolSearchMemory(runtime { throw CancellationException("cancelled") }).invoke(functionCall())
+            ToolSearchMemory(runtime { _, _, _, _ ->
+                throw CancellationException("cancelled")
+            }).invoke(functionCall())
         }
     }
 
@@ -135,9 +145,17 @@ class ToolSearchMemoryTest {
             ),
         )
 
-    private fun runtime(search: suspend (MemorySearchRequest) -> MemorySearchResult) =
+    private fun runtime(
+        search: suspend (MemoryContext, String, List<String>, Int) -> List<ConversationMemoryRuntime.SearchFact>
+    ) =
         object : ConversationMemoryRuntime {
-            override suspend fun searchMemory(request: MemorySearchRequest): MemorySearchResult = search(request)
+            override suspend fun searchMemory(
+                context: MemoryContext,
+                semanticQuery: String,
+                lexicalHints: List<String>,
+                maxFacts: Int,
+            ): List<ConversationMemoryRuntime.SearchFact> =
+                search(context, semanticQuery, lexicalHints, maxFacts)
 
             override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) = Unit
         }

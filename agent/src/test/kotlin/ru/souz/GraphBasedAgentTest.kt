@@ -44,7 +44,18 @@ class GraphBasedAgentTest {
         val nodesMCP = mockk<NodesMCP>()
         val nodesSkillInventory = mockk<NodesSkillInventory>()
         val nodesToolUseWithKnowledge = mockk<NodesToolUseWithKnowledge>()
-        val coreTools = testAgentCoreTools()
+        val getSkillByNameTool = testTool("GetSkillByName")
+        val getKnowledgeTool = testTool("GetKnowledge")
+        val searchKnowledgeTool = testTool("SearchKnowledge")
+        val searchMemoryTool = testTool("SearchMemory")
+        val runtimeCommandTool = testTool("RunSkillCommand")
+        val expectedCoreTools = listOf(
+            getSkillByNameTool,
+            getKnowledgeTool,
+            searchKnowledgeTool,
+            searchMemoryTool,
+            runtimeCommandTool,
+        )
         val nodesMemory = NodesMemory(
             memoryRuntime = object : ConversationMemoryRuntime {
                 override suspend fun retrieveMemory(
@@ -63,7 +74,7 @@ class GraphBasedAgentTest {
         every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
         every {
             nodesSkillInventory.node(
-                match { tools -> tools == coreTools.classicGraphTools },
+                match { tools -> tools == expectedCoreTools },
                 SKILL_INVENTORY_NODE_NAME,
             )
         } returns passthroughStringNode(SKILL_INVENTORY_NODE_NAME)
@@ -85,7 +96,11 @@ class GraphBasedAgentTest {
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
-            coreTools = coreTools,
+            getSkillByNameTool = getSkillByNameTool,
+            getKnowledgeTool = getKnowledgeTool,
+            searchKnowledgeTool = searchKnowledgeTool,
+            searchMemoryTool = searchMemoryTool,
+            runtimeCommandTool = runtimeCommandTool,
         )
         val expectedRun = listOf(
             "Input->History",

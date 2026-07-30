@@ -203,9 +203,6 @@ fun backendDiModule(
         BackendSkillCoreToolsFactory(
             skillRegistryRepository = instance(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
-            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
-            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             commandTool = instance<ToolRunSkillCommand>(),
         )
     }
@@ -219,6 +216,9 @@ fun backendDiModule(
             configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
             skillCoreToolsFactory = instance(),
+            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
+            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             skillRegistryRepository = instance(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
