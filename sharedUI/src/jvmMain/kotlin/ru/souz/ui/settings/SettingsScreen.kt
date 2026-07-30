@@ -228,6 +228,7 @@ fun SettingsScreenMain(
                         SettingsSection.GENERAL -> GeneralSettingsContent(
                             state = state,
                             onDefaultCalendarChange = { viewModel.send(SettingsEvent.SelectDefaultCalendar(it)) },
+                            onCalendarDropdownOpen = { viewModel.send(SettingsEvent.FetchCalendars) },
                             onUseStreamingChange = { viewModel.send(SettingsEvent.InputUseStreaming(it)) },
                             onNotificationSoundEnabledChange = { viewModel.send(SettingsEvent.InputNotificationSoundEnabled(it)) },
                             onVoiceInputReviewEnabledChange = { viewModel.send(SettingsEvent.InputVoiceInputReviewEnabled(it)) },
