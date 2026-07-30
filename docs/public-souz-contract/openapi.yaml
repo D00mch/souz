@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Client-Souz REST API
   version: 1.0.0-draft
-  description: REST contract for creating a durable chat before connecting to its WebSocket.
+  description: Minimal REST contract for creating a durable chat before connecting to its WebSocket.
 servers:
   - url: https://souz.example.ru
 security:
@@ -15,7 +15,7 @@ paths:
       operationId: createClientChat
       tags: [Client Chats]
       summary: Create a chat
-      description: Creates a user-owned Souz chat. The WebSocket route is defined by the AsyncAPI contract. The request is idempotent by `(userId, requestId)`.
+      description: Creates a user-owned Souz chat before the client opens `/v1/chats/{chatId}/ws?clientType=...`. The request is idempotent by `(userId, requestId)`.
       requestBody:
         required: true
         content:
@@ -63,19 +63,19 @@ components:
       content:
         application/json:
           schema:
-            $ref: "./schemas/common.yaml#/components/schemas/ErrorEnvelope"
+            $ref: "#/components/schemas/ErrorEnvelope"
     Unauthorized:
       description: Client authentication or user identity is missing or invalid.
       content:
         application/json:
           schema:
-            $ref: "./schemas/common.yaml#/components/schemas/ErrorEnvelope"
+            $ref: "#/components/schemas/ErrorEnvelope"
     Conflict:
       description: Request conflicts with idempotency state.
       content:
         application/json:
           schema:
-            $ref: "./schemas/common.yaml#/components/schemas/ErrorEnvelope"
+            $ref: "#/components/schemas/ErrorEnvelope"
   schemas:
     CreateChatRequest:
       type: object
@@ -83,10 +83,10 @@ components:
       required: [requestId, clientType]
       properties:
         requestId:
-          $ref: "./schemas/common.yaml#/components/schemas/NonEmptyString"
+          $ref: "#/components/schemas/NonEmptyString"
           description: Client-generated idempotency key for this chat creation attempt. This scope is independent from `message.submit.requestId`.
         clientType:
-          $ref: "./schemas/common.yaml#/components/schemas/ClientType"
+          $ref: "#/components/schemas/ClientType"
         title:
           type: [string, "null"]
     CreateChatResponse:
@@ -95,9 +95,52 @@ components:
       required: [requestId, duplicate, chat]
       properties:
         requestId:
-          $ref: "./schemas/common.yaml#/components/schemas/NonEmptyString"
+          $ref: "#/components/schemas/NonEmptyString"
         duplicate:
           type: boolean
           description: True when this response repeats a stored result for the same normalized create-chat payload.
         chat:
-          $ref: "./schemas/common.yaml#/components/schemas/Chat"
+          $ref: "#/components/schemas/Chat"
+    ClientType:
+      type: string
+      enum: [backend, mobile_app]
+    Chat:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: [string, "null"]
+    NonEmptyString:
+      type: string
+      minLength: 1
+      pattern: "\\S"
+    ErrorCode:
+      type: string
+      enum:
+        - invalid_request
+        - unauthorized
+        - idempotency_conflict
+        - internal_error
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
