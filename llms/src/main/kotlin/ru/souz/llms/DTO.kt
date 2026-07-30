@@ -144,10 +144,11 @@ enum class LLMModel(
     val displayName: String,
     val alias: String,
     val provider: LlmProvider,
+    val legacyAliases: Set<String> = emptySet(),
 ) {
-    Lite("GigaChat Lite", "GigaChat-2", LlmProvider.GIGA),
-    Pro("GigaChat Pro", "GigaChat-2-Pro", LlmProvider.GIGA),
-    Max("GigaChat Max", "GigaChat-2-Max", LlmProvider.GIGA),
+    Lite("GigaChat Lite", "GigaChat-2", LlmProvider.GIGA, setOf("GigaChat")),
+    Pro("GigaChat Pro", "GigaChat-2-Pro", LlmProvider.GIGA, setOf("GigaChat-Pro")),
+    Max("GigaChat Max", "GigaChat-2-Max", LlmProvider.GIGA, setOf("GigaChat-Max")),
     Ultra("GigaChat Ultra", "GigaChat-3-Ultra", LlmProvider.GIGA),
     QwenFlash("Qwen Flash", "qwen-flash", LlmProvider.QWEN),
     QwenPlus("Qwen Plus", "qwen-plus", LlmProvider.QWEN),
@@ -176,6 +177,16 @@ enum class LLMModel(
     CodexGpt55("GPT-5.5 (Codex)", "gpt-5.5", LlmProvider.CODEX),
     CodexGpt54("GPT-5.4 (Codex)", "gpt-5.4", LlmProvider.CODEX),
     CodexGpt53("GPT-5.3 Codex", "gpt-5.3-codex", LlmProvider.CODEX),
+}
+
+fun findLLMModel(value: String): LLMModel? {
+    val normalized = value.trim()
+    if (normalized.isEmpty()) return null
+    return LLMModel.entries.firstOrNull { model ->
+        model.name.equals(normalized, ignoreCase = true) ||
+            model.alias.equals(normalized, ignoreCase = true) ||
+            model.legacyAliases.any { it.equals(normalized, ignoreCase = true) }
+    }
 }
 
 enum class EmbeddingsModel(
@@ -235,7 +246,7 @@ object LLMRequest {
         val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
     ) {
         /**
-         * OpenAI expects function to provide call IDs, but Giga and Qwen does not.
+         * OpenAI-compatible providers expect function results to provide call IDs, but Giga does not.
          */
         fun rmFnIds(): Chat = copy(
             messages = messages.map { m ->

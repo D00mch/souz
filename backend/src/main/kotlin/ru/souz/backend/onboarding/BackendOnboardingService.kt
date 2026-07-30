@@ -13,6 +13,7 @@ import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.findLLMModel
 
 class BackendOnboardingService(
     private val bootstrapService: BackendBootstrapService,
@@ -117,7 +118,7 @@ class BackendOnboardingService(
             .mapValues { (_, models) -> models.map { it.model }.sorted() }
 
     private fun String.toProviderOrNull(): LlmProvider? =
-        LLMModel.entries.firstOrNull { it.alias == this }?.provider
+        findLLMModel(this)?.provider
 
     private companion object {
         const val STEP_PROVIDER = "provider"

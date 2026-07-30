@@ -31,6 +31,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.findLLMModel
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.giga.GigaRestChatAPI
@@ -411,10 +412,7 @@ internal fun scenarioIntegrationModel(defaultModel: LLMModel): LLMModel {
     val rawValue = readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_MODEL)
         ?: readSystemProperty(SOUZ_AGENT_INTEGRATION_TEST_MODEL)
         ?: return defaultModel
-    return LLMModel.entries.firstOrNull { model ->
-        rawValue.equals(model.name, ignoreCase = true) ||
-            rawValue.equals(model.alias, ignoreCase = true)
-    } ?: error(
+    return findLLMModel(rawValue) ?: error(
         "Unsupported $SOUZ_AGENT_INTEGRATION_TEST_MODEL='$rawValue'. " +
             "Expected one of ${LLMModel.entries.joinToString { "${it.name}/${it.alias}" }}."
     )

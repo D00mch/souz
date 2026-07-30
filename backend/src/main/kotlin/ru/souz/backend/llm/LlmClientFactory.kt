@@ -12,6 +12,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.findLLMModel
 
 data class BackendLlmExecutionContext(
     val userId: String,
@@ -108,9 +109,7 @@ private class RoutingLlmChatApi(
     }
 
     private fun providerFor(model: String): LlmProvider =
-        LLMModel.entries.firstOrNull { candidate ->
-            candidate.alias.equals(model, ignoreCase = true) || candidate.name.equals(model, ignoreCase = true)
-        }?.provider ?: context.settingsProvider.gigaModel.provider
+        findLLMModel(model)?.provider ?: context.settingsProvider.gigaModel.provider
 }
 
 private class CredentialOverrideSettingsProvider(

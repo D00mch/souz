@@ -9,6 +9,7 @@ import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.llms.LLMModel
+import ru.souz.llms.findLLMModel
 
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
     receiveOrRequestError(::invalidV1Request)
@@ -70,9 +71,7 @@ internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSett
     )
 
 internal fun parseModel(rawModel: String, fieldName: String): LLMModel =
-    LLMModel.entries.firstOrNull { model ->
-        model.alias.equals(rawModel.trim(), ignoreCase = true) || model.name.equals(rawModel.trim(), ignoreCase = true)
-    } ?: throw invalidV1Request("$fieldName must be a known model alias.")
+    findLLMModel(rawModel) ?: throw invalidV1Request("$fieldName must be a known model alias.")
 
 internal fun parseLocale(rawLocale: String, fieldName: String): Locale =
     try {
