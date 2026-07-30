@@ -2,6 +2,7 @@ package ru.souz.ui.android
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +34,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,12 +65,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import org.kodein.di.DI
+import org.kodein.di.instance
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import ru.souz.llms.LLMModel
 import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.AppTheme
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainEffect
 import ru.souz.ui.main.MainEvent
@@ -83,11 +87,17 @@ import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
 import ru.souz.ui.common.ApiKeyField
+import ru.souz.ui.host.SettingsHostPreferences
 
 @Composable
 fun SouzAndroidSharedUiApp(di: DI) {
     withDI(di) {
-        AppTheme {
+        val settingsHostPreferences: SettingsHostPreferences by localDI().instance()
+        val themeMode by settingsHostPreferences.themeMode.collectAsState()
+        AppTheme(
+            themeMode = themeMode,
+            systemDark = isSystemInDarkTheme(),
+        ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
@@ -604,6 +614,17 @@ private fun AndroidSettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = state.themeMode == mode,
+                        onClick = { onEvent(SettingsEvent.SelectThemeMode(mode)) },
+                        label = { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) },
+                    )
+                }
+            }
+
             Text("Models", style = MaterialTheme.typography.titleMedium)
             state.availableLlmModels.forEach { model ->
                 val selected = model == state.gigaModel

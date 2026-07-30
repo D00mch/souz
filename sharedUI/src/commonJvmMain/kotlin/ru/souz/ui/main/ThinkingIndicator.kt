@@ -9,17 +9,16 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val ThinkingTextColor = Color(0xFFE5E7EB)
 private val ThinkingPulseEasing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 private const val ThinkingLetterDelayMillis = 140
 private const val ThinkingPulseCycleMillis = 2200
@@ -68,7 +67,7 @@ private fun AnimatedThinkingLetter(
     Text(
         text = char,
         fontSize = 14.sp,
-        color = ThinkingTextColor,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.graphicsLayer { this.alpha = alpha },
     )
 }

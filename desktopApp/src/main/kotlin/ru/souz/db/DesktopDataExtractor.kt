@@ -116,13 +116,19 @@ class DesktopDataExtractor(
     }
 
     fun notes(): List<StorredData> = runCatching {
+        val notesRunning = runCatching { ToolRunBashCommand.sh("pgrep -x Notes") }.isSuccess
+        if (!notesRunning) return@runCatching emptyList<StorredData>()
+
         val script = """
 set AppleScript's text item delimiters to linefeed
 tell application "Notes" to set xs to name of notes
 return xs as text
             """.trimIndent()
         val raw = ToolRunBashCommand.apple(script)
-        raw.lines().map { StorredData(it, StorredType.NOTES) }
+        raw.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { StorredData(it, StorredType.NOTES) }
     }.getOrElse { emptyList() }
 
     val facts: List<StorredData> = listOf(

@@ -28,6 +28,7 @@ import org.kodein.di.compose.localDI
 import org.kodein.di.instance
 import ru.souz.Screen.*
 import ru.souz.db.SettingsProvider
+import ru.souz.ui.host.SettingsHostPreferences
 import ru.souz.tool.ToolCategory
 import ru.souz.ui.AppTheme
 import ru.souz.ui.main.MainScreen
@@ -39,6 +40,7 @@ import ru.souz.ui.tools.ToolsScreen
 import java.util.*
 import java.net.HttpURLConnection
 import java.net.URI
+import io.github.kdroidfilter.platformtools.darkmodedetector.isSystemInDarkMode
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -50,6 +52,8 @@ fun App(
 ) {
     val di = localDI()
     val settingsProvider: SettingsProvider by di.instance()
+    val settingsHostPreferences: SettingsHostPreferences by di.instance()
+    val themeMode by settingsHostPreferences.themeMode.collectAsState()
     var currentScreen: Screen by remember {
         mutableStateOf(if (settingsProvider.onboardingCompleted) Main else Setup)
     }
@@ -68,7 +72,10 @@ fun App(
         }
     }
 
-    AppTheme {
+    AppTheme(
+        themeMode = themeMode,
+        systemDark = isSystemInDarkMode(),
+    ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = Color.Transparent

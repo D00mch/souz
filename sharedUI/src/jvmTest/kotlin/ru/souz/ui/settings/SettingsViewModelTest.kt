@@ -11,6 +11,7 @@ import io.mockk.mockkStatic
 import io.mockk.runs
 import io.mockk.unmockkAll
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.kodein.di.DI
@@ -42,6 +44,7 @@ import ru.souz.llms.local.LocalModelStore
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
+import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.host.CalendarListProvider
@@ -173,6 +176,7 @@ class SettingsViewModelTest {
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
         val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
+        var calendarListProviderCalls = 0
 
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
@@ -196,7 +200,12 @@ class SettingsViewModelTest {
             bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
             bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
             bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
-            bindSingleton<CalendarListProvider> { { emptyList() } }
+            bindSingleton<CalendarListProvider> {
+                {
+                    calendarListProviderCalls += 1
+                    listOf("Work")
+                }
+            }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
 
@@ -229,6 +238,7 @@ class SettingsViewModelTest {
         assertEquals(expectedVoiceRecognitionModel, voiceRecognitionModelValue)
         assertEquals("prompt-for-${expectedLlmModel.alias}", state.systemPrompt)
         assertIs<ApiKeyFieldState.StoredHidden>(state.apiKeyFields.getValue(ApiKeyField.QWEN_CHAT))
+        assertEquals(0, calendarListProviderCalls)
 
         verify(exactly = 0) { settingsProvider.gigaChatKey }
         verify(exactly = 0) { settingsProvider.qwenChatKey }
@@ -291,6 +301,130 @@ class SettingsViewModelTest {
         assertTrue(viewModel.uiState.value.useEnglishInterface)
         assertTrue(settingsHostPreferences.useEnglishInterface)
     }
+
+    @Test
+    fun `theme selection updates observable preferences`() = runTest(dispatcher) {
+        val settingsHostPreferences = InMemorySettingsHostPreferences()
+        val viewModel = createViewModel(
+            telegramHost = ru.souz.ui.host.NoopTelegramSettingsHost,
+            preferences = settingsHostPreferences,
+        )
+
+        viewModel.handleEvent(SettingsEvent.SelectThemeMode(ThemeMode.LIGHT))
+        advanceUntilIdle()
+
+        assertEquals(ThemeMode.LIGHT, viewModel.uiState.value.themeMode)
+        assertEquals(ThemeMode.LIGHT, settingsHostPreferences.themeMode.value)
+
+        settingsHostPreferences.setThemeMode(ThemeMode.DARK)
+        advanceUntilIdle()
+
+        assertEquals(ThemeMode.DARK, viewModel.uiState.value.themeMode)
+    }
+
+    @Test
+    fun `telegram auth is single-flight without blocking settings events`() = runTest(dispatcher) {
+        val authState = MutableStateFlow(
+            ru.souz.ui.host.TelegramHostAuthState(
+                step = ru.souz.ui.host.TelegramHostAuthStep.PHONE,
+            )
+        )
+        val finishOperation = CompletableDeferred<Unit>()
+        val telegramHost = mockk<TelegramSettingsHost>(relaxed = true)
+        every { telegramHost.isSupported() } returns true
+        every { telegramHost.authState } returns authState
+        coEvery { telegramHost.submitPhoneNumber(any()) } coAnswers {
+            finishOperation.await()
+        }
+        val preferences = InMemorySettingsHostPreferences()
+        val viewModel = createViewModel(telegramHost, preferences)
+        advanceUntilIdle()
+
+        viewModel.handleEvent(SettingsEvent.InputTelegramPhone("+79990000000"))
+        viewModel.send(SettingsEvent.SubmitTelegramPhone)
+        runCurrent()
+
+        viewModel.send(SettingsEvent.SubmitTelegramPhone)
+        viewModel.send(SettingsEvent.SelectThemeMode(ThemeMode.LIGHT))
+        runCurrent()
+
+        try {
+            coVerify(exactly = 1) { telegramHost.submitPhoneNumber("+79990000000") }
+            assertEquals(ThemeMode.LIGHT, preferences.themeMode.value)
+        } finally {
+            finishOperation.complete(Unit)
+            advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun `telegram bot operation exposes final state`() = runTest(dispatcher) {
+        val telegramHost = mockk<TelegramSettingsHost>(relaxed = true)
+        every { telegramHost.isSupported() } returns true
+        every { telegramHost.authState } returns MutableStateFlow(
+            ru.souz.ui.host.TelegramHostAuthState(
+                step = ru.souz.ui.host.TelegramHostAuthStep.PHONE,
+            )
+        )
+        val finishBotOperation = CompletableDeferred<Unit>()
+        coEvery { telegramHost.createControlBot(forceNew = true) } coAnswers {
+            finishBotOperation.await()
+        }
+        val viewModel = createViewModel(telegramHost)
+        advanceUntilIdle()
+
+        viewModel.send(SettingsEvent.CreateControlBot)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.telegramOperationBusy)
+        viewModel.send(SettingsEvent.CreateControlBot)
+        runCurrent()
+        coVerify(exactly = 1) { telegramHost.createControlBot(forceNew = true) }
+
+        finishBotOperation.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(false, viewModel.uiState.value.telegramOperationBusy)
+        assertTrue(viewModel.uiState.value.isTelegramBotActive)
+    }
+
+    @Test
+    fun `telegram secondary auth actions are handled by view model`() = runTest(dispatcher) {
+        val telegramHost = mockk<TelegramSettingsHost>(relaxed = true)
+        every { telegramHost.isSupported() } returns true
+        every { telegramHost.authState } returns MutableStateFlow(
+            ru.souz.ui.host.TelegramHostAuthState(
+                step = ru.souz.ui.host.TelegramHostAuthStep.CODE,
+            )
+        )
+        val viewModel = createViewModel(telegramHost)
+        advanceUntilIdle()
+
+        viewModel.handleEvent(SettingsEvent.InputTelegramPhone("+7 (999) 000-00-00"))
+        viewModel.handleEvent(SettingsEvent.RequestTelegramCodeAgain)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { telegramHost.requestCodeAgain("+79990000000") }
+        assertNotNull(viewModel.uiState.value.telegramAuthInfo)
+
+        viewModel.handleEvent(SettingsEvent.RestartTelegramAuth)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { telegramHost.cancelAuth() }
+        assertEquals("", viewModel.uiState.value.telegramCodeInput)
+        assertEquals("", viewModel.uiState.value.telegramPasswordInput)
+    }
+
+    private fun createViewModel(
+        telegramHost: TelegramSettingsHost,
+        preferences: SettingsHostPreferences = InMemorySettingsHostPreferences(),
+    ) = SettingsViewModel(
+        di = DI {
+            bindSingleton<TelegramSettingsHost> { telegramHost }
+            bindSingleton<SettingsHostPreferences> { preferences }
+        },
+        settingsDispatcher = dispatcher,
+    )
 
     @Test
     fun `selecting ambient analysis model updates separate local setting without changing agent model`() = runTest(dispatcher) {

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,11 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import ru.souz.ui.common.RealLiquidGlassCard
 
 private const val NOTIFICATION_DISPLAY_DURATION_MS = 2500L
 private val NotificationWarningColor = Color(0xFFFF5252)
-private val NotificationCyanColor = Color(0xFF00E5FF)
 
 @Composable
 fun ConnectionStatusNotification(
@@ -60,7 +59,6 @@ fun ConnectionStatusNotification(
              // Reuse the glass card style but strictly sized
             RealLiquidGlassCard(
                 modifier = Modifier.wrapContentSize(),
-                isWindowFocused = true, // Force focused state for visibility
                 cornerRadius = 20.dp
             ) {
                 Row(
@@ -80,7 +78,7 @@ fun ConnectionStatusNotification(
                     
                     Text(
                         text = "No internet connection",
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -92,7 +90,7 @@ fun ConnectionStatusNotification(
                         modifier = Modifier
                             .size(20.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.1f))
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                             .clickable { 
                                 isVisible = false
                                 onDismiss() 
@@ -102,7 +100,7 @@ fun ConnectionStatusNotification(
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = "Close",
-                            tint = Color.White.copy(alpha = 0.7f),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(12.dp)
                         )
                     }

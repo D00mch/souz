@@ -23,16 +23,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
-import ru.souz.ui.settings.SettingsUiColors
+import ru.souz.ui.souzColors
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.region_profile_en_label
 import souz.sharedui.generated.resources.region_profile_ru_label
 
-private val ToggleBackground = SettingsUiColors.inputBackground
-private val ToggleBorder = SettingsUiColors.inputBorder
-private val ToggleSelectedBackground = SettingsUiColors.toggleActiveBackground
-private val ToggleSelectedText = SettingsUiColors.toggleActiveText
-private val ToggleText = SettingsUiColors.toggleInactiveText
+data class SegmentedToggleOption<T>(
+    val value: T,
+    val label: StringResource,
+)
 
 @Composable
 fun LanguageToggle(
@@ -42,33 +41,45 @@ fun LanguageToggle(
     russianLabel: StringResource = Res.string.region_profile_ru_label,
     englishLabel: StringResource = Res.string.region_profile_en_label,
 ) {
+    SettingsSegmentedToggle(
+        selected = useEnglish,
+        options = listOf(
+            SegmentedToggleOption(value = false, label = russianLabel),
+            SegmentedToggleOption(value = true, label = englishLabel),
+        ),
+        onSelected = onLanguageChange,
+        modifier = modifier,
+    )
+}
+
+@Composable
+fun <T> SettingsSegmentedToggle(
+    selected: T,
+    options: List<SegmentedToggleOption<T>>,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(32.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(ToggleBackground)
-            .border(1.dp, ToggleBorder, RoundedCornerShape(10.dp))
+            .background(MaterialTheme.souzColors.settings.segmentContainer)
+            .border(1.dp, MaterialTheme.souzColors.settings.inputBorder, RoundedCornerShape(10.dp))
             .padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ToggleSegment(
-            text = stringResource(russianLabel),
-            selected = !useEnglish,
-            onClick = {
-                if (useEnglish) onLanguageChange(false)
-            },
-            modifier = Modifier.weight(1f)
-        )
-        ToggleSegment(
-            text = stringResource(englishLabel),
-            selected = useEnglish,
-            onClick = {
-                if (!useEnglish) onLanguageChange(true)
-            },
-            modifier = Modifier.weight(1f)
-        )
+        options.forEach { option ->
+            ToggleSegment(
+                text = stringResource(option.label),
+                selected = selected == option.value,
+                onClick = {
+                    if (selected != option.value) onSelected(option.value)
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -83,7 +94,7 @@ private fun ToggleSegment(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) ToggleSelectedBackground else Color.Transparent)
+            .background(if (selected) MaterialTheme.souzColors.settings.selectedSegmentBackground else Color.Transparent)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -94,7 +105,7 @@ private fun ToggleSegment(
                 lineHeight = 16.sp,
                 fontWeight = FontWeight.Medium,
             ),
-            color = if (selected) ToggleSelectedText else ToggleText,
+            color = if (selected) MaterialTheme.souzColors.settings.selectedSegmentContent else MaterialTheme.souzColors.settings.segmentContent,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
     }

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,8 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifySelectionAction
+import ru.souz.ui.ToolReviewColors
 import ru.souz.ui.main.ToolModifyReviewItemUi
 import ru.souz.ui.main.ToolModifyReviewUi
+import ru.souz.ui.souzColors
 
 private val ToolModifyPatchPreviewMinHeight = 220.dp
 private val ToolModifyPatchPreviewMaxHeight = 620.dp
@@ -51,8 +54,9 @@ internal fun ToolModifyPatchPreview(
     maxHeight: Dp = ToolModifyPatchPreviewMaxHeight,
     maxLines: Int = ToolModifyPatchPreviewMaxLines,
 ) {
-    val (lines, isTruncated) = remember(patch, maxLines) {
-        buildPatchPreviewLines(patch, maxLines)
+    val colors = MaterialTheme.souzColors.toolReview
+    val (lines, isTruncated) = remember(patch, maxLines, colors) {
+        buildPatchPreviewLines(patch, maxLines, colors)
     }
     val verticalScroll = rememberScrollState()
 
@@ -64,8 +68,8 @@ internal fun ToolModifyPatchPreview(
                 max = maxHeight
             )
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0x33000000))
-            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(6.dp))
+            .background(colors.patchBackground)
+            .border(1.dp, colors.border, RoundedCornerShape(6.dp))
             .padding(8.dp)
     ) {
         Column(
@@ -97,7 +101,7 @@ internal fun ToolModifyPatchPreview(
             if (isTruncated) {
                 Text(
                     text = "... (preview truncated)",
-                    color = Color(0x99FFFFFF),
+                    color = colors.secondaryContent,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     lineHeight = 16.sp
@@ -114,18 +118,20 @@ internal fun ToolModifyReviewBlock(
     onToggleSelection: (String, Long) -> Unit,
     onResolve: (String, ToolModifySelectionAction) -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.toolReview
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0x10FFFFFF))
-            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(14.dp))
+            .background(colors.container)
+            .border(1.dp, colors.border, RoundedCornerShape(14.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
             text = if (review.isResolved) "Edit review result" else "Review staged EditFile changes",
-            color = Color(0xE6FFFFFF),
+            color = colors.content,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -133,7 +139,7 @@ internal fun ToolModifyReviewBlock(
         review.summary?.takeIf { it.isNotBlank() }?.let { summary ->
             Text(
                 text = summary,
-                color = Color(0x99FFFFFF),
+                color = colors.secondaryContent,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
             )
@@ -142,7 +148,7 @@ internal fun ToolModifyReviewBlock(
         if (!review.isResolved) {
             Text(
                 text = "Apply selected applies checked changes and discards the rest. Discard selected does the opposite.",
-                color = Color(0x80FFFFFF),
+                color = colors.secondaryContent,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
             )
@@ -180,12 +186,13 @@ internal fun ToolModifyReviewBlock(
 private fun buildPatchPreviewLines(
     patch: String,
     maxLines: Int,
+    colors: ToolReviewColors,
 ): Pair<List<PatchPreviewLine>, Boolean> {
     if (patch.isBlank()) {
         return listOf(
             PatchPreviewLine(
                 text = AnnotatedString("(empty patch)"),
-                color = Color(0x99FFFFFF),
+                color = colors.secondaryContent,
             )
         ) to false
     }
@@ -200,7 +207,7 @@ private fun buildPatchPreviewLines(
         if (isPatchRemovedLine(line)) {
             val removedPreviews = mutableListOf<PatchPreviewLine>()
             while (index < previewLines.size && isPatchRemovedLine(previewLines[index])) {
-                removedPreviews += buildPatchPreviewLine(previewLines[index])
+                removedPreviews += buildPatchPreviewLine(previewLines[index], colors)
                 index += 1
             }
 
@@ -212,12 +219,13 @@ private fun buildPatchPreviewLines(
                     val (removedPreview, addedPreview) = buildHighlightedPatchPreviewPair(
                         removedLine = removedPreviews[pairedIndex].text.text,
                         addedLine = addedLine,
+                        colors = colors,
                     )
                     removedPreviews[pairedIndex] = removedPreview
                     addedPreviews += addedPreview
                     pairedIndex += 1
                 } else {
-                    addedPreviews += buildPatchPreviewLine(addedLine)
+                    addedPreviews += buildPatchPreviewLine(addedLine, colors)
                 }
                 index += 1
             }
@@ -227,7 +235,7 @@ private fun buildPatchPreviewLines(
             continue
         }
 
-        preview += buildPatchPreviewLine(line)
+        preview += buildPatchPreviewLine(line, colors)
         index += 1
     }
 
@@ -241,23 +249,24 @@ private fun ToolModifyReviewItemCard(
     reviewResolved: Boolean,
     onToggleSelection: (String, Long) -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.toolReview
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val borderColor by animateColorAsState(
         targetValue = when {
-            reviewResolved -> statusColorFor(item.status)
-            item.selected -> Color(0x66F59E0B)
-            isHovered -> Color(0x33FFFFFF)
-            else -> Color(0x1AFFFFFF)
+            reviewResolved -> statusColorFor(item.status, colors)
+            item.selected -> colors.accent.copy(alpha = 0.4f)
+            isHovered -> colors.secondaryContent.copy(alpha = 0.25f)
+            else -> colors.border
         },
         animationSpec = tween(durationMillis = 150)
     )
     val backgroundColor by animateColorAsState(
         targetValue = when {
-            reviewResolved -> statusColorFor(item.status).copy(alpha = 0.08f)
-            item.selected -> Color(0x14F59E0B)
-            isHovered -> Color(0x10FFFFFF)
-            else -> Color(0x08FFFFFF)
+            reviewResolved -> statusColorFor(item.status, colors).copy(alpha = 0.08f)
+            item.selected -> colors.accent.copy(alpha = 0.08f)
+            isHovered -> colors.container
+            else -> colors.itemContainer
         },
         animationSpec = tween(durationMillis = 150)
     )
@@ -295,7 +304,7 @@ private fun ToolModifyReviewItemCard(
             ) {
                 Text(
                     text = item.path,
-                    color = Color(0xF2FFFFFF),
+                    color = colors.content,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 2,
@@ -303,7 +312,7 @@ private fun ToolModifyReviewItemCard(
                 )
                 Text(
                     text = statusTextFor(item, reviewResolved),
-                    color = statusColorFor(item.status),
+                    color = statusColorFor(item.status, colors),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                 )
@@ -313,7 +322,7 @@ private fun ToolModifyReviewItemCard(
                 Icon(
                     imageVector = if (item.selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                     contentDescription = null,
-                    tint = if (item.selected) Color(0xFFF59E0B) else Color(0x66FFFFFF),
+                    tint = if (item.selected) colors.accent else colors.secondaryContent,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -322,7 +331,7 @@ private fun ToolModifyReviewItemCard(
         item.warning?.takeIf { it.isNotBlank() }?.let { warning ->
             Text(
                 text = warning,
-                color = Color(0xFFFFB4AB),
+                color = colors.negative,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
             )
@@ -345,6 +354,7 @@ private data class PatchPreviewLine(
 
 private fun buildPatchPreviewLine(
     line: String,
+    colors: ToolReviewColors,
     exactChangeRange: TextRange? = null,
 ): PatchPreviewLine {
     val kind = patchPreviewLineKind(line)
@@ -356,7 +366,7 @@ private fun buildPatchPreviewLine(
         buildAnnotatedString {
             append(line)
             addStyle(
-                SpanStyle(background = exactChangeHighlightFor(kind)),
+                SpanStyle(background = exactChangeHighlightFor(kind, colors)),
                 start = safeRange.start,
                 end = safeRange.end
             )
@@ -367,14 +377,15 @@ private fun buildPatchPreviewLine(
 
     return PatchPreviewLine(
         text = text,
-        color = patchPreviewColorFor(kind),
-        backgroundColor = patchPreviewBackgroundFor(kind),
+        color = patchPreviewColorFor(kind, colors),
+        backgroundColor = patchPreviewBackgroundFor(kind, colors),
     )
 }
 
 private fun buildHighlightedPatchPreviewPair(
     removedLine: String,
     addedLine: String,
+    colors: ToolReviewColors,
 ): Pair<PatchPreviewLine, PatchPreviewLine> {
     val removedContent = removedLine.drop(1)
     val addedContent = addedLine.drop(1)
@@ -394,8 +405,8 @@ private fun buildHighlightedPatchPreviewPair(
         end = 1 + addedContent.length - sharedSuffixLength
     )
 
-    return buildPatchPreviewLine(removedLine, removedChangeRange) to
-        buildPatchPreviewLine(addedLine, addedChangeRange)
+    return buildPatchPreviewLine(removedLine, colors, removedChangeRange) to
+        buildPatchPreviewLine(addedLine, colors, addedChangeRange)
 }
 
 @Composable
@@ -404,23 +415,23 @@ private fun ReviewActionButton(
     primary: Boolean,
     onClick: () -> Unit,
 ) {
+    val colors = MaterialTheme.souzColors.toolReview
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val backgroundColor by animateColorAsState(
         targetValue = when {
-            primary && isHovered -> Color(0x33FFFFFF)
-            primary -> Color(0x1FFFFFFF)
-            isHovered -> Color(0x18FFFFFF)
-            else -> Color(0x10FFFFFF)
+            primary && isHovered -> colors.accent.copy(alpha = 0.85f)
+            primary -> colors.accent
+            isHovered -> colors.container
+            else -> colors.itemContainer
         },
         animationSpec = tween(durationMillis = 150)
     )
     val borderColor by animateColorAsState(
         targetValue = when {
-            primary && isHovered -> Color(0x44FFFFFF)
-            primary -> Color(0x33FFFFFF)
-            isHovered -> Color(0x28FFFFFF)
-            else -> Color(0x1AFFFFFF)
+            primary -> colors.accent
+            isHovered -> colors.secondaryContent.copy(alpha = 0.25f)
+            else -> colors.border
         },
         animationSpec = tween(durationMillis = 150)
     )
@@ -440,7 +451,7 @@ private fun ReviewActionButton(
     ) {
         Text(
             text = text,
-            color = Color.White,
+            color = if (primary) colors.accentContent else colors.content,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
         )
@@ -492,12 +503,15 @@ private fun statusTextFor(item: ToolModifyReviewItemUi, reviewResolved: Boolean)
         }
     }
 
-private fun statusColorFor(status: ToolModifyApplyStatus?): Color = when (status) {
-    ToolModifyApplyStatus.APPLIED -> Color(0xFF4ADE80)
-    ToolModifyApplyStatus.DISCARDED -> Color(0xFFB0BEC5)
+private fun statusColorFor(
+    status: ToolModifyApplyStatus?,
+    colors: ToolReviewColors,
+): Color = when (status) {
+    ToolModifyApplyStatus.APPLIED -> colors.positive
+    ToolModifyApplyStatus.DISCARDED -> colors.secondaryContent
     ToolModifyApplyStatus.SKIPPED_CONFLICT,
-    ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT -> Color(0xFFFFB74D)
-    null -> Color(0xFFF59E0B)
+    ToolModifyApplyStatus.SKIPPED_EXTERNAL_CONFLICT -> colors.warning
+    null -> colors.accent
 }
 
 private fun patchPreviewLineKind(line: String): PatchPreviewLineKind = when {
@@ -517,25 +531,34 @@ private fun patchPreviewLineKind(line: String): PatchPreviewLineKind = when {
     else -> PatchPreviewLineKind.Context
 }
 
-private fun patchPreviewColorFor(kind: PatchPreviewLineKind): Color = when (kind) {
-    PatchPreviewLineKind.FileHeader -> Color(0xFF90CAF9)
-    PatchPreviewLineKind.HunkHeader -> Color(0xFFFFCC80)
-    PatchPreviewLineKind.Added -> Color(0xFFB9F6CA)
-    PatchPreviewLineKind.Removed -> Color(0xFFFF8A80)
-    PatchPreviewLineKind.Meta -> Color(0xFFB0BEC5)
-    PatchPreviewLineKind.Context -> Color(0xCCFFFFFF)
+private fun patchPreviewColorFor(
+    kind: PatchPreviewLineKind,
+    colors: ToolReviewColors,
+): Color = when (kind) {
+    PatchPreviewLineKind.FileHeader -> colors.info
+    PatchPreviewLineKind.HunkHeader -> colors.warning
+    PatchPreviewLineKind.Added -> colors.positive
+    PatchPreviewLineKind.Removed -> colors.negative
+    PatchPreviewLineKind.Meta -> colors.secondaryContent
+    PatchPreviewLineKind.Context -> colors.content
 }
 
-private fun patchPreviewBackgroundFor(kind: PatchPreviewLineKind): Color = when (kind) {
-    PatchPreviewLineKind.Added -> Color(0x1A1B5E20)
-    PatchPreviewLineKind.Removed -> Color(0x1A7F1D1D)
-    PatchPreviewLineKind.HunkHeader -> Color(0x10FFB74D)
+private fun patchPreviewBackgroundFor(
+    kind: PatchPreviewLineKind,
+    colors: ToolReviewColors,
+): Color = when (kind) {
+    PatchPreviewLineKind.Added -> colors.positive.copy(alpha = 0.08f)
+    PatchPreviewLineKind.Removed -> colors.negative.copy(alpha = 0.08f)
+    PatchPreviewLineKind.HunkHeader -> colors.warning.copy(alpha = 0.06f)
     else -> Color.Transparent
 }
 
-private fun exactChangeHighlightFor(kind: PatchPreviewLineKind): Color = when (kind) {
-    PatchPreviewLineKind.Added -> Color(0x334ADE80)
-    PatchPreviewLineKind.Removed -> Color(0x33FF6B6B)
+private fun exactChangeHighlightFor(
+    kind: PatchPreviewLineKind,
+    colors: ToolReviewColors,
+): Color = when (kind) {
+    PatchPreviewLineKind.Added -> colors.positive.copy(alpha = 0.2f)
+    PatchPreviewLineKind.Removed -> colors.negative.copy(alpha = 0.2f)
     else -> Color.Transparent
 }
 

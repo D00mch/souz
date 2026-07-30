@@ -1,5 +1,6 @@
 package ru.souz.ui.host
 
+import ru.souz.ui.ThemeMode
 import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,6 +8,30 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DesktopSettingsHostPreferencesTest {
+    @Test
+    fun `theme mode persists explicit choices and defaults safely`() {
+        val savedValues = mutableListOf<String>()
+        val preferences = DesktopSettingsHostPreferences(
+            readThemeMode = { "LIGHT" },
+            writeThemeMode = { savedValues += it },
+        )
+
+        assertEquals(ThemeMode.LIGHT, preferences.themeMode.value)
+
+        preferences.setThemeMode(ThemeMode.DARK)
+
+        assertEquals(listOf("DARK"), savedValues)
+        assertEquals(ThemeMode.DARK, preferences.themeMode.value)
+        assertEquals(
+            ThemeMode.SYSTEM,
+            DesktopSettingsHostPreferences(readThemeMode = { "unexpected" }).themeMode.value,
+        )
+        assertEquals(
+            ThemeMode.SYSTEM,
+            DesktopSettingsHostPreferences(readThemeMode = { null }).themeMode.value,
+        )
+    }
+
     @Test
     fun `interface language follows system and applies persisted choices safely`() {
         withDefaultLocale("en-US") {

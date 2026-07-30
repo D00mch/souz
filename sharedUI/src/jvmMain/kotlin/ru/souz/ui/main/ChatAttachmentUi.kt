@@ -9,11 +9,14 @@ import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Image as ImageIcon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import org.jetbrains.skia.Image as SkiaImage
+import ru.souz.ui.souzColors
 
 internal data class ChatAttachmentUiStyle(
     val icon: ImageVector,
@@ -22,6 +25,7 @@ internal data class ChatAttachmentUiStyle(
     val iconTint: Color,
 )
 
+@Composable
 internal fun chatAttachmentUiStyle(type: ChatAttachmentType): ChatAttachmentUiStyle = when (type) {
     ChatAttachmentType.DOCUMENT -> ChatAttachmentUiStyle(
         icon = Icons.Rounded.Description,
@@ -67,9 +71,9 @@ internal fun chatAttachmentUiStyle(type: ChatAttachmentType): ChatAttachmentUiSt
     )
     ChatAttachmentType.OTHER -> ChatAttachmentUiStyle(
         icon = Icons.AutoMirrored.Rounded.InsertDriveFile,
-        background = Color(0x14FFFFFF),
-        border = Color(0x26FFFFFF),
-        iconTint = Color(0xB3FFFFFF)
+        background = MaterialTheme.souzColors.neutralAttachment.background,
+        border = MaterialTheme.souzColors.neutralAttachment.border,
+        iconTint = MaterialTheme.souzColors.neutralAttachment.content,
     )
 }
 

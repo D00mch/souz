@@ -43,7 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.souz.agent.session.GraphSession
 import ru.souz.agent.session.GraphStepRecord
+import ru.souz.ui.GraphColors
 import ru.souz.ui.glassColors
+import ru.souz.ui.souzColors
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
 import kotlin.math.roundToInt
@@ -563,7 +565,6 @@ fun GraphVisualizationScreen(
         // Main Background
         RealLiquidGlassCard(
             modifier = Modifier.fillMaxSize(),
-            isWindowFocused = true
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header - Draggable area for window
@@ -602,10 +603,10 @@ fun GraphVisualizationScreen(
                                 .width(12.dp)
                                 .padding(horizontal = 2.dp, vertical = 12.dp)
                                 .clip(RoundedCornerShape(999.dp))
-                                .background(Color.White.copy(alpha = 0.08f))
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
                                 .border(
                                     1.dp,
-                                    Color.White.copy(alpha = 0.12f),
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                                     RoundedCornerShape(999.dp)
                                 )
                                 .pointerHoverIcon(horizontalResizePointerIcon)
@@ -714,12 +715,17 @@ fun GraphCanvas(
     onNodeClick: (String) -> Unit
 ) {
     val density = LocalDensity.current
+    val colors = MaterialTheme.souzColors.graph
     
     // State for node positions (delta from initial)
     // We use a key to reset if data changes completely, but persist for same session
     val nodeOffsets = remember(data) { mutableStateMapOf<String, Offset>() }
     
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.canvasBackground),
+    ) {
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
         
@@ -741,7 +747,8 @@ fun GraphCanvas(
                     end = end,
                     fromPos = edge.fromPos,
                     toPos = edge.toPos,
-                    highlighted = edge.isHighlighted
+                    highlighted = edge.isHighlighted,
+                    colors = colors,
                 )
             }
         }
@@ -808,7 +815,14 @@ fun calculateControlPoint(start: Offset, end: Offset, fromPos: ResolvedPos, toPo
     return Offset(midX + horizontalOffset, midY)
 }
 
-fun DrawScope.drawCurvedEdge(start: Offset, end: Offset, fromPos: ResolvedPos, toPos: ResolvedPos, highlighted: Boolean) {
+fun DrawScope.drawCurvedEdge(
+    start: Offset,
+    end: Offset,
+    fromPos: ResolvedPos,
+    toPos: ResolvedPos,
+    highlighted: Boolean,
+    colors: GraphColors,
+) {
     val path = Path()
     path.moveTo(start.x, start.y)
     
@@ -816,8 +830,8 @@ fun DrawScope.drawCurvedEdge(start: Offset, end: Offset, fromPos: ResolvedPos, t
 
     path.quadraticTo(control.x, control.y, end.x, end.y)
 
-    val color = if (highlighted) Color(0xFF00E5FF) else Color.Gray.copy(alpha = 0.3f)
-    val alpha = if (highlighted) 0.5f else 0.2f
+    val color = if (highlighted) colors.highlightedEdge else colors.edge
+    val alpha = if (highlighted) 0.8f else 0.45f
     val strokeWidth = if (highlighted) 2.dp.toPx() else 1.dp.toPx()
 
     drawPath(
@@ -836,12 +850,11 @@ fun CircularNodeItem(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val glowColor = Color(0xFF00E5FF)
+    val colors = MaterialTheme.souzColors.graph
     
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .clickable(onClick = onClick),
+            .fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         if (count > 1) {
@@ -850,8 +863,8 @@ fun CircularNodeItem(
                     .matchParentSize()
                     .offset(x = 3.dp, y = 3.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.05f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+                    .background(colors.itemBackground)
+                    .border(0.5.dp, colors.nodeBorder, CircleShape)
             )
         }
 
@@ -859,22 +872,24 @@ fun CircularNodeItem(
             modifier = Modifier
                 .matchParentSize()
                 .clip(CircleShape)
-                .background(
-                    if (isSelected) glowColor.copy(alpha = 0.1f) 
-                    else Color(0xFF1E1E1E).copy(alpha = 0.95f) 
-                )
+                .clickable(onClick = onClick)
+                .background(if (isSelected) colors.selectedNodeBackground else colors.nodeBackground)
                 .border(
                     if (isSelected) 2.dp else 1.dp,
-                    if (isSelected) glowColor else Color.White.copy(alpha = 0.2f),
+                    if (isSelected) colors.selectedNodeBorder else colors.nodeBorder,
                     CircleShape
                 )
-                .shadow(if (isSelected) 12.dp else 0.dp, CircleShape, spotColor = glowColor),
+                .shadow(
+                    if (isSelected) 12.dp else 0.dp,
+                    CircleShape,
+                    spotColor = colors.selectedNodeBorder,
+                ),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isSelected) glowColor else Color.White.copy(alpha = 0.9f),
+                color = if (isSelected) colors.selectedNodeContent else colors.nodeContent,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
@@ -890,14 +905,14 @@ fun CircularNodeItem(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .clip(CircleShape)
-                    .background(Color(0xFF2C2C2C))
-                    .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                    .background(colors.badgeBackground)
+                    .border(1.dp, colors.badgeBorder, CircleShape)
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
                     text = "$count",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
+                    color = colors.badgeContent,
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp
                 )
@@ -916,13 +931,14 @@ fun SideDetailsPanel(
     onToggleSubgraph: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val colors = MaterialTheme.souzColors.graph
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black.copy(alpha = 0.5f))
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .background(colors.panelBackground)
+            .border(1.dp, colors.panelBorder, RoundedCornerShape(16.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -937,7 +953,7 @@ fun SideDetailsPanel(
             Text(
                 text = "SUBGRAPHS",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray,
+                color = colors.secondaryText,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -953,16 +969,16 @@ fun SideDetailsPanel(
                              else Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(16.dp))
                         },
                         colors = FilterChipDefaults.filterChipColors(
-                            containerColor = Color.White.copy(alpha = 0.05f),
-                            labelColor = Color.White,
-                            selectedContainerColor = Color(0xFF00E5FF).copy(alpha = 0.2f),
-                            selectedLabelColor = Color(0xFF00E5FF)
+                            containerColor = colors.itemBackground,
+                            labelColor = colors.primaryText,
+                            selectedContainerColor = colors.selectedItemBackground,
+                            selectedLabelColor = colors.selectedNodeContent,
                         )
                     )
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = colors.divider)
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -971,7 +987,7 @@ fun SideDetailsPanel(
                 Text(
                     text = "Select a node",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = colors.secondaryText,
                 )
             }
         } else {
@@ -979,16 +995,16 @@ fun SideDetailsPanel(
                 text = selectedNode.label,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = colors.primaryText,
             )
             Text(
                 text = "${selectedNode.visitCount} executions",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f)
+                color = colors.secondaryText,
             )
             
             Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = colors.divider)
             Spacer(modifier = Modifier.height(16.dp))
 
             Column(
@@ -1015,6 +1031,7 @@ fun ExpandableStepItem(
     isExpanded: Boolean,
     onToggle: () -> Unit
 ) {
+    val colors = MaterialTheme.souzColors.graph
     val clipboardManager = LocalClipboardManager.current
     var isCopied by remember { mutableStateOf(false) }
     val activeToolsDiff = remember(step.data) { extractActiveToolsDiff(step.data) }
@@ -1059,8 +1076,12 @@ fun ExpandableStepItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isExpanded) Color.White.copy(alpha = 0.08f) else Color.Transparent)
-            .border(1.dp, if (isExpanded) Color(0xFF00E5FF).copy(0.3f) else Color.White.copy(0.05f), RoundedCornerShape(8.dp))
+            .background(if (isExpanded) colors.selectedItemBackground else Color.Transparent)
+            .border(
+                1.dp,
+                if (isExpanded) colors.selectedNodeBorder.copy(alpha = 0.3f) else colors.panelBorder,
+                RoundedCornerShape(8.dp),
+            )
     ) {
         Row(
             modifier = Modifier
@@ -1074,7 +1095,7 @@ fun ExpandableStepItem(
                 text = "Execution #${step.stepIndex}",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.9f),
+                color = colors.primaryText,
                 modifier = Modifier.weight(1f)
             )
             
@@ -1089,7 +1110,7 @@ fun ExpandableStepItem(
                 Icon(
                     imageVector = if (isCopied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
                     contentDescription = if (isCopied) "Copied" else "Copy content",
-                    tint = if (isCopied) Color(0xFF66BB6A) else Color.White.copy(alpha = 0.5f),
+                    tint = if (isCopied) colors.positiveText else colors.secondaryText,
                     modifier = Modifier.size(14.dp)
                 )
             }
@@ -1097,7 +1118,7 @@ fun ExpandableStepItem(
             Icon(
                 imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.Rounded.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.6f),
+                tint = colors.secondaryText,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1128,13 +1149,13 @@ fun ExpandableStepItem(
                         
                         if (selectedCategories != null && selectedCategories.isNotEmpty()) {
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("CATEGORIES", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                                Text("CATEGORIES", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                                 Text(
                                     text = selectedCategories.joinToString(", "),
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFFA5D6A7)
+                                        color = colors.outputText,
                                     )
                                 )
                             }
@@ -1145,7 +1166,7 @@ fun ExpandableStepItem(
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 "ACTIVE TOOLS CHANGED",
-                                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText),
                             )
                             if (activeToolsDiff.added.isNotEmpty()) {
                                 Text(
@@ -1153,7 +1174,7 @@ fun ExpandableStepItem(
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFFB9F6CA)
+                                        color = colors.positiveText,
                                     )
                                 )
                             }
@@ -1163,7 +1184,7 @@ fun ExpandableStepItem(
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 11.sp,
-                                        color = Color(0xFFFF8A80)
+                                        color = colors.negativeText,
                                     )
                                 )
                             }
@@ -1174,31 +1195,31 @@ fun ExpandableStepItem(
                     val addedHistory = step.addedHistory
 
                     if (!isClassifyStep && !outputSummary.isNullOrEmpty() && step.inputSummary != outputSummary) {
-                        Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                        Text("IO DIFF", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                         DiffContent(original = step.inputSummary, revised = outputSummary)
                     } else if (!isClassifyStep || outputSummary.isNullOrEmpty()) {
                         // Input
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                             Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                             Text("INPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                              Text(
                                  text = step.inputSummary.trim().ifEmpty { "-" }, 
                                  style = TextStyle(
                                      fontFamily = FontFamily.Monospace, 
                                      fontSize = 11.sp, 
-                                     color = Color(0xFF81D4FA)
+                                     color = colors.inputText,
                                  )
                              )
                         }
 
                         if (!outputSummary.isNullOrEmpty() && !isClassifyStep) {
                              Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                 Text("OUTPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                                 Text("OUTPUT", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                                  Text(
                                      text = outputSummary.trim(), 
                                      style = TextStyle(
                                          fontFamily = FontFamily.Monospace, 
                                          fontSize = 11.sp, 
-                                         color = Color(0xFFA5D6A7)
+                                         color = colors.outputText,
                                      )
                                  )
                              }
@@ -1207,12 +1228,12 @@ fun ExpandableStepItem(
 
                     if (!addedHistory.isNullOrEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray))
+                            Text("SAVED TO HISTORY", style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = colors.secondaryText))
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFF101010), RoundedCornerShape(4.dp))
-                                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                    .background(colors.codeBackground, RoundedCornerShape(4.dp))
+                                    .border(1.dp, colors.panelBorder, RoundedCornerShape(4.dp))
                                     .padding(8.dp)
                             ) {
                                 Text(
@@ -1220,7 +1241,7 @@ fun ExpandableStepItem(
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 10.sp,
-                                        color = Color(0xFFFFCC80)
+                                        color = colors.historyText,
                                     )
                                 )
                             }
@@ -1234,6 +1255,7 @@ fun ExpandableStepItem(
 
 @Composable
 fun DiffContent(original: String, revised: String) {
+    val colors = MaterialTheme.souzColors.graph
     val diff = remember(original, revised) {
         val generator = com.github.difflib.text.DiffRowGenerator.create()
             .showInlineDiffs(true)
@@ -1252,7 +1274,7 @@ fun DiffContent(original: String, revised: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+            .background(colors.codeBackground, RoundedCornerShape(4.dp))
             .padding(8.dp)
     ) {
         diff.forEach { row ->
@@ -1262,19 +1284,19 @@ fun DiffContent(original: String, revised: String) {
              if (oldLine == newLine) {
                  Text(
                      text = "  $oldLine",
-                     style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color.Gray.copy(0.5f))
+                     style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.secondaryText),
                  )
              } else {
                  if (oldLine.isNotBlank()) {
                      Text(
                         text = "- $oldLine",
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFFFF8A80))
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.negativeText),
                      )
                  }
                  if (newLine.isNotBlank()) {
                      Text(
                         text = "+ $newLine",
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Color(0xFFB9F6CA))
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = colors.positiveText),
                      )
                  }
              }
@@ -1282,31 +1304,34 @@ fun DiffContent(original: String, revised: String) {
     }
 }
 
-
-
 @Composable
 fun TimelineStrip(
     steps: List<GraphStepRecord>,
     selectedStep: GraphStepRecord?,
     onStepClick: (GraphStepRecord) -> Unit
 ) {
+    val colors = MaterialTheme.souzColors.graph
+    val currentIndex = steps.indexOf(selectedStep)
+    val hasPrevious = currentIndex > 0
+    val hasNext = currentIndex in 0 until steps.lastIndex
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(
             onClick = {
-                val currentIndex = steps.indexOf(selectedStep)
-                if (currentIndex > 0) {
-                    onStepClick(steps[currentIndex - 1])
-                }
+                if (hasPrevious) onStepClick(steps[currentIndex - 1])
             },
-            enabled = (steps.indexOf(selectedStep) > 0)
+            enabled = hasPrevious,
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                 contentDescription = "Previous Step",
-                tint = if (steps.indexOf(selectedStep) > 0) MaterialTheme.glassColors.textPrimary else MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)
+                tint = if (hasPrevious) {
+                    MaterialTheme.glassColors.textPrimary
+                } else {
+                    MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)
+                },
             )
         }
 
@@ -1327,8 +1352,8 @@ fun TimelineStrip(
                         .padding(horizontal = 2.dp)
                         .clip(RoundedCornerShape(2.dp))
                         .background(
-                            if (isSelected) Color(0xFF00E5FF) 
-                            else Color.White.copy(alpha = 0.2f)
+                            if (isSelected) colors.highlightedEdge
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
                         )
                         .clickable { onStepClick(step) }
                 )
@@ -1337,17 +1362,18 @@ fun TimelineStrip(
 
         IconButton(
             onClick = {
-                val currentIndex = steps.indexOf(selectedStep)
-                if (currentIndex >= 0 && currentIndex < steps.size - 1) {
-                    onStepClick(steps[currentIndex + 1])
-                }
+                if (hasNext) onStepClick(steps[currentIndex + 1])
             },
-            enabled = (steps.indexOf(selectedStep) < steps.size - 1)
+            enabled = hasNext,
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowForward, // Need ArrowForward
                 contentDescription = "Next Step",
-                tint = if (steps.indexOf(selectedStep) < steps.size - 1) MaterialTheme.glassColors.textPrimary else MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)
+                tint = if (hasNext) {
+                    MaterialTheme.glassColors.textPrimary
+                } else {
+                    MaterialTheme.glassColors.textPrimary.copy(alpha = 0.3f)
+                },
             )
         }
     }

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,12 +62,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import ru.souz.ui.souzAssets
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
-
-import androidx.compose.ui.res.painterResource as jvmPainterResource
 
 private val WelcomeEnterEasing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f)
 private val WelcomeCardEasing = CubicBezierEasing(0f, 0f, 0.2f, 1f)
@@ -155,6 +156,8 @@ internal fun EmptyChatWelcomeContent(
     val density = LocalDensity.current
     val isLowDpi = density.density < 1.5f
     val logoSize = if (isLowDpi) WelcomeLogoSizeLowDpi else WelcomeLogoSize
+    val assets = MaterialTheme.souzAssets
+    val logo = painterResource(assets.welcomeLogo)
 
     LaunchedEffect(Unit) {
         show = true
@@ -225,7 +228,7 @@ internal fun EmptyChatWelcomeContent(
                     contentAlignment = Alignment.Center,
                 ) {
                     Image(
-                        painter = jvmPainterResource("icon-light.png"),
+                        painter = logo,
                         contentDescription = stringResource(Res.string.welcome_logo_content_desc),
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
@@ -236,7 +239,7 @@ internal fun EmptyChatWelcomeContent(
 
                 Text(
                     text = stringResource(Res.string.welcome_quick_actions_subtitle),
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     lineHeight = 19.6.sp,
                     textAlign = TextAlign.Center,
@@ -317,12 +320,16 @@ private fun QuickActionCard(
         label = "quick_action_card_offset_${item.id}",
     )
     val cardBackground by animateColorAsState(
-        targetValue = if (isHovered) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.05f),
+        targetValue = MaterialTheme.colorScheme.onSurface.copy(
+            alpha = if (isHovered) 0.10f else 0.05f,
+        ),
         animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
         label = "quick_action_card_bg_${item.id}",
     )
     val cardBorder by animateColorAsState(
-        targetValue = if (isHovered) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.06f),
+        targetValue = MaterialTheme.colorScheme.onSurface.copy(
+            alpha = if (isHovered) 0.12f else 0.06f,
+        ),
         animationSpec = tween(durationMillis = 300, easing = WelcomeCardEasing),
         label = "quick_action_card_border_${item.id}",
     )
@@ -375,7 +382,7 @@ private fun QuickActionCard(
 
         Text(
             text = stringResource(item.labelRes),
-            color = Color.White.copy(alpha = 0.8f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
             fontSize = 13.sp,
             lineHeight = 15.6.sp,
             maxLines = 1,
@@ -384,7 +391,7 @@ private fun QuickActionCard(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = stringResource(item.descriptionRes),
-            color = Color.White.copy(alpha = 0.3f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 11.sp,
             lineHeight = 13.2.sp,
             maxLines = 2,
