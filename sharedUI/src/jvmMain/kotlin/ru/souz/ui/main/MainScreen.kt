@@ -75,6 +75,7 @@ import org.jetbrains.compose.resources.stringResource
 import ru.souz.ambient.AmbientModeState
 import ru.souz.LocalWindowScope
 import ru.souz.tool.files.ToolModifySelectionAction
+import ru.souz.ui.AppTheme
 import ru.souz.ui.common.*
 import ru.souz.ui.main.search.*
 import ru.souz.ui.souzColors
@@ -1945,7 +1946,7 @@ private fun TopToolbarIconButton(
 @Preview
 @Composable
 fun PreviewSmartFocusGlass() {
-    MaterialTheme {
+    AppTheme {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(
@@ -1962,7 +1963,7 @@ fun PreviewSmartFocusGlass() {
 @Preview
 @Composable
 fun PreviewChatMode() {
-    MaterialTheme {
+    AppTheme {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(
@@ -1984,7 +1985,7 @@ fun PreviewChatMode() {
 @Preview
 @Composable
 fun PreviewChatModeEmpty() {
-    MaterialTheme {
+    AppTheme {
         Box(Modifier.fillMaxSize().background(Color.Gray)) {
             MainScreenContent(
                 state = MainState(

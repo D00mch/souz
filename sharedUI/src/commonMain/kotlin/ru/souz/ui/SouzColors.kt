@@ -60,6 +60,27 @@ data class SettingsColors(
 )
 
 @Immutable
+data class DialogColors(
+    val backdrop: Color,
+    val background: Color,
+    val border: Color,
+    val content: Color,
+    val secondaryContent: Color,
+    val subtleBackground: Color,
+    val subtleBorder: Color,
+    val info: Color,
+    val warning: Color,
+    val success: Color,
+    val primaryActionBackground: Color,
+    val primaryActionContent: Color,
+    val primaryActionHoverBackground: Color,
+    val secondaryActionBackground: Color,
+    val secondaryActionHoverBackground: Color,
+    val progressStart: Color,
+    val progressEnd: Color,
+)
+
+@Immutable
 data class GraphColors(
     val canvasBackground: Color,
     val nodeBackground: Color,
@@ -156,6 +177,7 @@ data class SouzColors(
     val glass: GlassColors,
     val chat: ChatColors,
     val settings: SettingsColors,
+    val dialog: DialogColors,
     val graph: GraphColors,
     val memory: MemoryColors,
     val ambientSuggestion: AmbientSuggestionColors,
