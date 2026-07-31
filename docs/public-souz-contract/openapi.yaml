@@ -5,17 +5,13 @@ info:
   description: Minimal REST contract for creating a durable chat before connecting to its WebSocket.
 servers:
   - url: https://souz.example.ru
-security:
-  - souzProxyAuth: []
-    souzUserIdentity: []
-  - mobileAppAuth: []
 paths:
   /v1/chats:
     post:
       operationId: createClientChat
       tags: [Client Chats]
       summary: Create a chat
-      description: Creates a user-owned Souz chat before the client opens `/v1/chats/{chatId}/ws?clientType=...`. The request is idempotent by `(userId, requestId)`. The authentication profile must match `request.clientType`.
+      description: Creates a user-owned Souz chat before the client opens `/v1/chats/{chatId}/ws?clientType=...`. The request is idempotent by `(userId, requestId)`, with `userId` supplied in the JSON body. This API is only exposed inside a trusted environment, so credentials are not required.
       requestBody:
         required: true
         content:
@@ -37,35 +33,12 @@ paths:
                 $ref: "#/components/schemas/CreateChatResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "409":
           $ref: "#/components/responses/Conflict"
 components:
-  securitySchemes:
-    souzProxyAuth:
-      type: apiKey
-      in: header
-      name: X-Souz-Proxy-Auth
-    souzUserIdentity:
-      type: apiKey
-      in: header
-      name: X-User-Id
-      description: Authoritative Souz user ID for backend clients.
-    mobileAppAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: client-app-token
-      description: Mobile application auth profile. Souz resolves the authoritative user from this token.
   responses:
     BadRequest:
       description: Invalid request headers, content type, or JSON body.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorEnvelope"
-    Unauthorized:
-      description: Client authentication or user identity is missing or invalid.
       content:
         application/json:
           schema:
@@ -80,14 +53,17 @@ components:
     CreateChatRequest:
       type: object
       additionalProperties: false
-      required: [requestId, clientType]
+      required: [userId, requestId, clientType]
       properties:
+        userId:
+          $ref: "#/components/schemas/UUID"
+          description: Trusted user identity for chat ownership and create-chat idempotency scope.
         requestId:
           $ref: "#/components/schemas/NonEmptyString"
           description: Client-generated idempotency key for this chat creation attempt. This scope is independent from `message.submit.requestId`.
         clientType:
           $ref: "#/components/schemas/ClientType"
-          description: Must match the presented authentication profile.
+          description: Client kind for this chat.
         title:
           type: [string, "null"]
     CreateChatResponse:
@@ -135,8 +111,11 @@ components:
     Device:
       type: object
       additionalProperties: false
-      required: [deviceId, deviceType, capabilities]
+      required: [userId, deviceId, deviceType, capabilities]
       properties:
+        userId:
+          $ref: "#/components/schemas/UUID"
+          description: Trusted user identity for the device scope.
         deviceId:
           $ref: "#/components/schemas/NonEmptyString"
         deviceType:
@@ -622,7 +601,6 @@ components:
       type: string
       enum:
         - invalid_request
-        - unauthorized
         - chat_not_found
         - thread_not_found
         - thread_already_terminal
