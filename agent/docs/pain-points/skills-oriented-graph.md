@@ -6,7 +6,7 @@
 
 Each execution owns an in-memory continuation queue. Submitted input cancels only an active main LLM child request; started tools remain non-interruptible. A provisional tool call is committed only after the queue is checked, tool results precede queued user input, and a final response is committed only when an empty queue atomically seals the run. Queued continuations return directly to the main LLM without repeating turn setup.
 
-`NodesSkillInventory` owns Skill inventory prompt augmentation and core-tool restriction. `NodesToolUseWithKnowledge` owns Knowledge-aware tool-result handling. `NodesCommon` owns generic tool-call execution and the inline-only tool-use node.
+`NodesSkillInventory` owns Skill inventory prompt augmentation and core-tool restriction. `ContinuationNodes` owns execution-scoped continuation boundaries. `NodesToolUseWithKnowledge` owns Knowledge-aware tool-result handling. `NodesCommon` owns generic tool-call execution and the inline-only tool-use node.
 
 Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 
