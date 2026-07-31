@@ -7,6 +7,7 @@ import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
 import ru.souz.agent.graph.Graph
+import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
@@ -16,12 +17,12 @@ import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
-import ru.souz.agent.nodes.ContinuationNodes
-import ru.souz.agent.nodes.ContinuationNodes.ChatRoute
+import ru.souz.agent.nodes.SteerableChat
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 
 /**
@@ -68,7 +69,10 @@ class SkillsGraphBasedAgent internal constructor(
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
-        val runNodes = ContinuationNodes(nodesLLM, controller)
+        val chat = SteerableChat(nodesLLM, controller)
+        val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
+            ctx.map { ctx.input as LLMResponse.Chat.Ok }
+        }
         val toolUse = nodesToolUseWithKnowledge.node(
             alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )
@@ -81,22 +85,15 @@ class SkillsGraphBasedAgent internal constructor(
         inputToHistory.edgeTo(memoryRecall)
         memoryRecall.edgeTo(skillInventory)
         skillInventory.edgeTo(contextEnrich)
-        contextEnrich.edgeTo(runNodes.chat)
-        runNodes.chat.edgeTo(runNodes.processChat)
-        runNodes.processChat.edgeTo { ctx ->
+        contextEnrich.edgeTo(chat)
+        chat.edgeTo { ctx ->
             when (ctx.input) {
-                ChatRoute.Replan -> runNodes.replan
-                is ChatRoute.Tool -> runNodes.toolResponse
-                is ChatRoute.Final -> runNodes.finalResponse
-                is ChatRoute.Error -> runNodes.errorResponse
+                is LLMResponse.Chat.Error -> chatErrorToFinish
+                is LLMResponse.Chat.Ok -> chatOk
             }
         }
-        runNodes.replan.edgeTo(runNodes.chat)
-        runNodes.toolResponse.edgeTo(toolUse)
-        toolUse.edgeTo(runNodes.queuedInputAfterTools)
-        runNodes.queuedInputAfterTools.edgeTo(runNodes.chat)
-        runNodes.finalResponse.edgeTo(finalizeTurn)
-        runNodes.errorResponse.edgeTo(chatErrorToFinish)
+        chatOk.edgeTo { ctx -> if (ctx.input.isToolUse) toolUse else finalizeTurn }
+        toolUse.edgeTo(chat)
         finalizeTurn.edgeTo(nodeFinish)
         chatErrorToFinish.edgeTo(nodeFinish)
     }
@@ -127,4 +124,7 @@ class SkillsGraphBasedAgent internal constructor(
             activeRun.compareAndSet(controller, null)
         }
     }
+
+    private val LLMResponse.Chat.Ok.isToolUse: Boolean
+        get() = choices.any { it.message.functionCall != null }
 }

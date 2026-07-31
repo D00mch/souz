@@ -172,42 +172,21 @@ Key behavior:
 ```mermaid
 flowchart TD
     input["User input"] --> boundary["Restrict execution context to fixed core tools"]
-    boundary --> coreTools["Core tools only\nGetSkillByName\nGetSkillsByCategory\nGetSkillsNamesByCategory\nGetKnowledge\nSearchKnowledge\nRunSkillCommand"]
     boundary --> history["Append input to history"]
     history --> memory["Recall scoped memory"]
     memory --> inventory["Append skill_inventory block\nTool-backed IDs by category\nFile-backed IDs only"]
     inventory --> enrich["Append additional context"]
-    enrich --> llm["Interruptible LLM request\nsees only core tools"]
+    enrich --> chat["Steerable chat\ninterrupt and replan LLM attempts"]
 
     additionalInput["Additional user input"] --> queue["Execution-scoped FIFO queue"]
-    queue -.->|cancel active LLM child only| llm
+    queue -.->|cancel active LLM child only| chat
 
-    llm --> decision{"Process provisional response"}
-    decision -->|request interrupted or input queued| appendQueued["Append queued user input\ndiscard provisional response"]
-    appendQueued --> llm
+    chat -->|accepted core tool calls| tools["Execute complete tool batch\noffload oversized results"]
+    tools --> chat
+    queue -.->|tools keep running; drain on re-entry| tools
 
-    decision -->|accepted tool call| toolCall{"Core tool call"}
-    toolCall -->|GetSkillByName| lookup["Load exact Skill\napprove file-backed bundle"]
-    toolCall -->|GetSkillsByCategory / names| categories["List or load tool-backed category Skills"]
-    toolCall -->|RunSkillCommand| command["Invoke enabled tool-backed Skill\nor sandboxed file-backed command"]
-    toolCall -->|GetKnowledge / SearchKnowledge| knowledge["Read conversation Knowledge"]
-
-    decision -->|final answer and queue empty| seal["Atomically seal active run"]
-    decision -->|error and queue empty| errorNode["Map error to user-facing output"]
-
-    lookup --> append["Append inline function result"]
-    categories --> append
-    knowledge --> append
-    command --> offload{"Non-exempt result > 8 KiB?"}
-    offload -->|yes| reference["Store Knowledge\nappend compact reference"]
-    offload -->|no| append
-    reference --> afterTools{"Tool batch finished\nqueued input?"}
-    append --> afterTools
-    queue -.->|tools keep running; drain afterward| afterTools
-    afterTools -->|yes| appendQueued
-    afterTools -->|no| llm
-
-    seal --> summary["Memory-aware finalization\nsummarize or return"]
+    chat -->|final response and queue atomically sealed| summary["Memory-aware finalization\nsummarize or return"]
+    chat -->|error and queue atomically sealed| errorNode["Map error to user-facing output"]
     summary --> finish["Finish"]
     errorNode --> finish
 ```

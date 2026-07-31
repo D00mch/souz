@@ -5,13 +5,11 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.Node
 import ru.souz.agent.nodes.ExecutedToolCall
@@ -146,28 +144,28 @@ class SkillsGraphBasedAgentMidRunInputTest {
     }
 
     @Test
-    fun `submission after a tool proposal prevents stale tool execution`() = runTest {
+    fun `submission while LLM proposes a tool prevents stale tool execution`() = runTest {
+        val proposalStarted = CompletableDeferred<Unit>()
         var toolInvocations = 0
         val harness = Harness(
             chatHandler = { call, ctx ->
-                ctx.map { if (call == 1) toolResponse() else finalResponse("replanned") }
+                if (call == 1) {
+                    proposalStarted.complete(Unit)
+                    awaitCancellation()
+                } else {
+                    ctx.map { finalResponse("replanned") }
+                }
             },
             toolHandler = {
                 toolInvocations += 1
                 emptyList()
             },
         )
-        val scope = this
-        var submitted = false
 
-        val result = harness.agent.executeWithTrace(harness.context()) { _, node, _, _ ->
-            if (node.name == "LLM" && !submitted) {
-                submitted = true
-                scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                    assertTrue(harness.agent.submitToActiveRun("do not run that tool"))
-                }
-            }
-        }
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
+        proposalStarted.await()
+        assertTrue(harness.agent.submitToActiveRun("do not run that tool"))
+        val result = execution.await()
 
         assertEquals("replanned", result.output)
         assertEquals(0, toolInvocations)
@@ -176,21 +174,21 @@ class SkillsGraphBasedAgentMidRunInputTest {
     }
 
     @Test
-    fun `submission before final acceptance discards the provisional response`() = runTest {
+    fun `submission while final response is provisional replans before finalization`() = runTest {
+        val provisionalStarted = CompletableDeferred<Unit>()
         val harness = Harness(chatHandler = { call, ctx ->
-            ctx.map { finalResponse(if (call == 1) "provisional" else "accepted") }
-        })
-        val scope = this
-        var submitted = false
-
-        val result = harness.agent.executeWithTrace(harness.context()) { _, node, _, _ ->
-            if (node.name == "LLM" && !submitted) {
-                submitted = true
-                scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                    assertTrue(harness.agent.submitToActiveRun("one more requirement"))
-                }
+            if (call == 1) {
+                provisionalStarted.complete(Unit)
+                awaitCancellation()
+            } else {
+                ctx.map { finalResponse("accepted") }
             }
-        }
+        })
+
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
+        provisionalStarted.await()
+        assertTrue(harness.agent.submitToActiveRun("one more requirement"))
+        val result = execution.await()
 
         assertEquals("accepted", result.output)
         assertEquals(1, harness.finalizationCount)
