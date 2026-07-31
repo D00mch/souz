@@ -12,8 +12,18 @@ import ru.souz.llms.LLMRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class AgentExecutorTest {
+    @Test
+    fun `executor forwards explicit input submission to the selected agent`() = runTest {
+        val agent = CapturingAgent().apply { acceptSubmissions = true }
+        val executor = AgentExecutor(agentProvider = { agent })
+
+        assertTrue(executor.submitToActiveRun(AgentId.SKILLS_GRAPH, "follow-up"))
+        assertEquals(listOf("follow-up"), agent.submittedInputs)
+    }
+
     @Test
     fun `executor prepares seed and forwards tracing without changing agent context`() = runTest {
         val agent = CapturingAgent()
@@ -55,6 +65,8 @@ class AgentExecutorTest {
     private class CapturingAgent : TraceableAgent {
         val executedContexts = mutableListOf<AgentContext<String>>()
         var receivedCallback: GraphStepCallback? = null
+        var acceptSubmissions = false
+        val submittedInputs = mutableListOf<String>()
 
         override val sideEffects: Flow<String> = emptyFlow()
 
@@ -73,5 +85,10 @@ class AgentExecutorTest {
         }
 
         override fun cancelActiveJob() = Unit
+
+        override suspend fun submitToActiveRun(input: String): Boolean {
+            submittedInputs += input
+            return acceptSubmissions
+        }
     }
 }

@@ -62,7 +62,7 @@ class SkillsGraphBasedAgentTest {
         )
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
-        every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
+        every { nodesLLM.provisionalChat("LLM request") } returns Node("LLM request") { ctx ->
             executed += "LLM"
             chatCount += 1
             ctx.map { if (chatCount <= 2) toolCallResponse() else finalResponse() }
@@ -135,7 +135,7 @@ class SkillsGraphBasedAgentTest {
         every { nodesCommon.inputToHistory() } returns passthrough("Input->History", executed)
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
-        every { nodesLLM.chat("LLM") } returns Node("LLM") { ctx ->
+        every { nodesLLM.provisionalChat("LLM request") } returns Node("LLM request") { ctx ->
             executed += "LLM"
             ctx.map { LLMResponse.Chat.Error(500, "provider failed") }
         }

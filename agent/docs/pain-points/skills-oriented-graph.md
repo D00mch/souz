@@ -4,6 +4,8 @@
 
 `SkillsGraphBasedAgent` exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and generic `RunSkillCommand`. Its execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains compact Skill inventory data filtered by the active tool policy and user-scoped registry: enabled tool-backed Skill IDs and escaped file-backed Skill IDs only. `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification or MCP injection.
 
+Each execution owns an in-memory continuation queue. Submitted input cancels only an active main LLM child request; started tools remain non-interruptible. A provisional tool call is committed only after the queue is checked, tool results precede queued user input, and a final response is committed only when an empty queue atomically seals the run. Queued continuations return directly to the main LLM without repeating turn setup.
+
 `NodesSkillInventory` owns Skill inventory prompt augmentation and core-tool restriction. `NodesToolUseWithKnowledge` owns Knowledge-aware tool-result handling. `NodesCommon` owns generic tool-call execution and the inline-only tool-use node.
 
 Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
@@ -17,6 +19,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 ## Safe changes
 
 - Keep core-tool restriction at the execution boundary so every graph node sees the restricted context; tool loops return directly to the LLM.
+- Keep the continuation controller execution-scoped. Discard provisional LLM responses when queued input wins a tool or final boundary, and seal before memory-aware finalization.
 - Keep `AgentContext.systemPrompt` equal to the configured prompt. Let `NodesSkillInventory` capture filtered tool-backed Skill IDs and escaped file-backed Skill IDs per turn and append them only to the effective system message in history.
 - Keep memory recall after history input and before context enrichment. Run it only once per user turn.
 - Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.

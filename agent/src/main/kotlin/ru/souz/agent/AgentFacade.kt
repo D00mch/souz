@@ -106,6 +106,10 @@ class AgentFacade internal constructor(
         _isExecuting.value = false
     }
 
+    /** Enqueues input only for the current open Skills run; it never starts a new turn. */
+    suspend fun submitToActiveRun(input: String): Boolean =
+        executor.submitToActiveRun(_activeAgentId.value, input)
+
     suspend fun execute(
         input: String,
         toolInvocationMetaOverride: ToolInvocationMeta? = null,

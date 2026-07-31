@@ -16,6 +16,10 @@ class AgentExecutor internal constructor(
         agentById(agentId).cancelActiveJob()
     }
 
+    /** Returns true only when the selected agent accepts input into its current open execution. */
+    suspend fun submitToActiveRun(agentId: AgentId, input: String): Boolean =
+        agentById(agentId).submitToActiveRun(input)
+
     suspend fun execute(
         agentId: AgentId,
         context: AgentContext<String>,

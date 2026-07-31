@@ -41,19 +41,7 @@ internal class NodesLLM(
      */
     fun chat(name: String = "LLM Chat"): Node<String, LLMResponse.Chat> =
         Node(name) { ctx: AgentContext<String> ->
-            l.debug("LLM input is {}", ctx.input)
-            val response = withContext(Dispatchers.IO) {
-                val req = ctx.toGigaRequest(ctx.history)
-                if (settingsProvider.useStreaming) {
-                    streamResponse(
-                        request = req.copy(stream = true),
-                        eventSink = ctx.runtimeEventSink,
-                    )
-                } else {
-                    llmApi.message(req)
-                }
-            }
-            l.debug("LLM response is {}", response)
+            val response = request(ctx)
             val history = ArrayList(ctx.history).apply {
                 if (response is LLMResponse.Chat.Ok) {
                     addAll(response.choices.mapNotNull { it.toMessage() })
@@ -61,6 +49,29 @@ internal class NodesLLM(
             }
             ctx.map(history = history) { response }
         }
+
+    /** Calls the main chat model without committing its provisional response to history. */
+    fun provisionalChat(name: String = "LLM Chat"): Node<String, LLMResponse.Chat> =
+        Node(name) { ctx: AgentContext<String> ->
+            ctx.map { request(ctx) }
+        }
+
+    private suspend fun request(ctx: AgentContext<*>): LLMResponse.Chat {
+        l.debug("LLM input is {}", ctx.input)
+        val response = withContext(Dispatchers.IO) {
+            val req = ctx.toGigaRequest(ctx.history)
+            if (settingsProvider.useStreaming) {
+                streamResponse(
+                    request = req.copy(stream = true),
+                    eventSink = ctx.runtimeEventSink,
+                )
+            } else {
+                llmApi.message(req)
+            }
+        }
+        l.debug("LLM response is {}", response)
+        return response
+    }
 
     private suspend fun streamResponse(
         request: LLMRequest.Chat,
