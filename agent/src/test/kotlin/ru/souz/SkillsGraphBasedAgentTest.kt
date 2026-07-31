@@ -37,20 +37,6 @@ class SkillsGraphBasedAgentTest {
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
-        val getSkillByName = tool("GetSkillByName")
-        val getSkillsByCategory = tool("GetSkillsByCategory")
-        val getSkillsNamesByCategory = tool("GetSkillsNamesByCategory")
-        val getKnowledge = tool("GetKnowledge")
-        val searchKnowledge = tool("SearchKnowledge")
-        val runtimeCommand = tool("RunSkillCommand")
-        val coreTools = listOf(
-            getSkillByName,
-            getSkillsByCategory,
-            getSkillsNamesByCategory,
-            getKnowledge,
-            searchKnowledge,
-            runtimeCommand,
-        )
         val executed = mutableListOf<String>()
         var chatCount = 0
 
@@ -58,7 +44,7 @@ class SkillsGraphBasedAgentTest {
         every { nodesCommon.inputToHistory() } returns coreToolsPassthrough(
             name = "Input->History",
             executed = executed,
-            coreTools = coreTools,
+            expectedToolNames = SKILLS_CORE_TOOL_NAMES,
         )
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
@@ -86,13 +72,7 @@ class SkillsGraphBasedAgentTest {
             nodesCommon,
             nodesErrorHandling,
             nodesSummarization,
-        nodesMemory,
-            getSkillByName,
-            getSkillsByCategory,
-            getSkillsNamesByCategory,
-            getKnowledge,
-            searchKnowledge,
-            runtimeCommand,
+            nodesMemory,
         )
         val result = skillsAgent.executeWithTrace(baseContext())
 
@@ -123,12 +103,6 @@ class SkillsGraphBasedAgentTest {
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
-        val getSkillByName = tool("GetSkillByName")
-        val getSkillsByCategory = tool("GetSkillsByCategory")
-        val getSkillsNamesByCategory = tool("GetSkillsNamesByCategory")
-        val getKnowledge = tool("GetKnowledge")
-        val searchKnowledge = tool("SearchKnowledge")
-        val runtimeCommand = tool("RunSkillCommand")
         val executed = mutableListOf<String>()
 
         every { nodesLLM.sideEffects } returns emptyFlow()
@@ -149,12 +123,6 @@ class SkillsGraphBasedAgentTest {
             nodesErrorHandling,
             nodesSummarization,
             nodesMemory,
-            getSkillByName,
-            getSkillsByCategory,
-            getSkillsNamesByCategory,
-            getKnowledge,
-            searchKnowledge,
-            runtimeCommand,
         ).executeWithTrace(baseContext())
 
         assertEquals("friendly error", result.output)
@@ -176,34 +144,29 @@ class SkillsGraphBasedAgentTest {
         nodesErrorHandling: NodesErrorHandling,
         nodesSummarization: NodesSummarization,
         nodesMemory: NodesMemory,
-        getSkillByName: LLMToolSetup,
-        getSkillsByCategory: LLMToolSetup,
-        getSkillsNamesByCategory: LLMToolSetup,
-        getKnowledge: LLMToolSetup,
-        searchKnowledge: LLMToolSetup,
-        runtimeCommand: LLMToolSetup,
     ) = SkillsGraphBasedAgent(
         logObjectMapper = restJsonMapper,
         nodesLLM = nodesLLM,
         nodesCommon = nodesCommon,
         nodesErrorHandling = nodesErrorHandling,
         nodesSummarization = nodesSummarization,
-            nodesMemory = nodesMemory,
-            nodesSkillInventory = NodesSkillInventory(
-                toolCatalog = testCatalog(),
-                toolsFilter = passThroughToolsFilter(),
-                skillRegistryRepository = emptySkillRegistry(),
-            ),
-            nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
-                nodesCommon = nodesCommon,
-                knowledgeStore = null,
-            ),
-        getSkillByNameTool = getSkillByName,
-        getSkillsByCategoryTool = getSkillsByCategory,
-        getSkillsNamesByCategoryTool = getSkillsNamesByCategory,
-        getKnowledgeTool = getKnowledge,
-        searchKnowledgeTool = searchKnowledge,
-        runtimeCommandTool = runtimeCommand,
+        nodesMemory = nodesMemory,
+        nodesSkillInventory = NodesSkillInventory(
+            toolCatalog = testCatalog(),
+            toolsFilter = passThroughToolsFilter(),
+            skillRegistryRepository = emptySkillRegistry(),
+        ),
+        nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
+            nodesCommon = nodesCommon,
+            knowledgeStore = null,
+        ),
+        getSkillByNameTool = testTool("GetSkillByName"),
+        getSkillsByCategoryTool = testTool("GetSkillsByCategory"),
+        getSkillsNamesByCategoryTool = testTool("GetSkillsNamesByCategory"),
+        getKnowledgeTool = testTool("GetKnowledge"),
+        searchKnowledgeTool = testTool("SearchKnowledge"),
+        searchMemoryTool = testTool("SearchMemory"),
+        runtimeCommandTool = testTool("RunSkillCommand"),
     )
 
     private fun passthrough(name: String, executed: MutableList<String>) = Node<String, String>(name) { ctx ->
@@ -214,11 +177,11 @@ class SkillsGraphBasedAgentTest {
     private fun coreToolsPassthrough(
         name: String,
         executed: MutableList<String>,
-        coreTools: List<LLMToolSetup>,
+        expectedToolNames: List<String>,
     ) = Node<String, String>(name) { ctx ->
         executed += name
-        assertEquals(coreTools.map { it.fn }, ctx.activeTools)
-        assertEquals(coreTools.associateBy { it.fn.name }, ctx.settings.tools.byName)
+        assertEquals(expectedToolNames, ctx.activeTools.map { it.name })
+        assertEquals(expectedToolNames, ctx.settings.tools.byName.keys.toList())
         assertEquals(emptyMap(), ctx.settings.tools.byCategory)
         assertEquals(emptyMap(), ctx.settings.tools.categoryByName)
         assertEquals(PROVIDED_SYSTEM_PROMPT, ctx.systemPrompt)
@@ -230,7 +193,7 @@ class SkillsGraphBasedAgentTest {
 
     private fun testCatalog(): AgentToolCatalog = object : AgentToolCatalog {
         override val toolsByCategory = mapOf(
-            ToolCategory.FILES to mapOf("CatalogTool" to tool("CatalogTool")),
+            ToolCategory.FILES to mapOf("CatalogTool" to testTool("CatalogTool")),
         )
     }
 
@@ -241,17 +204,6 @@ class SkillsGraphBasedAgentTest {
     private fun errorNode(executed: MutableList<String>) = Node<LLMResponse.Chat, String>("Chat.Error") { ctx ->
         executed += "Chat.Error"
         ctx.map { "friendly error" }
-    }
-
-    private fun tool(name: String): LLMToolSetup = object : LLMToolSetup {
-        override val fn = LLMRequest.Function(
-            name = name,
-            description = name,
-            parameters = LLMRequest.Parameters("object", emptyMap()),
-        )
-
-        override suspend fun invoke(functionCall: LLMResponse.FunctionCall) =
-            LLMRequest.Message(LLMMessageRole.function, "{}", name = name)
     }
 
     private fun passThroughToolsFilter(): AgentToolsFilter = object : AgentToolsFilter {
@@ -299,7 +251,7 @@ class SkillsGraphBasedAgentTest {
     )
 
     private fun baseContext(): AgentContext<String> {
-        val catalogTool = tool("CatalogTool")
+        val catalogTool = testTool("CatalogTool")
         return AgentContext(
             input = "Hello",
             settings = AgentSettings(
@@ -318,6 +270,15 @@ class SkillsGraphBasedAgentTest {
     }
 
     private companion object {
+        val SKILLS_CORE_TOOL_NAMES = listOf(
+            "GetSkillByName",
+            "GetSkillsByCategory",
+            "GetSkillsNamesByCategory",
+            "GetKnowledge",
+            "SearchKnowledge",
+            "SearchMemory",
+            "RunSkillCommand",
+        )
         val PROVIDED_SYSTEM_PROMPT = """
             ## Skill Discovery
 
@@ -326,4 +287,11 @@ class SkillsGraphBasedAgentTest {
             The supplied prompt continues after the inventory-section reference.
         """.trimIndent()
     }
+}
+
+internal fun testTool(name: String): LLMToolSetup = object : LLMToolSetup {
+    override val fn = LLMRequest.Function(name, name, LLMRequest.Parameters("object", emptyMap()))
+
+    override suspend fun invoke(functionCall: LLMResponse.FunctionCall) =
+        LLMRequest.Message(LLMMessageRole.function, "{}", name = functionCall.name)
 }

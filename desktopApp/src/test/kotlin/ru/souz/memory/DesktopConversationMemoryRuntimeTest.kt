@@ -12,6 +12,50 @@ import kotlin.test.assertEquals
 
 class DesktopConversationMemoryRuntimeTest {
     @Test
+    fun `search replaces caller owner and uses global plus current session scopes`() = runTest {
+        val memoryService = mockk<MemoryService>()
+        val contextSlot = slot<MemoryContext>()
+        val scopesSlot = slot<List<MemoryScope>>()
+        coEvery {
+            memoryService.searchMemory(
+                capture(contextSlot),
+                "User testing preferences",
+                listOf("tests first"),
+                4,
+                capture(scopesSlot),
+            )
+        } returns emptyList()
+        val runtime = DesktopConversationMemoryRuntime(
+            memoryService = memoryService,
+            captureService = mockk(relaxed = true),
+            contextProvider = DesktopMemoryContextProvider(
+                ownerProvider = MemoryOwnerProvider { MemoryOwnerId("desktop-owner") },
+                projectContextProvider = object : DesktopMemoryProjectContextProvider {
+                    override fun currentProjectId(): ProjectId = ProjectId("project-3")
+                },
+            ),
+        )
+
+        runtime.searchMemory(
+            context = MemoryContext(
+                MemoryOwnerId("caller-owner"), ConversationId("conversation-7"),
+                MemorySessionId("wrong-session"), ProjectId("caller-project"),
+            ),
+            semanticQuery = "User testing preferences",
+            lexicalHints = listOf("tests first"),
+            maxFacts = 4,
+        )
+
+        assertEquals("desktop-owner", contextSlot.captured.ownerId.value)
+        assertEquals("conversation-7", contextSlot.captured.conversationId?.value)
+        assertEquals("conversation-7", contextSlot.captured.sessionId?.value)
+        assertEquals(
+            listOf(globalMemoryScope(), MemoryScope.session(MemorySessionId("conversation-7"))),
+            scopesSlot.captured,
+        )
+    }
+
+    @Test
     fun `captureCompletedTurn does not use desktop conversation id as chat scope`() = runTest {
         val memoryService = mockk<MemoryService>(relaxed = true)
         val captureService = mockk<MemoryCaptureService>()

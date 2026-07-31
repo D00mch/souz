@@ -27,7 +27,6 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.testCoreTool
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -76,24 +75,24 @@ class BackendSkillCoreToolsFactoryTest {
         val factory = BackendSkillCoreToolsFactory(
             skillRegistryRepository = repository,
             legacyCommandTool = commandTool.toGiga(),
-            getKnowledgeTool = testCoreTool("GetKnowledge"),
-            searchKnowledgeTool = testCoreTool("SearchKnowledge"),
             commandTool = commandTool,
         )
         val mutableEnabledTools = linkedSetOf("EnabledTool")
         val toolsFilter = BackendRequestToolsFilter(mutableEnabledTools)
         mutableEnabledTools += "DisabledTool"
 
-        val coreTools = factory.create(catalog, toolsFilter, approvingGate(repository))
+        val approvalGate = approvingGate(repository)
+        val getSkillsNamesByCategory = factory.createGetSkillsNamesByCategory(catalog, toolsFilter)
+        val runtimeCommand = factory.createRuntimeCommand(catalog, toolsFilter, approvalGate)
         val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
-        val compiledNames = coreTools.getSkillsNamesByCategoryTool.invoke(
+        val compiledNames = getSkillsNamesByCategory.invoke(
             LLMResponse.FunctionCall(
                 name = "GetSkillsNamesByCategory",
                 arguments = mapOf("category" to ToolCategory.FILES.name),
             ),
             meta,
         ).contentJson()
-        val unknownCategoryNames = coreTools.getSkillsNamesByCategoryTool.invoke(
+        val unknownCategoryNames = getSkillsNamesByCategory.invoke(
             LLMResponse.FunctionCall(
                 name = "GetSkillsNamesByCategory",
                 arguments = mapOf("category" to "UNKNOWN_CATEGORY"),
@@ -105,34 +104,15 @@ class BackendSkillCoreToolsFactoryTest {
         assertEquals("category_not_found", unknownCategoryNames["error"]["code"].asText())
         assertTrue(unknownCategoryNames["category"].isNull)
         assertFalse(compiledNames.toString().contains("DisabledTool"))
-        assertEquals(
-            listOf(
-                "GetSkillByName",
-                "GetSkillsByCategory",
-                "GetSkillsNamesByCategory",
-                "GetKnowledge",
-                "SearchKnowledge",
-                "RunSkillCommand",
-            ),
-            listOf(
-                coreTools.getSkillByNameTool.fn.name,
-                coreTools.getSkillsByCategoryTool.fn.name,
-                coreTools.getSkillsNamesByCategoryTool.fn.name,
-                coreTools.getKnowledgeTool.fn.name,
-                coreTools.searchKnowledgeTool.fn.name,
-                coreTools.runtimeCommandTool.fn.name,
-            ),
-        )
-
-        val enabledResult = coreTools.runtimeCommandTool.invoke(
+        val enabledResult = runtimeCommand.invoke(
             skillCall("EnabledTool", mapOf("value" to "ok")),
             meta,
         )
-        val disabledResult = coreTools.runtimeCommandTool.invoke(
+        val disabledResult = runtimeCommand.invoke(
             skillCall("DisabledTool"),
             meta,
         ).contentJson()
-        val fileResult = coreTools.runtimeCommandTool.invoke(
+        val fileResult = runtimeCommand.invoke(
             skillCall(
                 FILE_SKILL_ID,
                 mapOf(

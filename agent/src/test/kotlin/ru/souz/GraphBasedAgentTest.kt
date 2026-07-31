@@ -23,7 +23,6 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
@@ -45,6 +44,18 @@ class GraphBasedAgentTest {
         val nodesMCP = mockk<NodesMCP>()
         val nodesSkillInventory = mockk<NodesSkillInventory>()
         val nodesToolUseWithKnowledge = mockk<NodesToolUseWithKnowledge>()
+        val getSkillByNameTool = testTool("GetSkillByName")
+        val getKnowledgeTool = testTool("GetKnowledge")
+        val searchKnowledgeTool = testTool("SearchKnowledge")
+        val searchMemoryTool = testTool("SearchMemory")
+        val runtimeCommandTool = testTool("RunSkillCommand")
+        val expectedCoreTools = listOf(
+            getSkillByNameTool,
+            getKnowledgeTool,
+            searchKnowledgeTool,
+            searchMemoryTool,
+            runtimeCommandTool,
+        )
         val nodesMemory = NodesMemory(
             memoryRuntime = object : ConversationMemoryRuntime {
                 override suspend fun retrieveMemory(
@@ -61,7 +72,12 @@ class GraphBasedAgentTest {
             ctx.map(history = ctx.history + LLMRequest.Message(LLMMessageRole.user, ctx.input))
         }
         every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
-        every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME) } returns passthroughStringNode(SKILL_INVENTORY_NODE_NAME)
+        every {
+            nodesSkillInventory.node(
+                match { tools -> tools == expectedCoreTools },
+                SKILL_INVENTORY_NODE_NAME,
+            )
+        } returns passthroughStringNode(SKILL_INVENTORY_NODE_NAME)
         every { nodesMCP.nodeProvideMcpTools("MCP Node") } returns passthroughStringNode("MCP Node")
         every { nodesCommon.nodeAppendAdditionalData() } returns passthroughStringNode("appendActualInformation")
         every { nodesLLM.chat("LLM") } returns chatNode("LLM")
@@ -80,10 +96,11 @@ class GraphBasedAgentTest {
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
-            getSkillByNameTool = dummyTool("GetSkillByName"),
-            getKnowledgeTool = dummyTool("GetKnowledge"),
-            searchKnowledgeTool = dummyTool("SearchKnowledge"),
-            runtimeCommandTool = dummyTool("RunSkillCommand"),
+            getSkillByNameTool = getSkillByNameTool,
+            getKnowledgeTool = getKnowledgeTool,
+            searchKnowledgeTool = searchKnowledgeTool,
+            searchMemoryTool = searchMemoryTool,
+            runtimeCommandTool = runtimeCommandTool,
         )
         val expectedRun = listOf(
             "Input->History",
@@ -158,17 +175,6 @@ class GraphBasedAgentTest {
 
     private fun errorNode(): Node<LLMResponse.Chat, String> = Node("Chat.Error->Finish") { ctx ->
         ctx.map { "error" }
-    }
-
-    private fun dummyTool(name: String): LLMToolSetup = object : LLMToolSetup {
-        override val fn = LLMRequest.Function(
-            name = name,
-            description = name,
-            parameters = LLMRequest.Parameters("object", emptyMap()),
-        )
-
-        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-            LLMRequest.Message(LLMMessageRole.function, "{}", name = functionCall.name)
     }
 
     private fun baseContext(): AgentContext<String> = AgentContext(

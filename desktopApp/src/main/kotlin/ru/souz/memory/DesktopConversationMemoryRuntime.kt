@@ -49,6 +49,26 @@ class DesktopConversationMemoryRuntime(
         )
     }
 
+    override suspend fun searchMemory(
+        context: MemoryContext,
+        semanticQuery: String,
+        lexicalHints: List<String>,
+        maxFacts: Int,
+    ): List<ConversationMemoryRuntime.SearchFact> {
+        val trustedContext = contextProvider.current(context.conversationId?.value)
+        val scopes = listOfNotNull(
+            globalMemoryScope(),
+            trustedContext.sessionId?.let(MemoryScope::session),
+        )
+        return memoryService.searchMemory(
+            context = trustedContext,
+            semanticQuery = semanticQuery,
+            lexicalHints = lexicalHints,
+            maxFacts = maxFacts,
+            overrideScopes = scopes,
+        )
+    }
+
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
         val context = contextProvider.current(input.conversationId)
         captureService.captureAfterTurn(

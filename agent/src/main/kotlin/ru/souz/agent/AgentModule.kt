@@ -112,6 +112,7 @@ fun agentDiModule(
             getSkillByNameTool = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
+            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
         )
     }
@@ -130,6 +131,7 @@ fun agentDiModule(
             getSkillsNamesByCategoryTool = instance(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
+            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
         )
     }

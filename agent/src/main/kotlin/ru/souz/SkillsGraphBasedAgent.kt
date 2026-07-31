@@ -40,6 +40,7 @@ class SkillsGraphBasedAgent internal constructor(
     getSkillsNamesByCategoryTool: LLMToolSetup,
     getKnowledgeTool: LLMToolSetup,
     searchKnowledgeTool: LLMToolSetup,
+    searchMemoryTool: LLMToolSetup,
     runtimeCommandTool: LLMToolSetup,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
@@ -47,7 +48,6 @@ class SkillsGraphBasedAgent internal constructor(
     ),
 ) : TraceableAgent {
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
-
     private val alwaysInlineResultTools = listOf(
         getSkillByNameTool,
         getSkillsByCategoryTool,
@@ -55,7 +55,8 @@ class SkillsGraphBasedAgent internal constructor(
         getKnowledgeTool,
         searchKnowledgeTool,
     )
-    private val coreTools = alwaysInlineResultTools + runtimeCommandTool
+    private val coreTools = alwaysInlineResultTools + searchMemoryTool + runtimeCommandTool
+
     private val graph: Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
         val memoryRecall = nodesMemory.recall()

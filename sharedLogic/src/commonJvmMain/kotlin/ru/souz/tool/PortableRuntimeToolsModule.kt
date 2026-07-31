@@ -12,6 +12,8 @@ import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -34,6 +36,7 @@ import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.knowledge.KnowledgeRetriever
 import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
@@ -150,6 +153,9 @@ fun portableSkillToolsDiModule(
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
         ToolSearchKnowledge(retriever = instance())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
+        ToolSearchMemory(instanceOrNull<ConversationMemoryRuntime>() ?: NoopConversationMemoryRuntime)
     }
     bindSingleton {
         ToolInvokeSkill(
