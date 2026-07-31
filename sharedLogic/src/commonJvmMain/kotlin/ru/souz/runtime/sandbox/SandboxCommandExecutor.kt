@@ -9,7 +9,12 @@ enum class SandboxCommandRuntime {
      */
     BASH,
 
+    /**
+     * Python script runtime. Local and Docker sandboxes use `python3`; Android uses
+     * the embedded app Python runtime.
+     */
     PYTHON,
+
     NODE,
 }
 

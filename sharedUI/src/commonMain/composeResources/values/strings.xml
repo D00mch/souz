@@ -86,6 +86,14 @@
     <string name="label_system_prompt">System prompt</string>
     <string name="button_reset">Reset</string>
     <string name="hint_system_prompt_reset">Reset system prompt to default</string>
+    <string name="settings_action_done">Done</string>
+    <string name="settings_action_clear">Clear</string>
+    <string name="settings_action_edit">Edit</string>
+    <string name="settings_action_show_secret">Show</string>
+    <string name="settings_action_hide_secret">Hide</string>
+    <string name="settings_action_save">Save</string>
+    <string name="settings_edit_field_title">Edit %1$s</string>
+    <string name="settings_value_not_set">Not set</string>
 
     <!-- General Settings -->
     <string name="setting_streaming_title">Streaming mode</string>
@@ -312,6 +320,7 @@
     <string name="button_sending_logs">Sending logs...</string>
     <string name="snack_logs_path_copied">Path to logs copied</string>
     <string name="error_failed_open_privacy_policy">Failed to open privacy policy</string>
+    <string name="error_no_chat_model_configured">Configure an API key before sending a message.</string>
     <string name="error_failed_reveal_api_key">Failed to reveal API key</string>
     <string name="error_failed_save_api_key">Failed to save API key</string>
     
@@ -331,6 +340,9 @@
 
     <!-- Dropdowns -->
     <string name="label_model">Model</string>
+    <string name="model_picker_no_models">No models available</string>
+    <string name="settings_models_configure">Configure models</string>
+    <string name="settings_models_empty">Configure a GigaChat, Qwen, or AI Tunnel API key to enable models for this profile.</string>
     <string name="label_ambient_analysis_model">Ambient model</string>
     <string name="content_desc_select_agent">Select agent</string>
     <string name="label_embeddings_model">Embeddings model</string>
@@ -362,8 +374,22 @@
     <!-- Graph Sessions -->
     <string name="graph_sessions_title">Graph Session History</string>
     <string name="graph_sessions_count_format">%d sessions</string>
+    <string name="action_open_graph_sessions">Open graph sessions</string>
+    <string name="action_refresh">Refresh</string>
     <string name="action_close">Close</string>
     <string name="graph_sessions_empty">No saved sessions.\nSend a request to the agent to create the first session.</string>
+    <string name="graph_session_opening">Opening session...</string>
+    <string name="graph_visualization_title">Session Visualization</string>
+    <string name="graph_select_node">Select a node</string>
+    <string name="graph_subgraphs">Subgraphs</string>
+    <string name="graph_executions_format">%d executions</string>
+    <string name="graph_execution_format">Execution #%d</string>
+    <string name="graph_input">Input</string>
+    <string name="graph_output">Output</string>
+    <string name="graph_saved_to_history">Saved to history</string>
+    <string name="graph_active_tools_changed">Active tools changed</string>
+    <string name="graph_categories">Categories</string>
+    <string name="graph_no_categories">-</string>
     <string name="status_in_progress">in progress</string>
     <string name="graph_steps_count">%d steps</string>
     <string name="duration_suffix_s">s</string>
@@ -582,6 +608,7 @@
     <string name="chat_action_list_notes">Listing notes</string>
     <string name="chat_action_search_notes">Searching notes: %1$s</string>
     <string name="chat_action_show_apps">Listing apps: %1$s</string>
+    <string name="chat_action_media_control">Controlling media: %1$s</string>
     <string name="chat_action_create_plot">Creating plot from: %1$s</string>
     <string name="chat_action_upload_file">Uploading file: %1$s</string>
     <string name="chat_action_download_file">Downloading file: %1$s</string>

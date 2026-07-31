@@ -21,10 +21,21 @@ import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
+import ru.souz.android.python.ChaquopyPythonSkillRunner
 import ru.souz.android.settings.AndroidSettingsProvider
+import ru.souz.android.tool.AndroidToolAvailabilityPolicy
+import ru.souz.android.tool.AndroidToolsFactory
+import ru.souz.android.tool.ToolKinopoiskMovie
+import ru.souz.android.tool.ToolMediaControl
+import ru.souz.android.tool.ToolOpenAndroid
+import ru.souz.android.tool.ToolSberAssistantCommand
+import ru.souz.android.tool.ToolSberLauncherSearch
+import ru.souz.android.tool.ToolSberTvChannel
+import ru.souz.android.tool.ToolShowAndroidApps
 import ru.souz.db.SettingsProvider
 import ru.souz.di.sharedUiCommonJvmDiModule
 import ru.souz.llms.LLMChatAPI
@@ -59,6 +70,7 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ImmediateToolPermissionBroker
+import ru.souz.tool.ToolAvailabilityPolicy
 import ru.souz.tool.ToolPermissionBroker
 import ru.souz.tool.ToolsSettings
 import ru.souz.tool.ToolsSettingsState
@@ -123,7 +135,11 @@ class AndroidAgentRuntime(
             bindSingleton<VisionGateway> { instance<LLMCapabilityResolver>() }
             bindSingleton<ImageGenerationGateway> { instance<CapabilityBasedImageGenerationGateway>() }
             bindSingleton<RuntimeSandboxFactory> {
-                AndroidRuntimeSandboxFactory(appContext, instance<SettingsProvider>())
+                AndroidRuntimeSandboxFactory(
+                    context = appContext,
+                    settingsProvider = instance<SettingsProvider>(),
+                    pythonCommandRunner = ChaquopyPythonSkillRunner(appContext),
+                )
             }
             bindSingleton<GraphSessionRepository>(tag = DiTags.GRAPH_SESSION_REPOSITORY) {
                 GraphSessionRepository(paths)
@@ -140,15 +156,37 @@ class AndroidAgentRuntime(
             bindSingleton<UserMessageClassifier>(tag = DiTags.LOCAL_CLASSIFIER) { AndroidNoopClassifier }
             bindSingleton<ToolPermissionBroker> { ImmediateToolPermissionBroker(instance<SettingsProvider>()) }
             bindSingleton { DeferredToolModifyPermissionBroker(instance<SettingsProvider>(), instance<FilesToolUtil>()) }
+            bindSingleton<ToolAvailabilityPolicy> { AndroidToolAvailabilityPolicy }
             bindSingleton<ToolsSettingsStore> {
                 AndroidToolsSettingsStore(
                     context = appContext,
                     objectMapper = instance(tag = DiTags.LOG_OBJECT_MAPPER),
                 )
             }
-            bindSingleton { ToolsSettings(instance(), instance()) }
+            bindSingleton { ToolsSettings(instance(), instance(), instance()) }
 
-            import(portableRuntimeToolsDiModule())
+            import(portableRuntimeToolsDiModule(bindAgentToolCatalog = false))
+            bindSingleton { ToolShowAndroidApps(appContext) }
+            bindSingleton { ToolOpenAndroid(appContext) }
+            bindSingleton { ToolMediaControl(appContext) }
+            bindSingleton { ToolSberAssistantCommand(appContext) }
+            bindSingleton { ToolSberLauncherSearch(appContext) }
+            bindSingleton { ToolSberTvChannel(appContext) }
+            bindSingleton { ToolKinopoiskMovie(appContext) }
+            bindSingleton {
+                AndroidToolsFactory(
+                    portableToolsFactory = instance(),
+                    toolShowApps = instance(),
+                    toolOpen = instance(),
+                    toolMediaControl = instance(),
+                    toolSberAssistantCommand = instance(),
+                    toolSberLauncherSearch = instance(),
+                    toolSberTvChannel = instance(),
+                    toolKinopoiskMovie = instance(),
+                    availabilityPolicy = instance(),
+                )
+            }
+            bindSingleton<AgentToolCatalog> { instance<AndroidToolsFactory>() }
             bindSingleton<SkillRegistryRepository> {
                 FileSystemSkillRegistryRepository(
                     sandboxResolver = instance<ToolInvocationRuntimeSandboxResolver>(),

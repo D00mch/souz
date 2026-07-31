@@ -54,6 +54,7 @@ import ru.souz.ui.host.DesktopTelegramSettingsHost
 import ru.souz.ui.host.ExternalLinkOpener
 import ru.souz.ui.host.InMemorySettingsHostPreferences
 import ru.souz.ui.host.LocalModelUiHost
+import ru.souz.ui.host.NoopLocalModelUiHost
 import ru.souz.ui.host.NoopPrivacyPolicyOpener
 import ru.souz.ui.host.NoopSupportLogService
 import ru.souz.ui.host.PrivacyPolicyOpener
@@ -513,6 +514,95 @@ class SettingsViewModelTest {
         assertEquals(LLMModel.LocalGemma4_E2B_It, ambientAnalysisModelValue)
         assertEquals(LLMModel.LocalGemma4_E2B_It, viewModel.uiState.value.ambientAnalysisModel)
         verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
+    }
+
+    @Test
+    fun `go to main flushes pending api key save and refreshes model list`() = runTest(dispatcher) {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        var qwenKey = ""
+        var embeddingsModelValue = EmbeddingsModel.GigaEmbeddings
+        var voiceRecognitionModelValue = VoiceRecognitionModel.SaluteSpeech
+
+        every { settingsProvider.regionProfile } returns REGION_RU
+        every { settingsProvider.regionProfile = any() } just runs
+        every { settingsProvider.gigaChatKey } returns ""
+        every { settingsProvider.qwenChatKey } answers { qwenKey }
+        every { settingsProvider.qwenChatKey = any() } answers { qwenKey = firstArg() }
+        every { settingsProvider.aiTunnelKey } returns ""
+        every { settingsProvider.anthropicKey } returns ""
+        every { settingsProvider.openaiKey } returns ""
+        every { settingsProvider.saluteSpeechKey } returns ""
+        every { settingsProvider.hasKey(any<LlmProvider>()) } answers {
+            when (firstArg<LlmProvider>()) {
+                LlmProvider.QWEN -> qwenKey.isNotBlank()
+                LlmProvider.LOCAL -> true
+                else -> false
+            }
+        }
+        every { settingsProvider.codexAccessToken } returns null
+        every { settingsProvider.gigaModel } returns LLMModel.Max
+        every { settingsProvider.embeddingsModel } answers { embeddingsModelValue }
+        every { settingsProvider.embeddingsModel = any() } answers { embeddingsModelValue = firstArg() }
+        every { settingsProvider.voiceRecognitionModel } answers { voiceRecognitionModelValue }
+        every { settingsProvider.voiceRecognitionModel = any() } answers { voiceRecognitionModelValue = firstArg() }
+        every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
+        every { settingsProvider.supportEmail } returns null
+        every { settingsProvider.mcpServersJson } returns null
+        every { settingsProvider.defaultCalendar } returns null
+        every { settingsProvider.useFewShotExamples } returns false
+        every { settingsProvider.useStreaming } returns false
+        every { settingsProvider.notificationSoundEnabled } returns true
+        every { settingsProvider.voiceInputReviewEnabled } returns false
+        every { settingsProvider.safeModeEnabled } returns true
+        every { settingsProvider.requestTimeoutMillis } returns 40_000L
+        every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
+        every { settingsProvider.temperature } returns 0.7f
+
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+        val agentFacade = mockk<AgentFacade>(relaxed = true)
+        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
+        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
+        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
+
+        val telegramService = mockk<TelegramUiService>(relaxed = true)
+        every { telegramService.isSupported() } returns true
+        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
+        val telegramControlBot = mockk<TelegramControlBot>(relaxed = true)
+
+        val di = DI {
+            bindSingleton<SettingsProvider> { settingsProvider }
+            bindSingleton<BackgroundIndexRefresher> { mockk(relaxed = true) }
+            bindSingleton<LlmBuildProfile> { llmBuildProfile }
+            bindSingleton<ApiKeyAvailabilityUseCase> { ApiKeyAvailabilityUseCase(llmBuildProfile) }
+            bindSingleton<LLMChatAPI> { mockk(relaxed = true) }
+            bindSingleton<AgentFacade> { agentFacade }
+            bindSingleton<TelegramUiService> { telegramService }
+            bindSingleton<TelegramControlBot> { telegramControlBot }
+            bindSingleton<LocalModelUiHost> { NoopLocalModelUiHost }
+            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramControlBot) }
+            bindSingleton<SupportLogService> { NoopSupportLogService }
+            bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
+            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
+            bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
+            bindSingleton<CalendarListProvider> { { emptyList() } }
+            bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
+        }
+
+        val viewModel = SettingsViewModel(di)
+        advanceUntilIdle()
+
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        viewModel.handleEvent(SettingsEvent.InputApiKey(ApiKeyField.QWEN_CHAT, "qwen-key"))
+        viewModel.handleEvent(SettingsEvent.GoToMain)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals("qwen-key", qwenKey)
+        assertTrue(LLMModel.QwenMax in state.availableLlmModels)
+        assertEquals(LLMModel.QwenMax, state.gigaModel)
+        assertEquals(EmbeddingsModel.QwenEmbeddings, embeddingsModelValue)
+        verify { agentFacade.setModel(LLMModel.QwenMax) }
     }
 
     @Test

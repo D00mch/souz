@@ -11,7 +11,7 @@ On JVM hosts, `DefaultRuntimeSandboxFactory` chooses the active sandbox with `SO
 - `local`: default when `SOUZ_SANDBOX_MODE` is unset.
 - `docker`: uses `DockerRuntimeSandbox` and the `souz-runtime-sandbox:latest` image.
 
-Android uses `AndroidRuntimeSandboxFactory` directly. It always creates an app-private `AndroidRuntimeSandbox`; the JVM environment variable does not select Android mode.
+Android uses `AndroidRuntimeSandboxFactory` directly. It always creates an app-private `AndroidRuntimeSandbox`; the JVM environment variable does not select Android mode. Skill `BASH` execution maps to POSIX `/system/bin/sh`, and `PYTHON` execution delegates to the Android app's embedded Chaquopy Python 3.11 runtime in a private killable service process. Android Python skills can use the standard library and pure-Python files vendored in the skill bundle; runtime pip installs are intentionally unsupported.
 
 Local mode is enough for normal development:
 

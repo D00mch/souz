@@ -7,7 +7,6 @@ import ru.souz.ui.VMEvent
 import ru.souz.ui.VMSideEffect
 import ru.souz.ui.VMState
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMModel
 import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.LocalModelDownloadPromptUi
@@ -123,8 +122,8 @@ data class MainState(
     val chatMessages: List<ChatMessage> = emptyList(),
     val chatStartTip: String = "",
     val chatSessionId: Long = 0L, // need this so local draft resets reliably when conversation resets.
-    val selectedModel: String = LLMModel.Max.alias,
-    val availableModelAliases: List<String> = listOf(LLMModel.Max.alias),
+    val selectedModel: String = "",
+    val availableModelAliases: List<String> = emptyList(),
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val isSpeaking: Boolean = false,
     val isAwaitingToolReview: Boolean = false,

@@ -55,7 +55,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
 
 class PostgresRepositoriesTest {
-    
+
     @Test
     fun `user settings repository tolerates legacy partial settings json`() = runTest {
         val schema = newPostgresSchema("postgres_legacy_settings_json")

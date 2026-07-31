@@ -94,6 +94,15 @@ object LocalRegexClassifier : UserMessageClassifier {
 
         ToolCategory.APPLICATIONS -> listOf(
             WeightedRegex(Regex("приложения открыты|открытые приложения|что запущено|прилож.*запущен"), 2.0),
+            WeightedRegex(
+                Regex(
+                    "включи.*музык|запусти.*музык|открой.*музык|поставь.*музык|" +
+                        "останови.*музык|выключи.*музык|поставь.*пауз|пауз.*музык|стоп.*музык|" +
+                        "следующ.*трек|предыдущ.*трек|переключи.*трек|play\\s+music|start\\s+music|" +
+                        "pause\\s+music|stop\\s+music|next\\s+track|previous\\s+track"
+                ),
+                2.2,
+            ),
             WeightedRegex(Regex("запущен|прилолож"), 1.5),
             WeightedRegex(Regex("открой"), 1.0),
         )

@@ -25,6 +25,13 @@ fun MessageMarkdown(
         fontSize = 13.sp,
         color = Color(0xFFE0E0E0),
     ),
+    codeContainerColor: Color = Color.Black.copy(alpha = 0.4f),
+    codeHeaderColor: Color = Color(0xFF2A2A2A),
+    codeBorderColor: Color = Color.White.copy(alpha = 0.1f),
+    codeLanguageColor: Color = Color.White.copy(alpha = 0.7f),
+    codeCopyButtonColor: Color = Color.White.copy(alpha = 0.15f),
+    codeCopyIconColor: Color = Color.White,
+    inlineCodeBackgroundColor: Color = Color.White.copy(alpha = 0.08f),
 ) {
     val parts = remember(content) { parseMarkdownContent(content.ifBlank { "..." }) }
     Column(modifier = modifier) {
@@ -35,6 +42,12 @@ fun MessageMarkdown(
                         code = part.code,
                         language = part.language,
                         style = codeStyle,
+                        containerColor = codeContainerColor,
+                        headerColor = codeHeaderColor,
+                        borderColor = codeBorderColor,
+                        languageColor = codeLanguageColor,
+                        copyButtonColor = codeCopyButtonColor,
+                        copyIconColor = codeCopyIconColor,
                     )
                 }
 
@@ -44,10 +57,10 @@ fun MessageMarkdown(
                         colors = DefaultMarkdownColors(
                             text = textStyle.color,
                             codeText = codeStyle.color,
-                            codeBackground = Color(0x66000000),
+                            codeBackground = codeContainerColor,
                             linkText = MaterialTheme.colorScheme.primary,
                             inlineCodeText = codeStyle.color,
-                            inlineCodeBackground = Color.White.copy(alpha = 0.08f),
+                            inlineCodeBackground = inlineCodeBackgroundColor,
                             dividerColor = MaterialTheme.colorScheme.outline,
                         ),
                         typography = DefaultMarkdownTypography(

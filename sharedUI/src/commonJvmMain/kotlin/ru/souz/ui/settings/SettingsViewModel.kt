@@ -342,7 +342,7 @@ class SettingsViewModel(
             TelegramLogout -> telegramLogout()
             RefreshFromProvider -> {
                 flushPendingTextSettingSaves()
-                flushPendingKeySaves()
+                flushPendingKeySaves(refreshAfterSave = false)
                 refreshFromProvider()
                 fetchBalance()
             }
@@ -715,11 +715,13 @@ class SettingsViewModel(
 
     private suspend fun persistDeferredKeySave(field: ApiKeyField) {
         val value = pendingKeyDrafts[field] ?: return
+        val wasConfigured = hasApiKey(field)
         if (!persistApiKey(field, value)) return
+        val configurationChanged = wasConfigured != hasApiKey(field)
         if (pendingKeyDrafts[field] == value) {
             pendingKeyDrafts.remove(field)
         }
-        if (field.requiresRefreshAfterSave) {
+        if (field.requiresRefreshAfterSave && configurationChanged) {
             flushPendingSystemPromptSave()
             refreshFromProvider()
         }
@@ -728,7 +730,7 @@ class SettingsViewModel(
         }
     }
 
-    private suspend fun flushPendingKeySaves() {
+    private suspend fun flushPendingKeySaves(refreshAfterSave: Boolean = true) {
         if (pendingKeyDrafts.isEmpty() && pendingKeySaveJobs.isEmpty()) return
 
         val jobs = pendingKeySaveJobs.values.toList()
@@ -738,13 +740,29 @@ class SettingsViewModel(
         val draftsToPersist = pendingKeyDrafts.toMap()
         if (draftsToPersist.isEmpty()) return
 
-        draftsToPersist
-            .filter { (field, value) -> persistApiKey(field, value) }
-            .forEach { (field, value) ->
-                if (pendingKeyDrafts[field] == value) {
-                    pendingKeyDrafts.remove(field)
-                }
+        val saveResults = draftsToPersist.mapNotNull { (field, value) ->
+            val wasConfigured = hasApiKey(field)
+            if (!persistApiKey(field, value)) return@mapNotNull null
+            PendingKeySaveResult(
+                field = field,
+                value = value,
+                configurationChanged = wasConfigured != hasApiKey(field),
+            )
+        }
+        saveResults.forEach { (field, value) ->
+            if (pendingKeyDrafts[field] == value) {
+                pendingKeyDrafts.remove(field)
             }
+        }
+        if (refreshAfterSave && saveResults.isNotEmpty()) {
+            if (saveResults.any { it.field.requiresRefreshAfterSave && it.configurationChanged }) {
+                flushPendingSystemPromptSave()
+                refreshFromProvider()
+            }
+            if (saveResults.any { it.field.requiresBalanceRefreshAfterSave }) {
+                fetchBalance()
+            }
+        }
     }
 
     private suspend fun toggleApiKeyVisibility(field: ApiKeyField) {
@@ -1213,6 +1231,12 @@ class SettingsViewModel(
         AGENT,
         AMBIENT_ANALYSIS,
     }
+
+    private data class PendingKeySaveResult(
+        val field: ApiKeyField,
+        val value: String,
+        val configurationChanged: Boolean,
+    )
 
     companion object {
         private const val KEY_INPUT_SAVE_DEBOUNCE_MS = 400L
