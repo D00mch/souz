@@ -68,6 +68,7 @@ import org.kodein.di.DI
 import org.kodein.di.instance
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
+import org.jetbrains.compose.resources.stringResource
 import ru.souz.llms.LLMModel
 import ru.souz.tool.files.ToolModifyApplyStatus
 import ru.souz.tool.files.ToolModifySelectionAction
@@ -88,6 +89,8 @@ import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.host.SettingsHostPreferences
+import souz.sharedui.generated.resources.Res
+import souz.sharedui.generated.resources.chat_input_active_run_placeholder
 
 @Composable
 fun SouzAndroidSharedUiApp(di: DI) {
@@ -181,7 +184,10 @@ private fun AndroidChatScreen(
     onShowMessage: (String) -> Unit,
 ) {
     var input by remember(state.chatSessionId) { mutableStateOf("") }
-    val canSend = !state.isProcessing && !state.isAwaitingToolReview && input.trim().isNotEmpty()
+    val allowActiveRunInput =
+        state.isProcessing && state.supportsActiveRunInput && !state.isAwaitingToolReview
+    val canEditInput = !state.isAwaitingToolReview && (!state.isProcessing || allowActiveRunInput)
+    val canSend = canEditInput && input.trim().isNotEmpty()
 
     state.toolPermissionDialog?.let { dialog ->
         val paramsText = dialog.params.entries.joinToString("\n") { "${it.key}: ${it.value}" }
@@ -312,33 +318,45 @@ private fun AndroidChatScreen(
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    enabled = !state.isProcessing && !state.isAwaitingToolReview,
+                    enabled = canEditInput,
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message") },
+                    placeholder = {
+                        Text(
+                            if (allowActiveRunInput) {
+                                stringResource(Res.string.chat_input_active_run_placeholder)
+                            } else {
+                                "Message"
+                            }
+                        )
+                    },
                     minLines = 1,
                     maxLines = 5,
                 )
                 Spacer(Modifier.width(8.dp))
-                IconButton(
-                    enabled = state.isProcessing || canSend,
-                    onClick = {
-                        when {
-                            state.isProcessing -> onCancel()
-                            state.isAwaitingToolReview -> Unit
-                            else -> {
-                                val text = input.trim()
-                                if (text.isNotEmpty()) {
-                                    input = ""
-                                    onSendMessage(text)
-                                }
+                if (!state.isProcessing || allowActiveRunInput) {
+                    IconButton(
+                        enabled = canSend,
+                        onClick = {
+                            val text = input.trim()
+                            if (text.isNotEmpty()) {
+                                input = ""
+                                onSendMessage(text)
                             }
-                        }
-                    },
-                ) {
-                    Icon(
-                        imageVector = if (state.isProcessing) Icons.Rounded.Stop else Icons.Rounded.ArrowUpward,
-                        contentDescription = null,
-                    )
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ArrowUpward,
+                            contentDescription = null,
+                        )
+                    }
+                }
+                if (state.isProcessing) {
+                    IconButton(onClick = onCancel) {
+                        Icon(
+                            imageVector = Icons.Rounded.Stop,
+                            contentDescription = null,
+                        )
+                    }
                 }
             }
         }

@@ -357,6 +357,7 @@ fun MainScreenContent(
                     pendingVoiceInputDraft = state.pendingVoiceInputDraft,
                     pendingVoiceInputDraftToken = state.pendingVoiceInputDraftToken,
                     isProcessing = state.isProcessing,
+                    supportsActiveRunInput = state.supportsActiveRunInput,
                     isAwaitingToolReview = state.isAwaitingToolReview,
                     isListening = state.isListening,
                     isOnline = isOnline,
@@ -959,6 +960,7 @@ fun ChatModeContent(
     pendingVoiceInputDraft: String?,
     pendingVoiceInputDraftToken: Long,
     isProcessing: Boolean,
+    supportsActiveRunInput: Boolean,
     isAwaitingToolReview: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
@@ -1149,6 +1151,7 @@ fun ChatModeContent(
             onRemoveAttachment = onRemoveAttachment,
             isFileDragActive = isFileDragActive,
             isProcessing = isProcessing,
+            allowActiveRunInput = isProcessing && supportsActiveRunInput && !isAwaitingToolReview,
             isListening = isListening,
             speakingMessageId = speakingMessageId,
             voiceInputDisabledReason = voiceInputDisabledReason,
@@ -1164,7 +1167,12 @@ fun ChatModeContent(
             onModelChange = onModelChange,
             onContextChange = onContextChange,
             scrollCloseSignal = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset,
-            placeholder = if (messages.isEmpty()) chatPlaceholder else "",
+            placeholder = when {
+                isProcessing && supportsActiveRunInput && !isAwaitingToolReview ->
+                    stringResource(Res.string.chat_input_active_run_placeholder)
+                messages.isEmpty() -> chatPlaceholder
+                else -> ""
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 16.dp)

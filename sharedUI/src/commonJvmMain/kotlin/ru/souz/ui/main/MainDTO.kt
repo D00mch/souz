@@ -118,6 +118,7 @@ data class MainState(
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
     val isProcessing: Boolean = false,
+    val supportsActiveRunInput: Boolean = false,
     val agentHistory: List<LLMRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),

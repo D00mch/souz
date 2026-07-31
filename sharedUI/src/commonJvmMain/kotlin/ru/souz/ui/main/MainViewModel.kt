@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentId
 import ru.souz.agent.state.AgentContext
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientModeState
@@ -196,6 +197,7 @@ class MainViewModel(
         viewModelScope.launch {
             var firstEmission = true
             agentFacade.activeAgentId.collect { agentId ->
+                setState { copy(supportsActiveRunInput = agentId == AgentId.SKILLS_GRAPH) }
                 if (firstEmission) {
                     firstEmission = false
                     lastAppliedAgentId = agentId
@@ -259,6 +261,16 @@ class MainViewModel(
             }
             is MainEvent.SendChatMessage -> vmLaunch {
                 val inputText = event.text
+                if (currentState.isProcessing && currentState.supportsActiveRunInput) {
+                    val accepted = chatUseCase.submitToActiveRun(
+                        chatMessage = inputText,
+                    )
+                    if (!accepted) {
+                        send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+                    }
+                    return@vmLaunch
+                }
+
                 val attachments = currentState.attachedFiles
                 val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
                     input = inputText,

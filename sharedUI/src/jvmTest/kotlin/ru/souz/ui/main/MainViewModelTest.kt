@@ -170,6 +170,46 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `send during Skills processing submits input to the active run`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+            submitActiveRunBehavior = { true },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.supportsActiveRunInput)
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+            awaitState(viewModel) { it.isProcessing }
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("steer this"))
+
+            val steeredState = awaitState(viewModel) { state ->
+                state.chatMessages.any { it.isUser && it.text == "steer this" }
+            }
+            assertTrue(steeredState.isProcessing)
+            assertEquals(listOf("initial request"), harness.executedInputs)
+            assertEquals(listOf("steer this"), harness.submittedActiveRunInputs)
+
+            response.complete("final answer")
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
+            }
+            assertEquals(
+                listOf("initial request", "steer this", "final answer"),
+                finalState.chatMessages.map { it.text },
+            )
+        } finally {
+            response.complete("final answer")
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `send stop, send drops, canceled first message, and keeps processing state`() = runTest(mainDispatcher) {
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
@@ -1506,6 +1546,7 @@ class MainViewModelTest {
 
     private fun createHarness(
         executeBehavior: suspend (String) -> String = { "stub response" },
+        submitActiveRunBehavior: suspend (String) -> Boolean = { false },
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
         voiceInputReviewEnabled: Boolean = false,
@@ -1529,14 +1570,22 @@ class MainViewModelTest {
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         val sideEffects = MutableSharedFlow<AgentSideEffect>()
+        val executedInputs = mutableListOf<String>()
+        val submittedActiveRunInputs = mutableListOf<String>()
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
         every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
         coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
+            executedInputs += firstArg<String>()
             AgentExecutionResult(
                 output = executeBehavior.invoke(firstArg()),
                 context = agentFacade.currentContext.value,
             )
+        }
+        coEvery { agentFacade.submitToActiveRun(any()) } coAnswers {
+            val input = firstArg<String>()
+            submittedActiveRunInputs += input
+            submitActiveRunBehavior(input)
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(activeAgentId)
         every { agentFacade.availableAgents } returns listOf(activeAgentId)
@@ -1694,6 +1743,8 @@ class MainViewModelTest {
             incomingMessages = incomingMessages,
             sideEffects = sideEffects,
             deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
+            executedInputs = executedInputs,
+            submittedActiveRunInputs = submittedActiveRunInputs,
         )
     }
 
@@ -1722,6 +1773,8 @@ class MainViewModelTest {
         val incomingMessages: MutableSharedFlow<TelegramControlIncomingMessage>,
         val sideEffects: MutableSharedFlow<AgentSideEffect>,
         val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
+        val executedInputs: List<String>,
+        val submittedActiveRunInputs: List<String>,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")

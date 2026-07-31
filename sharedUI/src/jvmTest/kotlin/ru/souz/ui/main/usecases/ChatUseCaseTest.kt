@@ -15,6 +15,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentId
@@ -39,14 +40,77 @@ import ru.souz.service.observability.ChatConversationMetrics
 import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.ChatRequestSource
 import ru.souz.service.observability.DesktopStructuredLogger
+import ru.souz.ui.main.MainState
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ChatUseCaseTest {
+    @Test
+    fun `active run input replaces provisional stream without starting another request`() = runTest {
+        val executeStarted = CompletableDeferred<Unit>()
+        val executeResult = CompletableDeferred<String>()
+        val executedInputs = mutableListOf<String>()
+        val submittedInputs = mutableListOf<String>()
+        val sideEffects = MutableSharedFlow<AgentSideEffect>()
+        val useCase = createExecutableUseCase(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            sideEffects = sideEffects,
+            executedInputs = executedInputs,
+            submittedInputs = submittedInputs,
+            submitToActiveRun = { true },
+            executeAnswer = {
+                executeStarted.complete(Unit)
+                executeResult.await()
+            },
+        )
+        var state = MainState()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { output ->
+                if (output is MainUseCaseOutput.State) {
+                    state = output.reduce(state)
+                }
+            }
+        }
+
+        val requestJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(
+                scope = backgroundScope,
+                isVoice = false,
+                chatMessage = "hello",
+                requestSource = ChatRequestSource.CHAT_UI,
+            )
+        }
+        executeStarted.await()
+        runCurrent()
+        sideEffects.emit(AgentSideEffect.Text("provisional"))
+
+        assertEquals(listOf("hello", "provisional"), state.chatMessages.map { it.text })
+
+        val accepted = useCase.submitToActiveRun("  steer this  ")
+
+        assertTrue(accepted)
+        assertEquals(listOf("hello", "steer this"), state.chatMessages.map { it.text })
+        assertTrue(state.isProcessing)
+
+        runCurrent()
+        sideEffects.emit(AgentSideEffect.Text("replacement"))
+        assertEquals(listOf("hello", "steer this", "replacement"), state.chatMessages.map { it.text })
+        assertFalse(state.chatMessages.any { it.text.contains("provisional") })
+
+        executeResult.complete("final answer")
+        requestJob.join()
+
+        assertEquals(listOf("hello"), executedInputs)
+        assertEquals(listOf("steer this"), submittedInputs)
+        assertEquals(listOf("hello", "steer this", "final answer"), state.chatMessages.map { it.text })
+        assertFalse(state.isProcessing)
+    }
+
     @Test
     fun `conversation cleanup closes and deletes session plus legacy chat scopes`() = runTest {
         val owner = MemoryOwnerId("desktop-owner")
@@ -353,11 +417,16 @@ class ChatUseCaseTest {
         cleanup: MemoryConversationCleanup = NoopMemoryConversationCleanup,
         knowledgeStore: ConversationKnowledgeStore = mockk(relaxed = true),
         baseMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
+        activeAgentId: AgentId = AgentId.GRAPH,
+        sideEffects: MutableSharedFlow<AgentSideEffect> = MutableSharedFlow(),
+        executedInputs: MutableList<String>? = null,
+        submittedInputs: MutableList<String>? = null,
+        submitToActiveRun: suspend (String) -> Boolean = { false },
         executeAnswer: suspend () -> String = { "response" },
     ): ChatUseCase {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
-        every { agentFacade.sideEffects } returns MutableSharedFlow<AgentSideEffect>()
-        every { agentFacade.activeAgentId } returns MutableStateFlow(AgentId.GRAPH)
+        every { agentFacade.sideEffects } returns sideEffects
+        every { agentFacade.activeAgentId } returns MutableStateFlow(activeAgentId)
         every { agentFacade.currentContext } returns MutableStateFlow(
             AgentContext(
                 input = "",
@@ -373,10 +442,16 @@ class ChatUseCaseTest {
             )
         )
         coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
+            executedInputs?.add(firstArg())
             AgentExecutionResult(
                 output = executeAnswer(),
                 context = agentFacade.currentContext.value,
             )
+        }
+        coEvery { agentFacade.submitToActiveRun(any()) } coAnswers {
+            val input = firstArg<String>()
+            submittedInputs?.add(input)
+            submitToActiveRun(input)
         }
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
@@ -394,13 +469,15 @@ class ChatUseCaseTest {
             toolModifyReviewUseCase.resolvePendingReviewIfNeeded(
                 requestId = any(),
                 pendingBotMessage = any(),
-                response = "response",
+                response = any(),
                 onReviewShown = any(),
             )
-        } returns ToolModifyReviewUseCase.ToolModifyReviewResult(
-            text = "response",
-            appendAsNewMessage = false,
-        )
+        } coAnswers {
+            ToolModifyReviewUseCase.ToolModifyReviewResult(
+                text = thirdArg(),
+                appendAsNewMessage = false,
+            )
+        }
 
         return ChatUseCase(
             agentFacade = agentFacade,
