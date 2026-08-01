@@ -203,6 +203,83 @@ class ChatUseCaseTest {
     }
 
     @Test
+    fun `superseded request removes continuations owned by the cancelled session`() = runTest {
+        val firstStarted = CompletableDeferred<Unit>()
+        val firstResult = CompletableDeferred<String>()
+        val firstCancellationObserved = CompletableDeferred<Unit>()
+        val allowFirstCleanup = CompletableDeferred<Unit>()
+        val secondStarted = CompletableDeferred<Unit>()
+        val secondResult = CompletableDeferred<String>()
+        val useCase = createExecutableUseCase(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            submitToActiveRun = { true },
+            onCancelActiveJob = {
+                if (firstStarted.isCompleted) {
+                    firstResult.completeExceptionally(CancellationException("superseded"))
+                }
+            },
+            executeAnswer = { input ->
+                when (input) {
+                    "first request" -> {
+                        firstStarted.complete(Unit)
+                        try {
+                            firstResult.await()
+                        } catch (error: CancellationException) {
+                            firstCancellationObserved.complete(Unit)
+                            allowFirstCleanup.await()
+                            throw error
+                        }
+                    }
+                    "second request" -> {
+                        secondStarted.complete(Unit)
+                        secondResult.await()
+                    }
+                    else -> error("Unexpected input: $input")
+                }
+            },
+        )
+        var state = MainState()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { output ->
+                if (output is MainUseCaseOutput.State) {
+                    state = output.reduce(state)
+                }
+            }
+        }
+
+        val firstRequest = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(
+                scope = backgroundScope,
+                isVoice = false,
+                chatMessage = "first request",
+                requestSource = ChatRequestSource.CHAT_UI,
+            )
+        }
+        firstStarted.await()
+        assertTrue(useCase.submitToActiveRun("continuation"))
+
+        val secondRequest = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(
+                scope = backgroundScope,
+                isVoice = false,
+                chatMessage = "second request",
+                requestSource = ChatRequestSource.AMBIENT_AGENT,
+            )
+        }
+        firstCancellationObserved.await()
+        secondStarted.await()
+        allowFirstCleanup.complete(Unit)
+        firstRequest.join()
+
+        assertEquals(listOf("second request"), state.chatMessages.map { it.text })
+        assertTrue(state.isProcessing)
+
+        secondResult.complete("second answer")
+        secondRequest.join()
+        assertEquals(listOf("second request", "second answer"), state.chatMessages.map { it.text })
+    }
+
+    @Test
     fun `conversation cleanup closes and deletes session plus legacy chat scopes`() = runTest {
         val owner = MemoryOwnerId("desktop-owner")
         val closedOwners = mutableListOf<MemoryOwnerId>()
@@ -513,7 +590,8 @@ class ChatUseCaseTest {
         executedInputs: MutableList<String>? = null,
         submittedInputs: MutableList<String>? = null,
         submitToActiveRun: suspend (String) -> Boolean = { false },
-        executeAnswer: suspend () -> String = { "response" },
+        onCancelActiveJob: () -> Unit = {},
+        executeAnswer: suspend (String) -> String = { "response" },
     ): ChatUseCase {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         every { agentFacade.sideEffects } returns sideEffects
@@ -532,10 +610,11 @@ class ChatUseCaseTest {
                 toolInvocationMeta = baseMeta,
             )
         )
+        every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob() }
         coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
             executedInputs?.add(firstArg())
             AgentExecutionResult(
-                output = executeAnswer(),
+                output = executeAnswer(firstArg()),
                 context = agentFacade.currentContext.value,
             )
         }

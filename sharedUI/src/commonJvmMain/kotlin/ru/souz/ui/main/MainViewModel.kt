@@ -265,6 +265,7 @@ class MainViewModel(
                     val accepted = chatUseCase.submitToActiveRun(
                         chatMessage = inputText,
                     )
+                    publishChatInputSubmissionFeedback(inputText, accepted)
                     if (!accepted) {
                         send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
                     }
@@ -276,9 +277,20 @@ class MainViewModel(
                     input = inputText,
                     attachedFiles = attachments,
                 )
-                if (composedMessage.isBlank()) return@vmLaunch
+                if (composedMessage.isBlank()) {
+                    publishChatInputSubmissionFeedback(inputText, accepted = false)
+                    return@vmLaunch
+                }
 
-                setState { copy(attachedFiles = emptyList()) }
+                setState {
+                    copy(
+                        attachedFiles = emptyList(),
+                        chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(
+                            input = inputText,
+                            accepted = true,
+                        ),
+                    )
+                }
                 chatUseCase.sendChatMessage(
                     scope = viewModelScope,
                     isVoice = false,
@@ -346,6 +358,21 @@ class MainViewModel(
             }
         }
     }
+
+    private suspend fun publishChatInputSubmissionFeedback(input: String, accepted: Boolean) {
+        setState {
+            copy(chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted))
+        }
+    }
+
+    private fun ChatInputSubmissionFeedback.next(
+        input: String,
+        accepted: Boolean,
+    ): ChatInputSubmissionFeedback = ChatInputSubmissionFeedback(
+        revision = revision + 1,
+        input = input,
+        accepted = accepted,
+    )
 
     fun onAttachDroppedPayload(payload: Any) {
         val droppedPaths = attachmentsUseCase.extractDroppedFilePathsNow(payload)

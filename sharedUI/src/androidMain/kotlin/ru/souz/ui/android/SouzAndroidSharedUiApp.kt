@@ -78,8 +78,10 @@ import ru.souz.ui.main.ChatMessage
 import ru.souz.ui.main.MainEffect
 import ru.souz.ui.main.MainEvent
 import ru.souz.ui.main.MainState
+import ru.souz.ui.main.PendingChatInputSubmission
 import ru.souz.ui.main.ToolModifyReviewItemUi
 import ru.souz.ui.main.ToolModifyReviewUi
+import ru.souz.ui.main.acceptanceFor
 import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.settings.SettingsEffect
 import ru.souz.ui.settings.SettingsEvent
@@ -184,9 +186,24 @@ private fun AndroidChatScreen(
     onShowMessage: (String) -> Unit,
 ) {
     var input by remember(state.chatSessionId) { mutableStateOf("") }
+    var pendingInputSubmission by remember(state.chatSessionId) {
+        mutableStateOf<PendingChatInputSubmission?>(null)
+    }
+    LaunchedEffect(state.chatInputSubmissionFeedback) {
+        val pending = pendingInputSubmission ?: return@LaunchedEffect
+        val feedback = state.chatInputSubmissionFeedback
+        val accepted = feedback.acceptanceFor(pending) ?: return@LaunchedEffect
+        if (accepted) {
+            input = ""
+        }
+        pendingInputSubmission = null
+    }
     val allowActiveRunInput =
         state.isProcessing && state.supportsActiveRunInput && !state.isAwaitingToolReview
-    val canEditInput = !state.isAwaitingToolReview && (!state.isProcessing || allowActiveRunInput)
+    val canEditInput =
+        pendingInputSubmission == null &&
+            !state.isAwaitingToolReview &&
+            (!state.isProcessing || allowActiveRunInput)
     val canSend = canEditInput && input.trim().isNotEmpty()
 
     state.toolPermissionDialog?.let { dialog ->
@@ -339,7 +356,10 @@ private fun AndroidChatScreen(
                         onClick = {
                             val text = input.trim()
                             if (text.isNotEmpty()) {
-                                input = ""
+                                pendingInputSubmission = PendingChatInputSubmission(
+                                    input = text,
+                                    afterRevision = state.chatInputSubmissionFeedback.revision,
+                                )
                                 onSendMessage(text)
                             }
                         },

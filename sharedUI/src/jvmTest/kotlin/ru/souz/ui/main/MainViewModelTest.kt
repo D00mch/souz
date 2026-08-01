@@ -194,6 +194,8 @@ class MainViewModelTest {
             assertTrue(steeredState.isProcessing)
             assertEquals(listOf("initial request"), harness.executedInputs)
             assertEquals(listOf("steer this"), harness.submittedActiveRunInputs)
+            assertTrue(steeredState.chatInputSubmissionFeedback.accepted)
+            assertEquals("steer this", steeredState.chatInputSubmissionFeedback.input)
 
             response.complete("final answer")
             val finalState = awaitState(viewModel) { state ->
@@ -203,6 +205,36 @@ class MainViewModelTest {
                 listOf("initial request", "steer this", "final answer"),
                 finalState.chatMessages.map { it.text },
             )
+        } finally {
+            response.complete("final answer")
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `rejected active run input publishes feedback for retaining the draft`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+            submitActiveRunBehavior = { false },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+            awaitState(viewModel) { it.isProcessing }
+            val initialRevision = viewModel.uiState.value.chatInputSubmissionFeedback.revision
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("keep this draft"))
+            runCurrent()
+
+            val feedback = viewModel.uiState.value.chatInputSubmissionFeedback
+            assertEquals(initialRevision + 1, feedback.revision)
+            assertEquals("keep this draft", feedback.input)
+            assertFalse(feedback.accepted)
+            assertEquals(listOf("keep this draft"), harness.submittedActiveRunInputs)
         } finally {
             response.complete("final answer")
             harness.clear()

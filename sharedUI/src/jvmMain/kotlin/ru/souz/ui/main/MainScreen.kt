@@ -356,6 +356,7 @@ fun MainScreenContent(
                     attachedFiles = state.attachedFiles,
                     pendingVoiceInputDraft = state.pendingVoiceInputDraft,
                     pendingVoiceInputDraftToken = state.pendingVoiceInputDraftToken,
+                    chatInputSubmissionFeedback = state.chatInputSubmissionFeedback,
                     isProcessing = state.isProcessing,
                     supportsActiveRunInput = state.supportsActiveRunInput,
                     isAwaitingToolReview = state.isAwaitingToolReview,
@@ -959,6 +960,7 @@ fun ChatModeContent(
     attachedFiles: List<ChatAttachedFile>,
     pendingVoiceInputDraft: String?,
     pendingVoiceInputDraftToken: Long,
+    chatInputSubmissionFeedback: ChatInputSubmissionFeedback,
     isProcessing: Boolean,
     supportsActiveRunInput: Boolean,
     isAwaitingToolReview: Boolean,
@@ -997,7 +999,19 @@ fun ChatModeContent(
         ?.id
     val stringThinking = stringResource(Res.string.status_thinking)
     var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
+    var pendingInputSubmission by remember(chatSessionId) {
+        mutableStateOf<PendingChatInputSubmission?>(null)
+    }
     var isFileDragActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(chatInputSubmissionFeedback) {
+        val pending = pendingInputSubmission ?: return@LaunchedEffect
+        val accepted = chatInputSubmissionFeedback.acceptanceFor(pending) ?: return@LaunchedEffect
+        if (accepted) {
+            inputText = TextFieldValue("")
+        }
+        pendingInputSubmission = null
+    }
 
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
@@ -1142,8 +1156,11 @@ fun ChatModeContent(
             onValueChange = { inputText = it },
             onSend = {
                 val currentText = inputText.text
+                pendingInputSubmission = PendingChatInputSubmission(
+                    input = currentText,
+                    afterRevision = chatInputSubmissionFeedback.revision,
+                )
                 onSendMessage(currentText)
-                inputText = TextFieldValue("")
             },
             onCancel = onCancelProcessing,
             attachedFiles = attachedFiles,
@@ -1151,14 +1168,18 @@ fun ChatModeContent(
             onRemoveAttachment = onRemoveAttachment,
             isFileDragActive = isFileDragActive,
             isProcessing = isProcessing,
-            allowActiveRunInput = isProcessing && supportsActiveRunInput && !isAwaitingToolReview,
+            allowActiveRunInput =
+                pendingInputSubmission == null &&
+                    isProcessing &&
+                    supportsActiveRunInput &&
+                    !isAwaitingToolReview,
             isListening = isListening,
             speakingMessageId = speakingMessageId,
             voiceInputDisabledReason = voiceInputDisabledReason,
             onStartListening = onStartListening,
             onStopListening = onStopListening,
             onStopSpeaking = onStopSpeech,
-            enabled = !isProcessing && !isAwaitingToolReview,
+            enabled = pendingInputSubmission == null && !isProcessing && !isAwaitingToolReview,
             isSandboxed = isSandboxed,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
