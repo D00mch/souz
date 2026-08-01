@@ -42,6 +42,8 @@ import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.ToolModifyReviewUseCase
 import ru.souz.ui.main.usecases.VoiceInputController
+import ru.souz.ui.main.usecases.VoiceInputRoutingIntent
+import ru.souz.ui.main.usecases.voiceInputRoutingIntent
 import ru.souz.service.observability.ChatConversationCloseReason
 import ru.souz.service.observability.ChatRequestSource
 import ru.souz.ui.host.BackgroundIndexRefresher
@@ -149,8 +151,9 @@ class MainViewModel(
             voiceInputUseCase.initialize(
                 scope = viewModelScope,
                 stateProvider = { currentState },
-                onRecognizedText = { recognizedText ->
+                onRecognizedInput = { recognizedInput ->
                     withContext(Dispatchers.Main) {
+                        val recognizedText = recognizedInput.text
                         if (settingsProvider.voiceInputReviewEnabled) {
                             setState {
                                 copy(
@@ -159,16 +162,19 @@ class MainViewModel(
                                 )
                             }
                         } else {
-                            val accepted = submitToActiveRunIfProcessing(recognizedText)
-                            if (accepted == null) {
-                                chatUseCase.sendChatMessage(
-                                    scope = viewModelScope,
-                                    isVoice = true,
-                                    chatMessage = recognizedText,
-                                    requestSource = ChatRequestSource.VOICE_INPUT,
-                                )
-                            } else if (!accepted) {
-                                send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+                            when (recognizedInput.routingIntent) {
+                                VoiceInputRoutingIntent.NEW_REQUEST ->
+                                    chatUseCase.sendChatMessage(
+                                        scope = viewModelScope,
+                                        isVoice = true,
+                                        chatMessage = recognizedText,
+                                        requestSource = ChatRequestSource.VOICE_INPUT,
+                                    )
+
+                                VoiceInputRoutingIntent.ACTIVE_RUN_CONTINUATION ->
+                                    if (!chatUseCase.submitToActiveRun(recognizedText)) {
+                                        send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+                                    }
                             }
                         }
                     }
@@ -225,7 +231,11 @@ class MainViewModel(
                     setState { copy(statusMessage = blockedReason, isListening = false) }
                     send(MainEffect.ShowError(blockedReason))
                 } else {
-                    voiceInputUseCase.startRecording(viewModelScope, currentState.isListening)
+                    voiceInputUseCase.startRecording(
+                        scope = viewModelScope,
+                        isListening = currentState.isListening,
+                        routingIntent = currentState.voiceInputRoutingIntent(),
+                    )
                 }
             }
             MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)

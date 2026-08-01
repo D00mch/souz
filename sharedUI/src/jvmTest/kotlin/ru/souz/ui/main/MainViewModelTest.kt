@@ -343,19 +343,25 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `audio flow event cancels first message and runs second request`() = runTest(mainDispatcher) {
+    fun `voice capture cancels classic request and runs recognized request`() = runTest(mainDispatcher) {
+        val firstStarted = CompletableDeferred<Unit>()
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
         val harness: TestHarness = createHarness(
             executeBehavior = { input ->
                 when (input) {
-                    "first request" -> firstResponse.await()
+                    "first request" -> {
+                        firstStarted.complete(Unit)
+                        firstResponse.await()
+                    }
                     "second request" -> secondResponse.await()
                     else -> error("Unexpected input: $input")
                 }
             },
             onCancelActiveJob = {
-                firstResponse.completeExceptionally(CancellationException("Cancelled by alt press"))
+                if (firstStarted.isCompleted) {
+                    firstResponse.completeExceptionally(CancellationException("Cancelled by voice capture"))
+                }
             },
             recognizeBehavior = {
                 LLMResponse.RecognizeResponse(result = listOf("second request"))
@@ -371,8 +377,15 @@ class MainViewModelTest {
             awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
             }
+            firstStarted.await()
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(9, 8, 7))
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { state ->
+                state.isListening && state.chatMessages.none { it.text == "first request" }
+            }
+            viewModel.handleEvent(MainEvent.StopListening)
+
             val secondInProgress = awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
             }
@@ -390,12 +403,14 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `audio flow event submits recognized text to the active Skills run`() = runTest(mainDispatcher) {
+    fun `voice capture submits recognized text to the active Skills run without cancellation`() = runTest(mainDispatcher) {
         val response = CompletableDeferred<String>()
+        var cancellationCalls = 0
         val harness = createHarness(
             activeAgentId = AgentId.SKILLS_GRAPH,
             executeBehavior = { response.await() },
             submitActiveRunBehavior = { true },
+            onCancelActiveJob = { cancellationCalls += 1 },
             recognizeBehavior = {
                 LLMResponse.RecognizeResponse(result = listOf("voice continuation"))
             },
@@ -407,8 +422,16 @@ class MainViewModelTest {
 
             viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
             awaitState(viewModel) { it.isProcessing }
+            val cancellationsBeforeCapture = cancellationCalls
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(9, 8, 7))
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            val captureState = awaitState(viewModel) { it.isListening }
+
+            assertTrue(captureState.isProcessing)
+            assertEquals(cancellationsBeforeCapture, cancellationCalls)
+
+            viewModel.handleEvent(MainEvent.StopListening)
 
             val continuedState = awaitState(viewModel) { state ->
                 state.chatMessages.any { it.isUser && it.text == "voice continuation" }
@@ -427,6 +450,65 @@ class MainViewModelTest {
             )
         } finally {
             response.complete("final answer")
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `voice continuation rejected after run completion does not start a new request`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val recognitionStarted = CompletableDeferred<Unit>()
+        val releaseRecognition = CompletableDeferred<Unit>()
+        val submissionAttempted = CompletableDeferred<Unit>()
+        var cancellationCalls = 0
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+            submitActiveRunBehavior = {
+                submissionAttempted.complete(Unit)
+                false
+            },
+            onCancelActiveJob = { cancellationCalls += 1 },
+            recognizeBehavior = {
+                recognitionStarted.complete(Unit)
+                releaseRecognition.await()
+                LLMResponse.RecognizeResponse(result = listOf("late voice continuation"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+            awaitState(viewModel) { it.isProcessing }
+            val cancellationsBeforeCapture = cancellationCalls
+
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            viewModel.handleEvent(MainEvent.StopListening)
+            awaitDeferred(recognitionStarted)
+
+            response.complete("final answer")
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
+            }
+
+            releaseRecognition.complete(Unit)
+            awaitDeferred(submissionAttempted)
+            runCurrent()
+
+            assertEquals(cancellationsBeforeCapture, cancellationCalls)
+            assertEquals(listOf("initial request"), harness.executedInputs)
+            assertEquals(listOf("late voice continuation"), harness.submittedActiveRunInputs)
+            assertEquals(
+                listOf("initial request", "final answer"),
+                viewModel.uiState.value.chatMessages.map { it.text },
+            )
+        } finally {
+            response.complete("final answer")
+            releaseRecognition.complete(Unit)
             harness.clear()
         }
     }
@@ -1613,9 +1695,16 @@ class MainViewModelTest {
     }
 
     private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {
+        testAudioRecorder(viewModel).emit(data)
+    }
+
+    private fun prepareAudioCapture(viewModel: MainViewModel, data: ByteArray) {
+        testAudioRecorder(viewModel).emitOnStop(data)
+    }
+
+    private fun testAudioRecorder(viewModel: MainViewModel): TestAudioRecorder {
         val voiceInputUseCase = privateField<VoiceInputUseCase>(viewModel, "voiceInputUseCase")
-        val recorder = voiceInputUseCase.audioRecorder as TestAudioRecorder
-        recorder.emit(data)
+        return voiceInputUseCase.audioRecorder as TestAudioRecorder
     }
 
     private fun createHarness(
@@ -1958,7 +2047,8 @@ class MainViewModelTest {
     }
 
     private class TestAudioRecorder : UiAudioRecorder {
-        private val mutableAudioFlow = MutableSharedFlow<ByteArray>()
+        private val mutableAudioFlow = MutableSharedFlow<ByteArray>(extraBufferCapacity = 1)
+        private var audioOnStop: ByteArray? = null
         override val audioFlow = mutableAudioFlow
         override val recordingState = MutableStateFlow<UiAudioRecordingState>(UiAudioRecordingState.Idle)
 
@@ -1971,10 +2061,17 @@ class MainViewModelTest {
 
         override fun stop() {
             recordingState.value = UiAudioRecordingState.Idle
+            val audio = audioOnStop ?: return
+            audioOnStop = null
+            check(mutableAudioFlow.tryEmit(audio))
         }
 
         suspend fun emit(data: ByteArray) {
             mutableAudioFlow.emit(data)
+        }
+
+        fun emitOnStop(data: ByteArray) {
+            audioOnStop = data
         }
     }
 }
