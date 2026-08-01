@@ -56,6 +56,29 @@ class MacOsSpeechRecognitionProviderTest {
     }
 
     @Test
+    fun `provider uses recognition language independently from region profile`() = runTest {
+        val settingsProvider = mockk<SettingsProvider>()
+        every { settingsProvider.regionProfile } returns REGION_RU
+
+        val bridge = FakeMacOsSpeechBridge(
+            status = MacOsSpeechAuthorizationStatus.AUTHORIZED,
+            onRecognize = { _, locale ->
+                lastLocale = locale
+                "recognized text"
+            },
+        )
+        val provider = MacOsSpeechRecognitionProvider(
+            settingsProvider = settingsProvider,
+            bridge = bridge,
+            languageProvider = SpeechRecognitionLanguageProvider { SpeechRecognitionLanguage.EN },
+            isMacOsProvider = { true },
+        )
+
+        assertEquals("recognized text", provider.recognize(byteArrayOf(1, 2)))
+        assertEquals("en-US", bridge.lastLocale)
+    }
+
+    @Test
     fun `provider maps denied authorization to explicit local error`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.regionProfile } returns REGION_RU

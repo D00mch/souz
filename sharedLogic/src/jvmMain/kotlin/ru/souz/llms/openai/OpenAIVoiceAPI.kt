@@ -18,6 +18,8 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.restJsonMapper
+import ru.souz.service.speech.SpeechRecognitionLanguage
+import ru.souz.service.speech.SpeechRecognitionLanguageProvider
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -26,6 +28,9 @@ class MissingOpenAiVoiceKeyException : IllegalStateException("OPENAI_API_KEY is 
 
 class OpenAIVoiceAPI(
     private val settingsProvider: SettingsProvider,
+    private val languageProvider: SpeechRecognitionLanguageProvider = SpeechRecognitionLanguageProvider {
+        SpeechRecognitionLanguage.fromLanguageCode(settingsProvider.regionProfile)
+    },
 ) {
     private val l = LoggerFactory.getLogger(OpenAIVoiceAPI::class.java)
 
@@ -72,6 +77,7 @@ class OpenAIVoiceAPI(
                 MultiPartFormDataContent(
                     formData {
                         append("model", transcriptionModel)
+                        append("language", languageProvider.current().apiCode)
                         append(
                             key = "file",
                             value = wavAudio,

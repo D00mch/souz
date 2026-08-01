@@ -215,6 +215,8 @@ enum class VoiceRecognitionModel(
     AiTunnelGpt4oMiniTranscribe("AI-Tunnel: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.AI_TUNNEL),
     OpenAIGpt4oTranscribe("OpenAI: gpt-4o-transcribe", "gpt-4o-transcribe", VoiceRecognitionProvider.OPENAI),
     OpenAIGpt4oMiniTranscribe("OpenAI: gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe", VoiceRecognitionProvider.OPENAI),
+    OpenAIGptTranscribe("OpenAI: gpt-transcribe", "gpt-transcribe", VoiceRecognitionProvider.OPENAI),
+    OpenAIWhisper1("OpenAI: whisper-1", "whisper-1", VoiceRecognitionProvider.OPENAI),
     LocalMacOsStt("Local MacOS STT", "local-macos-stt", VoiceRecognitionProvider.LOCAL_MACOS),
 }
 

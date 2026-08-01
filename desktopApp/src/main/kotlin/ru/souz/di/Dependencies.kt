@@ -77,10 +77,8 @@ import ru.souz.tool.mail.*
 import ru.souz.tool.notes.*
 import ru.souz.tool.textReplace.*
 import ru.souz.tool.math.ToolCalculator
-import ru.souz.ui.main.usecases.FinderPathExtractor
 import ru.souz.ui.main.usecases.MemoryConversationCleanup
 import ru.souz.ui.main.usecases.MemoryServiceConversationCleanup
-import ru.souz.ui.common.usecases.ApiKeyAvailabilityUseCase
 import ru.souz.service.speech.AiTunnelSpeechRecognitionProvider
 import ru.souz.service.speech.LiveSpeechTranscriptionProvider
 import ru.souz.service.speech.MacOsSpeechAnalyzerLiveTranscriptionProvider
@@ -89,6 +87,8 @@ import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.ModelAwareSpeechRecognitionProvider
 import ru.souz.service.speech.OpenAISpeechRecognitionProvider
 import ru.souz.service.speech.SaluteSpeechRecognitionProvider
+import ru.souz.service.speech.SpeechRecognitionLanguage
+import ru.souz.service.speech.SpeechRecognitionLanguageProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.service.telegram.TelegramChatSelectionBroker
 import ru.souz.service.telegram.TelegramContactSelectionBroker
@@ -131,6 +131,7 @@ import ru.souz.memory.SqliteMemoryRepository
 import ru.souz.ui.host.CalendarListProvider
 import ru.souz.ui.host.BackgroundIndexRefresher
 import ru.souz.ui.host.PermissionPromptService
+import ru.souz.ui.host.SettingsHostPreferences
 import ru.souz.ui.host.TelegramControlBot
 import ru.souz.ui.host.TelegramUiService
 import ru.souz.ui.host.UiAudioRecorder
@@ -342,8 +343,18 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     // API
     bindSingleton { GigaVoiceAPI(instance(), instance()) }
-    bindSingleton { OpenAIVoiceAPI(instance()) }
-    bindSingleton { AiTunnelVoiceAPI(instance()) }
+    bindSingleton<SpeechRecognitionLanguageProvider> {
+        val settingsHostPreferences = instance<SettingsHostPreferences>()
+        SpeechRecognitionLanguageProvider {
+            if (settingsHostPreferences.useEnglishInterface) {
+                SpeechRecognitionLanguage.EN
+            } else {
+                SpeechRecognitionLanguage.RU
+            }
+        }
+    }
+    bindSingleton { OpenAIVoiceAPI(instance(), instance()) }
+    bindSingleton { AiTunnelVoiceAPI(instance(), instance()) }
     bindSingleton { MacOsSpeechBridge() }
     bindSingleton<LiveSpeechTranscriptionProvider> { MacOsSpeechAnalyzerLiveTranscriptionProvider(instance()) }
     bindSingleton<AmbientTranscriptionService>(overrides = true) {
@@ -369,7 +380,14 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { SaluteSpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { OpenAISpeechRecognitionProvider(instance(), instance()) }
     bindSingleton { AiTunnelSpeechRecognitionProvider(instance(), instance()) }
-    bindSingleton { MacOsSpeechRecognitionProvider(instance(), instance(), liveSpeechProvider = instance()) }
+    bindSingleton {
+        MacOsSpeechRecognitionProvider(
+            settingsProvider = instance(),
+            bridge = instance(),
+            languageProvider = instance(),
+            liveSpeechProvider = instance(),
+        )
+    }
     bindSingleton<SpeechRecognitionProvider> {
         ModelAwareSpeechRecognitionProvider(instance(), instance(), instance(), instance(), instance())
     }
