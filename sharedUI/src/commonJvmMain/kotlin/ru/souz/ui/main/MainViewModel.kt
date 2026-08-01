@@ -159,12 +159,17 @@ class MainViewModel(
                                 )
                             }
                         } else {
-                            chatUseCase.sendChatMessage(
-                                scope = viewModelScope,
-                                isVoice = true,
-                                chatMessage = recognizedText,
-                                requestSource = ChatRequestSource.VOICE_INPUT,
-                            )
+                            val accepted = submitToActiveRunIfProcessing(recognizedText)
+                            if (accepted == null) {
+                                chatUseCase.sendChatMessage(
+                                    scope = viewModelScope,
+                                    isVoice = true,
+                                    chatMessage = recognizedText,
+                                    requestSource = ChatRequestSource.VOICE_INPUT,
+                                )
+                            } else if (!accepted) {
+                                send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+                            }
                         }
                     }
                 },
@@ -261,12 +266,10 @@ class MainViewModel(
             }
             is MainEvent.SendChatMessage -> vmLaunch {
                 val inputText = event.text
-                if (currentState.isProcessing && currentState.supportsActiveRunInput) {
-                    val accepted = chatUseCase.submitToActiveRun(
-                        chatMessage = inputText,
-                    )
-                    publishChatInputSubmissionFeedback(inputText, accepted)
-                    if (!accepted) {
+                val activeRunAccepted = submitToActiveRunIfProcessing(inputText)
+                if (activeRunAccepted != null) {
+                    publishChatInputSubmissionFeedback(inputText, activeRunAccepted)
+                    if (!activeRunAccepted) {
                         send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
                     }
                     return@vmLaunch
@@ -358,6 +361,13 @@ class MainViewModel(
             }
         }
     }
+
+    private suspend fun submitToActiveRunIfProcessing(input: String): Boolean? =
+        if (currentState.isProcessing && currentState.supportsActiveRunInput) {
+            chatUseCase.submitToActiveRun(chatMessage = input)
+        } else {
+            null
+        }
 
     private suspend fun publishChatInputSubmissionFeedback(input: String, accepted: Boolean) {
         setState {

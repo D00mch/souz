@@ -390,6 +390,48 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `audio flow event submits recognized text to the active Skills run`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+            submitActiveRunBehavior = { true },
+            recognizeBehavior = {
+                LLMResponse.RecognizeResponse(result = listOf("voice continuation"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+            awaitState(viewModel) { it.isProcessing }
+
+            emitAudioFlowEvent(viewModel, byteArrayOf(9, 8, 7))
+
+            val continuedState = awaitState(viewModel) { state ->
+                state.chatMessages.any { it.isUser && it.text == "voice continuation" }
+            }
+            assertTrue(continuedState.isProcessing)
+            assertEquals(listOf("initial request"), harness.executedInputs)
+            assertEquals(listOf("voice continuation"), harness.submittedActiveRunInputs)
+
+            response.complete("final answer")
+            val finalState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
+            }
+            assertEquals(
+                listOf("initial request", "voice continuation", "final answer"),
+                finalState.chatMessages.map { it.text },
+            )
+        } finally {
+            response.complete("final answer")
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `voice recognition stores draft in input when review is enabled`() = runTest(mainDispatcher) {
         val draft = "voice draft input"
         val harness = createHarness(
