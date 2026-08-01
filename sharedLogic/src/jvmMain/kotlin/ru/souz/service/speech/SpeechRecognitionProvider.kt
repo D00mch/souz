@@ -74,8 +74,11 @@ class AiTunnelSpeechRecognitionProvider(
 }
 
 class MacOsSpeechRecognitionProvider(
-    private val settingsProvider: SettingsProvider,
+    settingsProvider: SettingsProvider,
     private val bridge: MacOsSpeechBridgeApi,
+    private val languageProvider: SpeechRecognitionLanguageProvider = SpeechRecognitionLanguageProvider {
+        SpeechRecognitionLanguage.fromLanguageCode(settingsProvider.regionProfile)
+    },
     private val isMacOsProvider: () -> Boolean = LocalMacOsSpeechHost::isCurrentHost,
     private val liveSpeechProvider: LiveSpeechTranscriptionProvider? = null,
 ) : SpeechRecognitionProvider {
@@ -90,7 +93,7 @@ class MacOsSpeechRecognitionProvider(
             throw LocalMacOsSpeechUnavailableException("Local macOS speech recognition is unavailable on this host.")
         }
 
-        val locale = localeFor(settingsProvider.regionProfile)
+        val locale = languageProvider.current().localeTag
         ensureSpeechUsageDescription(locale)
         ensureAuthorization(locale)
 
@@ -281,11 +284,6 @@ class MacOsSpeechRecognitionProvider(
             MacOsSpeechAuthorizationStatus.NOT_DETERMINED ->
                 throw LocalMacOsSpeechUnavailableException("macOS speech recognition authorization did not complete.")
         }
-    }
-
-    private fun localeFor(regionProfile: String): String = when (regionProfile) {
-        REGION_EN -> "en-US"
-        else -> "ru-RU"
     }
 
     private fun mapBridgeError(error: Throwable, locale: String): Throwable {

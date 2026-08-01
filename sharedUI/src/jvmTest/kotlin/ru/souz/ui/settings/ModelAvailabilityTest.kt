@@ -37,6 +37,25 @@ class ModelAvailabilityTest {
     }
 
     @Test
+    fun `available voice recognition models include all openai transcription models`() {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.regionProfile } returns REGION_EN
+        every { settingsProvider.hasKey(ru.souz.llms.VoiceRecognitionProvider.OPENAI) } returns true
+
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+
+        assertEquals(
+            listOf(
+                VoiceRecognitionModel.OpenAIGpt4oTranscribe,
+                VoiceRecognitionModel.OpenAIGpt4oMiniTranscribe,
+                VoiceRecognitionModel.OpenAIGptTranscribe,
+                VoiceRecognitionModel.OpenAIWhisper1,
+            ),
+            settingsProvider.availableVoiceRecognitionModels(llmBuildProfile),
+        )
+    }
+
+    @Test
     fun `available voice recognition models include local macos without api key on supported host`() {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_EN

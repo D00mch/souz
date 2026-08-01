@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.restJsonMapper
+import ru.souz.service.speech.SpeechRecognitionLanguage
+import ru.souz.service.speech.SpeechRecognitionLanguageProvider
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -23,6 +25,9 @@ class MissingAiTunnelVoiceKeyException : IllegalStateException("AITUNNEL_KEY is 
 
 class AiTunnelVoiceAPI(
     private val settingsProvider: SettingsProvider,
+    private val languageProvider: SpeechRecognitionLanguageProvider = SpeechRecognitionLanguageProvider {
+        SpeechRecognitionLanguage.fromLanguageCode(settingsProvider.regionProfile)
+    },
 ) {
     private val l = LoggerFactory.getLogger(AiTunnelVoiceAPI::class.java)
 
@@ -43,7 +48,7 @@ class AiTunnelVoiceAPI(
     private val transcriptionLanguage: String
         get() = System.getenv("AITUNNEL_TRANSCRIPTION_LANGUAGE")
             ?: System.getProperty("AITUNNEL_TRANSCRIPTION_LANGUAGE")
-            ?: DEFAULT_TRANSCRIPTION_LANGUAGE
+            ?: languageProvider.current().apiCode
 
     private val client = HttpClient(CIO) {
         defaultRequest {
@@ -96,7 +101,6 @@ class AiTunnelVoiceAPI(
     private companion object {
         const val TRANSCRIPTIONS_URL = "https://api.aitunnel.ru/v1/audio/transcriptions"
         const val DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
-        const val DEFAULT_TRANSCRIPTION_LANGUAGE = "ru"
         const val AUDIO_SAMPLE_RATE_HZ = 16_000
         const val AUDIO_BITS_PER_SAMPLE = 16
         const val AUDIO_CHANNELS = 1

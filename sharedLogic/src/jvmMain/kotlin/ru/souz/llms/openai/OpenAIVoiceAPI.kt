@@ -18,6 +18,8 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.llms.restJsonMapper
+import ru.souz.service.speech.SpeechRecognitionLanguage
+import ru.souz.service.speech.SpeechRecognitionLanguageProvider
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -26,6 +28,9 @@ class MissingOpenAiVoiceKeyException : IllegalStateException("OPENAI_API_KEY is 
 
 class OpenAIVoiceAPI(
     private val settingsProvider: SettingsProvider,
+    private val languageProvider: SpeechRecognitionLanguageProvider = SpeechRecognitionLanguageProvider {
+        SpeechRecognitionLanguage.fromLanguageCode(settingsProvider.regionProfile)
+    },
 ) {
     private val l = LoggerFactory.getLogger(OpenAIVoiceAPI::class.java)
 
@@ -60,6 +65,8 @@ class OpenAIVoiceAPI(
             channels = AUDIO_CHANNELS,
             bitsPerSample = AUDIO_BITS_PER_SAMPLE,
         )
+        val model = transcriptionModel
+        val language = languageProvider.current().apiCode
         l.debug(
             "Sending OpenAI transcription audio: rawPcmBytes={}, wavBytes={}, sampleRateHz={}, channels={}",
             audio.size,
@@ -70,20 +77,11 @@ class OpenAIVoiceAPI(
         val response = client.post(TRANSCRIPTIONS_URL) {
             setBody(
                 MultiPartFormDataContent(
-                    formData {
-                        append("model", transcriptionModel)
-                        append(
-                            key = "file",
-                            value = wavAudio,
-                            headers = Headers.build {
-                                append(HttpHeaders.ContentType, "audio/wav")
-                                append(
-                                    HttpHeaders.ContentDisposition,
-                                    "form-data; name=\"file\"; filename=\"capture.wav\"",
-                                )
-                            }
-                        )
-                    }
+                    buildOpenAiTranscriptionFormData(
+                        model = model,
+                        language = language,
+                        wavAudio = wavAudio,
+                    )
                 )
             )
         }
@@ -106,6 +104,32 @@ class OpenAIVoiceAPI(
         const val AUDIO_CHANNELS = 1
     }
 }
+
+internal fun buildOpenAiTranscriptionFormData(
+    model: String,
+    language: String,
+    wavAudio: ByteArray,
+) = formData {
+    append("model", model)
+    if (model == GPT_TRANSCRIBE_MODEL) {
+        append("languages[]", language)
+    } else {
+        append("language", language)
+    }
+    append(
+        key = "file",
+        value = wavAudio,
+        headers = Headers.build {
+            append(HttpHeaders.ContentType, "audio/wav")
+            append(
+                HttpHeaders.ContentDisposition,
+                "form-data; name=\"file\"; filename=\"capture.wav\"",
+            )
+        }
+    )
+}
+
+private const val GPT_TRANSCRIBE_MODEL = "gpt-transcribe"
 
 private fun pcm16MonoToWav(
     rawPcm: ByteArray,
