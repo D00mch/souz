@@ -343,6 +343,7 @@ private class Harness(
             getSkillsNamesByCategoryTool = tool("GetSkillsNamesByCategory"),
             getKnowledgeTool = tool("GetKnowledge"),
             searchKnowledgeTool = tool("SearchKnowledge"),
+            searchMemoryTool = tool("SearchMemory"),
             runtimeCommandTool = tool("RunSkillCommand"),
         )
     }

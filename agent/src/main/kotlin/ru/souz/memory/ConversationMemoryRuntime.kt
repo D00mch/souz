@@ -95,13 +95,35 @@ data class MemoryRetrievalResult(
     val trace: MemoryRetrievalTrace = MemoryRetrievalTrace(),
 )
 
+object MemorySearchPolicy {
+    const val DEFAULT_MAX_FACTS: Int = 8
+    const val MAX_FACTS: Int = 16
+    const val MAX_LEXICAL_HINTS: Int = 16
+}
+
 /**
  * Conversation-scoped entry point for prompt memory retrieval and post-turn capture.
  */
 interface ConversationMemoryRuntime {
+    data class SearchFact(
+        val factId: String,
+        val scope: String,
+        val kind: String,
+        val title: String,
+        val body: String,
+        val score: Float,
+    )
+
     suspend fun retrieveMemory(
         request: MemoryRetrievalRequest,
     ): MemoryRetrievalResult = MemoryRetrievalResult(renderedPromptBlock = null)
+
+    suspend fun searchMemory(
+        context: MemoryContext,
+        semanticQuery: String,
+        lexicalHints: List<String>,
+        maxFacts: Int,
+    ): List<SearchFact> = emptyList()
 
     suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput)
 }

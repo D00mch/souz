@@ -39,6 +39,7 @@ class GraphBasedAgent internal constructor(
     getSkillByNameTool: LLMToolSetup,
     getKnowledgeTool: LLMToolSetup,
     searchKnowledgeTool: LLMToolSetup,
+    searchMemoryTool: LLMToolSetup,
     runtimeCommandTool: LLMToolSetup,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
@@ -47,12 +48,8 @@ class GraphBasedAgent internal constructor(
 ) : TraceableAgent {
 
     override val sideEffects: Flow<String> = nodesLLM.sideEffects
-    private val alwaysInlineResultTools = listOf(
-        getSkillByNameTool,
-        getKnowledgeTool,
-        searchKnowledgeTool,
-    )
-    private val skillTools = alwaysInlineResultTools + runtimeCommandTool
+    private val alwaysInlineResultTools = listOf(getSkillByNameTool, getKnowledgeTool, searchKnowledgeTool)
+    private val coreTools = alwaysInlineResultTools + searchMemoryTool + runtimeCommandTool
 
     private val graph: Graph<String, String> = buildGraph(name = "Agent") {
         val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("LLM")
@@ -64,7 +61,7 @@ class GraphBasedAgent internal constructor(
         val memoryRecall: Node<String, String> = nodesMemory.recall()
         val nodeClassify: Node<String, String> = nodesClassify.node(CLASSIFY_NODE_NAME)
         val nodeSkillInventory: Node<String, String> = nodesSkillInventory.node(
-            skillTools = skillTools,
+            skillTools = coreTools,
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
