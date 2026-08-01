@@ -45,7 +45,7 @@ class AgentFacade internal constructor(
     }
     private var executionGeneration: Long = 0
 
-    fun setActiveAgent(agentId: AgentId) {
+    suspend fun setActiveAgent(agentId: AgentId) {
         val normalized = contextFactory.normalizeAgentId(agentId)
         if (normalized == _activeAgentId.value) return
 
@@ -68,12 +68,12 @@ class AgentFacade internal constructor(
         _currentContext.tryEmit(_currentContext.value.copy(systemPrompt = prompt))
     }
 
-    fun clearContext(): Boolean {
+    suspend fun clearContext(): Boolean {
         cancelActiveJob()
         return _currentContext.tryEmit(contextFactory.create(_activeAgentId.value))
     }
 
-    fun setContext(ctx: AgentContext<String>): Boolean {
+    suspend fun setContext(ctx: AgentContext<String>): Boolean {
         cancelActiveJob()
         return _currentContext.tryEmit(ctx)
     }
@@ -100,7 +100,7 @@ class AgentFacade internal constructor(
         _currentContext.tryEmit(_currentContext.value.copy(settings = newSettings))
     }
 
-    fun cancelActiveJob() {
+    suspend fun cancelActiveJob() {
         executionGeneration += 1
         executor.cancelActiveJob(_activeAgentId.value)
         _isExecuting.value = false

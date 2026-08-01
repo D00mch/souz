@@ -1,147 +1,65 @@
 package ru.souz.agent.runtime
 
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableJob
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
-/**
- * Coordinates queued user input for one Skills graph execution.
- *
- * The queue, active LLM job, and replan marker form one state machine guarded by [Mutex]. Its main
- * invariant is that an LLM request cannot start between checking the queue and registering the job
- * that a later [submit] must cancel. Provider requests and tool execution must remain outside the
- * critical sections.
- *
- * Inputs are retained in FIFO order. The controller remains open across replans and tool calls, then
- * [drainOrSeal] atomically chooses between another replan and final-response acceptance.
- * Each accepted input advances the stream revision that the next LLM request captures before start.
- */
-internal class ActiveRunInputController {
-    private val mutex = Mutex()
-    // CompletableJob is a thread-safe gate that close() can complete without suspending.
-    private val accepting: CompletableJob = Job()
-    private val queuedInputs = ArrayDeque<String>()
-    private var streamRevision = 0L
-    private var activeLlmJob: Job? = null
-    // Identifies the child cancelled by submit(), so unrelated cancellation is never swallowed.
-    private var replannedLlmJob: Job? = null
+/** Mutex-serialized mailbox for one Skills graph execution. */
+internal class ActiveRunInputController(
+    private val mutex: Mutex = Mutex(),
+) {
+    private var state: State = State.Open()
 
-    /**
-     * Enqueues [input] while the run is open.
-     *
-     * Returns `true` after accepting the input. If the main LLM child is registered, only that child
-     * is cancelled; the graph remains active and drains the queued input before replanning. The stream
-     * revision advances in the same critical section so buffered output from older branches is stale.
-     */
+    /** Accepts [input] at one linearization point with closing and final sealing. */
     suspend fun submit(input: String): Boolean = mutex.withLock {
-        if (!accepting.isActive) return false
-
-        streamRevision += 1
-        queuedInputs.addLast(input)
-        activeLlmJob?.let { job ->
-            replannedLlmJob = job
-            job.cancel(ReplanLlmRequestCancellation())
-        }
+        val open = state as? State.Open ?: return false
+        open.queuedInputs.addLast(input)
+        state = open.copy(streamRevision = open.streamRevision + 1)
+        open.inputAvailable.complete(Unit)
         true
     }
 
-    /**
-     * Runs the provider request only after atomically checking the queue and registering its child job.
-     *
-     * If input is already queued, the unstarted child is cancelled and the queued batch is returned
-     * for replanning. Once registered, any later submission can cancel exactly this child without
-     * cancelling the graph.
-     */
-    suspend fun <T> runInterruptibleLlm(
-        request: suspend (streamRevision: Long) -> T,
-    ): LlmRunResult<T> = supervisorScope {
-        // Keep the provider dormant until the queue check and job registration form one boundary.
-        var requestStreamRevision = 0L
-        val requestJob = async(start = CoroutineStart.LAZY) { request(requestStreamRevision) }
-        // Queued input wins before registration; after registration, submit() can cancel this exact job.
-        mutex.withLock {
-            if (!accepting.isActive) {
-                currentCoroutineContext().ensureActive()
-                throw CancellationException("Active Skills graph run is closed")
-            }
-            if (queuedInputs.isNotEmpty()) {
-                // A lazy child must still be completed before supervisorScope can return.
-                requestJob.cancel()
-                return@supervisorScope LlmRunResult.Replan(drainLocked())
-            }
-            requestStreamRevision = streamRevision
-            activeLlmJob = requestJob
-        }
-
-        requestJob.start()
-        try {
-            LlmRunResult.Completed(requestJob.await())
-        } catch (error: CancellationException) {
-            // Parent/owner cancellation must terminate the graph, never masquerade as a replan.
-            currentCoroutineContext().ensureActive()
-            mutex.withLock {
-                if (replannedLlmJob === requestJob && error.causedByReplanSignal()) {
-                    return@supervisorScope LlmRunResult.Replan(drainLocked())
-                }
-            }
-            throw error
-        } finally {
-            // Cancellation must not leave a stale child registered for a later submission.
-            withContext(NonCancellable) {
-                mutex.withLock {
-                    if (activeLlmJob === requestJob) activeLlmJob = null
-                    if (replannedLlmJob === requestJob) replannedLlmJob = null
-                }
-            }
+    /** Returns queued input or the revision and notification for the next LLM attempt. */
+    suspend fun nextLlmStep(): NextLlmStep = mutex.withLock {
+        val open = openState()
+        if (open.queuedInputs.isNotEmpty()) {
+            NextLlmStep.QueuedInput(drainLocked(open))
+        } else {
+            NextLlmStep.Request(open.streamRevision, open.inputAvailable)
         }
     }
 
-    /**
-     * Drains all currently queued inputs in FIFO order while keeping the run open.
-     *
-     * A single input is returned unchanged. Multiple inputs are rendered as one user message with
-     * explicit boundaries so they enter history together without losing their order.
-     */
-    suspend fun drain(): String? = mutex.withLock { drainOrNullLocked() }
+    /** Drains all input accepted before this operation, preserving FIFO message boundaries. */
+    suspend fun drain(): String? = mutex.withLock {
+        val open = openState()
+        if (open.queuedInputs.isEmpty()) null else drainLocked(open)
+    }
 
-    /**
-     * Atomically drains pending input or seals an empty run against further submissions.
-     *
-     * Holding the same mutex as [submit] prevents input from being accepted in the gap between the
-     * final empty-queue check and sealing.
-     */
+    /** Atomically drains pending input or closes an empty mailbox around a final response. */
     suspend fun drainOrSeal(): String? = mutex.withLock {
-        drainOrNullLocked() ?: run {
-            accepting.complete()
+        val open = openState()
+        if (open.queuedInputs.isNotEmpty()) {
+            drainLocked(open)
+        } else {
+            closeLocked(open)
             null
         }
     }
 
-    /**
-     * Stops accepting submissions without suspending.
-     *
-     * A concurrent [submit] that already observed the gate as active is ordered before this close;
-     * later submissions are rejected. Final response acceptance uses [drainOrSeal] instead because
-     * queue draining and closing must be one mutex-protected operation.
-     */
-    fun close() {
-        accepting.complete()
+    /** Stops accepting submissions in the same state machine as enqueueing and draining. */
+    suspend fun close() = mutex.withLock {
+        (state as? State.Open)?.let(::closeLocked)
     }
 
-    private fun drainLocked(): String {
-        check(queuedInputs.isNotEmpty()) { "A replan must have queued user input" }
-        val messages = buildList {
-            while (queuedInputs.isNotEmpty()) add(queuedInputs.removeFirst())
-        }
+    private fun openState(): State.Open = state as? State.Open
+        ?: throw CancellationException("Active Skills graph run is closed")
+
+    private fun drainLocked(open: State.Open): String {
+        check(open.queuedInputs.isNotEmpty()) { "Queued input is required" }
+        val messages = open.queuedInputs.toList()
+        state = State.Open(streamRevision = open.streamRevision)
         if (messages.size == 1) return messages.single()
 
         return buildString {
@@ -157,17 +75,27 @@ internal class ActiveRunInputController {
         }
     }
 
-    private fun drainOrNullLocked(): String? =
-        if (queuedInputs.isEmpty()) null else drainLocked()
-
-    private fun CancellationException.causedByReplanSignal(): Boolean =
-        generateSequence<Throwable>(this) { it.cause }
-            .any { it is ReplanLlmRequestCancellation }
-
-    internal sealed interface LlmRunResult<out T> {
-        data class Completed<T>(val value: T) : LlmRunResult<T>
-        data class Replan(val queuedInput: String) : LlmRunResult<Nothing>
+    private fun closeLocked(open: State.Open) {
+        state = State.Closed
+        open.inputAvailable.complete(Unit)
     }
 
-    private class ReplanLlmRequestCancellation : CancellationException("Replan for queued user input")
+    internal sealed interface NextLlmStep {
+        data class QueuedInput(val input: String) : NextLlmStep
+
+        data class Request(
+            val streamRevision: Long,
+            val inputAvailable: Deferred<Unit>,
+        ) : NextLlmStep
+    }
+
+    private sealed interface State {
+        data class Open(
+            val queuedInputs: ArrayDeque<String> = ArrayDeque(),
+            val streamRevision: Long = 0L,
+            val inputAvailable: CompletableDeferred<Unit> = CompletableDeferred(),
+        ) : State
+
+        data object Closed : State
+    }
 }

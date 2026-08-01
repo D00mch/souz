@@ -12,7 +12,7 @@ class AgentExecutor internal constructor(
 ) {
     fun sideEffects(agentId: AgentId): Flow<AgentStreamChunk> = agentById(agentId).sideEffects
 
-    fun cancelActiveJob(agentId: AgentId) {
+    suspend fun cancelActiveJob(agentId: AgentId) {
         agentById(agentId).cancelActiveJob()
     }
 

@@ -1,8 +1,11 @@
 package ru.souz
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.withContext
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
@@ -99,8 +102,8 @@ class SkillsGraphBasedAgent internal constructor(
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
-    override fun cancelActiveJob() {
-        activeRun.value?.close()
+    override suspend fun cancelActiveJob() {
+        activeRun.getAndUpdate { null }?.close()
         executionDelegate.cancelActiveJob()
     }
 
@@ -114,6 +117,7 @@ class SkillsGraphBasedAgent internal constructor(
         ctx: AgentContext<String>,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
+        cancelActiveJob()
         val restrictedContext = nodesSkillInventory.restrictToTools(ctx, coreTools)
         val controller = ActiveRunInputController()
         val executionGraph = graph(controller)
@@ -121,8 +125,10 @@ class SkillsGraphBasedAgent internal constructor(
         return try {
             executionDelegate.executeWithTrace(graph = executionGraph, ctx = restrictedContext, onStep = onStep)
         } finally {
-            controller.close()
-            activeRun.compareAndSet(controller, null)
+            withContext(NonCancellable) {
+                controller.close()
+                activeRun.compareAndSet(controller, null)
+            }
         }
     }
 

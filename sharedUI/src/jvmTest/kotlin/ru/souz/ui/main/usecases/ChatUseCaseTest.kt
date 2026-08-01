@@ -305,7 +305,7 @@ class ChatUseCaseTest {
     }
 
     @Test
-    fun `onCleared emits pending conversation finish after active request is cancelled`() = runTest {
+    fun `onCleared emits pending conversation finish after request scope cancellation`() = runTest {
         val executeStarted = CompletableDeferred<Unit>()
         val executeResult = CompletableDeferred<String>()
         val finished = mutableListOf<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>()
@@ -325,9 +325,6 @@ class ChatUseCaseTest {
                 systemPrompt = "Base system prompt",
             )
         )
-        every { agentFacade.cancelActiveJob() } answers {
-            executeResult.completeExceptionally(CancellationException("view model cleared"))
-        }
         coEvery { agentFacade.executeForResult("hello", any()) } coAnswers {
             executeStarted.complete(Unit)
             AgentExecutionResult(
@@ -371,8 +368,9 @@ class ChatUseCaseTest {
         }
         executeStarted.await()
 
-        useCase.onCleared()
+        requestJob.cancel(CancellationException("view model cleared"))
         requestJob.join()
+        useCase.onCleared()
 
         val event = finished.single()
         assertEquals(ChatConversationCloseReason.VIEW_MODEL_CLEARED, event.third)
@@ -610,7 +608,7 @@ class ChatUseCaseTest {
                 toolInvocationMeta = baseMeta,
             )
         )
-        every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob() }
+        coEvery { agentFacade.cancelActiveJob() } answers { onCancelActiveJob() }
         coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
             executedInputs?.add(firstArg())
             AgentExecutionResult(

@@ -1606,7 +1606,7 @@ class MainViewModelTest {
         val submittedActiveRunInputs = mutableListOf<String>()
         every { agentFacade.sideEffects } returns sideEffects
         every { agentFacade.currentContext } returns MutableStateFlow(emptyAgentContext())
-        every { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
+        coEvery { agentFacade.cancelActiveJob() } answers { onCancelActiveJob.invoke() }
         coEvery { agentFacade.executeForResult(any(), any()) } coAnswers {
             executedInputs += firstArg<String>()
             AgentExecutionResult(

@@ -93,7 +93,7 @@ class GraphBasedAgent internal constructor(
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
-    override fun cancelActiveJob() {
+    override suspend fun cancelActiveJob() {
         executionDelegate.cancelActiveJob()
     }
 

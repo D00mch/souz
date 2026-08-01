@@ -161,7 +161,7 @@ class ChatUseCase internal constructor(
     /**
      * Stops only the currently running agent execution without directly mutating chat UI state.
      */
-    private fun cancelActiveJob() {
+    private suspend fun cancelActiveJob() {
         agentFacade.cancelActiveJob()
     }
 
@@ -237,7 +237,7 @@ class ChatUseCase internal constructor(
         }
     }
 
-    fun setContext(ctx: AgentContext<String>) {
+    suspend fun setContext(ctx: AgentContext<String>) {
         agentFacade.setContext(ctx)
     }
 
@@ -251,10 +251,10 @@ class ChatUseCase internal constructor(
         agentFacade.setContextSize(size)
     }
 
+    /** Finishes UI-owned state after the ViewModel request scope has been cancelled. */
     fun onCleared(): ToolInvocationMeta? {
         val conversationMeta = closeAndCaptureConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
-        cancelActiveJob()
         toolModifyReviewUseCase.clearPendingReviewBlocking(discardBrokerState = true)
         return conversationMeta
     }

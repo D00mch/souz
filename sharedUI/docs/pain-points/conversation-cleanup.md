@@ -4,6 +4,8 @@
 
 Closing a local conversation clears both conversation-scoped memory and temporary Knowledge for the same user and conversation. Cleanup runs for a new conversation, explicit context clearing, and `MainViewModel` teardown.
 
+ViewModel teardown cancels its request scope before `ChatUseCase.onCleared` finishes UI-owned state and captures the conversation metadata. Teardown does not start a separate asynchronous agent-cancellation task.
+
 `ChatUseCase` retains the exact `ToolInvocationMeta` passed to the latest request in the active conversation. The metadata must be captured before `AgentFacade.clearContext()` replaces the agent context, then passed unchanged to `ConversationKnowledgeStore.clearConversation`.
 
 ## Lifetime

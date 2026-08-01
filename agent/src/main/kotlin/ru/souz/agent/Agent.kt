@@ -22,7 +22,7 @@ data class AgentStreamChunk(
 interface Agent {
     val sideEffects: Flow<AgentStreamChunk>
     suspend fun execute(ctx: AgentContext<String>): String
-    fun cancelActiveJob()
+    suspend fun cancelActiveJob()
 }
 
 data class AgentExecutionResult(

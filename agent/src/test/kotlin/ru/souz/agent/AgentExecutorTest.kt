@@ -84,7 +84,7 @@ class AgentExecutorTest {
             )
         }
 
-        override fun cancelActiveJob() = Unit
+        override suspend fun cancelActiveJob() = Unit
 
         override suspend fun submitToActiveRun(input: String): Boolean {
             submittedInputs += input
