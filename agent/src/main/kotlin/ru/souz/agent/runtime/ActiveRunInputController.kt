@@ -23,12 +23,14 @@ import kotlinx.coroutines.withContext
  *
  * Inputs are retained in FIFO order. The controller remains open across replans and tool calls, then
  * [drainOrSeal] atomically chooses between another replan and final-response acceptance.
+ * Each accepted input advances the stream revision that the next LLM request captures before start.
  */
 internal class ActiveRunInputController {
     private val mutex = Mutex()
     // CompletableJob is a thread-safe gate that close() can complete without suspending.
     private val accepting: CompletableJob = Job()
     private val queuedInputs = ArrayDeque<String>()
+    private var streamRevision = 0L
     private var activeLlmJob: Job? = null
     // Identifies the child cancelled by submit(), so unrelated cancellation is never swallowed.
     private var replannedLlmJob: Job? = null
@@ -37,11 +39,13 @@ internal class ActiveRunInputController {
      * Enqueues [input] while the run is open.
      *
      * Returns `true` after accepting the input. If the main LLM child is registered, only that child
-     * is cancelled; the graph remains active and drains the queued input before replanning.
+     * is cancelled; the graph remains active and drains the queued input before replanning. The stream
+     * revision advances in the same critical section so buffered output from older branches is stale.
      */
     suspend fun submit(input: String): Boolean = mutex.withLock {
         if (!accepting.isActive) return false
 
+        streamRevision += 1
         queuedInputs.addLast(input)
         activeLlmJob?.let { job ->
             replannedLlmJob = job
@@ -58,10 +62,11 @@ internal class ActiveRunInputController {
      * cancelling the graph.
      */
     suspend fun <T> runInterruptibleLlm(
-        request: suspend () -> T,
+        request: suspend (streamRevision: Long) -> T,
     ): LlmRunResult<T> = supervisorScope {
         // Keep the provider dormant until the queue check and job registration form one boundary.
-        val requestJob = async(start = CoroutineStart.LAZY) { request() }
+        var requestStreamRevision = 0L
+        val requestJob = async(start = CoroutineStart.LAZY) { request(requestStreamRevision) }
         // Queued input wins before registration; after registration, submit() can cancel this exact job.
         mutex.withLock {
             if (!accepting.isActive) {
@@ -73,6 +78,7 @@ internal class ActiveRunInputController {
                 requestJob.cancel()
                 return@supervisorScope LlmRunResult.Replan(drainLocked())
             }
+            requestStreamRevision = streamRevision
             activeLlmJob = requestJob
         }
 

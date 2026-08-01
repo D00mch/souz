@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -51,6 +52,50 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ChatUseCaseTest {
+    @Test
+    fun `stale streamed chunk queued before continuation is not rendered after reset`() = runTest {
+        val executeStarted = CompletableDeferred<Unit>()
+        val executeResult = CompletableDeferred<String>()
+        val sideEffects = MutableSharedFlow<AgentSideEffect>(extraBufferCapacity = 1)
+        val useCase = createExecutableUseCase(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            sideEffects = sideEffects,
+            submitToActiveRun = { true },
+            executeAnswer = {
+                executeStarted.complete(Unit)
+                executeResult.await()
+            },
+        )
+        var state = MainState()
+        backgroundScope.launch(StandardTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { output ->
+                if (output is MainUseCaseOutput.State) {
+                    state = output.reduce(state)
+                }
+            }
+        }
+        val requestJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(
+                scope = backgroundScope,
+                isVoice = false,
+                chatMessage = "hello",
+                requestSource = ChatRequestSource.CHAT_UI,
+            )
+        }
+        executeStarted.await()
+        runCurrent()
+
+        assertTrue(sideEffects.tryEmit(AgentSideEffect.Text("stale provisional")))
+        val accepted = useCase.submitToActiveRun("steer this")
+        runCurrent()
+
+        assertTrue(accepted)
+        assertEquals(listOf("hello", "steer this"), state.chatMessages.map { it.text })
+
+        executeResult.complete("final answer")
+        requestJob.join()
+    }
+
     @Test
     fun `active run input replaces provisional stream without starting another request`() = runTest {
         val executeStarted = CompletableDeferred<Unit>()
@@ -99,7 +144,7 @@ class ChatUseCaseTest {
         assertTrue(state.isProcessing)
 
         runCurrent()
-        sideEffects.emit(AgentSideEffect.Text("replacement"))
+        sideEffects.emit(AgentSideEffect.Text("replacement", streamRevision = 1L))
         assertEquals(listOf("hello", "steer this", "replacement"), state.chatMessages.map { it.text })
         assertFalse(state.chatMessages.any { it.text.contains("provisional") })
 

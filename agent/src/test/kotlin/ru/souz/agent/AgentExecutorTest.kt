@@ -68,7 +68,7 @@ class AgentExecutorTest {
         var acceptSubmissions = false
         val submittedInputs = mutableListOf<String>()
 
-        override val sideEffects: Flow<String> = emptyFlow()
+        override val sideEffects: Flow<AgentStreamChunk> = emptyFlow()
 
         override suspend fun execute(ctx: AgentContext<String>): String = executeWithTrace(ctx).output
 

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
+import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -31,17 +32,21 @@ internal class NodesLLM(
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 
-    val sideEffects: Flow<String> = MutableSharedFlow(extraBufferCapacity = 16)
-    
+    private val mutableSideEffects = MutableSharedFlow<AgentStreamChunk>(extraBufferCapacity = 16)
+    val sideEffects: Flow<AgentStreamChunk> = mutableSideEffects
+
     /**
      * Calls LLM's API with the current [AgentContext.history].
      * Converts [AgentContext.history] into [AgentContext.input] as [LLMRequest.Chat] suitable for LLM call
      *
      * Modifies [AgentContext.history] and [AgentContext.input]
      */
-    fun chat(name: String = "LLM Chat"): Node<String, LLMResponse.Chat> =
+    fun chat(
+        name: String = "LLM Chat",
+        streamRevision: Long = 0L,
+    ): Node<String, LLMResponse.Chat> =
         Node(name) { ctx: AgentContext<String> ->
-            val response = request(ctx)
+            val response = request(ctx, streamRevision)
             val history = ArrayList(ctx.history).apply {
                 if (response is LLMResponse.Chat.Ok) {
                     addAll(response.choices.mapNotNull { it.toMessage() })
@@ -51,12 +56,18 @@ internal class NodesLLM(
         }
 
     /** Calls the main chat model without committing its provisional response to history. */
-    fun provisionalChat(name: String = "LLM Chat"): Node<String, LLMResponse.Chat> =
+    fun provisionalChat(
+        name: String = "LLM Chat",
+        streamRevision: Long = 0L,
+    ): Node<String, LLMResponse.Chat> =
         Node(name) { ctx: AgentContext<String> ->
-            ctx.map { request(ctx) }
+            ctx.map { request(ctx, streamRevision) }
         }
 
-    private suspend fun request(ctx: AgentContext<*>): LLMResponse.Chat {
+    private suspend fun request(
+        ctx: AgentContext<*>,
+        streamRevision: Long,
+    ): LLMResponse.Chat {
         l.debug("LLM input is {}", ctx.input)
         val response = withContext(Dispatchers.IO) {
             val req = ctx.toGigaRequest(ctx.history)
@@ -64,6 +75,7 @@ internal class NodesLLM(
                 streamResponse(
                     request = req.copy(stream = true),
                     eventSink = ctx.runtimeEventSink,
+                    streamRevision = streamRevision,
                 )
             } else {
                 llmApi.message(req)
@@ -76,6 +88,7 @@ internal class NodesLLM(
     private suspend fun streamResponse(
         request: LLMRequest.Chat,
         eventSink: AgentRuntimeEventSink,
+        streamRevision: Long,
     ): LLMResponse.Chat {
         val streamResponse = AtomicReference<LLMResponse.Chat?>(null)
         val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
@@ -102,7 +115,7 @@ internal class NodesLLM(
                     if (pending.length >= increasingChunkSize) {
                         val toEmit = pending.toString()
                         l.info("About to emit into sideEffects flow: {}", toEmit)
-                        (sideEffects as MutableSharedFlow<String>).tryEmit(toEmit)
+                        mutableSideEffects.tryEmit(AgentStreamChunk(toEmit, streamRevision))
                         pending.clear()
                         increasingChunkSize *= 3
                     }
@@ -127,7 +140,7 @@ internal class NodesLLM(
             if (pending.isNotEmpty()) {
                 val toEmit = pending.toString()
                 l.info("About to emit final chunk into sideEffects flow: {}", toEmit)
-                (sideEffects as MutableSharedFlow<String>).tryEmit(toEmit)
+                mutableSideEffects.tryEmit(AgentStreamChunk(toEmit, streamRevision))
             }
         }
 

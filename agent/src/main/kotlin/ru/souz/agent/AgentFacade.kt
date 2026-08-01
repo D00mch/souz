@@ -39,7 +39,7 @@ class AgentFacade internal constructor(
 
     val sideEffects: Flow<AgentSideEffect> = _activeAgentId.flatMapLatest { id ->
         merge(
-            executor.sideEffects(id).map { AgentSideEffect.Text(it) },
+            executor.sideEffects(id).map { AgentSideEffect.Text(it.text, it.streamRevision) },
             agentToolExecutor.toolInvocations.map { AgentSideEffect.Fn(it) },
         )
     }

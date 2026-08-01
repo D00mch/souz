@@ -281,39 +281,44 @@ class ChatUseCase internal constructor(
             agentFacade.sideEffects.collect { effect ->
                 when (effect) {
                     is AgentSideEffect.Text -> {
-                        if (observedRevision != session.sideEffectRevision) {
-                            observedRevision = session.sideEffectRevision
-                            accumulatedText = ""
-                            isCodeBlockStarted = false
-                        }
-                        if (toolModifyReviewUseCase.hasPendingEdits()) {
-                            return@collect
-                        }
-                        val text = effect.v
-                        accumulatedText += text
-                        emitState(refreshChatSearch = true) {
-                            val updatedMessage = msg.copy(
-                                text = accumulatedText,
-                            )
-                            val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
-                                chatMessages.mapLast { updatedMessage }
-                            } else {
-                                chatMessages + updatedMessage
+                        activeRequestMutex.withLock textEffect@{
+                            if (effect.streamRevision != session.sideEffectRevision) {
+                                return@textEffect
                             }
-                            copy(chatMessages = updatedMessages)
-                        }
-
-                        if (!msg.isVoice) return@collect
-
-                        if (text.contains(CODE_BLOCK)) {
-                            isCodeBlockStarted = !isCodeBlockStarted
-                            if (isCodeBlockStarted) {
-                                speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                            if (observedRevision != effect.streamRevision) {
+                                observedRevision = effect.streamRevision
+                                accumulatedText = ""
+                                isCodeBlockStarted = false
                             }
-                        }
+                            if (toolModifyReviewUseCase.hasPendingEdits()) {
+                                return@textEffect
+                            }
+                            val text = effect.v
+                            accumulatedText += text
+                            emitState(refreshChatSearch = true) {
+                                val updatedMessage = msg.copy(
+                                    text = accumulatedText,
+                                )
+                                val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
+                                    chatMessages.mapLast { updatedMessage }
+                                } else {
+                                    chatMessages + updatedMessage
+                                }
+                                copy(chatMessages = updatedMessages)
+                            }
 
-                        if (!isCodeBlockStarted) {
-                            speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
+                            if (!msg.isVoice) return@textEffect
+
+                            if (text.contains(CODE_BLOCK)) {
+                                isCodeBlockStarted = !isCodeBlockStarted
+                                if (isCodeBlockStarted) {
+                                    speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                                }
+                            }
+
+                            if (!isCodeBlockStarted) {
+                                speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
+                            }
                         }
                     }
                     is AgentSideEffect.Fn -> {

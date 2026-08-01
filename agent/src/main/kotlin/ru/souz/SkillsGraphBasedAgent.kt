@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import ru.souz.agent.AgentExecutionResult
+import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
 import ru.souz.agent.graph.Graph
@@ -50,7 +51,7 @@ class SkillsGraphBasedAgent internal constructor(
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),
 ) : TraceableAgent {
-    override val sideEffects: Flow<String> = nodesLLM.sideEffects
+    override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = listOf(
         getSkillByNameTool,
         getSkillsByCategoryTool,

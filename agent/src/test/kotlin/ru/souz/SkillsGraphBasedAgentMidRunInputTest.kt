@@ -67,6 +67,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         firstCancelled.await()
         replacementStarted.await()
         assertTrue(execution.isActive)
+        assertEquals(listOf(0L, 2L), harness.streamRevisions)
 
         assertEquals(
             """
@@ -287,6 +288,7 @@ private class Harness(
     private val nodesSkillInventory = mockk<NodesSkillInventory>()
 
     val requestHistories = mutableListOf<List<LLMRequest.Message>>()
+    val streamRevisions = mutableListOf<Long>()
     var chatCallCount = 0
         private set
     var finalizationCount = 0
@@ -308,10 +310,13 @@ private class Harness(
         every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME) } returns
             Node(SKILL_INVENTORY_NODE_NAME) { it }
         every { nodesCommon.nodeAppendAdditionalData() } returns Node("appendActualInformation") { it }
-        every { nodesLLM.provisionalChat("LLM request") } returns Node("LLM request") { ctx ->
-            chatCallCount += 1
-            requestHistories += ctx.history.toList()
-            chatHandler(chatCallCount, ctx)
+        every { nodesLLM.provisionalChat("LLM request", any()) } answers {
+            streamRevisions += secondArg<Long>()
+            Node("LLM request") { ctx ->
+                chatCallCount += 1
+                requestHistories += ctx.history.toList()
+                chatHandler(chatCallCount, ctx)
+            }
         }
         coEvery { nodesCommon.executeFunctionCalls(any()) } coAnswers {
             toolHandler(firstArg())

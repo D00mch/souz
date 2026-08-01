@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -83,7 +84,7 @@ class NodesLLMTest {
         )
 
         val sideEffect = async { nodes.sideEffects.first() }
-        val result = nodes.chat().execute(
+        val result = nodes.chat(streamRevision = 7L).execute(
             ctx = context,
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
@@ -96,7 +97,7 @@ class NodesLLMTest {
             ),
             runtimeEvents,
         )
-        assertEquals("Hello streaming world", sideEffect.await())
+        assertEquals(AgentStreamChunk("Hello streaming world", 7L), sideEffect.await())
         val response = result.input as LLMResponse.Chat.Ok
         assertEquals("Hello streaming world", response.choices.single().message.content)
         assertEquals("Hello streaming world", result.history.last().content)

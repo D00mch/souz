@@ -10,7 +10,7 @@ class AgentExecutor internal constructor(
     // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
     private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
 ) {
-    fun sideEffects(agentId: AgentId): Flow<String> = agentById(agentId).sideEffects
+    fun sideEffects(agentId: AgentId): Flow<AgentStreamChunk> = agentById(agentId).sideEffects
 
     fun cancelActiveJob(agentId: AgentId) {
         agentById(agentId).cancelActiveJob()

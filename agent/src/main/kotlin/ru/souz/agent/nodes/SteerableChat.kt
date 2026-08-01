@@ -12,12 +12,10 @@ import ru.souz.llms.toMessage
 
 /** Main Skills chat node that replans around execution-scoped user input. */
 internal class SteerableChat(
-    nodesLLM: NodesLLM,
+    private val nodesLLM: NodesLLM,
     private val controller: ActiveRunInputController,
 ) : Node<String, LLMResponse.Chat> {
     override val name: String = "LLM"
-
-    private val provisionalChat = nodesLLM.provisionalChat("LLM request")
 
     override suspend fun execute(
         ctx: AgentContext<String>,
@@ -26,8 +24,8 @@ internal class SteerableChat(
         var current = ctx
 
         while (true) {
-            val attempt = controller.runInterruptibleLlm {
-                provisionalChat.execute(current, runtime)
+            val attempt = controller.runInterruptibleLlm { streamRevision ->
+                nodesLLM.provisionalChat("LLM request", streamRevision).execute(current, runtime)
             }
             when (attempt) {
                 is LlmRunResult.Replan -> {
