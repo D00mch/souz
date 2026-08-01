@@ -42,8 +42,7 @@ import ru.souz.ui.main.usecases.PermissionsUseCase
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.ToolModifyReviewUseCase
 import ru.souz.ui.main.usecases.VoiceInputController
-import ru.souz.ui.main.usecases.VoiceInputRoutingIntent
-import ru.souz.ui.main.usecases.voiceInputRoutingIntent
+import ru.souz.ui.main.usecases.VoiceInputRoute
 import ru.souz.service.observability.ChatConversationCloseReason
 import ru.souz.service.observability.ChatRequestSource
 import ru.souz.ui.host.BackgroundIndexRefresher
@@ -94,6 +93,7 @@ class MainViewModel(
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
     private var ambientModelPreloadJob: Job? = null
+    private var voiceInputDraftToken = 0L
     private val ambientModeController by lazy(kotlin.LazyThreadSafetyMode.NONE) {
         AmbientModeController(
             scope = viewModelScope,
@@ -155,15 +155,19 @@ class MainViewModel(
                     withContext(Dispatchers.Main) {
                         val recognizedText = recognizedInput.text
                         if (settingsProvider.voiceInputReviewEnabled) {
+                            val draftToken = ++voiceInputDraftToken
                             setState {
                                 copy(
-                                    pendingVoiceInputDraft = recognizedText.trim(),
-                                    pendingVoiceInputDraftToken = pendingVoiceInputDraftToken + 1,
+                                    pendingVoiceInputDraft = PendingVoiceInputDraft(
+                                        text = recognizedText.trim(),
+                                        token = draftToken,
+                                        route = recognizedInput.route,
+                                    ),
                                 )
                             }
                         } else {
-                            when (recognizedInput.routingIntent) {
-                                VoiceInputRoutingIntent.NEW_REQUEST ->
+                            when (val route = recognizedInput.route) {
+                                VoiceInputRoute.NewRequest ->
                                     chatUseCase.sendChatMessage(
                                         scope = viewModelScope,
                                         isVoice = true,
@@ -171,8 +175,8 @@ class MainViewModel(
                                         requestSource = ChatRequestSource.VOICE_INPUT,
                                     )
 
-                                VoiceInputRoutingIntent.ACTIVE_RUN_CONTINUATION ->
-                                    if (!chatUseCase.submitToActiveRun(recognizedText)) {
+                                is VoiceInputRoute.ActiveRunContinuation ->
+                                    if (!chatUseCase.submitToCapturedActiveRun(route.requestId, recognizedText)) {
                                         send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
                                     }
                             }
@@ -234,14 +238,15 @@ class MainViewModel(
                     voiceInputUseCase.startRecording(
                         scope = viewModelScope,
                         isListening = currentState.isListening,
-                        routingIntent = currentState.voiceInputRoutingIntent(),
                     )
                 }
             }
             MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
             is MainEvent.ConsumePendingVoiceInputDraft -> {
-                if (event.token == currentState.pendingVoiceInputDraftToken) {
-                    setState { copy(pendingVoiceInputDraft = null) }
+                if (event.token == currentState.pendingVoiceInputDraft?.token) {
+                    setState {
+                        copy(pendingVoiceInputDraft = pendingVoiceInputDraft?.copy(text = null))
+                    }
                 }
             }
             MainEvent.RequestNewConversation -> requestNewConversation()
@@ -276,13 +281,41 @@ class MainViewModel(
             }
             is MainEvent.SendChatMessage -> vmLaunch {
                 val inputText = event.text
-                val activeRunAccepted = submitToActiveRunIfProcessing(inputText)
-                if (activeRunAccepted != null) {
-                    publishChatInputSubmissionFeedback(inputText, activeRunAccepted)
+                val voiceDraftToken = event.voiceInputDraftToken
+                val reviewedVoiceDraft = voiceDraftToken?.let { token ->
+                    currentState.pendingVoiceInputDraft?.takeIf { it.token == token }
+                        ?: run {
+                            publishChatInputSubmissionFeedback(inputText, accepted = false)
+                            send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+                            return@vmLaunch
+                        }
+                }
+
+                if (reviewedVoiceDraft?.route is VoiceInputRoute.ActiveRunContinuation) {
+                    val activeRunAccepted = chatUseCase.submitToCapturedActiveRun(
+                        expectedRequestId = reviewedVoiceDraft.route.requestId,
+                        chatMessage = inputText,
+                    )
+                    publishChatInputSubmissionFeedback(
+                        input = inputText,
+                        accepted = activeRunAccepted,
+                        consumedVoiceDraftToken = voiceDraftToken.takeIf { activeRunAccepted },
+                    )
                     if (!activeRunAccepted) {
                         send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
                     }
                     return@vmLaunch
+                }
+
+                if (reviewedVoiceDraft == null) {
+                    val activeRunAccepted = submitToActiveRunIfProcessing(inputText)
+                    if (activeRunAccepted != null) {
+                        publishChatInputSubmissionFeedback(inputText, activeRunAccepted)
+                        if (!activeRunAccepted) {
+                            send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+                        }
+                        return@vmLaunch
+                    }
                 }
 
                 val attachments = currentState.attachedFiles
@@ -302,6 +335,8 @@ class MainViewModel(
                             input = inputText,
                             accepted = true,
                         ),
+                        pendingVoiceInputDraft = pendingVoiceInputDraft
+                            ?.takeUnless { it.token == voiceDraftToken },
                     )
                 }
                 chatUseCase.sendChatMessage(
@@ -379,9 +414,17 @@ class MainViewModel(
             null
         }
 
-    private suspend fun publishChatInputSubmissionFeedback(input: String, accepted: Boolean) {
+    private suspend fun publishChatInputSubmissionFeedback(
+        input: String,
+        accepted: Boolean,
+        consumedVoiceDraftToken: Long? = null,
+    ) {
         setState {
-            copy(chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted))
+            copy(
+                chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted),
+                pendingVoiceInputDraft = pendingVoiceInputDraft
+                    ?.takeUnless { it.token == consumedVoiceDraftToken },
+            )
         }
     }
 

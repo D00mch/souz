@@ -18,27 +18,19 @@ interface VoiceInputController {
     suspend fun startRecording(
         scope: CoroutineScope,
         isListening: Boolean,
-        routingIntent: VoiceInputRoutingIntent,
     )
     suspend fun stopRecording(isListening: Boolean)
 }
 
-enum class VoiceInputRoutingIntent {
-    NEW_REQUEST,
-    ACTIVE_RUN_CONTINUATION,
+sealed interface VoiceInputRoute {
+    data object NewRequest : VoiceInputRoute
+    data class ActiveRunContinuation(val requestId: Long) : VoiceInputRoute
 }
 
 data class RecognizedVoiceInput(
     val text: String,
-    val routingIntent: VoiceInputRoutingIntent,
+    val route: VoiceInputRoute,
 )
-
-internal fun MainState.voiceInputRoutingIntent(): VoiceInputRoutingIntent =
-    if (isProcessing && supportsActiveRunInput) {
-        VoiceInputRoutingIntent.ACTIVE_RUN_CONTINUATION
-    } else {
-        VoiceInputRoutingIntent.NEW_REQUEST
-    }
 
 object NoopVoiceInputController : VoiceInputController {
     override val outputs: Flow<MainUseCaseOutput> = emptyFlow()
@@ -53,7 +45,6 @@ object NoopVoiceInputController : VoiceInputController {
     override suspend fun startRecording(
         scope: CoroutineScope,
         isListening: Boolean,
-        routingIntent: VoiceInputRoutingIntent,
     ) = Unit
     override suspend fun stopRecording(isListening: Boolean) = Unit
 }

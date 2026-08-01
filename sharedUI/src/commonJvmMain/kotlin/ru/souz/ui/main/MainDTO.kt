@@ -13,6 +13,7 @@ import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.LocalModelDownloadPromptUi
 import ru.souz.ui.common.LocalModelDownloadStateUi
 import ru.souz.ui.main.search.ChatSearchState
+import ru.souz.ui.main.usecases.VoiceInputRoute
 
 /**
  * Chat message for the chat mode.
@@ -112,6 +113,12 @@ data class ChatInputSubmissionFeedback(
     val accepted: Boolean = false,
 )
 
+data class PendingVoiceInputDraft(
+    val text: String?,
+    val token: Long,
+    val route: VoiceInputRoute,
+)
+
 internal data class PendingChatInputSubmission(
     val input: String,
     val afterRevision: Long,
@@ -153,8 +160,7 @@ data class MainState(
     val localModelDownloadPrompt: LocalModelDownloadPromptUi? = null,
     val localModelDownloadState: LocalModelDownloadStateUi? = null,
     val attachedFiles: List<ChatAttachedFile> = emptyList(),
-    val pendingVoiceInputDraft: String? = null,
-    val pendingVoiceInputDraftToken: Long = 0L,
+    val pendingVoiceInputDraft: PendingVoiceInputDraft? = null,
     val chatSearch: ChatSearchState = ChatSearchState(),
     val ambientMode: AmbientModeState = AmbientModeState(),
     val ambientSuggestions: List<AmbientSuggestionUiModel> = emptyList(),
@@ -186,7 +192,10 @@ sealed interface MainEvent : VMEvent {
     data object PickChatAttachments : MainEvent
     data class AttachDroppedFiles(val paths: List<String>) : MainEvent
     data class RemoveChatAttachment(val path: String) : MainEvent
-    data class SendChatMessage(val text: String) : MainEvent
+    data class SendChatMessage(
+        val text: String,
+        val voiceInputDraftToken: Long? = null,
+    ) : MainEvent
     data class OpenPath(val path: String) : MainEvent
     data class UpdateChatSearchQuery(val query: String) : MainEvent
     data object SelectNextChatSearchResult : MainEvent

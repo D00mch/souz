@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
@@ -52,7 +54,7 @@ class VoiceInputUseCase(
     private var lastRecognizedAtMs: Long = 0L
     private val recognitionMutex = Mutex()
     private val captureRoutingMutex = Mutex()
-    private val captureRoutingIntents = ArrayDeque<VoiceInputRoutingIntent>()
+    private val captureRoutes = ArrayDeque<VoiceInputRoute>()
 
     private val _outputs = Channel<MainUseCaseOutput>()
     override val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
@@ -81,7 +83,6 @@ class VoiceInputUseCase(
                                 startRecordingInternal(
                                     scope = scope,
                                     isListening = state.isListening,
-                                    routingIntent = state.voiceInputRoutingIntent(),
                                     blockedReason = voiceInputStartBlocker(),
                                 )
                             }
@@ -103,16 +104,24 @@ class VoiceInputUseCase(
             val userInputFlow = audioRecorder.audioFlow
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
-                .mapLatest { audioData ->
-                    val routingIntent = takeCaptureRoutingIntent()
+                .mapNotNull { audioData ->
+                    val route = takeCaptureRoute()
+                    if (route == null) {
+                        l.warn("Audio payload has no matching voice capture, skipping recognition")
+                        null
+                    } else {
+                        route to audioData
+                    }
+                }
+                .mapLatest { (route, audioData) ->
                     if (audioData.isEmpty()) {
                         l.warn("Empty audio payload captured, skipping transcription request")
                         emitVoiceCaptureTooShort()
-                        return@mapLatest RecognizedVoiceInput("", routingIntent)
+                        return@mapLatest RecognizedVoiceInput("", route)
                     }
                     if (!recognitionMutex.tryLock()) {
                         l.debug("Skipping recognition request because previous one is still in progress")
-                        return@mapLatest RecognizedVoiceInput("", routingIntent)
+                        return@mapLatest RecognizedVoiceInput("", route)
                     }
 
                     val recognizedText = try {
@@ -121,7 +130,7 @@ class VoiceInputUseCase(
                     } finally {
                         recognitionMutex.unlock()
                     }
-                    RecognizedVoiceInput(recognizedText, routingIntent)
+                    RecognizedVoiceInput(recognizedText, route)
                 }
 
                 .onEach { onTextRecognizeSideEffects(it.text) }
@@ -187,15 +196,13 @@ class VoiceInputUseCase(
     override suspend fun startRecording(
         scope: CoroutineScope,
         isListening: Boolean,
-        routingIntent: VoiceInputRoutingIntent,
     ) {
-        startRecordingInternal(scope, isListening, routingIntent, blockedReason = null)
+        startRecordingInternal(scope, isListening, blockedReason = null)
     }
 
     private suspend fun startRecordingInternal(
         scope: CoroutineScope,
         isListening: Boolean,
-        routingIntent: VoiceInputRoutingIntent,
         blockedReason: String? = null,
     ) {
         if (isListening) return
@@ -217,11 +224,17 @@ class VoiceInputUseCase(
             return
         }
 
-        if (routingIntent == VoiceInputRoutingIntent.NEW_REQUEST) {
+        val activeRunRequestId = chatUseCase.captureActiveSkillsRequestId()
+        val route = if (activeRunRequestId == null) {
+            VoiceInputRoute.NewRequest
+        } else {
+            VoiceInputRoute.ActiveRunContinuation(activeRunRequestId)
+        }
+        if (route is VoiceInputRoute.NewRequest) {
             chatUseCase.abortActiveRequest()
         }
         speechUseCase.playMacPingSafely(scope)
-        enqueueCaptureRoutingIntent(routingIntent)
+        enqueueCaptureRoute(route)
 
         val statusMsg = getString(Res.string.voice_status_recording_started)
         emitState {
@@ -235,7 +248,7 @@ class VoiceInputUseCase(
             audioRecorder.start()
         }
         if (!started) {
-            discardCaptureRoutingIntent(routingIntent)
+            discardCaptureRoute(route)
             val recorderState = audioRecorder.recordingState.value
             val errorMsg = (recorderState as? UiAudioRecordingState.Error)?.message.orEmpty()
             l.error("Unable to start microphone capture: {}", errorMsg)
@@ -246,7 +259,14 @@ class VoiceInputUseCase(
     override suspend fun stopRecording(isListening: Boolean) {
         if (!isListening) return
 
-        audioRecorder.stop()
+        try {
+            audioRecorder.stop()
+        } catch (error: Exception) {
+            l.error("Unable to stop microphone capture", error)
+            discardLatestCaptureRoute()
+            emitVoiceCaptureFailed()
+            return
+        }
         val statusMsg = getString(Res.string.voice_status_processing_input)
         emitState {
             copy(
@@ -255,26 +275,42 @@ class VoiceInputUseCase(
             )
         }
 
+        val terminalState = audioRecorder.recordingState.first { state ->
+            state is UiAudioRecordingState.Idle || state is UiAudioRecordingState.Error
+        }
+        if (terminalState is UiAudioRecordingState.Error) {
+            l.error("Unable to stop microphone capture: {}", terminalState.message)
+            discardLatestCaptureRoute()
+            emitVoiceCaptureFailed()
+            return
+        }
+
         delay(300)
         speechUseCase.playInputConfirmation()
     }
 
-    private suspend fun enqueueCaptureRoutingIntent(routingIntent: VoiceInputRoutingIntent) {
+    private suspend fun enqueueCaptureRoute(route: VoiceInputRoute) {
         captureRoutingMutex.withLock {
-            captureRoutingIntents.addLast(routingIntent)
+            captureRoutes.addLast(route)
         }
     }
 
-    private suspend fun takeCaptureRoutingIntent(): VoiceInputRoutingIntent =
+    private suspend fun takeCaptureRoute(): VoiceInputRoute? =
         captureRoutingMutex.withLock {
-            captureRoutingIntents.removeFirstOrNull() ?: VoiceInputRoutingIntent.NEW_REQUEST
+            captureRoutes.removeFirstOrNull()
         }
 
-    private suspend fun discardCaptureRoutingIntent(routingIntent: VoiceInputRoutingIntent) {
+    private suspend fun discardCaptureRoute(route: VoiceInputRoute) {
         captureRoutingMutex.withLock {
-            if (captureRoutingIntents.lastOrNull() == routingIntent) {
-                captureRoutingIntents.removeLast()
+            if (captureRoutes.lastOrNull() == route) {
+                captureRoutes.removeLast()
             }
+        }
+    }
+
+    private suspend fun discardLatestCaptureRoute() {
+        captureRoutingMutex.withLock {
+            captureRoutes.removeLastOrNull()
         }
     }
 

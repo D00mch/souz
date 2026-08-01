@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentExecutionResult
+import ru.souz.agent.AgentId
 import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.state.AgentContext
@@ -132,6 +133,22 @@ class ChatUseCase internal constructor(
     /** Adds text to the open Skills run without starting or cancelling a chat request session. */
     suspend fun submitToActiveRun(
         chatMessage: String,
+    ): Boolean = submitToActiveRunInternal(chatMessage, expectedRequestId = null)
+
+    internal suspend fun captureActiveSkillsRequestId(): Long? = activeRequestMutex.withLock {
+        if (agentFacade.activeAgentId.value != AgentId.SKILLS_GRAPH) return@withLock null
+        val session = activeRequestSession ?: return@withLock null
+        session.requestId.takeIf { it == activeChatRequestId }
+    }
+
+    internal suspend fun submitToCapturedActiveRun(
+        expectedRequestId: Long,
+        chatMessage: String,
+    ): Boolean = submitToActiveRunInternal(chatMessage, expectedRequestId)
+
+    private suspend fun submitToActiveRunInternal(
+        chatMessage: String,
+        expectedRequestId: Long?,
     ): Boolean {
         val userText = chatMessage.trim()
         if (userText.isEmpty()) return false
@@ -139,6 +156,7 @@ class ChatUseCase internal constructor(
         return activeRequestMutex.withLock {
             val session = activeRequestSession ?: return@withLock false
             if (session.requestId != activeChatRequestId) return@withLock false
+            if (expectedRequestId != null && session.requestId != expectedRequestId) return@withLock false
             if (!agentFacade.submitToActiveRun(userText)) return@withLock false
 
             val continuationMessage = ChatMessage(text = userText, isUser = true)
