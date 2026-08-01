@@ -41,7 +41,8 @@ This document summarizes provider selection, audio packaging, and endpoint-speci
   - raw PCM request body
 - OpenAI:
   - `POST https://api.openai.com/v1/audio/transcriptions`
-  - multipart upload with `model`, `language`, and `file`
+  - multipart upload with `model`, `file`, and a model-compatible language hint
+  - `gpt-transcribe` uses `languages[]`; other selectable models use `language`
   - model resolution: selected alias -> `OPENAI_TRANSCRIPTION_MODEL` env -> same JVM property -> `gpt-4o-transcribe`
   - language resolution: current interface language -> `ru` or `en`
 - AiTunnel:
