@@ -5,16 +5,24 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
 
 sealed interface AgentSideEffect {
-    @JvmInline
-    value class Text(val v: String) : AgentSideEffect
+    data class Text(
+        val v: String,
+        val streamRevision: Long = 0L,
+    ) : AgentSideEffect
 
     data class Fn(val call: LLMResponse.FunctionCall) : AgentSideEffect
 }
 
+/** Text produced by the LLM branch identified by [streamRevision]. */
+data class AgentStreamChunk(
+    val text: String,
+    val streamRevision: Long,
+)
+
 interface Agent {
-    val sideEffects: Flow<String>
+    val sideEffects: Flow<AgentStreamChunk>
     suspend fun execute(ctx: AgentContext<String>): String
-    fun cancelActiveJob()
+    suspend fun cancelActiveJob()
 }
 
 data class AgentExecutionResult(

@@ -140,6 +140,7 @@ class GraphBasedAgentTest {
         assertFalse(classifierHistory.any { it.content.contains("Previous memory") })
         assertTrue(classifierHistory.any { it.content.contains("Fresh memory") })
         assertEquals(1, classifierHistory.count(LLMRequest.Message::isInjectedMemoryContextMessage))
+        assertFalse(agent.submitToActiveRun("classic graph follow-up"))
     }
 
     private fun passthroughStringNode(name: String): Node<String, String> = Node(name) { it }

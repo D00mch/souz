@@ -366,6 +366,8 @@
 
     <!-- Chat Input -->
     <string name="chat_input_placeholder">Введите сообщение...</string>
+    <string name="chat_input_active_run_placeholder">Уточнить текущую задачу...</string>
+    <string name="error_active_run_input_rejected">Текущий ответ уже завершается. Отправьте сообщение ещё раз как новый запрос.</string>
     <string name="tooltip_hold_option">Зажать правый Option</string>
     <string name="tooltip_hold_mic_button">Нажмите и удерживайте кнопку микрофона</string>
     <string name="tooltip_stop_speech">Остановить озвучку</string>

@@ -356,7 +356,9 @@ fun MainScreenContent(
                     attachedFiles = state.attachedFiles,
                     pendingVoiceInputDraft = state.pendingVoiceInputDraft,
                     pendingVoiceInputDraftToken = state.pendingVoiceInputDraftToken,
+                    chatInputSubmissionFeedback = state.chatInputSubmissionFeedback,
                     isProcessing = state.isProcessing,
+                    supportsActiveRunInput = state.supportsActiveRunInput,
                     isAwaitingToolReview = state.isAwaitingToolReview,
                     isListening = state.isListening,
                     isOnline = isOnline,
@@ -958,7 +960,9 @@ fun ChatModeContent(
     attachedFiles: List<ChatAttachedFile>,
     pendingVoiceInputDraft: String?,
     pendingVoiceInputDraftToken: Long,
+    chatInputSubmissionFeedback: ChatInputSubmissionFeedback,
     isProcessing: Boolean,
+    supportsActiveRunInput: Boolean,
     isAwaitingToolReview: Boolean,
     isListening: Boolean,
     isOnline: Boolean,
@@ -995,7 +999,19 @@ fun ChatModeContent(
         ?.id
     val stringThinking = stringResource(Res.string.status_thinking)
     var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
+    var pendingInputSubmission by remember(chatSessionId) {
+        mutableStateOf<PendingChatInputSubmission?>(null)
+    }
     var isFileDragActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(chatInputSubmissionFeedback) {
+        val pending = pendingInputSubmission ?: return@LaunchedEffect
+        val accepted = chatInputSubmissionFeedback.acceptanceFor(pending) ?: return@LaunchedEffect
+        if (accepted) {
+            inputText = TextFieldValue("")
+        }
+        pendingInputSubmission = null
+    }
 
     val windowInfo = LocalWindowInfo.current
     val isWindowFocused = windowInfo.isWindowFocused
@@ -1140,8 +1156,11 @@ fun ChatModeContent(
             onValueChange = { inputText = it },
             onSend = {
                 val currentText = inputText.text
+                pendingInputSubmission = PendingChatInputSubmission(
+                    input = currentText,
+                    afterRevision = chatInputSubmissionFeedback.revision,
+                )
                 onSendMessage(currentText)
-                inputText = TextFieldValue("")
             },
             onCancel = onCancelProcessing,
             attachedFiles = attachedFiles,
@@ -1149,13 +1168,18 @@ fun ChatModeContent(
             onRemoveAttachment = onRemoveAttachment,
             isFileDragActive = isFileDragActive,
             isProcessing = isProcessing,
+            allowActiveRunInput =
+                pendingInputSubmission == null &&
+                    isProcessing &&
+                    supportsActiveRunInput &&
+                    !isAwaitingToolReview,
             isListening = isListening,
             speakingMessageId = speakingMessageId,
             voiceInputDisabledReason = voiceInputDisabledReason,
             onStartListening = onStartListening,
             onStopListening = onStopListening,
             onStopSpeaking = onStopSpeech,
-            enabled = !isProcessing && !isAwaitingToolReview,
+            enabled = pendingInputSubmission == null && !isProcessing && !isAwaitingToolReview,
             isSandboxed = isSandboxed,
             focusRequester = focusRequester,
             selectedModel = selectedModel,
@@ -1164,7 +1188,12 @@ fun ChatModeContent(
             onModelChange = onModelChange,
             onContextChange = onContextChange,
             scrollCloseSignal = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset,
-            placeholder = if (messages.isEmpty()) chatPlaceholder else "",
+            placeholder = when {
+                isProcessing && supportsActiveRunInput && !isAwaitingToolReview ->
+                    stringResource(Res.string.chat_input_active_run_placeholder)
+                messages.isEmpty() -> chatPlaceholder
+                else -> ""
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 16.dp)

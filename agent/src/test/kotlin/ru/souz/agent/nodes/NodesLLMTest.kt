@@ -1,5 +1,6 @@
 package ru.souz.agent.nodes
 
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import java.io.File
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -24,6 +26,42 @@ import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
     @Test
+    fun `provisional chat leaves the assistant response out of history`() = runTest {
+        val settingsProvider = mockk<AgentSettingsProvider> {
+            every { useStreaming } returns false
+        }
+        val response = LLMResponse.Chat.Ok(
+            choices = listOf(
+                LLMResponse.Choice(
+                    message = LLMResponse.Message(
+                        content = "provisional",
+                        role = LLMMessageRole.assistant,
+                        functionsStateId = null,
+                    ),
+                    index = 0,
+                    finishReason = LLMResponse.FinishReason.stop,
+                )
+            ),
+            created = 1,
+            model = "test-model",
+            usage = LLMResponse.Usage(1, 1, 2, 0),
+        )
+        val llmApi = mockk<LLMChatAPI> {
+            coEvery { message(any()) } returns response
+        }
+        val nodes = NodesLLM(llmApi, settingsProvider)
+        val originalHistory = listOf(LLMRequest.Message(LLMMessageRole.user, "Prompt"))
+
+        val result = nodes.provisionalChat().execute(
+            ctx = context(history = originalHistory),
+            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+        )
+
+        assertEquals(response, result.input)
+        assertEquals(originalHistory, result.history)
+    }
+
+    @Test
     fun `streaming chat emits runtime deltas and keeps side effects batching`() = runTest {
         val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
         val settingsProvider = mockk<AgentSettingsProvider> {
@@ -36,18 +74,8 @@ class NodesLLMTest {
             ),
             settingsProvider = settingsProvider,
         )
-        val context = AgentContext(
-            input = "ignored",
-            settings = AgentSettings(
-                model = "test-model",
-                temperature = 0.2f,
-                toolsByCategory = emptyMap(),
-            ),
-            history = listOf(
-                LLMRequest.Message(role = LLMMessageRole.user, content = "Prompt")
-            ),
-            activeTools = emptyList(),
-            systemPrompt = "system",
+        val context = context(
+            history = listOf(LLMRequest.Message(role = LLMMessageRole.user, content = "Prompt")),
             runtimeEventSink = object : AgentRuntimeEventSink {
                 override suspend fun emit(event: AgentRuntimeEvent) {
                     runtimeEvents += event
@@ -56,7 +84,7 @@ class NodesLLMTest {
         )
 
         val sideEffect = async { nodes.sideEffects.first() }
-        val result = nodes.chat().execute(
+        val result = nodes.chat(streamRevision = 7L).execute(
             ctx = context,
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
@@ -69,11 +97,27 @@ class NodesLLMTest {
             ),
             runtimeEvents,
         )
-        assertEquals("Hello streaming world", sideEffect.await())
+        assertEquals(AgentStreamChunk("Hello streaming world", 7L), sideEffect.await())
         val response = result.input as LLMResponse.Chat.Ok
         assertEquals("Hello streaming world", response.choices.single().message.content)
         assertEquals("Hello streaming world", result.history.last().content)
     }
+
+    private fun context(
+        history: List<LLMRequest.Message>,
+        runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+    ): AgentContext<String> = AgentContext(
+        input = "ignored",
+        settings = AgentSettings(
+            model = "test-model",
+            temperature = 0.2f,
+            toolsByCategory = emptyMap(),
+        ),
+        history = history,
+        activeTools = emptyList(),
+        systemPrompt = "system",
+        runtimeEventSink = runtimeEventSink,
+    )
 }
 
 private class StreamingChatApi(

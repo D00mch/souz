@@ -106,6 +106,23 @@ data class AmbientSuggestionUiModel(
     }
 }
 
+data class ChatInputSubmissionFeedback(
+    val revision: Long = 0L,
+    val input: String = "",
+    val accepted: Boolean = false,
+)
+
+internal data class PendingChatInputSubmission(
+    val input: String,
+    val afterRevision: Long,
+)
+
+internal fun ChatInputSubmissionFeedback.acceptanceFor(
+    pending: PendingChatInputSubmission,
+): Boolean? = accepted.takeIf {
+    revision > pending.afterRevision && input == pending.input
+}
+
 /**
  * State for the main screen that mirrors the floating glass panel experience.
  */
@@ -118,6 +135,8 @@ data class MainState(
     val lastKnownAgentContext: AgentContext<String>? = null,
     val userExpectCloseOnX: Boolean = false,
     val isProcessing: Boolean = false,
+    val supportsActiveRunInput: Boolean = false,
+    val chatInputSubmissionFeedback: ChatInputSubmissionFeedback = ChatInputSubmissionFeedback(),
     val agentHistory: List<LLMRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),

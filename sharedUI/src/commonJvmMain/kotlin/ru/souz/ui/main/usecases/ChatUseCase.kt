@@ -56,7 +56,7 @@ class ChatUseCase internal constructor(
     private val taskSideEffectJobs = ArrayList<Job>()
     private val activeRequestMutex = Mutex()
     private var activeChatRequestId: Long = 0L
-    private var activeRequestMessages: ActiveRequestMessages? = null
+    private var activeRequestSession: ChatRequestSession? = null
     private var activeConversationMeta: ToolInvocationMeta? = null
 
     private val _outputs = MutableSharedFlow<MainUseCaseOutput>(replay = 1, extraBufferCapacity = 64)
@@ -97,7 +97,7 @@ class ChatUseCase internal constructor(
 
         try {
             emitRequestStarted(session)
-            session.sideEffectsJob = subscribeOnTaskSideEffects(scope, session.pendingBotMessage)
+            session.sideEffectsJob = subscribeOnTaskSideEffects(scope, session)
             l.info(
                 "About to execute agent request: source={} chars={}",
                 requestSource,
@@ -129,10 +129,39 @@ class ChatUseCase internal constructor(
         }
     }
 
+    /** Adds text to the open Skills run without starting or cancelling a chat request session. */
+    suspend fun submitToActiveRun(
+        chatMessage: String,
+    ): Boolean {
+        val userText = chatMessage.trim()
+        if (userText.isEmpty()) return false
+
+        return activeRequestMutex.withLock {
+            val session = activeRequestSession ?: return@withLock false
+            if (session.requestId != activeChatRequestId) return@withLock false
+            if (!agentFacade.submitToActiveRun(userText)) return@withLock false
+
+            val continuationMessage = ChatMessage(text = userText, isUser = true)
+            session.userMessageIds += continuationMessage.id
+            session.sideEffectRevision += 1
+            speechUseCase.clearQueue()
+            emitState(refreshChatSearch = true) {
+                val pendingIds = setOf(session.pendingBotMessage.id, session.currentPendingMessageId)
+                copy(
+                    chatMessages = chatMessages.filterNot { it.id in pendingIds } + continuationMessage,
+                    agentActions = emptyList(),
+                    statusMessage = "",
+                )
+            }
+            l.info("Submitted input to active agent run: chars={}", userText.length)
+            true
+        }
+    }
+
     /**
      * Stops only the currently running agent execution without directly mutating chat UI state.
      */
-    private fun cancelActiveJob() {
+    private suspend fun cancelActiveJob() {
         agentFacade.cancelActiveJob()
     }
 
@@ -140,16 +169,19 @@ class ChatUseCase internal constructor(
      * Cancels the active request, drops any in-flight chat messages, and clears pending approvals.
      */
     suspend fun abortActiveRequest() {
-        val (nextRequestId, inFlightMessages) = invalidateActiveRequest()
+        val (nextRequestId, inFlightMessageIds) = invalidateActiveRequest()
 
         killTaskSideEffectJobs()
         cancelActiveJob()
         toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
 
         emitState(refreshChatSearch = true) {
-            val idsToDrop = inFlightMessages?.let { arrayOf(it.userMessageId, it.pendingMessageId) } ?: emptyArray()
             copy(
-                chatMessages = if (idsToDrop.isEmpty()) chatMessages else chatMessages.filterNot { it.id in idsToDrop },
+                chatMessages = if (inFlightMessageIds.isEmpty()) {
+                    chatMessages
+                } else {
+                    chatMessages.filterNot { it.id in inFlightMessageIds }
+                },
                 isProcessing = false,
                 isAwaitingToolReview = false,
                 agentActions = emptyList(),
@@ -205,7 +237,7 @@ class ChatUseCase internal constructor(
         }
     }
 
-    fun setContext(ctx: AgentContext<String>) {
+    suspend fun setContext(ctx: AgentContext<String>) {
         agentFacade.setContext(ctx)
     }
 
@@ -219,10 +251,10 @@ class ChatUseCase internal constructor(
         agentFacade.setContextSize(size)
     }
 
+    /** Finishes UI-owned state after the ViewModel request scope has been cancelled. */
     fun onCleared(): ToolInvocationMeta? {
         val conversationMeta = closeAndCaptureConversation(ChatConversationCloseReason.VIEW_MODEL_CLEARED)
         killTaskSideEffectJobs()
-        cancelActiveJob()
         toolModifyReviewUseCase.clearPendingReviewBlocking(discardBrokerState = true)
         return conversationMeta
     }
@@ -236,42 +268,54 @@ class ChatUseCase internal constructor(
         return meta
     }
 
-    private fun subscribeOnTaskSideEffects(scope: CoroutineScope, msg: ChatMessage): Job {
+    private fun subscribeOnTaskSideEffects(scope: CoroutineScope, session: ChatRequestSession): Job {
         val agentId = agentFacade.activeAgentId.value
+        val msg = session.pendingBotMessage
         val job = scope.launch {
             var isCodeBlockStarted = false
             var accumulatedText = ""
+            var observedRevision = session.sideEffectRevision
             agentFacade.sideEffects.collect { effect ->
                 when (effect) {
                     is AgentSideEffect.Text -> {
-                        if (toolModifyReviewUseCase.hasPendingEdits()) {
-                            return@collect
-                        }
-                        val text = effect.v
-                        accumulatedText += text
-                        emitState(refreshChatSearch = true) {
-                            val updatedMessage = msg.copy(
-                                text = accumulatedText,
-                            )
-                            val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
-                                chatMessages.mapLast { updatedMessage }
-                            } else {
-                                chatMessages + updatedMessage
+                        activeRequestMutex.withLock textEffect@{
+                            if (effect.streamRevision != session.sideEffectRevision) {
+                                return@textEffect
                             }
-                            copy(chatMessages = updatedMessages)
-                        }
-
-                        if (!msg.isVoice) return@collect
-
-                        if (text.contains(CODE_BLOCK)) {
-                            isCodeBlockStarted = !isCodeBlockStarted
-                            if (isCodeBlockStarted) {
-                                speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                            if (observedRevision != effect.streamRevision) {
+                                observedRevision = effect.streamRevision
+                                accumulatedText = ""
+                                isCodeBlockStarted = false
                             }
-                        }
+                            if (toolModifyReviewUseCase.hasPendingEdits()) {
+                                return@textEffect
+                            }
+                            val text = effect.v
+                            accumulatedText += text
+                            emitState(refreshChatSearch = true) {
+                                val updatedMessage = msg.copy(
+                                    text = accumulatedText,
+                                )
+                                val updatedMessages = if (msg.id == chatMessages.lastOrNull()?.id) {
+                                    chatMessages.mapLast { updatedMessage }
+                                } else {
+                                    chatMessages + updatedMessage
+                                }
+                                copy(chatMessages = updatedMessages)
+                            }
 
-                        if (!isCodeBlockStarted) {
-                            speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
+                            if (!msg.isVoice) return@textEffect
+
+                            if (text.contains(CODE_BLOCK)) {
+                                isCodeBlockStarted = !isCodeBlockStarted
+                                if (isCodeBlockStarted) {
+                                    speechUseCase.queuePrepared(text.substringBefore(CODE_BLOCK))
+                                }
+                            }
+
+                            if (!isCodeBlockStarted) {
+                                speechUseCase.queuePrepared(text.substringAfter(CODE_BLOCK))
+                            }
                         }
                     }
                     is AgentSideEffect.Fn -> {
@@ -352,25 +396,19 @@ class ChatUseCase internal constructor(
             executionMeta = executionMeta,
         )
         activeConversationMeta = session.executionMeta
-        updateActiveRequestMessages(session)
+        updateActiveRequestSession(session)
         return session
     }
 
-    /**
-     * Tracks the user message and the current bot placeholder/review message that
-     * belong to the active request so later cancellation or cleanup can remove them.
-     */
-    private suspend fun updateActiveRequestMessages(
+    /** Keeps the current session's pending assistant message aligned with its UI representation. */
+    private suspend fun updateActiveRequestSession(
         session: ChatRequestSession,
         pendingMessageId: String = session.pendingBotMessage.id,
     ) {
-        session.currentPendingMessageId = pendingMessageId
         activeRequestMutex.withLock {
-            activeRequestMessages = ActiveRequestMessages(
-                requestId = session.requestId,
-                userMessageId = session.userMessage.id,
-                pendingMessageId = pendingMessageId,
-            )
+            if (activeChatRequestId != session.requestId) return@withLock
+            session.currentPendingMessageId = pendingMessageId
+            activeRequestSession = session
         }
     }
 
@@ -440,7 +478,7 @@ class ChatUseCase internal constructor(
             pendingBotMessage = session.pendingBotMessage,
             response = response,
             onReviewShown = { reviewMessageId ->
-                updateActiveRequestMessages(session, pendingMessageId = reviewMessageId)
+                updateActiveRequestSession(session, pendingMessageId = reviewMessageId)
             },
         )
         val botMessage = if (toolReviewResult.appendAsNewMessage) {
@@ -498,18 +536,20 @@ class ChatUseCase internal constructor(
             speechUseCase.playMacPingMsgSafely(scope)
         }
 
-        emitState(refreshChatSearch = true) {
-            val completedBotMessage = response.botMessage.copy(agentActions = agentActions)
-            copy(
-                chatMessages = if (response.appendAsNewMessage) {
-                    chatMessages + completedBotMessage
-                } else {
-                    upsertMessage(completedBotMessage)
-                },
-                isProcessing = false,
-                isAwaitingToolReview = false,
-                agentActions = emptyList(),
-            )
+        activeRequestMutex.withLock {
+            emitState(refreshChatSearch = true) {
+                val completedBotMessage = response.botMessage.copy(agentActions = agentActions)
+                copy(
+                    chatMessages = if (response.appendAsNewMessage) {
+                        chatMessages + completedBotMessage
+                    } else {
+                        upsertMessage(completedBotMessage)
+                    },
+                    isProcessing = false,
+                    isAwaitingToolReview = false,
+                    agentActions = emptyList(),
+                )
+            }
         }
 
         if (response.botMessage.isVoice && !settingsProvider.useStreaming) {
@@ -530,15 +570,12 @@ class ChatUseCase internal constructor(
     ) {
         l.info("Chat message cancelled: {}", error.message)
         val isCurrentRequest = currentActiveRequestId() == session.requestId
-        val activeMessages = activeRequestMessagesFor(session.requestId)
+        val requestMessageIds = requestMessageIds(session)
         toolModifyReviewUseCase.clearPendingReview(discardBrokerState = true)
         withContext(NonCancellable) {
             emitState(refreshChatSearch = true) {
-                val idsToDrop = activeMessages
-                    ?.let { arrayOf(it.userMessageId, it.pendingMessageId) }
-                    ?: arrayOf(session.userMessage.id, session.currentPendingMessageId)
                 copy(
-                    chatMessages = chatMessages.filterNot { it.id in idsToDrop },
+                    chatMessages = chatMessages.filterNot { it.id in requestMessageIds },
                     isProcessing = if (isCurrentRequest) false else isProcessing,
                     isAwaitingToolReview = if (isCurrentRequest) false else isAwaitingToolReview,
                     agentActions = if (isCurrentRequest) emptyList() else agentActions,
@@ -607,8 +644,8 @@ class ChatUseCase internal constructor(
         session.sideEffectsJob?.cancel()
         session.sideEffectsJob?.let { taskSideEffectJobs.remove(it) }
         activeRequestMutex.withLock {
-            if (activeRequestMessages?.requestId == session.requestId) {
-                activeRequestMessages = null
+            if (activeRequestSession === session) {
+                activeRequestSession = null
             }
         }
     }
@@ -618,19 +655,19 @@ class ChatUseCase internal constructor(
         activeChatRequestId
     }
 
-    private suspend fun invalidateActiveRequest(): Pair<Long, ActiveRequestMessages?> = activeRequestMutex.withLock {
+    private suspend fun invalidateActiveRequest(): Pair<Long, Set<String>> = activeRequestMutex.withLock {
         activeChatRequestId += 1
-        val inFlightMessages = activeRequestMessages
-        activeRequestMessages = null
-        activeChatRequestId to inFlightMessages
+        val inFlightMessageIds = activeRequestSession?.messageIds().orEmpty()
+        activeRequestSession = null
+        activeChatRequestId to inFlightMessageIds
     }
 
     private suspend fun currentActiveRequestId(): Long = activeRequestMutex.withLock {
         activeChatRequestId
     }
 
-    private suspend fun activeRequestMessagesFor(requestId: Long): ActiveRequestMessages? = activeRequestMutex.withLock {
-        activeRequestMessages?.takeIf { it.requestId == requestId }
+    private suspend fun requestMessageIds(session: ChatRequestSession): Set<String> = activeRequestMutex.withLock {
+        session.messageIds()
     }
 
     private suspend fun emitState(
@@ -673,12 +710,6 @@ class ChatUseCase internal constructor(
         const val MAX_AGENT_ACTIONS = 8
     }
 
-    private data class ActiveRequestMessages(
-        val requestId: Long,
-        val userMessageId: String,
-        val pendingMessageId: String,
-    )
-
     private class ChatRequestSession(
         val requestId: Long,
         val requestContext: ChatRequestLogContext,
@@ -686,11 +717,15 @@ class ChatUseCase internal constructor(
         val pendingBotMessage: ChatMessage,
         val executionMeta: ToolInvocationMeta,
     ) {
+        val userMessageIds: MutableSet<String> = mutableSetOf(userMessage.id)
         var currentPendingMessageId: String = pendingBotMessage.id
         var requestStatus: ChatRequestStatus = ChatRequestStatus.SUCCESS
         var responseLengthChars: Int? = null
         var requestErrorType: String? = null
         var sideEffectsJob: Job? = null
+        var sideEffectRevision: Long = 0L
+
+        fun messageIds(): Set<String> = userMessageIds + currentPendingMessageId
     }
 
     private data class CompletedChatResponse(

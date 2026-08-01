@@ -1,0 +1,7 @@
+# Chat execution
+
+`ChatUseCase` owns one request session from the first user message through the final assistant response. Skills active-run input belongs to that session; it must not call `sendChatMessage`, reset the agent, or create another observability request.
+
+Accepted active-run input is shown as another user message. Its acceptance and UI bookkeeping share the active-request mutex with terminal response rendering, so an accepted continuation is committed before the final assistant message. The provisional assistant message is removed and its streaming accumulator is reset before replacement output is rendered. Text side effects carry the producer's stream revision; the collector handles them under the same mutex and discards revisions older than the session instead of assigning ownership at collection time. Each request session retains the IDs of its original and continuation messages, so cancellation removes them together with the pending assistant message even after another input source supersedes the request.
+
+The UI exposes active-run input only while the Skills graph is processing and no tool review is awaiting a decision. Send and Stop remain separate actions. The ViewModel publishes accepted or rejected submission feedback; Android and Desktop clear the local draft only after acceptance and retain it after rejection. A rejected submission does not fall through to a new request because the current run may be crossing its final-response boundary.

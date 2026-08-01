@@ -3,6 +3,7 @@ package ru.souz
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.flow.Flow
 import ru.souz.agent.AgentExecutionResult
+import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
 import ru.souz.agent.graph.Graph
@@ -47,7 +48,7 @@ class GraphBasedAgent internal constructor(
     ),
 ) : TraceableAgent {
 
-    override val sideEffects: Flow<String> = nodesLLM.sideEffects
+    override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = listOf(getSkillByNameTool, getKnowledgeTool, searchKnowledgeTool)
     private val coreTools = alwaysInlineResultTools + searchMemoryTool + runtimeCommandTool
 
@@ -92,7 +93,7 @@ class GraphBasedAgent internal constructor(
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
-    override fun cancelActiveJob() {
+    override suspend fun cancelActiveJob() {
         executionDelegate.cancelActiveJob()
     }
 

@@ -172,35 +172,28 @@ Key behavior:
 ```mermaid
 flowchart TD
     input["User input"] --> boundary["Restrict execution context to fixed core tools"]
-    boundary --> coreTools["Core tools only\nGetSkillByName\nGetSkillsByCategory\nGetSkillsNamesByCategory\nGetKnowledge\nSearchKnowledge\nRunSkillCommand"]
     boundary --> history["Append input to history"]
     history --> memory["Recall scoped memory"]
     memory --> inventory["Append skill_inventory block\nTool-backed IDs by category\nFile-backed IDs only"]
     inventory --> enrich["Append additional context"]
-    enrich --> llm["LLM chat node\nsees only core tools"]
-    llm --> decision{"LLM result"}
+    enrich --> chat["Steerable chat\ninterrupt and replan LLM attempts"]
 
-    decision -->|GetSkillByName| lookup["Load exact Skill\napprove file-backed bundle"]
-    decision -->|GetSkillsByCategory / names| categories["List or load tool-backed category Skills"]
-    decision -->|RunSkillCommand| command["Invoke enabled tool-backed Skill\nor sandboxed file-backed command"]
-    decision -->|GetKnowledge / SearchKnowledge| knowledge["Read conversation Knowledge"]
-    decision -->|final answer| summary["Memory-aware finalization\nsummarize or return"]
-    decision -->|error| errorNode["Map error to user-facing output"]
+    additionalInput["Additional user input"] --> queue["Execution-scoped FIFO queue"]
+    queue -.->|cancel active LLM child only| chat
 
-    lookup --> append["Append inline function result"]
-    categories --> append
-    knowledge --> append
-    command --> offload{"Non-exempt result > 8 KiB?"}
-    offload -->|yes| reference["Store Knowledge\nappend compact reference"]
-    offload -->|no| append
-    reference --> llm
-    append --> llm
+    chat -->|accepted core tool calls| tools["Execute complete tool batch\noffload oversized results"]
+    tools --> chat
+    queue -.->|tools keep running; drain on re-entry| tools
 
+    chat -->|final response and queue atomically sealed| summary["Memory-aware finalization\nsummarize or return"]
+    chat -->|error and queue atomically sealed| errorNode["Map error to user-facing output"]
     summary --> finish["Finish"]
     errorNode --> finish
 ```
 
 The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Its execution boundary replaces both advertised functions and executable tool lookup with that fixed core tool set before the graph starts. It does not run direct-tool classification or MCP injection.
+
+Additional input can be submitted only to an open Skills run. It cancels an active LLM request without cancelling the graph, waits for an already-started tool batch, and is appended after all tool results. Finalization begins only after an empty queue atomically seals the run.
 
 Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution, and both paths require cached or fresh `SkillApprovalGate` approval.
 

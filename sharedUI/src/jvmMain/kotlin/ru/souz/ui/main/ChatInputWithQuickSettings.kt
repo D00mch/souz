@@ -131,6 +131,7 @@ internal fun ChatInputWithQuickSettings(
     onRemoveAttachment: (String) -> Unit,
     isFileDragActive: Boolean,
     isProcessing: Boolean,
+    allowActiveRunInput: Boolean,
     isListening: Boolean,
     speakingMessageId: String?,
     voiceInputDisabledReason: String?,
@@ -151,8 +152,8 @@ internal fun ChatInputWithQuickSettings(
 ) {
     val hasText = value.text.isNotBlank()
     val hasAttachments = attachedFiles.isNotEmpty()
-    val hasSendPayload = (hasText || hasAttachments) && enabled
-    val canSendOrCancel = hasSendPayload || isProcessing
+    val canEditText = enabled || allowActiveRunInput
+    val hasSendPayload = (hasText && canEditText) || (hasAttachments && enabled)
     val canToggleMic = (enabled && voiceInputDisabledReason == null) || isListening || speakingMessageId != null
     val containerShape = RoundedCornerShape(16.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
@@ -293,7 +294,7 @@ internal fun ChatInputWithQuickSettings(
                     BasicTextField(
                         value = value,
                         onValueChange = onValueChange,
-                        enabled = enabled,
+                        enabled = canEditText,
                         textStyle = TextStyle(
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 14.sp,
@@ -326,14 +327,21 @@ internal fun ChatInputWithQuickSettings(
                         isSandboxed = isSandboxed,
                     )
 
-                    SendMessageButton(
-                        isActive = canSendOrCancel,
-                        isProcessing = isProcessing,
-                        onClick = {
-                            if (isProcessing) onCancel()
-                            else onSend()
-                        }
-                    )
+                    if (!isProcessing || allowActiveRunInput) {
+                        SendMessageButton(
+                            isActive = hasSendPayload,
+                            isProcessing = false,
+                            onClick = onSend,
+                        )
+                    }
+
+                    if (isProcessing) {
+                        SendMessageButton(
+                            isActive = true,
+                            isProcessing = true,
+                            onClick = onCancel,
+                        )
+                    }
                 }
             }
         }

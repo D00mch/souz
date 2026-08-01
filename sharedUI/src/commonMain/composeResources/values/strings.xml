@@ -370,6 +370,8 @@
 
     <!-- Chat Input -->
     <string name="chat_input_placeholder">Type a message...</string>
+    <string name="chat_input_active_run_placeholder">Guide the current response...</string>
+    <string name="error_active_run_input_rejected">The current response is already finishing. Send the message again as a new request.</string>
     <string name="tooltip_hold_option">Hold right Option</string>
     <string name="tooltip_hold_mic_button">Press and hold the microphone button</string>
     <string name="tooltip_stop_speech">Stop speech</string>

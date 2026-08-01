@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.AgentId
 import ru.souz.agent.state.AgentContext
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientModeState
@@ -196,6 +197,7 @@ class MainViewModel(
         viewModelScope.launch {
             var firstEmission = true
             agentFacade.activeAgentId.collect { agentId ->
+                setState { copy(supportsActiveRunInput = agentId == AgentId.SKILLS_GRAPH) }
                 if (firstEmission) {
                     firstEmission = false
                     lastAppliedAgentId = agentId
@@ -259,14 +261,36 @@ class MainViewModel(
             }
             is MainEvent.SendChatMessage -> vmLaunch {
                 val inputText = event.text
+                if (currentState.isProcessing && currentState.supportsActiveRunInput) {
+                    val accepted = chatUseCase.submitToActiveRun(
+                        chatMessage = inputText,
+                    )
+                    publishChatInputSubmissionFeedback(inputText, accepted)
+                    if (!accepted) {
+                        send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+                    }
+                    return@vmLaunch
+                }
+
                 val attachments = currentState.attachedFiles
                 val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
                     input = inputText,
                     attachedFiles = attachments,
                 )
-                if (composedMessage.isBlank()) return@vmLaunch
+                if (composedMessage.isBlank()) {
+                    publishChatInputSubmissionFeedback(inputText, accepted = false)
+                    return@vmLaunch
+                }
 
-                setState { copy(attachedFiles = emptyList()) }
+                setState {
+                    copy(
+                        attachedFiles = emptyList(),
+                        chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(
+                            input = inputText,
+                            accepted = true,
+                        ),
+                    )
+                }
                 chatUseCase.sendChatMessage(
                     scope = viewModelScope,
                     isVoice = false,
@@ -334,6 +358,21 @@ class MainViewModel(
             }
         }
     }
+
+    private suspend fun publishChatInputSubmissionFeedback(input: String, accepted: Boolean) {
+        setState {
+            copy(chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted))
+        }
+    }
+
+    private fun ChatInputSubmissionFeedback.next(
+        input: String,
+        accepted: Boolean,
+    ): ChatInputSubmissionFeedback = ChatInputSubmissionFeedback(
+        revision = revision + 1,
+        input = input,
+        accepted = accepted,
+    )
 
     fun onAttachDroppedPayload(payload: Any) {
         val droppedPaths = attachmentsUseCase.extractDroppedFilePathsNow(payload)
