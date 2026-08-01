@@ -137,11 +137,11 @@ class ChatUseCase internal constructor(
         val userText = chatMessage.trim()
         if (userText.isEmpty()) return false
 
-        val session = activeRequestMutex.withLock { activeRequestSession } ?: return false
-        if (!agentFacade.submitToActiveRun(userText)) return false
+        return activeRequestMutex.withLock {
+            val session = activeRequestSession ?: return@withLock false
+            if (!agentFacade.submitToActiveRun(userText)) return@withLock false
 
-        val continuationMessage = ChatMessage(text = userText, isUser = true)
-        activeRequestMutex.withLock {
+            val continuationMessage = ChatMessage(text = userText, isUser = true)
             activeRequestMessages
                 ?.takeIf { it.requestId == session.requestId }
                 ?.let { messages ->
@@ -149,20 +149,19 @@ class ChatUseCase internal constructor(
                         userMessageIds = messages.userMessageIds + continuationMessage.id,
                     )
                 }
+            session.sideEffectRevision += 1
+            speechUseCase.clearQueue()
+            emitState(refreshChatSearch = true) {
+                val pendingIds = setOf(session.pendingBotMessage.id, session.currentPendingMessageId)
+                copy(
+                    chatMessages = chatMessages.filterNot { it.id in pendingIds } + continuationMessage,
+                    agentActions = emptyList(),
+                    statusMessage = "",
+                )
+            }
+            l.info("Submitted input to active agent run: chars={}", userText.length)
+            true
         }
-
-        session.sideEffectRevision += 1
-        speechUseCase.clearQueue()
-        emitState(refreshChatSearch = true) {
-            val pendingIds = setOf(session.pendingBotMessage.id, session.currentPendingMessageId)
-            copy(
-                chatMessages = chatMessages.filterNot { it.id in pendingIds } + continuationMessage,
-                agentActions = emptyList(),
-                statusMessage = "",
-            )
-        }
-        l.info("Submitted input to active agent run: chars={}", userText.length)
-        return true
     }
 
     /**
@@ -542,18 +541,20 @@ class ChatUseCase internal constructor(
             speechUseCase.playMacPingMsgSafely(scope)
         }
 
-        emitState(refreshChatSearch = true) {
-            val completedBotMessage = response.botMessage.copy(agentActions = agentActions)
-            copy(
-                chatMessages = if (response.appendAsNewMessage) {
-                    chatMessages + completedBotMessage
-                } else {
-                    upsertMessage(completedBotMessage)
-                },
-                isProcessing = false,
-                isAwaitingToolReview = false,
-                agentActions = emptyList(),
-            )
+        activeRequestMutex.withLock {
+            emitState(refreshChatSearch = true) {
+                val completedBotMessage = response.botMessage.copy(agentActions = agentActions)
+                copy(
+                    chatMessages = if (response.appendAsNewMessage) {
+                        chatMessages + completedBotMessage
+                    } else {
+                        upsertMessage(completedBotMessage)
+                    },
+                    isProcessing = false,
+                    isAwaitingToolReview = false,
+                    agentActions = emptyList(),
+                )
+            }
         }
 
         if (response.botMessage.isVoice && !settingsProvider.useStreaming) {

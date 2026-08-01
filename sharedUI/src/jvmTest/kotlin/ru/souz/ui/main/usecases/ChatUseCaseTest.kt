@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -108,6 +109,51 @@ class ChatUseCaseTest {
         assertEquals(listOf("hello"), executedInputs)
         assertEquals(listOf("steer this"), submittedInputs)
         assertEquals(listOf("hello", "steer this", "final answer"), state.chatMessages.map { it.text })
+        assertFalse(state.isProcessing)
+    }
+
+    @Test
+    fun `accepted active run input is rendered before a racing final response`() = runTest {
+        val executeStarted = CompletableDeferred<Unit>()
+        val executeResult = CompletableDeferred<String>()
+        val useCase = createExecutableUseCase(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            submitToActiveRun = {
+                executeResult.complete("final answer")
+                yield()
+                true
+            },
+            executeAnswer = {
+                executeStarted.complete(Unit)
+                executeResult.await()
+            },
+        )
+        var state = MainState()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { output ->
+                if (output is MainUseCaseOutput.State) {
+                    state = output.reduce(state)
+                }
+            }
+        }
+        val requestJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(
+                scope = backgroundScope,
+                isVoice = false,
+                chatMessage = "hello",
+                requestSource = ChatRequestSource.CHAT_UI,
+            )
+        }
+        executeStarted.await()
+
+        val accepted = useCase.submitToActiveRun("steer this")
+        requestJob.join()
+
+        assertTrue(accepted)
+        assertEquals(
+            listOf("hello", "steer this", "final answer"),
+            state.chatMessages.map { it.text },
+        )
         assertFalse(state.isProcessing)
     }
 
