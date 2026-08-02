@@ -390,11 +390,12 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 
 ### Backend safety model
 
-- `/v1/**` trusts identity only from proxy-managed headers:
+- Most `/v1/**` routes trust identity only from proxy-managed headers:
   - `X-User-Id`
   - `X-Souz-Proxy-Auth`
 - `X-User-Id` is treated as opaque and provisioned through `UserRepository.ensureUser(userId)`.
-- Request bodies are never trusted for user identity.
+- `POST /v1/chats` and `GET /v1/chats/{chatId}/ws` are credential-free Client-Souz exceptions for trusted environments. Chat creation accepts trusted UUID `userId` from the body, and WebSocket `message.submit.payload.device.userId` must match the stored chat owner.
+- Other request bodies are never trusted for user identity.
 - Each chat, execution, option, and setting is scoped to the trusted user.
 - Backend host adapters replace desktop-only services with no-op implementations.
 - The backend uses the same shared agent execution kernel as desktop.

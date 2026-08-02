@@ -344,9 +344,8 @@ internal class PublicClientService(
         defaultModel = meta?.model?.let { raw ->
             findLLMModel(raw) ?: throw ClientContractException("invalid_request", "payload.meta.model must be a known model alias.")
         },
-        locale = meta?.locale?.let { Locale.forLanguageTag(it).takeIf { locale -> locale.language.isNotBlank() } }
-            ?: Locale.forLanguageTag("ru-RU"),
-        timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault(),
+        locale = meta?.locale?.let { Locale.forLanguageTag(it).takeIf { locale -> locale.language.isNotBlank() } },
+        timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },
         streamingMessages = true,
     )
 
