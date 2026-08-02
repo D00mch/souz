@@ -1075,7 +1075,13 @@ fun ChatModeContent(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                onSuggestionClick = { command -> onSendMessage(command, false) }
+                onSuggestionClick = { command ->
+                    pendingInputSubmission = PendingChatInputSubmission(
+                        input = command,
+                        afterRevision = chatInputSubmissionFeedback.revision,
+                    )
+                    onSendMessage(command, false)
+                }
             )
         } else {
             LazyColumn(
