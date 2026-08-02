@@ -55,7 +55,7 @@ class VoiceInputUseCase(
     override suspend fun initialize(
         scope: CoroutineScope,
         onRecognizedInput: suspend (RecognizedVoiceInput) -> Unit,
-        voiceInputStartBlocker: suspend (VoiceInputRoute) -> String?,
+        voiceInputStartBlocker: suspend () -> String?,
     ) = coroutineScope {
         launch { audioRecorder.logState() }
 
@@ -97,12 +97,12 @@ class VoiceInputUseCase(
 
     override suspend fun startRecording(
         scope: CoroutineScope,
-        voiceInputStartBlocker: suspend (VoiceInputRoute) -> String?,
+        voiceInputStartBlocker: suspend () -> String?,
     ) = startRecordingInternal(scope, voiceInputStartBlocker)
 
     private suspend fun startRecordingInternal(
         scope: CoroutineScope,
-        voiceInputStartBlocker: suspend (VoiceInputRoute) -> String?,
+        voiceInputStartBlocker: suspend () -> String?,
     ) {
         if (!captureMutex.tryLock()) {
             val statusMsg = getString(Res.string.voice_status_processing_input)
@@ -123,7 +123,7 @@ class VoiceInputUseCase(
             val activeRunRequestId = chatUseCase.captureActiveRunRequestId()
             val route = activeRunRequestId?.let { VoiceInputRoute.ActiveRunContinuation(it) }
                 ?: VoiceInputRoute.NewRequest
-            val blockedReason = voiceInputStartBlocker(route)
+            val blockedReason = voiceInputStartBlocker()
             if (!blockedReason.isNullOrBlank()) {
                 emitVoiceInputBlocked(blockedReason)
                 return

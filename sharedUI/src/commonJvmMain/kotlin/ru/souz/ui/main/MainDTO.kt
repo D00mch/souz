@@ -13,7 +13,6 @@ import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.common.LocalModelDownloadPromptUi
 import ru.souz.ui.common.LocalModelDownloadStateUi
 import ru.souz.ui.main.search.ChatSearchState
-import ru.souz.ui.main.usecases.VoiceInputRoute
 
 /**
  * Chat message for the chat mode.
@@ -113,30 +112,11 @@ data class ChatInputSubmissionFeedback(
     val accepted: Boolean = false,
 )
 
-data class VoiceInputDraftSegment(
+data class PendingVoiceInputDraft(
     val text: String,
     val token: Long,
+    val submitAsVoice: Boolean,
 )
-
-data class PendingVoiceInputDraft(
-    val segments: List<VoiceInputDraftSegment>,
-    val route: VoiceInputRoute,
-) {
-    val text: String
-        get() = segments.joinToString("\n") { it.text }
-
-    val token: Long
-        get() = segments.last().token
-
-    val activeRunRequestId: Long?
-        get() = (route as? VoiceInputRoute.ActiveRunContinuation)?.requestId
-}
-
-internal fun PendingVoiceInputDraft?.withSegment(
-    route: VoiceInputRoute,
-    segment: VoiceInputDraftSegment,
-): PendingVoiceInputDraft =
-    if (this?.route == route) copy(segments = segments + segment) else PendingVoiceInputDraft(listOf(segment), route)
 
 internal data class PendingChatInputSubmission(
     val input: String,
@@ -163,8 +143,6 @@ data class MainState(
     val isProcessing: Boolean = false,
     val supportsActiveRunInput: Boolean = false,
     val chatInputSubmissionFeedback: ChatInputSubmissionFeedback = ChatInputSubmissionFeedback(),
-    val chatInputText: String = "",
-    val chatInputLocalEditRevision: Long? = null,
     val agentHistory: List<LLMRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
@@ -212,11 +190,11 @@ sealed interface MainEvent : VMEvent {
     data object PickChatAttachments : MainEvent
     data class AttachDroppedFiles(val paths: List<String>) : MainEvent
     data class RemoveChatAttachment(val path: String) : MainEvent
-    data class UpdateChatInputText(
+    data class ConsumePendingVoiceInputDraft(val token: Long) : MainEvent
+    data class SendChatMessage(
         val text: String,
-        val localEditRevision: Long? = null,
+        val isVoice: Boolean = false,
     ) : MainEvent
-    data class SendChatMessage(val text: String) : MainEvent
     data class OpenPath(val path: String) : MainEvent
     data class UpdateChatSearchQuery(val query: String) : MainEvent
     data object SelectNextChatSearchResult : MainEvent

@@ -87,7 +87,7 @@ class ChatUseCaseTest {
         runCurrent()
 
         assertTrue(sideEffects.tryEmit(AgentSideEffect.Text("stale provisional")))
-        val accepted = useCase.submitToActiveRun("steer this")
+        val accepted = useCase.submitToActiveRun("steer this", isVoice = false)
         runCurrent()
 
         assertTrue(accepted)
@@ -138,7 +138,7 @@ class ChatUseCaseTest {
 
         assertEquals(listOf("hello", "provisional"), state.chatMessages.map { it.text })
 
-        val accepted = useCase.submitToActiveRun("  steer this  ")
+        val accepted = useCase.submitToActiveRun("  steer this  ", isVoice = false)
 
         assertTrue(accepted)
         assertEquals(listOf("hello", "steer this"), state.chatMessages.map { it.text })
@@ -243,7 +243,7 @@ class ChatUseCaseTest {
         assertTrue(state.chatMessages.last().let { !it.isUser && it.isVoice })
         verify(exactly = 1) { speechUseCase.queuePrepared("spoken replacement") }
 
-        assertTrue(useCase.submitToActiveRun("typed continuation"))
+        assertTrue(useCase.submitToActiveRun("typed continuation", isVoice = false))
         sideEffects.emit(AgentSideEffect.Text("silent replacement", streamRevision = 2L))
         runCurrent()
         assertTrue(state.chatMessages.last().let { !it.isUser && !it.isVoice })
@@ -288,7 +288,7 @@ class ChatUseCaseTest {
         }
         executeStarted.await()
 
-        val accepted = useCase.submitToActiveRun("steer this")
+        val accepted = useCase.submitToActiveRun("steer this", isVoice = false)
         requestJob.join()
 
         assertTrue(accepted)
@@ -353,7 +353,7 @@ class ChatUseCaseTest {
             )
         }
         firstStarted.await()
-        assertTrue(useCase.submitToActiveRun("continuation"))
+        assertTrue(useCase.submitToActiveRun("continuation", isVoice = false))
 
         val secondRequest = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             useCase.sendChatMessage(

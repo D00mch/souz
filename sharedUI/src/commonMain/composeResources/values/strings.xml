@@ -404,7 +404,6 @@
     <string name="voice_status_speech_not_recognized">Speech not recognized</string>
     <string name="voice_error_microphone_busy_ambient">Microphone is used by ambient mode.</string>
     <string name="voice_error_tool_review_pending">Resolve the pending tool review before using voice input.</string>
-    <string name="voice_error_reviewed_draft_route_changed">Send or clear the current voice draft before recording for another request.</string>
     <string name="ambient_error_missing_analysis_model">Download the ambient model in Settings before starting ambient mode.</string>
     <string name="ambient_error_stt_unavailable">Ambient speech recognition is unavailable.</string>
     <string name="ambient_error_microphone_unavailable">Microphone is unavailable for ambient mode.</string>

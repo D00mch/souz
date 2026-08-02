@@ -53,7 +53,6 @@ import souz.sharedui.generated.resources.onboarding_display_text
 import souz.sharedui.generated.resources.onboarding_input_permission_request
 import souz.sharedui.generated.resources.voice_error_local_macos_audio_too_long
 import souz.sharedui.generated.resources.voice_error_local_macos_unavailable
-import souz.sharedui.generated.resources.voice_error_reviewed_draft_route_changed
 import souz.sharedui.generated.resources.voice_error_tool_review_pending
 import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
@@ -403,13 +402,17 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `voice started request does not block recording active run continuation events`() = runTest(mainDispatcher) {
+    fun `active run voice continuation bypasses review without cancellation`() = runTest(mainDispatcher) {
         val response = CompletableDeferred<String>()
-        val recognizedTexts = ArrayDeque(listOf("initial voice request", "voice continuation"))
+        val recognizedTexts = ArrayDeque(
+            listOf("initial voice request", "voice continuation", "rejected continuation"),
+        )
+        var cancellationCalls = 0
         val harness = createHarness(
             activeAgentId = AgentId.SKILLS_GRAPH,
             executeBehavior = { response.await() },
-            submitActiveRunBehavior = { true },
+            submitActiveRunBehavior = { it != "rejected continuation" },
+            onCancelActiveJob = { cancellationCalls += 1 },
             recognizeBehavior = {
                 LLMResponse.RecognizeResponse(result = listOf(recognizedTexts.removeFirst()))
             },
@@ -427,11 +430,14 @@ class MainViewModelTest {
             awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "initial voice request" }
             }
+            harness.settingsProvider.voiceInputReviewEnabled = true
+            val cancellationsBeforeCapture = cancellationCalls
 
             prepareAudioCapture(viewModel, byteArrayOf(4, 5, 6))
             viewModel.send(MainEvent.StartListening)
             val captureState = awaitState(viewModel) { it.isListening }
             assertTrue(captureState.isProcessing)
+            assertEquals(cancellationsBeforeCapture, cancellationCalls)
 
             viewModel.send(MainEvent.StopListening)
             val continuedState = awaitState(viewModel) { state ->
@@ -440,66 +446,24 @@ class MainViewModelTest {
             assertEquals(listOf("initial voice request"), harness.executedInputs)
             assertEquals(listOf("voice continuation"), harness.submittedActiveRunInputs)
             assertTrue(continuedState.chatMessages.last { it.text == "voice continuation" }.isVoice)
+            assertNull(continuedState.pendingVoiceInputDraft)
 
-            response.complete("final answer")
-            awaitState(viewModel) { state ->
-                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
+            recordVoiceInput(viewModel, byteArrayOf(7, 8, 9))
+            val rejectedState = awaitState(viewModel) {
+                it.pendingVoiceInputDraft?.text == "rejected continuation"
             }
-        } finally {
-            response.complete("final answer")
-            harness.clear()
-        }
-    }
-
-    @Test
-    fun `voice capture submits recognized text to a capable active run without cancellation`() = runTest(mainDispatcher) {
-        val response = CompletableDeferred<String>()
-        var cancellationCalls = 0
-        val harness = createHarness(
-            activeAgentId = AgentId.GRAPH,
-            supportsActiveRunInput = true,
-            executeBehavior = { response.await() },
-            submitActiveRunBehavior = { true },
-            onCancelActiveJob = { cancellationCalls += 1 },
-            recognizeBehavior = {
-                LLMResponse.RecognizeResponse(result = listOf("voice continuation"))
-            },
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-
-            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
-            awaitState(viewModel) { it.isProcessing }
-            val cancellationsBeforeCapture = cancellationCalls
-
-            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
-            viewModel.handleEvent(MainEvent.StartListening)
-            val captureState = awaitState(viewModel) { it.isListening }
-
-            assertTrue(captureState.isProcessing)
+            assertFalse(requireNotNull(rejectedState.pendingVoiceInputDraft).submitAsVoice)
+            assertFalse(rejectedState.chatMessages.any { it.text == "rejected continuation" })
+            assertEquals(
+                listOf("voice continuation", "rejected continuation"),
+                harness.submittedActiveRunInputs,
+            )
             assertEquals(cancellationsBeforeCapture, cancellationCalls)
 
-            viewModel.handleEvent(MainEvent.StopListening)
-
-            val continuedState = awaitState(viewModel) { state ->
-                state.chatMessages.any { it.isUser && it.text == "voice continuation" }
-            }
-            assertTrue(continuedState.isProcessing)
-            assertTrue(continuedState.chatMessages.last { it.text == "voice continuation" }.isVoice)
-            assertEquals(listOf("initial request"), harness.executedInputs)
-            assertEquals(listOf("voice continuation"), harness.submittedActiveRunInputs)
-
             response.complete("final answer")
-            val finalState = awaitState(viewModel) { state ->
+            awaitState(viewModel) { state ->
                 !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
             }
-            assertEquals(
-                listOf("initial request", "voice continuation", "final answer"),
-                finalState.chatMessages.map { it.text },
-            )
-            assertTrue(finalState.chatMessages.last().isVoice)
         } finally {
             response.complete("final answer")
             harness.clear()
@@ -507,24 +471,12 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `voice continuation rejected after run completion does not start a new request`() = runTest(mainDispatcher) {
-        val response = CompletableDeferred<String>()
-        val recognitionStarted = CompletableDeferred<Unit>()
-        val releaseRecognition = CompletableDeferred<Unit>()
-        val submissionAttempted = CompletableDeferred<Unit>()
-        var cancellationCalls = 0
+    fun `reviewed new request voice becomes a one-shot voice draft`() = runTest(mainDispatcher) {
+        val draftText = "review this voice request"
         val harness = createHarness(
-            activeAgentId = AgentId.SKILLS_GRAPH,
-            executeBehavior = { response.await() },
-            submitActiveRunBehavior = {
-                submissionAttempted.complete(Unit)
-                false
-            },
-            onCancelActiveJob = { cancellationCalls += 1 },
+            voiceInputReviewEnabled = true,
             recognizeBehavior = {
-                recognitionStarted.complete(Unit)
-                releaseRecognition.await()
-                LLMResponse.RecognizeResponse(result = listOf("late voice continuation"))
+                LLMResponse.RecognizeResponse(result = listOf(draftText))
             },
         )
 
@@ -532,44 +484,75 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
-            awaitState(viewModel) { it.isProcessing }
-            val cancellationsBeforeCapture = cancellationCalls
-
-            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
-            viewModel.handleEvent(MainEvent.StartListening)
-            awaitState(viewModel) { it.isListening }
-            viewModel.handleEvent(MainEvent.StopListening)
-            awaitDeferred(recognitionStarted)
-
-            response.complete("final answer")
-            awaitState(viewModel) { state ->
-                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
+            recordVoiceInput(viewModel, byteArrayOf(9, 8, 7))
+            val stateWithDraft = awaitState(viewModel) { state ->
+                state.pendingVoiceInputDraft?.text == draftText
             }
+            val draft = requireNotNull(stateWithDraft.pendingVoiceInputDraft)
+            assertTrue(draft.submitAsVoice)
+            assertTrue(stateWithDraft.chatMessages.isEmpty())
+            assertFalse(stateWithDraft.isProcessing)
 
-            releaseRecognition.complete(Unit)
-            awaitDeferred(submissionAttempted)
+            viewModel.handleEvent(MainEvent.SendChatMessage("unrelated typed request"))
+            awaitState(viewModel) {
+                !it.isProcessing && harness.executedInputs == listOf("unrelated typed request")
+            }
+            assertEquals(draft, viewModel.uiState.value.pendingVoiceInputDraft)
+
+            viewModel.handleEvent(MainEvent.ConsumePendingVoiceInputDraft(draft.token))
+            awaitState(viewModel) { it.pendingVoiceInputDraft == null }
+
+            viewModel.handleEvent(
+                MainEvent.SendChatMessage(draft.text, isVoice = draft.submitAsVoice),
+            )
+            val sentState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { it.isUser && it.text == draftText }
+            }
+            assertTrue(sentState.chatMessages.last { it.isUser }.isVoice)
+            assertTrue(sentState.chatMessages.last { !it.isUser }.isVoice)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `unconsumed voice drafts merge and stale consumption does not clear them`() = runTest(mainDispatcher) {
+        val recognizedTexts = ArrayDeque(listOf("first draft", "second draft"))
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                LLMResponse.RecognizeResponse(result = listOf(recognizedTexts.removeFirst()))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
+            val firstDraft = requireNotNull(
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "first draft" }
+                    .pendingVoiceInputDraft,
+            )
+            recordVoiceInput(viewModel, byteArrayOf(4, 5, 6))
+            val secondDraft = requireNotNull(
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "first draft\nsecond draft" }
+                    .pendingVoiceInputDraft,
+            )
+
+            viewModel.handleEvent(MainEvent.ConsumePendingVoiceInputDraft(firstDraft.token))
             runCurrent()
 
-            assertEquals(cancellationsBeforeCapture, cancellationCalls)
-            assertEquals(listOf("initial request"), harness.executedInputs)
-            assertEquals(listOf("late voice continuation"), harness.submittedActiveRunInputs)
-            assertEquals(
-                listOf("initial request", "final answer"),
-                viewModel.uiState.value.chatMessages.map { it.text },
-            )
-            assertEquals("late voice continuation", viewModel.uiState.value.chatInputText)
-            assertFalse(viewModel.uiState.value.chatInputSubmissionFeedback.accepted)
-            assertEquals("late voice continuation", viewModel.uiState.value.chatInputSubmissionFeedback.input)
+            assertTrue(secondDraft.token > firstDraft.token)
+            assertTrue(secondDraft.submitAsVoice)
+            assertEquals(secondDraft, viewModel.uiState.value.pendingVoiceInputDraft)
         } finally {
-            response.complete("final answer")
-            releaseRecognition.complete(Unit)
             harness.clear()
         }
     }
 
     @Test
-    fun `voice continuation captured for completed request does not steer its replacement`() = runTest(mainDispatcher) {
+    fun `late voice continuation becomes a draft and does not steer a replacement run`() = runTest(mainDispatcher) {
         val responseA = CompletableDeferred<String>()
         val responseB = CompletableDeferred<String>()
         val recognitionStarted = CompletableDeferred<Unit>()
@@ -618,13 +601,15 @@ class MainViewModelTest {
 
             releaseRecognition.complete(Unit)
             awaitDeferred(recognitionReturned)
-            advanceUntilIdle()
+            val finalState = awaitState(viewModel) {
+                it.pendingVoiceInputDraft?.text == "late voice continuation"
+            }
 
-            val finalState = viewModel.uiState.value
             assertTrue(finalState.isProcessing)
             assertEquals(listOf("request A", "request B"), harness.executedInputs)
             assertTrue(harness.submittedActiveRunInputs.isEmpty())
             assertFalse(finalState.chatMessages.any { it.text == "late voice continuation" })
+            assertFalse(requireNotNull(finalState.pendingVoiceInputDraft).submitAsVoice)
         } finally {
             responseA.complete("answer A")
             responseB.complete("answer B")
@@ -632,147 +617,6 @@ class MainViewModelTest {
             harness.clear()
         }
     }
-
-    @Test
-    fun `reviewed voice continuation does not become a new request after captured run completes`() =
-        runTest(mainDispatcher) {
-            val response = CompletableDeferred<String>()
-            val draft = "reviewed voice continuation"
-            val harness = createHarness(
-                activeAgentId = AgentId.SKILLS_GRAPH,
-                voiceInputReviewEnabled = true,
-                executeBehavior = { response.await() },
-                submitActiveRunBehavior = { true },
-                recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(draft)) },
-            )
-
-            try {
-                val viewModel = harness.viewModel
-                advanceUntilIdle()
-
-                viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
-                awaitState(viewModel) { it.isProcessing }
-
-                prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
-                viewModel.handleEvent(MainEvent.StartListening)
-                awaitState(viewModel) { it.isListening }
-                viewModel.handleEvent(MainEvent.StopListening)
-
-                val stateWithDraft = awaitState(viewModel) { it.pendingVoiceInputDraft?.text == draft }
-                assertEquals(draft, requireNotNull(stateWithDraft.pendingVoiceInputDraft).text)
-
-                response.complete("initial answer")
-                awaitState(viewModel) { !it.isProcessing }
-
-                val feedbackRevision = viewModel.uiState.value.chatInputSubmissionFeedback.revision
-                viewModel.handleEvent(MainEvent.SendChatMessage(draft))
-
-                val rejectedState = awaitState(viewModel) {
-                    it.chatInputSubmissionFeedback.revision > feedbackRevision
-                }
-                assertFalse(rejectedState.chatInputSubmissionFeedback.accepted)
-                assertEquals(listOf("initial request"), harness.executedInputs)
-                assertTrue(harness.submittedActiveRunInputs.isEmpty())
-            } finally {
-                response.complete("initial answer")
-                harness.clear()
-            }
-        }
-
-    @Test
-    fun `reviewed voice continuation preserves voice modality when submitted to active run`() =
-        runTest(mainDispatcher) {
-            val response = CompletableDeferred<String>()
-            val draft = "reviewed voice continuation"
-            val harness = createHarness(
-                activeAgentId = AgentId.SKILLS_GRAPH,
-                voiceInputReviewEnabled = true,
-                executeBehavior = { response.await() },
-                submitActiveRunBehavior = { true },
-                recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(draft)) },
-            )
-
-            try {
-                val viewModel = harness.viewModel
-                advanceUntilIdle()
-
-                viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
-                awaitState(viewModel) { it.isProcessing }
-
-                recordVoiceInput(viewModel, byteArrayOf(9, 8, 7))
-                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == draft }
-
-                viewModel.handleEvent(MainEvent.SendChatMessage(draft))
-
-                val continuedState = awaitState(viewModel) { state ->
-                    state.chatMessages.any { it.isUser && it.text == draft }
-                }
-                assertTrue(continuedState.chatMessages.last { it.text == draft }.isVoice)
-                assertEquals(listOf("initial request"), harness.executedInputs)
-                assertEquals(listOf(draft), harness.submittedActiveRunInputs)
-
-                response.complete("initial answer")
-                val finalState = awaitState(viewModel) { state ->
-                    !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "initial answer" }
-                }
-                assertTrue(finalState.chatMessages.last { !it.isUser }.isVoice)
-            } finally {
-                response.complete("initial answer")
-                harness.clear()
-            }
-        }
-
-    @Test
-    fun `reviewed voice draft blocks capture for a different route`() =
-        runTest(mainDispatcher) {
-            val response = CompletableDeferred<String>()
-            val firstDraft = "active run draft"
-            val harness = createHarness(
-                activeAgentId = AgentId.SKILLS_GRAPH,
-                voiceInputReviewEnabled = true,
-                executeBehavior = { response.await() },
-                recognizeBehavior = {
-                    LLMResponse.RecognizeResponse(result = listOf(firstDraft))
-                },
-            )
-
-            try {
-                val viewModel = harness.viewModel
-                val audioRecorder = testAudioRecorder(viewModel)
-                advanceUntilIdle()
-
-                viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
-                awaitState(viewModel) { it.isProcessing }
-
-                recordVoiceInput(viewModel, byteArrayOf(9, 8, 7))
-                val stateWithDraft = awaitState(viewModel) {
-                    it.pendingVoiceInputDraft?.text == firstDraft &&
-                        it.chatInputText == firstDraft
-                }
-                val activeRunDraft = requireNotNull(stateWithDraft.pendingVoiceInputDraft)
-
-                response.complete("initial answer")
-                awaitState(viewModel) { !it.isProcessing }
-
-                viewModel.handleEvent(MainEvent.StartListening)
-
-                val blockedMessage = getString(Res.string.voice_error_reviewed_draft_route_changed)
-                val blockedState = awaitState(viewModel) { it.statusMessage == blockedMessage }
-                assertFalse(blockedState.isListening)
-                assertEquals(1, audioRecorder.startCalls)
-                assertEquals(activeRunDraft.token, blockedState.pendingVoiceInputDraft?.token)
-
-                viewModel.handleEvent(MainEvent.UpdateChatInputText(""))
-                val clearedInputState = awaitState(viewModel) {
-                    it.pendingVoiceInputDraft == null &&
-                        it.chatInputText.isEmpty()
-                }
-                assertNull(clearedInputState.pendingVoiceInputDraft)
-            } finally {
-                response.complete("initial answer")
-                harness.clear()
-            }
-        }
 
     @Test
     fun `failed recording stop does not route the next capture with stale intent`() = runTest(mainDispatcher) {
@@ -888,59 +732,6 @@ class MainViewModelTest {
             harness.clear()
         }
     }
-
-    @Test
-    fun `same-route captures merge the pending voice draft`() =
-        runTest(mainDispatcher) {
-            val firstDraft = "first voice draft"
-            val secondDraft = "second voice draft"
-            var call = 0
-            val harness = createHarness(
-                voiceInputReviewEnabled = true,
-                recognizeBehavior = {
-                    call += 1
-                    val result = if (call == 1) firstDraft else secondDraft
-                    LLMResponse.RecognizeResponse(result = listOf(result))
-                },
-            )
-
-            try {
-                val viewModel = harness.viewModel
-                advanceUntilIdle()
-
-                recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
-                val firstState = awaitState(viewModel) {
-                    it.pendingVoiceInputDraft?.text == firstDraft &&
-                        it.chatInputText == firstDraft
-                }
-                assertTrue(firstState.chatMessages.isEmpty())
-                assertFalse(firstState.isProcessing)
-
-                recordVoiceInput(viewModel, byteArrayOf(4, 5, 6))
-                val secondState = awaitState(viewModel) {
-                    it.pendingVoiceInputDraft?.let { draft ->
-                        draft.segments.map(VoiceInputDraftSegment::text) == listOf(firstDraft, secondDraft) &&
-                            draft.token > draft.segments.first().token &&
-                            it.chatInputText == "$firstDraft\n$secondDraft"
-                    } == true
-                }
-
-                assertEquals(
-                    listOf(firstDraft, secondDraft),
-                    viewModel.uiState.value.pendingVoiceInputDraft?.segments?.map(VoiceInputDraftSegment::text),
-                )
-                assertEquals(
-                    "$firstDraft\n$secondDraft",
-                    viewModel.uiState.value.pendingVoiceInputDraft?.text,
-                )
-                assertEquals(
-                    secondState.pendingVoiceInputDraft?.token,
-                    viewModel.uiState.value.pendingVoiceInputDraft?.token,
-                )
-            } finally {
-                harness.clear()
-            }
-        }
 
     @Test
     fun `start listening is ignored while previous voice recognition is still processing`() = runTest(mainDispatcher) {
@@ -1634,10 +1425,10 @@ class MainViewModelTest {
                 viewModel.uiState.value.copy(
                     isAwaitingToolReview = true,
                     pendingVoiceInputDraft = PendingVoiceInputDraft(
-                        segments = listOf(VoiceInputDraftSegment(text = "voice draft", token = 42L)),
-                        route = VoiceInputRoute.NewRequest,
+                        text = "voice draft",
+                        token = 42L,
+                        submitAsVoice = true,
                     ),
-                    chatInputText = "voice draft",
                     chatMessages = listOf(
                         ChatMessage(
                             text = "pending review",
@@ -1653,8 +1444,7 @@ class MainViewModelTest {
             val state = awaitState(viewModel) {
                 !it.isAwaitingToolReview &&
                     it.chatMessages.isEmpty() &&
-                    it.pendingVoiceInputDraft == null &&
-                    it.chatInputText.isEmpty()
+                    it.pendingVoiceInputDraft == null
             }
             assertFalse(state.isAwaitingToolReview)
             assertNull(state.pendingVoiceInputDraft)

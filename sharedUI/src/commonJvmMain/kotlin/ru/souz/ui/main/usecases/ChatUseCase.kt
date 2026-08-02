@@ -132,8 +132,8 @@ class ChatUseCase internal constructor(
     /** Adds text to the open run, optionally only when it still owns [expectedRequestId]. */
     suspend fun submitToActiveRun(
         chatMessage: String,
+        isVoice: Boolean,
         expectedRequestId: Long? = null,
-        isVoice: Boolean = false,
     ): Boolean {
         val userText = chatMessage.trim()
         if (userText.isEmpty()) return false
