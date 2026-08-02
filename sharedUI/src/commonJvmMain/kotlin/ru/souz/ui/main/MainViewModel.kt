@@ -203,9 +203,6 @@ class MainViewModel(
                 voiceInputUseCase.startRecording(viewModelScope, ::voiceInputBlockReason)
             }
             MainEvent.StopListening -> voiceInputUseCase.stopRecording()
-            is MainEvent.DiscardPendingVoiceInputDraft -> {
-                setState { copy(pendingVoiceInputDraft = pendingVoiceInputDraft.withoutToken(event.token)) }
-            }
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()
@@ -221,6 +218,7 @@ class MainViewModel(
             MainEvent.PickChatAttachments -> pickChatAttachments()
             is MainEvent.AttachDroppedFiles -> addAttachedFiles(event.paths)
             is MainEvent.RemoveChatAttachment -> removeAttachedFile(event.path)
+            is MainEvent.UpdateChatInputText -> updateChatInputText(event.text)
             is MainEvent.UpdateChatSearchQuery -> setStateAndReindexChatSearch {
                 copy(chatSearch = chatSearchEngine.updateQuery(chatSearch, event.query))
             }
@@ -303,7 +301,16 @@ class MainViewModel(
                 token = ++voiceInputDraftToken,
             )
             setState {
-                copy(pendingVoiceInputDraft = pendingVoiceInputDraft.withSegment(input.route, segment))
+                val draft = pendingVoiceInputDraft.withSegment(input.route, segment)
+                val mergedText = draft.segmentsAfter(reviewedVoiceInputDraftToken)
+                    .fold(chatInputText) { current, next ->
+                        mergeVoiceDraftIntoInputText(current, next.text)
+                    }
+                copy(
+                    pendingVoiceInputDraft = draft,
+                    chatInputText = mergedText,
+                    reviewedVoiceInputDraftToken = draft.token,
+                )
             }
             return
         }
@@ -368,7 +375,9 @@ class MainViewModel(
             copy(
                 attachedFiles = emptyList(),
                 chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(inputText, accepted = true),
-                pendingVoiceInputDraft = pendingVoiceInputDraft.withoutToken(voiceDraftToken),
+                pendingVoiceInputDraft = null,
+                chatInputText = "",
+                reviewedVoiceInputDraftToken = null,
             )
         }
         chatUseCase.sendChatMessage(
@@ -411,8 +420,26 @@ class MainViewModel(
         setState {
             copy(
                 chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted),
-                pendingVoiceInputDraft = pendingVoiceInputDraft.withoutToken(consumedVoiceDraftToken),
+                pendingVoiceInputDraft = pendingVoiceInputDraft
+                    .takeUnless { accepted }
+                    .withoutToken(consumedVoiceDraftToken),
+                chatInputText = if (accepted) "" else chatInputText,
+                reviewedVoiceInputDraftToken = if (accepted) null else reviewedVoiceInputDraftToken,
             )
+        }
+    }
+
+    private suspend fun updateChatInputText(text: String) {
+        setState {
+            if (text.isEmpty()) {
+                copy(
+                    chatInputText = "",
+                    reviewedVoiceInputDraftToken = null,
+                    pendingVoiceInputDraft = null,
+                )
+            } else {
+                copy(chatInputText = text)
+            }
         }
     }
 
@@ -643,6 +670,8 @@ class MainViewModel(
                 chatSessionId = chatSessionId + 1,
                 attachedFiles = emptyList(),
                 pendingVoiceInputDraft = null,
+                chatInputText = "",
+                reviewedVoiceInputDraftToken = null,
                 showNewChatDialog = false,
                 chatSearch = ChatSearchState(),
             )
@@ -832,6 +861,8 @@ class MainViewModel(
                         chatStartTip = startTips.randomOrNull() ?: "",
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
+                        chatInputText = "",
+                        reviewedVoiceInputDraftToken = null,
                         showNewChatDialog = false,
                         chatSearch = ChatSearchState(),
                     )
@@ -849,6 +880,8 @@ class MainViewModel(
                         chatStartTip = startTips.randomOrNull() ?: "",
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
+                        chatInputText = "",
+                        reviewedVoiceInputDraftToken = null,
                         showNewChatDialog = false,
                         chatSearch = ChatSearchState(),
                     )

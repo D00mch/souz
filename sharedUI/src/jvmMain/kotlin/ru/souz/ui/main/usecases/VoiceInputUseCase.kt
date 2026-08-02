@@ -7,6 +7,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.consumeAsFlow
@@ -56,6 +57,7 @@ class VoiceInputUseCase(
     private var lastRecognizedAtMs: Long = 0L
     private val recognitionMutex = Mutex()
     private val captureMutex = Mutex()
+    private val pendingRouteMutex = Mutex()
     private var pendingCaptureRoute: VoiceInputRoute? = null
 
     private val _outputs = Channel<MainUseCaseOutput>()
@@ -99,9 +101,7 @@ class VoiceInputUseCase(
                 .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
                 .catch { l.error("Error in audio flow: ${it.message}") }
                 .mapNotNull { audioData ->
-                    val route = captureMutex.withLock {
-                        pendingCaptureRoute.also { pendingCaptureRoute = null }
-                    }
+                    val route = takePendingCaptureRoute()
                     if (route == null) {
                         l.warn("Audio payload has no matching voice capture, skipping recognition")
                         null
@@ -162,7 +162,7 @@ class VoiceInputUseCase(
     ) {
         if (!captureMutex.tryLock()) return
         try {
-            if (pendingCaptureRoute != null) return
+            if (hasPendingCaptureRoute()) return
             if (recognitionMutex.isLocked) {
                 val statusMsg = getString(Res.string.voice_status_processing_input)
                 emitState { copy(statusMessage = statusMsg) }
@@ -185,7 +185,7 @@ class VoiceInputUseCase(
                 emitVoiceInputBlocked(blockedReason)
                 return
             }
-            pendingCaptureRoute = route
+            setPendingCaptureRoute(route)
             if (route is VoiceInputRoute.NewRequest) {
                 chatUseCase.abortActiveRequest()
             }
@@ -203,7 +203,7 @@ class VoiceInputUseCase(
                 audioRecorder.start()
             }
             if (!started) {
-                pendingCaptureRoute = null
+                clearPendingCaptureRoute(route)
                 val recorderState = audioRecorder.recordingState.value
                 val errorMsg = (recorderState as? UiAudioRecordingState.Error)?.message.orEmpty()
                 l.error("Unable to start microphone capture: {}", errorMsg)
@@ -216,13 +216,13 @@ class VoiceInputUseCase(
 
     override suspend fun stopRecording() {
         val stopped = captureMutex.withLock {
-            if (pendingCaptureRoute == null) return@withLock false
+            val route = currentPendingCaptureRoute() ?: return@withLock false
 
             try {
                 audioRecorder.stop()
             } catch (error: Exception) {
                 l.error("Unable to stop microphone capture", error)
-                pendingCaptureRoute = null
+                clearPendingCaptureRoute(route)
                 emitVoiceError(Res.string.voice_error_microphone_unavailable)
                 return@withLock false
             }
@@ -234,11 +234,13 @@ class VoiceInputUseCase(
             }
             if (terminalState is UiAudioRecordingState.Error) {
                 l.error("Unable to stop microphone capture: {}", terminalState.message)
-                pendingCaptureRoute = null
+                clearPendingCaptureRoute(route)
                 emitVoiceError(Res.string.voice_error_microphone_unavailable)
                 return@withLock false
             }
 
+            yield()
+            clearPendingCaptureRoute(route)
             emitState { copy(isListening = false) }
             true
         }
@@ -309,6 +311,32 @@ class VoiceInputUseCase(
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
+    }
+
+    private suspend fun hasPendingCaptureRoute(): Boolean = pendingRouteMutex.withLock {
+        pendingCaptureRoute != null
+    }
+
+    private suspend fun currentPendingCaptureRoute(): VoiceInputRoute? = pendingRouteMutex.withLock {
+        pendingCaptureRoute
+    }
+
+    private suspend fun setPendingCaptureRoute(route: VoiceInputRoute) {
+        pendingRouteMutex.withLock {
+            pendingCaptureRoute = route
+        }
+    }
+
+    private suspend fun takePendingCaptureRoute(): VoiceInputRoute? = pendingRouteMutex.withLock {
+        pendingCaptureRoute.also { pendingCaptureRoute = null }
+    }
+
+    private suspend fun clearPendingCaptureRoute(route: VoiceInputRoute) {
+        pendingRouteMutex.withLock {
+            if (pendingCaptureRoute == route) {
+                pendingCaptureRoute = null
+            }
+        }
     }
 
     private fun isDuplicateRecognition(text: String): Boolean {

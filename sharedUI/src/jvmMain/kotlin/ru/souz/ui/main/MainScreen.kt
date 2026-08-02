@@ -129,9 +129,9 @@ fun MainScreenContent(
     onPickChatAttachments: () -> Unit = {},
     onAttachDroppedTransferable: (Transferable) -> Unit = {},
     onRemoveChatAttachment: (String) -> Unit = {},
+    onUpdateChatInputText: (String) -> Unit = {},
     onSendChatMessage: (String, Long?) -> Unit = { _, _ -> },
     onClearContext: () -> Unit = {},
-    onDiscardPendingVoiceInputDraft: (Long) -> Unit = {},
     onToggleToolModifyReviewSelection: (String, Long) -> Unit = { _, _ -> },
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
     onApproveToolPermission: () -> Unit = {},
@@ -354,7 +354,8 @@ fun MainScreenContent(
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
                     attachedFiles = state.attachedFiles,
-                    pendingVoiceInputDraft = state.pendingVoiceInputDraft,
+                    chatInputText = state.chatInputText,
+                    reviewedVoiceInputDraftToken = state.reviewedVoiceInputDraftToken,
                     chatInputSubmissionFeedback = state.chatInputSubmissionFeedback,
                     isProcessing = state.isProcessing,
                     supportsActiveRunInput = state.supportsActiveRunInput,
@@ -370,9 +371,9 @@ fun MainScreenContent(
                     onPickAttachments = onPickChatAttachments,
                     onDropTransferable = onAttachDroppedTransferable,
                     onRemoveAttachment = onRemoveChatAttachment,
+                    onInputTextChange = onUpdateChatInputText,
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
-                    onDiscardPendingVoiceInputDraft = onDiscardPendingVoiceInputDraft,
                     onStartListening = onStartListening,
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
@@ -957,7 +958,8 @@ fun ChatModeContent(
     availableModelAliases: List<String>,
     selectedContextSize: Int,
     attachedFiles: List<ChatAttachedFile>,
-    pendingVoiceInputDraft: PendingVoiceInputDraft?,
+    chatInputText: String,
+    reviewedVoiceInputDraftToken: Long?,
     chatInputSubmissionFeedback: ChatInputSubmissionFeedback,
     isProcessing: Boolean,
     supportsActiveRunInput: Boolean,
@@ -973,9 +975,9 @@ fun ChatModeContent(
     onPickAttachments: () -> Unit,
     onDropTransferable: (Transferable) -> Unit,
     onRemoveAttachment: (String) -> Unit,
+    onInputTextChange: (String) -> Unit,
     onSendMessage: (String, Long?) -> Unit,
     onCancelProcessing: () -> Unit = {},
-    onDiscardPendingVoiceInputDraft: (Long) -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
@@ -996,21 +998,30 @@ fun ChatModeContent(
         ?.takeIf { isSpeaking && !it.isUser && it.isVoice }
         ?.id
     val stringThinking = stringResource(Res.string.status_thinking)
-    var inputText by remember(chatSessionId) { mutableStateOf(TextFieldValue("")) }
+    var inputText by remember(chatSessionId) {
+        mutableStateOf(TextFieldValue(chatInputText, TextRange(chatInputText.length)))
+    }
     var pendingInputSubmission by remember(chatSessionId) {
         mutableStateOf<PendingChatInputSubmission?>(null)
     }
-    var reviewedVoiceInputDraftToken by remember(chatSessionId) { mutableStateOf<Long?>(null) }
     var isFileDragActive by remember { mutableStateOf(false) }
 
     LaunchedEffect(chatInputSubmissionFeedback) {
         val pending = pendingInputSubmission ?: return@LaunchedEffect
-        val accepted = chatInputSubmissionFeedback.acceptanceFor(pending) ?: return@LaunchedEffect
-        if (accepted) {
-            inputText = TextFieldValue("")
-            reviewedVoiceInputDraftToken = null
-        }
+        chatInputSubmissionFeedback.acceptanceFor(pending) ?: return@LaunchedEffect
         pendingInputSubmission = null
+    }
+
+    LaunchedEffect(chatInputText, isSearchOpen) {
+        if (inputText.text != chatInputText) {
+            inputText = TextFieldValue(
+                text = chatInputText,
+                selection = TextRange(chatInputText.length),
+            )
+            if (chatInputText.isNotEmpty() && !isSearchOpen) {
+                focusRequester.requestFocus()
+            }
+        }
     }
 
     val windowInfo = LocalWindowInfo.current
@@ -1034,24 +1045,6 @@ fun ChatModeContent(
         val activeMatch = searchState.activeMatch ?: return@LaunchedEffect
         if (!isSearchOpen) return@LaunchedEffect
         listState.animateScrollToItem(activeMatch.messageIndex)
-    }
-
-    LaunchedEffect(pendingVoiceInputDraft?.token) {
-        val draft = pendingVoiceInputDraft ?: return@LaunchedEffect
-        val newSegments = draft.segmentsAfter(reviewedVoiceInputDraftToken)
-        if (newSegments.isEmpty()) return@LaunchedEffect
-
-        val mergedText = newSegments.fold(inputText.text) { currentText, segment ->
-            mergeVoiceDraftIntoInputText(currentText, segment.text)
-        }
-        inputText = TextFieldValue(
-            text = mergedText,
-            selection = TextRange(mergedText.length),
-        )
-        reviewedVoiceInputDraftToken = draft.token
-        if (!isSearchOpen) {
-            focusRequester.requestFocus()
-        }
     }
 
     ChatFileDropTarget(
@@ -1079,12 +1072,7 @@ fun ChatModeContent(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                onSuggestionClick = { command ->
-                    reviewedVoiceInputDraftToken?.let(onDiscardPendingVoiceInputDraft)
-                    onSendMessage(command, null)
-                    inputText = TextFieldValue("")
-                    reviewedVoiceInputDraftToken = null
-                }
+                onSuggestionClick = { command -> onSendMessage(command, null) }
             )
         } else {
             LazyColumn(
@@ -1159,10 +1147,7 @@ fun ChatModeContent(
             value = inputText,
             onValueChange = {
                 inputText = it
-                if (it.text.isEmpty()) {
-                    reviewedVoiceInputDraftToken?.let(onDiscardPendingVoiceInputDraft)
-                    reviewedVoiceInputDraftToken = null
-                }
+                onInputTextChange(it.text)
             },
             onSend = {
                 val currentText = inputText.text

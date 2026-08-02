@@ -169,6 +169,8 @@ data class MainState(
     val isProcessing: Boolean = false,
     val supportsActiveRunInput: Boolean = false,
     val chatInputSubmissionFeedback: ChatInputSubmissionFeedback = ChatInputSubmissionFeedback(),
+    val chatInputText: String = "",
+    val reviewedVoiceInputDraftToken: Long? = null,
     val agentHistory: List<LLMRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
@@ -201,7 +203,6 @@ data class MainState(
 sealed interface MainEvent : VMEvent {
     data object StartListening : MainEvent
     data object StopListening : MainEvent
-    data class DiscardPendingVoiceInputDraft(val token: Long) : MainEvent
     data object RequestNewConversation : MainEvent
     data object ConfirmNewConversation : MainEvent
     data object DismissNewConversationDialog : MainEvent
@@ -217,6 +218,7 @@ sealed interface MainEvent : VMEvent {
     data object PickChatAttachments : MainEvent
     data class AttachDroppedFiles(val paths: List<String>) : MainEvent
     data class RemoveChatAttachment(val path: String) : MainEvent
+    data class UpdateChatInputText(val text: String) : MainEvent
     data class SendChatMessage(
         val text: String,
         val voiceInputDraftToken: Long? = null,
