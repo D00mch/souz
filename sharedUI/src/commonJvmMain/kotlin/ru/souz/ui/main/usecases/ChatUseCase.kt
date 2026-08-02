@@ -16,7 +16,6 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.AgentExecutionResult
-import ru.souz.agent.AgentId
 import ru.souz.agent.AgentSideEffect
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.state.AgentContext
@@ -130,10 +129,11 @@ class ChatUseCase internal constructor(
         }
     }
 
-    /** Adds text to the open Skills run, optionally only when it still owns [expectedRequestId]. */
+    /** Adds text to the open run, optionally only when it still owns [expectedRequestId]. */
     suspend fun submitToActiveRun(
         chatMessage: String,
         expectedRequestId: Long? = null,
+        isVoice: Boolean = false,
     ): Boolean {
         val userText = chatMessage.trim()
         if (userText.isEmpty()) return false
@@ -144,7 +144,12 @@ class ChatUseCase internal constructor(
             if (expectedRequestId != null && session.requestId != expectedRequestId) return@withLock false
             if (!agentFacade.submitToActiveRun(userText)) return@withLock false
 
-            val continuationMessage = ChatMessage(text = userText, isUser = true)
+            val continuationMessage = ChatMessage(
+                text = userText,
+                isUser = true,
+                isVoice = isVoice,
+            )
+            session.pendingBotMessage = session.pendingBotMessage.copy(isVoice = isVoice)
             session.userMessageIds += continuationMessage.id
             session.sideEffectRevision += 1
             speechUseCase.clearQueue()
@@ -161,8 +166,8 @@ class ChatUseCase internal constructor(
         }
     }
 
-    internal suspend fun captureActiveSkillsRequestId(): Long? = activeRequestMutex.withLock {
-        if (agentFacade.activeAgentId.value != AgentId.SKILLS_GRAPH) return@withLock null
+    internal suspend fun captureActiveRunRequestId(): Long? = activeRequestMutex.withLock {
+        if (!agentFacade.supportsActiveRunInput) return@withLock null
         activeRequestSession?.requestId?.takeIf { it == activeChatRequestId }
     }
 
@@ -278,7 +283,6 @@ class ChatUseCase internal constructor(
 
     private fun subscribeOnTaskSideEffects(scope: CoroutineScope, session: ChatRequestSession): Job {
         val agentId = agentFacade.activeAgentId.value
-        val msg = session.pendingBotMessage
         val job = scope.launch {
             var isCodeBlockStarted = false
             var accumulatedText = ""
@@ -298,6 +302,7 @@ class ChatUseCase internal constructor(
                             if (toolModifyReviewUseCase.hasPendingEdits()) {
                                 return@textEffect
                             }
+                            val msg = session.pendingBotMessage
                             val text = effect.v
                             accumulatedText += text
                             emitState(refreshChatSearch = true) {
@@ -613,7 +618,7 @@ class ChatUseCase internal constructor(
         val errorMessage = ChatMessage(
             text = "Ошибка: ${error.message}",
             isUser = false,
-            isVoice = session.userMessage.isVoice,
+            isVoice = session.pendingBotMessage.isVoice,
         )
 
         emitState(refreshChatSearch = true) {
@@ -722,7 +727,7 @@ class ChatUseCase internal constructor(
         val requestId: Long,
         val requestContext: ChatRequestLogContext,
         val userMessage: ChatMessage,
-        val pendingBotMessage: ChatMessage,
+        var pendingBotMessage: ChatMessage,
         val executionMeta: ToolInvocationMeta,
     ) {
         val userMessageIds: MutableSet<String> = mutableSetOf(userMessage.id)

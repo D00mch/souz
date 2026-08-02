@@ -62,9 +62,6 @@ fun MainScreen(
             viewModel.send(MainEvent.SendChatMessage(text, voiceInputDraftToken))
         },
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
-        onConsumePendingVoiceInputDraft = { token ->
-            viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
-        },
         onDiscardPendingVoiceInputDraft = { token ->
             viewModel.send(MainEvent.DiscardPendingVoiceInputDraft(token))
         },

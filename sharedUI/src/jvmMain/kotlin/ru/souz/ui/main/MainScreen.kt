@@ -131,7 +131,6 @@ fun MainScreenContent(
     onRemoveChatAttachment: (String) -> Unit = {},
     onSendChatMessage: (String, Long?) -> Unit = { _, _ -> },
     onClearContext: () -> Unit = {},
-    onConsumePendingVoiceInputDraft: (Long) -> Unit = {},
     onDiscardPendingVoiceInputDraft: (Long) -> Unit = {},
     onToggleToolModifyReviewSelection: (String, Long) -> Unit = { _, _ -> },
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
@@ -373,7 +372,6 @@ fun MainScreenContent(
                     onRemoveAttachment = onRemoveChatAttachment,
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
-                    onConsumePendingVoiceInputDraft = onConsumePendingVoiceInputDraft,
                     onDiscardPendingVoiceInputDraft = onDiscardPendingVoiceInputDraft,
                     onStartListening = onStartListening,
                     onStopListening = onStopListening,
@@ -977,7 +975,6 @@ fun ChatModeContent(
     onRemoveAttachment: (String) -> Unit,
     onSendMessage: (String, Long?) -> Unit,
     onCancelProcessing: () -> Unit = {},
-    onConsumePendingVoiceInputDraft: (Long) -> Unit,
     onDiscardPendingVoiceInputDraft: (Long) -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
@@ -1041,16 +1038,19 @@ fun ChatModeContent(
 
     LaunchedEffect(pendingVoiceInputDraft?.token) {
         val draft = pendingVoiceInputDraft ?: return@LaunchedEffect
-        val recognizedText = draft.text?.trim().orEmpty()
-        if (recognizedText.isEmpty()) return@LaunchedEffect
+        val newSegments = draft.segments.filter { segment ->
+            reviewedVoiceInputDraftToken?.let { segment.token > it } ?: true
+        }
+        if (newSegments.isEmpty()) return@LaunchedEffect
 
-        val mergedText = mergeVoiceDraftIntoInputText(inputText.text, recognizedText)
+        val mergedText = newSegments.fold(inputText.text) { currentText, segment ->
+            mergeVoiceDraftIntoInputText(currentText, segment.text)
+        }
         inputText = TextFieldValue(
             text = mergedText,
             selection = TextRange(mergedText.length),
         )
         reviewedVoiceInputDraftToken = draft.token
-        onConsumePendingVoiceInputDraft(draft.token)
         if (!isSearchOpen) {
             focusRequester.requestFocus()
         }

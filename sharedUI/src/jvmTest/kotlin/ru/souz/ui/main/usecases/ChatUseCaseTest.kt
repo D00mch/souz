@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -155,6 +156,102 @@ class ChatUseCaseTest {
         assertEquals(listOf("steer this"), submittedInputs)
         assertEquals(listOf("hello", "steer this", "final answer"), state.chatMessages.map { it.text })
         assertFalse(state.isProcessing)
+    }
+
+    @Test
+    fun `voice continuation makes non-streaming response speak`() = runTest {
+        val executeStarted = CompletableDeferred<Unit>()
+        val executeResult = CompletableDeferred<String>()
+        val speechUseCase = mockk<SpeechUseCase>(relaxed = true)
+        val useCase = createExecutableUseCase(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            speechUseCase = speechUseCase,
+            submitToActiveRun = { true },
+            executeAnswer = {
+                executeStarted.complete(Unit)
+                executeResult.await()
+            },
+        )
+        var state = MainState()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { output ->
+                if (output is MainUseCaseOutput.State) {
+                    state = output.reduce(state)
+                }
+            }
+        }
+        val requestJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(
+                scope = backgroundScope,
+                isVoice = false,
+                chatMessage = "typed request",
+                requestSource = ChatRequestSource.CHAT_UI,
+            )
+        }
+        executeStarted.await()
+
+        assertTrue(useCase.submitToActiveRun("voice continuation", isVoice = true))
+        executeResult.complete("spoken final answer")
+        requestJob.join()
+
+        assertEquals(
+            listOf(false, true, true),
+            state.chatMessages.map { it.isVoice },
+        )
+        verify(exactly = 1) { speechUseCase.queuePrepared("spoken final answer") }
+    }
+
+    @Test
+    fun `streaming response follows latest continuation modality`() = runTest {
+        val executeStarted = CompletableDeferred<Unit>()
+        val executeResult = CompletableDeferred<String>()
+        val sideEffects = MutableSharedFlow<AgentSideEffect>()
+        val speechUseCase = mockk<SpeechUseCase>(relaxed = true)
+        val useCase = createExecutableUseCase(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            sideEffects = sideEffects,
+            speechUseCase = speechUseCase,
+            useStreaming = true,
+            submitToActiveRun = { true },
+            executeAnswer = {
+                executeStarted.complete(Unit)
+                executeResult.await()
+            },
+        )
+        var state = MainState()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.outputs.collect { output ->
+                if (output is MainUseCaseOutput.State) {
+                    state = output.reduce(state)
+                }
+            }
+        }
+        val requestJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            useCase.sendChatMessage(
+                scope = backgroundScope,
+                isVoice = false,
+                chatMessage = "typed request",
+                requestSource = ChatRequestSource.CHAT_UI,
+            )
+        }
+        executeStarted.await()
+        runCurrent()
+
+        assertTrue(useCase.submitToActiveRun("voice continuation", isVoice = true))
+        sideEffects.emit(AgentSideEffect.Text("spoken replacement", streamRevision = 1L))
+        runCurrent()
+        assertTrue(state.chatMessages.last().let { !it.isUser && it.isVoice })
+        verify(exactly = 1) { speechUseCase.queuePrepared("spoken replacement") }
+
+        assertTrue(useCase.submitToActiveRun("typed continuation"))
+        sideEffects.emit(AgentSideEffect.Text("silent replacement", streamRevision = 2L))
+        runCurrent()
+        assertTrue(state.chatMessages.last().let { !it.isUser && !it.isVoice })
+        verify(exactly = 0) { speechUseCase.queuePrepared("silent replacement") }
+
+        executeResult.complete("silent final answer")
+        requestJob.join()
+        assertFalse(state.chatMessages.last().isVoice)
     }
 
     @Test
@@ -585,6 +682,8 @@ class ChatUseCaseTest {
         baseMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
         activeAgentId: AgentId = AgentId.GRAPH,
         sideEffects: MutableSharedFlow<AgentSideEffect> = MutableSharedFlow(),
+        speechUseCase: SpeechUseCase = mockk(relaxed = true),
+        useStreaming: Boolean = false,
         executedInputs: MutableList<String>? = null,
         submittedInputs: MutableList<String>? = null,
         submitToActiveRun: suspend (String) -> Boolean = { false },
@@ -625,7 +724,7 @@ class ChatUseCaseTest {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.gigaModel } returns LLMModel.Max
         every { settingsProvider.notificationSoundEnabled } returns false
-        every { settingsProvider.useStreaming } returns false
+        every { settingsProvider.useStreaming } returns useStreaming
 
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
@@ -650,7 +749,7 @@ class ChatUseCaseTest {
         return ChatUseCase(
             agentFacade = agentFacade,
             settingsProvider = settingsProvider,
-            speechUseCase = mockk(relaxed = true),
+            speechUseCase = speechUseCase,
             finderPathExtractor = mockk(relaxed = true),
             chatAttachmentsUseCase = ChatAttachmentsUseCase(UnconfinedTestDispatcher()),
             toolModifyReviewUseCase = toolModifyReviewUseCase,

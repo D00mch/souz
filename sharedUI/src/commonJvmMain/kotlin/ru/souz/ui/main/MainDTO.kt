@@ -113,11 +113,21 @@ data class ChatInputSubmissionFeedback(
     val accepted: Boolean = false,
 )
 
-data class PendingVoiceInputDraft(
-    val text: String?,
+data class VoiceInputDraftSegment(
+    val text: String,
     val token: Long,
-    val route: VoiceInputRoute,
 )
+
+data class PendingVoiceInputDraft(
+    val segments: List<VoiceInputDraftSegment>,
+    val route: VoiceInputRoute,
+) {
+    val text: String
+        get() = segments.joinToString("\n") { it.text }
+
+    val token: Long
+        get() = segments.last().token
+}
 
 internal data class PendingChatInputSubmission(
     val input: String,
@@ -176,7 +186,6 @@ data class MainState(
 sealed interface MainEvent : VMEvent {
     data object StartListening : MainEvent
     data object StopListening : MainEvent
-    data class ConsumePendingVoiceInputDraft(val token: Long) : MainEvent
     data class DiscardPendingVoiceInputDraft(val token: Long) : MainEvent
     data object RequestNewConversation : MainEvent
     data object ConfirmNewConversation : MainEvent

@@ -11,10 +11,23 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AgentExecutorTest {
+    @Test
+    fun `executor reads active run input capability from the selected agent`() {
+        val agent = CapturingAgent()
+        val executor = AgentExecutor(agentProvider = { agent })
+
+        assertFalse(executor.supportsActiveRunInput(AgentId.GRAPH))
+
+        agent.supportsActiveRunInput = true
+
+        assertTrue(executor.supportsActiveRunInput(AgentId.GRAPH))
+    }
+
     @Test
     fun `executor forwards explicit input submission to the selected agent`() = runTest {
         val agent = CapturingAgent().apply { acceptSubmissions = true }
@@ -63,6 +76,7 @@ class AgentExecutorTest {
     )
 
     private class CapturingAgent : TraceableAgent {
+        override var supportsActiveRunInput: Boolean = false
         val executedContexts = mutableListOf<AgentContext<String>>()
         var receivedCallback: GraphStepCallback? = null
         var acceptSubmissions = false

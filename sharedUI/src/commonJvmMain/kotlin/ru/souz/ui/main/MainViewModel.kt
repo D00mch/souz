@@ -18,7 +18,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
-import ru.souz.agent.AgentId
 import ru.souz.agent.state.AgentContext
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientModeState
@@ -183,7 +182,7 @@ class MainViewModel(
         viewModelScope.launch {
             var firstEmission = true
             agentFacade.activeAgentId.collect { agentId ->
-                setState { copy(supportsActiveRunInput = agentId == AgentId.SKILLS_GRAPH) }
+                setState { copy(supportsActiveRunInput = agentFacade.supportsActiveRunInput) }
                 if (firstEmission) {
                     firstEmission = false
                     lastAppliedAgentId = agentId
@@ -204,13 +203,6 @@ class MainViewModel(
                 voiceInputUseCase.startRecording(viewModelScope, ::voiceInputBlockReason)
             }
             MainEvent.StopListening -> voiceInputUseCase.stopRecording()
-            is MainEvent.ConsumePendingVoiceInputDraft -> {
-                if (event.token == currentState.pendingVoiceInputDraft?.token) {
-                    setState {
-                        copy(pendingVoiceInputDraft = pendingVoiceInputDraft?.copy(text = null))
-                    }
-                }
-            }
             is MainEvent.DiscardPendingVoiceInputDraft -> {
                 if (event.token == currentState.pendingVoiceInputDraft?.token) {
                     setState { copy(pendingVoiceInputDraft = null) }
@@ -370,9 +362,22 @@ class MainViewModel(
     private suspend fun handleRecognizedVoiceInput(input: RecognizedVoiceInput) {
         if (settingsProvider.voiceInputReviewEnabled) {
             val token = ++voiceInputDraftToken
+            val segment = VoiceInputDraftSegment(
+                text = input.text.trim(),
+                token = token,
+            )
             setState {
+                val currentDraft = pendingVoiceInputDraft
+                val updatedDraft = if (currentDraft?.route == input.route) {
+                    currentDraft.copy(segments = currentDraft.segments + segment)
+                } else {
+                    PendingVoiceInputDraft(
+                        segments = listOf(segment),
+                        route = input.route,
+                    )
+                }
                 copy(
-                    pendingVoiceInputDraft = PendingVoiceInputDraft(input.text.trim(), token, input.route)
+                    pendingVoiceInputDraft = updatedDraft,
                 )
             }
             return
@@ -389,7 +394,11 @@ class MainViewModel(
                 true
             }
             is VoiceInputRoute.ActiveRunContinuation ->
-                chatUseCase.submitToActiveRun(input.text, route.requestId)
+                chatUseCase.submitToActiveRun(
+                    chatMessage = input.text,
+                    expectedRequestId = route.requestId,
+                    isVoice = true,
+                )
         }
         if (!accepted) showActiveRunInputRejected()
     }

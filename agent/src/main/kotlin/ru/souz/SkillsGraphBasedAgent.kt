@@ -54,6 +54,7 @@ class SkillsGraphBasedAgent internal constructor(
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),
 ) : TraceableAgent {
+    override val supportsActiveRunInput: Boolean = true
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = listOf(
         getSkillByNameTool,

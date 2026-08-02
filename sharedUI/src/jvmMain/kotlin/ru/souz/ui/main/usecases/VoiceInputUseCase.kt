@@ -177,7 +177,7 @@ class VoiceInputUseCase(
                 return
             }
 
-            val activeRunRequestId = chatUseCase.captureActiveSkillsRequestId()
+            val activeRunRequestId = chatUseCase.captureActiveRunRequestId()
             val route = activeRunRequestId?.let { VoiceInputRoute.ActiveRunContinuation(it) }
                 ?: VoiceInputRoute.NewRequest
             val blockedReason = voiceInputStartBlocker(route)
