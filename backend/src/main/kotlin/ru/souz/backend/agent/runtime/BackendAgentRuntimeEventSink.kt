@@ -86,7 +86,7 @@ internal class BackendAgentRuntimeEventSink(
 
             is AgentRuntimeEvent.ToolCallFailed -> onToolCallFailed(event)
 
-            is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled) {
+            is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled && !publicClientThread) {
                 val option = persistOption(event)
                 requestedOptionId = option.id
                 executionRepository.get(userId, executionId)?.let { execution ->
@@ -97,20 +97,18 @@ internal class BackendAgentRuntimeEventSink(
                         )
                     )
                 }
-                if (!publicClientThread) {
-                    appendDurableEvent(
-                        type = AgentEventType.OPTION_REQUESTED,
-                        payload = ChoiceRequestedPayload(
-                            optionId = option.id,
-                            kind = option.kind.value,
-                            title = option.title,
-                            selectionMode = option.selectionMode,
-                            options = option.options.map { item ->
-                                ChoiceOptionItemPayload(item.id, item.label, item.content)
-                            },
-                        ),
-                    )
-                }
+                appendDurableEvent(
+                    type = AgentEventType.OPTION_REQUESTED,
+                    payload = ChoiceRequestedPayload(
+                        optionId = option.id,
+                        kind = option.kind.value,
+                        title = option.title,
+                        selectionMode = option.selectionMode,
+                        options = option.options.map { item ->
+                            ChoiceOptionItemPayload(item.id, item.label, item.content)
+                        },
+                    ),
+                )
             }
         }
     }
@@ -270,7 +268,7 @@ internal class BackendAgentRuntimeEventSink(
             beforePublicEvent()
             appendDurableEvent(
                 type = AgentEventType.THREAD_FAILED,
-                payload = ThreadFailedPayload(PublicErrorPayload(errorCode, errorMessage)),
+                payload = ThreadFailedPayload(PublicErrorPayload(errorCode.toPublicErrorCode(), errorMessage)),
             )
         } else {
             appendDurableEvent(
@@ -397,3 +395,18 @@ internal class BackendAgentRuntimeEventSink(
     }
 
 }
+
+private fun String.toPublicErrorCode(): String =
+    if (this in publicErrorCodes) this else "internal_error"
+
+private val publicErrorCodes = setOf(
+    "invalid_request",
+    "chat_not_found",
+    "thread_not_found",
+    "thread_already_terminal",
+    "tool_call_not_found",
+    "idempotency_conflict",
+    "feature_disabled",
+    "message_rejected",
+    "internal_error",
+)
