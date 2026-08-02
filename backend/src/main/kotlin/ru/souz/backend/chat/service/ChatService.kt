@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.client.PublicPayloadHash
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.common.normalizePositiveLimit
@@ -80,22 +81,31 @@ class ChatService(
             return@withLock CreateClientChatResult(existing, duplicate = true)
         }
         val now = Instant.now()
-        CreateClientChatResult(
-            chat = chatRepository.create(
-                Chat(
-                    id = UUID.randomUUID(),
-                    userId = userId,
-                    title = normalizedTitle,
-                    archived = false,
-                    createdAt = now,
-                    updatedAt = now,
-                    clientType = clientType,
-                    requestId = requestId,
-                    payloadHash = payloadHash,
-                )
-            ),
-            duplicate = false,
+        val chat = Chat(
+            id = UUID.randomUUID(),
+            userId = userId,
+            title = normalizedTitle,
+            archived = false,
+            createdAt = now,
+            updatedAt = now,
+            clientType = clientType,
+            requestId = requestId,
+            payloadHash = payloadHash,
         )
+        try {
+            CreateClientChatResult(chatRepository.create(chat), duplicate = false)
+        } catch (conflict: ChatRequestConflictException) {
+            if (conflict.userId != userId || conflict.requestId != requestId) throw conflict
+            val existing = chatRepository.findByRequestId(userId, requestId) ?: throw conflict
+            if (existing.payloadHash != payloadHash) {
+                throw BackendV1Exception(
+                    status = HttpStatusCode.Conflict,
+                    code = "idempotency_conflict",
+                    message = "requestId was already used with a different chat payload.",
+                )
+            }
+            CreateClientChatResult(existing, duplicate = true)
+        }
     }
 
     suspend fun updateTitle(

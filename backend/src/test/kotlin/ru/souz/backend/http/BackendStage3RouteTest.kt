@@ -1321,6 +1321,8 @@ internal fun routeTestContext(
         launcher = AgentExecutionLauncher(
             executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             finalizer = finalizer,
+            executionRepository = executionRepository,
+            clientThreadRegistry = clientThreadRegistry,
         ),
     )
     val optionService = OptionService(

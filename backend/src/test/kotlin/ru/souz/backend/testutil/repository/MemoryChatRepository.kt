@@ -5,6 +5,7 @@ import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
 
 class MemoryChatRepository(
@@ -16,6 +17,9 @@ class MemoryChatRepository(
     constructor() : this(DEFAULT_MEMORY_REPOSITORY_MAX_ENTRIES)
 
     override suspend fun create(chat: Chat): Chat = mutex.withLock {
+        if (chats.values.any { it.userId == chat.userId && it.requestId == chat.requestId }) {
+            throw ChatRequestConflictException(chat.userId, chat.requestId)
+        }
         chats[ChatKey(chat.userId, chat.id)] = chat
         chat
     }

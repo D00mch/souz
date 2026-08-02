@@ -32,4 +32,6 @@ data class AgentExecution(
     val metadata: Map<String, String>,
     val revision: Long = 1,
     val latestDeviceContextJson: String = "{}",
+    val runtimeOwner: String? = null,
+    val runtimeLeaseUntil: Instant? = null,
 )
