@@ -48,6 +48,9 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.client.BackendClientToolCatalog
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
+import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
@@ -70,6 +73,7 @@ import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryAgentStateRepository
 import ru.souz.backend.testutil.repository.MemoryChatRepository
+import ru.souz.backend.testutil.repository.MemoryClientRequestRepository
 import ru.souz.backend.testutil.repository.MemoryOptionRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
@@ -450,36 +454,41 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `post chats creates chat for current user`() = testApplication {
+    fun `post chats creates a public client chat`() = testApplication {
         val context = routeTestContext()
+        val userId = UUID.randomUUID().toString()
         application {
             backendApplication(
                 BackendHttpDependencies(
                     bootstrapService = context.bootstrapService,
                     selectedModel = { context.settingsProvider.gigaModel.alias },
                     trustedProxyToken = { "proxy-secret" },
+                    ensureTrustedUser = context.userRepository::ensureUser,
                     userSettingsService = context.userSettingsService,
                     chatService = context.chatService,
                     messageService = context.messageService,
                     executionService = context.executionService,
+                    publicClientService = context.publicClientService,
                 )
             )
         }
 
         val response = client.post(BackendHttpRoutes.CHATS) {
-            trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
-            setBody("""{"title":"Новый чат"}""")
+            setBody(
+                """{"userId":"$userId","requestId":"create-1","clientType":"backend","title":"Новый чат"}"""
+            )
         }
         val chat = json.readTree(response.bodyAsText())["chat"]
         val chatId = UUID.fromString(chat["id"].asText())
-        val storedChat = runBlocking { context.chatRepository.get("user-a", chatId) }
+        val storedChat = runBlocking { context.chatRepository.get(userId, chatId) }
 
         assertEquals(HttpStatusCode.Created, response.status)
         assertEquals("Новый чат", chat["title"].asText())
-        assertEquals(false, chat["archived"].asBoolean())
         assertNotNull(storedChat)
-        assertEquals("user-a", storedChat.userId)
+        assertEquals(userId, storedChat.userId)
+        assertEquals("backend", storedChat.clientType)
+        assertEquals("create-1", storedChat.requestId)
     }
 
     @Test
@@ -632,8 +641,9 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `first trusted user request provisions namespace before chats messages and settings`() = testApplication {
+    fun `public chat creation provisions namespace before proxy messages and settings`() = testApplication {
         val context = routeTestContext()
+        val userId = UUID.randomUUID().toString()
         application {
             backendApplication(
                 BackendHttpDependencies(
@@ -645,39 +655,41 @@ class BackendStage3RouteTest {
                     chatService = context.chatService,
                     messageService = context.messageService,
                     executionService = context.executionService,
+                    publicClientService = context.publicClientService,
                 )
             )
         }
 
         val createChatResponse = client.post(BackendHttpRoutes.CHATS) {
-            trustedHeaders("fresh-user")
             contentType(ContentType.Application.Json)
-            setBody("""{"title":"Provisioned"}""")
+            setBody(
+                """{"userId":"$userId","requestId":"create-1","clientType":"backend","title":"Provisioned"}"""
+            )
         }
         val createChatPayload = json.readTree(createChatResponse.bodyAsText())
         val chatId = UUID.fromString(createChatPayload["chat"]["id"].asText())
         val createMessageResponse = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-            trustedHeaders("fresh-user")
+            trustedHeaders(userId)
             contentType(ContentType.Application.Json)
             setBody("""{"content":"hello"}""")
         }
         val settingsResponse = client.get(BackendHttpRoutes.SETTINGS) {
-            trustedHeaders("fresh-user")
+            trustedHeaders(userId)
         }
         val settingsPayload = json.readTree(settingsResponse.bodyAsText())["settings"]
 
-        val userRecord = runBlocking { context.userRepository.get("fresh-user") }
-        val storedChat = runBlocking { context.chatRepository.get("fresh-user", chatId) }
-        val storedMessages = runBlocking { context.messageRepository.list("fresh-user", chatId) }
-        val storedSettings = runBlocking { context.userSettingsRepository.get("fresh-user") }
+        val userRecord = runBlocking { context.userRepository.get(userId) }
+        val storedChat = runBlocking { context.chatRepository.get(userId, chatId) }
+        val storedMessages = runBlocking { context.messageRepository.list(userId, chatId) }
+        val storedSettings = runBlocking { context.userSettingsRepository.get(userId) }
 
         assertEquals(HttpStatusCode.Created, createChatResponse.status)
         assertEquals(HttpStatusCode.OK, createMessageResponse.status)
         assertEquals(HttpStatusCode.OK, settingsResponse.status)
         assertNotNull(userRecord)
         assertNotNull(storedSettings)
-        assertEquals("fresh-user", storedChat?.userId)
-        assertEquals(listOf("fresh-user"), storedMessages.map { it.userId }.distinct())
+        assertEquals(userId, storedChat?.userId)
+        assertEquals(listOf(userId), storedMessages.map { it.userId }.distinct())
         assertEquals(1, runBlocking { context.userRepository.count() })
         assertEquals("ru", settingsPayload["interfaceLanguage"].asText())
         assertEquals(context.settingsProvider.requestTimeoutMillis, settingsPayload["requestTimeoutMillis"].asLong())
@@ -1200,6 +1212,8 @@ internal data class RouteTestContext(
     val userSettingsRepository: MemoryUserSettingsRepository,
     val userProviderKeyRepository: MemoryUserProviderKeyRepository,
     val chatRepository: MemoryChatRepository,
+    val clientRequestRepository: MemoryClientRequestRepository,
+    val clientThreadRegistry: ClientThreadRuntimeRegistry,
     val messageRepository: MemoryMessageRepository,
     val executionRepository: MemoryAgentExecutionRepository,
     val optionRepository: MemoryOptionRepository,
@@ -1215,6 +1229,7 @@ internal data class RouteTestContext(
     val executionService: AgentExecutionService,
     val optionService: OptionService,
     val messageService: MessageService,
+    val publicClientService: PublicClientService,
 )
 
 internal fun routeTestContext(
@@ -1245,12 +1260,16 @@ internal fun routeTestContext(
         toolEvents = true,
     ),
     turnRunner: BackendConversationTurnRunner? = null,
+    agentId: AgentId = AgentId.default,
 ): RouteTestContext {
     val eventService = AgentEventService(
         chatRepository = chatRepository,
         eventRepository = eventRepository,
         eventBus = AgentEventBus(),
     )
+    val clientThreadRegistry = ClientThreadRuntimeRegistry()
+    val clientRequestRepository = MemoryClientRequestRepository()
+    val clientToolCatalog = BackendClientToolCatalog(clientThreadRegistry, toolCallRepository, eventService)
     val effectiveSettingsResolver = EffectiveSettingsResolver(
         baseSettingsProvider = settingsProvider,
         userSettingsRepository = userSettingsRepository,
@@ -1265,7 +1284,9 @@ internal fun routeTestContext(
         sessionRepository = AgentStateBackedSessionRepository(stateRepository),
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "global backend prompt",
+        configuredAgentId = agentId,
         toolCatalog = toolCatalog,
+        clientToolCatalog = clientToolCatalog,
         skillRegistryRepository = TestSkillRegistryRepository,
         skillCoreToolsFactory = testSkillCoreToolsFactory(),
         getKnowledgeTool = testCoreTool("GetKnowledge"),
@@ -1274,16 +1295,18 @@ internal fun routeTestContext(
         knowledgeStore = TestConversationKnowledgeStore,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
-    val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)
+    val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory, clientThreadRegistry)
     val requestFactory = AgentExecutionRequestFactory(
         effectiveSettingsResolver = effectiveSettingsResolver,
         featureFlags = featureFlags,
+        clientThreadRegistry = clientThreadRegistry,
     )
     val finalizer = AgentExecutionFinalizer(
         agentStateRepository = stateRepository,
         chatRepository = chatRepository,
         executionRepository = executionRepository,
         turnRunner = conversationTurnRunner,
+        clientThreadRegistry = clientThreadRegistry,
     )
     val executionService = AgentExecutionService(
         chatRepository = chatRepository,
@@ -1334,6 +1357,15 @@ internal fun routeTestContext(
         userSettingsRepository = userSettingsRepository,
         userSettingsService = userSettingsService,
     )
+    val publicClientService = PublicClientService(
+        chatRepository = chatRepository,
+        messageRepository = messageRepository,
+        executionRepository = executionRepository,
+        clientRequestRepository = clientRequestRepository,
+        toolCallRepository = toolCallRepository,
+        executionService = executionService,
+        registry = clientThreadRegistry,
+    )
     return RouteTestContext(
         featureFlags = featureFlags,
         settingsProvider = settingsProvider,
@@ -1341,6 +1373,8 @@ internal fun routeTestContext(
         userSettingsRepository = userSettingsRepository,
         userProviderKeyRepository = userProviderKeyRepository,
         chatRepository = chatRepository,
+        clientRequestRepository = clientRequestRepository,
+        clientThreadRegistry = clientThreadRegistry,
         messageRepository = messageRepository,
         executionRepository = executionRepository,
         optionRepository = optionRepository,
@@ -1356,6 +1390,7 @@ internal fun routeTestContext(
         executionService = executionService,
         optionService = optionService,
         messageService = messageService,
+        publicClientService = publicClientService,
     )
 }
 

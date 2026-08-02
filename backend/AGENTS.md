@@ -1,18 +1,18 @@
 # Backend
 
-`:backend` is the headless JVM HTTP host. It exposes public health and generated API documentation, protects `/v1/**` behind a trusted proxy, and runs chat turns through the shared `:agent` kernel without Compose or desktop-only services.
+`:backend` is the headless JVM HTTP host. It exposes public health, generated API documentation, and the credential-free Client-Souz chat creation and WebSocket boundary. Other `/v1/**` operations stay behind the trusted proxy. Chat turns run through the shared `:agent` kernel without Compose or desktop-only services.
 
 Before changing this module, read the [pain-point index](docs/pain-points.md) and the topics relevant to the area.
 
 ## Boundaries
 
-- Treat proxy-provided identity as the only user identity and scope every user-owned operation accordingly.
+- Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity only in `POST /v1/chats` and `message.submit.payload.device` and must keep those values equal for chat ownership.
 - Expose only backend-safe runtime tools; desktop integrations and UI dependencies must stay outside this module.
 - Apply each execution's immutable enabled-tool snapshot through request-scoped filters; keep core skill tools and user-scoped file-backed skills outside compiled-tool filtering.
 - Select the agent for new conversations from backend configuration and retain the agent stored in existing conversation state.
-- Keep product messages, execution lifecycle, agent continuation state, and durable/live events in their existing ownership layers.
+- Keep product messages, thread lifecycle, agent continuation state, client tool calls, idempotency receipts, and replay events in their existing ownership layers.
 - PostgreSQL is the structured repository store. User skill bundles and sandbox workspaces remain filesystem-backed and user-scoped.
-- Give each ordinary HTTP route explicit OpenAPI metadata. Keep WebSocket routes out of the generated document.
+- Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket route out of the generated document and maintain its schema in `docs/public-souz-contract`.
 
 ## Verification
 

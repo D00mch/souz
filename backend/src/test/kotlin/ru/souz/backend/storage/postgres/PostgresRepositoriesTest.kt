@@ -27,6 +27,7 @@ import ru.souz.backend.agent.session.AgentStateConflictException
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
+import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionAnswer
 import ru.souz.backend.options.model.OptionKind
@@ -34,6 +35,7 @@ import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionAnswerUpdateResult
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.ThreadCompletedPayload
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
@@ -53,6 +55,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.restJsonMapper
 
 class PostgresRepositoriesTest {
     
@@ -299,6 +302,94 @@ class PostgresRepositoriesTest {
             assertEquals(ToolCallStatus.FAILED, stored.status)
             assertEquals("OpenBrowser", stored.name)
             assertEquals(1_000L, stored.durationMs)
+        }
+    }
+
+    @Test
+    fun `public client state round trips through canonical tables`() = runTest {
+        val schema = newPostgresSchema("postgres_public_client")
+
+        postgresRepositories(schema).use { repositories ->
+            val userId = UUID.randomUUID().toString()
+            val chat = chat(userId, Instant.parse("2026-05-01T10:00:00Z")).copy(
+                clientType = "mobile_app",
+                requestId = "create-1",
+                payloadHash = "create-hash",
+            )
+            repositories.userRepository.ensureUser(userId)
+            repositories.chatRepository.create(chat)
+            assertEquals(chat, repositories.chatRepository.findByRequestId(userId, "create-1"))
+
+            val execution = execution(
+                userId = userId,
+                chatId = chat.id,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.RUNNING,
+                startedAt = Instant.parse("2026-05-01T10:01:00Z"),
+            ).copy(
+                revision = 2,
+                latestDeviceContextJson = """{"deviceId":"phone-1"}""",
+            )
+            repositories.executionRepository.create(execution)
+            val storedExecution = repositories.executionRepository.getByChat(userId, chat.id, execution.id)
+            assertEquals(2, storedExecution?.revision)
+            assertEquals("phone-1", storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
+
+            val receipt = ClientRequest(
+                chatId = chat.id,
+                requestId = "message-2",
+                kind = "message.submit",
+                threadId = execution.id,
+                payloadHash = "message-hash",
+                ackJson = """{"status":"accepted"}""",
+                receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
+            )
+            repositories.clientRequestRepository.create(receipt)
+            val storedReceipt = repositories.clientRequestRepository.get(chat.id, receipt.requestId)
+            assertEquals(receipt.copy(ackJson = storedReceipt?.ackJson.orEmpty()), storedReceipt)
+            assertEquals("accepted", storedReceipt?.ackJson?.let { restJsonMapper.readTree(it) }?.path("status")?.asText())
+
+            val toolContext = ToolCallContext(userId, chat.id.toString(), execution.id.toString(), "tool-1")
+            val deadline = Instant.parse("2026-05-01T10:06:00Z")
+            repositories.toolCallRepository.startClientCall(
+                context = toolContext,
+                name = "user.ask",
+                deviceId = "phone-1",
+                argumentsJson = """{"question":"Continue?"}""",
+                deadlineAt = deadline,
+                startedAt = Instant.parse("2026-05-01T10:01:02Z"),
+            )
+            repositories.toolCallRepository.completeClientCall(
+                context = toolContext,
+                status = ToolCallStatus.SUCCEEDED,
+                resultJson = """{"answer":"yes"}""",
+                errorJson = null,
+                payloadHash = "result-hash",
+                receivedAt = Instant.parse("2026-05-01T10:01:03Z"),
+            )
+            val storedTool = repositories.toolCallRepository.get(toolContext)
+            assertEquals("client", storedTool?.target)
+            assertEquals("phone-1", storedTool?.deviceId)
+            assertEquals(deadline, storedTool?.deadlineAt)
+            assertEquals("result-hash", storedTool?.resultPayloadHash)
+            assertEquals("yes", storedTool?.resultJson?.let { restJsonMapper.readTree(it) }?.path("answer")?.asText())
+
+            val eventService = AgentEventService(chatRepository = repositories.chatRepository, eventRepository = repositories.eventRepository, eventBus = AgentEventBus())
+            val firstTerminal = eventService.appendDurable(
+                userId = userId,
+                chatId = chat.id,
+                executionId = execution.id,
+                type = AgentEventType.THREAD_COMPLETED,
+                payload = ThreadCompletedPayload("done"),
+            )
+            val repeatedTerminal = eventService.appendDurable(
+                userId = userId,
+                chatId = chat.id,
+                executionId = execution.id,
+                type = AgentEventType.THREAD_CANCELLED,
+                payload = ru.souz.backend.events.model.ThreadCancelledPayload("user_requested"),
+            )
+            assertEquals(firstTerminal.id, repeatedTerminal.id)
         }
     }
 
@@ -689,6 +780,7 @@ class PostgresRepositoriesTest {
             dataSource = dataSource,
             userRepository = PostgresUserRepository(dataSource),
             chatRepository = PostgresChatRepository(dataSource),
+            clientRequestRepository = PostgresClientRequestRepository(dataSource),
             messageRepository = PostgresMessageRepository(dataSource),
             stateRepository = PostgresAgentStateRepository(dataSource),
             executionRepository = PostgresAgentExecutionRepository(dataSource),
@@ -897,6 +989,7 @@ private data class PostgresRepositoryBundle(
     val dataSource: com.zaxxer.hikari.HikariDataSource,
     val userRepository: PostgresUserRepository,
     val chatRepository: PostgresChatRepository,
+    val clientRequestRepository: PostgresClientRequestRepository,
     val messageRepository: PostgresMessageRepository,
     val stateRepository: PostgresAgentStateRepository,
     val executionRepository: PostgresAgentExecutionRepository,

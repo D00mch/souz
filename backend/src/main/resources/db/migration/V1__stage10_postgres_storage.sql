@@ -14,10 +14,14 @@ create table user_settings (
 create table chats (
   id uuid primary key,
   user_id text not null references users(id) on delete cascade,
+  client_type text not null,
+  request_id text not null,
+  payload_hash text not null,
   title text,
   archived boolean not null default false,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique(user_id, request_id)
 );
 
 create index chats_user_updated_idx
@@ -65,7 +69,9 @@ create table agent_executions (
   error_code text,
   error_message text,
   usage_json jsonb,
-  metadata jsonb not null default '{}'
+  metadata jsonb not null default '{}',
+  revision bigint not null default 1,
+  latest_device_context jsonb not null default '{}'
 );
 
 create index agent_executions_chat_started_idx
@@ -74,6 +80,17 @@ on agent_executions(user_id, chat_id, started_at desc);
 create unique index agent_executions_one_active_per_chat_idx
 on agent_executions(user_id, chat_id)
 where status in ('queued', 'running', 'waiting_option', 'cancelling');
+
+create table client_requests (
+  chat_id uuid not null references chats(id) on delete cascade,
+  request_id text not null,
+  kind text not null,
+  thread_id uuid references agent_executions(id) on delete cascade,
+  payload_hash text not null,
+  ack_json jsonb not null,
+  received_at timestamptz not null default now(),
+  primary key(chat_id, request_id)
+);
 
 create table options (
   id uuid primary key,
@@ -112,3 +129,7 @@ create table agent_events (
 
 create index agent_events_chat_seq_idx
 on agent_events(user_id, chat_id, seq);
+
+create unique index agent_events_one_terminal_per_thread_idx
+on agent_events(execution_id)
+where type in ('thread.completed', 'thread.failed', 'thread.cancelled');

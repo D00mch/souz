@@ -72,6 +72,21 @@ class PostgresAgentEventRepository(
         }
     }
 
+    override suspend fun findTerminal(executionId: UUID): AgentEvent? = dataSource.read { connection ->
+        connection.prepareStatement(
+            """
+            select * from agent_events
+            where execution_id = ? and type in ('thread.completed', 'thread.failed', 'thread.cancelled')
+            limit 1
+            """.trimIndent()
+        ).use { statement ->
+            statement.setObject(1, executionId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.toEvent() else null
+            }
+        }
+    }
+
     override suspend fun listByChat(
         userId: String,
         chatId: UUID,

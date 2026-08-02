@@ -119,6 +119,9 @@ internal class BackendConversationRuntime(
     }
 
     internal fun currentUsage(): LLMResponse.Usage = usageTrackingApi.cumulativeUsage()
+
+    internal suspend fun submitToActiveRun(input: String): Boolean =
+        executor.submitToActiveRun(activeAgentId, input)
 }
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
@@ -130,6 +133,7 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
+    private val clientToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
     private val getKnowledgeTool: LLMToolSetup,
@@ -152,8 +156,13 @@ class BackendConversationRuntimeFactory(
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
         settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
+        val executionToolCatalog = if (request.clientToolsEnabled) {
+            BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
+        } else {
+            toolCatalog
+        }
         val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
-            delegate = toolCatalog,
+            delegate = executionToolCatalog,
             settingsProvider = settingsProvider,
         )
         val requestToolsFilter = BackendRequestToolsFilter(request.enabledTools)
@@ -235,6 +244,16 @@ class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
         )
     }
+}
+
+private class BackendMergedToolCatalog(
+    primary: AgentToolCatalog,
+    additional: AgentToolCatalog,
+) : AgentToolCatalog {
+    override val toolsByCategory: Map<ru.souz.tool.ToolCategory, Map<String, LLMToolSetup>> =
+        (primary.toolsByCategory.keys + additional.toolsByCategory.keys).associateWith { category ->
+            primary.toolsByCategory[category].orEmpty() + additional.toolsByCategory[category].orEmpty()
+        }
 }
 
 private object BackendNoopSkillRegistryRepository : SkillRegistryRepository {

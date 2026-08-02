@@ -21,6 +21,8 @@ interface AgentEventRepository {
 
     suspend fun get(userId: String, eventId: UUID): AgentEvent?
 
+    suspend fun findTerminal(executionId: UUID): AgentEvent? = null
+
     suspend fun listByChat(
         userId: String,
         chatId: UUID,

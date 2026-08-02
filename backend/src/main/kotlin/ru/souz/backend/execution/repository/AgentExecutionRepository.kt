@@ -15,6 +15,7 @@ interface AgentExecutionRepository {
     suspend fun getByChat(userId: String, chatId: UUID, executionId: UUID): AgentExecution?
     suspend fun findByClientMessageId(userId: String, chatId: UUID, clientMessageId: String): AgentExecution?
     suspend fun findActive(userId: String, chatId: UUID): AgentExecution?
+    suspend fun failInterruptedClientThreads(): List<AgentExecution> = emptyList()
     suspend fun listByChat(
         userId: String,
         chatId: UUID,

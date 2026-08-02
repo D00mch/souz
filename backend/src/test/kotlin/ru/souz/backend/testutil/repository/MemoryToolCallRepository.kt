@@ -7,6 +7,7 @@ import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
+import ru.souz.llms.restJsonMapper
 
 class MemoryToolCallRepository(
     maxEntries: Int,
@@ -56,9 +57,9 @@ class MemoryToolCallRepository(
             startedAt = finishedAt,
         )).copy(
             name = name,
-            status = ToolCallStatus.FINISHED,
-            resultPreview = resultPreview,
-            error = null,
+            status = ToolCallStatus.SUCCEEDED,
+            resultJson = resultPreview,
+            errorJson = null,
             finishedAt = finishedAt,
             durationMs = durationMs,
         )
@@ -87,8 +88,8 @@ class MemoryToolCallRepository(
         )).copy(
             name = name,
             status = ToolCallStatus.FAILED,
-            resultPreview = null,
-            error = error,
+            resultJson = null,
+            errorJson = restJsonMapper.writeValueAsString(mapOf("message" to error)),
             finishedAt = finishedAt,
             durationMs = durationMs,
         )
@@ -114,6 +115,49 @@ class MemoryToolCallRepository(
             .sortedWith(compareBy<ToolCall> { it.startedAt }.thenBy { it.toolCallId })
             .take(limit)
             .toList()
+    }
+
+    override suspend fun startClientCall(
+        context: ToolCallContext,
+        name: String,
+        deviceId: String?,
+        argumentsJson: String,
+        deadlineAt: Instant,
+        startedAt: Instant,
+    ): ToolCall = mutex.withLock {
+        ToolCall(
+            userId = context.userId,
+            chatId = context.chatId,
+            executionId = context.executionId,
+            toolCallId = context.toolCallId,
+            name = name,
+            target = "client",
+            deviceId = deviceId,
+            status = ToolCallStatus.RUNNING,
+            argumentsJson = argumentsJson,
+            deadlineAt = deadlineAt,
+            startedAt = startedAt,
+        ).also { toolCalls[context.toKey()] = it }
+    }
+
+    override suspend fun completeClientCall(
+        context: ToolCallContext,
+        status: ToolCallStatus,
+        resultJson: String?,
+        errorJson: String?,
+        payloadHash: String,
+        receivedAt: Instant,
+    ): ToolCall? = mutex.withLock {
+        val current = toolCalls[context.toKey()] ?: return@withLock null
+        if (current.status != ToolCallStatus.RUNNING || current.target != "client") return@withLock null
+        current.copy(
+            status = status,
+            resultJson = resultJson,
+            errorJson = errorJson,
+            resultPayloadHash = payloadHash,
+            resultReceivedAt = receivedAt,
+            finishedAt = receivedAt,
+        ).also { toolCalls[context.toKey()] = it }
     }
 }
 
