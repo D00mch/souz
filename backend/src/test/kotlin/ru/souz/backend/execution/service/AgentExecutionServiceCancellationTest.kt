@@ -25,7 +25,9 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
@@ -69,12 +71,53 @@ class AgentExecutionServiceCancellationTest {
             context.close()
         }
     }
+
+    @Test
+    fun `cancel execution re-reads latest state before writing cancelling`() = runTest {
+        val memoryRepository = MemoryAgentExecutionRepository()
+        val racingRepository = CompletingOnSecondReadExecutionRepository(memoryRepository)
+        val context = cancellationTestContext(executionRepository = racingRepository)
+        try {
+            val execution = AgentExecution(
+                id = UUID.randomUUID(),
+                userId = context.chat.userId,
+                chatId = context.chat.id,
+                userMessageId = null,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.RUNNING,
+                requestId = null,
+                clientMessageId = null,
+                model = null,
+                provider = null,
+                startedAt = Instant.parse("2026-05-02T09:01:00Z"),
+                finishedAt = null,
+                cancelRequested = false,
+                errorCode = null,
+                errorMessage = null,
+                usage = null,
+                metadata = emptyMap(),
+            )
+            memoryRepository.create(execution)
+            racingRepository.completeOnSecondRead = execution.id
+
+            val error = assertFailsWith<BackendV1Exception> {
+                context.service.cancelExecution(context.chat.userId, context.chat.id, execution.id)
+            }
+            val stored = memoryRepository.getByChat(context.chat.userId, context.chat.id, execution.id)
+
+            assertEquals("invalid_request", error.code)
+            assertEquals(AgentExecutionStatus.COMPLETED, stored?.status)
+        } finally {
+            context.close()
+        }
+    }
 }
 
-private suspend fun cancellationTestContext(): CancellationTestContext {
+private suspend fun cancellationTestContext(
+    executionRepository: AgentExecutionRepository = MemoryAgentExecutionRepository(),
+): CancellationTestContext {
     val chatRepository = MemoryChatRepository()
     val messageRepository = MemoryMessageRepository()
-    val executionRepository = MemoryAgentExecutionRepository()
     val optionRepository = MemoryOptionRepository()
     val eventRepository = MemoryAgentEventRepository()
     val userSettingsRepository = MemoryUserSettingsRepository()
@@ -150,12 +193,39 @@ private suspend fun cancellationTestContext(): CancellationTestContext {
 private data class CancellationTestContext(
     val service: AgentExecutionService,
     val chat: Chat,
-    val executionRepository: MemoryAgentExecutionRepository,
+    val executionRepository: AgentExecutionRepository,
     val eventRepository: MemoryAgentEventRepository,
     val executionScope: CoroutineScope,
 ) : AutoCloseable {
     override fun close() {
         executionScope.cancel()
+    }
+}
+
+private class CompletingOnSecondReadExecutionRepository(
+    private val delegate: MemoryAgentExecutionRepository,
+) : AgentExecutionRepository by delegate {
+    var completeOnSecondRead: UUID? = null
+    private var matchingReads: Int = 0
+
+    override suspend fun getByChat(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+    ): AgentExecution? {
+        val current = delegate.getByChat(userId, chatId, executionId) ?: return null
+        if (executionId == completeOnSecondRead) {
+            matchingReads += 1
+            if (matchingReads == 2) {
+                return delegate.update(
+                    current.copy(
+                        status = AgentExecutionStatus.COMPLETED,
+                        finishedAt = Instant.parse("2026-05-02T09:01:05Z"),
+                    )
+                )
+            }
+        }
+        return current
     }
 }
 

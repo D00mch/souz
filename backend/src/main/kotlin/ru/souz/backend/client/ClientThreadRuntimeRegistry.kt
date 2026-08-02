@@ -102,6 +102,10 @@ internal class ClientThreadRuntimeRegistry(
                 return@withLock null
             }
             val result = commit()
+            if (result == null) {
+                clearAck(threadId, state, requestId, pendingAck)
+                return@withLock null
+            }
             state.latestDevice = device
             result
         } catch (error: Exception) {

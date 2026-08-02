@@ -13,19 +13,26 @@ import io.ktor.server.testing.testApplication
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
+import java.time.Clock
+import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
@@ -777,6 +784,44 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `recovery sweep retries after a retained lease expires`() = runTest {
+        val context = publicContext()
+        val clock = MutableClock(Instant.parse("2026-08-02T21:00:00Z"))
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-retained", "backend", null).chat
+        val threadId = UUID.randomUUID()
+        context.executionRepository.create(
+            clientExecution(
+                userId = userId,
+                chatId = chat.id,
+                threadId = threadId,
+                leaseUntil = clock.instant().plusSeconds(5),
+            )
+        )
+        val recovery = ClientThreadRecoveryService(
+            executionRepository = context.executionRepository,
+            eventService = context.eventService,
+            clock = clock,
+            recoveryInterval = Duration.ofSeconds(1),
+        )
+
+        recovery.recover()
+        assertEquals(AgentExecutionStatus.RUNNING, context.executionRepository.getByChat(userId, chat.id, threadId)?.status)
+
+        clock.current = clock.current.plusSeconds(6)
+        val job = recovery.start(this)
+        advanceTimeBy(1_000)
+        runCurrent()
+        job.cancelAndJoin()
+
+        val recoveredExecution = context.executionRepository.getByChat(userId, chat.id, threadId)
+        val events = context.eventRepository.listByChat(userId, chat.id)
+        assertEquals(AgentExecutionStatus.FAILED, recoveredExecution?.status)
+        assertEquals(listOf(AgentEventType.THREAD_FAILED), events.map { it.type })
+    }
+
+    @Test
     fun `thread cancel is acknowledged before the cancelled terminal event`() = testApplication {
         val api = CancellableChatApi()
         val context = publicContext(api)
@@ -1013,4 +1058,14 @@ private class LostCompletionRaceToolCallRepository(
         )
         return null
     }
+}
+
+private class MutableClock(
+    var current: Instant,
+) : Clock() {
+    override fun getZone(): ZoneId = ZoneId.of("UTC")
+
+    override fun withZone(zone: ZoneId): Clock = this
+
+    override fun instant(): Instant = current
 }

@@ -73,6 +73,7 @@ import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryAgentStateRepository
 import ru.souz.backend.testutil.repository.MemoryChatRepository
+import ru.souz.backend.testutil.repository.MemoryClientInputRepository
 import ru.souz.backend.testutil.repository.MemoryClientRequestRepository
 import ru.souz.backend.testutil.repository.MemoryOptionRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
@@ -1213,6 +1214,7 @@ internal data class RouteTestContext(
     val userSettingsRepository: MemoryUserSettingsRepository,
     val userProviderKeyRepository: MemoryUserProviderKeyRepository,
     val chatRepository: MemoryChatRepository,
+    val clientInputRepository: MemoryClientInputRepository,
     val clientRequestRepository: MemoryClientRequestRepository,
     val clientThreadRegistry: ClientThreadRuntimeRegistry,
     val messageRepository: MemoryMessageRepository,
@@ -1270,6 +1272,7 @@ internal fun routeTestContext(
     )
     val clientThreadRegistry = ClientThreadRuntimeRegistry()
     val clientRequestRepository = MemoryClientRequestRepository()
+    val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
     val clientToolCatalog = BackendClientToolCatalog(clientThreadRegistry, toolCallRepository, eventService)
     val effectiveSettingsResolver = EffectiveSettingsResolver(
         baseSettingsProvider = settingsProvider,
@@ -1362,8 +1365,8 @@ internal fun routeTestContext(
     )
     val publicClientService = PublicClientService(
         chatRepository = chatRepository,
-        messageRepository = messageRepository,
         executionRepository = executionRepository,
+        clientInputRepository = clientInputRepository,
         clientRequestRepository = clientRequestRepository,
         toolCallRepository = toolCallRepository,
         executionService = executionService,
@@ -1376,6 +1379,7 @@ internal fun routeTestContext(
         userSettingsRepository = userSettingsRepository,
         userProviderKeyRepository = userProviderKeyRepository,
         chatRepository = chatRepository,
+        clientInputRepository = clientInputRepository,
         clientRequestRepository = clientRequestRepository,
         clientThreadRegistry = clientThreadRegistry,
         messageRepository = messageRepository,

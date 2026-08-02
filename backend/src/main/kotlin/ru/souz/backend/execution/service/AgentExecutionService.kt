@@ -274,24 +274,33 @@ class AgentExecutionService internal constructor(
     }
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
-        if (!execution.status.isActiveForCancellation()) {
-            throw invalidV1Request("Execution is not active.")
-        }
-        val cancellingExecution = executionRepository.update(
-            execution.copy(
-                status = AgentExecutionStatus.CANCELLING,
-                cancelRequested = true,
+        return finalizer.withTerminalTransition(execution.id) {
+            val currentExecution = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)
+                ?: throw BackendV1Exception(
+                    status = HttpStatusCode.NotFound,
+                    code = "execution_not_found",
+                    message = "Execution not found.",
+                )
+            if (!currentExecution.status.isActiveForCancellation()) {
+                throw invalidV1Request("Execution is not active.")
+            }
+            val cancellingExecution = executionRepository.update(
+                currentExecution.copy(
+                    status = AgentExecutionStatus.CANCELLING,
+                    cancelRequested = true,
+                )
             )
-        )
-        if (launcher.cancel(cancellingExecution.id)) {
-            return cancellingExecution
+            if (launcher.cancel(cancellingExecution.id)) {
+                cancellingExecution
+            } else {
+                finalizer.persistCancelled(
+                    executionId = cancellingExecution.id,
+                    userId = cancellingExecution.userId,
+                    chatId = cancellingExecution.chatId,
+                    usage = cancellingExecution.usage,
+                )
+            }
         }
-        return finalizer.markCancelled(
-            executionId = cancellingExecution.id,
-            userId = cancellingExecution.userId,
-            chatId = cancellingExecution.chatId,
-            usage = cancellingExecution.usage,
-        )
     }
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID): Chat =

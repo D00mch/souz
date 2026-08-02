@@ -28,6 +28,7 @@ import ru.souz.backend.client.BackendClientToolCatalog
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.client.ClientThreadRecoveryService
+import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.repository.OptionRepository
@@ -58,6 +59,7 @@ import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
+import ru.souz.backend.storage.postgres.PostgresClientInputRepository
 import ru.souz.backend.storage.postgres.PostgresClientRequestRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
@@ -123,6 +125,7 @@ fun backendDiModule(
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
     bindSingleton<ClientRequestRepository> { PostgresClientRequestRepository(instance()) }
+    bindSingleton<ClientInputRepository> { PostgresClientInputRepository(instance()) }
     bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
     bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance()) }
@@ -322,8 +325,8 @@ fun backendDiModule(
     bindSingleton {
         PublicClientService(
             chatRepository = instance(),
-            messageRepository = instance(),
             executionRepository = instance(),
+            clientInputRepository = instance(),
             clientRequestRepository = instance(),
             toolCallRepository = instance(),
             executionService = instance(),
@@ -334,6 +337,7 @@ fun backendDiModule(
         ClientThreadRecoveryService(
             executionRepository = instance(),
             eventService = instance(),
+            clock = instance(),
         )
     }
     bindSingleton {
