@@ -65,6 +65,9 @@ fun MainScreen(
         onConsumePendingVoiceInputDraft = { token ->
             viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
         },
+        onDiscardPendingVoiceInputDraft = { token ->
+            viewModel.send(MainEvent.DiscardPendingVoiceInputDraft(token))
+        },
         onToggleToolModifyReviewSelection = { messageId, itemId ->
             viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
         },

@@ -177,6 +177,7 @@ sealed interface MainEvent : VMEvent {
     data object StartListening : MainEvent
     data object StopListening : MainEvent
     data class ConsumePendingVoiceInputDraft(val token: Long) : MainEvent
+    data class DiscardPendingVoiceInputDraft(val token: Long) : MainEvent
     data object RequestNewConversation : MainEvent
     data object ConfirmNewConversation : MainEvent
     data object DismissNewConversationDialog : MainEvent

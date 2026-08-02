@@ -10,10 +10,13 @@ interface VoiceInputController {
     suspend fun initialize(
         scope: CoroutineScope,
         onRecognizedInput: suspend (RecognizedVoiceInput) -> Unit,
-        voiceInputStartBlocker: suspend () -> String? = { null },
+        voiceInputStartBlocker: suspend (VoiceInputRoute) -> String? = { null },
     )
 
-    suspend fun startRecording(scope: CoroutineScope)
+    suspend fun startRecording(
+        scope: CoroutineScope,
+        voiceInputStartBlocker: suspend (VoiceInputRoute) -> String? = { null },
+    )
     suspend fun stopRecording()
 }
 
@@ -33,9 +36,12 @@ object NoopVoiceInputController : VoiceInputController {
     override suspend fun initialize(
         scope: CoroutineScope,
         onRecognizedInput: suspend (RecognizedVoiceInput) -> Unit,
-        voiceInputStartBlocker: suspend () -> String?,
+        voiceInputStartBlocker: suspend (VoiceInputRoute) -> String?,
     ) = Unit
 
-    override suspend fun startRecording(scope: CoroutineScope) = Unit
+    override suspend fun startRecording(
+        scope: CoroutineScope,
+        voiceInputStartBlocker: suspend (VoiceInputRoute) -> String?,
+    ) = Unit
     override suspend fun stopRecording() = Unit
 }

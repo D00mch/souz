@@ -201,13 +201,7 @@ class MainViewModel(
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
             MainEvent.StartListening -> {
-                val blockedReason = voiceInputBlockReason()
-                if (blockedReason != null) {
-                    setState { copy(statusMessage = blockedReason, isListening = false) }
-                    send(MainEffect.ShowError(blockedReason))
-                } else {
-                    voiceInputUseCase.startRecording(viewModelScope)
-                }
+                voiceInputUseCase.startRecording(viewModelScope, ::voiceInputBlockReason)
             }
             MainEvent.StopListening -> voiceInputUseCase.stopRecording()
             is MainEvent.ConsumePendingVoiceInputDraft -> {
@@ -215,6 +209,11 @@ class MainViewModel(
                     setState {
                         copy(pendingVoiceInputDraft = pendingVoiceInputDraft?.copy(text = null))
                     }
+                }
+            }
+            is MainEvent.DiscardPendingVoiceInputDraft -> {
+                if (event.token == currentState.pendingVoiceInputDraft?.token) {
+                    setState { copy(pendingVoiceInputDraft = null) }
                 }
             }
             MainEvent.RequestNewConversation -> requestNewConversation()
@@ -532,10 +531,12 @@ class MainViewModel(
             AmbientSpeechAvailability.AlreadyRunning -> ""
         }
 
-    private suspend fun voiceInputBlockReason(): String? = when {
+    private suspend fun voiceInputBlockReason(route: VoiceInputRoute): String? = when {
         currentState.isAwaitingToolReview -> getString(Res.string.voice_error_tool_review_pending)
         ambientModeController.isMicrophoneBusyForVoiceInput ->
             getString(Res.string.voice_error_microphone_busy_ambient)
+        currentState.pendingVoiceInputDraft?.route?.let { it != route } == true ->
+            getString(Res.string.voice_error_reviewed_draft_route_changed)
         else -> null
     }
 

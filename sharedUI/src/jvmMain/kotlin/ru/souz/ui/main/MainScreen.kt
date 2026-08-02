@@ -132,6 +132,7 @@ fun MainScreenContent(
     onSendChatMessage: (String, Long?) -> Unit = { _, _ -> },
     onClearContext: () -> Unit = {},
     onConsumePendingVoiceInputDraft: (Long) -> Unit = {},
+    onDiscardPendingVoiceInputDraft: (Long) -> Unit = {},
     onToggleToolModifyReviewSelection: (String, Long) -> Unit = { _, _ -> },
     onResolveToolModifyReview: (String, ToolModifySelectionAction) -> Unit = { _, _ -> },
     onApproveToolPermission: () -> Unit = {},
@@ -373,6 +374,7 @@ fun MainScreenContent(
                     onSendMessage = onSendChatMessage,
                     onCancelProcessing = onClearContext,
                     onConsumePendingVoiceInputDraft = onConsumePendingVoiceInputDraft,
+                    onDiscardPendingVoiceInputDraft = onDiscardPendingVoiceInputDraft,
                     onStartListening = onStartListening,
                     onStopListening = onStopListening,
                     onStopSpeech = onStopSpeech,
@@ -976,6 +978,7 @@ fun ChatModeContent(
     onSendMessage: (String, Long?) -> Unit,
     onCancelProcessing: () -> Unit = {},
     onConsumePendingVoiceInputDraft: (Long) -> Unit,
+    onDiscardPendingVoiceInputDraft: (Long) -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onStopSpeech: () -> Unit,
@@ -1079,6 +1082,7 @@ fun ChatModeContent(
                     .weight(1f)
                     .fillMaxWidth(),
                 onSuggestionClick = { command ->
+                    reviewedVoiceInputDraftToken?.let(onDiscardPendingVoiceInputDraft)
                     onSendMessage(command, null)
                     inputText = TextFieldValue("")
                     reviewedVoiceInputDraftToken = null
@@ -1157,7 +1161,10 @@ fun ChatModeContent(
             value = inputText,
             onValueChange = {
                 inputText = it
-                if (it.text.isEmpty()) reviewedVoiceInputDraftToken = null
+                if (it.text.isEmpty()) {
+                    reviewedVoiceInputDraftToken?.let(onDiscardPendingVoiceInputDraft)
+                    reviewedVoiceInputDraftToken = null
+                }
             },
             onSend = {
                 val currentText = inputText.text
