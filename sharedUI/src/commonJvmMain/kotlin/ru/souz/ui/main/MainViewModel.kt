@@ -218,7 +218,7 @@ class MainViewModel(
             MainEvent.PickChatAttachments -> pickChatAttachments()
             is MainEvent.AttachDroppedFiles -> addAttachedFiles(event.paths)
             is MainEvent.RemoveChatAttachment -> removeAttachedFile(event.path)
-            is MainEvent.UpdateChatInputText -> updateChatInputText(event.text)
+            is MainEvent.UpdateChatInputText -> updateChatInputText(event.text, event.localEditRevision)
             is MainEvent.UpdateChatSearchQuery -> setStateAndReindexChatSearch {
                 copy(chatSearch = chatSearchEngine.updateQuery(chatSearch, event.query))
             }
@@ -302,14 +302,10 @@ class MainViewModel(
             )
             setState {
                 val draft = pendingVoiceInputDraft.withSegment(input.route, segment)
-                val mergedText = draft.segmentsAfter(reviewedVoiceInputDraftToken)
-                    .fold(chatInputText) { current, next ->
-                        mergeVoiceDraftIntoInputText(current, next.text)
-                    }
                 copy(
                     pendingVoiceInputDraft = draft,
-                    chatInputText = mergedText,
-                    reviewedVoiceInputDraftToken = draft.token,
+                    chatInputText = mergeVoiceDraftIntoInputText(chatInputText, segment.text),
+                    chatInputLocalEditRevision = null,
                 )
             }
             return
@@ -337,17 +333,13 @@ class MainViewModel(
 
     private suspend fun handleSendChatMessage(event: MainEvent.SendChatMessage) {
         val inputText = event.text
-        val voiceDraftToken = event.voiceInputDraftToken
-        val reviewedVoiceDraft = voiceDraftToken?.let { token ->
-            currentState.pendingVoiceInputDraft?.takeIf { it.token == token }
-                ?: return rejectChatInput(inputText)
-        }
+        val reviewedVoiceDraft = currentState.pendingVoiceInputDraft
 
         reviewedVoiceDraft?.activeRunRequestId?.let { requestId ->
             submitActiveRunInput(
                 input = inputText,
                 expectedRequestId = requestId,
-                voiceDraftToken = voiceDraftToken,
+                isVoice = true,
             )
             return
         }
@@ -357,10 +349,10 @@ class MainViewModel(
             return
         }
 
-        sendNewChatMessage(inputText, voiceDraftToken)
+        sendNewChatMessage(inputText, isVoice = reviewedVoiceDraft != null)
     }
 
-    private suspend fun sendNewChatMessage(inputText: String, voiceDraftToken: Long?) {
+    private suspend fun sendNewChatMessage(inputText: String, isVoice: Boolean = false) {
         val attachments = currentState.attachedFiles
         val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
             input = inputText,
@@ -377,36 +369,30 @@ class MainViewModel(
                 chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(inputText, accepted = true),
                 pendingVoiceInputDraft = null,
                 chatInputText = "",
-                reviewedVoiceInputDraftToken = null,
+                chatInputLocalEditRevision = null,
             )
         }
         chatUseCase.sendChatMessage(
             scope = viewModelScope,
-            isVoice = false,
+            isVoice = isVoice,
             chatMessage = composedMessage,
             displayMessage = inputText,
             attachedFiles = attachments,
-            requestSource = ChatRequestSource.CHAT_UI,
+            requestSource = if (isVoice) ChatRequestSource.VOICE_INPUT else ChatRequestSource.CHAT_UI,
         )
     }
 
     private suspend fun submitActiveRunInput(
         input: String,
         expectedRequestId: Long? = null,
-        voiceDraftToken: Long? = null,
+        isVoice: Boolean = false,
     ) {
-        val accepted = chatUseCase.submitToActiveRun(input, expectedRequestId)
+        val accepted = chatUseCase.submitToActiveRun(input, expectedRequestId, isVoice)
         publishChatInputSubmissionFeedback(
             input = input,
             accepted = accepted,
-            consumedVoiceDraftToken = voiceDraftToken.takeIf { accepted },
         )
         if (!accepted) showActiveRunInputRejected()
-    }
-
-    private suspend fun rejectChatInput(input: String) {
-        publishChatInputSubmissionFeedback(input, accepted = false)
-        showActiveRunInputRejected()
     }
 
     private suspend fun showActiveRunInputRejected() =
@@ -415,30 +401,30 @@ class MainViewModel(
     private suspend fun publishChatInputSubmissionFeedback(
         input: String,
         accepted: Boolean,
-        consumedVoiceDraftToken: Long? = null,
     ) {
         setState {
             copy(
                 chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted),
-                pendingVoiceInputDraft = pendingVoiceInputDraft
-                    .takeUnless { accepted }
-                    .withoutToken(consumedVoiceDraftToken),
+                pendingVoiceInputDraft = pendingVoiceInputDraft.takeUnless { accepted },
                 chatInputText = if (accepted) "" else chatInputText,
-                reviewedVoiceInputDraftToken = if (accepted) null else reviewedVoiceInputDraftToken,
+                chatInputLocalEditRevision = if (accepted) null else chatInputLocalEditRevision,
             )
         }
     }
 
-    private suspend fun updateChatInputText(text: String) {
+    private suspend fun updateChatInputText(text: String, localEditRevision: Long?) {
         setState {
             if (text.isEmpty()) {
                 copy(
                     chatInputText = "",
-                    reviewedVoiceInputDraftToken = null,
+                    chatInputLocalEditRevision = localEditRevision,
                     pendingVoiceInputDraft = null,
                 )
             } else {
-                copy(chatInputText = text)
+                copy(
+                    chatInputText = text,
+                    chatInputLocalEditRevision = localEditRevision,
+                )
             }
         }
     }
@@ -671,7 +657,7 @@ class MainViewModel(
                 attachedFiles = emptyList(),
                 pendingVoiceInputDraft = null,
                 chatInputText = "",
-                reviewedVoiceInputDraftToken = null,
+                chatInputLocalEditRevision = null,
                 showNewChatDialog = false,
                 chatSearch = ChatSearchState(),
             )
@@ -862,7 +848,7 @@ class MainViewModel(
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         chatInputText = "",
-                        reviewedVoiceInputDraftToken = null,
+                        chatInputLocalEditRevision = null,
                         showNewChatDialog = false,
                         chatSearch = ChatSearchState(),
                     )
@@ -881,7 +867,7 @@ class MainViewModel(
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         chatInputText = "",
-                        reviewedVoiceInputDraftToken = null,
+                        chatInputLocalEditRevision = null,
                         showNewChatDialog = false,
                         chatSearch = ChatSearchState(),
                     )

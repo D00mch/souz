@@ -130,9 +130,6 @@ data class PendingVoiceInputDraft(
 
     val activeRunRequestId: Long?
         get() = (route as? VoiceInputRoute.ActiveRunContinuation)?.requestId
-
-    fun segmentsAfter(token: Long?): List<VoiceInputDraftSegment> =
-        segments.filter { segment -> token?.let { segment.token > it } ?: true }
 }
 
 internal fun PendingVoiceInputDraft?.withSegment(
@@ -140,9 +137,6 @@ internal fun PendingVoiceInputDraft?.withSegment(
     segment: VoiceInputDraftSegment,
 ): PendingVoiceInputDraft =
     if (this?.route == route) copy(segments = segments + segment) else PendingVoiceInputDraft(listOf(segment), route)
-
-internal fun PendingVoiceInputDraft?.withoutToken(token: Long?): PendingVoiceInputDraft? =
-    if (token != null && this?.token == token) null else this
 
 internal data class PendingChatInputSubmission(
     val input: String,
@@ -170,7 +164,7 @@ data class MainState(
     val supportsActiveRunInput: Boolean = false,
     val chatInputSubmissionFeedback: ChatInputSubmissionFeedback = ChatInputSubmissionFeedback(),
     val chatInputText: String = "",
-    val reviewedVoiceInputDraftToken: Long? = null,
+    val chatInputLocalEditRevision: Long? = null,
     val agentHistory: List<LLMRequest.Message> = emptyList(),
     val isThinkingPanelOpen: Boolean = false,
     val chatMessages: List<ChatMessage> = emptyList(),
@@ -218,11 +212,11 @@ sealed interface MainEvent : VMEvent {
     data object PickChatAttachments : MainEvent
     data class AttachDroppedFiles(val paths: List<String>) : MainEvent
     data class RemoveChatAttachment(val path: String) : MainEvent
-    data class UpdateChatInputText(val text: String) : MainEvent
-    data class SendChatMessage(
+    data class UpdateChatInputText(
         val text: String,
-        val voiceInputDraftToken: Long? = null,
+        val localEditRevision: Long? = null,
     ) : MainEvent
+    data class SendChatMessage(val text: String) : MainEvent
     data class OpenPath(val path: String) : MainEvent
     data class UpdateChatSearchQuery(val query: String) : MainEvent
     data object SelectNextChatSearchResult : MainEvent

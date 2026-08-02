@@ -611,18 +611,13 @@ class MainViewModelTest {
                 viewModel.handleEvent(MainEvent.StopListening)
 
                 val stateWithDraft = awaitState(viewModel) { it.pendingVoiceInputDraft?.text == draft }
-                val draftToken = requireNotNull(stateWithDraft.pendingVoiceInputDraft).token
+                assertEquals(draft, requireNotNull(stateWithDraft.pendingVoiceInputDraft).text)
 
                 response.complete("initial answer")
                 awaitState(viewModel) { !it.isProcessing }
 
                 val feedbackRevision = viewModel.uiState.value.chatInputSubmissionFeedback.revision
-                viewModel.handleEvent(
-                    MainEvent.SendChatMessage(
-                        text = draft,
-                        voiceInputDraftToken = draftToken,
-                    )
-                )
+                viewModel.handleEvent(MainEvent.SendChatMessage(draft))
 
                 val rejectedState = awaitState(viewModel) {
                     it.chatInputSubmissionFeedback.revision > feedbackRevision
@@ -630,6 +625,49 @@ class MainViewModelTest {
                 assertFalse(rejectedState.chatInputSubmissionFeedback.accepted)
                 assertEquals(listOf("initial request"), harness.executedInputs)
                 assertTrue(harness.submittedActiveRunInputs.isEmpty())
+            } finally {
+                response.complete("initial answer")
+                harness.clear()
+            }
+        }
+
+    @Test
+    fun `reviewed voice continuation preserves voice modality when submitted to active run`() =
+        runTest(mainDispatcher) {
+            val response = CompletableDeferred<String>()
+            val draft = "reviewed voice continuation"
+            val harness = createHarness(
+                activeAgentId = AgentId.SKILLS_GRAPH,
+                voiceInputReviewEnabled = true,
+                executeBehavior = { response.await() },
+                submitActiveRunBehavior = { true },
+                recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(draft)) },
+            )
+
+            try {
+                val viewModel = harness.viewModel
+                advanceUntilIdle()
+
+                viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+                awaitState(viewModel) { it.isProcessing }
+
+                recordVoiceInput(viewModel, byteArrayOf(9, 8, 7))
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == draft }
+
+                viewModel.handleEvent(MainEvent.SendChatMessage(draft))
+
+                val continuedState = awaitState(viewModel) { state ->
+                    state.chatMessages.any { it.isUser && it.text == draft }
+                }
+                assertTrue(continuedState.chatMessages.last { it.text == draft }.isVoice)
+                assertEquals(listOf("initial request"), harness.executedInputs)
+                assertEquals(listOf(draft), harness.submittedActiveRunInputs)
+
+                response.complete("initial answer")
+                val finalState = awaitState(viewModel) { state ->
+                    !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "initial answer" }
+                }
+                assertTrue(finalState.chatMessages.last { !it.isUser }.isVoice)
             } finally {
                 response.complete("initial answer")
                 harness.clear()
@@ -661,8 +699,7 @@ class MainViewModelTest {
                 recordVoiceInput(viewModel, byteArrayOf(9, 8, 7))
                 val stateWithDraft = awaitState(viewModel) {
                     it.pendingVoiceInputDraft?.text == firstDraft &&
-                        it.chatInputText == firstDraft &&
-                        it.reviewedVoiceInputDraftToken == it.pendingVoiceInputDraft.token
+                        it.chatInputText == firstDraft
                 }
                 val activeRunDraft = requireNotNull(stateWithDraft.pendingVoiceInputDraft)
 
@@ -676,13 +713,11 @@ class MainViewModelTest {
                 assertFalse(blockedState.isListening)
                 assertEquals(1, audioRecorder.startCalls)
                 assertEquals(activeRunDraft.token, blockedState.pendingVoiceInputDraft?.token)
-                assertEquals(activeRunDraft.token, blockedState.reviewedVoiceInputDraftToken)
 
                 viewModel.handleEvent(MainEvent.UpdateChatInputText(""))
                 val clearedInputState = awaitState(viewModel) {
                     it.pendingVoiceInputDraft == null &&
-                        it.chatInputText.isEmpty() &&
-                        it.reviewedVoiceInputDraftToken == null
+                        it.chatInputText.isEmpty()
                 }
                 assertNull(clearedInputState.pendingVoiceInputDraft)
             } finally {
@@ -867,8 +902,7 @@ class MainViewModelTest {
                 recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
                 val firstState = awaitState(viewModel) {
                     it.pendingVoiceInputDraft?.text == firstDraft &&
-                        it.chatInputText == firstDraft &&
-                        it.reviewedVoiceInputDraftToken == it.pendingVoiceInputDraft.token
+                        it.chatInputText == firstDraft
                 }
                 assertTrue(firstState.chatMessages.isEmpty())
                 assertFalse(firstState.isProcessing)
@@ -878,8 +912,7 @@ class MainViewModelTest {
                     it.pendingVoiceInputDraft?.let { draft ->
                         draft.segments.map(VoiceInputDraftSegment::text) == listOf(firstDraft, secondDraft) &&
                             draft.token > draft.segments.first().token &&
-                            it.chatInputText == "$firstDraft\n$secondDraft" &&
-                            it.reviewedVoiceInputDraftToken == draft.token
+                            it.chatInputText == "$firstDraft\n$secondDraft"
                     } == true
                 }
 
@@ -1655,7 +1688,6 @@ class MainViewModelTest {
                         route = VoiceInputRoute.NewRequest,
                     ),
                     chatInputText = "voice draft",
-                    reviewedVoiceInputDraftToken = 42L,
                     chatMessages = listOf(
                         ChatMessage(
                             text = "pending review",
@@ -1672,8 +1704,7 @@ class MainViewModelTest {
                 !it.isAwaitingToolReview &&
                     it.chatMessages.isEmpty() &&
                     it.pendingVoiceInputDraft == null &&
-                    it.chatInputText.isEmpty() &&
-                    it.reviewedVoiceInputDraftToken == null
+                    it.chatInputText.isEmpty()
             }
             assertFalse(state.isAwaitingToolReview)
             assertNull(state.pendingVoiceInputDraft)

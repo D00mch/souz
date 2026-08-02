@@ -58,10 +58,10 @@ fun MainScreen(
         onPickChatAttachments = { viewModel.send(MainEvent.PickChatAttachments) },
         onAttachDroppedTransferable = { viewModel.onAttachDroppedPayload(it) },
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
-        onUpdateChatInputText = { viewModel.send(MainEvent.UpdateChatInputText(it)) },
-        onSendChatMessage = { text, voiceInputDraftToken ->
-            viewModel.send(MainEvent.SendChatMessage(text, voiceInputDraftToken))
+        onUpdateChatInputText = { text, localEditRevision ->
+            viewModel.send(MainEvent.UpdateChatInputText(text, localEditRevision))
         },
+        onSendChatMessage = { text -> viewModel.send(MainEvent.SendChatMessage(text)) },
         onClearContext = { viewModel.send(MainEvent.UserPressStop) },
         onToggleToolModifyReviewSelection = { messageId, itemId ->
             viewModel.send(MainEvent.ToggleToolModifyReviewSelection(messageId, itemId))
