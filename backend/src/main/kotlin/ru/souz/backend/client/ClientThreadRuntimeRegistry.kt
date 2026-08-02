@@ -1,6 +1,9 @@
 package ru.souz.backend.client
 
 import com.fasterxml.jackson.databind.JsonNode
+import java.net.InetAddress
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
@@ -18,7 +21,15 @@ internal data class PendingClientTool(
     val result: CompletableDeferred<ClientToolOutcome> = CompletableDeferred(),
 )
 
-internal class ClientThreadRuntimeRegistry {
+internal sealed interface BeginClientToolResult {
+    data class Started(val device: ClientDevice) : BeginClientToolResult
+    data object Busy : BeginClientToolResult
+    data object Missing : BeginClientToolResult
+}
+
+internal class ClientThreadRuntimeRegistry(
+    val runtimeOwner: String = defaultRuntimeOwner(),
+) {
     private data class State(
         val runtimeReady: CompletableDeferred<Unit> = CompletableDeferred(),
         var runtime: BackendConversationRuntime? = null,
@@ -46,10 +57,6 @@ internal class ClientThreadRuntimeRegistry {
         discarded.runtimeReady.complete(Unit)
         discarded.pendingAcks.values.forEach { it.complete(Unit) }
         discarded.pendingTool?.result?.cancel()
-    }
-
-    suspend fun latestDevice(threadId: UUID): ClientDevice? = mutex.withLock {
-        states[threadId]?.latestDevice
     }
 
     suspend fun attach(threadId: UUID, runtime: BackendConversationRuntime) {
@@ -158,11 +165,12 @@ internal class ClientThreadRuntimeRegistry {
         }
     }
 
-    suspend fun beginTool(threadId: UUID, pending: PendingClientTool): Boolean = mutex.withLock {
-        val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock false
-        if (state.pendingTool != null) return@withLock false
+    suspend fun beginTool(threadId: UUID, pending: PendingClientTool): BeginClientToolResult = mutex.withLock {
+        val state = states[threadId]?.takeUnless { it.terminal }
+            ?: return@withLock BeginClientToolResult.Missing
+        if (state.pendingTool != null) return@withLock BeginClientToolResult.Busy
         state.pendingTool = pending
-        true
+        BeginClientToolResult.Started(state.latestDevice)
     }
 
     suspend fun finishTool(threadId: UUID, toolCallId: String, outcome: ClientToolOutcome): Boolean {
@@ -201,5 +209,18 @@ internal class ClientThreadRuntimeRegistry {
         if (state.pendingAcks[requestId] === pendingAck) state.pendingAcks.remove(requestId)
         pendingAck.complete(Unit)
         removeIfTerminalAndIdle(threadId, state)
+    }
+
+    companion object {
+        val LEASE_DURATION: Duration = Duration.ofMinutes(2)
+        val LEASE_REFRESH_INTERVAL: Duration = Duration.ofSeconds(30)
+
+        fun leaseUntil(now: Instant = Instant.now()): Instant = now.plus(LEASE_DURATION)
+
+        private fun defaultRuntimeOwner(): String =
+            System.getProperty("souz.backend.instanceId")
+                ?: System.getenv("SOUZ_BACKEND_INSTANCE_ID")
+                ?: runCatching { InetAddress.getLocalHost().hostName }.getOrNull()
+                ?: UUID.randomUUID().toString()
     }
 }

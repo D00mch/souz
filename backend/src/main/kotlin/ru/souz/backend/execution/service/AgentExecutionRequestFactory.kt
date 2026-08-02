@@ -90,6 +90,8 @@ internal class AgentExecutionRequestFactory(
             ),
             revision = revision,
             latestDeviceContextJson = latestDeviceContextJson,
+            runtimeOwner = clientThreadRegistry?.runtimeOwner?.takeIf { clientToolsEnabled },
+            runtimeLeaseUntil = ClientThreadRuntimeRegistry.leaseUntil().takeIf { clientToolsEnabled },
         )
 
         return PreparedChatTurn(

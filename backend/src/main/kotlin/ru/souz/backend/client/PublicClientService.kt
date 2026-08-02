@@ -24,6 +24,7 @@ import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
+import ru.souz.llms.findLLMModel
 
 internal data class HandledClientFrame(
     val response: Any,
@@ -40,7 +41,13 @@ internal class PublicClientService(
     private val registry: ClientThreadRuntimeRegistry,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
-    private val requestMutex = Mutex()
+    private data class ChatRequestLock(
+        val mutex: Mutex = Mutex(),
+        var references: Int = 0,
+    )
+
+    private val chatRequestLocksMutex = Mutex()
+    private val chatRequestLocks = linkedMapOf<UUID, ChatRequestLock>()
 
     suspend fun requireChat(chatId: UUID, clientType: String): Chat {
         val chat = chatRepository.getById(chatId) ?: throw ClientContractException("chat_not_found", "Chat not found.")
@@ -51,7 +58,7 @@ internal class PublicClientService(
     }
 
     suspend fun handleMessage(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame =
-        requestMutex.withLock { handleMessageLocked(chat, frame) }
+        withChatRequestLock(chat.id) { handleMessageLocked(chat, frame) }
 
     private suspend fun handleMessageLocked(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame {
         val now = Instant.now()
@@ -142,7 +149,7 @@ internal class PublicClientService(
     }
 
     suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame =
-        requestMutex.withLock { handleCancelLocked(chat, frame) }
+        withChatRequestLock(chat.id) { handleCancelLocked(chat, frame) }
 
     private suspend fun handleCancelLocked(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {
         val now = Instant.now()
@@ -331,11 +338,30 @@ internal class PublicClientService(
     }
 
     private fun requestOverrides(meta: ClientRequestMeta?): UserSettingsOverrides = UserSettingsOverrides(
+        defaultModel = meta?.model?.let { raw ->
+            findLLMModel(raw) ?: throw ClientContractException("invalid_request", "payload.meta.model must be a known model alias.")
+        },
         locale = meta?.locale?.let { Locale.forLanguageTag(it).takeIf { locale -> locale.language.isNotBlank() } }
             ?: Locale.forLanguageTag("ru-RU"),
         timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneId.systemDefault(),
         streamingMessages = true,
     )
+
+    private suspend fun <T> withChatRequestLock(chatId: UUID, block: suspend () -> T): T {
+        val requestLock = chatRequestLocksMutex.withLock {
+            chatRequestLocks.getOrPut(chatId) { ChatRequestLock() }.also { it.references += 1 }
+        }
+        return try {
+            requestLock.mutex.withLock { block() }
+        } finally {
+            chatRequestLocksMutex.withLock {
+                requestLock.references -= 1
+                if (requestLock.references == 0) {
+                    chatRequestLocks.remove(chatId)
+                }
+            }
+        }
+    }
 
     private fun ru.souz.backend.toolcall.model.ToolCall.toClientToolOutcome(): ClientToolOutcome =
         ClientToolOutcome(

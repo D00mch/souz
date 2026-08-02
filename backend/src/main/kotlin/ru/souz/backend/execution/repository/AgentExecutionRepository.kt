@@ -1,5 +1,6 @@
 package ru.souz.backend.execution.repository
 
+import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.execution.model.AgentExecution
 
@@ -15,7 +16,15 @@ interface AgentExecutionRepository {
     suspend fun getByChat(userId: String, chatId: UUID, executionId: UUID): AgentExecution?
     suspend fun findByClientMessageId(userId: String, chatId: UUID, clientMessageId: String): AgentExecution?
     suspend fun findActive(userId: String, chatId: UUID): AgentExecution?
-    suspend fun failInterruptedClientThreads(): List<AgentExecution> = emptyList()
+    suspend fun refreshClientThreadLease(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        runtimeOwner: String,
+        leaseUntil: Instant,
+    ): AgentExecution? = null
+    suspend fun failInterruptedClientThreads(now: Instant): List<AgentExecution> = emptyList()
+    suspend fun findRecoveredClientThreadsMissingTerminalEvents(): List<AgentExecution> = emptyList()
     suspend fun listByChat(
         userId: String,
         chatId: UUID,

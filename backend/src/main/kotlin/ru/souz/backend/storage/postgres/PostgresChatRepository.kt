@@ -4,31 +4,39 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
 
 class PostgresChatRepository(
     private val dataSource: DataSource,
 ) : ChatRepository {
     override suspend fun create(chat: Chat): Chat = dataSource.write { connection ->
-        connection.prepareStatement(
-            """
-            insert into chats(
-              id, user_id, client_type, request_id, payload_hash,
-              title, archived, created_at, updated_at
-            )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent()
-        ).use { statement ->
-            statement.setObject(1, chat.id)
-            statement.setString(2, chat.userId)
-            statement.setString(3, chat.clientType)
-            statement.setString(4, chat.requestId)
-            statement.setString(5, chat.payloadHash)
-            statement.setString(6, chat.title)
-            statement.setBoolean(7, chat.archived)
-            statement.setInstant(8, chat.createdAt)
-            statement.setInstant(9, chat.updatedAt)
-            statement.executeUpdate()
+        try {
+            connection.prepareStatement(
+                """
+                insert into chats(
+                  id, user_id, client_type, request_id, payload_hash,
+                  title, archived, created_at, updated_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setObject(1, chat.id)
+                statement.setString(2, chat.userId)
+                statement.setString(3, chat.clientType)
+                statement.setString(4, chat.requestId)
+                statement.setString(5, chat.payloadHash)
+                statement.setString(6, chat.title)
+                statement.setBoolean(7, chat.archived)
+                statement.setInstant(8, chat.createdAt)
+                statement.setInstant(9, chat.updatedAt)
+                statement.executeUpdate()
+            }
+        } catch (error: java.sql.SQLException) {
+            if (error.isConstraintViolation(CHAT_REQUEST_CONSTRAINT)) {
+                throw ChatRequestConflictException(chat.userId, chat.requestId)
+            }
+            throw error
         }
         chat
     }

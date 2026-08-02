@@ -90,17 +90,20 @@ private class ClientToolSetup(
             ?: return errorMessage(functionCall.name, "client_context_missing", "Thread ID is unavailable.")
         val chatId = meta.conversationId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
             ?: return errorMessage(functionCall.name, "client_context_missing", "Chat ID is unavailable.")
-        val device = registry.latestDevice(threadId)
-            ?: return errorMessage(functionCall.name, "client_context_missing", "Client device is unavailable.")
         val toolCallId = UUID.randomUUID().toString()
         val pending = PendingClientTool(toolCallId)
-        if (!registry.beginTool(threadId, pending)) {
-            return errorMessage(functionCall.name, "client_tool_busy", "Another client tool call is already pending.")
+        val device = when (val beginTool = registry.beginTool(threadId, pending)) {
+            BeginClientToolResult.Missing ->
+                return errorMessage(functionCall.name, "client_context_missing", "Client device is unavailable.")
+            BeginClientToolResult.Busy ->
+                return errorMessage(functionCall.name, "client_tool_busy", "Another client tool call is already pending.")
+            is BeginClientToolResult.Started -> beginTool.device
         }
         val startedAt = Instant.now()
         val deadlineAt = startedAt.plus(timeout)
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments)
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
+        var clientCallStarted = false
         try {
             toolCallRepository.startClientCall(
                 context = context,
@@ -110,6 +113,7 @@ private class ClientToolSetup(
                 deadlineAt = deadlineAt,
                 startedAt = startedAt,
             )
+            clientCallStarted = true
             registry.awaitAcceptedInputAcks(threadId)
             eventService.appendDurable(
                 userId = meta.userId,
@@ -145,10 +149,26 @@ private class ClientToolSetup(
             }
             throw cancelled
         } catch (error: Exception) {
+            if (clientCallStarted) {
+                withContext(NonCancellable) {
+                    failStartedCall(context, error)
+                }
+            }
             return errorMessage(functionCall.name, "client_tool_failed", error.message ?: "Client tool failed.")
         } finally {
             registry.clearTool(threadId, toolCallId)
         }
+    }
+
+    private suspend fun failStartedCall(context: ToolCallContext, cause: Exception) {
+        val error = ClientError("client_tool_failed", cause.message ?: "Client tool failed.")
+        toolCallRepository.completeClientCall(
+            context = context,
+            status = ToolCallStatus.FAILED,
+            resultJson = null,
+            errorJson = restJsonMapper.writeValueAsString(error),
+            payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "failed", "error" to error)),
+        )
     }
 
     private suspend fun timeOut(

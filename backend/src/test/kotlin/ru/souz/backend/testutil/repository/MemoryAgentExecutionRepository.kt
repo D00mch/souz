@@ -1,9 +1,11 @@
 package ru.souz.backend.testutil.repository
 
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.execution.model.AgentExecution
+import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -53,6 +55,44 @@ class MemoryAgentExecutionRepository(
     override suspend fun findActive(userId: String, chatId: UUID): AgentExecution? = mutex.withLock {
         activeExecutionIds[ActiveConversationKey(userId, chatId)]
             ?.let { executionId -> executionFor(ExecutionKey(userId, executionId)) }
+    }
+
+    override suspend fun refreshClientThreadLease(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        runtimeOwner: String,
+        leaseUntil: Instant,
+    ): AgentExecution? = mutex.withLock {
+        val key = ExecutionKey(userId, executionId)
+        val current = executionFor(key)?.takeIf { it.chatId == chatId && it.status.isActive() }
+            ?: return@withLock null
+        storeExecution(
+            current.copy(
+                runtimeOwner = runtimeOwner,
+                runtimeLeaseUntil = leaseUntil,
+            )
+        )
+    }
+
+    override suspend fun failInterruptedClientThreads(now: Instant): List<AgentExecution> = mutex.withLock {
+        (executions.values + activeExecutions.values)
+            .distinctBy { it.id }
+            .filter { execution ->
+                execution.status.isActive() &&
+                    execution.runtimeLeaseUntil != null &&
+                    execution.runtimeLeaseUntil < now
+            }
+            .map { execution ->
+                storeExecution(
+                    execution.copy(
+                        status = AgentExecutionStatus.FAILED,
+                        finishedAt = now,
+                        errorCode = "process_restarted",
+                        errorMessage = "The Souz process restarted while the thread was running.",
+                    )
+                )
+            }
     }
 
     override suspend fun listByChat(

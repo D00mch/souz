@@ -71,7 +71,9 @@ create table agent_executions (
   usage_json jsonb,
   metadata jsonb not null default '{}',
   revision bigint not null default 1,
-  latest_device_context jsonb not null default '{}'
+  latest_device_context jsonb not null default '{}',
+  runtime_owner text,
+  runtime_lease_until timestamptz
 );
 
 create index agent_executions_chat_started_idx
