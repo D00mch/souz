@@ -69,6 +69,14 @@ internal class ClientThreadRuntimeRegistry {
         }
     }
 
+    suspend fun awaitRuntimeAvailable(threadId: UUID): Boolean {
+        val runtimeReady = mutex.withLock { states[threadId]?.runtimeReady } ?: return false
+        runtimeReady.await()
+        return mutex.withLock {
+            states[threadId]?.let { state -> !state.terminal && state.runtime != null } == true
+        }
+    }
+
     suspend fun <T> acceptInput(
         threadId: UUID,
         requestId: String,
@@ -76,17 +84,22 @@ internal class ClientThreadRuntimeRegistry {
         input: String,
         canAccept: suspend () -> Boolean,
         commit: suspend () -> T,
-    ): T? {
-        val runtimeReady = mutex.withLock { states[threadId]?.runtimeReady } ?: return null
-        runtimeReady.await()
-        return mutex.withLock {
-            val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock null
-            val runtime = state.runtime ?: return@withLock null
-            if (!canAccept() || !runtime.submitToActiveRun(input)) return@withLock null
+    ): T? = mutex.withLock {
+        val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock null
+        val runtime = state.runtime ?: return@withLock null
+        if (!canAccept()) return@withLock null
+        val pendingAck = state.pendingAcks.getOrPut(requestId) { CompletableDeferred() }
+        try {
+            if (!runtime.submitToActiveRun(input)) {
+                clearAck(threadId, state, requestId, pendingAck)
+                return@withLock null
+            }
             val result = commit()
             state.latestDevice = device
-            state.pendingAcks.putIfAbsent(requestId, CompletableDeferred())
             result
+        } catch (error: Exception) {
+            clearAck(threadId, state, requestId, pendingAck)
+            throw error
         }
     }
 
@@ -177,5 +190,16 @@ internal class ClientThreadRuntimeRegistry {
         if (state.terminal && state.runtime == null && state.pendingTool == null && state.pendingAcks.isEmpty()) {
             states.remove(threadId)
         }
+    }
+
+    private fun clearAck(
+        threadId: UUID,
+        state: State,
+        requestId: String,
+        pendingAck: CompletableDeferred<Unit>,
+    ) {
+        if (state.pendingAcks[requestId] === pendingAck) state.pendingAcks.remove(requestId)
+        pendingAck.complete(Unit)
+        removeIfTerminalAndIdle(threadId, state)
     }
 }
