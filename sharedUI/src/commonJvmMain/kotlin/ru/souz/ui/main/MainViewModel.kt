@@ -202,7 +202,9 @@ class MainViewModel(
             MainEvent.StartListening -> {
                 voiceInputUseCase.startRecording(viewModelScope, ::voiceInputBlockReason)
             }
-            MainEvent.StopListening -> voiceInputUseCase.stopRecording()
+            MainEvent.StopListening -> {
+                voiceInputUseCase.stopRecording()?.let { handleRecognizedVoiceInput(it) }
+            }
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
             MainEvent.DismissNewConversationDialog -> dismissNewConversationDialog()

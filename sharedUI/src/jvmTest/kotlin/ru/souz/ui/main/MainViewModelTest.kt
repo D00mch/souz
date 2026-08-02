@@ -36,7 +36,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -89,9 +88,6 @@ import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.speech.LocalMacOsSpeechAudioTooLongException
 import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
-import ru.souz.service.speech.MacOsSpeechAuthorizationStatus
-import ru.souz.service.speech.MacOsSpeechBridgeApi
-import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
@@ -767,45 +763,6 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `recording stopped before voice collection starts does not block the next capture`() =
-        runTest(mainDispatcher) {
-            val draft = "ready draft"
-            var recognizeCalls = 0
-            val harness = createHarness(
-                voiceInputReviewEnabled = true,
-                recognizeBehavior = {
-                    recognizeCalls += 1
-                    LLMResponse.RecognizeResponse(result = listOf(draft))
-                },
-            )
-
-            try {
-                val viewModel = harness.viewModel
-                val audioRecorder = testAudioRecorder(viewModel)
-
-                prepareAudioCapture(viewModel, byteArrayOf(1, 2, 3))
-                viewModel.handleEvent(MainEvent.StartListening)
-                viewModel.handleEvent(MainEvent.StopListening)
-                runCurrent()
-
-                assertEquals(1, audioRecorder.startCalls)
-                assertEquals(0, recognizeCalls)
-
-                advanceUntilIdle()
-
-                recordVoiceInput(viewModel, byteArrayOf(4, 5, 6))
-                val recoveredState = awaitState(viewModel) {
-                    it.pendingVoiceInputDraft?.text == draft
-                }
-                assertEquals(draft, recoveredState.pendingVoiceInputDraft?.text)
-                assertEquals(2, audioRecorder.startCalls)
-                assertEquals(1, recognizeCalls)
-            } finally {
-                harness.clear()
-            }
-        }
-
-    @Test
     fun `recording stays busy until asynchronous stop completes`() = runTest(mainDispatcher) {
         val draft = "voice draft"
         val harness = createHarness(
@@ -950,7 +907,10 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            recordVoiceInput(viewModel, byteArrayOf(9, 9, 9))
+            prepareAudioCapture(viewModel, byteArrayOf(9, 9, 9))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            val stopJob = launch { viewModel.handleEvent(MainEvent.StopListening) }
             recognitionStarted.await()
 
             viewModel.handleEvent(MainEvent.StartListening)
@@ -960,7 +920,7 @@ class MainViewModelTest {
             assertFalse(state.isListening)
 
             releaseRecognition.complete(Unit)
-            runCurrent()
+            stopJob.join()
         } finally {
             releaseRecognition.complete(Unit)
             harness.clear()
@@ -968,7 +928,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `local macos unavailable recognition keeps collecting audio during retry backoff`() =
+    fun `next capture works after local macos unavailable recognition`() =
         runTest(mainDispatcher) {
             var recognizeCalls = 0
             val harness = createHarness(
@@ -1003,68 +963,6 @@ class MainViewModelTest {
                 harness.clear()
             }
         }
-
-    @Test
-    fun `audio without capture route does not cancel in flight recognition`() = runTest(mainDispatcher) {
-        val localSettingsProvider = mockk<SettingsProvider>()
-        every { localSettingsProvider.regionProfile } returns "ru"
-
-        val firstRecognitionStarted = CompletableDeferred<Unit>()
-        val releaseFirstRecognition = CompletableDeferred<Unit>()
-        val firstRecognitionCancelled = CompletableDeferred<Unit>()
-        var recognizeCalls = 0
-        val bridge = object : MacOsSpeechBridgeApi {
-            override fun hasSpeechRecognitionUsageDescription(): Boolean = true
-
-            override fun authorizationStatus(): MacOsSpeechAuthorizationStatus =
-                MacOsSpeechAuthorizationStatus.AUTHORIZED
-
-            override fun requestAuthorizationIfNeeded() = Unit
-
-            override fun recognizeWav(path: String, locale: String): String {
-                recognizeCalls += 1
-                check(recognizeCalls == 1) { "Unexpected recognition call: $recognizeCalls" }
-                firstRecognitionStarted.complete(Unit)
-                runBlocking { releaseFirstRecognition.await() }
-                return "first draft"
-            }
-
-            override fun cancelRecognition() {
-                firstRecognitionCancelled.complete(Unit)
-            }
-        }
-
-        val provider = MacOsSpeechRecognitionProvider(
-            settingsProvider = localSettingsProvider,
-            bridge = bridge,
-            isMacOsProvider = { true },
-        )
-        val harness = createHarness(
-            voiceInputReviewEnabled = true,
-            speechRecognitionProviderOverride = provider,
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-
-            recordVoiceInput(viewModel, byteArrayOf(9, 9, 9))
-            awaitDeferred(firstRecognitionStarted)
-
-            testAudioRecorder(viewModel).emit(byteArrayOf(1, 2, 3))
-            runCurrent()
-
-            assertEquals(1, recognizeCalls)
-            assertFalse(firstRecognitionCancelled.isCompleted)
-
-            releaseFirstRecognition.complete(Unit)
-            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "first draft" }
-            assertEquals("first draft", recoveredState.pendingVoiceInputDraft?.text)
-        } finally {
-            releaseFirstRecognition.complete(Unit)
-            harness.clear()
-        }
-    }
 
     @Test
     fun `too long local macos audio shows specific message without automatic retry and keeps voice input alive`() = runTest(mainDispatcher) {
@@ -2394,13 +2292,11 @@ class MainViewModelTest {
     }
 
     private class TestAudioRecorder : UiAudioRecorder {
-        private val mutableAudioFlow = MutableSharedFlow<ByteArray>(extraBufferCapacity = 1)
         private var audioOnStop: ByteArray? = null
         private var stopFailureMessage: String? = null
-        private var shouldDeferStop = false
+        private var deferredStop: CompletableDeferred<ByteArray?>? = null
         var startCalls = 0
             private set
-        override val audioFlow = mutableAudioFlow
         override val recordingState = MutableStateFlow<UiAudioRecordingState>(UiAudioRecordingState.Idle)
 
         override suspend fun logState(): Nothing = awaitCancellation()
@@ -2411,25 +2307,22 @@ class MainViewModelTest {
             return true
         }
 
-        override fun stop() {
+        override suspend fun stop(): ByteArray? {
             stopFailureMessage?.let { message ->
                 stopFailureMessage = null
                 recordingState.value = UiAudioRecordingState.Error(message)
-                return
+                return null
             }
-            if (shouldDeferStop) {
-                shouldDeferStop = false
+            deferredStop?.let { stop ->
                 recordingState.value = UiAudioRecordingState.Stopping
-                return
+                val audio = stop.await()
+                recordingState.value = UiAudioRecordingState.Idle
+                return audio
             }
             val audio = audioOnStop
             audioOnStop = null
-            if (audio != null) check(mutableAudioFlow.tryEmit(audio))
             recordingState.value = UiAudioRecordingState.Idle
-        }
-
-        suspend fun emit(data: ByteArray) {
-            mutableAudioFlow.emit(data)
+            return audio
         }
 
         fun emitOnStop(data: ByteArray) {
@@ -2441,15 +2334,15 @@ class MainViewModelTest {
         }
 
         fun deferNextStop() {
-            shouldDeferStop = true
+            deferredStop = CompletableDeferred()
         }
 
         suspend fun completeDeferredStop() {
             check(recordingState.value == UiAudioRecordingState.Stopping)
             val audio = audioOnStop
             audioOnStop = null
-            if (audio != null) mutableAudioFlow.emit(audio)
-            recordingState.value = UiAudioRecordingState.Idle
+            checkNotNull(deferredStop).complete(audio)
+            deferredStop = null
         }
     }
 }

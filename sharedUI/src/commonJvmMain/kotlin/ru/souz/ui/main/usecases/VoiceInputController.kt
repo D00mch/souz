@@ -17,7 +17,7 @@ interface VoiceInputController {
         scope: CoroutineScope,
         voiceInputStartBlocker: suspend (VoiceInputRoute) -> String? = { null },
     )
-    suspend fun stopRecording()
+    suspend fun stopRecording(): RecognizedVoiceInput?
 }
 
 sealed interface VoiceInputRoute {
@@ -43,5 +43,5 @@ object NoopVoiceInputController : VoiceInputController {
         scope: CoroutineScope,
         voiceInputStartBlocker: suspend (VoiceInputRoute) -> String?,
     ) = Unit
-    override suspend fun stopRecording() = Unit
+    override suspend fun stopRecording(): RecognizedVoiceInput? = null
 }

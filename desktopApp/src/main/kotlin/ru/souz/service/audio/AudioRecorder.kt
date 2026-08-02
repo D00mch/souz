@@ -1,29 +1,19 @@
 package ru.souz.service.audio
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import ru.souz.ui.host.UiAudioRecorder
 import ru.souz.ui.host.UiAudioRecordingState
+import kotlin.coroutines.cancellation.CancellationException
 
 class InMemoryAudioRecorder(
     private val recorder: ActiveSoundRecorder = ActiveSoundRecorderImpl(),
-    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
     warmupOnInit: Boolean = false,
 ) : UiAudioRecorder {
     private val l = LoggerFactory.getLogger(InMemoryAudioRecorder::class.java)
-    private val _audioFlow = MutableSharedFlow<ByteArray>()
-
     private val _recordingState = MutableStateFlow<UiAudioRecordingState>(UiAudioRecordingState.Idle)
     override val recordingState = _recordingState.asStateFlow()
-
-    override val audioFlow: Flow<ByteArray> = _audioFlow
 
     init {
         if (warmupOnInit) {
@@ -64,16 +54,17 @@ class InMemoryAudioRecorder(
         }
     }
 
-    override fun stop() {
-        coroutineScope.launch {
-            try {
-                _recordingState.value = UiAudioRecordingState.Stopping
-                val bytes = recorder.stopRecording()
-                _audioFlow.emit(bytes)
-                _recordingState.value = UiAudioRecordingState.Idle
-            } catch (e: Exception) {
-                _recordingState.value = UiAudioRecordingState.Error(e.message ?: "Failed to stop recording")
-            }
+    override suspend fun stop(): ByteArray? {
+        _recordingState.value = UiAudioRecordingState.Stopping
+        return try {
+            val bytes = recorder.stopRecording()
+            _recordingState.value = UiAudioRecordingState.Idle
+            bytes
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            _recordingState.value = UiAudioRecordingState.Error(e.message ?: "Failed to stop recording")
+            null
         }
     }
 }

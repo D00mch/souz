@@ -221,32 +221,32 @@ private fun writeInt(stream: OutputStream, value: Int) {
 }
 
 suspend fun main() {
-    val audioRecorder = InMemoryAudioRecorder(
-        coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    )
+    val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    val audioRecorder = InMemoryAudioRecorder()
+    var i = 0
     val hotkeyListener = HotkeyListener(
         onPressed = { pressed ->
             println(if (pressed) "onStart" else "onStop")
             when {
                 pressed -> audioRecorder.start()
-                else -> audioRecorder.stop()
+                else -> scope.launch {
+                    val audioData = audioRecorder.stop() ?: return@launch
+                    println("Recorded audio: ${audioData.size} bytes")
+                    val outputFile = File("recording${i++}.wav")
+                    val wavBytes = rawToWav(audioData, sampleRate = 16_000f, sampleSizeInBits = 16, channels = 1)
+                    FileOutputStream(outputFile).use {
+                        it.write(wavBytes)
+                    }
+                }
             }
         },
         onDoubleClick = { println("double click") }
     )
 
-    var i = 0
     try {
         GlobalScreen.registerNativeHook()
         GlobalScreen.addNativeKeyListener(hotkeyListener)
-        audioRecorder.audioFlow.collect { audioData: ByteArray ->
-            println("Recorded audio: ${audioData.size} bytes")
-            val outputFile = File("recording${i++}.wav")
-            val wavBytes = rawToWav(audioData, sampleRate = 16_000f, sampleSizeInBits = 16, channels = 1)
-            FileOutputStream(outputFile).use {
-                it.write(wavBytes)
-            }
-        }
+        kotlinx.coroutines.awaitCancellation()
     } catch (e: NativeHookException) {
         System.err.println("Failed to register native hook: ${e.message}")
         exitProcess(1)

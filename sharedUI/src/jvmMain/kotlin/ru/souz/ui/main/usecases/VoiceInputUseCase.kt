@@ -3,20 +3,12 @@ package ru.souz.ui.main.usecases
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.consumeAsFlow
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.mapLatest
-import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -43,7 +35,6 @@ import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
 import org.jetbrains.compose.resources.getString
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class VoiceInputUseCase(
     val audioRecorder: UiAudioRecorder,
     private val speechRecognitionProvider: SpeechRecognitionProvider,
@@ -55,9 +46,7 @@ class VoiceInputUseCase(
     private val l = LoggerFactory.getLogger(VoiceInputUseCase::class.java)
     private var lastRecognizedText: String? = null
     private var lastRecognizedAtMs: Long = 0L
-    private val recognitionMutex = Mutex()
     private val captureMutex = Mutex()
-    private val pendingRouteMutex = Mutex()
     private var pendingCaptureRoute: VoiceInputRoute? = null
 
     private val _outputs = Channel<MainUseCaseOutput>()
@@ -82,7 +71,7 @@ class VoiceInputUseCase(
                     scope.launch {
                         when {
                             pressed -> startRecordingInternal(scope, voiceInputStartBlocker)
-                            else -> stopRecording()
+                            else -> stopRecording()?.let { onRecognizedInput(it) }
                         }
                     }
                 },
@@ -97,52 +86,7 @@ class VoiceInputUseCase(
         }
 
         try {
-            val userInputFlow = audioRecorder.audioFlow
-                .onEach { l.debug("[Received audio data: ${it.size} bytes]") }
-                .catch { l.error("Error in audio flow: ${it.message}") }
-                .mapNotNull { audioData ->
-                    val route = takePendingCaptureRoute()
-                    if (route == null) {
-                        l.warn("Audio payload has no matching voice capture, skipping recognition")
-                        null
-                    } else {
-                        route to audioData
-                    }
-                }
-                .mapLatest { (route, audioData) ->
-                    if (audioData.isEmpty()) {
-                        l.warn("Empty audio payload captured, skipping transcription request")
-                        emitVoiceCaptureTooShort()
-                        return@mapLatest RecognizedVoiceInput("", route)
-                    }
-                    if (!recognitionMutex.tryLock()) {
-                        l.debug("Skipping recognition request because previous one is still in progress")
-                        return@mapLatest RecognizedVoiceInput("", route)
-                    }
-
-                    val recognizedText = try {
-                        try {
-                            l.debug("[Sending PCM audio data: ${audioData.size} bytes]")
-                            speechRecognitionProvider.recognize(audioData)
-                        } finally {
-                            recognitionMutex.unlock()
-                        }
-                    } catch (cause: Throwable) {
-                        if (keepsCollectingAfterRecognitionFailure(cause)) {
-                            return@mapLatest null
-                        }
-                        throw cause
-                    }
-                    RecognizedVoiceInput(recognizedText, route)
-                }
-                .filterNotNull()
-                .onEach { onTextRecognizeSideEffects(it.text) }
-                .filter { it.text.isNotBlank() }
-
-            userInputFlow.collect { recognizedInput ->
-                if (isDuplicateRecognition(recognizedInput.text)) return@collect
-                onRecognizedInput(recognizedInput)
-            }
+            awaitCancellation()
         } finally {
             if (nativeHookRegistered) {
                 hotkeyRegistration?.invoke()
@@ -160,14 +104,13 @@ class VoiceInputUseCase(
         scope: CoroutineScope,
         voiceInputStartBlocker: suspend (VoiceInputRoute) -> String?,
     ) {
-        if (!captureMutex.tryLock()) return
+        if (!captureMutex.tryLock()) {
+            val statusMsg = getString(Res.string.voice_status_processing_input)
+            emitState { copy(statusMessage = statusMsg) }
+            return
+        }
         try {
-            if (hasPendingCaptureRoute()) return
-            if (recognitionMutex.isLocked) {
-                val statusMsg = getString(Res.string.voice_status_processing_input)
-                emitState { copy(statusMessage = statusMsg) }
-                return
-            }
+            if (pendingCaptureRoute != null) return
             if (!speechRecognitionProvider.enabled) {
                 emitVoiceError(Res.string.voice_error_recognition_unavailable)
                 return
@@ -185,7 +128,7 @@ class VoiceInputUseCase(
                 emitVoiceInputBlocked(blockedReason)
                 return
             }
-            setPendingCaptureRoute(route)
+            pendingCaptureRoute = route
             if (route is VoiceInputRoute.NewRequest) {
                 chatUseCase.abortActiveRequest()
             }
@@ -203,7 +146,7 @@ class VoiceInputUseCase(
                 audioRecorder.start()
             }
             if (!started) {
-                clearPendingCaptureRoute(route)
+                pendingCaptureRoute = null
                 val recorderState = audioRecorder.recordingState.value
                 val errorMsg = (recorderState as? UiAudioRecordingState.Error)?.message.orEmpty()
                 l.error("Unable to start microphone capture: {}", errorMsg)
@@ -214,39 +157,45 @@ class VoiceInputUseCase(
         }
     }
 
-    override suspend fun stopRecording() {
-        val stopped = captureMutex.withLock {
-            val route = currentPendingCaptureRoute() ?: return@withLock false
-
-            try {
-                audioRecorder.stop()
+    override suspend fun stopRecording(): RecognizedVoiceInput? {
+        val recognizedInput = captureMutex.withLock {
+            val route = pendingCaptureRoute ?: return@withLock null
+            val audioData = try {
+                withContext(Dispatchers.IO) { audioRecorder.stop() }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 l.error("Unable to stop microphone capture", error)
-                clearPendingCaptureRoute(route)
+                pendingCaptureRoute = null
                 emitVoiceError(Res.string.voice_error_microphone_unavailable)
-                return@withLock false
+                return@withLock null
             }
+            pendingCaptureRoute = null
+            if (audioData == null) {
+                val recorderState = audioRecorder.recordingState.value
+                val errorMsg = (recorderState as? UiAudioRecordingState.Error)?.message.orEmpty()
+                l.error("Unable to stop microphone capture: {}", errorMsg)
+                emitVoiceError(Res.string.voice_error_microphone_unavailable)
+                return@withLock null
+            }
+
             val statusMsg = getString(Res.string.voice_status_processing_input)
-            emitState { copy(statusMessage = statusMsg) }
-
-            val terminalState = audioRecorder.recordingState.first { state ->
-                state is UiAudioRecordingState.Idle || state is UiAudioRecordingState.Error
+            emitState {
+                copy(
+                    isListening = false,
+                    statusMessage = statusMsg,
+                )
             }
-            if (terminalState is UiAudioRecordingState.Error) {
-                l.error("Unable to stop microphone capture: {}", terminalState.message)
-                clearPendingCaptureRoute(route)
-                emitVoiceError(Res.string.voice_error_microphone_unavailable)
-                return@withLock false
-            }
-
-            yield()
-            clearPendingCaptureRoute(route)
-            emitState { copy(isListening = false) }
-            true
+            recognize(route, audioData)
         }
-        if (!stopped) return
+
+        if (recognizedInput == null) return null
+        val acceptedInput = recognizedInput
+            .also { onTextRecognizeSideEffects(it.text) }
+            .takeIf { it.text.isNotBlank() && !isDuplicateRecognition(it.text) }
         delay(300)
         speechUseCase.playInputConfirmation()
+        return acceptedInput
     }
 
     private suspend fun onTextRecognizeSideEffects(recognizedText: String) {
@@ -261,47 +210,62 @@ class VoiceInputUseCase(
         emitVoiceError(Res.string.voice_error_empty_audio, speak = false)
     }
 
-    private suspend fun keepsCollectingAfterRecognitionFailure(cause: Throwable): Boolean = when (cause) {
-        is CancellationException -> false
-        is MissingVoiceKeyException,
-        is MissingOpenAiVoiceKeyException,
-        is MissingAiTunnelVoiceKeyException -> emitVoiceError(Res.string.voice_error_missing_key, keepCollecting = true)
-        is VoiceRecognitionUnavailableException -> emitVoiceError(Res.string.voice_error_recognition_unavailable)
-        is LocalMacOsSpeechPermissionDeniedException -> emitVoiceError(Res.string.voice_error_speech_permission_denied)
-        is LocalMacOsSpeechAppBundleMissingUsageDescriptionException ->
-            emitVoiceError(Res.string.voice_error_local_macos_bundle_required)
-        is LocalMacOsSpeechLocaleUnsupportedException ->
-            emitVoiceError(Res.string.voice_error_local_macos_locale_unsupported)
-        is LocalMacOsSpeechOnDeviceUnsupportedException ->
-            emitVoiceError(Res.string.voice_error_local_macos_unavailable)
-        is LocalMacOsSpeechAudioTooLongException ->
-            emitVoiceError(Res.string.voice_error_local_macos_audio_too_long, keepCollecting = true)
-        is LocalMacOsSpeechUnavailableException ->
-            emitVoiceError(
-                Res.string.voice_error_local_macos_unavailable,
-                keepCollecting = true,
-                retryDelayMs = 1_000L,
-            )
-        else -> {
-            l.error("Voice recognition failed: {}", cause.message, cause)
-            val errorMsg = getString(Res.string.error_prefix).format(cause.message ?: "")
-            emitState { copy(statusMessage = errorMsg) }
-            delay(1_000L)
-            true
+    private suspend fun recognize(
+        route: VoiceInputRoute,
+        audioData: ByteArray,
+    ): RecognizedVoiceInput? {
+        l.debug("[Received audio data: ${audioData.size} bytes]")
+        if (audioData.isEmpty()) {
+            l.warn("Empty audio payload captured, skipping transcription request")
+            emitVoiceCaptureTooShort()
+            return RecognizedVoiceInput("", route)
+        }
+
+        return try {
+            l.debug("[Sending PCM audio data: ${audioData.size} bytes]")
+            RecognizedVoiceInput(speechRecognitionProvider.recognize(audioData), route)
+        } catch (cause: Throwable) {
+            handleRecognitionFailure(cause)
+            null
+        }
+    }
+
+    private suspend fun handleRecognitionFailure(cause: Throwable) {
+        when (cause) {
+            is CancellationException -> throw cause
+            is MissingVoiceKeyException,
+            is MissingOpenAiVoiceKeyException,
+            is MissingAiTunnelVoiceKeyException -> emitVoiceError(Res.string.voice_error_missing_key)
+            is VoiceRecognitionUnavailableException -> emitVoiceError(Res.string.voice_error_recognition_unavailable)
+            is LocalMacOsSpeechPermissionDeniedException -> emitVoiceError(Res.string.voice_error_speech_permission_denied)
+            is LocalMacOsSpeechAppBundleMissingUsageDescriptionException ->
+                emitVoiceError(Res.string.voice_error_local_macos_bundle_required)
+            is LocalMacOsSpeechLocaleUnsupportedException ->
+                emitVoiceError(Res.string.voice_error_local_macos_locale_unsupported)
+            is LocalMacOsSpeechOnDeviceUnsupportedException ->
+                emitVoiceError(Res.string.voice_error_local_macos_unavailable)
+            is LocalMacOsSpeechAudioTooLongException ->
+                emitVoiceError(Res.string.voice_error_local_macos_audio_too_long)
+            is LocalMacOsSpeechUnavailableException ->
+                emitVoiceError(Res.string.voice_error_local_macos_unavailable, retryDelayMs = 1_000L)
+            else -> {
+                l.error("Voice recognition failed: {}", cause.message, cause)
+                val errorMsg = getString(Res.string.error_prefix).format(cause.message ?: "")
+                emitState { copy(isListening = false, statusMessage = errorMsg) }
+                delay(1_000L)
+            }
         }
     }
 
     private suspend fun emitVoiceError(
         resource: StringResource,
         speak: Boolean = true,
-        keepCollecting: Boolean = false,
         retryDelayMs: Long = 0L,
-    ): Boolean {
+    ) {
         val message = getString(resource)
         if (speak) speechUseCase.queue(message)
         emitState { copy(isListening = false, statusMessage = message) }
         if (retryDelayMs > 0L) delay(retryDelayMs)
-        return keepCollecting
     }
 
     private suspend fun emitVoiceInputBlocked(message: String) {
@@ -311,32 +275,6 @@ class VoiceInputUseCase(
 
     private suspend fun emitState(reduce: MainState.() -> MainState) {
         _outputs.send(MainUseCaseOutput.State(reduce))
-    }
-
-    private suspend fun hasPendingCaptureRoute(): Boolean = pendingRouteMutex.withLock {
-        pendingCaptureRoute != null
-    }
-
-    private suspend fun currentPendingCaptureRoute(): VoiceInputRoute? = pendingRouteMutex.withLock {
-        pendingCaptureRoute
-    }
-
-    private suspend fun setPendingCaptureRoute(route: VoiceInputRoute) {
-        pendingRouteMutex.withLock {
-            pendingCaptureRoute = route
-        }
-    }
-
-    private suspend fun takePendingCaptureRoute(): VoiceInputRoute? = pendingRouteMutex.withLock {
-        pendingCaptureRoute.also { pendingCaptureRoute = null }
-    }
-
-    private suspend fun clearPendingCaptureRoute(route: VoiceInputRoute) {
-        pendingRouteMutex.withLock {
-            if (pendingCaptureRoute == route) {
-                pendingCaptureRoute = null
-            }
-        }
     }
 
     private fun isDuplicateRecognition(text: String): Boolean {
