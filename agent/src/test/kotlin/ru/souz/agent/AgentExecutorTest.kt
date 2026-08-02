@@ -32,12 +32,14 @@ class AgentExecutorTest {
             override suspend fun emit(event: AgentRuntimeEvent) = Unit
         }
         val callback: GraphStepCallback = { _, _, _, _ -> }
+        var activeRunReady = false
 
         val result = executor.executeWithTrace(
             agentId = AgentId.GRAPH,
             context = baseContext(),
             input = "hello",
             eventSink = eventSink,
+            onActiveRunReady = { activeRunReady = true },
             onStep = callback,
         )
 
@@ -46,6 +48,7 @@ class AgentExecutorTest {
         assertEquals("Base system prompt", executedContext.systemPrompt)
         assertSame(eventSink, executedContext.runtimeEventSink)
         assertSame(callback, agent.receivedCallback)
+        assertTrue(activeRunReady)
         assertEquals("assistant response", result.output)
         assertEquals("Base system prompt", result.context.systemPrompt)
     }
@@ -74,8 +77,10 @@ class AgentExecutorTest {
 
         override suspend fun executeWithTrace(
             ctx: AgentContext<String>,
+            onActiveRunReady: suspend () -> Unit,
             onStep: GraphStepCallback?,
         ): AgentExecutionResult {
+            onActiveRunReady()
             executedContexts += ctx
             receivedCallback = onStep
             return AgentExecutionResult(

@@ -408,5 +408,6 @@ private val publicErrorCodes = setOf(
     "idempotency_conflict",
     "feature_disabled",
     "message_rejected",
+    "client_tool_timed_out",
     "internal_error",
 )

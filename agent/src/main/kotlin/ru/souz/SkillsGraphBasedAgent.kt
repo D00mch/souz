@@ -115,6 +115,7 @@ class SkillsGraphBasedAgent internal constructor(
 
     override suspend fun executeWithTrace(
         ctx: AgentContext<String>,
+        onActiveRunReady: suspend () -> Unit,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()
@@ -123,6 +124,7 @@ class SkillsGraphBasedAgent internal constructor(
         val executionGraph = graph(controller)
         activeRun.value = controller
         return try {
+            onActiveRunReady()
             executionDelegate.executeWithTrace(graph = executionGraph, ctx = restrictedContext, onStep = onStep)
         } finally {
             withContext(NonCancellable) {

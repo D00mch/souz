@@ -64,6 +64,13 @@ internal class ClientThreadRuntimeRegistry(
             val state = states[threadId] ?: return@withLock
             if (state.terminal) return@withLock
             state.runtime = runtime
+        }
+    }
+
+    suspend fun markRuntimeReady(threadId: UUID, runtime: BackendConversationRuntime) {
+        mutex.withLock {
+            val state = states[threadId] ?: return@withLock
+            if (state.terminal || state.runtime !== runtime) return@withLock
             state.runtimeReady.complete(Unit)
         }
     }
@@ -71,7 +78,10 @@ internal class ClientThreadRuntimeRegistry(
     suspend fun detach(threadId: UUID, runtime: BackendConversationRuntime) {
         mutex.withLock {
             val state = states[threadId] ?: return@withLock
-            if (state.runtime === runtime) state.runtime = null
+            if (state.runtime === runtime) {
+                state.runtime = null
+                state.runtimeReady.complete(Unit)
+            }
             removeIfTerminalAndIdle(threadId, state)
         }
     }

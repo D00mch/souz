@@ -12,6 +12,7 @@ internal interface TraceableAgent : Agent {
 
     suspend fun executeWithTrace(
         ctx: AgentContext<String>,
+        onActiveRunReady: suspend () -> Unit = {},
         onStep: GraphStepCallback? = null,
     ): AgentExecutionResult
 }

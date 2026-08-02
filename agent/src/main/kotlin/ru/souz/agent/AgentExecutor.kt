@@ -25,11 +25,13 @@ class AgentExecutor internal constructor(
         context: AgentContext<String>,
         input: String,
         eventSink: AgentRuntimeEventSink? = null,
+        onActiveRunReady: suspend () -> Unit = {},
     ): AgentExecutionResult = executeWithTrace(
         agentId = agentId,
         context = context,
         input = input,
         eventSink = eventSink,
+        onActiveRunReady = onActiveRunReady,
         onStep = null,
     )
 
@@ -38,14 +40,15 @@ class AgentExecutor internal constructor(
         context: AgentContext<String>,
         input: String,
         eventSink: AgentRuntimeEventSink? = null,
-        onStep: GraphStepCallback?,
+        onActiveRunReady: suspend () -> Unit = {},
+        onStep: GraphStepCallback? = null,
     ): AgentExecutionResult {
         val runtimeEventSink = eventSink ?: context.runtimeEventSink
         val seed = context.copy(
             input = input,
             runtimeEventSink = runtimeEventSink,
         )
-        return agentById(agentId).executeWithTrace(seed, onStep)
+        return agentById(agentId).executeWithTrace(seed, onActiveRunReady, onStep)
     }
 
     private fun agentById(agentId: AgentId): TraceableAgent = agentProvider(normalizeAgentId(agentId))
