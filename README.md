@@ -31,6 +31,50 @@ brew install --cask souz-ai
 
 Or download the latest build from [GitHub Releases](https://github.com/D00mch/souz/releases).
 
+## Local backend
+
+Run the backend and PostgreSQL locally with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The backend listens on `http://127.0.0.1:8080` and PostgreSQL listens on `127.0.0.1:5432`. Override host ports with `SOUZ_BACKEND_HOST_PORT` and `SOUZ_POSTGRES_HOST_PORT` when needed. Local defaults use `SOUZ_MASTER_KEY=local-dev-master-key` and `SOUZ_BACKEND_PROXY_TOKEN=local-dev-proxy-token`.
+
+Protected `/v1` routes expect proxy-injected headers:
+
+```bash
+curl -H 'X-Souz-Proxy-Auth: local-dev-proxy-token' \
+  -H 'X-User-Id: 00000000-0000-0000-0000-000000000001' \
+  http://127.0.0.1:8080/v1/bootstrap
+```
+
+### Local backend model and key setup
+
+The backend stores provider keys and the default chat model per trusted user. Start Docker Compose first, then set both through the `/v1` API with the same `X-User-Id`.
+
+Store an OpenAI API key for the local user:
+
+```bash
+curl -X PUT http://127.0.0.1:8080/v1/me/provider-keys/openai \
+  -H 'Content-Type: application/json' \
+  -H 'X-Souz-Proxy-Auth: local-dev-proxy-token' \
+  -H 'X-User-Id: 00000000-0000-0000-0000-000000000001' \
+  -d '{"apiKey":"sk-..."}'
+```
+
+Set that user's default model to an OpenAI API model:
+
+```bash
+curl -X PATCH http://127.0.0.1:8080/v1/me/settings \
+  -H 'Content-Type: application/json' \
+  -H 'X-Souz-Proxy-Auth: local-dev-proxy-token' \
+  -H 'X-User-Id: 00000000-0000-0000-0000-000000000001' \
+  -d '{"defaultModel":"gpt-5.2"}'
+```
+
+`gpt-5.5` is the shared Codex GPT-5.5 alias, not an OpenAI API-key model. The backend currently removes the `CODEX` provider from advertised capabilities and does not build a backend chat client for Codex OAuth, so `{"defaultModel":"gpt-5.5"}` is not a supported Docker backend setup. Use an `OPENAI` provider alias such as `gpt-5.2`, `gpt-5-mini`, or `gpt-5-nano` with an OpenAI API key.
+
 ## Project structure
 
 ```text
@@ -416,6 +460,14 @@ SOUZ_BACKEND_PROXY_TOKEN=replace-with-shared-proxy-secret
 SOUZ_MASTER_KEY=replace-with-settings-secret
 SOUZ_BACKEND_AGENT=graph # graph or skills
 
+# Server-managed provider keys, optional. Docker Compose local setup
+# usually uses /v1/me/provider-keys/{provider} instead.
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+QWEN_KEY=...
+GIGA_KEY=...
+AITUNNEL_KEY=...
+
 # Feature flags
 SOUZ_FEATURE_WS_EVENTS=true
 SOUZ_FEATURE_STREAMING_MESSAGES=true
@@ -508,6 +560,8 @@ Souz supports:
 - Local llama.cpp models through `:native`.
 
 Provider/model selection is key-aware: chat, embeddings, and voice-recognition model lists are filtered by configured provider keys or Codex OAuth state, and invalid saved selections are normalized to available providers.
+
+The backend supports API-key providers and local models for chat execution. Codex aliases are available to desktop/shared OAuth flows, but backend execution excludes the `CODEX` provider.
 
 ## Local models
 
