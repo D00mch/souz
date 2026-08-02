@@ -7,6 +7,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
@@ -37,6 +39,8 @@ internal class PublicClientService(
     private val registry: ClientThreadRuntimeRegistry,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
+    private val requestMutex = Mutex()
+
     suspend fun requireChat(chatId: UUID, clientType: String): Chat {
         val chat = chatRepository.getById(chatId) ?: throw ClientContractException("chat_not_found", "Chat not found.")
         if (chat.clientType != clientType) {
@@ -45,7 +49,10 @@ internal class PublicClientService(
         return chat
     }
 
-    suspend fun handleMessage(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame {
+    suspend fun handleMessage(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame =
+        requestMutex.withLock { handleMessageLocked(chat, frame) }
+
+    private suspend fun handleMessageLocked(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame {
         val now = Instant.now()
         val requestId = frame.requestId.required("requestId")
         validateDevice(chat, frame.payload.device)
@@ -132,7 +139,10 @@ internal class PublicClientService(
         )
     }
 
-    suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {
+    suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame =
+        requestMutex.withLock { handleCancelLocked(chat, frame) }
+
+    private suspend fun handleCancelLocked(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {
         val now = Instant.now()
         val requestId = frame.requestId.required("requestId")
         val threadId = frame.threadId.uuid("threadId")
@@ -219,6 +229,7 @@ internal class PublicClientService(
             )
         } catch (error: Exception) {
             registry.ackSent(threadId, requestId)
+            registry.discard(threadId)
             return rejectedMessage(chat.id, requestId, "message_rejected", error.message ?: "Message was rejected.", now)
         }
         val ack = AcceptedMessageAck(

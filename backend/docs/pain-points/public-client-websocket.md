@@ -6,7 +6,7 @@
 
 Accepted user inputs are `messages` with `inputSeq`, source, device, request ID, and request metadata. The execution keeps the latest revision and device JSON. Client tool calls are tool-backed Skills in the request-scoped catalog, so the Skills graph discovers them and invokes them through `RunSkillCommand`.
 
-The live registry owns only process-local runtime references, acknowledgement gates, and one pending client-tool waiter. Disconnect does not cancel a waiter. Before the server accepts connections, startup recovery fails interrupted public threads and emits `thread.failed`; it does not reconstruct waiters.
+The live registry owns only process-local runtime references, acknowledgement gates, and one pending client-tool waiter. A single coroutine mutex protects its state. Terminal entries remain until the runtime is detached and pending acknowledgements and tool work are clear, then they are discarded. Disconnect does not cancel a waiter. Before the server accepts connections, startup recovery fails interrupted public threads and emits `thread.failed`; it does not reconstruct waiters.
 
 ## Why it is fragile
 
@@ -15,8 +15,10 @@ An acknowledgement, tool event, runtime mailbox, and terminal state can race. Se
 ## Safe-change guidance
 
 - Keep strict JSON decoding and reject unknown fields.
+- Serialize the shared `message.submit` and `thread.cancel` receipt check and acceptance in the single backend process.
 - Serialize input acceptance with terminal persistence. Commit the message and revision only when `submitToActiveRun` accepts it; release its event gate only after the acknowledgement is sent.
 - Persist a tool result before acknowledging it; complete the suspended Skill only after sending the acknowledgement.
+- Persist pending client tool calls as cancelled before propagating thread cancellation.
 - Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate either hardcoded Skill.
 - Keep `user.ask` and `device.media.open` in the request-scoped tool catalog rather than adding them to the Skills graph core-tool list.
 - Keep replay subscription-before-query and suppress duplicate live delivery by sequence.

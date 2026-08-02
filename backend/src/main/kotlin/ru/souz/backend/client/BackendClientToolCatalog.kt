@@ -5,6 +5,8 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
@@ -138,6 +140,9 @@ private class ClientToolSetup(
                 name = functionCall.name,
             )
         } catch (cancelled: CancellationException) {
+            withContext(NonCancellable) {
+                cancel(context)
+            }
             throw cancelled
         } catch (error: Exception) {
             return errorMessage(functionCall.name, "client_tool_failed", error.message ?: "Client tool failed.")
@@ -166,6 +171,17 @@ private class ClientToolSetup(
         val outcome = ClientToolOutcome("timed_out", null, error)
         registry.finishTool(threadId, toolCallId, outcome)
         return outcome
+    }
+
+    private suspend fun cancel(context: ToolCallContext) {
+        val error = ClientError("client_tool_cancelled", "Client tool call was cancelled with its thread.")
+        toolCallRepository.completeClientCall(
+            context = context,
+            status = ToolCallStatus.CANCELLED,
+            resultJson = null,
+            errorJson = restJsonMapper.writeValueAsString(error),
+            payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "cancelled", "error" to error)),
+        )
     }
 
     private fun errorMessage(functionName: String, code: String, message: String): LLMRequest.Message =
