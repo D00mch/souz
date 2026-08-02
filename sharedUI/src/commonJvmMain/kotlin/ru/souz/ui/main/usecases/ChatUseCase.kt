@@ -130,25 +130,10 @@ class ChatUseCase internal constructor(
         }
     }
 
-    /** Adds text to the open Skills run without starting or cancelling a chat request session. */
+    /** Adds text to the open Skills run, optionally only when it still owns [expectedRequestId]. */
     suspend fun submitToActiveRun(
         chatMessage: String,
-    ): Boolean = submitToActiveRunInternal(chatMessage, expectedRequestId = null)
-
-    internal suspend fun captureActiveSkillsRequestId(): Long? = activeRequestMutex.withLock {
-        if (agentFacade.activeAgentId.value != AgentId.SKILLS_GRAPH) return@withLock null
-        val session = activeRequestSession ?: return@withLock null
-        session.requestId.takeIf { it == activeChatRequestId }
-    }
-
-    internal suspend fun submitToCapturedActiveRun(
-        expectedRequestId: Long,
-        chatMessage: String,
-    ): Boolean = submitToActiveRunInternal(chatMessage, expectedRequestId)
-
-    private suspend fun submitToActiveRunInternal(
-        chatMessage: String,
-        expectedRequestId: Long?,
+        expectedRequestId: Long? = null,
     ): Boolean {
         val userText = chatMessage.trim()
         if (userText.isEmpty()) return false
@@ -174,6 +159,11 @@ class ChatUseCase internal constructor(
             l.info("Submitted input to active agent run: chars={}", userText.length)
             true
         }
+    }
+
+    internal suspend fun captureActiveSkillsRequestId(): Long? = activeRequestMutex.withLock {
+        if (agentFacade.activeAgentId.value != AgentId.SKILLS_GRAPH) return@withLock null
+        activeRequestSession?.requestId?.takeIf { it == activeChatRequestId }
     }
 
     /**

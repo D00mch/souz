@@ -354,8 +354,7 @@ fun MainScreenContent(
                     availableModelAliases = state.availableModelAliases,
                     selectedContextSize = state.selectedContextSize,
                     attachedFiles = state.attachedFiles,
-                    pendingVoiceInputDraft = state.pendingVoiceInputDraft?.text,
-                    pendingVoiceInputDraftToken = state.pendingVoiceInputDraft?.token ?: 0L,
+                    pendingVoiceInputDraft = state.pendingVoiceInputDraft,
                     chatInputSubmissionFeedback = state.chatInputSubmissionFeedback,
                     isProcessing = state.isProcessing,
                     supportsActiveRunInput = state.supportsActiveRunInput,
@@ -958,8 +957,7 @@ fun ChatModeContent(
     availableModelAliases: List<String>,
     selectedContextSize: Int,
     attachedFiles: List<ChatAttachedFile>,
-    pendingVoiceInputDraft: String?,
-    pendingVoiceInputDraftToken: Long,
+    pendingVoiceInputDraft: PendingVoiceInputDraft?,
     chatInputSubmissionFeedback: ChatInputSubmissionFeedback,
     isProcessing: Boolean,
     supportsActiveRunInput: Boolean,
@@ -1038,18 +1036,18 @@ fun ChatModeContent(
         listState.animateScrollToItem(activeMatch.messageIndex)
     }
 
-    LaunchedEffect(pendingVoiceInputDraftToken) {
-        val recognizedText = pendingVoiceInputDraft?.trim().orEmpty()
+    LaunchedEffect(pendingVoiceInputDraft?.token) {
+        val draft = pendingVoiceInputDraft ?: return@LaunchedEffect
+        val recognizedText = draft.text?.trim().orEmpty()
         if (recognizedText.isEmpty()) return@LaunchedEffect
 
-        val draftToken = pendingVoiceInputDraftToken
         val mergedText = mergeVoiceDraftIntoInputText(inputText.text, recognizedText)
         inputText = TextFieldValue(
             text = mergedText,
             selection = TextRange(mergedText.length),
         )
-        reviewedVoiceInputDraftToken = draftToken
-        onConsumePendingVoiceInputDraft(draftToken)
+        reviewedVoiceInputDraftToken = draft.token
+        onConsumePendingVoiceInputDraft(draft.token)
         if (!isSearchOpen) {
             focusRequester.requestFocus()
         }

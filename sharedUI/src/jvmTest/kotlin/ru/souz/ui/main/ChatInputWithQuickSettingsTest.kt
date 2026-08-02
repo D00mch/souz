@@ -7,19 +7,7 @@ import kotlin.test.assertTrue
 class ChatInputWithQuickSettingsTest {
     @Test
     fun `voice toggle is enabled for active run input`() {
-        assertTrue(
-            canStartVoiceInput(
-                inputEnabled = false,
-                allowActiveRunInput = true,
-                voiceInputDisabledReason = null,
-            )
-        )
-        assertFalse(
-            canStartVoiceInput(
-                inputEnabled = false,
-                allowActiveRunInput = true,
-                voiceInputDisabledReason = "Voice input unavailable",
-            )
-        )
+        assertTrue(canStartVoiceInput(false, true, null))
+        assertFalse(canStartVoiceInput(false, true, "Voice input unavailable"))
     }
 }
