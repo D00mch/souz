@@ -68,6 +68,7 @@ internal class BackendConversationRuntime(
         request: BackendConversationTurnRequest,
         persistSession: Boolean = true,
         eventSink: AgentRuntimeEventSink? = null,
+        onActiveRunReady: suspend () -> Unit = {},
     ): BackendConversationExecution {
         settingsProvider.applyRequest(
             request = request,
@@ -95,6 +96,7 @@ internal class BackendConversationRuntime(
             context = seedContext,
             input = request.prompt,
             eventSink = eventSink,
+            onActiveRunReady = onActiveRunReady,
         )
         val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
         val nextSession = AgentConversationSession(

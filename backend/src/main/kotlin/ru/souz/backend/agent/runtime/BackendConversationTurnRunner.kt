@@ -56,6 +56,9 @@ internal class BackendConversationRuntimeTurnRunner(
                 request = request,
                 persistSession = false,
                 eventSink = eventSink,
+                onActiveRunReady = {
+                    if (threadId != null) clientThreadRegistry?.markRuntimeReady(threadId, runtime)
+                },
             )
             if (eventSink is BackendAgentRuntimeEventSink && eventSink.hasRequestedOption) {
                 BackendConversationTurnOutcome.WaitingOption(
