@@ -11,14 +11,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.chat.model.Chat
-import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.client.model.ClientRequest
+import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
@@ -33,8 +33,8 @@ internal data class HandledClientFrame(
 
 internal class PublicClientService(
     private val chatRepository: ChatRepository,
-    private val messageRepository: MessageRepository,
     private val executionRepository: AgentExecutionRepository,
+    private val clientInputRepository: ClientInputRepository,
     private val clientRequestRepository: ClientRequestRepository,
     private val toolCallRepository: ToolCallRepository,
     private val executionService: AgentExecutionService,
@@ -178,14 +178,22 @@ internal class PublicClientService(
         if (!execution.status.isRunningThread()) {
             return rejectedCancel(chat.id, requestId, threadId, "thread_already_terminal", "Thread is already terminal.", now)
         }
-        val cancelled = registry.acceptCancellation(
-            threadId = threadId,
-            requestId = requestId,
-            canAccept = {
-                executionRepository.getByChat(chat.userId, chat.id, threadId)?.status?.isRunningThread() == true
-            },
-            commit = { executionService.cancelExecution(chat.userId, chat.id, threadId) },
-        )
+        val cancelled = try {
+            registry.acceptCancellation(
+                threadId = threadId,
+                requestId = requestId,
+                canAccept = {
+                    executionRepository.getByChat(chat.userId, chat.id, threadId)?.status?.isRunningThread() == true
+                },
+                commit = { executionService.cancelExecution(chat.userId, chat.id, threadId) },
+            )
+        } catch (error: BackendV1Exception) {
+            if (error.code == "invalid_request" && error.message == "Execution is not active.") {
+                null
+            } else {
+                throw error
+            }
+        }
         if (cancelled == null) {
             val latest = executionRepository.getByChat(chat.userId, chat.id, threadId)
             return if (latest != null && !latest.status.isRunningThread()) {
@@ -289,20 +297,12 @@ internal class PublicClientService(
                 commit = {
                     val current = requireNotNull(activeExecution)
                     val nextInputSeq = current.revision + 1
-                    messageRepository.append(
-                        userId = chat.userId,
-                        chatId = chat.id,
-                        role = ChatRole.USER,
+                    clientInputRepository.appendFollowUpInput(
+                        execution = current,
                         content = frame.payload.content.text,
                         metadata = inputMetadata(frame, nextInputSeq),
-                    )
-                    executionRepository.update(
-                        current.copy(
-                            revision = nextInputSeq,
-                            latestDeviceContextJson = mapper.writeValueAsString(frame.payload.device),
-                        )
-                    )
-                    nextInputSeq
+                        latestDeviceContextJson = mapper.writeValueAsString(frame.payload.device),
+                    )?.revision
                 },
             )
         } else {

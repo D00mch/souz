@@ -335,6 +335,19 @@ class PostgresRepositoriesTest {
             assertEquals(2, storedExecution?.revision)
             assertEquals("phone-1", storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
 
+            val updatedExecution = repositories.clientInputRepository.appendFollowUpInput(
+                execution = requireNotNull(storedExecution),
+                content = "next public input",
+                metadata = mapOf("inputSeq" to "3", "requestId" to "message-2"),
+                latestDeviceContextJson = """{"deviceId":"phone-2"}""",
+                createdAt = Instant.parse("2026-05-01T10:01:01Z"),
+            )
+            val storedMessages = repositories.messageRepository.list(userId, chat.id)
+            assertEquals(3, updatedExecution?.revision)
+            assertEquals("phone-2", updatedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
+            assertEquals(listOf("next public input"), storedMessages.map { it.content })
+            assertEquals(listOf("3"), storedMessages.map { it.metadata["inputSeq"] })
+
             val receipt = ClientRequest(
                 chatId = chat.id,
                 requestId = "message-2",
@@ -781,6 +794,7 @@ class PostgresRepositoriesTest {
             userRepository = PostgresUserRepository(dataSource),
             chatRepository = PostgresChatRepository(dataSource),
             clientRequestRepository = PostgresClientRequestRepository(dataSource),
+            clientInputRepository = PostgresClientInputRepository(dataSource),
             messageRepository = PostgresMessageRepository(dataSource),
             stateRepository = PostgresAgentStateRepository(dataSource),
             executionRepository = PostgresAgentExecutionRepository(dataSource),
@@ -990,6 +1004,7 @@ private data class PostgresRepositoryBundle(
     val userRepository: PostgresUserRepository,
     val chatRepository: PostgresChatRepository,
     val clientRequestRepository: PostgresClientRequestRepository,
+    val clientInputRepository: PostgresClientInputRepository,
     val messageRepository: PostgresMessageRepository,
     val stateRepository: PostgresAgentStateRepository,
     val executionRepository: PostgresAgentExecutionRepository,

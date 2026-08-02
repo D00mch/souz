@@ -18,11 +18,15 @@ class BackendRuntime private constructor(
         if (httpDependencies.featureFlags.telegramBot) di.direct.instance() else null
     }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
+    private val applicationScope: BackendApplicationScope by lazy { di.direct.instance() }
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
-        if (httpDependencies.featureFlags.wsEvents) runBlocking { clientThreadRecoveryService.recover() }
+        if (httpDependencies.featureFlags.wsEvents) {
+            runBlocking { clientThreadRecoveryService.recover() }
+            clientThreadRecoveryService.start(applicationScope)
+        }
         telegramBotPollingService?.start()
     }
 

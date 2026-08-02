@@ -267,8 +267,22 @@ internal class AgentExecutionFinalizer(
         chatId: UUID,
         usage: AgentExecutionUsage?,
     ): AgentExecution = withTerminalTransition(executionId) {
+        persistCancelled(
+            executionId = executionId,
+            userId = userId,
+            chatId = chatId,
+            usage = usage,
+        )
+    }
+
+    internal suspend fun persistCancelled(
+        executionId: UUID,
+        userId: String,
+        chatId: UUID,
+        usage: AgentExecutionUsage?,
+    ): AgentExecution {
         val currentExecution = currentExecution(executionId, userId, chatId)
-        executionRepository.update(
+        return executionRepository.update(
             currentExecution.copy(
                 status = AgentExecutionStatus.CANCELLED,
                 cancelRequested = true,
@@ -352,7 +366,7 @@ internal class AgentExecutionFinalizer(
         )
     }
 
-    private suspend fun <T> withTerminalTransition(executionId: UUID, block: suspend () -> T): T =
+    internal suspend fun <T> withTerminalTransition(executionId: UUID, block: suspend () -> T): T =
         clientThreadRegistry?.withTerminalTransition(executionId, block) ?: block()
 }
 
