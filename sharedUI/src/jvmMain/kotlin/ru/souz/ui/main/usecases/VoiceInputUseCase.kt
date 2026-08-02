@@ -128,7 +128,7 @@ class VoiceInputUseCase(
                             recognitionMutex.unlock()
                         }
                     } catch (cause: Throwable) {
-                        if (handleRecognitionFailure(cause)) {
+                        if (keepsCollectingAfterRecognitionFailure(cause)) {
                             return@mapLatest null
                         }
                         throw cause
@@ -259,11 +259,11 @@ class VoiceInputUseCase(
         emitVoiceError(Res.string.voice_error_empty_audio, speak = false)
     }
 
-    private suspend fun handleRecognitionFailure(cause: Throwable): Boolean = when (cause) {
+    private suspend fun keepsCollectingAfterRecognitionFailure(cause: Throwable): Boolean = when (cause) {
         is CancellationException -> false
         is MissingVoiceKeyException,
         is MissingOpenAiVoiceKeyException,
-        is MissingAiTunnelVoiceKeyException -> emitVoiceError(Res.string.voice_error_missing_key, retry = true)
+        is MissingAiTunnelVoiceKeyException -> emitVoiceError(Res.string.voice_error_missing_key, keepCollecting = true)
         is VoiceRecognitionUnavailableException -> emitVoiceError(Res.string.voice_error_recognition_unavailable)
         is LocalMacOsSpeechPermissionDeniedException -> emitVoiceError(Res.string.voice_error_speech_permission_denied)
         is LocalMacOsSpeechAppBundleMissingUsageDescriptionException ->
@@ -273,9 +273,13 @@ class VoiceInputUseCase(
         is LocalMacOsSpeechOnDeviceUnsupportedException ->
             emitVoiceError(Res.string.voice_error_local_macos_unavailable)
         is LocalMacOsSpeechAudioTooLongException ->
-            emitVoiceError(Res.string.voice_error_local_macos_audio_too_long, retry = true)
+            emitVoiceError(Res.string.voice_error_local_macos_audio_too_long, keepCollecting = true)
         is LocalMacOsSpeechUnavailableException ->
-            emitVoiceError(Res.string.voice_error_local_macos_unavailable, retry = true, retryDelayMs = 1_000L)
+            emitVoiceError(
+                Res.string.voice_error_local_macos_unavailable,
+                keepCollecting = true,
+                retryDelayMs = 1_000L,
+            )
         else -> {
             l.error("Voice recognition failed: {}", cause.message, cause)
             val errorMsg = getString(Res.string.error_prefix).format(cause.message ?: "")
@@ -288,14 +292,14 @@ class VoiceInputUseCase(
     private suspend fun emitVoiceError(
         resource: StringResource,
         speak: Boolean = true,
-        retry: Boolean = false,
+        keepCollecting: Boolean = false,
         retryDelayMs: Long = 0L,
     ): Boolean {
         val message = getString(resource)
         if (speak) speechUseCase.queue(message)
         emitState { copy(isListening = false, statusMessage = message) }
         if (retryDelayMs > 0L) delay(retryDelayMs)
-        return retry
+        return keepCollecting
     }
 
     private suspend fun emitVoiceInputBlocked(message: String) {

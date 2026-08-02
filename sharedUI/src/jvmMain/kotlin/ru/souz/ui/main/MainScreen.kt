@@ -1038,9 +1038,7 @@ fun ChatModeContent(
 
     LaunchedEffect(pendingVoiceInputDraft?.token) {
         val draft = pendingVoiceInputDraft ?: return@LaunchedEffect
-        val newSegments = draft.segments.filter { segment ->
-            reviewedVoiceInputDraftToken?.let { segment.token > it } ?: true
-        }
+        val newSegments = draft.segmentsAfter(reviewedVoiceInputDraftToken)
         if (newSegments.isEmpty()) return@LaunchedEffect
 
         val mergedText = newSegments.fold(inputText.text) { currentText, segment ->

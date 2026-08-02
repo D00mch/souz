@@ -127,7 +127,22 @@ data class PendingVoiceInputDraft(
 
     val token: Long
         get() = segments.last().token
+
+    val activeRunRequestId: Long?
+        get() = (route as? VoiceInputRoute.ActiveRunContinuation)?.requestId
+
+    fun segmentsAfter(token: Long?): List<VoiceInputDraftSegment> =
+        segments.filter { segment -> token?.let { segment.token > it } ?: true }
 }
+
+internal fun PendingVoiceInputDraft?.withSegment(
+    route: VoiceInputRoute,
+    segment: VoiceInputDraftSegment,
+): PendingVoiceInputDraft =
+    if (this?.route == route) copy(segments = segments + segment) else PendingVoiceInputDraft(listOf(segment), route)
+
+internal fun PendingVoiceInputDraft?.withoutToken(token: Long?): PendingVoiceInputDraft? =
+    if (token != null && this?.token == token) null else this
 
 internal data class PendingChatInputSubmission(
     val input: String,

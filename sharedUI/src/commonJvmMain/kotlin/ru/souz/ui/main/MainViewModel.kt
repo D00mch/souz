@@ -204,9 +204,7 @@ class MainViewModel(
             }
             MainEvent.StopListening -> voiceInputUseCase.stopRecording()
             is MainEvent.DiscardPendingVoiceInputDraft -> {
-                if (event.token == currentState.pendingVoiceInputDraft?.token) {
-                    setState { copy(pendingVoiceInputDraft = null) }
-                }
+                setState { copy(pendingVoiceInputDraft = pendingVoiceInputDraft.withoutToken(event.token)) }
             }
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
@@ -238,68 +236,7 @@ class MainViewModel(
                         send(MainEffect.ShowError(error.message ?: getString(Res.string.error_failed_to_open_path)))
                     }
             }
-            is MainEvent.SendChatMessage -> vmLaunch {
-                val inputText = event.text
-                val voiceDraftToken = event.voiceInputDraftToken
-                val reviewedVoiceDraft = voiceDraftToken?.let { token ->
-                    currentState.pendingVoiceInputDraft?.takeIf { it.token == token }
-                        ?: run {
-                            publishChatInputSubmissionFeedback(inputText, accepted = false)
-                            showActiveRunInputRejected()
-                            return@vmLaunch
-                        }
-                }
-
-                val capturedRequestId =
-                    (reviewedVoiceDraft?.route as? VoiceInputRoute.ActiveRunContinuation)?.requestId
-                if (capturedRequestId != null) {
-                    submitActiveRunInput(
-                        input = inputText,
-                        expectedRequestId = capturedRequestId,
-                        voiceDraftToken = voiceDraftToken,
-                    )
-                    return@vmLaunch
-                }
-
-                if (
-                    reviewedVoiceDraft == null &&
-                    currentState.isProcessing &&
-                    currentState.supportsActiveRunInput
-                ) {
-                    submitActiveRunInput(inputText)
-                    return@vmLaunch
-                }
-
-                val attachments = currentState.attachedFiles
-                val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
-                    input = inputText,
-                    attachedFiles = attachments,
-                )
-                if (composedMessage.isBlank()) {
-                    publishChatInputSubmissionFeedback(inputText, accepted = false)
-                    return@vmLaunch
-                }
-
-                setState {
-                    copy(
-                        attachedFiles = emptyList(),
-                        chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(
-                            input = inputText,
-                            accepted = true,
-                        ),
-                        pendingVoiceInputDraft = pendingVoiceInputDraft
-                            ?.takeUnless { it.token == voiceDraftToken },
-                    )
-                }
-                chatUseCase.sendChatMessage(
-                    scope = viewModelScope,
-                    isVoice = false,
-                    chatMessage = composedMessage,
-                    displayMessage = inputText,
-                    attachedFiles = attachments,
-                    requestSource = ChatRequestSource.CHAT_UI,
-                )
-            }
+            is MainEvent.SendChatMessage -> vmLaunch { handleSendChatMessage(event) }
 
             MainEvent.RefreshSettings -> refreshSettings()
             is MainEvent.ToggleToolModifyReviewSelection ->
@@ -361,24 +298,12 @@ class MainViewModel(
 
     private suspend fun handleRecognizedVoiceInput(input: RecognizedVoiceInput) {
         if (settingsProvider.voiceInputReviewEnabled) {
-            val token = ++voiceInputDraftToken
             val segment = VoiceInputDraftSegment(
                 text = input.text.trim(),
-                token = token,
+                token = ++voiceInputDraftToken,
             )
             setState {
-                val currentDraft = pendingVoiceInputDraft
-                val updatedDraft = if (currentDraft?.route == input.route) {
-                    currentDraft.copy(segments = currentDraft.segments + segment)
-                } else {
-                    PendingVoiceInputDraft(
-                        segments = listOf(segment),
-                        route = input.route,
-                    )
-                }
-                copy(
-                    pendingVoiceInputDraft = updatedDraft,
-                )
+                copy(pendingVoiceInputDraft = pendingVoiceInputDraft.withSegment(input.route, segment))
             }
             return
         }
@@ -403,6 +328,59 @@ class MainViewModel(
         if (!accepted) showActiveRunInputRejected()
     }
 
+    private suspend fun handleSendChatMessage(event: MainEvent.SendChatMessage) {
+        val inputText = event.text
+        val voiceDraftToken = event.voiceInputDraftToken
+        val reviewedVoiceDraft = voiceDraftToken?.let { token ->
+            currentState.pendingVoiceInputDraft?.takeIf { it.token == token }
+                ?: return rejectChatInput(inputText)
+        }
+
+        reviewedVoiceDraft?.activeRunRequestId?.let { requestId ->
+            submitActiveRunInput(
+                input = inputText,
+                expectedRequestId = requestId,
+                voiceDraftToken = voiceDraftToken,
+            )
+            return
+        }
+
+        if (reviewedVoiceDraft == null && currentState.isProcessing && currentState.supportsActiveRunInput) {
+            submitActiveRunInput(inputText)
+            return
+        }
+
+        sendNewChatMessage(inputText, voiceDraftToken)
+    }
+
+    private suspend fun sendNewChatMessage(inputText: String, voiceDraftToken: Long?) {
+        val attachments = currentState.attachedFiles
+        val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
+            input = inputText,
+            attachedFiles = attachments,
+        )
+        if (composedMessage.isBlank()) {
+            publishChatInputSubmissionFeedback(inputText, accepted = false)
+            return
+        }
+
+        setState {
+            copy(
+                attachedFiles = emptyList(),
+                chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(inputText, accepted = true),
+                pendingVoiceInputDraft = pendingVoiceInputDraft.withoutToken(voiceDraftToken),
+            )
+        }
+        chatUseCase.sendChatMessage(
+            scope = viewModelScope,
+            isVoice = false,
+            chatMessage = composedMessage,
+            displayMessage = inputText,
+            attachedFiles = attachments,
+            requestSource = ChatRequestSource.CHAT_UI,
+        )
+    }
+
     private suspend fun submitActiveRunInput(
         input: String,
         expectedRequestId: Long? = null,
@@ -417,9 +395,13 @@ class MainViewModel(
         if (!accepted) showActiveRunInputRejected()
     }
 
-    private suspend fun showActiveRunInputRejected() {
-        send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+    private suspend fun rejectChatInput(input: String) {
+        publishChatInputSubmissionFeedback(input, accepted = false)
+        showActiveRunInputRejected()
     }
+
+    private suspend fun showActiveRunInputRejected() =
+        send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
 
     private suspend fun publishChatInputSubmissionFeedback(
         input: String,
@@ -429,8 +411,7 @@ class MainViewModel(
         setState {
             copy(
                 chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted),
-                pendingVoiceInputDraft = pendingVoiceInputDraft
-                    ?.takeUnless { it.token == consumedVoiceDraftToken },
+                pendingVoiceInputDraft = pendingVoiceInputDraft.withoutToken(consumedVoiceDraftToken),
             )
         }
     }
