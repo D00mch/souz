@@ -403,6 +403,55 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `voice started request does not block recording active run continuation events`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val recognizedTexts = ArrayDeque(listOf("initial voice request", "voice continuation"))
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+            submitActiveRunBehavior = { true },
+            recognizeBehavior = {
+                LLMResponse.RecognizeResponse(result = listOf(recognizedTexts.removeFirst()))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            prepareAudioCapture(viewModel, byteArrayOf(1, 2, 3))
+            viewModel.send(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            viewModel.send(MainEvent.StopListening)
+
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "initial voice request" }
+            }
+
+            prepareAudioCapture(viewModel, byteArrayOf(4, 5, 6))
+            viewModel.send(MainEvent.StartListening)
+            val captureState = awaitState(viewModel) { it.isListening }
+            assertTrue(captureState.isProcessing)
+
+            viewModel.send(MainEvent.StopListening)
+            val continuedState = awaitState(viewModel) { state ->
+                state.chatMessages.any { it.isUser && it.text == "voice continuation" }
+            }
+            assertEquals(listOf("initial voice request"), harness.executedInputs)
+            assertEquals(listOf("voice continuation"), harness.submittedActiveRunInputs)
+            assertTrue(continuedState.chatMessages.last { it.text == "voice continuation" }.isVoice)
+
+            response.complete("final answer")
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
+            }
+        } finally {
+            response.complete("final answer")
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `voice capture submits recognized text to a capable active run without cancellation`() = runTest(mainDispatcher) {
         val response = CompletableDeferred<String>()
         var cancellationCalls = 0
@@ -509,6 +558,9 @@ class MainViewModelTest {
                 listOf("initial request", "final answer"),
                 viewModel.uiState.value.chatMessages.map { it.text },
             )
+            assertEquals("late voice continuation", viewModel.uiState.value.chatInputText)
+            assertFalse(viewModel.uiState.value.chatInputSubmissionFeedback.accepted)
+            assertEquals("late voice continuation", viewModel.uiState.value.chatInputSubmissionFeedback.input)
         } finally {
             response.complete("final answer")
             releaseRecognition.complete(Unit)

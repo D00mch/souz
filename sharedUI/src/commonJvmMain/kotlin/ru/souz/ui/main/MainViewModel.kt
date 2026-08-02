@@ -203,7 +203,9 @@ class MainViewModel(
                 voiceInputUseCase.startRecording(viewModelScope, ::voiceInputBlockReason)
             }
             MainEvent.StopListening -> {
-                voiceInputUseCase.stopRecording()?.let { handleRecognizedVoiceInput(it) }
+                vmLaunch {
+                    voiceInputUseCase.stopRecording()?.let { handleRecognizedVoiceInput(it) }
+                }
             }
             MainEvent.RequestNewConversation -> requestNewConversation()
             MainEvent.ConfirmNewConversation -> confirmNewConversation()
@@ -330,7 +332,22 @@ class MainViewModel(
                     isVoice = true,
                 )
         }
-        if (!accepted) showActiveRunInputRejected()
+        if (!accepted) {
+            retainRejectedVoiceInput(input.text)
+            showActiveRunInputRejected()
+        }
+    }
+
+    private suspend fun retainRejectedVoiceInput(input: String) {
+        val text = input.trim()
+        if (text.isBlank()) return
+        setState {
+            copy(
+                chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(text, accepted = false),
+                chatInputText = mergeVoiceDraftIntoInputText(chatInputText, text),
+                chatInputLocalEditRevision = null,
+            )
+        }
     }
 
     private suspend fun handleSendChatMessage(event: MainEvent.SendChatMessage) {
