@@ -99,6 +99,47 @@ class AgentEventServiceTest {
     }
 
     @Test
+    fun `public stream catch-up returns durable events dropped from the live buffer`() = runTest {
+        val chatRepository = MemoryChatRepository()
+        val eventRepository = MemoryAgentEventRepository()
+        val service = AgentEventService(
+            chatRepository = chatRepository,
+            eventRepository = eventRepository,
+            eventBus = AgentEventBus(),
+        )
+        val chat = chat(userId = "user-a", title = "Public catch-up")
+        chatRepository.create(chat)
+        service.appendDurable(
+            userId = chat.userId,
+            chatId = chat.id,
+            executionId = null,
+            type = AgentEventType.MESSAGE_CREATED,
+            payload = rawEventPayload("index" to "initial"),
+        )
+        val stream = service.openPublicStream(userId = chat.userId, chatId = chat.id, afterSeq = 0)
+
+        try {
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE + 5) { index ->
+                service.appendDurable(
+                    userId = chat.userId,
+                    chatId = chat.id,
+                    executionId = null,
+                    type = AgentEventType.MESSAGE_CREATED,
+                    payload = rawEventPayload("index" to index.toString()),
+                )
+            }
+
+            val catchUp = stream.replayAfter(stream.replay.last().seq)
+
+            assertEquals(AgentEventLimits.LIVE_BUFFER_SIZE + 5, catchUp.size)
+            assertEquals(2L, catchUp.first().seq)
+            assertEquals((AgentEventLimits.LIVE_BUFFER_SIZE + 6).toLong(), catchUp.last().seq)
+        } finally {
+            stream.close()
+        }
+    }
+
+    @Test
     fun `list and stream replay default and clamp limits`() = runTest {
         val chatRepository = MemoryChatRepository()
         val eventRepository = MemoryAgentEventRepository()

@@ -156,20 +156,28 @@ class AgentEventService(
         val subscription = eventBus.subscribe(userId, chatId)
         try {
             return AgentEventStream(
-                replay = eventRepository.listByChat(
-                    userId = userId,
-                    chatId = chatId,
-                    afterSeq = afterSeq,
-                    limit = Int.MAX_VALUE,
-                ),
+                replay = listPublicStreamReplay(userId, chatId, afterSeq),
                 liveEvents = subscription.events,
                 close = { subscription.close() },
+                replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
             )
         } catch (error: Throwable) {
             subscription.close()
             throw error
         }
     }
+
+    private suspend fun listPublicStreamReplay(
+        userId: String,
+        chatId: UUID,
+        afterSeq: Long,
+    ): List<AgentEvent> =
+        eventRepository.listByChat(
+            userId = userId,
+            chatId = chatId,
+            afterSeq = afterSeq,
+            limit = Int.MAX_VALUE,
+        )
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID) {
         if (chatRepository.get(userId, chatId) == null) {

@@ -22,7 +22,7 @@ An acknowledgement, tool event, runtime mailbox, and terminal state can race. Se
 - Refresh public thread runtime leases while the process owns the live runtime. Recovery must only fail expired leases or already failed recovered threads missing their terminal event.
 - Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate either hardcoded Skill.
 - Keep `user.ask` and `device.media.open` in the request-scoped tool catalog rather than adding them to the Skills graph core-tool list.
-- Keep replay subscription-before-query and suppress duplicate live delivery by sequence.
+- Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
 
 ## Verification
 
