@@ -54,6 +54,7 @@ import souz.sharedui.generated.resources.onboarding_display_text
 import souz.sharedui.generated.resources.onboarding_input_permission_request
 import souz.sharedui.generated.resources.voice_error_local_macos_audio_too_long
 import souz.sharedui.generated.resources.voice_error_local_macos_unavailable
+import souz.sharedui.generated.resources.voice_error_tool_review_pending
 import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
@@ -706,6 +707,42 @@ class MainViewModelTest {
             assertFalse(completedState.isListening)
             assertEquals(1, audioRecorder.startCalls)
         } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `voice hotkey is blocked while Skills run awaits tool review`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            nativeVoiceHotkeyEnabled = true,
+            executeBehavior = { response.await() },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            val audioRecorder = testAudioRecorder(viewModel)
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+            awaitState(viewModel) { it.isProcessing }
+            forceUiState(
+                viewModel,
+                viewModel.uiState.value.copy(
+                    isProcessing = false,
+                    isAwaitingToolReview = true,
+                )
+            )
+
+            harness.pressVoiceHotkey(true)
+
+            val blockedMessage = getString(Res.string.voice_error_tool_review_pending)
+            val blockedState = awaitState(viewModel) { it.statusMessage == blockedMessage }
+            assertFalse(blockedState.isListening)
+            assertEquals(0, audioRecorder.startCalls)
+        } finally {
+            response.complete("final answer")
             harness.clear()
         }
     }
@@ -1908,6 +1945,7 @@ class MainViewModelTest {
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
         voiceInputReviewEnabled: Boolean = false,
+        nativeVoiceHotkeyEnabled: Boolean = false,
         safeModeEnabled: Boolean = false,
         qwenChatKey: String = "",
         configuredModel: LLMModel = LLMModel.Max,
@@ -2022,10 +2060,17 @@ class MainViewModelTest {
         every { telegramBotController.cleanCommands } returns cleanCommands
         val audioRecorder = TestAudioRecorder()
         val desktopPermissionService = mockk<PermissionPromptService>(relaxed = true)
+        var voiceHotkeyCallback: ((Boolean) -> Unit)? = null
         every { desktopPermissionService.isSandboxed } returns false
-        every { desktopPermissionService.isHeadless } answers { java.awt.GraphicsEnvironment.isHeadless() }
-        every { desktopPermissionService.registerNativeHook() } returns false
-        every { desktopPermissionService.canRegisterNativeHookNow() } returns false
+        every { desktopPermissionService.isHeadless } answers {
+            !nativeVoiceHotkeyEnabled && java.awt.GraphicsEnvironment.isHeadless()
+        }
+        every { desktopPermissionService.registerNativeHook() } returns nativeVoiceHotkeyEnabled
+        every { desktopPermissionService.canRegisterNativeHookNow() } returns nativeVoiceHotkeyEnabled
+        every { desktopPermissionService.registerVoiceInputHotkey(any(), any()) } answers {
+            voiceHotkeyCallback = firstArg()
+            return@answers {}
+        }
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
         every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
@@ -2103,6 +2148,7 @@ class MainViewModelTest {
             deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
             executedInputs = executedInputs,
             submittedActiveRunInputs = submittedActiveRunInputs,
+            pressVoiceHotkey = { pressed -> checkNotNull(voiceHotkeyCallback)(pressed) },
         )
     }
 
@@ -2133,6 +2179,7 @@ class MainViewModelTest {
         val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
         val executedInputs: List<String>,
         val submittedActiveRunInputs: List<String>,
+        val pressVoiceHotkey: (Boolean) -> Unit,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")

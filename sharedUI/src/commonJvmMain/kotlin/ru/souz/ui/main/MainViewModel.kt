@@ -182,7 +182,7 @@ class MainViewModel(
                         }
                     }
                 },
-                voiceInputStartBlocker = ::ambientVoiceInputBlockReason,
+                voiceInputStartBlocker = ::voiceInputBlockReason,
             )
         }
         viewModelScope.launchDbSetup(backgroundIndexRefresher)
@@ -229,7 +229,7 @@ class MainViewModel(
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
             MainEvent.StartListening -> {
-                val blockedReason = ambientVoiceInputBlockReason()
+                val blockedReason = voiceInputBlockReason()
                 if (blockedReason != null) {
                     setState { copy(statusMessage = blockedReason, isListening = false) }
                     send(MainEffect.ShowError(blockedReason))
@@ -529,12 +529,12 @@ class MainViewModel(
             AmbientSpeechAvailability.AlreadyRunning -> ""
         }
 
-    private suspend fun ambientVoiceInputBlockReason(): String? =
-        if (ambientModeController.isMicrophoneBusyForVoiceInput) {
+    private suspend fun voiceInputBlockReason(): String? = when {
+        currentState.isAwaitingToolReview -> getString(Res.string.voice_error_tool_review_pending)
+        ambientModeController.isMicrophoneBusyForVoiceInput ->
             getString(Res.string.voice_error_microphone_busy_ambient)
-        } else {
-            null
-        }
+        else -> null
+    }
 
     private suspend fun toggleAmbientMode() {
         if (ambientModeController.modeState.value.isVoiceInputBlocked()) {
