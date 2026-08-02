@@ -154,7 +154,7 @@ internal class AgentExecutionRequestFactory(
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
         )
 
-    fun createEventSink(
+    suspend fun createEventSink(
         userId: String,
         chatId: UUID,
         execution: AgentExecution,
