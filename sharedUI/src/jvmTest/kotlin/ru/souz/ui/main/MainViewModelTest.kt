@@ -679,8 +679,13 @@ class MainViewModelTest {
                 assertEquals(1, audioRecorder.startCalls)
                 assertEquals(activeRunDraft.token, blockedState.pendingVoiceInputDraft?.token)
 
-                viewModel.handleEvent(MainEvent.DiscardPendingVoiceInputDraft(activeRunDraft.token))
-                awaitState(viewModel) { it.pendingVoiceInputDraft == null }
+                viewModel.handleEvent(MainEvent.UpdateChatInputText(""))
+                val clearedInputState = awaitState(viewModel) {
+                    it.pendingVoiceInputDraft == null &&
+                        it.chatInputText.isEmpty() &&
+                        it.reviewedVoiceInputDraftToken == null
+                }
+                assertNull(clearedInputState.pendingVoiceInputDraft)
 
                 recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
                 val newRequestState = awaitState(viewModel) {
@@ -811,62 +816,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `voice recognition stores draft in input when review is enabled`() = runTest(mainDispatcher) {
-        val draft = "voice draft input"
-        val harness = createHarness(
-            voiceInputReviewEnabled = true,
-            recognizeBehavior = {
-                LLMResponse.RecognizeResponse(result = listOf(draft))
-            },
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-
-            recordVoiceInput(viewModel, byteArrayOf(7, 7, 7))
-
-            val state = awaitState(viewModel) { uiState ->
-                uiState.pendingVoiceInputDraft?.text == draft
-            }
-            assertEquals(draft, state.pendingVoiceInputDraft?.text)
-            assertTrue(state.chatMessages.isEmpty())
-            assertFalse(state.isProcessing)
-        } finally {
-            harness.clear()
-        }
-    }
-
-    @Test
-    fun `discarding pending voice draft clears it`() = runTest(mainDispatcher) {
-        val draft = "voice draft input"
-        val harness = createHarness(
-            voiceInputReviewEnabled = true,
-            recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(draft)) },
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-
-            recordVoiceInput(viewModel, byteArrayOf(7, 7, 7))
-            val stateWithDraft = awaitState(viewModel) { it.pendingVoiceInputDraft?.text == draft }
-
-            viewModel.handleEvent(
-                MainEvent.DiscardPendingVoiceInputDraft(
-                    token = requireNotNull(stateWithDraft.pendingVoiceInputDraft).token,
-                )
-            )
-
-            val state = awaitState(viewModel) { it.pendingVoiceInputDraft == null }
-            assertNull(state.pendingVoiceInputDraft)
-        } finally {
-            harness.clear()
-        }
-    }
-
-    @Test
-    fun `same-route captures merge and stale discard does not clear the pending voice draft`() =
+    fun `same-route captures merge into chat input`() =
         runTest(mainDispatcher) {
             val firstDraft = "first voice draft"
             val secondDraft = "second voice draft"
@@ -885,19 +835,23 @@ class MainViewModelTest {
                 advanceUntilIdle()
 
                 recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
-                val firstState = awaitState(viewModel) { it.pendingVoiceInputDraft?.text == firstDraft }
-                val staleToken = requireNotNull(firstState.pendingVoiceInputDraft).token
+                val firstState = awaitState(viewModel) {
+                    it.pendingVoiceInputDraft?.text == firstDraft &&
+                        it.chatInputText == firstDraft &&
+                        it.reviewedVoiceInputDraftToken == it.pendingVoiceInputDraft?.token
+                }
+                assertTrue(firstState.chatMessages.isEmpty())
+                assertFalse(firstState.isProcessing)
 
                 recordVoiceInput(viewModel, byteArrayOf(4, 5, 6))
                 val secondState = awaitState(viewModel) {
                     it.pendingVoiceInputDraft?.let { draft ->
                         draft.segments.map(VoiceInputDraftSegment::text) == listOf(firstDraft, secondDraft) &&
-                            draft.token > staleToken
+                            draft.token > draft.segments.first().token &&
+                            it.chatInputText == "$firstDraft\n$secondDraft" &&
+                            it.reviewedVoiceInputDraftToken == draft.token
                     } == true
                 }
-
-                viewModel.handleEvent(MainEvent.DiscardPendingVoiceInputDraft(token = staleToken))
-                runCurrent()
 
                 assertEquals(
                     listOf(firstDraft, secondDraft),
@@ -1666,6 +1620,12 @@ class MainViewModelTest {
                 viewModel,
                 viewModel.uiState.value.copy(
                     isAwaitingToolReview = true,
+                    pendingVoiceInputDraft = PendingVoiceInputDraft(
+                        segments = listOf(VoiceInputDraftSegment(text = "voice draft", token = 42L)),
+                        route = VoiceInputRoute.NewRequest,
+                    ),
+                    chatInputText = "voice draft",
+                    reviewedVoiceInputDraftToken = 42L,
                     chatMessages = listOf(
                         ChatMessage(
                             text = "pending review",
@@ -1678,8 +1638,15 @@ class MainViewModelTest {
 
             viewModel.handleEvent(MainEvent.ClearContext)
 
-            val state = awaitState(viewModel) { !it.isAwaitingToolReview && it.chatMessages.isEmpty() }
+            val state = awaitState(viewModel) {
+                !it.isAwaitingToolReview &&
+                    it.chatMessages.isEmpty() &&
+                    it.pendingVoiceInputDraft == null &&
+                    it.chatInputText.isEmpty() &&
+                    it.reviewedVoiceInputDraftToken == null
+            }
             assertFalse(state.isAwaitingToolReview)
+            assertNull(state.pendingVoiceInputDraft)
         } finally {
             harness.clear()
         }

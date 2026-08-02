@@ -11,28 +11,19 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AgentExecutorTest {
     @Test
-    fun `executor reads active run input capability from the selected agent`() {
-        val agent = CapturingAgent()
+    fun `executor forwards active run capability and input submission to the selected agent`() = runTest {
+        val agent = CapturingAgent().apply {
+            supportsActiveRunInput = true
+            acceptSubmissions = true
+        }
         val executor = AgentExecutor(agentProvider = { agent })
 
-        assertFalse(executor.supportsActiveRunInput(AgentId.GRAPH))
-
-        agent.supportsActiveRunInput = true
-
-        assertTrue(executor.supportsActiveRunInput(AgentId.GRAPH))
-    }
-
-    @Test
-    fun `executor forwards explicit input submission to the selected agent`() = runTest {
-        val agent = CapturingAgent().apply { acceptSubmissions = true }
-        val executor = AgentExecutor(agentProvider = { agent })
-
+        assertTrue(executor.supportsActiveRunInput(AgentId.SKILLS_GRAPH))
         assertTrue(executor.submitToActiveRun(AgentId.SKILLS_GRAPH, "follow-up"))
         assertEquals(listOf("follow-up"), agent.submittedInputs)
     }
