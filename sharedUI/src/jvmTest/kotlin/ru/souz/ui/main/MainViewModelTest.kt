@@ -36,7 +36,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -54,6 +53,7 @@ import souz.sharedui.generated.resources.onboarding_display_text
 import souz.sharedui.generated.resources.onboarding_input_permission_request
 import souz.sharedui.generated.resources.voice_error_local_macos_audio_too_long
 import souz.sharedui.generated.resources.voice_error_local_macos_unavailable
+import souz.sharedui.generated.resources.voice_error_tool_review_pending
 import souz.sharedui.generated.resources.voice_status_processing_input
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.getStringArray
@@ -87,9 +87,6 @@ import ru.souz.service.observability.ChatObservabilityTracker
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.service.speech.LocalMacOsSpeechAudioTooLongException
 import ru.souz.service.speech.LocalMacOsSpeechUnavailableException
-import ru.souz.service.speech.MacOsSpeechAuthorizationStatus
-import ru.souz.service.speech.MacOsSpeechBridgeApi
-import ru.souz.service.speech.MacOsSpeechRecognitionProvider
 import ru.souz.service.speech.SpeechRecognitionProvider
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.SelectionApprovalSource
@@ -113,6 +110,7 @@ import ru.souz.ui.main.usecases.DesktopPathPicker
 import ru.souz.ui.main.usecases.MemoryConversationCleanup
 import ru.souz.ui.main.usecases.NoopMemoryConversationCleanup
 import ru.souz.ui.main.usecases.VoiceInputController
+import ru.souz.ui.main.usecases.VoiceInputRoute
 import ru.souz.ui.main.usecases.VoiceInputUseCase
 import ru.souz.ui.common.FinderService
 import ru.souz.ui.host.BackgroundIndexRefresher
@@ -170,10 +168,11 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `send during Skills processing submits input to the active run`() = runTest(mainDispatcher) {
+    fun `send during capable agent processing submits input to the active run`() = runTest(mainDispatcher) {
         val response = CompletableDeferred<String>()
         val harness = createHarness(
-            activeAgentId = AgentId.SKILLS_GRAPH,
+            activeAgentId = AgentId.GRAPH,
+            supportsActiveRunInput = true,
             executeBehavior = { response.await() },
             submitActiveRunBehavior = { true },
         )
@@ -343,19 +342,25 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `audio flow event cancels first message and runs second request`() = runTest(mainDispatcher) {
+    fun `voice capture cancels classic request and runs recognized request`() = runTest(mainDispatcher) {
+        val firstStarted = CompletableDeferred<Unit>()
         val firstResponse = CompletableDeferred<String>()
         val secondResponse = CompletableDeferred<String>()
         val harness: TestHarness = createHarness(
             executeBehavior = { input ->
                 when (input) {
-                    "first request" -> firstResponse.await()
+                    "first request" -> {
+                        firstStarted.complete(Unit)
+                        firstResponse.await()
+                    }
                     "second request" -> secondResponse.await()
                     else -> error("Unexpected input: $input")
                 }
             },
             onCancelActiveJob = {
-                firstResponse.completeExceptionally(CancellationException("Cancelled by alt press"))
+                if (firstStarted.isCompleted) {
+                    firstResponse.completeExceptionally(CancellationException("Cancelled by voice capture"))
+                }
             },
             recognizeBehavior = {
                 LLMResponse.RecognizeResponse(result = listOf("second request"))
@@ -371,8 +376,15 @@ class MainViewModelTest {
             awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "first request" }
             }
+            firstStarted.await()
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(9, 8, 7))
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { state ->
+                state.isListening && state.chatMessages.none { it.text == "first request" }
+            }
+            viewModel.handleEvent(MainEvent.StopListening)
+
             val secondInProgress = awaitState(viewModel) { state ->
                 state.isProcessing && state.chatMessages.any { it.isUser && it.text == "second request" }
             }
@@ -390,12 +402,19 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `voice recognition stores draft in input when review is enabled`() = runTest(mainDispatcher) {
-        val draft = "voice draft input"
+    fun `active run voice continuation bypasses review without cancellation`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val recognizedTexts = ArrayDeque(
+            listOf("initial voice request", "voice continuation", "rejected continuation"),
+        )
+        var cancellationCalls = 0
         val harness = createHarness(
-            voiceInputReviewEnabled = true,
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+            submitActiveRunBehavior = { it != "rejected continuation" },
+            onCancelActiveJob = { cancellationCalls += 1 },
             recognizeBehavior = {
-                LLMResponse.RecognizeResponse(result = listOf(draft))
+                LLMResponse.RecognizeResponse(result = listOf(recognizedTexts.removeFirst()))
             },
         )
 
@@ -403,22 +422,253 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(7, 7, 7))
+            prepareAudioCapture(viewModel, byteArrayOf(1, 2, 3))
+            viewModel.send(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            viewModel.send(MainEvent.StopListening)
 
-            val state = awaitState(viewModel) { uiState ->
-                uiState.pendingVoiceInputDraft == draft && uiState.pendingVoiceInputDraftToken > 0
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "initial voice request" }
             }
-            assertEquals(draft, state.pendingVoiceInputDraft)
-            assertTrue(state.chatMessages.isEmpty())
-            assertFalse(state.isProcessing)
+            harness.settingsProvider.voiceInputReviewEnabled = true
+            val cancellationsBeforeCapture = cancellationCalls
+
+            prepareAudioCapture(viewModel, byteArrayOf(4, 5, 6))
+            viewModel.send(MainEvent.StartListening)
+            val captureState = awaitState(viewModel) { it.isListening }
+            assertTrue(captureState.isProcessing)
+            assertEquals(cancellationsBeforeCapture, cancellationCalls)
+
+            viewModel.send(MainEvent.StopListening)
+            val continuedState = awaitState(viewModel) { state ->
+                state.chatMessages.any { it.isUser && it.text == "voice continuation" }
+            }
+            assertEquals(listOf("initial voice request"), harness.executedInputs)
+            assertEquals(listOf("voice continuation"), harness.submittedActiveRunInputs)
+            assertTrue(continuedState.chatMessages.last { it.text == "voice continuation" }.isVoice)
+            assertNull(continuedState.pendingVoiceInputDraft)
+
+            recordVoiceInput(viewModel, byteArrayOf(7, 8, 9))
+            val rejectedState = awaitState(viewModel) {
+                it.pendingVoiceInputDraft?.text == "rejected continuation"
+            }
+            assertFalse(requireNotNull(rejectedState.pendingVoiceInputDraft).submitAsVoice)
+            assertFalse(rejectedState.chatMessages.any { it.text == "rejected continuation" })
+            assertEquals(
+                listOf("voice continuation", "rejected continuation"),
+                harness.submittedActiveRunInputs,
+            )
+            assertEquals(cancellationsBeforeCapture, cancellationCalls)
+
+            response.complete("final answer")
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "final answer" }
+            }
+        } finally {
+            response.complete("final answer")
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `reviewed new request voice becomes a one-shot voice draft`() = runTest(mainDispatcher) {
+        val draftText = "review this voice request"
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                LLMResponse.RecognizeResponse(result = listOf(draftText))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            recordVoiceInput(viewModel, byteArrayOf(9, 8, 7))
+            val stateWithDraft = awaitState(viewModel) { state ->
+                state.pendingVoiceInputDraft?.text == draftText
+            }
+            val draft = requireNotNull(stateWithDraft.pendingVoiceInputDraft)
+            assertTrue(draft.submitAsVoice)
+            assertTrue(stateWithDraft.chatMessages.isEmpty())
+            assertFalse(stateWithDraft.isProcessing)
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("unrelated typed request"))
+            awaitState(viewModel) {
+                !it.isProcessing && harness.executedInputs == listOf("unrelated typed request")
+            }
+            assertEquals(draft, viewModel.uiState.value.pendingVoiceInputDraft)
+
+            viewModel.consumePendingVoiceInputDraft(draft.token)
+            awaitState(viewModel) { it.pendingVoiceInputDraft == null }
+
+            viewModel.handleEvent(
+                MainEvent.SendChatMessage(draft.text, isVoice = draft.submitAsVoice),
+            )
+            val sentState = awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { it.isUser && it.text == draftText }
+            }
+            assertTrue(sentState.chatMessages.last { it.isUser }.isVoice)
+            assertTrue(sentState.chatMessages.last { !it.isUser }.isVoice)
         } finally {
             harness.clear()
         }
     }
 
     @Test
-    fun `consuming pending voice draft clears it`() = runTest(mainDispatcher) {
-        val draft = "voice draft input"
+    fun `acknowledged voice drafts are excluded while unconsumed drafts merge`() = runTest(mainDispatcher) {
+        val recognizedTexts = ArrayDeque(listOf("first draft", "second draft", "third draft"))
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = {
+                LLMResponse.RecognizeResponse(result = listOf(recognizedTexts.removeFirst()))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
+            val firstDraft = requireNotNull(
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "first draft" }
+                    .pendingVoiceInputDraft,
+            )
+            viewModel.consumePendingVoiceInputDraft(firstDraft.token)
+            assertNull(viewModel.uiState.value.pendingVoiceInputDraft)
+
+            recordVoiceInput(viewModel, byteArrayOf(4, 5, 6))
+            val secondDraft = requireNotNull(
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "second draft" }
+                    .pendingVoiceInputDraft,
+            )
+            recordVoiceInput(viewModel, byteArrayOf(7, 8, 9))
+            val combinedDraft = requireNotNull(
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "second draft\nthird draft" }
+                    .pendingVoiceInputDraft,
+            )
+
+            viewModel.consumePendingVoiceInputDraft(secondDraft.token)
+
+            assertTrue(secondDraft.token > firstDraft.token)
+            assertTrue(combinedDraft.token > secondDraft.token)
+            assertTrue(combinedDraft.submitAsVoice)
+            assertEquals(combinedDraft, viewModel.uiState.value.pendingVoiceInputDraft)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `late voice continuation becomes a draft and does not steer a replacement run`() = runTest(mainDispatcher) {
+        val responseA = CompletableDeferred<String>()
+        val responseB = CompletableDeferred<String>()
+        val recognitionStarted = CompletableDeferred<Unit>()
+        val releaseRecognition = CompletableDeferred<Unit>()
+        val recognitionReturned = CompletableDeferred<Unit>()
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { input ->
+                when (input) {
+                    "request A" -> responseA.await()
+                    "request B" -> responseB.await()
+                    else -> error("Unexpected input: $input")
+                }
+            },
+            submitActiveRunBehavior = { true },
+            recognizeBehavior = {
+                recognitionStarted.complete(Unit)
+                releaseRecognition.await()
+                recognitionReturned.complete(Unit)
+                LLMResponse.RecognizeResponse(result = listOf("late voice continuation"))
+            },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            advanceUntilIdle()
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("request A"))
+            awaitState(viewModel) { it.isProcessing }
+
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            viewModel.handleEvent(MainEvent.StopListening)
+            awaitDeferred(recognitionStarted)
+
+            responseA.complete("answer A")
+            awaitState(viewModel) { state ->
+                !state.isProcessing && state.chatMessages.any { !it.isUser && it.text == "answer A" }
+            }
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("request B"))
+            awaitState(viewModel) { state ->
+                state.isProcessing && state.chatMessages.any { it.isUser && it.text == "request B" }
+            }
+
+            releaseRecognition.complete(Unit)
+            awaitDeferred(recognitionReturned)
+            val finalState = awaitState(viewModel) {
+                it.pendingVoiceInputDraft?.text == "late voice continuation"
+            }
+
+            assertTrue(finalState.isProcessing)
+            assertEquals(listOf("request A", "request B"), harness.executedInputs)
+            assertTrue(harness.submittedActiveRunInputs.isEmpty())
+            assertFalse(finalState.chatMessages.any { it.text == "late voice continuation" })
+            assertFalse(requireNotNull(finalState.pendingVoiceInputDraft).submitAsVoice)
+        } finally {
+            responseA.complete("answer A")
+            responseB.complete("answer B")
+            releaseRecognition.complete(Unit)
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `failed recording stop does not route the next capture with stale intent`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
+        val continuation = "continue active request"
+        val harness = createHarness(
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            executeBehavior = { response.await() },
+            submitActiveRunBehavior = { true },
+            recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(continuation)) },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            val audioRecorder = testAudioRecorder(viewModel)
+            advanceUntilIdle()
+
+            audioRecorder.failNextStop()
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            viewModel.handleEvent(MainEvent.StopListening)
+            awaitState(viewModel) { !it.isListening }
+
+            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+            awaitState(viewModel) { it.isProcessing }
+
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            viewModel.handleEvent(MainEvent.StopListening)
+
+            awaitState(viewModel) { harness.submittedActiveRunInputs == listOf(continuation) }
+
+            assertEquals(listOf("initial request"), harness.executedInputs)
+            assertTrue(viewModel.uiState.value.isProcessing)
+        } finally {
+            response.complete("initial answer")
+            harness.clear()
+        }
+    }
+
+    @Test
+    fun `recording stays busy until asynchronous stop completes`() = runTest(mainDispatcher) {
+        val draft = "voice draft"
         val harness = createHarness(
             voiceInputReviewEnabled = true,
             recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(draft)) },
@@ -426,55 +676,67 @@ class MainViewModelTest {
 
         try {
             val viewModel = harness.viewModel
+            val audioRecorder = testAudioRecorder(viewModel)
             advanceUntilIdle()
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(7, 7, 7))
-            val stateWithDraft = awaitState(viewModel) { it.pendingVoiceInputDraft == draft }
+            audioRecorder.deferNextStop()
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
 
-            viewModel.handleEvent(
-                MainEvent.ConsumePendingVoiceInputDraft(token = stateWithDraft.pendingVoiceInputDraftToken)
-            )
+            val stopJob = launch { viewModel.handleEvent(MainEvent.StopListening) }
+            runCurrent()
+            assertEquals(UiAudioRecordingState.Stopping, audioRecorder.recordingState.value)
+            assertTrue(viewModel.uiState.value.isListening)
 
-            val state = awaitState(viewModel) { it.pendingVoiceInputDraft == null }
-            assertNull(state.pendingVoiceInputDraft)
+            viewModel.handleEvent(MainEvent.StartListening)
+            assertEquals(1, audioRecorder.startCalls)
+
+            audioRecorder.completeDeferredStop()
+            stopJob.join()
+
+            val completedState = awaitState(viewModel) {
+                !it.isListening && it.pendingVoiceInputDraft?.text == draft
+            }
+            assertFalse(completedState.isListening)
+            assertEquals(1, audioRecorder.startCalls)
         } finally {
             harness.clear()
         }
     }
 
     @Test
-    fun `stale consume event does not clear newer pending voice draft`() = runTest(mainDispatcher) {
-        val firstDraft = "first voice draft"
-        val secondDraft = "second voice draft"
-        var call = 0
+    fun `voice hotkey is blocked while Skills run awaits tool review`() = runTest(mainDispatcher) {
+        val response = CompletableDeferred<String>()
         val harness = createHarness(
-            voiceInputReviewEnabled = true,
-            recognizeBehavior = {
-                call += 1
-                val result = if (call == 1) firstDraft else secondDraft
-                LLMResponse.RecognizeResponse(result = listOf(result))
-            },
+            activeAgentId = AgentId.SKILLS_GRAPH,
+            nativeVoiceHotkeyEnabled = true,
+            executeBehavior = { response.await() },
         )
 
         try {
             val viewModel = harness.viewModel
+            val audioRecorder = testAudioRecorder(viewModel)
             advanceUntilIdle()
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
-            val firstState = awaitState(viewModel) { it.pendingVoiceInputDraft == firstDraft }
-            val staleToken = firstState.pendingVoiceInputDraftToken
+            viewModel.handleEvent(MainEvent.SendChatMessage("initial request"))
+            awaitState(viewModel) { it.isProcessing }
+            forceUiState(
+                viewModel,
+                viewModel.uiState.value.copy(
+                    isProcessing = false,
+                    isAwaitingToolReview = true,
+                )
+            )
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(4, 5, 6))
-            val secondState = awaitState(viewModel) {
-                it.pendingVoiceInputDraft == secondDraft && it.pendingVoiceInputDraftToken > staleToken
-            }
+            harness.pressVoiceHotkey(true)
 
-            viewModel.handleEvent(MainEvent.ConsumePendingVoiceInputDraft(token = staleToken))
-            runCurrent()
-
-            assertEquals(secondDraft, viewModel.uiState.value.pendingVoiceInputDraft)
-            assertEquals(secondState.pendingVoiceInputDraftToken, viewModel.uiState.value.pendingVoiceInputDraftToken)
+            val blockedMessage = getString(Res.string.voice_error_tool_review_pending)
+            val blockedState = awaitState(viewModel) { it.statusMessage == blockedMessage }
+            assertFalse(blockedState.isListening)
+            assertEquals(0, audioRecorder.startCalls)
         } finally {
+            response.complete("final answer")
             harness.clear()
         }
     }
@@ -496,7 +758,10 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(9, 9, 9))
+            prepareAudioCapture(viewModel, byteArrayOf(9, 9, 9))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+            val stopJob = launch { viewModel.handleEvent(MainEvent.StopListening) }
             recognitionStarted.await()
 
             viewModel.handleEvent(MainEvent.StartListening)
@@ -506,7 +771,7 @@ class MainViewModelTest {
             assertFalse(state.isListening)
 
             releaseRecognition.complete(Unit)
-            runCurrent()
+            stopJob.join()
         } finally {
             releaseRecognition.complete(Unit)
             harness.clear()
@@ -514,105 +779,41 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `local macos unavailable recognition retries and processes next audio event`() = runTest(mainDispatcher) {
-        var recognizeCalls = 0
-        val harness = createHarness(
-            voiceInputReviewEnabled = true,
-            recognizeBehavior = {
-                recognizeCalls += 1
-                if (recognizeCalls == 1) {
-                    throw LocalMacOsSpeechUnavailableException("Local macOS unavailable")
-                }
-                LLMResponse.RecognizeResponse(result = listOf("final draft"))
-            },
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-
-            emitAudioFlowEvent(viewModel, byteArrayOf(7, 8, 9))
-
-            val unavailableMessage = getString(Res.string.voice_error_local_macos_unavailable)
-            val unavailableState = awaitState(viewModel) { it.statusMessage == unavailableMessage }
-            assertEquals(unavailableMessage, unavailableState.statusMessage)
-
-            advanceTimeBy(1_000L)
-            runCurrent()
-
-            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
-
-            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "final draft" }
-            assertEquals("final draft", recoveredState.pendingVoiceInputDraft)
-            assertEquals(2, recognizeCalls)
-        } finally {
-            harness.clear()
-        }
-    }
-
-    @Test
-    fun `new audio cancels in flight local macos recognition and processes latest draft`() = runTest(mainDispatcher) {
-        val localSettingsProvider = mockk<SettingsProvider>()
-        every { localSettingsProvider.regionProfile } returns "ru"
-
-        val firstRecognitionStarted = CompletableDeferred<Unit>()
-        val firstRecognitionCancelled = CompletableDeferred<Unit>()
-        var recognizeCalls = 0
-        val bridge = object : MacOsSpeechBridgeApi {
-            override fun hasSpeechRecognitionUsageDescription(): Boolean = true
-
-            override fun authorizationStatus(): MacOsSpeechAuthorizationStatus =
-                MacOsSpeechAuthorizationStatus.AUTHORIZED
-
-            override fun requestAuthorizationIfNeeded() = Unit
-
-            override fun recognizeWav(path: String, locale: String): String {
-                recognizeCalls += 1
-                return when (recognizeCalls) {
-                    1 -> {
-                        firstRecognitionStarted.complete(Unit)
-                        runBlocking { firstRecognitionCancelled.await() }
-                        throw IllegalStateException("LOCAL_MACOS_STT:CANCELLED:Recognition cancelled.")
+    fun `next capture works after local macos unavailable recognition`() =
+        runTest(mainDispatcher) {
+            var recognizeCalls = 0
+            val harness = createHarness(
+                voiceInputReviewEnabled = true,
+                recognizeBehavior = {
+                    recognizeCalls += 1
+                    if (recognizeCalls == 1) {
+                        throw LocalMacOsSpeechUnavailableException("Local macOS unavailable")
                     }
+                    LLMResponse.RecognizeResponse(result = listOf("final draft"))
+                },
+            )
 
-                    2 -> "second draft"
-                    else -> error("Unexpected recognition call: $recognizeCalls")
+            try {
+                val viewModel = harness.viewModel
+                advanceUntilIdle()
+
+                recordVoiceInput(viewModel, byteArrayOf(7, 8, 9))
+
+                val unavailableMessage = getString(Res.string.voice_error_local_macos_unavailable)
+                val unavailableState = awaitState(viewModel) { it.statusMessage == unavailableMessage }
+                assertEquals(unavailableMessage, unavailableState.statusMessage)
+
+                recordVoiceInput(viewModel, byteArrayOf(1, 2, 3))
+
+                val recoveredState = awaitState(viewModel) {
+                    it.pendingVoiceInputDraft?.text == "final draft"
                 }
-            }
-
-            override fun cancelRecognition() {
-                firstRecognitionCancelled.complete(Unit)
+                assertEquals("final draft", recoveredState.pendingVoiceInputDraft?.text)
+                assertEquals(2, recognizeCalls)
+            } finally {
+                harness.clear()
             }
         }
-
-        val provider = MacOsSpeechRecognitionProvider(
-            settingsProvider = localSettingsProvider,
-            bridge = bridge,
-            isMacOsProvider = { true },
-        )
-        val harness = createHarness(
-            voiceInputReviewEnabled = true,
-            speechRecognitionProviderOverride = provider,
-        )
-
-        try {
-            val viewModel = harness.viewModel
-            advanceUntilIdle()
-
-            emitAudioFlowEvent(viewModel, byteArrayOf(9, 9, 9))
-            awaitDeferred(firstRecognitionStarted)
-
-            emitAudioFlowEvent(viewModel, byteArrayOf(1, 2, 3))
-
-            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "second draft" }
-            assertEquals("second draft", recoveredState.pendingVoiceInputDraft)
-            assertEquals(2, recognizeCalls)
-            assertTrue(firstRecognitionCancelled.isCompleted)
-        } finally {
-            firstRecognitionCancelled.complete(Unit)
-            harness.clear()
-        }
-    }
 
     @Test
     fun `too long local macos audio shows specific message without automatic retry and keeps voice input alive`() = runTest(mainDispatcher) {
@@ -632,7 +833,7 @@ class MainViewModelTest {
             val viewModel = harness.viewModel
             advanceUntilIdle()
 
-            emitAudioFlowEvent(viewModel, ByteArray(16_000 * 2 * 45 + 1))
+            recordVoiceInput(viewModel, ByteArray(16_000 * 2 * 45 + 1))
 
             val tooLongMessage = getString(Res.string.voice_error_local_macos_audio_too_long)
             val tooLongState = awaitState(viewModel) { it.statusMessage == tooLongMessage }
@@ -643,10 +844,10 @@ class MainViewModelTest {
             runCurrent()
             assertEquals(1, recognizeCalls)
 
-            emitAudioFlowEvent(viewModel, byteArrayOf(7, 8, 9))
+            recordVoiceInput(viewModel, byteArrayOf(7, 8, 9))
 
-            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft == "short draft" }
-            assertEquals("short draft", recoveredState.pendingVoiceInputDraft)
+            val recoveredState = awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "short draft" }
+            assertEquals("short draft", recoveredState.pendingVoiceInputDraft?.text)
             assertEquals(2, recognizeCalls)
         } finally {
             harness.clear()
@@ -1231,6 +1432,11 @@ class MainViewModelTest {
                 viewModel,
                 viewModel.uiState.value.copy(
                     isAwaitingToolReview = true,
+                    pendingVoiceInputDraft = PendingVoiceInputDraft(
+                        text = "voice draft",
+                        token = 42L,
+                        submitAsVoice = true,
+                    ),
                     chatMessages = listOf(
                         ChatMessage(
                             text = "pending review",
@@ -1243,8 +1449,13 @@ class MainViewModelTest {
 
             viewModel.handleEvent(MainEvent.ClearContext)
 
-            val state = awaitState(viewModel) { !it.isAwaitingToolReview && it.chatMessages.isEmpty() }
+            val state = awaitState(viewModel) {
+                !it.isAwaitingToolReview &&
+                    it.chatMessages.isEmpty() &&
+                    it.pendingVoiceInputDraft == null
+            }
             assertFalse(state.isAwaitingToolReview)
+            assertNull(state.pendingVoiceInputDraft)
         } finally {
             harness.clear()
         }
@@ -1545,15 +1756,8 @@ class MainViewModelTest {
         data: ByteArray,
         predicate: (MainState) -> Boolean,
     ): MainState {
-        val deadlineMs = System.currentTimeMillis() + 5_000
-        while (System.currentTimeMillis() < deadlineMs) {
-            emitAudioFlowEvent(viewModel, data)
-            runCurrent()
-            val state = viewModel.uiState.value
-            if (predicate(state)) return state
-            withContext(Dispatchers.Default) { yield() }
-        }
-        error("Timed out waiting for voice request to start")
+        recordVoiceInput(viewModel, data)
+        return awaitState(viewModel, predicate)
     }
 
     private fun forceUiState(viewModel: MainViewModel, state: MainState) {
@@ -1570,10 +1774,20 @@ class MainViewModelTest {
         return field.get(instance) as T
     }
 
-    private suspend fun emitAudioFlowEvent(viewModel: MainViewModel, data: ByteArray) {
+    private suspend fun TestScope.recordVoiceInput(viewModel: MainViewModel, data: ByteArray) {
+        prepareAudioCapture(viewModel, data)
+        viewModel.handleEvent(MainEvent.StartListening)
+        awaitState(viewModel) { it.isListening }
+        viewModel.handleEvent(MainEvent.StopListening)
+    }
+
+    private fun prepareAudioCapture(viewModel: MainViewModel, data: ByteArray) {
+        testAudioRecorder(viewModel).emitOnStop(data)
+    }
+
+    private fun testAudioRecorder(viewModel: MainViewModel): TestAudioRecorder {
         val voiceInputUseCase = privateField<VoiceInputUseCase>(viewModel, "voiceInputUseCase")
-        val recorder = voiceInputUseCase.audioRecorder as TestAudioRecorder
-        recorder.emit(data)
+        return voiceInputUseCase.audioRecorder as TestAudioRecorder
     }
 
     private fun createHarness(
@@ -1582,6 +1796,7 @@ class MainViewModelTest {
         onCancelActiveJob: () -> Unit = {},
         needsOnboarding: Boolean = false,
         voiceInputReviewEnabled: Boolean = false,
+        nativeVoiceHotkeyEnabled: Boolean = false,
         safeModeEnabled: Boolean = false,
         qwenChatKey: String = "",
         configuredModel: LLMModel = LLMModel.Max,
@@ -1599,6 +1814,7 @@ class MainViewModelTest {
         conversationKnowledgeStore: ConversationKnowledgeStore = mockk(relaxed = true),
         conversationFinishedEvents: MutableList<Triple<String, ChatConversationMetrics, ChatConversationCloseReason>>? = null,
         activeAgentId: AgentId = AgentId.GRAPH,
+        supportsActiveRunInput: Boolean = activeAgentId == AgentId.SKILLS_GRAPH,
     ): TestHarness {
         val agentFacade = mockk<AgentFacade>(relaxed = true)
         val sideEffects = MutableSharedFlow<AgentSideEffect>()
@@ -1620,6 +1836,7 @@ class MainViewModelTest {
             submitActiveRunBehavior(input)
         }
         every { agentFacade.activeAgentId } returns MutableStateFlow(activeAgentId)
+        every { agentFacade.supportsActiveRunInput } returns supportsActiveRunInput
         every { agentFacade.availableAgents } returns listOf(activeAgentId)
 
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
@@ -1696,10 +1913,17 @@ class MainViewModelTest {
         every { telegramBotController.cleanCommands } returns cleanCommands
         val audioRecorder = TestAudioRecorder()
         val desktopPermissionService = mockk<PermissionPromptService>(relaxed = true)
+        var voiceHotkeyCallback: ((Boolean) -> Unit)? = null
         every { desktopPermissionService.isSandboxed } returns false
-        every { desktopPermissionService.isHeadless } answers { java.awt.GraphicsEnvironment.isHeadless() }
-        every { desktopPermissionService.registerNativeHook() } returns false
-        every { desktopPermissionService.canRegisterNativeHookNow() } returns false
+        every { desktopPermissionService.isHeadless } answers {
+            !nativeVoiceHotkeyEnabled && java.awt.GraphicsEnvironment.isHeadless()
+        }
+        every { desktopPermissionService.registerNativeHook() } returns nativeVoiceHotkeyEnabled
+        every { desktopPermissionService.canRegisterNativeHookNow() } returns nativeVoiceHotkeyEnabled
+        every { desktopPermissionService.registerVoiceInputHotkey(any(), any()) } answers {
+            voiceHotkeyCallback = firstArg()
+            return@answers {}
+        }
         val tokenLogging = mockk<TokenLogging>(relaxed = true)
         every { tokenLogging.requestContextElement(any()) } returns EmptyCoroutineContext
         every { tokenLogging.currentRequestTokenUsage(any()) } returns LLMResponse.Usage(0, 0, 0, 0)
@@ -1777,6 +2001,7 @@ class MainViewModelTest {
             deferredToolModifyPermissionBroker = deferredToolModifyPermissionBroker,
             executedInputs = executedInputs,
             submittedActiveRunInputs = submittedActiveRunInputs,
+            pressVoiceHotkey = { pressed -> checkNotNull(voiceHotkeyCallback)(pressed) },
         )
     }
 
@@ -1807,6 +2032,7 @@ class MainViewModelTest {
         val deferredToolModifyPermissionBroker: DeferredToolModifyPermissionBroker,
         val executedInputs: List<String>,
         val submittedActiveRunInputs: List<String>,
+        val pressVoiceHotkey: (Boolean) -> Unit,
     ) {
         fun clear() {
             val onCleared = MainViewModel::class.java.getDeclaredMethod("onCleared")
@@ -1916,23 +2142,57 @@ class MainViewModelTest {
     }
 
     private class TestAudioRecorder : UiAudioRecorder {
-        private val mutableAudioFlow = MutableSharedFlow<ByteArray>()
-        override val audioFlow = mutableAudioFlow
+        private var audioOnStop: ByteArray? = null
+        private var stopFailureMessage: String? = null
+        private var deferredStop: CompletableDeferred<ByteArray?>? = null
+        var startCalls = 0
+            private set
         override val recordingState = MutableStateFlow<UiAudioRecordingState>(UiAudioRecordingState.Idle)
 
         override suspend fun logState(): Nothing = awaitCancellation()
 
         override fun start(): Boolean {
+            startCalls += 1
             recordingState.value = UiAudioRecordingState.Recording
             return true
         }
 
-        override fun stop() {
+        override suspend fun stop(): ByteArray? {
+            stopFailureMessage?.let { message ->
+                stopFailureMessage = null
+                recordingState.value = UiAudioRecordingState.Error(message)
+                return null
+            }
+            deferredStop?.let { stop ->
+                recordingState.value = UiAudioRecordingState.Stopping
+                val audio = stop.await()
+                recordingState.value = UiAudioRecordingState.Idle
+                return audio
+            }
+            val audio = audioOnStop
+            audioOnStop = null
             recordingState.value = UiAudioRecordingState.Idle
+            return audio
         }
 
-        suspend fun emit(data: ByteArray) {
-            mutableAudioFlow.emit(data)
+        fun emitOnStop(data: ByteArray) {
+            audioOnStop = data
+        }
+
+        fun failNextStop(message: String = "Failed to stop recording") {
+            stopFailureMessage = message
+        }
+
+        fun deferNextStop() {
+            deferredStop = CompletableDeferred()
+        }
+
+        suspend fun completeDeferredStop() {
+            check(recordingState.value == UiAudioRecordingState.Stopping)
+            val audio = audioOnStop
+            audioOnStop = null
+            checkNotNull(deferredStop).complete(audio)
+            deferredStop = null
         }
     }
 }

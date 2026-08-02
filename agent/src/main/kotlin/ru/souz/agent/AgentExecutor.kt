@@ -12,6 +12,9 @@ class AgentExecutor internal constructor(
 ) {
     fun sideEffects(agentId: AgentId): Flow<AgentStreamChunk> = agentById(agentId).sideEffects
 
+    fun supportsActiveRunInput(agentId: AgentId): Boolean =
+        agentById(agentId).supportsActiveRunInput
+
     suspend fun cancelActiveJob(agentId: AgentId) {
         agentById(agentId).cancelActiveJob()
     }

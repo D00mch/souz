@@ -18,7 +18,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentFacade
-import ru.souz.agent.AgentId
 import ru.souz.agent.state.AgentContext
 import ru.souz.ambient.AmbientBlockAnalyzer
 import ru.souz.ambient.AmbientModeState
@@ -39,9 +38,11 @@ import ru.souz.ui.main.usecases.ChatAttachmentsUseCase
 import ru.souz.ui.main.usecases.ChatUseCase
 import ru.souz.ui.main.usecases.MainUseCaseOutput
 import ru.souz.ui.main.usecases.PermissionsUseCase
+import ru.souz.ui.main.usecases.RecognizedVoiceInput
 import ru.souz.ui.main.usecases.SpeechUseCase
 import ru.souz.ui.main.usecases.ToolModifyReviewUseCase
 import ru.souz.ui.main.usecases.VoiceInputController
+import ru.souz.ui.main.usecases.VoiceInputRoute
 import ru.souz.service.observability.ChatConversationCloseReason
 import ru.souz.service.observability.ChatRequestSource
 import ru.souz.ui.host.BackgroundIndexRefresher
@@ -92,6 +93,7 @@ class MainViewModel(
     private var localModelDownloadJob: Job? = null
     private var localModelPreloadJob: Job? = null
     private var ambientModelPreloadJob: Job? = null
+    private var voiceInputDraftToken = 0L
     private val ambientModeController by lazy(kotlin.LazyThreadSafetyMode.NONE) {
         AmbientModeController(
             scope = viewModelScope,
@@ -148,27 +150,10 @@ class MainViewModel(
         ioLaunch {
             voiceInputUseCase.initialize(
                 scope = viewModelScope,
-                stateProvider = { currentState },
-                onRecognizedText = { recognizedText ->
-                    withContext(Dispatchers.Main) {
-                        if (settingsProvider.voiceInputReviewEnabled) {
-                            setState {
-                                copy(
-                                    pendingVoiceInputDraft = recognizedText.trim(),
-                                    pendingVoiceInputDraftToken = pendingVoiceInputDraftToken + 1,
-                                )
-                            }
-                        } else {
-                            chatUseCase.sendChatMessage(
-                                scope = viewModelScope,
-                                isVoice = true,
-                                chatMessage = recognizedText,
-                                requestSource = ChatRequestSource.VOICE_INPUT,
-                            )
-                        }
-                    }
+                onRecognizedInput = {
+                    withContext(Dispatchers.Main) { handleRecognizedVoiceInput(it) }
                 },
-                voiceInputStartBlocker = ::ambientVoiceInputBlockReason,
+                voiceInputStartBlocker = ::voiceInputBlockReason,
             )
         }
         viewModelScope.launchDbSetup(backgroundIndexRefresher)
@@ -197,7 +182,7 @@ class MainViewModel(
         viewModelScope.launch {
             var firstEmission = true
             agentFacade.activeAgentId.collect { agentId ->
-                setState { copy(supportsActiveRunInput = agentId == AgentId.SKILLS_GRAPH) }
+                setState { copy(supportsActiveRunInput = agentFacade.supportsActiveRunInput) }
                 if (firstEmission) {
                     firstEmission = false
                     lastAppliedAgentId = agentId
@@ -215,18 +200,11 @@ class MainViewModel(
     override suspend fun handleEvent(event: MainEvent) {
         when (event) {
             MainEvent.StartListening -> {
-                val blockedReason = ambientVoiceInputBlockReason()
-                if (blockedReason != null) {
-                    setState { copy(statusMessage = blockedReason, isListening = false) }
-                    send(MainEffect.ShowError(blockedReason))
-                } else {
-                    voiceInputUseCase.startRecording(viewModelScope, currentState.isListening)
-                }
+                voiceInputUseCase.startRecording(viewModelScope, ::voiceInputBlockReason)
             }
-            MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
-            is MainEvent.ConsumePendingVoiceInputDraft -> {
-                if (event.token == currentState.pendingVoiceInputDraftToken) {
-                    setState { copy(pendingVoiceInputDraft = null) }
+            MainEvent.StopListening -> {
+                vmLaunch {
+                    voiceInputUseCase.stopRecording()?.let { handleRecognizedVoiceInput(it) }
                 }
             }
             MainEvent.RequestNewConversation -> requestNewConversation()
@@ -259,47 +237,7 @@ class MainViewModel(
                         send(MainEffect.ShowError(error.message ?: getString(Res.string.error_failed_to_open_path)))
                     }
             }
-            is MainEvent.SendChatMessage -> vmLaunch {
-                val inputText = event.text
-                if (currentState.isProcessing && currentState.supportsActiveRunInput) {
-                    val accepted = chatUseCase.submitToActiveRun(
-                        chatMessage = inputText,
-                    )
-                    publishChatInputSubmissionFeedback(inputText, accepted)
-                    if (!accepted) {
-                        send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
-                    }
-                    return@vmLaunch
-                }
-
-                val attachments = currentState.attachedFiles
-                val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
-                    input = inputText,
-                    attachedFiles = attachments,
-                )
-                if (composedMessage.isBlank()) {
-                    publishChatInputSubmissionFeedback(inputText, accepted = false)
-                    return@vmLaunch
-                }
-
-                setState {
-                    copy(
-                        attachedFiles = emptyList(),
-                        chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(
-                            input = inputText,
-                            accepted = true,
-                        ),
-                    )
-                }
-                chatUseCase.sendChatMessage(
-                    scope = viewModelScope,
-                    isVoice = false,
-                    chatMessage = composedMessage,
-                    displayMessage = inputText,
-                    attachedFiles = attachments,
-                    requestSource = ChatRequestSource.CHAT_UI,
-                )
-            }
+            is MainEvent.SendChatMessage -> vmLaunch { handleSendChatMessage(event) }
 
             MainEvent.RefreshSettings -> refreshSettings()
             is MainEvent.ToggleToolModifyReviewSelection ->
@@ -359,9 +297,113 @@ class MainViewModel(
         }
     }
 
-    private suspend fun publishChatInputSubmissionFeedback(input: String, accepted: Boolean) {
+    private suspend fun handleRecognizedVoiceInput(input: RecognizedVoiceInput) {
+        when (val route = input.route) {
+            VoiceInputRoute.NewRequest -> {
+                if (settingsProvider.voiceInputReviewEnabled) {
+                    publishVoiceInputDraft(input.text, submitAsVoice = true)
+                } else {
+                    chatUseCase.sendChatMessage(
+                        scope = viewModelScope,
+                        isVoice = true,
+                        chatMessage = input.text,
+                        requestSource = ChatRequestSource.VOICE_INPUT,
+                    )
+                }
+            }
+            is VoiceInputRoute.ActiveRunContinuation -> {
+                val accepted = chatUseCase.submitToActiveRun(
+                    chatMessage = input.text,
+                    isVoice = true,
+                    expectedRequestId = route.requestId,
+                )
+                if (!accepted) {
+                    publishVoiceInputDraft(input.text, submitAsVoice = false)
+                    showActiveRunInputRejected()
+                }
+            }
+        }
+    }
+
+    private suspend fun publishVoiceInputDraft(
+        input: String,
+        submitAsVoice: Boolean,
+    ) {
+        val text = input.trim()
+        if (text.isBlank()) return
+        val token = ++voiceInputDraftToken
         setState {
-            copy(chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted))
+            val pending = pendingVoiceInputDraft
+            copy(
+                pendingVoiceInputDraft = PendingVoiceInputDraft(
+                    text = mergeVoiceDraftIntoInputText(pending?.text.orEmpty(), text),
+                    token = token,
+                    submitAsVoice = pending?.submitAsVoice == true || submitAsVoice,
+                ),
+            )
+        }
+    }
+
+    private suspend fun handleSendChatMessage(event: MainEvent.SendChatMessage) {
+        val inputText = event.text
+        if (!event.isVoice && currentState.isProcessing && currentState.supportsActiveRunInput) {
+            submitActiveRunInput(inputText)
+            return
+        }
+
+        sendNewChatMessage(inputText, isVoice = event.isVoice)
+    }
+
+    private suspend fun sendNewChatMessage(inputText: String, isVoice: Boolean) {
+        val attachments = currentState.attachedFiles
+        val composedMessage = attachmentsUseCase.buildChatMessageWithAttachedPaths(
+            input = inputText,
+            attachedFiles = attachments,
+        )
+        if (composedMessage.isBlank()) {
+            publishChatInputSubmissionFeedback(inputText, accepted = false)
+            return
+        }
+
+        setState {
+            copy(
+                attachedFiles = emptyList(),
+                chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(inputText, accepted = true),
+            )
+        }
+        chatUseCase.sendChatMessage(
+            scope = viewModelScope,
+            isVoice = isVoice,
+            chatMessage = composedMessage,
+            displayMessage = inputText,
+            attachedFiles = attachments,
+            requestSource = if (isVoice) ChatRequestSource.VOICE_INPUT else ChatRequestSource.CHAT_UI,
+        )
+    }
+
+    private suspend fun submitActiveRunInput(input: String) {
+        val accepted = chatUseCase.submitToActiveRun(
+            chatMessage = input,
+            isVoice = false,
+        )
+        publishChatInputSubmissionFeedback(
+            input = input,
+            accepted = accepted,
+        )
+        if (!accepted) showActiveRunInputRejected()
+    }
+
+    private suspend fun showActiveRunInputRejected() =
+        send(MainEffect.ShowError(getString(Res.string.error_active_run_input_rejected)))
+
+    private suspend fun publishChatInputSubmissionFeedback(
+        input: String,
+        accepted: Boolean,
+    ) {
+        setState {
+            copy(
+                chatInputSubmissionFeedback = chatInputSubmissionFeedback.next(input, accepted),
+            )
         }
     }
 
@@ -378,6 +420,17 @@ class MainViewModel(
         val droppedPaths = attachmentsUseCase.extractDroppedFilePathsNow(payload)
         if (droppedPaths.isEmpty()) return
         send(MainEvent.AttachDroppedFiles(droppedPaths))
+    }
+
+    /** Acknowledges an applied draft before another recognition can extend the pending value. */
+    fun consumePendingVoiceInputDraft(token: Long) {
+        setState {
+            if (pendingVoiceInputDraft?.token == token) {
+                copy(pendingVoiceInputDraft = null)
+            } else {
+                this
+            }
+        }
     }
 
     fun chatSearchProjectionFor(messageId: String): ChatMessageSearchProjection? =
@@ -470,12 +523,12 @@ class MainViewModel(
             AmbientSpeechAvailability.AlreadyRunning -> ""
         }
 
-    private suspend fun ambientVoiceInputBlockReason(): String? =
-        if (ambientModeController.isMicrophoneBusyForVoiceInput) {
+    private suspend fun voiceInputBlockReason(): String? = when {
+        currentState.isAwaitingToolReview -> getString(Res.string.voice_error_tool_review_pending)
+        ambientModeController.isMicrophoneBusyForVoiceInput ->
             getString(Res.string.voice_error_microphone_busy_ambient)
-        } else {
-            null
-        }
+        else -> null
+    }
 
     private suspend fun toggleAmbientMode() {
         if (ambientModeController.modeState.value.isVoiceInputBlocked()) {
@@ -777,6 +830,7 @@ class MainViewModel(
                         chatMessages = emptyList(),
                         agentActions = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
+                        chatSessionId = chatSessionId + 1,
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         showNewChatDialog = false,
@@ -794,6 +848,7 @@ class MainViewModel(
                         chatMessages = emptyList(),
                         agentActions = emptyList(),
                         chatStartTip = startTips.randomOrNull() ?: "",
+                        chatSessionId = chatSessionId + 1,
                         attachedFiles = emptyList(),
                         pendingVoiceInputDraft = null,
                         showNewChatDialog = false,

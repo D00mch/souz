@@ -16,10 +16,14 @@ import kotlin.test.assertTrue
 
 class AgentExecutorTest {
     @Test
-    fun `executor forwards explicit input submission to the selected agent`() = runTest {
-        val agent = CapturingAgent().apply { acceptSubmissions = true }
+    fun `executor forwards active run capability and input submission to the selected agent`() = runTest {
+        val agent = CapturingAgent().apply {
+            supportsActiveRunInput = true
+            acceptSubmissions = true
+        }
         val executor = AgentExecutor(agentProvider = { agent })
 
+        assertTrue(executor.supportsActiveRunInput(AgentId.SKILLS_GRAPH))
         assertTrue(executor.submitToActiveRun(AgentId.SKILLS_GRAPH, "follow-up"))
         assertEquals(listOf("follow-up"), agent.submittedInputs)
     }
@@ -63,6 +67,7 @@ class AgentExecutorTest {
     )
 
     private class CapturingAgent : TraceableAgent {
+        override var supportsActiveRunInput: Boolean = false
         val executedContexts = mutableListOf<AgentContext<String>>()
         var receivedCallback: GraphStepCallback? = null
         var acceptSubmissions = false

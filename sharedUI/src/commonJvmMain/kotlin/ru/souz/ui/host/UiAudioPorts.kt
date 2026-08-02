@@ -1,17 +1,14 @@
 package ru.souz.ui.host
 
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 interface UiAudioRecorder {
-    val audioFlow: Flow<ByteArray>
     val recordingState: StateFlow<UiAudioRecordingState>
 
     suspend fun logState(): Nothing
     fun start(): Boolean
-    fun stop()
+    suspend fun stop(): ByteArray?
 }
 
 sealed interface UiAudioRecordingState {
@@ -34,7 +31,6 @@ interface UiSpeechPlayer {
 }
 
 object NoopUiAudioRecorder : UiAudioRecorder {
-    override val audioFlow: Flow<ByteArray> = emptyFlow()
     override val recordingState: StateFlow<UiAudioRecordingState> = MutableStateFlow(UiAudioRecordingState.Idle)
 
     override suspend fun logState(): Nothing {
@@ -42,7 +38,7 @@ object NoopUiAudioRecorder : UiAudioRecorder {
     }
 
     override fun start(): Boolean = false
-    override fun stop() = Unit
+    override suspend fun stop(): ByteArray? = null
 }
 
 object NoopUiSpeechPlayer : UiSpeechPlayer {

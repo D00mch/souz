@@ -399,6 +399,7 @@
     <string name="voice_status_processing_input">Обработка входа</string>
     <string name="voice_status_speech_not_recognized">Речь не распознана</string>
     <string name="voice_error_microphone_busy_ambient">Микрофон занят ambient mode.</string>
+    <string name="voice_error_tool_review_pending">Завершите проверку действий инструмента перед использованием голосового ввода.</string>
     <string name="ambient_error_missing_analysis_model">Сначала скачайте ambient модель в настройках.</string>
     <string name="ambient_error_stt_unavailable">Ambient распознавание речи недоступно.</string>
     <string name="ambient_error_microphone_unavailable">Микрофон недоступен для ambient mode.</string>

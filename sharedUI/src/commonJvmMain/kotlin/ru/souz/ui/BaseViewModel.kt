@@ -33,7 +33,7 @@ abstract class BaseViewModel<STATE : VMState, EVENT : VMEvent, EFFECT : VMSideEf
     fun send(event: EVENT) = viewModelScope.launch { _events.emit(event) }
     protected suspend fun send(effect: EFFECT) = _effects.emit(effect)
 
-    protected suspend fun setState(reduce: STATE.() -> STATE) {
+    protected fun setState(reduce: STATE.() -> STATE) {
         _uiState.update(reduce)
     }
 
