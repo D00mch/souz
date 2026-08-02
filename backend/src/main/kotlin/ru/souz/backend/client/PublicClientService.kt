@@ -109,6 +109,9 @@ internal class PublicClientService(
         if (status != "succeeded" && frame.result != null) {
             return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "A non-succeeded result must not include result.", now)
         }
+        if (frame.error?.details?.isObject == false) {
+            return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "error.details must be an object.", now)
+        }
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), toolCallId)
         val existing = toolCallRepository.get(context)
             ?: return rejectedTool(chat.id, threadId, toolCallId, "tool_call_not_found", "Tool call not found.", now)

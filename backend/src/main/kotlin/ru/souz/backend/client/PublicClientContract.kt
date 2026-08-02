@@ -74,9 +74,11 @@ data class ThreadCancelFrame(
     val reason: String? = null,
 )
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 data class ClientError(
     val code: String,
     val message: String,
+    val details: JsonNode? = null,
 )
 
 data class SubmissionAck(

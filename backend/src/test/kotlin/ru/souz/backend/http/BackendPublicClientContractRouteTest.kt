@@ -1,6 +1,8 @@
 package ru.souz.backend.http
 
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.post
@@ -505,6 +507,33 @@ class BackendPublicClientContractRouteTest {
 
         assertEquals("rejected", ack["status"].asText())
         assertEquals("idempotency_conflict", ack["error"]["code"].asText())
+    }
+
+    @Test
+    fun `tool result error accepts documented details object`() {
+        val mapper = jacksonObjectMapper()
+            .registerKotlinModule()
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+
+        val frame = mapper.readValue(
+            """
+            {
+              "kind": "tool.result",
+              "chatId": "${UUID.randomUUID()}",
+              "threadId": "${UUID.randomUUID()}",
+              "toolCallId": "call-1",
+              "status": "failed",
+              "error": {
+                "code": "internal_error",
+                "message": "failed",
+                "details": {"traceId": "trace-1"}
+              }
+            }
+            """.trimIndent(),
+            ToolResultFrame::class.java,
+        )
+
+        assertEquals("trace-1", frame.error?.details?.path("traceId")?.asText())
     }
 
     @Test
