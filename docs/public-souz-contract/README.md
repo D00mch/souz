@@ -4,6 +4,8 @@ Draft public contract for Client integrations with Souz Cloud.
 
 The canonical frame trace is [examples/happy-path.jsonl](examples/happy-path.jsonl). This document records the rules that are not obvious from that trace. [openapi.yaml](openapi.yaml) keeps the REST endpoint and reusable WebSocket frame schemas machine-readable.
 
+Local API-client setup for the HTTP request and WebSocket happy path is in [postman/](postman/) and [insomnia/](insomnia/).
+
 ## Boundary
 
 Client owns audio ingestion, external token validation, ASR, TTS, screen rendering, and device actions. Souz receives trusted `userId` values, recognized text, device metadata, and tool results. This API is only exposed inside a trusted environment, so the public contract does not require credentials.
