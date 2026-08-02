@@ -1,0 +1,11 @@
+{
+  "kind": "tool.result",
+  "chatId": "{{chatId}}",
+  "threadId": "{{threadId}}",
+  "toolCallId": "{{toolCallIdOpenMedia}}",
+  "status": "succeeded",
+  "result": {
+    "opened": true,
+    "contentId": "the-thing-1982"
+  }
+}

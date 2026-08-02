@@ -1,0 +1,10 @@
+{
+  "kind": "tool.result",
+  "chatId": "{{chatId}}",
+  "threadId": "{{threadId}}",
+  "toolCallId": "{{toolCallIdAsk}}",
+  "status": "succeeded",
+  "result": {
+    "answer": "Мне нравятся фантастика и триллеры."
+  }
+}
