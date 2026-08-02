@@ -617,6 +617,129 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
+    fun `client tool timeout uses remaining time until the persisted deadline`() = runBlocking {
+        val context = publicContext()
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val threadId = UUID.randomUUID()
+        context.executionRepository.create(
+            AgentExecution(
+                id = threadId,
+                userId = userId,
+                chatId = chat.id,
+                userMessageId = null,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.RUNNING,
+                requestId = null,
+                clientMessageId = null,
+                model = null,
+                provider = null,
+                startedAt = Instant.now(),
+                finishedAt = null,
+                cancelRequested = false,
+                errorCode = null,
+                errorMessage = null,
+                usage = null,
+                metadata = emptyMap(),
+            )
+        )
+        context.clientThreadRegistry.register(
+            threadId,
+            ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
+        )
+        val startedAt = Instant.parse("2026-05-01T10:00:00Z")
+        var now = startedAt
+        val advancingEventService = AgentEventService(
+            chatRepository = context.chatRepository,
+            eventRepository = AdvancingAppendAgentEventRepository(context.eventRepository) {
+                now = startedAt.plusSeconds(301)
+            },
+            eventBus = AgentEventBus(),
+        )
+        val catalog = BackendClientToolCatalog(
+            context.clientThreadRegistry,
+            context.toolCallRepository,
+            advancingEventService,
+            now = { now },
+        )
+        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
+
+        val result = tool.invoke(
+            LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Продолжить?")),
+            ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
+        )
+        val stored = context.toolCallRepository.listByExecution(
+            ToolCallContext(userId, chat.id.toString(), threadId.toString(), "unused")
+        ).single()
+
+        assertTrue(result.content.contains("client_tool_timed_out"))
+        assertEquals(ToolCallStatus.TIMED_OUT, stored.status)
+        assertEquals(startedAt.plusSeconds(300), stored.deadlineAt)
+    }
+
+    @Test
+    fun `late successful tool result is rejected and records timeout`() = runBlocking {
+        val context = publicContext()
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val threadId = UUID.randomUUID()
+        context.executionRepository.create(
+            AgentExecution(
+                id = threadId,
+                userId = userId,
+                chatId = chat.id,
+                userMessageId = null,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.RUNNING,
+                requestId = null,
+                clientMessageId = null,
+                model = null,
+                provider = null,
+                startedAt = Instant.now(),
+                finishedAt = null,
+                cancelRequested = false,
+                errorCode = null,
+                errorMessage = null,
+                usage = null,
+                metadata = emptyMap(),
+            )
+        )
+        context.clientThreadRegistry.register(
+            threadId,
+            ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
+        )
+        val toolCallId = UUID.randomUUID().toString()
+        val contextKey = ToolCallContext(userId, chat.id.toString(), threadId.toString(), toolCallId)
+        context.toolCallRepository.startClientCall(
+            context = contextKey,
+            name = USER_ASK_SKILL,
+            deviceId = "device-tv",
+            argumentsJson = "{}",
+            deadlineAt = Instant.now().minusSeconds(1),
+        )
+
+        val handled = context.publicClientService.handleToolResult(
+            chat,
+            ToolResultFrame(
+                kind = "tool.result",
+                chatId = chat.id.toString(),
+                threadId = threadId.toString(),
+                toolCallId = toolCallId,
+                status = "succeeded",
+                result = json.readTree("""{"answer":"Поздно"}"""),
+            ),
+        )
+        handled.afterSend()
+        val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
+        val stored = context.toolCallRepository.get(contextKey)
+
+        assertEquals("rejected", ack["status"].asText())
+        assertEquals("client_tool_timed_out", ack["error"]["code"].asText())
+        assertEquals(ToolCallStatus.TIMED_OUT, stored?.status)
+        assertTrue(stored?.errorJson.orEmpty().contains("client_tool_timed_out"))
+    }
+
+    @Test
     fun `startup recovery leaves live leased client threads running`() = runBlocking {
         val context = publicContext()
         val userId = UUID.randomUUID().toString()
@@ -846,6 +969,25 @@ private class FailingAppendAgentEventRepository(
         createdAt: Instant,
     ): AgentEvent {
         error("event append failed")
+    }
+}
+
+private class AdvancingAppendAgentEventRepository(
+    private val delegate: AgentEventRepository,
+    private val advance: () -> Unit,
+) : AgentEventRepository by delegate {
+    override suspend fun append(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID?,
+        type: AgentEventType,
+        payload: AgentEventPayload,
+        id: UUID,
+        createdAt: Instant,
+    ): AgentEvent {
+        val event = delegate.append(userId, chatId, executionId, type, payload, id, createdAt)
+        advance()
+        return event
     }
 }
 

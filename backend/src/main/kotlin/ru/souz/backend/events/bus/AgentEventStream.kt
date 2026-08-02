@@ -8,4 +8,5 @@ data class AgentEventStream(
     val replay: List<AgentEvent>,
     val liveEvents: ReceiveChannel<AgentEventEnvelope>,
     val close: suspend () -> Unit,
+    val replayAfter: suspend (afterSeq: Long) -> List<AgentEvent> = { emptyList() },
 )

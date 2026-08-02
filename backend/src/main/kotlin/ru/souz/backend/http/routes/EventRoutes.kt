@@ -37,6 +37,7 @@ import ru.souz.backend.client.ThreadCancelFrame
 import ru.souz.backend.client.ToolResultAck
 import ru.souz.backend.client.ToolResultFrame
 import ru.souz.backend.client.supportedClientTypes
+import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -138,21 +139,22 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
                 val replayDone = CompletableDeferred<Unit>()
                 val sender = launch {
                     var lastSeq = afterSeq
+                    suspend fun sendDurableEvents(events: Iterable<AgentEvent>) {
+                        events.forEach { event ->
+                            lastSeq = maxOf(lastSeq, event.seq)
+                            if (event.isPublicClientEvent()) sendJson(event.toPublicDto())
+                        }
+                    }
                     try {
-                        stream.replay.asSequence()
-                            .filter(AgentEventEnvelope::isPublicClientEvent)
-                            .forEach { event ->
-                                sendJson(event.toPublicDto())
-                                lastSeq = maxOf(lastSeq, event.seq)
-                            }
+                        sendDurableEvents(stream.replay)
+                        sendDurableEvents(stream.replayAfter(lastSeq))
                     } finally {
                         replayDone.complete(Unit)
                     }
                     for (event in stream.liveEvents) {
                         val seq = event.seq
-                        if (event.isPublicClientEvent() && seq != null && seq > lastSeq) {
-                            sendJson(event.toPublicDto())
-                            lastSeq = seq
+                        if (seq == null || seq > lastSeq) {
+                            sendDurableEvents(stream.replayAfter(lastSeq))
                         }
                     }
                 }

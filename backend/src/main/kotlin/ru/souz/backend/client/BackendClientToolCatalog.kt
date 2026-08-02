@@ -31,6 +31,7 @@ internal class BackendClientToolCatalog(
     registry: ClientThreadRuntimeRegistry,
     toolCallRepository: ToolCallRepository,
     eventService: AgentEventService,
+    now: () -> Instant = Instant::now,
 ) : AgentToolCatalog {
     private val ask = ClientToolSetup(
         name = USER_ASK_SKILL,
@@ -44,6 +45,7 @@ internal class BackendClientToolCatalog(
         registry = registry,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
+        now = now,
     )
     private val mediaOpen = ClientToolSetup(
         name = DEVICE_MEDIA_OPEN_SKILL,
@@ -60,6 +62,7 @@ internal class BackendClientToolCatalog(
         registry = registry,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
+        now = now,
     )
 
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
@@ -76,6 +79,7 @@ private class ClientToolSetup(
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
+    private val now: () -> Instant,
 ) : LLMToolSetup {
     override val fn = LLMRequest.Function(name = name, description = description, parameters = parameters)
 
@@ -99,7 +103,7 @@ private class ClientToolSetup(
                 return errorMessage(functionCall.name, "client_tool_busy", "Another client tool call is already pending.")
             is BeginClientToolResult.Started -> beginTool.device
         }
-        val startedAt = Instant.now()
+        val startedAt = now()
         val deadlineAt = startedAt.plus(timeout)
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments)
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
@@ -128,8 +132,7 @@ private class ClientToolSetup(
                     deadlineAt = deadlineAt.toString(),
                 ),
             )
-            val outcome = withTimeoutOrNull(timeout.toMillis()) { pending.result.await() }
-                ?: timeOut(context, threadId, toolCallId, pending)
+            val outcome = awaitResultUntilDeadline(context, threadId, toolCallId, pending, deadlineAt)
             return LLMRequest.Message(
                 role = LLMMessageRole.function,
                 content = when (outcome.status) {
@@ -160,6 +163,22 @@ private class ClientToolSetup(
         }
     }
 
+    private suspend fun awaitResultUntilDeadline(
+        context: ToolCallContext,
+        threadId: UUID,
+        toolCallId: String,
+        pending: PendingClientTool,
+        deadlineAt: Instant,
+    ): ClientToolOutcome {
+        val remainingMillis = Duration.between(now(), deadlineAt).toMillis()
+        val completed = if (remainingMillis > 0) {
+            withTimeoutOrNull(remainingMillis) { pending.result.await() }
+        } else {
+            null
+        }
+        return completed ?: timeOut(context, threadId, toolCallId, pending)
+    }
+
     private suspend fun failStartedCall(context: ToolCallContext, cause: Exception) {
         val error = ClientError("client_tool_failed", cause.message ?: "Client tool failed.")
         toolCallRepository.completeClientCall(
@@ -186,6 +205,7 @@ private class ClientToolSetup(
             resultJson = null,
             errorJson = restJsonMapper.writeValueAsString(errorNode),
             payloadHash = payloadHash,
+            receivedAt = now(),
         )
         if (completed == null) return pending.result.await()
         val outcome = ClientToolOutcome("timed_out", null, error)

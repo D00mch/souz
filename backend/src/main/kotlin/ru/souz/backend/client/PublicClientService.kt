@@ -121,6 +121,9 @@ internal class PublicClientService(
         if (existing.status != ToolCallStatus.RUNNING) {
             return terminalToolResult(chat.id, threadId, toolCallId, existing, payloadHash, now)
         }
+        if (status != "timed_out" && existing.deadlineAt?.let { !now.isBefore(it) } == true) {
+            return timeOutExpiredTool(chat.id, threadId, toolCallId, context, now)
+        }
         val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
         if (execution == null || !execution.status.isRunningThread() || !registry.contains(threadId)) {
             return rejectedTool(chat.id, threadId, toolCallId, "thread_already_terminal", "Thread is not running.", now)
@@ -361,6 +364,39 @@ internal class PublicClientService(
                 }
             }
         }
+    }
+
+    private suspend fun timeOutExpiredTool(
+        chatId: UUID,
+        threadId: UUID,
+        toolCallId: String,
+        context: ToolCallContext,
+        now: Instant,
+    ): HandledClientFrame {
+        val error = ClientError("client_tool_timed_out", "Client tool result deadline expired.")
+        val outcome = ClientToolOutcome("timed_out", null, error)
+        val completed = toolCallRepository.completeClientCall(
+            context = context,
+            status = ToolCallStatus.TIMED_OUT,
+            resultJson = null,
+            errorJson = mapper.writeValueAsString(error),
+            payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "timed_out", "error" to error)),
+            receivedAt = now,
+        )
+        return HandledClientFrame(
+            response = ToolResultAck(
+                chatId = chatId.toString(),
+                toolCallId = toolCallId,
+                threadId = threadId.toString(),
+                status = "rejected",
+                duplicate = false,
+                error = error,
+                receivedAt = now.toString(),
+            ),
+            afterSend = {
+                if (completed != null) registry.finishTool(threadId, toolCallId, outcome)
+            },
+        )
     }
 
     private fun ru.souz.backend.toolcall.model.ToolCall.toClientToolOutcome(): ClientToolOutcome =
