@@ -59,7 +59,7 @@ fun MainScreen(
         onAttachDroppedTransferable = { viewModel.onAttachDroppedPayload(it) },
         onRemoveChatAttachment = { viewModel.send(MainEvent.RemoveChatAttachment(it)) },
         onConsumePendingVoiceInputDraft = { token ->
-            viewModel.send(MainEvent.ConsumePendingVoiceInputDraft(token))
+            viewModel.consumePendingVoiceInputDraft(token)
         },
         onSendChatMessage = { text, isVoice ->
             viewModel.send(MainEvent.SendChatMessage(text, isVoice))

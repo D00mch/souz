@@ -190,7 +190,6 @@ sealed interface MainEvent : VMEvent {
     data object PickChatAttachments : MainEvent
     data class AttachDroppedFiles(val paths: List<String>) : MainEvent
     data class RemoveChatAttachment(val path: String) : MainEvent
-    data class ConsumePendingVoiceInputDraft(val token: Long) : MainEvent
     data class SendChatMessage(
         val text: String,
         val isVoice: Boolean = false,

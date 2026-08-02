@@ -222,11 +222,6 @@ class MainViewModel(
             MainEvent.PickChatAttachments -> pickChatAttachments()
             is MainEvent.AttachDroppedFiles -> addAttachedFiles(event.paths)
             is MainEvent.RemoveChatAttachment -> removeAttachedFile(event.path)
-            is MainEvent.ConsumePendingVoiceInputDraft -> {
-                if (event.token == currentState.pendingVoiceInputDraft?.token) {
-                    setState { copy(pendingVoiceInputDraft = null) }
-                }
-            }
             is MainEvent.UpdateChatSearchQuery -> setStateAndReindexChatSearch {
                 copy(chatSearch = chatSearchEngine.updateQuery(chatSearch, event.query))
             }
@@ -425,6 +420,17 @@ class MainViewModel(
         val droppedPaths = attachmentsUseCase.extractDroppedFilePathsNow(payload)
         if (droppedPaths.isEmpty()) return
         send(MainEvent.AttachDroppedFiles(droppedPaths))
+    }
+
+    /** Acknowledges an applied draft before another recognition can extend the pending value. */
+    fun consumePendingVoiceInputDraft(token: Long) {
+        setState {
+            if (pendingVoiceInputDraft?.token == token) {
+                copy(pendingVoiceInputDraft = null)
+            } else {
+                this
+            }
+        }
     }
 
     fun chatSearchProjectionFor(messageId: String): ChatMessageSearchProjection? =

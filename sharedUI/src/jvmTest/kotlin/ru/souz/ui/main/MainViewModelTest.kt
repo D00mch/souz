@@ -499,7 +499,7 @@ class MainViewModelTest {
             }
             assertEquals(draft, viewModel.uiState.value.pendingVoiceInputDraft)
 
-            viewModel.handleEvent(MainEvent.ConsumePendingVoiceInputDraft(draft.token))
+            viewModel.consumePendingVoiceInputDraft(draft.token)
             awaitState(viewModel) { it.pendingVoiceInputDraft == null }
 
             viewModel.handleEvent(
@@ -516,8 +516,8 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `unconsumed voice drafts merge and stale consumption does not clear them`() = runTest(mainDispatcher) {
-        val recognizedTexts = ArrayDeque(listOf("first draft", "second draft"))
+    fun `acknowledged voice drafts are excluded while unconsumed drafts merge`() = runTest(mainDispatcher) {
+        val recognizedTexts = ArrayDeque(listOf("first draft", "second draft", "third draft"))
         val harness = createHarness(
             voiceInputReviewEnabled = true,
             recognizeBehavior = {
@@ -534,18 +534,26 @@ class MainViewModelTest {
                 awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "first draft" }
                     .pendingVoiceInputDraft,
             )
+            viewModel.consumePendingVoiceInputDraft(firstDraft.token)
+            assertNull(viewModel.uiState.value.pendingVoiceInputDraft)
+
             recordVoiceInput(viewModel, byteArrayOf(4, 5, 6))
             val secondDraft = requireNotNull(
-                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "first draft\nsecond draft" }
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "second draft" }
+                    .pendingVoiceInputDraft,
+            )
+            recordVoiceInput(viewModel, byteArrayOf(7, 8, 9))
+            val combinedDraft = requireNotNull(
+                awaitState(viewModel) { it.pendingVoiceInputDraft?.text == "second draft\nthird draft" }
                     .pendingVoiceInputDraft,
             )
 
-            viewModel.handleEvent(MainEvent.ConsumePendingVoiceInputDraft(firstDraft.token))
-            runCurrent()
+            viewModel.consumePendingVoiceInputDraft(secondDraft.token)
 
             assertTrue(secondDraft.token > firstDraft.token)
-            assertTrue(secondDraft.submitAsVoice)
-            assertEquals(secondDraft, viewModel.uiState.value.pendingVoiceInputDraft)
+            assertTrue(combinedDraft.token > secondDraft.token)
+            assertTrue(combinedDraft.submitAsVoice)
+            assertEquals(combinedDraft, viewModel.uiState.value.pendingVoiceInputDraft)
         } finally {
             harness.clear()
         }
