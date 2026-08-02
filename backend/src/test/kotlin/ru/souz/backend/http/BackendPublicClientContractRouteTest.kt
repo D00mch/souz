@@ -17,6 +17,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -52,6 +53,7 @@ import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
@@ -244,6 +246,49 @@ class BackendPublicClientContractRouteTest {
             assertEquals("thread.completed", terminal["type"].asText())
             assertEquals(LLMModel.QwenMax.alias, api.finalRequests.last().model)
             assertEquals(LLMModel.QwenMax, execution?.model)
+            session.close()
+        }
+    }
+
+    @Test
+    fun `omitted message locale and time zone use persisted settings`() = testApplication {
+        val context = publicContext()
+        install(context)
+        val userId = UUID.randomUUID().toString()
+        runBlocking {
+            context.userSettingsRepository.save(
+                UserSettings(
+                    userId = userId,
+                    locale = Locale.forLanguageTag("en-US"),
+                    timeZone = ZoneId.of("America/New_York"),
+                )
+            )
+        }
+        val create = client.post(BackendHttpRoutes.CHATS) {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"$userId","requestId":"create-1","clientType":"backend"}""")
+        }
+        val chatId = json.readTree(create.bodyAsText())["chat"]["id"].asText()
+        val wsClient = createClient { install(WebSockets) }
+
+        runBlocking {
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            session.send(
+                Frame.Text(
+                    """{"kind":"message.submit","chatId":"$chatId","requestId":"message-1","payload":{"device":{"userId":"$userId","deviceId":"device-1","deviceType":"tv_box","capabilities":["speech","screen","device_tools"]},"content":{"type":"text","source":"voice","text":"Привет"}}}"""
+                )
+            )
+            val ack = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val execution = context.executionRepository.getByChat(
+                userId,
+                UUID.fromString(chatId),
+                UUID.fromString(ack["thread"]["id"].asText()),
+            )
+
+            assertEquals("thread.completed", terminal["type"].asText())
+            assertEquals("en-US", execution?.metadata?.get("locale"))
+            assertEquals("America/New_York", execution?.metadata?.get("timeZone"))
             session.close()
         }
     }
