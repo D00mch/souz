@@ -45,6 +45,12 @@ class AgentExecutionService internal constructor(
         content: String,
         clientMessageId: String? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
+        executionId: UUID = UUID.randomUUID(),
+        revision: Long = 1,
+        latestDeviceContextJson: String = "{}",
+        userMessageMetadata: Map<String, String> = emptyMap(),
+        clientToolsEnabled: Boolean = false,
+        forceBackground: Boolean = false,
     ): SendMessageResult = supervisorScope {
         val chat = requireOwnedChat(userId, chatId)
         val prepared = requestFactory.prepareChatTurn(
@@ -53,6 +59,12 @@ class AgentExecutionService internal constructor(
             content = content,
             clientMessageId = clientMessageId,
             requestOverrides = requestOverrides,
+            executionId = executionId,
+            revision = revision,
+            latestDeviceContextJson = latestDeviceContextJson,
+            userMessageMetadataExtras = userMessageMetadata,
+            clientToolsEnabled = clientToolsEnabled,
+            forceBackground = forceBackground,
         )
         prepared.normalizedClientMessageId?.let { normalizedClientMessageId ->
             executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)

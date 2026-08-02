@@ -7,6 +7,8 @@ import ru.souz.backend.chat.model.Chat
 interface ChatRepository {
     suspend fun create(chat: Chat): Chat
     suspend fun get(userId: String, chatId: UUID): Chat?
+    suspend fun getById(chatId: UUID): Chat?
+    suspend fun findByRequestId(userId: String, requestId: String): Chat?
     suspend fun list(
         userId: String,
         limit: Int = DEFAULT_LIMIT,

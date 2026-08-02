@@ -12,16 +12,22 @@ class PostgresChatRepository(
     override suspend fun create(chat: Chat): Chat = dataSource.write { connection ->
         connection.prepareStatement(
             """
-            insert into chats(id, user_id, title, archived, created_at, updated_at)
-            values (?, ?, ?, ?, ?, ?)
+            insert into chats(
+              id, user_id, client_type, request_id, payload_hash,
+              title, archived, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         ).use { statement ->
             statement.setObject(1, chat.id)
             statement.setString(2, chat.userId)
-            statement.setString(3, chat.title)
-            statement.setBoolean(4, chat.archived)
-            statement.setInstant(5, chat.createdAt)
-            statement.setInstant(6, chat.updatedAt)
+            statement.setString(3, chat.clientType)
+            statement.setString(4, chat.requestId)
+            statement.setString(5, chat.payloadHash)
+            statement.setString(6, chat.title)
+            statement.setBoolean(7, chat.archived)
+            statement.setInstant(8, chat.createdAt)
+            statement.setInstant(9, chat.updatedAt)
             statement.executeUpdate()
         }
         chat
@@ -33,6 +39,27 @@ class PostgresChatRepository(
         ).use { statement ->
             statement.setString(1, userId)
             statement.setObject(2, chatId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.toChat() else null
+            }
+        }
+    }
+
+    override suspend fun getById(chatId: UUID): Chat? = dataSource.read { connection ->
+        connection.prepareStatement("select * from chats where id = ?").use { statement ->
+            statement.setObject(1, chatId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.toChat() else null
+            }
+        }
+    }
+
+    override suspend fun findByRequestId(userId: String, requestId: String): Chat? = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select * from chats where user_id = ? and request_id = ?"
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setString(2, requestId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toChat() else null
             }

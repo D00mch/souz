@@ -24,6 +24,11 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.client.BackendClientToolCatalog
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
+import ru.souz.backend.client.PublicClientService
+import ru.souz.backend.client.ClientThreadRecoveryService
+import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
@@ -53,6 +58,7 @@ import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
+import ru.souz.backend.storage.postgres.PostgresClientRequestRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
@@ -116,6 +122,7 @@ fun backendDiModule(
     }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
+    bindSingleton<ClientRequestRepository> { PostgresClientRequestRepository(instance()) }
     bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
     bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance()) }
@@ -134,6 +141,7 @@ fun backendDiModule(
         )
     }
     bindSingleton { AgentEventBus() }
+    bindSingleton { ClientThreadRuntimeRegistry() }
     bindSingleton {
         UserProviderKeyService(
             repository = instance(),
@@ -207,6 +215,13 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        BackendClientToolCatalog(
+            registry = instance(),
+            toolCallRepository = instance(),
+            eventService = instance(),
+        )
+    }
+    bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
@@ -215,6 +230,7 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
+            clientToolCatalog = instance<BackendClientToolCatalog>(),
             skillCoreToolsFactory = instance(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
@@ -228,6 +244,7 @@ fun backendDiModule(
         AgentExecutionRequestFactory(
             effectiveSettingsResolver = instance(),
             featureFlags = instance(),
+            clientThreadRegistry = instance(),
         )
     }
     bindSingleton {
@@ -235,7 +252,8 @@ fun backendDiModule(
             agentStateRepository = instance(),
             chatRepository = instance(),
             executionRepository = instance(),
-            turnRunner = BackendConversationRuntimeTurnRunner(instance()),
+            turnRunner = BackendConversationRuntimeTurnRunner(instance(), instance()),
+            clientThreadRegistry = instance(),
         )
     }
     bindSingleton {
@@ -300,6 +318,23 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        PublicClientService(
+            chatRepository = instance(),
+            messageRepository = instance(),
+            executionRepository = instance(),
+            clientRequestRepository = instance(),
+            toolCallRepository = instance(),
+            executionService = instance(),
+            registry = instance(),
+        )
+    }
+    bindSingleton {
+        ClientThreadRecoveryService(
+            executionRepository = instance(),
+            eventService = instance(),
+        )
+    }
+    bindSingleton {
         BackendBootstrapService(
             settingsProvider = instance(),
             effectiveSettingsResolver = instance(),
@@ -323,6 +358,7 @@ fun backendDiModule(
             executionService = instance(),
             optionService = instance(),
             eventService = instance(),
+            publicClientService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             featureFlags = featureFlags,
             selectedModel = { settingsProvider.gigaModel.alias },

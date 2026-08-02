@@ -32,9 +32,11 @@ class PostgresAgentExecutionRepository(
                     error_code,
                     error_message,
                     usage_json,
-                    metadata
+                    metadata,
+                    revision,
+                    latest_device_context
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
                 bindExecution(statement, execution)
@@ -67,7 +69,9 @@ class PostgresAgentExecutionRepository(
                     error_code = ?,
                     error_message = ?,
                     usage_json = ?,
-                    metadata = ?
+                    metadata = ?,
+                    revision = ?,
+                    latest_device_context = ?
                 where user_id = ? and id = ?
                 """.trimIndent()
             ).use { statement ->
@@ -152,6 +156,27 @@ class PostgresAgentExecutionRepository(
         }
     }
 
+    override suspend fun failInterruptedClientThreads(): List<AgentExecution> = dataSource.write { connection ->
+        connection.prepareStatement(
+            """
+            update agent_executions execution
+            set status = 'failed', finished_at = now(), error_code = 'process_restarted',
+                error_message = 'The Souz process restarted while the thread was running.'
+            from chats chat
+            where execution.chat_id = chat.id
+              and chat.payload_hash not like 'internal:%'
+              and execution.status in ('queued', 'running', 'waiting_option', 'cancelling')
+            returning execution.*
+            """.trimIndent()
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) add(resultSet.toExecution())
+                }
+            }
+        }
+    }
+
     override suspend fun listByChat(
         userId: String,
         chatId: UUID,
@@ -196,6 +221,8 @@ class PostgresAgentExecutionRepository(
         statement.setString(15, execution.errorMessage)
         statement.setJson(16, execution.usage?.toUsageJson())
         statement.setJson(17, postgresStorageMapper.writeValueAsString(execution.metadata))
+        statement.setLong(18, execution.revision)
+        statement.setJson(19, execution.latestDeviceContextJson)
     }
 
     private fun bindExecutionUpdate(statement: java.sql.PreparedStatement, execution: AgentExecution) {
@@ -213,7 +240,9 @@ class PostgresAgentExecutionRepository(
         statement.setString(12, execution.errorMessage)
         statement.setJson(13, execution.usage?.toUsageJson())
         statement.setJson(14, postgresStorageMapper.writeValueAsString(execution.metadata))
-        statement.setString(15, execution.userId)
-        statement.setObject(16, execution.id)
+        statement.setLong(15, execution.revision)
+        statement.setJson(16, execution.latestDeviceContextJson)
+        statement.setString(17, execution.userId)
+        statement.setObject(18, execution.id)
     }
 }

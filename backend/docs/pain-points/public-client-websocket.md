@@ -1,0 +1,26 @@
+# Public client WebSocket
+
+## Invariant
+
+`POST /v1/chats` is idempotent by `(user_id, request_id)` and stores the normalized payload hash on `chats`. The chat-scoped socket accepts one active thread, where `agent_executions.id` is the public `threadId`. `message.submit` and `thread.cancel` share `(chat_id, request_id)` in `client_requests`; `tool.result` uses the client `tool_calls` row.
+
+Accepted user inputs are `messages` with `inputSeq`, source, device, request ID, and request metadata. The execution keeps the latest revision and device JSON. Client tool calls are tool-backed Skills in the request-scoped catalog, so the Skills graph discovers them and invokes them through `RunSkillCommand`.
+
+The live registry owns only process-local runtime references, acknowledgement gates, and one pending client-tool waiter. Disconnect does not cancel a waiter. Before the server accepts connections, startup recovery fails interrupted public threads and emits `thread.failed`; it does not reconstruct waiters.
+
+## Why it is fragile
+
+An acknowledgement, tool event, runtime mailbox, and terminal state can race. Sending an event before its causal acknowledgement, accepting input after terminal state, or completing a waiter before the tool-result acknowledgement makes the wire trace contradictory even with one pod.
+
+## Safe-change guidance
+
+- Keep strict JSON decoding and reject unknown fields.
+- Serialize input acceptance with terminal persistence. Commit the message and revision only when `submitToActiveRun` accepts it; release its event gate only after the acknowledgement is sent.
+- Persist a tool result before acknowledging it; complete the suspended Skill only after sending the acknowledgement.
+- Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate either hardcoded Skill.
+- Keep `user.ask` and `device.media.open` in the request-scoped tool catalog rather than adding them to the Skills graph core-tool list.
+- Keep replay subscription-before-query and suppress duplicate live delivery by sequence.
+
+## Verification
+
+Run `./gradlew :backend:test --tests 'ru.souz.backend.http.BackendPublicClientContractRouteTest'` and `./gradlew :agent:test`. Cover create idempotency, strict frames, second input during an active run, acknowledgement ordering, tool result duplicates/conflicts, cancellation, and reconnect replay.

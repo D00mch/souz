@@ -3,8 +3,10 @@ package ru.souz.backend.app
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
+import kotlinx.coroutines.runBlocking
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.telegram.TelegramBotPollingService
+import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.llms.local.LocalLlamaRuntime
 
 /** Process-wide backend runtime container with shared services and LLM resources. */
@@ -16,9 +18,11 @@ class BackendRuntime private constructor(
         if (httpDependencies.featureFlags.telegramBot) di.direct.instance() else null
     }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
+    private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
     private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
+        if (httpDependencies.featureFlags.wsEvents) runBlocking { clientThreadRecoveryService.recover() }
         telegramBotPollingService?.start()
     }
 

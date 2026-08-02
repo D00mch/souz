@@ -76,17 +76,23 @@ internal suspend fun <T> DataSource.write(block: (Connection) -> T): T =
 internal fun Connection.ensureStateChat(userId: String, chatId: java.util.UUID, updatedAt: Instant) {
     prepareStatement(
         """
-        insert into chats(id, user_id, title, archived, created_at, updated_at)
-        values (?, ?, ?, ?, ?, ?)
+        insert into chats(
+          id, user_id, client_type, request_id, payload_hash,
+          title, archived, created_at, updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
         on conflict (id) do nothing
         """.trimIndent()
     ).use { statement ->
         statement.setObject(1, chatId)
         statement.setString(2, userId)
-        statement.setString(3, null)
-        statement.setBoolean(4, true)
-        statement.setInstant(5, updatedAt)
-        statement.setInstant(6, updatedAt)
+        statement.setString(3, "backend")
+        statement.setString(4, "internal:$chatId")
+        statement.setString(5, "internal:$chatId")
+        statement.setString(6, null)
+        statement.setBoolean(7, true)
+        statement.setInstant(8, updatedAt)
+        statement.setInstant(9, updatedAt)
         statement.executeUpdate()
     }
 }
@@ -177,12 +183,15 @@ internal data class StoredExecutionUsage(
 )
 
 internal fun Chat.toRow(): List<Any?> =
-    listOf(id, userId, title, archived, createdAt, updatedAt)
+    listOf(id, userId, clientType, requestId, payloadHash, title, archived, createdAt, updatedAt)
 
 internal fun ResultSet.toChat(): Chat =
     Chat(
         id = getObject("id", java.util.UUID::class.java),
         userId = getString("user_id"),
+        clientType = getString("client_type"),
+        requestId = getString("request_id"),
+        payloadHash = getString("payload_hash"),
         title = getString("title"),
         archived = getBoolean("archived"),
         createdAt = instant("created_at"),
@@ -272,6 +281,8 @@ internal fun ResultSet.toExecution(): AgentExecution =
             }
         },
         metadata = postgresStorageMapper.readValue<Map<String, String>>(getString("metadata")),
+        revision = getLong("revision"),
+        latestDeviceContextJson = getString("latest_device_context"),
     )
 
 internal fun ResultSet.toOption(): Option =
@@ -324,10 +335,15 @@ internal fun ResultSet.toToolCall(): ToolCall =
         executionId = getObject("execution_id", java.util.UUID::class.java).toString(),
         toolCallId = getString("tool_call_id"),
         name = getString("name"),
+        target = getString("target"),
+        deviceId = getString("device_id"),
         status = parseToolCallStatus(getString("status")),
         argumentsJson = getString("arguments_json"),
-        resultPreview = getString("result_preview"),
-        error = getString("error"),
+        resultJson = getString("result_json"),
+        errorJson = getString("error_json"),
+        deadlineAt = getObject("deadline_at", OffsetDateTime::class.java)?.toInstant(),
+        resultPayloadHash = getString("result_payload_hash"),
+        resultReceivedAt = getObject("result_received_at", OffsetDateTime::class.java)?.toInstant(),
         startedAt = instant("started_at"),
         finishedAt = getObject("finished_at", OffsetDateTime::class.java)?.toInstant(),
         durationMs = getObject("duration_ms", java.lang.Long::class.java)?.toLong(),

@@ -1,7 +1,9 @@
 package ru.souz.backend.agent.runtime
 
 import kotlinx.coroutines.CancellationException
+import java.util.UUID
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.session.AgentConversationSession
@@ -38,6 +40,7 @@ internal interface BackendConversationTurnRunner {
 
 internal class BackendConversationRuntimeTurnRunner(
     private val runtimeFactory: BackendConversationRuntimeFactory,
+    private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
 ) : BackendConversationTurnRunner {
     override suspend fun run(
         conversationKey: AgentConversationKey,
@@ -46,6 +49,8 @@ internal class BackendConversationRuntimeTurnRunner(
         initialUsage: LLMResponse.Usage,
     ): BackendConversationTurnOutcome {
         val runtime = runtimeFactory.create(conversationKey, request, initialUsage)
+        val threadId = request.executionId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
+        if (threadId != null) clientThreadRegistry?.attach(threadId, runtime)
         return try {
             val execution = runtime.execute(
                 request = request,
@@ -71,6 +76,8 @@ internal class BackendConversationRuntimeTurnRunner(
                 cause = e,
                 usage = runtime.currentUsage(),
             )
+        } finally {
+            if (threadId != null) clientThreadRegistry?.detach(threadId, runtime)
         }
     }
 }

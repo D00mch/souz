@@ -21,6 +21,10 @@ import ru.souz.backend.events.model.RawAgentEventPayload
 import ru.souz.backend.events.model.ToolCallFailedPayload
 import ru.souz.backend.events.model.ToolCallFinishedPayload
 import ru.souz.backend.events.model.ToolCallStartedPayload
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
+import ru.souz.backend.events.model.ThreadCancelledPayload
+import ru.souz.backend.events.model.ThreadCompletedPayload
+import ru.souz.backend.events.model.ThreadFailedPayload
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.keys.model.UserProviderKeyView
@@ -99,16 +103,8 @@ internal data class BackendV1ChatsResponse(
     val nextCursor: String?,
 )
 
-internal data class BackendV1CreateChatRequest(
-    val title: String? = null,
-)
-
 internal data class BackendV1UpdateChatTitleRequest(
     val title: String = "",
-)
-
-internal data class BackendV1CreateChatResponse(
-    val chat: BackendV1ChatDto,
 )
 
 internal data class BackendV1ChatDto(
@@ -245,6 +241,16 @@ internal data class BackendV1EventDto(
     val createdAt: String,
 )
 
+internal data class PublicClientEventDto(
+    val kind: String = "event",
+    val seq: Long,
+    val type: String,
+    val chatId: String,
+    val threadId: String,
+    val payload: Map<String, Any?>,
+    val createdAt: String,
+)
+
 internal fun EffectiveUserSettings.toDto(): BackendV1SettingsDto =
     BackendV1SettingsDto(
         defaultModel = defaultModel.alias,
@@ -368,8 +374,38 @@ internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
         createdAt = createdAt.toString(),
     )
 
+internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
+    PublicClientEventDto(
+        seq = requireNotNull(seq),
+        type = type.value,
+        chatId = chatId.toString(),
+        threadId = requireNotNull(executionId).toString(),
+        payload = payload.toTransportPayload(type),
+        createdAt = createdAt.toString(),
+    )
+
 private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<String, Any?> =
     when (this) {
+        is PublicToolCallStartedPayload -> linkedMapOf<String, Any?>(
+            "toolCallId" to toolCallId,
+            "name" to name,
+            "target" to target,
+            "deviceId" to deviceId,
+            "arguments" to arguments,
+            "deadlineAt" to deadlineAt,
+        ).withoutNulls()
+
+        is ThreadCompletedPayload -> linkedMapOf("response" to response)
+
+        is ThreadFailedPayload -> linkedMapOf(
+            "error" to linkedMapOf(
+                "code" to error.code,
+                "message" to error.message,
+            )
+        )
+
+        is ThreadCancelledPayload -> linkedMapOf<String, Any?>("reason" to reason).withoutNulls()
+
         is MessageCreatedPayload -> linkedMapOf<String, Any?>(
             "messageId" to messageId.toString(),
             "seq" to seq,
@@ -558,6 +594,10 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyIfPresent("error")
             copyLongIfPresent("durationMs")
         }
+
+        AgentEventType.THREAD_COMPLETED -> buildLegacyPayload { copyIfPresent("response") }
+        AgentEventType.THREAD_FAILED -> buildLegacyPayload { copyJsonValueIfPresent("error") }
+        AgentEventType.THREAD_CANCELLED -> buildLegacyPayload { copyIfPresent("reason") }
     }
 
 private inline fun Map<String, String>.buildLegacyPayload(

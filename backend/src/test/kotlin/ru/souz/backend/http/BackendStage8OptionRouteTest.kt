@@ -2,9 +2,6 @@ package ru.souz.backend.http
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
-import io.ktor.client.plugins.websocket.WebSockets
-import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -14,9 +11,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
-import io.ktor.websocket.Frame
-import io.ktor.websocket.close
-import io.ktor.websocket.readText
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -66,10 +60,6 @@ class BackendStage8OptionRouteTest {
             context.chatRepository.create(chat)
         }
         installStage8Application(context)
-        val wsClient = createClient {
-            install(WebSockets)
-        }
-
         val response = client.post(BackendHttpRoutes.chatMessages(chat.id)) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
@@ -82,11 +72,6 @@ class BackendStage8OptionRouteTest {
         }
         val replayPayload = stage8Json.readTree(replayResponse.bodyAsText())
         val optionRequestedEvent = replayPayload["items"].first { it["type"].asText() == "option.requested" }
-        val reconnectSession = runBlocking {
-            wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chat.id)}?afterSeq=${optionRequestedEvent["seq"].asLong() - 1}") {
-                trustedHeaders("user-a")
-            }
-        }
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(payload["assistantMessage"].isNull)
@@ -96,8 +81,7 @@ class BackendStage8OptionRouteTest {
         assertEquals(storedExecution.id, storedOption.executionId)
         assertEquals("single", optionRequestedEvent["payload"]["selectionMode"].asText())
         assertEquals("Alpha", optionRequestedEvent["payload"]["options"][0]["label"].asText())
-        assertEquals(storedOption.id.toString(), reconnectSession.receiveEvent()["payload"]["optionId"].asText())
-        runBlocking { reconnectSession.close() }
+        assertEquals(storedOption.id.toString(), optionRequestedEvent["payload"]["optionId"].asText())
     }
 
     @Test
@@ -497,9 +481,6 @@ private suspend fun <T : Any> eventually(
         delay(10)
     }
 }
-
-private suspend fun DefaultClientWebSocketSession.receiveEvent(): JsonNode =
-    stage8Json.readTree((incoming.receive() as Frame.Text).readText())
 
 private fun seedWaitingOption(
     context: RouteTestContext,

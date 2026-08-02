@@ -119,14 +119,13 @@ Each thread has exactly one terminal event. If completion and cancellation race,
 
 Tool-result acknowledgements are outside the event sequence.
 
-## Backend Fit
+## Backend Mapping
 
-Souz already has trusted identity, user-scoped chats, PostgreSQL messages, agent execution lifecycle, cancellation, durable event replay, and live WebSocket events.
+- `chats` stores `clientType`, create `requestId`, and its normalized payload hash.
+- `agent_executions` is the thread store; the execution ID is `threadId`, with revision and latest device context.
+- `messages.metadata` stores accepted input sequence, source, device, request ID, and request metadata.
+- `client_requests` stores the shared message/cancel idempotency scope and original acknowledgement.
+- `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
+- `agent_events` stores replayable client tool-start and terminal events with chat-local sequence values.
 
-Implementation gaps:
-
-- inbound WebSocket handling for `message.submit`, `tool.result`, and `thread.cancel`;
-- public thread aggregate over internal executions;
-- persisted normalized payload hashes and acknowledgements for the idempotency keys above;
-- client-targeted tool adapter that can suspend until `tool.result`;
-- storage for `clientType`, `userId`, input `source`, device capabilities, `inputSeq`, `revision`, and chat-local event `seq`.
+`user.ask` and `device.media.open` are hardcoded tool-backed Skills. They are discovered by the Skills graph and invoked through `RunSkillCommand`; the live invocation suspends until `tool.result` or its deadline. The WebSocket feature requires `SOUZ_BACKEND_AGENT=skills`.
