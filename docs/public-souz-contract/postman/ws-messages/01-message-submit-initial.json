@@ -1,0 +1,26 @@
+{
+  "kind": "message.submit",
+  "chatId": "{{chatId}}",
+  "requestId": "{{messageRequestId1}}",
+  "payload": {
+    "device": {
+      "userId": "{{userId}}",
+      "deviceId": "{{deviceId}}",
+      "deviceType": "tv_box",
+      "capabilities": [
+        "speech",
+        "screen",
+        "device_tools"
+      ]
+    },
+    "content": {
+      "type": "text",
+      "source": "voice",
+      "text": "Включи какой-нибудь интересный фильм"
+    },
+    "meta": {
+      "locale": "ru-RU",
+      "timeZone": "Europe/Moscow"
+    }
+  }
+}
