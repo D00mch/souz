@@ -150,7 +150,6 @@ class MainViewModel(
         ioLaunch {
             voiceInputUseCase.initialize(
                 scope = viewModelScope,
-                stateProvider = { currentState },
                 onRecognizedInput = { recognizedInput ->
                     withContext(Dispatchers.Main) {
                         val recognizedText = recognizedInput.text
@@ -235,13 +234,10 @@ class MainViewModel(
                     setState { copy(statusMessage = blockedReason, isListening = false) }
                     send(MainEffect.ShowError(blockedReason))
                 } else {
-                    voiceInputUseCase.startRecording(
-                        scope = viewModelScope,
-                        isListening = currentState.isListening,
-                    )
+                    voiceInputUseCase.startRecording(viewModelScope)
                 }
             }
-            MainEvent.StopListening -> voiceInputUseCase.stopRecording(currentState.isListening)
+            MainEvent.StopListening -> voiceInputUseCase.stopRecording()
             is MainEvent.ConsumePendingVoiceInputDraft -> {
                 if (event.token == currentState.pendingVoiceInputDraft?.token) {
                     setState {

@@ -672,6 +672,45 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `recording stays busy until asynchronous stop completes`() = runTest(mainDispatcher) {
+        val draft = "voice draft"
+        val harness = createHarness(
+            voiceInputReviewEnabled = true,
+            recognizeBehavior = { LLMResponse.RecognizeResponse(result = listOf(draft)) },
+        )
+
+        try {
+            val viewModel = harness.viewModel
+            val audioRecorder = testAudioRecorder(viewModel)
+            advanceUntilIdle()
+
+            audioRecorder.deferNextStop()
+            prepareAudioCapture(viewModel, byteArrayOf(9, 8, 7))
+            viewModel.handleEvent(MainEvent.StartListening)
+            awaitState(viewModel) { it.isListening }
+
+            val stopJob = launch { viewModel.handleEvent(MainEvent.StopListening) }
+            runCurrent()
+            assertEquals(UiAudioRecordingState.Stopping, audioRecorder.recordingState.value)
+            assertTrue(viewModel.uiState.value.isListening)
+
+            viewModel.handleEvent(MainEvent.StartListening)
+            assertEquals(1, audioRecorder.startCalls)
+
+            audioRecorder.completeDeferredStop()
+            stopJob.join()
+
+            val completedState = awaitState(viewModel) {
+                !it.isListening && it.pendingVoiceInputDraft?.text == draft
+            }
+            assertFalse(completedState.isListening)
+            assertEquals(1, audioRecorder.startCalls)
+        } finally {
+            harness.clear()
+        }
+    }
+
+    @Test
     fun `voice recognition stores draft in input when review is enabled`() = runTest(mainDispatcher) {
         val draft = "voice draft input"
         val harness = createHarness(
@@ -2206,12 +2245,16 @@ class MainViewModelTest {
         private val mutableAudioFlow = MutableSharedFlow<ByteArray>(extraBufferCapacity = 1)
         private var audioOnStop: ByteArray? = null
         private var stopFailureMessage: String? = null
+        private var shouldDeferStop = false
+        var startCalls = 0
+            private set
         override val audioFlow = mutableAudioFlow
         override val recordingState = MutableStateFlow<UiAudioRecordingState>(UiAudioRecordingState.Idle)
 
         override suspend fun logState(): Nothing = awaitCancellation()
 
         override fun start(): Boolean {
+            startCalls += 1
             recordingState.value = UiAudioRecordingState.Recording
             return true
         }
@@ -2222,10 +2265,15 @@ class MainViewModelTest {
                 recordingState.value = UiAudioRecordingState.Error(message)
                 return
             }
-            recordingState.value = UiAudioRecordingState.Idle
-            val audio = audioOnStop ?: return
+            if (shouldDeferStop) {
+                shouldDeferStop = false
+                recordingState.value = UiAudioRecordingState.Stopping
+                return
+            }
+            val audio = audioOnStop
             audioOnStop = null
-            check(mutableAudioFlow.tryEmit(audio))
+            if (audio != null) check(mutableAudioFlow.tryEmit(audio))
+            recordingState.value = UiAudioRecordingState.Idle
         }
 
         suspend fun emit(data: ByteArray) {
@@ -2238,6 +2286,18 @@ class MainViewModelTest {
 
         fun failNextStop(message: String = "Failed to stop recording") {
             stopFailureMessage = message
+        }
+
+        fun deferNextStop() {
+            shouldDeferStop = true
+        }
+
+        suspend fun completeDeferredStop() {
+            check(recordingState.value == UiAudioRecordingState.Stopping)
+            val audio = audioOnStop
+            audioOnStop = null
+            if (audio != null) mutableAudioFlow.emit(audio)
+            recordingState.value = UiAudioRecordingState.Idle
         }
     }
 }

@@ -120,6 +120,12 @@ private val BounceEasing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 
 private val ContextOptions = listOf(8_000, 16_000, 32_000, 64_000, 96_000, 128_000)
 
+internal fun canStartVoiceInput(
+    inputEnabled: Boolean,
+    allowActiveRunInput: Boolean,
+    voiceInputDisabledReason: String?,
+): Boolean = (inputEnabled || allowActiveRunInput) && voiceInputDisabledReason == null
+
 @Composable
 internal fun ChatInputWithQuickSettings(
     value: TextFieldValue,
@@ -154,7 +160,9 @@ internal fun ChatInputWithQuickSettings(
     val hasAttachments = attachedFiles.isNotEmpty()
     val canEditText = enabled || allowActiveRunInput
     val hasSendPayload = (hasText && canEditText) || (hasAttachments && enabled)
-    val canToggleMic = (enabled && voiceInputDisabledReason == null) || isListening || speakingMessageId != null
+    val canToggleMic =
+        canStartVoiceInput(enabled, allowActiveRunInput, voiceInputDisabledReason) ||
+            isListening || speakingMessageId != null
     val containerShape = RoundedCornerShape(16.dp)
     var isModelDropdownOpen by remember { mutableStateOf(false) }
     var isContextDropdownOpen by remember { mutableStateOf(false) }

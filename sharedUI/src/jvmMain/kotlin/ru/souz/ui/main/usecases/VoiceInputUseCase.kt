@@ -53,15 +53,15 @@ class VoiceInputUseCase(
     private var lastRecognizedText: String? = null
     private var lastRecognizedAtMs: Long = 0L
     private val recognitionMutex = Mutex()
-    private val captureRoutingMutex = Mutex()
-    private val captureRoutes = ArrayDeque<VoiceInputRoute>()
+    private val captureTransitionMutex = Mutex()
+    private val captureRouteMutex = Mutex()
+    private var pendingCaptureRoute: VoiceInputRoute? = null
 
     private val _outputs = Channel<MainUseCaseOutput>()
     override val outputs: Flow<MainUseCaseOutput> = _outputs.consumeAsFlow()
 
     override suspend fun initialize(
         scope: CoroutineScope,
-        stateProvider: () -> MainState,
         onRecognizedInput: suspend (RecognizedVoiceInput) -> Unit,
         voiceInputStartBlocker: suspend () -> String?,
     ) = coroutineScope {
@@ -78,15 +78,8 @@ class VoiceInputUseCase(
                     l.info(if (pressed) "onStart" else "onStop")
                     scope.launch {
                         when {
-                            pressed -> {
-                                val state = stateProvider()
-                                startRecordingInternal(
-                                    scope = scope,
-                                    isListening = state.isListening,
-                                    blockedReason = voiceInputStartBlocker(),
-                                )
-                            }
-                            else -> stopRecording(stateProvider().isListening)
+                            pressed -> startRecordingInternal(scope, voiceInputStartBlocker())
+                            else -> stopRecording()
                         }
                     }
                 },
@@ -193,124 +186,121 @@ class VoiceInputUseCase(
         }
     }
 
-    override suspend fun startRecording(
-        scope: CoroutineScope,
-        isListening: Boolean,
-    ) {
-        startRecordingInternal(scope, isListening, blockedReason = null)
-    }
+    override suspend fun startRecording(scope: CoroutineScope) = startRecordingInternal(scope, blockedReason = null)
 
     private suspend fun startRecordingInternal(
         scope: CoroutineScope,
-        isListening: Boolean,
         blockedReason: String? = null,
     ) {
-        if (isListening) return
-        if (!blockedReason.isNullOrBlank()) {
-            emitState { copy(isListening = false, statusMessage = blockedReason) }
-            return
-        }
-        if (recognitionMutex.isLocked) {
-            val statusMsg = getString(Res.string.voice_status_processing_input)
-            emitState { copy(statusMessage = statusMsg) }
-            return
-        }
-        if (!speechRecognitionProvider.enabled) {
-            emitVoiceRecognitionUnavailable()
-            return
-        }
-        if (!speechRecognitionProvider.hasRequiredKey) {
-            emitVoiceKeyMissing()
-            return
-        }
+        if (!captureTransitionMutex.tryLock()) return
+        try {
+            if (currentCaptureRoute() != null) return
+            if (!blockedReason.isNullOrBlank()) {
+                emitState { copy(isListening = false, statusMessage = blockedReason) }
+                return
+            }
+            if (recognitionMutex.isLocked) {
+                val statusMsg = getString(Res.string.voice_status_processing_input)
+                emitState { copy(statusMessage = statusMsg) }
+                return
+            }
+            if (!speechRecognitionProvider.enabled) {
+                emitVoiceRecognitionUnavailable()
+                return
+            }
+            if (!speechRecognitionProvider.hasRequiredKey) {
+                emitVoiceKeyMissing()
+                return
+            }
 
-        val activeRunRequestId = chatUseCase.captureActiveSkillsRequestId()
-        val route = if (activeRunRequestId == null) {
-            VoiceInputRoute.NewRequest
-        } else {
-            VoiceInputRoute.ActiveRunContinuation(activeRunRequestId)
-        }
-        if (route is VoiceInputRoute.NewRequest) {
-            chatUseCase.abortActiveRequest()
-        }
-        speechUseCase.playMacPingSafely(scope)
-        enqueueCaptureRoute(route)
+            val activeRunRequestId = chatUseCase.captureActiveSkillsRequestId()
+            val route = if (activeRunRequestId == null) {
+                VoiceInputRoute.NewRequest
+            } else {
+                VoiceInputRoute.ActiveRunContinuation(activeRunRequestId)
+            }
+            if (!reserveCaptureRoute(route)) return
+            if (route is VoiceInputRoute.NewRequest) {
+                chatUseCase.abortActiveRequest()
+            }
+            speechUseCase.playMacPingSafely(scope)
 
-        val statusMsg = getString(Res.string.voice_status_recording_started)
-        emitState {
-            copy(
-                isListening = true,
-                statusMessage = statusMsg,
-            )
-        }
+            val statusMsg = getString(Res.string.voice_status_recording_started)
+            emitState {
+                copy(
+                    isListening = true,
+                    statusMessage = statusMsg,
+                )
+            }
 
-        val started = withContext(Dispatchers.IO) {
-            audioRecorder.start()
-        }
-        if (!started) {
-            discardCaptureRoute(route)
-            val recorderState = audioRecorder.recordingState.value
-            val errorMsg = (recorderState as? UiAudioRecordingState.Error)?.message.orEmpty()
-            l.error("Unable to start microphone capture: {}", errorMsg)
-            emitVoiceCaptureFailed()
+            val started = withContext(Dispatchers.IO) {
+                audioRecorder.start()
+            }
+            if (!started) {
+                discardCaptureRoute(route)
+                val recorderState = audioRecorder.recordingState.value
+                val errorMsg = (recorderState as? UiAudioRecordingState.Error)?.message.orEmpty()
+                l.error("Unable to start microphone capture: {}", errorMsg)
+                emitVoiceCaptureFailed()
+            }
+        } finally {
+            captureTransitionMutex.unlock()
         }
     }
 
-    override suspend fun stopRecording(isListening: Boolean) {
-        if (!isListening) return
+    override suspend fun stopRecording() {
+        val stopped = captureTransitionMutex.withLock {
+            val route = currentCaptureRoute() ?: return@withLock false
 
-        try {
-            audioRecorder.stop()
-        } catch (error: Exception) {
-            l.error("Unable to stop microphone capture", error)
-            discardLatestCaptureRoute()
-            emitVoiceCaptureFailed()
-            return
-        }
-        val statusMsg = getString(Res.string.voice_status_processing_input)
-        emitState {
-            copy(
-                isListening = false,
-                statusMessage = statusMsg,
-            )
-        }
+            try {
+                audioRecorder.stop()
+            } catch (error: Exception) {
+                l.error("Unable to stop microphone capture", error)
+                discardCaptureRoute(route)
+                emitVoiceCaptureFailed()
+                return@withLock false
+            }
+            val statusMsg = getString(Res.string.voice_status_processing_input)
+            emitState { copy(statusMessage = statusMsg) }
 
-        val terminalState = audioRecorder.recordingState.first { state ->
-            state is UiAudioRecordingState.Idle || state is UiAudioRecordingState.Error
-        }
-        if (terminalState is UiAudioRecordingState.Error) {
-            l.error("Unable to stop microphone capture: {}", terminalState.message)
-            discardLatestCaptureRoute()
-            emitVoiceCaptureFailed()
-            return
-        }
+            val terminalState = audioRecorder.recordingState.first { state ->
+                state is UiAudioRecordingState.Idle || state is UiAudioRecordingState.Error
+            }
+            if (terminalState is UiAudioRecordingState.Error) {
+                l.error("Unable to stop microphone capture: {}", terminalState.message)
+                discardCaptureRoute(route)
+                emitVoiceCaptureFailed()
+                return@withLock false
+            }
 
+            emitState { copy(isListening = false) }
+            true
+        }
+        if (!stopped) return
         delay(300)
         speechUseCase.playInputConfirmation()
     }
 
-    private suspend fun enqueueCaptureRoute(route: VoiceInputRoute) {
-        captureRoutingMutex.withLock {
-            captureRoutes.addLast(route)
+    private suspend fun reserveCaptureRoute(route: VoiceInputRoute): Boolean =
+        captureRouteMutex.withLock {
+            if (pendingCaptureRoute != null) return@withLock false
+            pendingCaptureRoute = route
+            true
         }
-    }
+
+    private suspend fun currentCaptureRoute(): VoiceInputRoute? =
+        captureRouteMutex.withLock { pendingCaptureRoute }
 
     private suspend fun takeCaptureRoute(): VoiceInputRoute? =
-        captureRoutingMutex.withLock {
-            captureRoutes.removeFirstOrNull()
+        captureRouteMutex.withLock {
+            pendingCaptureRoute.also { pendingCaptureRoute = null }
         }
 
     private suspend fun discardCaptureRoute(route: VoiceInputRoute) {
-        captureRoutingMutex.withLock {
-            if (captureRoutes.lastOrNull() == route) {
-                captureRoutes.removeLast()
+        captureRouteMutex.withLock {
+            if (pendingCaptureRoute == route) {
+                pendingCaptureRoute = null
             }
-        }
-    }
-
-    private suspend fun discardLatestCaptureRoute() {
-        captureRoutingMutex.withLock {
-            captureRoutes.removeLastOrNull()
         }
     }
 
