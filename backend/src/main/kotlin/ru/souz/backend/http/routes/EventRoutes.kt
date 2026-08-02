@@ -1,5 +1,6 @@
 package ru.souz.backend.http.routes
 
+import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -184,15 +185,15 @@ private suspend fun handleClientFrame(
     raw: String,
 ): HandledClientFrame {
     val node = try {
-        publicWebSocketMapper.readTree(raw)
-    } catch (_: Exception) {
+        publicWebSocketMapper.readTree(raw) ?: throw InvalidClientFrameException("Frame must be valid JSON.")
+    } catch (_: JsonProcessingException) {
         throw InvalidClientFrameException("Frame must be valid JSON.")
     }
     if (!node.isObject) throw InvalidClientFrameException("Frame must be a JSON object.")
     val kind = node.path("kind").asText()
     return try {
         when (kind) {
-            "message.submit" -> publicWebSocketMapper.treeToValue(node, MessageSubmitFrame::class.java).also {
+            "message.submit" -> decodeClientFrame(node, MessageSubmitFrame::class.java).also {
                 requireFrameChat(chat.id, it.chatId)
                 val capabilities = node.path("payload").path("device").path("capabilities")
                 if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
@@ -200,11 +201,11 @@ private suspend fun handleClientFrame(
                 }
             }.let { service.handleMessage(chat, it) }
 
-            "tool.result" -> publicWebSocketMapper.treeToValue(node, ToolResultFrame::class.java).also {
+            "tool.result" -> decodeClientFrame(node, ToolResultFrame::class.java).also {
                 requireFrameChat(chat.id, it.chatId)
             }.let { service.handleToolResult(chat, it) }
 
-            "thread.cancel" -> publicWebSocketMapper.treeToValue(node, ThreadCancelFrame::class.java).also {
+            "thread.cancel" -> decodeClientFrame(node, ThreadCancelFrame::class.java).also {
                 requireFrameChat(chat.id, it.chatId)
             }.let { service.handleCancel(chat, it) }
 
@@ -212,11 +213,15 @@ private suspend fun handleClientFrame(
         }
     } catch (error: ClientContractException) {
         rejectedFor(node, chat.id, kind, error.code, error.message)
-    } catch (error: InvalidClientFrameException) {
-        throw error
-    } catch (_: Exception) {
-        rejectedFor(node, chat.id, kind, "invalid_request", "Frame does not match the public contract.")
     }
+}
+
+private fun <T> decodeClientFrame(node: JsonNode, type: Class<T>): T = try {
+    publicWebSocketMapper.treeToValue(node, type)
+} catch (_: JsonProcessingException) {
+    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
+} catch (_: IllegalArgumentException) {
+    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
 }
 
 private fun requireFrameChat(expected: UUID, raw: String) {

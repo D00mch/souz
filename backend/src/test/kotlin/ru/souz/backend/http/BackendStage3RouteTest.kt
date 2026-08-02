@@ -80,6 +80,7 @@ import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.testutil.repository.MemoryUserRepository
 import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
 import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -1218,7 +1219,7 @@ internal data class RouteTestContext(
     val executionRepository: MemoryAgentExecutionRepository,
     val optionRepository: MemoryOptionRepository,
     val eventRepository: MemoryAgentEventRepository,
-    val toolCallRepository: MemoryToolCallRepository,
+    val toolCallRepository: ToolCallRepository,
     val eventService: AgentEventService,
     val stateRepository: MemoryAgentStateRepository,
     val bootstrapService: BackendBootstrapService,
@@ -1249,7 +1250,7 @@ internal fun routeTestContext(
     executionRepository: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
     optionRepository: MemoryOptionRepository = MemoryOptionRepository(),
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
-    toolCallRepository: MemoryToolCallRepository = MemoryToolCallRepository(),
+    toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
     stateRepository: MemoryAgentStateRepository = MemoryAgentStateRepository(),
     toolCatalog: AgentToolCatalog = toolCatalog(
         ToolCategory.FILES to fakeTool("ListFiles"),

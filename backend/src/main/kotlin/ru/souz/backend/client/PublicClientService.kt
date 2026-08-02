@@ -20,6 +20,7 @@ import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
@@ -111,14 +112,7 @@ internal class PublicClientService(
             mapper.valueToTree(linkedMapOf("status" to status, "result" to frame.result, "error" to frame.error))
         )
         if (existing.status != ToolCallStatus.RUNNING) {
-            return if (existing.resultPayloadHash == payloadHash) {
-                val outcome = existing.toClientToolOutcome()
-                HandledClientFrame(acceptedTool(chat.id, threadId, toolCallId, duplicate = true, now)) {
-                    registry.finishTool(threadId, toolCallId, outcome)
-                }
-            } else {
-                rejectedTool(chat.id, threadId, toolCallId, "idempotency_conflict", "toolCallId already has a different terminal result.", now)
-            }
+            return terminalToolResult(chat.id, threadId, toolCallId, existing, payloadHash, now)
         }
         val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
         if (execution == null || !execution.status.isRunningThread() || !registry.contains(threadId)) {
@@ -131,7 +125,15 @@ internal class PublicClientService(
             errorJson = frame.error?.let(mapper::writeValueAsString),
             payloadHash = payloadHash,
             receivedAt = now,
-        ) ?: return rejectedTool(chat.id, threadId, toolCallId, "message_rejected", "Tool call is no longer pending.", now)
+        )
+        if (completed == null) {
+            val latest = toolCallRepository.get(context)
+            return if (latest != null && latest.status != ToolCallStatus.RUNNING) {
+                terminalToolResult(chat.id, threadId, toolCallId, latest, payloadHash, now)
+            } else {
+                rejectedTool(chat.id, threadId, toolCallId, "message_rejected", "Tool call is no longer pending.", now)
+            }
+        }
         val outcome = ClientToolOutcome(completed.status.value, frame.result, frame.error)
         return HandledClientFrame(
             response = acceptedTool(chat.id, threadId, toolCallId, duplicate = false, now),
@@ -232,18 +234,20 @@ internal class PublicClientService(
             registry.discard(threadId)
             return rejectedMessage(chat.id, requestId, "message_rejected", error.message ?: "Message was rejected.", now)
         }
+        val executionId = result.execution.id
+        if (executionId != threadId) registry.discard(threadId)
         val ack = AcceptedMessageAck(
             chatId = chat.id.toString(),
             requestId = requestId,
             duplicate = false,
             submission = SubmissionAck(1),
-            thread = ThreadAck(result.execution.id.toString(), created = true, revision = 1),
+            thread = ThreadAck(executionId.toString(), created = true, revision = 1),
             receivedAt = now.toString(),
         )
         clientRequestRepository.create(
-            ClientRequest(chat.id, requestId, frame.kind, threadId, payloadHash, mapper.writeValueAsString(ack), now)
+            ClientRequest(chat.id, requestId, frame.kind, executionId, payloadHash, mapper.writeValueAsString(ack), now)
         )
-        return HandledClientFrame(ack) { registry.ackSent(threadId, requestId) }
+        return HandledClientFrame(ack) { registry.ackSent(executionId, requestId) }
     }
 
     private suspend fun continueThread(
@@ -259,8 +263,9 @@ internal class PublicClientService(
         if (!execution.status.isRunningThread()) {
             return rejectedMessage(chat.id, requestId, "thread_already_terminal", "Thread is already terminal.", now)
         }
+        val runtimeAvailable = withTimeoutOrNull(5_000) { registry.awaitRuntimeAvailable(threadId) } == true
         var activeExecution: ru.souz.backend.execution.model.AgentExecution? = null
-        val inputSeq = withTimeoutOrNull(5_000) {
+        val inputSeq = if (runtimeAvailable) {
             registry.acceptInput(
                 threadId = threadId,
                 requestId = requestId,
@@ -290,6 +295,8 @@ internal class PublicClientService(
                     nextInputSeq
                 },
             )
+        } else {
+            null
         }
         if (inputSeq == null) {
             val latest = executionRepository.getByChat(chat.userId, chat.id, threadId)
@@ -339,6 +346,29 @@ internal class PublicClientService(
                     .getOrElse { ClientError("client_tool_failed", "Client tool failed.") }
             },
         )
+
+    private fun terminalToolResult(
+        chatId: UUID,
+        threadId: UUID,
+        toolCallId: String,
+        toolCall: ToolCall,
+        payloadHash: String,
+        now: Instant,
+    ): HandledClientFrame = if (toolCall.resultPayloadHash == payloadHash) {
+        val outcome = toolCall.toClientToolOutcome()
+        HandledClientFrame(acceptedTool(chatId, threadId, toolCallId, duplicate = true, now)) {
+            registry.finishTool(threadId, toolCallId, outcome)
+        }
+    } else {
+        rejectedTool(
+            chatId,
+            threadId,
+            toolCallId,
+            "idempotency_conflict",
+            "toolCallId already has a different terminal result.",
+            now,
+        )
+    }
 
     private fun validateDevice(chat: Chat, device: ClientDevice) {
         if (device.userId.uuid("device.userId").toString() != chat.userId) {

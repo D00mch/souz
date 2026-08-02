@@ -13,9 +13,11 @@ import io.ktor.server.testing.testApplication
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
+import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
@@ -25,21 +27,26 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import ru.souz.agent.AgentId
+import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.client.BackendClientToolCatalog
 import ru.souz.backend.client.ClientDevice
+import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.ToolResultFrame
 import ru.souz.backend.client.USER_ASK_SKILL
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.testutil.repository.MemoryToolCallRepository
+import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
-import java.time.Instant
 
 class BackendPublicClientContractRouteTest {
     private val json = jacksonObjectMapper()
@@ -234,6 +241,52 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
+    fun `start thread receipt uses the execution id returned by the service`() = runBlocking {
+        val context = publicContext()
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val existingMessage = context.messageRepository.append(
+            userId = userId,
+            chatId = chat.id,
+            role = ChatRole.USER,
+            content = "Уже принято",
+        )
+        val existingExecution = context.executionRepository.create(
+            AgentExecution(
+                id = UUID.randomUUID(),
+                userId = userId,
+                chatId = chat.id,
+                userMessageId = existingMessage.id,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.COMPLETED,
+                requestId = null,
+                clientMessageId = "message-1",
+                model = null,
+                provider = null,
+                startedAt = Instant.now(),
+                finishedAt = Instant.now(),
+                cancelRequested = false,
+                errorCode = null,
+                errorMessage = null,
+                usage = null,
+                metadata = emptyMap(),
+            )
+        )
+        val frame = json.treeToValue(
+            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Повтор", "device-1")),
+            MessageSubmitFrame::class.java,
+        )
+
+        val handled = context.publicClientService.handleMessage(chat, frame)
+        val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
+        val receipt = context.clientRequestRepository.get(chat.id, "message-1")
+
+        assertEquals(existingExecution.id.toString(), ack["thread"]["id"].asText())
+        assertEquals(existingExecution.id, receipt?.threadId)
+        handled.afterSend()
+    }
+
+    @Test
     fun `user ask is a tool backed skill that waits for an idempotent client result`() = runBlocking {
         val context = publicContext()
         val userId = UUID.randomUUID().toString()
@@ -332,6 +385,70 @@ class BackendPublicClientContractRouteTest {
         assertTrue(duplicatePayload["duplicate"].asBoolean())
         assertEquals("rejected", conflictingPayload["status"].asText())
         assertEquals("idempotency_conflict", conflictingPayload["error"]["code"].asText())
+    }
+
+    @Test
+    fun `tool result completion race accepts a matching terminal result as duplicate`() = runBlocking {
+        val fixture = toolResultRaceFixture { payloadHash -> payloadHash }
+
+        val handled = fixture.context.publicClientService.handleToolResult(fixture.chat, fixture.frame)
+        val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
+
+        assertEquals("accepted", ack["status"].asText())
+        assertTrue(ack["duplicate"].asBoolean())
+    }
+
+    @Test
+    fun `tool result completion race rejects a different terminal result`() = runBlocking {
+        val fixture = toolResultRaceFixture { payloadHash -> "different:$payloadHash" }
+
+        val handled = fixture.context.publicClientService.handleToolResult(fixture.chat, fixture.frame)
+        val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
+
+        assertEquals("rejected", ack["status"].asText())
+        assertEquals("idempotency_conflict", ack["error"]["code"].asText())
+    }
+
+    @Test
+    fun `accepted input commit failure propagates and clears its acknowledgement`() = runBlocking {
+        val api = GateControlledChatApi()
+        val context = publicContext(api)
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val firstFrame = json.treeToValue(
+            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Первое сообщение", "device-1")),
+            MessageSubmitFrame::class.java,
+        )
+        val first = context.publicClientService.handleMessage(chat, firstFrame)
+        val firstAck = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(first.response)
+        val threadId = UUID.fromString(firstAck["thread"]["id"].asText())
+        first.afterSend()
+        api.awaitStarted("Первое сообщение")
+
+        val failure = assertFailsWith<IllegalStateException> {
+            context.clientThreadRegistry.acceptInput(
+                threadId = threadId,
+                requestId = "message-2",
+                device = ClientDevice(userId, "device-2", "tv_box", setOf("speech")),
+                input = "Второе сообщение",
+                canAccept = { true },
+                commit = { error("commit failed") },
+            )
+        }
+
+        assertEquals("commit failed", failure.message)
+        api.awaitStarted("Второе сообщение")
+        withTimeout(200) {
+            context.clientThreadRegistry.awaitAcceptedInputAcks(threadId)
+        }
+        api.release()
+        withTimeout(2_000) {
+            while (context.eventRepository.listByChat(userId, chat.id).none {
+                    it.type == AgentEventType.THREAD_COMPLETED
+                }) {
+                delay(10)
+            }
+        }
     }
 
     @Test
@@ -448,6 +565,61 @@ class BackendPublicClientContractRouteTest {
         }
     }
 
+    private suspend fun toolResultRaceFixture(
+        terminalPayloadHash: (String) -> String,
+    ): ToolResultRaceFixture {
+        val repository = LostCompletionRaceToolCallRepository(terminalPayloadHash)
+        val context = publicContext(toolCallRepository = repository)
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val threadId = UUID.randomUUID()
+        context.executionRepository.create(
+            AgentExecution(
+                id = threadId,
+                userId = userId,
+                chatId = chat.id,
+                userMessageId = null,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.RUNNING,
+                requestId = null,
+                clientMessageId = null,
+                model = null,
+                provider = null,
+                startedAt = Instant.now(),
+                finishedAt = null,
+                cancelRequested = false,
+                errorCode = null,
+                errorMessage = null,
+                usage = null,
+                metadata = emptyMap(),
+            )
+        )
+        context.clientThreadRegistry.register(
+            threadId,
+            ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
+        )
+        val toolCallId = UUID.randomUUID().toString()
+        repository.startClientCall(
+            context = ToolCallContext(userId, chat.id.toString(), threadId.toString(), toolCallId),
+            name = USER_ASK_SKILL,
+            deviceId = "device-tv",
+            argumentsJson = "{}",
+            deadlineAt = Instant.now().plusSeconds(60),
+        )
+        return ToolResultRaceFixture(
+            context = context,
+            chat = chat,
+            frame = ToolResultFrame(
+                kind = "tool.result",
+                chatId = chat.id.toString(),
+                threadId = threadId.toString(),
+                toolCallId = toolCallId,
+                status = "succeeded",
+                result = json.readTree("""{"answer":"Да"}"""),
+            ),
+        )
+    }
+
     private fun io.ktor.server.testing.ApplicationTestBuilder.install(context: RouteTestContext) {
         application {
             backendApplication(
@@ -465,8 +637,12 @@ class BackendPublicClientContractRouteTest {
         }
     }
 
-    private fun publicContext(llmApi: ru.souz.llms.LLMChatAPI = CapturingChatApi()): RouteTestContext = routeTestContext(
+    private fun publicContext(
+        llmApi: ru.souz.llms.LLMChatAPI = CapturingChatApi(),
+        toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
+    ): RouteTestContext = routeTestContext(
         llmApi = llmApi,
+        toolCallRepository = toolCallRepository,
         featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = false, toolEvents = true),
         agentId = AgentId.SKILLS_GRAPH,
     )
@@ -481,5 +657,35 @@ class BackendPublicClientContractRouteTest {
     ): String {
         val thread = threadId?.let { ",\"threadId\":\"$it\"" }.orEmpty()
         return """{"kind":"message.submit","chatId":"$chatId","requestId":"$requestId"$thread,"payload":{"device":{"userId":"$userId","deviceId":"$deviceId","deviceType":"tv_box","capabilities":["speech","screen","device_tools"]},"content":{"type":"text","source":"voice","text":"$text"},"meta":{"locale":"ru-RU","timeZone":"Europe/Moscow"}}}"""
+    }
+}
+
+private data class ToolResultRaceFixture(
+    val context: RouteTestContext,
+    val chat: Chat,
+    val frame: ToolResultFrame,
+)
+
+private class LostCompletionRaceToolCallRepository(
+    private val terminalPayloadHash: (String) -> String,
+    private val delegate: MemoryToolCallRepository = MemoryToolCallRepository(),
+) : ToolCallRepository by delegate {
+    override suspend fun completeClientCall(
+        context: ToolCallContext,
+        status: ToolCallStatus,
+        resultJson: String?,
+        errorJson: String?,
+        payloadHash: String,
+        receivedAt: Instant,
+    ): ToolCall? {
+        delegate.completeClientCall(
+            context = context,
+            status = status,
+            resultJson = resultJson,
+            errorJson = errorJson,
+            payloadHash = terminalPayloadHash(payloadHash),
+            receivedAt = receivedAt,
+        )
+        return null
     }
 }
