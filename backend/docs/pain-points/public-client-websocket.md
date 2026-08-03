@@ -16,7 +16,7 @@ An acknowledgement, tool event, runtime mailbox, and terminal state can race. Se
 
 - Keep strict JSON decoding and reject unknown fields.
 - Serialize the shared `message.submit` and `thread.cancel` receipt check and acceptance in the single backend process.
-- Serialize input acceptance with terminal persistence. Reserve the Skills mailbox, commit the message and revision, then publish the input; release the reservation without publishing when the commit fails. Release the event gate only after the acknowledgement is sent.
+- Serialize input acceptance with terminal persistence. Reserve the Skills mailbox, commit the message and revision, then publish the input; release the reservation without publishing when the commit fails. Release the event gate immediately after the acknowledgement is sent and before status feedback.
 - Persist a tool result before acknowledging it; complete the suspended Skill only after sending the acknowledgement.
 - Send live `thread.status` feedback after accepted submit/cancel acknowledgements without adding it to durable replay.
 - Persist pending client tool calls as cancelled before propagating thread cancellation.

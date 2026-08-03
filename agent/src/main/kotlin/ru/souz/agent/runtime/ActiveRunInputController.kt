@@ -3,6 +3,8 @@ package ru.souz.agent.runtime
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -31,8 +33,10 @@ internal class ActiveRunInputController(
         var released = false
         return try {
             val shouldPublish = beforePublish()
-            val published = releaseReservation(input.takeIf { shouldPublish })
-            released = true
+            val published = withContext(NonCancellable) {
+                releaseReservation(input.takeIf { shouldPublish }).also { released = true }
+            }
+            currentCoroutineContext().ensureActive()
             published
         } catch (error: Exception) {
             if (!released) withContext(NonCancellable) { releaseReservation(input = null) }

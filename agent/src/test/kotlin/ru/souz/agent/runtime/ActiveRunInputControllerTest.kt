@@ -88,4 +88,31 @@ class ActiveRunInputControllerTest {
 
         assertNull(sealing.await())
     }
+
+    @Test
+    fun `committed reserved submission publishes input before propagating cancellation`() = runTest {
+        val mutex = Mutex()
+        val controller = ActiveRunInputController(mutex = mutex)
+        val commitCompleted = CompletableDeferred<Unit>()
+        val submission = async(start = CoroutineStart.UNDISPATCHED) {
+            controller.submitAfter("durable input") {
+                commitCompleted.await()
+                true
+            }
+        }
+        runCurrent()
+
+        mutex.lock()
+        commitCompleted.complete(Unit)
+        runCurrent()
+        submission.cancel()
+        runCurrent()
+
+        assertFalse(submission.isCompleted)
+        mutex.unlock()
+        submission.join()
+
+        assertTrue(submission.isCancelled)
+        assertEquals("durable input", controller.drain())
+    }
 }

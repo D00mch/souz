@@ -170,8 +170,8 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
                             break
                         }
                         sendJson(handled.response)
-                        sendStatusFeedback(clientService, chat, handled.response, ::sendJson)
                         handled.afterSend()
+                        sendStatusFeedback(clientService, chat, handled.response, ::sendJson)
                     }
                 } finally {
                     sender.cancelAndJoin()
