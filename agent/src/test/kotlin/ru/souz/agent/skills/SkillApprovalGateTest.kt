@@ -9,7 +9,7 @@ import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.implementations.activation.FakeSkillLlmValidator
+import ru.souz.agent.skills.implementations.activation.FakeSkillValidator
 import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
 import ru.souz.agent.skills.implementations.bundle.skillFixturePath
 import ru.souz.agent.skills.implementations.registry.InMemorySkillRegistryRepository
@@ -22,8 +22,9 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
 import ru.souz.agent.skills.validation.SkillApprovalGate
+import ru.souz.agent.skills.validation.SkillValidationFinding
+import ru.souz.agent.skills.validation.SkillValidationLevel
 import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -34,7 +35,7 @@ class SkillApprovalGateTest {
         val repository = InMemorySkillRegistryRepository()
         val bundle = fixtureBundle()
         repository.saveSkillBundle(USER_ID, bundle)
-        val validator = FakeSkillLlmValidator.approving()
+        val validator = FakeSkillValidator.approving()
         val gate = SkillApprovalGate(repository, validator)
 
         repeat(2) {
@@ -50,7 +51,7 @@ class SkillApprovalGateTest {
         val repository = InMemorySkillRegistryRepository()
         val firstBundle = fixtureBundle()
         repository.saveSkillBundle(USER_ID, firstBundle)
-        val validator = FakeSkillLlmValidator.approving()
+        val validator = FakeSkillValidator.approving()
         val gate = SkillApprovalGate(repository, validator)
 
         assertIs<SkillApprovalGate.Result.Approved>(gate.ensureApproved(input(firstBundle)))
@@ -76,14 +77,19 @@ class SkillApprovalGateTest {
                 userId = USER_ID,
                 skillId = SKILL_ID,
                 bundleHash = bundleHash,
-                status = SkillValidationStatus.REJECTED,
                 policyVersion = "skills-policy/v1",
-                validatorVersion = "skills-validator/v1",
-                reasons = listOf("Rejected earlier."),
+                approved = false,
+                findings = listOf(
+                    SkillValidationFinding(
+                        code = "test.rejected",
+                        message = "Rejected earlier.",
+                        level = SkillValidationLevel.ERROR,
+                    )
+                ),
                 createdAt = java.time.Instant.EPOCH,
             )
         )
-        val validator = FakeSkillLlmValidator.approving()
+        val validator = FakeSkillValidator.approving()
         val gate = SkillApprovalGate(repository, validator)
 
         val result = gate.ensureApproved(input(bundle))
@@ -100,7 +106,7 @@ class SkillApprovalGateTest {
         val settingsProvider = MutableAgentSettingsProvider(LLMModel.Max)
         val api = CapturingApprovalChatApi()
         val gate = SkillApprovalGate.from(
-            registryRepository = repository,
+            validationStore = repository,
             llmApi = api,
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
@@ -126,8 +132,8 @@ class SkillApprovalGateTest {
             listOf(LLMModel.OpenAIGpt5Mini.alias, LLMModel.QwenMax.alias),
             api.models,
         )
-        assertEquals(LLMModel.OpenAIGpt5Mini.alias, firstApproval.record?.model)
-        assertEquals(LLMModel.QwenMax.alias, secondApproval.record?.model)
+        assertEquals(true, firstApproval.record?.approved)
+        assertEquals(true, secondApproval.record?.approved)
     }
 
     private fun input(bundle: SkillBundle): SkillApprovalGate.Input = SkillApprovalGate.Input(

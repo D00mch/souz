@@ -138,4 +138,4 @@ Tool-result acknowledgements are outside the event sequence.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
 - `agent_events` stores replayable client tool-start and terminal events with chat-local sequence values.
 
-Client operations are tool-backed Skills supplied through the same `SkillRegistryRepository` contract used by desktop Skills. Bundled definitions live under `backend/src/main/resources/skills/client`; each `SKILL.md` declares its operation ID, category, timeout, and instructions. All client Skills share one WebSocket transport, and each live invocation suspends until `tool.result` or its deadline. The WebSocket feature requires `SOUZ_BACKEND_AGENT=skills`.
+Client operations are backend-owned bundled tool-backed Skills provided through `SkillBundleProvider`. Definitions live under `backend/src/main/resources/skills/client`; each `SKILL.md` declares its operation ID, category, timeout, and instructions. All client Skills share one WebSocket transport, and each live invocation suspends until `tool.result` or its deadline. The WebSocket feature requires `SOUZ_BACKEND_AGENT=skills`.

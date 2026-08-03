@@ -6,6 +6,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.llms.LLMResponse
 

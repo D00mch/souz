@@ -38,9 +38,9 @@ import ru.souz.backend.testCoreTool
 import ru.souz.backend.testSearchMemoryTool
 import ru.souz.backend.testSkillCoreToolsFactory
 import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
+import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
@@ -51,7 +51,6 @@ import ru.souz.backend.chat.service.MessageService
 import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
-import ru.souz.backend.client.bundledClientSkillRegistry
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
@@ -1313,7 +1312,6 @@ internal fun routeTestContext(
     val clientRequestRepository = MemoryClientRequestRepository()
     val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
     val clientToolCatalogFactory = BackendClientToolCatalogFactory(
-        skillRegistryRepository = bundledClientSkillRegistry(TestSkillRegistryRepository),
         registry = clientThreadRegistry,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
@@ -1334,7 +1332,7 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         configuredAgentId = agentId,
         toolCatalog = toolCatalog,
-        clientToolCatalogProvider = clientToolCatalogFactory::create,
+        clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
         skillRegistryRepository = TestSkillRegistryRepository,
         skillCoreToolsFactory = testSkillCoreToolsFactory(),
         getKnowledgeTool = testCoreTool("GetKnowledge"),

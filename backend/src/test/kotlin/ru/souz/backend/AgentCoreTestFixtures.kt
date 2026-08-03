@@ -33,7 +33,7 @@ internal fun testCoreTool(name: String): LLMToolSetup = object : LLMToolSetup {
 internal fun testSkillCoreToolsFactory(
     skillRegistryRepository: SkillRegistryRepository = TestSkillRegistryRepository,
 ): BackendSkillCoreToolsFactory = BackendSkillCoreToolsFactory(
-    skillRegistryRepository = skillRegistryRepository,
+    skillBundleProvider = skillRegistryRepository,
     legacyCommandTool = testCoreTool("RunSkillCommand"),
     commandTool = ToolRunSkillCommand(
         ToolInvocationRuntimeSandboxResolver {

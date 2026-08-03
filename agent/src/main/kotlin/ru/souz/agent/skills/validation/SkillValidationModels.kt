@@ -1,27 +1,15 @@
 package ru.souz.agent.skills.validation
 
-import ru.souz.agent.skills.bundle.SkillManifest
-import ru.souz.agent.skills.activation.SkillId
 import java.time.Instant
-
-/**
- * Final lifecycle state stored for a skill validation run.
- */
-enum class SkillValidationStatus {
-    /** The bundle passed validation under the active policy and can be used. */
-    APPROVED,
-
-    /** The bundle failed validation and must not be selected or executed. */
-    REJECTED,
-
-    /** A previously stored approval no longer matches the current bundle or policy. */
-    STALE,
-}
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.bundle.SKILL_MD_PATH
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillManifest
 
 /**
  * Severity assigned to a validation finding.
  */
-enum class SkillValidationSeverity {
+enum class SkillValidationLevel {
     /** Informational note that does not affect approval. */
     INFO,
 
@@ -38,19 +26,17 @@ enum class SkillValidationSeverity {
 data class SkillValidationFinding(
     val code: String,
     val message: String,
-    val severity: SkillValidationSeverity,
+    val level: SkillValidationLevel,
     val filePath: String? = null,
 )
 
 /**
  * Limits and thresholds that define the active validation contract.
  *
- * Together with [validatorVersion], [policyVersion] forms the cache key for persisted validation
- * records so approvals can be invalidated when the rules change.
+ * Changing validation rules requires a new [policyVersion] so cached approvals are not reused.
  */
 data class SkillValidationPolicy(
     val policyVersion: String,
-    val validatorVersion: String,
     val minApprovalConfidence: Double,
     val maxFileBytes: Int,
     val maxBundleBytes: Int,
@@ -59,7 +45,6 @@ data class SkillValidationPolicy(
     companion object {
         fun default(): SkillValidationPolicy = SkillValidationPolicy(
             policyVersion = "skills-policy/v1",
-            validatorVersion = "skills-validator/v1",
             minApprovalConfidence = 0.66,
             maxFileBytes = 128 * 1024,
             maxBundleBytes = 512 * 1024,
@@ -75,77 +60,37 @@ data class SkillValidationRecord(
     val userId: String,
     val skillId: SkillId,
     val bundleHash: String,
-    val status: SkillValidationStatus,
     val policyVersion: String,
-    val validatorVersion: String,
-    val model: String? = null,
-    val reasons: List<String> = emptyList(),
+    val approved: Boolean,
     val findings: List<SkillValidationFinding> = emptyList(),
     val createdAt: Instant,
 )
 
 /**
- * Combined non-LLM validation output aggregated before the final approval decision.
+ * Input shared by all Skill validators.
  */
-data class SkillValidationResult(
-    val findings: List<SkillValidationFinding>,
-) {
-    val hasHardReject: Boolean = findings.any { it.severity == SkillValidationSeverity.ERROR }
-}
-
-/**
- * Binary LLM verdict produced after structural and static checks.
- */
-enum class SkillLlmValidationDecision {
-    APPROVE,
-    REJECT,
-}
-
-/**
- * Coarse risk bucket used to communicate the model's overall concern level.
- */
-enum class SkillRiskLevel {
-    LOW,
-    MEDIUM,
-    HIGH,
-}
-
-/**
- * Sanitized bundle context passed to the LLM validator.
- *
- * The input contains the manifest, selected markdown, bounded supporting excerpts, and findings
- * from deterministic validators so the model reasons over a constrained view of the bundle.
- */
-data class SkillLlmValidationInput(
+data class SkillValidationInput(
     val userId: String,
     val skillId: SkillId,
     val bundleHash: String,
     val policy: SkillValidationPolicy,
-    val manifest: SkillManifest,
-    val filePaths: List<String>,
-    val skillMarkdown: String,
-    val supportingFileExcerpts: Map<String, String>,
-    val structuralFindings: List<SkillValidationFinding>,
-    val staticFindings: List<SkillValidationFinding>,
-)
+    val bundle: SkillBundle,
+    val previousFindings: List<SkillValidationFinding> = emptyList(),
+) {
+    val manifest: SkillManifest get() = bundle.manifest
+    val filePaths: List<String> get() = bundle.files.map { it.normalizedPath }
+    val skillMarkdown: String get() = bundle.skillMarkdownFile.contentAsText()
+    val supportingFileExcerpts: Map<String, String>
+        get() = bundle.files
+            .filterNot { it.normalizedPath == SKILL_MD_PATH }
+            .associate { file ->
+                file.normalizedPath to file.contentAsText().take(policy.excerptCharsPerFile)
+            }
+}
 
 /**
- * Structured LLM response used to persist and explain the approval decision.
+ * Replaceable Skill validator. Returning an ERROR finding rejects the bundle.
  */
-data class SkillLlmValidationVerdict(
-    val decision: SkillLlmValidationDecision,
-    val confidence: Double,
-    val riskLevel: SkillRiskLevel,
-    val reasons: List<String>,
-    val requestedCapabilities: List<String>,
-    val suspiciousFiles: List<String>,
-    val findings: List<SkillValidationFinding>,
-    val model: String? = null,
-)
-
-/**
- * Replaceable LLM-backed validator implementation.
- */
-fun interface SkillLlmValidator {
-    suspend fun validate(input: SkillLlmValidationInput): SkillLlmValidationVerdict
+fun interface SkillValidator {
+    suspend fun validate(input: SkillValidationInput): List<SkillValidationFinding>
 }

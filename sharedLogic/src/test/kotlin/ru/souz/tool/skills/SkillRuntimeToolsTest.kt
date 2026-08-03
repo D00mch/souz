@@ -309,7 +309,7 @@ class SkillRuntimeToolsTest {
         val runner = ToolInvokeSkill(
             toolCatalog = catalog(),
             toolsFilter = TestToolsFilter(),
-            repository = repository,
+            skillBundleProvider = repository,
             commandTool = commandTool,
         )
         val largeOutput = "x".repeat(25_050)
@@ -424,7 +424,7 @@ class SkillRuntimeToolsTest {
     ): ToolGetSkillByName = ToolGetSkillByName(
         toolCatalog = catalog,
         toolsFilter = filter,
-        repository = repository,
+        skillBundleProvider = repository,
         legacyCommandTool = ToolRunSkillCommand(mockk(relaxed = true)).toGiga(),
         approvalGate = approvalGate,
     )
@@ -454,7 +454,7 @@ class SkillRuntimeToolsTest {
     ): ToolInvokeSkill = ToolInvokeSkill(
         toolCatalog = catalog,
         toolsFilter = filter,
-        repository = repository,
+        skillBundleProvider = repository,
         commandTool = ToolRunSkillCommand(mockk(relaxed = true)),
         approvalGate = approvalGate,
     )

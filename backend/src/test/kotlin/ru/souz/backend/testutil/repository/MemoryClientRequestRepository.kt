@@ -11,7 +11,9 @@ class MemoryClientRequestRepository : ClientRequestRepository {
     private val requests = linkedMapOf<Pair<UUID, String>, ClientRequest>()
 
     override suspend fun create(request: ClientRequest): ClientRequest = mutex.withLock {
-        requests[request.chatId to request.requestId] = request
+        val key = request.chatId to request.requestId
+        check(key !in requests) { "Client request already exists: ${request.chatId}/${request.requestId}" }
+        requests[key] = request
         request
     }
 

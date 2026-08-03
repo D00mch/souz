@@ -15,9 +15,9 @@ import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
+import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -29,7 +29,6 @@ import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.client.ClientThreadRecoveryService
-import ru.souz.backend.client.bundledClientSkillRegistry
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
@@ -90,7 +89,6 @@ import ru.souz.tool.skills.ToolRunSkillCommand
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
-    const val CLIENT_SKILL_REGISTRY = "backendClientSkillRegistry"
 }
 
 /** Backend Kodein module that wires HTTP services to the shared JVM runtime. */
@@ -215,17 +213,13 @@ fun backendDiModule(
     }
     bindSingleton {
         BackendSkillCoreToolsFactory(
-            skillRegistryRepository = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             commandTool = instance<ToolRunSkillCommand>(),
         )
     }
-    bindSingleton<SkillRegistryRepository>(tag = BackendDiTags.CLIENT_SKILL_REGISTRY) {
-        bundledClientSkillRegistry(delegate = instance())
-    }
     bindSingleton {
         BackendClientToolCatalogFactory(
-            skillRegistryRepository = instance(tag = BackendDiTags.CLIENT_SKILL_REGISTRY),
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
@@ -241,7 +235,7 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
-            clientToolCatalogProvider = clientToolCatalogFactory::create,
+            clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
             skillCoreToolsFactory = instance(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),

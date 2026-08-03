@@ -42,14 +42,12 @@ import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.TestSkillRegistryRepository
 import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientDevice
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.ToolResultFrame
-import ru.souz.backend.client.bundledClientSkillRegistry
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -498,11 +496,10 @@ class BackendPublicClientContractRouteTest {
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
         val catalog = BackendClientToolCatalogFactory(
-            skillRegistryRepository = bundledClientSkillRegistry(TestSkillRegistryRepository),
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create(userId)
+        ).create()
         val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
         requireNotNull(catalog.toolsByCategory[ToolCategory.APPLICATIONS]?.get("device.media.open"))
         val invocation = async {
@@ -695,11 +692,10 @@ class BackendPublicClientContractRouteTest {
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
         val catalog = BackendClientToolCatalogFactory(
-            skillRegistryRepository = bundledClientSkillRegistry(TestSkillRegistryRepository),
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create(userId)
+        ).create()
         val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
         val invocation = async {
             tool.invoke(

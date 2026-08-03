@@ -163,7 +163,7 @@ class NodesSkillInventoryTest {
     ): NodesSkillInventory = NodesSkillInventory(
         toolCatalog = catalog,
         toolsFilter = toolsFilter,
-        skillRegistryRepository = repository,
+        skillBundleProvider = repository,
     )
 
     private fun contextWithCatalog(vararg tools: LLMToolSetup): AgentContext<String> = AgentContext(

@@ -44,13 +44,7 @@ internal class PublicClientService(
     private val registry: ClientThreadRuntimeRegistry,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
-    private data class ChatRequestLock(
-        val mutex: Mutex = Mutex(),
-        var references: Int = 0,
-    )
-
-    private val chatRequestLocksMutex = Mutex()
-    private val chatRequestLocks = linkedMapOf<UUID, ChatRequestLock>()
+    private val requestMutex = Mutex()
 
     suspend fun requireChat(chatId: UUID, clientType: String): Chat {
         val chat = chatRepository.getById(chatId) ?: throw ClientContractException("chat_not_found", "Chat not found.")
@@ -67,7 +61,7 @@ internal class PublicClientService(
     }
 
     suspend fun handleMessage(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame =
-        withChatRequestLock(chat.id) { handleMessageLocked(chat, frame) }
+        requestMutex.withLock { handleMessageLocked(chat, frame) }
 
     private suspend fun handleMessageLocked(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame {
         val now = Instant.now()
@@ -164,7 +158,7 @@ internal class PublicClientService(
     }
 
     suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame =
-        withChatRequestLock(chat.id) { handleCancelLocked(chat, frame) }
+        requestMutex.withLock { handleCancelLocked(chat, frame) }
 
     private suspend fun handleCancelLocked(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {
         val now = Instant.now()
@@ -362,22 +356,6 @@ internal class PublicClientService(
         timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },
         streamingMessages = true,
     )
-
-    private suspend fun <T> withChatRequestLock(chatId: UUID, block: suspend () -> T): T {
-        val requestLock = chatRequestLocksMutex.withLock {
-            chatRequestLocks.getOrPut(chatId) { ChatRequestLock() }.also { it.references += 1 }
-        }
-        return try {
-            requestLock.mutex.withLock { block() }
-        } finally {
-            chatRequestLocksMutex.withLock {
-                requestLock.references -= 1
-                if (requestLock.references == 0) {
-                    chatRequestLocks.remove(chatId)
-                }
-            }
-        }
-    }
 
     private suspend fun timeOutExpiredTool(
         chatId: UUID,

@@ -1,133 +1,39 @@
-package ru.souz.backend.agent.runtime
+package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import ru.souz.agent.AgentContextFactory
-import ru.souz.agent.AgentId
+import kotlinx.coroutines.CoroutineScope
 import ru.souz.agent.AgentExecutionKernelFactory
-import ru.souz.agent.AgentExecutor
+import ru.souz.agent.AgentId
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
-import ru.souz.agent.skills.activation.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.skills.validation.SkillApprovalGate
-import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.session.AgentConversationSession
+import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
+import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
+import ru.souz.backend.agent.runtime.BackendFewShotAwareToolCatalog
+import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
+import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
+import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
+import ru.souz.backend.agent.runtime.BackendNoopMcpToolProvider
+import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
+import ru.souz.backend.agent.runtime.BackendRequestToolCatalog
+import ru.souz.backend.agent.runtime.BackendRequestToolsFilter
+import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
+import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
 import ru.souz.tool.skills.ToolGetSkillsByCategory
-
-/** Result of one backend agent execution turn plus final usage data. */
-internal data class BackendConversationExecution(
-    val output: String,
-    val usage: LLMResponse.Usage,
-    val session: AgentConversationSession,
-)
-
-/** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
-internal class BackendConversationRuntime(
-    private val key: AgentConversationKey,
-    private val sessionRepository: AgentSessionRepository,
-    private val settingsProvider: BackendConversationSettingsProvider,
-    private val contextFactory: AgentContextFactory,
-    private val executor: AgentExecutor,
-    private val usageTrackingApi: CumulativeUsageTrackingChatApi,
-    private val persistedSession: AgentConversationSession?,
-) {
-    private val activeAgentId = contextFactory.normalizeAgentId(
-        persistedSession?.activeAgentId ?: settingsProvider.activeAgentId
-    )
-    private val currentTemperature = persistedSession?.temperature ?: settingsProvider.temperature
-
-    init {
-        persistedSession?.let { session ->
-            settingsProvider.restore(
-                activeAgentId = activeAgentId,
-                temperature = currentTemperature,
-                locale = session.locale,
-            )
-        }
-    }
-
-    internal suspend fun execute(
-        request: BackendConversationTurnRequest,
-        persistSession: Boolean = true,
-        eventSink: AgentRuntimeEventSink? = null,
-        onActiveRunReady: suspend () -> Unit = {},
-    ): BackendConversationExecution {
-        settingsProvider.applyRequest(
-            request = request,
-            activeAgentId = activeAgentId,
-            temperature = currentTemperature,
-        )
-
-        val seedContext = contextFactory.create(
-            agentId = activeAgentId,
-            history = persistedSession?.history.orEmpty(),
-            model = settingsProvider.gigaModel,
-            contextSize = request.contextSize,
-            temperature = settingsProvider.temperature,
-            toolInvocationMeta = ToolInvocationMeta(
-                userId = key.userId,
-                conversationId = key.conversationId,
-                requestId = request.executionId,
-                locale = request.locale,
-                timeZone = request.timeZone,
-            ),
-        )
-
-        val result = executor.execute(
-            agentId = activeAgentId,
-            context = seedContext,
-            input = request.prompt,
-            eventSink = eventSink,
-            onActiveRunReady = onActiveRunReady,
-        )
-        val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
-        val nextSession = AgentConversationSession(
-            activeAgentId = nextAgentId,
-            history = result.context.history,
-            temperature = result.context.settings.temperature,
-            locale = request.locale,
-            timeZone = request.timeZone,
-            basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L,
-            rowVersion = persistedSession?.rowVersion ?: 0L,
-        )
-
-        if (persistSession) {
-            sessionRepository.save(key, nextSession)
-        }
-
-        return BackendConversationExecution(
-            output = result.output,
-            usage = usageTrackingApi.cumulativeUsage(),
-            session = nextSession,
-        )
-    }
-
-    internal fun currentUsage(): LLMResponse.Usage = usageTrackingApi.cumulativeUsage()
-
-    internal suspend fun submitToActiveRun(input: String): Boolean =
-        executor.submitToActiveRun(activeAgentId, input)
-
-    internal suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
-        executor.submitToActiveRunAfter(activeAgentId, input, beforePublish)
-}
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 class BackendConversationRuntimeFactory(
@@ -145,7 +51,7 @@ class BackendConversationRuntimeFactory(
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
-    private val agentBackgroundScope: kotlinx.coroutines.CoroutineScope,
+    private val agentBackgroundScope: CoroutineScope,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -192,7 +98,7 @@ class BackendConversationRuntimeFactory(
         )
         val effectiveSkillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository
         val skillApprovalGate = SkillApprovalGate.from(
-            registryRepository = effectiveSkillRegistryRepository,
+            validationStore = effectiveSkillRegistryRepository,
             llmApi = usageTrackingApi,
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
@@ -253,53 +159,4 @@ class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
         )
     }
-}
-
-private class BackendMergedToolCatalog(
-    primary: AgentToolCatalog,
-    additional: AgentToolCatalog,
-) : AgentToolCatalog {
-    override val toolsByCategory: Map<ru.souz.tool.ToolCategory, Map<String, LLMToolSetup>> =
-        (primary.toolsByCategory.keys + additional.toolsByCategory.keys).associateWith { category ->
-            primary.toolsByCategory[category].orEmpty() + additional.toolsByCategory[category].orEmpty()
-        }
-}
-
-private object BackendNoopSkillRegistryRepository : SkillRegistryRepository {
-    override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = null
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? = null
-
-    override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill =
-        error("Skill registry repository is not configured for this backend runtime.")
-
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null
-
-    override suspend fun getValidation(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-    ): SkillValidationRecord? = null
-
-    override suspend fun saveValidation(record: SkillValidationRecord) = Unit
-
-    override suspend fun markValidationStatus(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-        status: SkillValidationStatus,
-        reason: String?,
-    ) = Unit
-
-    override suspend fun invalidateOtherValidations(
-        userId: String,
-        skillId: SkillId,
-        activeBundleHash: String,
-        policyVersion: String,
-        reason: String?,
-    ) = Unit
 }

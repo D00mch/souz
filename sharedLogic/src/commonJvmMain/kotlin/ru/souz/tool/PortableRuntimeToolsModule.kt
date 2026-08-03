@@ -5,6 +5,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -121,7 +122,7 @@ fun portableSkillToolsDiModule(
         ToolGetSkillByName(
             toolCatalog = instance(),
             toolsFilter = instance(),
-            repository = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
@@ -161,7 +162,7 @@ fun portableSkillToolsDiModule(
         ToolInvokeSkill(
             toolCatalog = instance(),
             toolsFilter = instance(),
-            repository = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
             commandTool = instance(),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )

@@ -22,7 +22,6 @@ import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.registry.toInventoryEntry
 import ru.souz.agent.skills.validation.SkillValidationFinding
 import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.paths.SandboxSouzPaths
@@ -295,66 +294,6 @@ class FileSystemSkillRegistryRepository(
         logValidationSaved(store, path, record)
     }
 
-    override suspend fun markValidationStatus(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-        status: SkillValidationStatus,
-        reason: String?,
-    ) = withContext(Dispatchers.IO) {
-        val current = getValidation(userId, skillId, bundleHash, policyVersion) ?: return@withContext
-        saveValidation(
-            current.copy(
-                status = status,
-                reasons = current.reasons + listOfNotNull(reason),
-            )
-        )
-    }
-
-    override suspend fun invalidateOtherValidations(
-        userId: String,
-        skillId: SkillId,
-        activeBundleHash: String,
-        policyVersion: String,
-        reason: String?,
-    ) = withContext(Dispatchers.IO) {
-        val store = storeFor(userId)
-        val policyRoot = store.resolvePath(
-            validationPolicyRoot(
-                paths = store.paths,
-                userId = userId,
-                skillId = skillId,
-                policyVersion = policyVersion,
-            )
-        )
-        if (!policyRoot.exists || !policyRoot.isDirectory) {
-            return@withContext
-        }
-
-        store.fileSystem.listDescendants(
-            root = policyRoot,
-            maxDepth = 1,
-            includeHidden = true,
-        )
-            .filter { it.isRegularFile && it.parentPath == policyRoot.path && it.name.endsWith(".json") }
-            .forEach { path ->
-                val record = readValidationOrNull(store, path) ?: return@forEach
-                if (record.bundleHash == activeBundleHash || record.status != SkillValidationStatus.APPROVED) {
-                    return@forEach
-                }
-                writeValidation(
-                    store = store,
-                    path = path,
-                    record = record.copy(
-                        status = SkillValidationStatus.STALE,
-                        reasons = record.reasons + listOfNotNull(reason),
-                    ),
-                )
-                logValidationMarkedStale(userId, store, skillId, record, activeBundleHash, policyVersion)
-            }
-    }
-
     private fun writeBundleIfMissing(
         store: Store,
         bundleRoot: SandboxPathInfo,
@@ -532,11 +471,8 @@ class FileSystemSkillRegistryRepository(
                 userId = stored.userId,
                 skillId = SkillId(stored.skillId),
                 bundleHash = stored.bundleHash,
-                status = SkillValidationStatus.valueOf(stored.status),
                 policyVersion = stored.policyVersion,
-                validatorVersion = stored.validatorVersion,
-                model = stored.model,
-                reasons = stored.reasons,
+                approved = stored.approved,
                 findings = stored.findings,
                 createdAt = Instant.parse(stored.createdAt),
             )
@@ -554,11 +490,8 @@ class FileSystemSkillRegistryRepository(
             userId = record.userId,
             skillId = record.skillId.value,
             bundleHash = record.bundleHash,
-            status = record.status.name,
             policyVersion = record.policyVersion,
-            validatorVersion = record.validatorVersion,
-            model = record.model,
-            reasons = record.reasons,
+            approved = record.approved,
             findings = record.findings,
             createdAt = record.createdAt.toString(),
             updatedAt = clock.instant().toString(),
@@ -857,37 +790,16 @@ class FileSystemSkillRegistryRepository(
     ) {
         logger.info(
             "Skill registry saved validation skill={} user={} scope={} sandboxMode={} hash={} policy={} " +
-                    "status={} findings={} path={}",
+                    "approved={} findings={} path={}",
             record.skillId.value,
             record.userId,
             config.scope,
             store.sandboxMode,
             record.bundleHash.take(12),
             record.policyVersion,
-            record.status,
+            record.approved,
             record.findings.size,
             path.path,
-        )
-    }
-
-    private fun logValidationMarkedStale(
-        userId: String,
-        store: Store,
-        skillId: SkillId,
-        record: SkillValidationRecord,
-        activeBundleHash: String,
-        policyVersion: String,
-    ) {
-        logger.info(
-            "Skill registry marked stale validation skill={} user={} scope={} sandboxMode={} staleHash={} " +
-                    "activeHash={} policy={}",
-            skillId.value,
-            userId,
-            config.scope,
-            store.sandboxMode,
-            record.bundleHash.take(12),
-            activeBundleHash.take(12),
-            policyVersion,
         )
     }
 
@@ -920,11 +832,8 @@ class FileSystemSkillRegistryRepository(
         val userId: String,
         val skillId: String,
         val bundleHash: String,
-        val status: String,
         val policyVersion: String,
-        val validatorVersion: String,
-        val model: String?,
-        val reasons: List<String> = emptyList(),
+        val approved: Boolean,
         val findings: List<SkillValidationFinding> = emptyList(),
         val createdAt: String,
         val updatedAt: String,

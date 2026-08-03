@@ -8,7 +8,7 @@ import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import ru.souz.backend.agent.runtime.BackendConversationRuntime
+import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 
 internal data class ClientToolOutcome(
     val status: String,

@@ -8,7 +8,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillBundleHasher
+import ru.souz.agent.skills.bundle.SkillFile
+import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -25,35 +30,36 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
 internal class BackendClientToolCatalogFactory(
-    private val skillRegistryRepository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider = BackendBundledClientSkillBundleProvider(),
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val now: () -> Instant = Instant::now,
 ) {
-    suspend fun create(userId: String): AgentToolCatalog {
-        val skills = skillRegistryRepository.listSkills(userId).mapNotNull { storedSkill ->
-            if (storedSkill.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] != CLIENT_SKILL_TRANSPORT) {
-                return@mapNotNull null
-            }
-            val bundle = requireNotNull(skillRegistryRepository.loadSkillBundle(userId, storedSkill.skillId)) {
-                "Missing client Skill bundle: ${storedSkill.skillId.value}"
-            }
-            ClientSkillDefinition(
-                name = storedSkill.skillId.value,
-                category = storedSkill.manifest.clientCategory(),
-                timeout = storedSkill.manifest.clientTimeout(),
-                description = "${storedSkill.manifest.description}\n\n${bundle.skillMarkdownBody}",
-            )
-        }
-        return BackendClientToolCatalog(
-            skills = skills,
+    suspend fun create(userId: String = CLIENT_SKILL_OWNER): AgentToolCatalog =
+        BackendClientToolCatalog(
+            skills = loadClientSkillDefinitions(userId),
             registry = registry,
             toolCallRepository = toolCallRepository,
             eventService = eventService,
             now = now,
         )
-    }
+
+    private suspend fun loadClientSkillDefinitions(userId: String): List<ClientSkillDefinition> =
+        skillBundleProvider.listSkills(userId).map { storedSkill ->
+            val bundle = requireNotNull(skillBundleProvider.loadSkillBundle(userId, storedSkill.skillId)) {
+                "Bundled client Skill disappeared after listing: ${storedSkill.skillId.value}"
+            }
+            require(bundle.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] == CLIENT_SKILL_TRANSPORT) {
+                "Bundled client Skill ${storedSkill.skillId.value} has invalid metadata.$CLIENT_SKILL_TRANSPORT_METADATA"
+            }
+            ClientSkillDefinition(
+                name = storedSkill.skillId.value,
+                category = bundle.manifest.clientCategory(),
+                timeout = bundle.manifest.clientTimeout(),
+                description = "${bundle.manifest.description}\n\n${bundle.skillMarkdownBody}",
+            )
+        }
 }
 
 private class BackendClientToolCatalog(
@@ -241,6 +247,70 @@ private data class ClientSkillDefinition(
     val description: String,
 )
 
+private class BackendBundledClientSkillBundleProvider(
+    classLoader: ClassLoader = BackendClientToolCatalogFactory::class.java.classLoader,
+) : SkillBundleProvider {
+    private val bundles: Map<SkillId, SkillBundle> = loadBundledClientSkillBundles(classLoader)
+
+    override suspend fun listSkills(userId: String): List<StoredSkill> = bundles.values
+        .map { bundle -> bundle.toStoredSkill(userId) }
+        .sortedBy { it.skillId.value }
+
+    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? =
+        bundles[skillId]?.toStoredSkill(userId)
+
+    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
+        bundles.values.firstOrNull { it.manifest.name == name }?.toStoredSkill(userId)
+
+    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = bundles[skillId]
+
+    private fun SkillBundle.toStoredSkill(userId: String): StoredSkill = StoredSkill(
+        userId = userId,
+        skillId = skillId,
+        manifest = manifest,
+        bundleHash = SkillBundleHasher.hash(this),
+        createdAt = Instant.EPOCH,
+    )
+}
+
+private fun loadBundledClientSkillBundles(classLoader: ClassLoader): Map<SkillId, SkillBundle> {
+    val entries = requireNotNull(classLoader.getResourceAsStream(CLIENT_SKILL_INDEX)) {
+        "Missing bundled client Skill index: $CLIENT_SKILL_INDEX"
+    }.bufferedReader().useLines { lines ->
+        lines
+            .map(String::trim)
+            .filter { it.isNotEmpty() && !it.startsWith('#') }
+            .toList()
+    }
+
+    val bundles = entries.map { entry ->
+        require('/' !in entry && '\\' !in entry) { "Invalid bundled client Skill entry: $entry" }
+        val resourcePath = "$CLIENT_SKILL_ROOT/$entry/SKILL.md"
+        val content = requireNotNull(classLoader.getResourceAsStream(resourcePath)) {
+            "Missing bundled client Skill resource: $resourcePath"
+        }.use { it.readBytes() }
+        val manifestBundle = SkillBundle.fromFiles(
+            skillId = SkillId(entry),
+            files = listOf(SkillFile(normalizedPath = "SKILL.md", content = content)),
+        )
+        val skillId = manifestBundle.manifest.metadata[CLIENT_SKILL_ID_METADATA]
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: error("Bundled client Skill $entry is missing metadata.$CLIENT_SKILL_ID_METADATA")
+        require(manifestBundle.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] == CLIENT_SKILL_TRANSPORT) {
+            "Bundled client Skill $entry has invalid metadata.$CLIENT_SKILL_TRANSPORT_METADATA"
+        }
+        val bundle = SkillBundle.fromFiles(
+            skillId = SkillId(skillId),
+            files = manifestBundle.files,
+        )
+        bundle.skillId to bundle
+    }
+    val duplicate = bundles.groupingBy { it.first.value }.eachCount().entries.firstOrNull { it.value > 1 }
+    require(duplicate == null) { "Duplicate bundled client Skill ID: ${duplicate?.key}" }
+    return bundles.toMap()
+}
+
 private fun ru.souz.agent.skills.bundle.SkillManifest.clientCategory(): ToolCategory {
     val raw = metadata[CLIENT_SKILL_CATEGORY_METADATA]?.trim().orEmpty()
     return ToolCategory.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
@@ -253,3 +323,12 @@ private fun ru.souz.agent.skills.bundle.SkillManifest.clientTimeout(): Duration 
         ?.takeIf { !it.isZero && !it.isNegative }
         ?: error("Client Skill $name has an invalid metadata.$CLIENT_SKILL_TIMEOUT_METADATA: $raw")
 }
+
+private const val CLIENT_SKILL_TRANSPORT_METADATA = "souz.transport"
+private const val CLIENT_SKILL_TRANSPORT = "client-websocket"
+private const val CLIENT_SKILL_CATEGORY_METADATA = "souz.category"
+private const val CLIENT_SKILL_TIMEOUT_METADATA = "souz.timeout"
+private const val CLIENT_SKILL_ID_METADATA = "souz.skill-id"
+private const val CLIENT_SKILL_ROOT = "skills/client"
+private const val CLIENT_SKILL_INDEX = "$CLIENT_SKILL_ROOT/index.txt"
+private const val CLIENT_SKILL_OWNER = "backend-client"
