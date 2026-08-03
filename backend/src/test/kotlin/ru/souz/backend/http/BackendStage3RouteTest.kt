@@ -48,9 +48,10 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalog
+import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
+import ru.souz.backend.client.bundledClientSkillRegistry
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
@@ -1273,7 +1274,12 @@ internal fun routeTestContext(
     val clientThreadRegistry = ClientThreadRuntimeRegistry()
     val clientRequestRepository = MemoryClientRequestRepository()
     val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
-    val clientToolCatalog = BackendClientToolCatalog(clientThreadRegistry, toolCallRepository, eventService)
+    val clientToolCatalogFactory = BackendClientToolCatalogFactory(
+        skillRegistryRepository = bundledClientSkillRegistry(TestSkillRegistryRepository),
+        registry = clientThreadRegistry,
+        toolCallRepository = toolCallRepository,
+        eventService = eventService,
+    )
     val effectiveSettingsResolver = EffectiveSettingsResolver(
         baseSettingsProvider = settingsProvider,
         userSettingsRepository = userSettingsRepository,
@@ -1290,7 +1296,7 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         configuredAgentId = agentId,
         toolCatalog = toolCatalog,
-        clientToolCatalog = clientToolCatalog,
+        clientToolCatalogProvider = clientToolCatalogFactory::create,
         skillRegistryRepository = TestSkillRegistryRepository,
         skillCoreToolsFactory = testSkillCoreToolsFactory(),
         getKnowledgeTool = testCoreTool("GetKnowledge"),

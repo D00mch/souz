@@ -19,7 +19,6 @@ import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.restJsonMapper
-import ru.souz.backend.client.CLIENT_SKILL_NAMES
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 
 internal data class PreparedChatTurn(
@@ -111,8 +110,7 @@ internal class AgentExecutionRequestFactory(
                 streamingMessages = effectiveSettings.streamingMessages,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
-                enabledTools = effectiveSettings.enabledTools.toSet() +
-                    if (clientToolsEnabled) CLIENT_SKILL_NAMES else emptySet(),
+                enabledTools = effectiveSettings.enabledTools.toSet(),
                 clientToolsEnabled = clientToolsEnabled,
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId) + userMessageMetadataExtras,

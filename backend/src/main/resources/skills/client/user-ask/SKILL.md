@@ -1,6 +1,11 @@
 ---
 name: user-ask
 description: Ask the user a concise clarification question over the active public Souz WebSocket and wait for their answer. Use when required information is missing or the user's preference must be confirmed.
+metadata:
+  souz.skill-id: user.ask
+  souz.transport: client-websocket
+  souz.category: CHAT
+  souz.timeout: PT5M
 ---
 
 # Ask the user

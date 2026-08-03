@@ -135,7 +135,7 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val clientToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
+    private val clientToolCatalogProvider: suspend (String) -> AgentToolCatalog = { BackendNoopAgentToolCatalog },
     private val skillRegistryRepository: SkillRegistryRepository? = null,
     private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
     private val getKnowledgeTool: LLMToolSetup,
@@ -158,16 +158,20 @@ class BackendConversationRuntimeFactory(
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
         settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
-        val executionToolCatalog = if (request.clientToolsEnabled) {
-            BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
+        val clientToolCatalog = if (request.clientToolsEnabled) {
+            clientToolCatalogProvider(key.userId)
         } else {
-            toolCatalog
+            BackendNoopAgentToolCatalog
         }
+        val executionToolCatalog = BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
         val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
             delegate = executionToolCatalog,
             settingsProvider = settingsProvider,
         )
-        val requestToolsFilter = BackendRequestToolsFilter(request.enabledTools)
+        val enabledTools = request.enabledTools?.plus(
+            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
+        )
+        val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
         val filteredToolCatalog = BackendRequestToolCatalog(
             delegate = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,

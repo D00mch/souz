@@ -1,6 +1,11 @@
 ---
 name: device-media-open
 description: Open media on the user's active client device over the public Souz WebSocket. Use when the user asks to play or open a movie, show, video, song, or other media.
+metadata:
+  souz.skill-id: device.media.open
+  souz.transport: client-websocket
+  souz.category: APPLICATIONS
+  souz.timeout: PT1M
 ---
 
 # Open media

@@ -8,7 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import ru.souz.agent.skills.bundle.SkillBundleParser
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -24,27 +24,46 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
-internal const val USER_ASK_SKILL = "user.ask"
-internal const val DEVICE_MEDIA_OPEN_SKILL = "device.media.open"
+internal class BackendClientToolCatalogFactory(
+    private val skillRegistryRepository: SkillRegistryRepository,
+    private val registry: ClientThreadRuntimeRegistry,
+    private val toolCallRepository: ToolCallRepository,
+    private val eventService: AgentEventService,
+    private val now: () -> Instant = Instant::now,
+) {
+    suspend fun create(userId: String): AgentToolCatalog {
+        val skills = skillRegistryRepository.listSkills(userId).mapNotNull { storedSkill ->
+            if (storedSkill.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] != CLIENT_SKILL_TRANSPORT) {
+                return@mapNotNull null
+            }
+            val bundle = requireNotNull(skillRegistryRepository.loadSkillBundle(userId, storedSkill.skillId)) {
+                "Missing client Skill bundle: ${storedSkill.skillId.value}"
+            }
+            ClientSkillDefinition(
+                name = storedSkill.skillId.value,
+                category = storedSkill.manifest.clientCategory(),
+                timeout = storedSkill.manifest.clientTimeout(),
+                description = "${storedSkill.manifest.description}\n\n${bundle.skillMarkdownBody}",
+            )
+        }
+        return BackendClientToolCatalog(
+            skills = skills,
+            registry = registry,
+            toolCallRepository = toolCallRepository,
+            eventService = eventService,
+            now = now,
+        )
+    }
+}
 
-private val CLIENT_SKILLS = listOf(
-    ClientSkillDefinition(USER_ASK_SKILL, ToolCategory.CHAT, Duration.ofMinutes(5), "/skills/user-ask/SKILL.md"),
-    ClientSkillDefinition(
-        DEVICE_MEDIA_OPEN_SKILL,
-        ToolCategory.APPLICATIONS,
-        Duration.ofMinutes(1),
-        "/skills/device-media-open/SKILL.md",
-    ),
-)
-internal val CLIENT_SKILL_NAMES = CLIENT_SKILLS.mapTo(linkedSetOf()) { it.name }
-
-internal class BackendClientToolCatalog(
+private class BackendClientToolCatalog(
+    skills: List<ClientSkillDefinition>,
     registry: ClientThreadRuntimeRegistry,
     toolCallRepository: ToolCallRepository,
     eventService: AgentEventService,
-    now: () -> Instant = Instant::now,
+    now: () -> Instant,
 ) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = CLIENT_SKILLS
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = skills
         .groupBy { it.category }
         .mapValues { (_, skills) ->
             skills.associate { skill ->
@@ -215,20 +234,22 @@ private class ClientWebSocketSkill(
         )
 }
 
-private class ClientSkillDefinition(
+private data class ClientSkillDefinition(
     val name: String,
     val category: ToolCategory,
     val timeout: Duration,
-    private val resourcePath: String,
-) {
-    val description: String by lazy { loadSkillDescription(resourcePath) }
+    val description: String,
+)
+
+private fun ru.souz.agent.skills.bundle.SkillManifest.clientCategory(): ToolCategory {
+    val raw = metadata[CLIENT_SKILL_CATEGORY_METADATA]?.trim().orEmpty()
+    return ToolCategory.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        ?: error("Client Skill $name has an invalid metadata.$CLIENT_SKILL_CATEGORY_METADATA: $raw")
 }
 
-private fun loadSkillDescription(resourcePath: String): String {
-    val markdown = requireNotNull(
-        BackendClientToolCatalog::class.java.getResource(resourcePath)
-    ) { "Missing client Skill resource: $resourcePath" }.readText()
-    return SkillBundleParser.parse(markdown).let { parsed ->
-        "${parsed.manifest.description}\n\n${parsed.body}"
-    }
+private fun ru.souz.agent.skills.bundle.SkillManifest.clientTimeout(): Duration {
+    val raw = metadata[CLIENT_SKILL_TIMEOUT_METADATA]?.trim().orEmpty()
+    return runCatching { Duration.parse(raw) }.getOrNull()
+        ?.takeIf { !it.isZero && !it.isNegative }
+        ?: error("Client Skill $name has an invalid metadata.$CLIENT_SKILL_TIMEOUT_METADATA: $raw")
 }

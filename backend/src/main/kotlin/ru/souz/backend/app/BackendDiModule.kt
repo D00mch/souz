@@ -10,6 +10,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
@@ -24,10 +25,11 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalog
+import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.client.ClientThreadRecoveryService
+import ru.souz.backend.client.bundledClientSkillRegistry
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
@@ -88,6 +90,7 @@ import ru.souz.tool.skills.ToolRunSkillCommand
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
+    const val CLIENT_SKILL_REGISTRY = "backendClientSkillRegistry"
 }
 
 /** Backend Kodein module that wires HTTP services to the shared JVM runtime. */
@@ -217,14 +220,19 @@ fun backendDiModule(
             commandTool = instance<ToolRunSkillCommand>(),
         )
     }
+    bindSingleton<SkillRegistryRepository>(tag = BackendDiTags.CLIENT_SKILL_REGISTRY) {
+        bundledClientSkillRegistry(delegate = instance())
+    }
     bindSingleton {
-        BackendClientToolCatalog(
+        BackendClientToolCatalogFactory(
+            skillRegistryRepository = instance(tag = BackendDiTags.CLIENT_SKILL_REGISTRY),
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
         )
     }
     bindSingleton {
+        val clientToolCatalogFactory = instance<BackendClientToolCatalogFactory>()
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
@@ -233,7 +241,7 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
-            clientToolCatalog = instance<BackendClientToolCatalog>(),
+            clientToolCatalogProvider = clientToolCatalogFactory::create,
             skillCoreToolsFactory = instance(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),

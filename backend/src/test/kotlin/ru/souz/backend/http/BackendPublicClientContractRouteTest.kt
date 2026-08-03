@@ -41,13 +41,13 @@ import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.client.BackendClientToolCatalog
+import ru.souz.backend.TestSkillRegistryRepository
+import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientDevice
 import ru.souz.backend.client.ClientThreadRecoveryService
-import ru.souz.backend.client.DEVICE_MEDIA_OPEN_SKILL
 import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.ToolResultFrame
-import ru.souz.backend.client.USER_ASK_SKILL
+import ru.souz.backend.client.bundledClientSkillRegistry
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -448,16 +448,17 @@ class BackendPublicClientContractRouteTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalog(
-            context.clientThreadRegistry,
-            context.toolCallRepository,
-            context.eventService,
-        )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
-        requireNotNull(catalog.toolsByCategory[ToolCategory.APPLICATIONS]?.get(DEVICE_MEDIA_OPEN_SKILL))
+        val catalog = BackendClientToolCatalogFactory(
+            skillRegistryRepository = bundledClientSkillRegistry(TestSkillRegistryRepository),
+            registry = context.clientThreadRegistry,
+            toolCallRepository = context.toolCallRepository,
+            eventService = context.eventService,
+        ).create(userId)
+        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
+        requireNotNull(catalog.toolsByCategory[ToolCategory.APPLICATIONS]?.get("device.media.open"))
         val invocation = async {
             tool.invoke(
-                LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Какой жанр?")),
+                LLMResponse.FunctionCall("user.ask", mapOf("question" to "Какой жанр?")),
                 ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
             )
         }
@@ -642,15 +643,16 @@ class BackendPublicClientContractRouteTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalog(
-            context.clientThreadRegistry,
-            context.toolCallRepository,
-            context.eventService,
-        )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
+        val catalog = BackendClientToolCatalogFactory(
+            skillRegistryRepository = bundledClientSkillRegistry(TestSkillRegistryRepository),
+            registry = context.clientThreadRegistry,
+            toolCallRepository = context.toolCallRepository,
+            eventService = context.eventService,
+        ).create(userId)
+        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
         val invocation = async {
             tool.invoke(
-                LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Продолжить?")),
+                LLMResponse.FunctionCall("user.ask", mapOf("question" to "Продолжить?")),
                 ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
             )
         }
