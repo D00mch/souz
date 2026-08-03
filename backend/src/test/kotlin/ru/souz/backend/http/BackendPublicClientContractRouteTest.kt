@@ -42,11 +42,12 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.client.BackendClientToolCatalog
-import ru.souz.backend.client.CLIENT_WEBSOCKET_SKILL
 import ru.souz.backend.client.ClientDevice
 import ru.souz.backend.client.ClientThreadRecoveryService
+import ru.souz.backend.client.DEVICE_MEDIA_OPEN_SKILL
 import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.ToolResultFrame
+import ru.souz.backend.client.USER_ASK_SKILL
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -452,16 +453,11 @@ class BackendPublicClientContractRouteTest {
             context.toolCallRepository,
             context.eventService,
         )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(CLIENT_WEBSOCKET_SKILL))
+        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
+        requireNotNull(catalog.toolsByCategory[ToolCategory.APPLICATIONS]?.get(DEVICE_MEDIA_OPEN_SKILL))
         val invocation = async {
             tool.invoke(
-                LLMResponse.FunctionCall(
-                    CLIENT_WEBSOCKET_SKILL,
-                    mapOf(
-                        "name" to "user.ask",
-                        "arguments" to mapOf("question" to "Какой жанр?"),
-                    ),
-                ),
+                LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Какой жанр?")),
                 ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
             )
         }
@@ -651,16 +647,10 @@ class BackendPublicClientContractRouteTest {
             context.toolCallRepository,
             context.eventService,
         )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(CLIENT_WEBSOCKET_SKILL))
+        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
         val invocation = async {
             tool.invoke(
-                LLMResponse.FunctionCall(
-                    CLIENT_WEBSOCKET_SKILL,
-                    mapOf(
-                        "name" to "user.ask",
-                        "arguments" to mapOf("question" to "Продолжить?"),
-                    ),
-                ),
+                LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Продолжить?")),
                 ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
             )
         }

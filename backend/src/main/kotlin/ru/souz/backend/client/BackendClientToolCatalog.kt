@@ -24,8 +24,19 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
-internal const val CLIENT_WEBSOCKET_SKILL = "client.websocket"
-internal val CLIENT_SKILL_NAMES = setOf(CLIENT_WEBSOCKET_SKILL)
+internal const val USER_ASK_SKILL = "user.ask"
+internal const val DEVICE_MEDIA_OPEN_SKILL = "device.media.open"
+
+private val CLIENT_SKILLS = listOf(
+    ClientSkillDefinition(USER_ASK_SKILL, ToolCategory.CHAT, Duration.ofMinutes(5), "/skills/user-ask/SKILL.md"),
+    ClientSkillDefinition(
+        DEVICE_MEDIA_OPEN_SKILL,
+        ToolCategory.APPLICATIONS,
+        Duration.ofMinutes(1),
+        "/skills/device-media-open/SKILL.md",
+    ),
+)
+internal val CLIENT_SKILL_NAMES = CLIENT_SKILLS.mapTo(linkedSetOf()) { it.name }
 
 internal class BackendClientToolCatalog(
     registry: ClientThreadRuntimeRegistry,
@@ -33,39 +44,26 @@ internal class BackendClientToolCatalog(
     eventService: AgentEventService,
     now: () -> Instant = Instant::now,
 ) : AgentToolCatalog {
-    private val clientWebSocket = ClientWebSocketSkill(
-        registry = registry,
-        toolCallRepository = toolCallRepository,
-        eventService = eventService,
-        now = now,
-    )
-
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
-        ToolCategory.CHAT to mapOf(clientWebSocket.fn.name to clientWebSocket),
-    )
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = CLIENT_SKILLS
+        .groupBy { it.category }
+        .mapValues { (_, skills) ->
+            skills.associate { skill ->
+                skill.name to ClientWebSocketSkill(skill, registry, toolCallRepository, eventService, now)
+            }
+        }
 }
 
 private class ClientWebSocketSkill(
+    private val skill: ClientSkillDefinition,
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val now: () -> Instant,
 ) : LLMToolSetup {
     override val fn = LLMRequest.Function(
-        name = CLIENT_WEBSOCKET_SKILL,
-        description = CLIENT_WEBSOCKET_SKILL_DESCRIPTION,
-        parameters = LLMRequest.Parameters(
-            type = "object",
-            properties = mapOf(
-                "name" to LLMRequest.Property("string", "Operation name sent to the client."),
-                "arguments" to LLMRequest.Property("object", "Operation-specific JSON payload."),
-                "timeoutSeconds" to LLMRequest.Property(
-                    "number",
-                    "Optional result deadline from 1 to $MAX_TIMEOUT_SECONDS seconds.",
-                ),
-            ),
-            required = listOf("name", "arguments"),
-        ),
+        name = skill.name,
+        description = skill.description,
+        parameters = LLMRequest.Parameters("object"),
     )
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
@@ -75,18 +73,6 @@ private class ClientWebSocketSkill(
         functionCall: LLMResponse.FunctionCall,
         meta: ToolInvocationMeta,
     ): LLMRequest.Message {
-        val operationName = (functionCall.arguments["name"] as? String)?.trim().orEmpty()
-        if (operationName.isEmpty()) {
-            return errorMessage(functionCall.name, "invalid_client_message", "Client operation name is required.")
-        }
-        val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments["arguments"])
-        if (!arguments.isObject) {
-            return errorMessage(functionCall.name, "invalid_client_message", "Client arguments must be an object.")
-        }
-        val timeoutSeconds = (functionCall.arguments["timeoutSeconds"] as? Number)
-            ?.toLong()
-            ?.coerceIn(1, MAX_TIMEOUT_SECONDS)
-            ?: DEFAULT_TIMEOUT_SECONDS
         val threadId = meta.requestId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
             ?: return errorMessage(functionCall.name, "client_context_missing", "Thread ID is unavailable.")
         val chatId = meta.conversationId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
@@ -101,13 +87,14 @@ private class ClientWebSocketSkill(
             is BeginClientToolResult.Started -> beginTool.device
         }
         val startedAt = now()
-        val deadlineAt = startedAt.plusSeconds(timeoutSeconds)
+        val deadlineAt = startedAt.plus(skill.timeout)
+        val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments)
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
         var clientCallStarted = false
         try {
             toolCallRepository.startClientCall(
                 context = context,
-                name = operationName,
+                name = fn.name,
                 deviceId = device.deviceId,
                 argumentsJson = restJsonMapper.writeValueAsString(arguments),
                 deadlineAt = deadlineAt,
@@ -122,7 +109,7 @@ private class ClientWebSocketSkill(
                 type = AgentEventType.TOOL_CALL_STARTED,
                 payload = PublicToolCallStartedPayload(
                     toolCallId = toolCallId,
-                    name = operationName,
+                    name = fn.name,
                     deviceId = device.deviceId,
                     arguments = arguments,
                     deadlineAt = deadlineAt.toString(),
@@ -226,18 +213,22 @@ private class ClientWebSocketSkill(
             content = restJsonMapper.writeValueAsString(mapOf("error" to ClientError(code, message))),
             name = functionName,
         )
-
-    private companion object {
-        const val DEFAULT_TIMEOUT_SECONDS = 300L
-        const val MAX_TIMEOUT_SECONDS = 300L
-    }
 }
 
-private val CLIENT_WEBSOCKET_SKILL_DESCRIPTION: String by lazy {
+private class ClientSkillDefinition(
+    val name: String,
+    val category: ToolCategory,
+    val timeout: Duration,
+    private val resourcePath: String,
+) {
+    val description: String by lazy { loadSkillDescription(resourcePath) }
+}
+
+private fun loadSkillDescription(resourcePath: String): String {
     val markdown = requireNotNull(
-        BackendClientToolCatalog::class.java.getResource("/skills/client-websocket/SKILL.md")
-    ) { "Missing client WebSocket Skill resource." }.readText()
-    SkillBundleParser.parse(markdown).let { parsed ->
+        BackendClientToolCatalog::class.java.getResource(resourcePath)
+    ) { "Missing client Skill resource: $resourcePath" }.readText()
+    return SkillBundleParser.parse(markdown).let { parsed ->
         "${parsed.manifest.description}\n\n${parsed.body}"
     }
 }
