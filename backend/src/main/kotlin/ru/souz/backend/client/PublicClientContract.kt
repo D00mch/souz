@@ -93,6 +93,55 @@ data class ThreadAck(
 )
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
+data class PublicThreadStatusResponse(
+    val chatId: String,
+    val threadId: String,
+    val status: String,
+    val alive: Boolean,
+    val acceptsInput: Boolean,
+    val revision: Long,
+    val startedAt: String,
+    val finishedAt: String? = null,
+    val runtimeLeaseExpiresAt: String? = null,
+    val error: ClientError? = null,
+    val observedAt: String,
+)
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class ThreadStatusFrame(
+    val kind: String = "status",
+    val type: String = "thread.status",
+    val chatId: String,
+    val threadId: String,
+    val requestId: String? = null,
+    val status: String,
+    val alive: Boolean,
+    val acceptsInput: Boolean,
+    val revision: Long,
+    val startedAt: String,
+    val finishedAt: String? = null,
+    val runtimeLeaseExpiresAt: String? = null,
+    val error: ClientError? = null,
+    val observedAt: String,
+)
+
+internal fun PublicThreadStatusResponse.toStatusFrame(requestId: String? = null): ThreadStatusFrame =
+    ThreadStatusFrame(
+        chatId = chatId,
+        threadId = threadId,
+        requestId = requestId,
+        status = status,
+        alive = alive,
+        acceptsInput = acceptsInput,
+        revision = revision,
+        startedAt = startedAt,
+        finishedAt = finishedAt,
+        runtimeLeaseExpiresAt = runtimeLeaseExpiresAt,
+        error = error,
+        observedAt = observedAt,
+    )
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
 data class AcceptedMessageAck(
     val kind: String = "ack",
     val chatId: String,

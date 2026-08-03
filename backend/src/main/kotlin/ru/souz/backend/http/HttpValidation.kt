@@ -38,6 +38,9 @@ internal fun ApplicationCall.requireProvider(): LlmProvider {
 internal fun ApplicationCall.requireExecutionId(): UUID =
     requireUuidParameter("executionId", "executionId must be a UUID.")
 
+internal fun ApplicationCall.requireThreadId(): UUID =
+    requireUuidParameter("threadId", "threadId must be a UUID.")
+
 internal fun ApplicationCall.requireOptionId(): UUID =
     requireUuidParameter("optionId", "optionId must be a UUID.")
 

@@ -14,9 +14,11 @@ import ru.souz.backend.http.BackendOpenApiSchemas
 import ru.souz.backend.http.BackendOpenApiTags
 import ru.souz.backend.http.BackendV1ErrorEnvelope
 import ru.souz.backend.http.BackendV1ChatsResponse
+import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.BackendV1UpdateChatTitleRequest
 import ru.souz.backend.http.DEFAULT_CHAT_LIMIT
 import ru.souz.backend.http.MAX_CHAT_LIMIT
+import ru.souz.backend.http.clientTypeQueryParameter
 import ru.souz.backend.http.describeV1
 import ru.souz.backend.http.jsonBody
 import ru.souz.backend.http.jsonResponse
@@ -27,6 +29,7 @@ import ru.souz.backend.http.receiveOrV1BadRequest
 import ru.souz.backend.http.requireChatId
 import ru.souz.backend.http.requireExecutionId
 import ru.souz.backend.http.requireJsonContentV1
+import ru.souz.backend.http.requireThreadId
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
 import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toDto
@@ -35,8 +38,10 @@ import ru.souz.backend.http.strictBooleanQueryParameter
 import ru.souz.backend.http.uuidPathParameter
 import ru.souz.backend.http.v1ErrorResponses
 import ru.souz.backend.client.ClientChatDto
+import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.CreateClientChatRequest
 import ru.souz.backend.client.CreateClientChatResponse
+import ru.souz.backend.client.PublicThreadStatusResponse
 import ru.souz.backend.client.supportedClientTypes
 import ru.souz.backend.http.describePublic
 import com.fasterxml.jackson.databind.DeserializationFeature
@@ -131,6 +136,41 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
             jsonResponse<CreateClientChatResponse>(HttpStatusCode.Created, "The newly created chat.")
             jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.BadRequest, "Invalid request.")
             jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.Conflict, "Idempotency conflict.")
+            jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.InternalServerError, "Internal server error.")
+        }
+    }
+
+    get(BackendHttpRoutes.CHAT_THREAD_PATTERN) {
+        val service = requireV1Service(deps.publicClientService, "Public client")
+        val chatId = call.requireChatId()
+        val threadId = call.requireThreadId()
+        val clientType = call.request.queryParameters["clientType"]?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw ru.souz.backend.http.invalidV1Request("clientType is required.")
+        if (clientType !in supportedClientTypes) {
+            throw ru.souz.backend.http.invalidV1Request("clientType must be backend or mobile_app.")
+        }
+        val response = try {
+            val chat = service.requireChat(chatId, clientType)
+            service.threadStatus(chat, threadId)
+        } catch (error: ClientContractException) {
+            throw error.toPublicV1Exception()
+        }
+        call.respond(response)
+    }.describePublic(
+        operationId = "getClientThreadStatus",
+        tag = BackendOpenApiTags.CHATS,
+        summary = "Get public thread status",
+        description = "Returns the current status for a Client-Souz thread inside a public chat.",
+    ) {
+        parameters {
+            uuidPathParameter("chatId", "Public chat UUID.")
+            uuidPathParameter("threadId", "Thread UUID returned in a message acknowledgement.")
+            clientTypeQueryParameter()
+        }
+        responses {
+            jsonResponse<PublicThreadStatusResponse>(HttpStatusCode.OK, "Current thread status.")
+            jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.BadRequest, "Invalid request.")
+            jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.NotFound, "Chat or thread not found.")
             jsonResponse<BackendV1ErrorEnvelope>(HttpStatusCode.InternalServerError, "Internal server error.")
         }
     }
@@ -267,6 +307,17 @@ private fun String.requireUuid(field: String): String = try {
 } catch (_: IllegalArgumentException) {
     throw ru.souz.backend.http.invalidV1Request("$field must be a UUID.")
 }
+
+private fun ClientContractException.toPublicV1Exception(): BackendV1Exception =
+    BackendV1Exception(
+        status = when (code) {
+            "chat_not_found", "thread_not_found" -> HttpStatusCode.NotFound
+            "idempotency_conflict" -> HttpStatusCode.Conflict
+            else -> HttpStatusCode.BadRequest
+        },
+        code = code,
+        message = message,
+    )
 
 private val publicChatMapper = jacksonObjectMapper()
     .registerKotlinModule()

@@ -215,6 +215,7 @@ private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
         add("POST ${BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN}")
         add("GET ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}")
         add("GET ${BackendHttpRoutes.CHAT_EVENTS_PATTERN}")
+        add("GET ${BackendHttpRoutes.CHAT_THREAD_PATTERN}")
         add("POST ${BackendHttpRoutes.CHAT_MESSAGES_PATTERN}")
         if (featureFlags.telegramBot) {
             add("GET ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")

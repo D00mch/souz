@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.request.get
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -125,14 +126,25 @@ class BackendPublicClientContractRouteTest {
                 )
             )
             val ack = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val status = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
 
             assertEquals("ack", ack["kind"].asText())
             assertEquals("accepted", ack["status"].asText())
             assertEquals(1, ack["submission"]["inputSeq"].asInt())
+            assertEquals("status", status["kind"].asText())
+            assertEquals("thread.status", status["type"].asText())
+            assertEquals(ack["thread"]["id"].asText(), status["threadId"].asText())
             assertEquals("event", terminal["kind"].asText())
             assertEquals("thread.completed", terminal["type"].asText(), terminal.toString())
             assertEquals(ack["thread"]["id"].asText(), terminal["threadId"].asText())
+            val queried = client.get(
+                "${BackendHttpRoutes.chatThread(chatId, ack["thread"]["id"].asText())}?clientType=backend"
+            )
+            val queriedStatus = json.readTree(queried.bodyAsText())
+            assertEquals(HttpStatusCode.OK, queried.status)
+            assertEquals("completed", queriedStatus["status"].asText())
+            assertFalse(queriedStatus["alive"].asBoolean())
 
             session.send(
                 Frame.Text(
@@ -182,27 +194,40 @@ class BackendPublicClientContractRouteTest {
             val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
             session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "Первое сообщение", "device-1")))
             val firstAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val firstStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val threadId = firstAck["thread"]["id"].asText()
+            assertEquals("thread.status", firstStatus["type"].asText())
+            assertEquals(threadId, firstStatus["threadId"].asText())
+            val runningStatusResponse = client.get("${BackendHttpRoutes.chatThread(chatId, threadId)}?clientType=backend")
+            val runningStatus = json.readTree(runningStatusResponse.bodyAsText())
+            assertEquals(HttpStatusCode.OK, runningStatusResponse.status)
+            assertEquals("running", runningStatus["status"].asText())
+            assertTrue(runningStatus["alive"].asBoolean())
+            assertTrue(runningStatus["acceptsInput"].asBoolean())
             api.awaitStarted("Первое сообщение")
 
             session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "Первое сообщение", "device-1")))
             val duplicateAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val duplicateStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
             session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "Другой текст", "device-1")))
             val conflictingAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
 
             session.send(Frame.Text(messageFrame(chatId, userId, "message-2", threadId, "Второе сообщение", "device-2")))
             val secondAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val secondStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
             api.awaitStarted("Второе сообщение")
             api.release()
             val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
 
             assertTrue(duplicateAck["duplicate"].asBoolean())
+            assertEquals(threadId, duplicateStatus["threadId"].asText())
             assertEquals(1, duplicateAck["submission"]["inputSeq"].asInt())
             assertEquals("rejected", conflictingAck["status"].asText())
             assertEquals("idempotency_conflict", conflictingAck["error"]["code"].asText())
             assertEquals(2, secondAck["submission"]["inputSeq"].asInt())
             assertEquals(2, secondAck["thread"]["revision"].asInt())
             assertFalse(secondAck["thread"]["created"].asBoolean())
+            assertEquals(2, secondStatus["revision"].asInt())
             assertEquals("thread.completed", terminal["type"].asText())
             val messages = context.messageRepository.list(userId, UUID.fromString(chatId))
             assertEquals(listOf("1", "2"), messages.filter { it.role.value == "user" }.map { it.metadata["inputSeq"] })
@@ -238,6 +263,7 @@ class BackendPublicClientContractRouteTest {
                 )
             )
             val ack = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val status = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val execution = context.executionRepository.getByChat(
                 userId,
@@ -245,6 +271,7 @@ class BackendPublicClientContractRouteTest {
                 UUID.fromString(ack["thread"]["id"].asText()),
             )
 
+            assertEquals("thread.status", status["type"].asText())
             assertEquals("thread.completed", terminal["type"].asText())
             assertEquals(LLMModel.QwenMax.alias, api.finalRequests.last().model)
             assertEquals(LLMModel.QwenMax, execution?.model)
@@ -281,6 +308,7 @@ class BackendPublicClientContractRouteTest {
                 )
             )
             val ack = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val status = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val execution = context.executionRepository.getByChat(
                 userId,
@@ -288,6 +316,7 @@ class BackendPublicClientContractRouteTest {
                 UUID.fromString(ack["thread"]["id"].asText()),
             )
 
+            assertEquals("thread.status", status["type"].asText())
             assertEquals("thread.completed", terminal["type"].asText())
             assertEquals("en-US", execution?.metadata?.get("locale"))
             assertEquals("America/New_York", execution?.metadata?.get("timeZone"))
@@ -315,12 +344,16 @@ class BackendPublicClientContractRouteTest {
             val acknowledgements = listOf(firstSession, secondSession).map { session ->
                 async {
                     session.send(Frame.Text(frameText))
-                    json.readTree((session.incoming.receive() as Frame.Text).readText())
+                    val ack = json.readTree((session.incoming.receive() as Frame.Text).readText())
+                    val status = json.readTree((session.incoming.receive() as Frame.Text).readText())
+                    ack to status
                 }
             }.awaitAll()
+            val ackPayloads = acknowledgements.map { it.first }
 
-            assertEquals(listOf(false, true), acknowledgements.map { it["duplicate"].asBoolean() }.sorted())
-            assertEquals(1, acknowledgements.map { it["thread"]["id"].asText() }.distinct().size)
+            assertEquals(listOf(false, true), ackPayloads.map { it["duplicate"].asBoolean() }.sorted())
+            assertEquals(1, ackPayloads.map { it["thread"]["id"].asText() }.distinct().size)
+            assertEquals(1, acknowledgements.map { it.second["threadId"].asText() }.distinct().size)
             assertEquals(
                 1,
                 context.messageRepository.list(userId, UUID.fromString(chatId)).count { it.role.value == "user" },
@@ -912,7 +945,9 @@ class BackendPublicClientContractRouteTest {
             val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
             session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "Отмени меня", "device-1")))
             val messageAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val messageStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val threadId = messageAck["thread"]["id"].asText()
+            assertEquals(threadId, messageStatus["threadId"].asText())
             api.awaitStarted("Отмени меня")
             session.send(
                 Frame.Text(
@@ -920,6 +955,7 @@ class BackendPublicClientContractRouteTest {
                 )
             )
             val cancelAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val cancelStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
             session.send(
                 Frame.Text(
@@ -927,6 +963,7 @@ class BackendPublicClientContractRouteTest {
                 )
             )
             val duplicateAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
+            val duplicateStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
             session.send(
                 Frame.Text(
                     """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-1","threadId":"$threadId","reason":"device_disconnected"}"""
@@ -936,9 +973,11 @@ class BackendPublicClientContractRouteTest {
 
             assertEquals("accepted", cancelAck["status"].asText())
             assertEquals("cancel-1", cancelAck["requestId"].asText())
+            assertEquals(threadId, cancelStatus["threadId"].asText())
             assertEquals("thread.cancelled", terminal["type"].asText())
             assertEquals("accepted", duplicateAck["status"].asText())
             assertTrue(duplicateAck["duplicate"].asBoolean())
+            assertEquals("cancelled", duplicateStatus["status"].asText())
             assertEquals("rejected", conflictingAck["status"].asText())
             assertEquals("idempotency_conflict", conflictingAck["error"]["code"].asText())
             assertFalse(context.clientThreadRegistry.contains(UUID.fromString(threadId)))

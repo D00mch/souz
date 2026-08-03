@@ -22,11 +22,13 @@ After the first accepted `message.submit` ack, copy `thread.id` into the `thread
 Expected live sequence:
 
 ```text
-message.submit -> ack accepted -> tool.call.started user.ask
+message.submit -> ack accepted -> thread.status -> tool.call.started user.ask
 tool.result -> ack accepted
-message.submit -> ack accepted -> tool.call.started device.media.open
+message.submit -> ack accepted -> thread.status -> tool.call.started device.media.open
 tool.result -> ack accepted -> thread.completed
 ```
+
+Use `GET {{baseUrl}}/v1/chats/{{chatId}}/threads/{{threadId}}?clientType={{clientType}}` to check whether a thread is still alive after reconnects or long gaps without events.
 
 For local backend testing, use the default `baseUrl` and `wsBaseUrl` values. The WebSocket route requires `SOUZ_FEATURE_WS_EVENTS=true` and `SOUZ_BACKEND_AGENT=skills`.
 
