@@ -280,6 +280,23 @@ class AgentExecutionService internal constructor(
         return CancelExecutionResult(cancelExecutionInternal(execution))
     }
 
+    internal suspend fun failQueuedStartup(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+    ): AgentExecution? {
+        val execution = executionRepository.getByChat(userId, chatId, executionId) ?: return null
+        if (execution.status != AgentExecutionStatus.QUEUED) return execution
+        return finalizer.markFailed(
+            executionId = execution.id,
+            userId = execution.userId,
+            chatId = execution.chatId,
+            errorCode = "agent_execution_failed",
+            errorMessage = "Thread startup was interrupted.",
+            usage = execution.usage,
+        )
+    }
+
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
         return finalizer.withTerminalTransition(execution.id) {
             val currentExecution = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)

@@ -46,7 +46,13 @@ internal class PublicClientService(
     private val registry: ClientThreadRuntimeRegistry,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
-    private val requestMutex = Mutex()
+    private data class ChatRequestLock(
+        val mutex: Mutex = Mutex(),
+        var users: Int = 0,
+    )
+
+    private val chatRequestLocksMutex = Mutex()
+    private val chatRequestLocks = mutableMapOf<UUID, ChatRequestLock>()
 
     suspend fun requireChat(chatId: UUID, clientType: String): Chat {
         val chat = chatRepository.getById(chatId) ?: throw ClientContractException("chat_not_found", "Chat not found.")
@@ -63,7 +69,7 @@ internal class PublicClientService(
     }
 
     suspend fun handleMessage(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame =
-        requestMutex.withLock { handleMessageLocked(chat, frame) }
+        withChatRequestLock(chat.id) { handleMessageLocked(chat, frame) }
 
     private suspend fun handleMessageLocked(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame {
         val now = Instant.now()
@@ -157,7 +163,7 @@ internal class PublicClientService(
     }
 
     suspend fun handleCancel(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame =
-        requestMutex.withLock { handleCancelLocked(chat, frame) }
+        withChatRequestLock(chat.id) { handleCancelLocked(chat, frame) }
 
     private suspend fun handleCancelLocked(chat: Chat, frame: ThreadCancelFrame): HandledClientFrame {
         val now = Instant.now()
@@ -276,11 +282,11 @@ internal class PublicClientService(
             )
         } catch (error: CancellationException) {
             withContext(NonCancellable) {
-                runCatching { reconcileFailedStart(chat.id, requestId, threadId) }
+                runCatching { reconcileFailedStart(chat, requestId, threadId) }
             }
             throw error
         } catch (error: Exception) {
-            val stored = runCatching { reconcileFailedStart(chat.id, requestId, threadId) }
+            val stored = runCatching { reconcileFailedStart(chat, requestId, threadId) }
                 .getOrElse { throw error }
             return stored?.let { request ->
                 handledStoredMessage(request, frame, payloadHash, now, duplicate = request.threadId != threadId)
@@ -494,11 +500,29 @@ internal class PublicClientService(
     }
 
     private suspend fun reconcileFailedStart(
-        chatId: UUID, requestId: String, threadId: UUID,
-    ): ClientRequest? = clientRequestRepository.get(chatId, requestId).also { stored ->
-        if (stored?.threadId != threadId) {
+        chat: Chat, requestId: String, threadId: UUID,
+    ): ClientRequest? = clientRequestRepository.get(chat.id, requestId).also { stored ->
+        if (stored?.threadId == threadId) {
+            executionService.failQueuedStartup(chat.userId, chat.id, threadId)
+        } else {
             registry.ackSent(threadId, requestId)
             registry.discard(threadId)
+        }
+    }
+
+    private suspend fun <T> withChatRequestLock(chatId: UUID, block: suspend () -> T): T {
+        val lock = chatRequestLocksMutex.withLock {
+            chatRequestLocks.getOrPut(chatId) { ChatRequestLock() }.also { it.users += 1 }
+        }
+        return try {
+            lock.mutex.withLock { block() }
+        } finally {
+            withContext(NonCancellable) {
+                chatRequestLocksMutex.withLock {
+                    lock.users -= 1
+                    if (lock.users == 0) chatRequestLocks.remove(chatId, lock)
+                }
+            }
         }
     }
 
