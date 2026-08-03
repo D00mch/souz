@@ -138,4 +138,4 @@ Tool-result acknowledgements are outside the event sequence.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
 - `agent_events` stores replayable client tool-start and terminal events with chat-local sequence values.
 
-`user.ask` and `device.media.open` are hardcoded tool-backed Skills. They are discovered by the Skills graph and invoked through `RunSkillCommand`; the live invocation suspends until `tool.result` or its deadline. The WebSocket feature requires `SOUZ_BACKEND_AGENT=skills`.
+`client.websocket` is a tool-backed Skill whose instructions live in `backend/src/main/resources/skills/client-websocket/SKILL.md`. The Skill tells the model how to send operations such as `user.ask` and `device.media.open`; the live invocation suspends until `tool.result` or its deadline. The WebSocket feature requires `SOUZ_BACKEND_AGENT=skills`.

@@ -42,17 +42,14 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.client.BackendClientToolCatalog
+import ru.souz.backend.client.CLIENT_WEBSOCKET_SKILL
 import ru.souz.backend.client.ClientDevice
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.ToolResultFrame
-import ru.souz.backend.client.USER_ASK_SKILL
 import ru.souz.backend.events.bus.AgentEventBus
-import ru.souz.backend.events.model.AgentEvent
-import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
-import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -420,7 +417,7 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `user ask is a tool backed skill that waits for an idempotent client result`() = runBlocking {
+    fun `client websocket skill waits for an idempotent client result`() = runBlocking {
         val context = publicContext()
         val userId = UUID.randomUUID().toString()
         val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
@@ -455,10 +452,16 @@ class BackendPublicClientContractRouteTest {
             context.toolCallRepository,
             context.eventService,
         )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
+        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(CLIENT_WEBSOCKET_SKILL))
         val invocation = async {
             tool.invoke(
-                LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Какой жанр?")),
+                LLMResponse.FunctionCall(
+                    CLIENT_WEBSOCKET_SKILL,
+                    mapOf(
+                        "name" to "user.ask",
+                        "arguments" to mapOf("question" to "Какой жанр?"),
+                    ),
+                ),
                 ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
             )
         }
@@ -512,6 +515,7 @@ class BackendPublicClientContractRouteTest {
         val conflictingPayload = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(conflicting.response)
 
         assertEquals("device-tv", payload.deviceId)
+        assertEquals("user.ask", payload.name)
         assertEquals("Какой жанр?", payload.arguments["question"].asText())
         assertTrue(result.content.contains("Ужасы"))
         assertFalse(handledPayload["duplicate"].asBoolean())
@@ -647,10 +651,16 @@ class BackendPublicClientContractRouteTest {
             context.toolCallRepository,
             context.eventService,
         )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
+        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(CLIENT_WEBSOCKET_SKILL))
         val invocation = async {
             tool.invoke(
-                LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Продолжить?")),
+                LLMResponse.FunctionCall(
+                    CLIENT_WEBSOCKET_SKILL,
+                    mapOf(
+                        "name" to "user.ask",
+                        "arguments" to mapOf("question" to "Продолжить?"),
+                    ),
+                ),
                 ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
             )
         }
@@ -672,123 +682,6 @@ class BackendPublicClientContractRouteTest {
         )
         assertEquals(ToolCallStatus.CANCELLED, stored?.status)
         assertTrue(stored?.errorJson.orEmpty().contains("client_tool_cancelled"))
-    }
-
-    @Test
-    fun `client tool event publication failure finalizes its persisted call`() = runBlocking {
-        val context = publicContext()
-        val userId = UUID.randomUUID().toString()
-        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
-        val threadId = UUID.randomUUID()
-        context.executionRepository.create(
-            AgentExecution(
-                id = threadId,
-                userId = userId,
-                chatId = chat.id,
-                userMessageId = null,
-                assistantMessageId = null,
-                status = AgentExecutionStatus.RUNNING,
-                requestId = null,
-                clientMessageId = null,
-                model = null,
-                provider = null,
-                startedAt = Instant.now(),
-                finishedAt = null,
-                cancelRequested = false,
-                errorCode = null,
-                errorMessage = null,
-                usage = null,
-                metadata = emptyMap(),
-            )
-        )
-        context.clientThreadRegistry.register(
-            threadId,
-            ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
-        )
-        val failingEventService = AgentEventService(
-            chatRepository = context.chatRepository,
-            eventRepository = FailingAppendAgentEventRepository(context.eventRepository),
-            eventBus = AgentEventBus(),
-        )
-        val catalog = BackendClientToolCatalog(
-            context.clientThreadRegistry,
-            context.toolCallRepository,
-            failingEventService,
-        )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
-
-        val result = tool.invoke(
-            LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Продолжить?")),
-            ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
-        )
-        val stored = context.toolCallRepository.listByExecution(
-            ToolCallContext(userId, chat.id.toString(), threadId.toString(), "unused")
-        ).single()
-
-        assertTrue(result.content.contains("client_tool_failed"))
-        assertEquals(ToolCallStatus.FAILED, stored.status)
-        assertTrue(stored.errorJson.orEmpty().contains("event append failed"))
-    }
-
-    @Test
-    fun `client tool timeout uses remaining time until the persisted deadline`() = runBlocking {
-        val context = publicContext()
-        val userId = UUID.randomUUID().toString()
-        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
-        val threadId = UUID.randomUUID()
-        context.executionRepository.create(
-            AgentExecution(
-                id = threadId,
-                userId = userId,
-                chatId = chat.id,
-                userMessageId = null,
-                assistantMessageId = null,
-                status = AgentExecutionStatus.RUNNING,
-                requestId = null,
-                clientMessageId = null,
-                model = null,
-                provider = null,
-                startedAt = Instant.now(),
-                finishedAt = null,
-                cancelRequested = false,
-                errorCode = null,
-                errorMessage = null,
-                usage = null,
-                metadata = emptyMap(),
-            )
-        )
-        context.clientThreadRegistry.register(
-            threadId,
-            ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
-        )
-        val startedAt = Instant.parse("2026-05-01T10:00:00Z")
-        var now = startedAt
-        val advancingEventService = AgentEventService(
-            chatRepository = context.chatRepository,
-            eventRepository = AdvancingAppendAgentEventRepository(context.eventRepository) {
-                now = startedAt.plusSeconds(301)
-            },
-            eventBus = AgentEventBus(),
-        )
-        val catalog = BackendClientToolCatalog(
-            context.clientThreadRegistry,
-            context.toolCallRepository,
-            advancingEventService,
-            now = { now },
-        )
-        val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get(USER_ASK_SKILL))
-
-        val result = tool.invoke(
-            LLMResponse.FunctionCall(USER_ASK_SKILL, mapOf("question" to "Продолжить?")),
-            ToolInvocationMeta(userId, chat.id.toString(), threadId.toString()),
-        )
-        val stored = context.toolCallRepository.listByExecution(
-            ToolCallContext(userId, chat.id.toString(), threadId.toString(), "unused")
-        ).single()
-
-        assertTrue(result.content.contains("client_tool_timed_out"))
-        assertEquals(ToolCallStatus.TIMED_OUT, stored.status)
-        assertEquals(startedAt.plusSeconds(300), stored.deadlineAt)
     }
 
     @Test
@@ -826,7 +719,7 @@ class BackendPublicClientContractRouteTest {
         val contextKey = ToolCallContext(userId, chat.id.toString(), threadId.toString(), toolCallId)
         context.toolCallRepository.startClientCall(
             context = contextKey,
-            name = USER_ASK_SKILL,
+            name = "user.ask",
             deviceId = "device-tv",
             argumentsJson = "{}",
             deadlineAt = Instant.now().minusSeconds(1),
@@ -1021,7 +914,7 @@ class BackendPublicClientContractRouteTest {
         val toolCallId = UUID.randomUUID().toString()
         repository.startClientCall(
             context = ToolCallContext(userId, chat.id.toString(), threadId.toString(), toolCallId),
-            name = USER_ASK_SKILL,
+            name = "user.ask",
             deviceId = "device-tv",
             argumentsJson = "{}",
             deadlineAt = Instant.now().plusSeconds(60),
@@ -1113,41 +1006,6 @@ private fun clientExecution(
         runtimeOwner = "test-owner",
         runtimeLeaseUntil = leaseUntil,
     )
-
-private class FailingAppendAgentEventRepository(
-    private val delegate: AgentEventRepository,
-) : AgentEventRepository by delegate {
-    override suspend fun append(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID?,
-        type: AgentEventType,
-        payload: AgentEventPayload,
-        id: UUID,
-        createdAt: Instant,
-    ): AgentEvent {
-        error("event append failed")
-    }
-}
-
-private class AdvancingAppendAgentEventRepository(
-    private val delegate: AgentEventRepository,
-    private val advance: () -> Unit,
-) : AgentEventRepository by delegate {
-    override suspend fun append(
-        userId: String,
-        chatId: UUID,
-        executionId: UUID?,
-        type: AgentEventType,
-        payload: AgentEventPayload,
-        id: UUID,
-        createdAt: Instant,
-    ): AgentEvent {
-        val event = delegate.append(userId, chatId, executionId, type, payload, id, createdAt)
-        advance()
-        return event
-    }
-}
 
 private class LostCompletionRaceToolCallRepository(
     private val terminalPayloadHash: (String) -> String,

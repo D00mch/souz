@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import ru.souz.agent.skills.bundle.SkillBundleParser
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -23,9 +24,8 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
-internal const val USER_ASK_SKILL = "user.ask"
-internal const val DEVICE_MEDIA_OPEN_SKILL = "device.media.open"
-internal val CLIENT_SKILL_NAMES = setOf(USER_ASK_SKILL, DEVICE_MEDIA_OPEN_SKILL)
+internal const val CLIENT_WEBSOCKET_SKILL = "client.websocket"
+internal val CLIENT_SKILL_NAMES = setOf(CLIENT_WEBSOCKET_SKILL)
 
 internal class BackendClientToolCatalog(
     registry: ClientThreadRuntimeRegistry,
@@ -33,32 +33,7 @@ internal class BackendClientToolCatalog(
     eventService: AgentEventService,
     now: () -> Instant = Instant::now,
 ) : AgentToolCatalog {
-    private val ask = ClientToolSetup(
-        name = USER_ASK_SKILL,
-        description = "Ask the user a short clarification question and wait for their answer.",
-        parameters = LLMRequest.Parameters(
-            type = "object",
-            properties = mapOf("question" to LLMRequest.Property("string", "Question shown to the user.")),
-            required = listOf("question"),
-        ),
-        timeout = Duration.ofMinutes(5),
-        registry = registry,
-        toolCallRepository = toolCallRepository,
-        eventService = eventService,
-        now = now,
-    )
-    private val mediaOpen = ClientToolSetup(
-        name = DEVICE_MEDIA_OPEN_SKILL,
-        description = "Open media on the user's latest device and wait for the device result.",
-        parameters = LLMRequest.Parameters(
-            type = "object",
-            properties = mapOf(
-                "query" to LLMRequest.Property("string", "Media title or search query."),
-                "genre" to LLMRequest.Property("string", "Optional media genre."),
-            ),
-            required = listOf("query"),
-        ),
-        timeout = Duration.ofMinutes(1),
+    private val clientWebSocket = ClientWebSocketSkill(
         registry = registry,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
@@ -66,22 +41,32 @@ internal class BackendClientToolCatalog(
     )
 
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
-        ToolCategory.CHAT to mapOf(ask.fn.name to ask),
-        ToolCategory.APPLICATIONS to mapOf(mediaOpen.fn.name to mediaOpen),
+        ToolCategory.CHAT to mapOf(clientWebSocket.fn.name to clientWebSocket),
     )
 }
 
-private class ClientToolSetup(
-    name: String,
-    description: String,
-    parameters: LLMRequest.Parameters,
-    private val timeout: Duration,
+private class ClientWebSocketSkill(
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val now: () -> Instant,
 ) : LLMToolSetup {
-    override val fn = LLMRequest.Function(name = name, description = description, parameters = parameters)
+    override val fn = LLMRequest.Function(
+        name = CLIENT_WEBSOCKET_SKILL,
+        description = CLIENT_WEBSOCKET_SKILL_DESCRIPTION,
+        parameters = LLMRequest.Parameters(
+            type = "object",
+            properties = mapOf(
+                "name" to LLMRequest.Property("string", "Operation name sent to the client."),
+                "arguments" to LLMRequest.Property("object", "Operation-specific JSON payload."),
+                "timeoutSeconds" to LLMRequest.Property(
+                    "number",
+                    "Optional result deadline from 1 to $MAX_TIMEOUT_SECONDS seconds.",
+                ),
+            ),
+            required = listOf("name", "arguments"),
+        ),
+    )
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
         errorMessage(functionCall.name, "client_context_missing", "Client tool context is unavailable.")
@@ -90,6 +75,18 @@ private class ClientToolSetup(
         functionCall: LLMResponse.FunctionCall,
         meta: ToolInvocationMeta,
     ): LLMRequest.Message {
+        val operationName = (functionCall.arguments["name"] as? String)?.trim().orEmpty()
+        if (operationName.isEmpty()) {
+            return errorMessage(functionCall.name, "invalid_client_message", "Client operation name is required.")
+        }
+        val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments["arguments"])
+        if (!arguments.isObject) {
+            return errorMessage(functionCall.name, "invalid_client_message", "Client arguments must be an object.")
+        }
+        val timeoutSeconds = (functionCall.arguments["timeoutSeconds"] as? Number)
+            ?.toLong()
+            ?.coerceIn(1, MAX_TIMEOUT_SECONDS)
+            ?: DEFAULT_TIMEOUT_SECONDS
         val threadId = meta.requestId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
             ?: return errorMessage(functionCall.name, "client_context_missing", "Thread ID is unavailable.")
         val chatId = meta.conversationId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
@@ -104,14 +101,13 @@ private class ClientToolSetup(
             is BeginClientToolResult.Started -> beginTool.device
         }
         val startedAt = now()
-        val deadlineAt = startedAt.plus(timeout)
-        val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments)
+        val deadlineAt = startedAt.plusSeconds(timeoutSeconds)
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
         var clientCallStarted = false
         try {
             toolCallRepository.startClientCall(
                 context = context,
-                name = fn.name,
+                name = operationName,
                 deviceId = device.deviceId,
                 argumentsJson = restJsonMapper.writeValueAsString(arguments),
                 deadlineAt = deadlineAt,
@@ -126,7 +122,7 @@ private class ClientToolSetup(
                 type = AgentEventType.TOOL_CALL_STARTED,
                 payload = PublicToolCallStartedPayload(
                     toolCallId = toolCallId,
-                    name = fn.name,
+                    name = operationName,
                     deviceId = device.deviceId,
                     arguments = arguments,
                     deadlineAt = deadlineAt.toString(),
@@ -230,4 +226,18 @@ private class ClientToolSetup(
             content = restJsonMapper.writeValueAsString(mapOf("error" to ClientError(code, message))),
             name = functionName,
         )
+
+    private companion object {
+        const val DEFAULT_TIMEOUT_SECONDS = 300L
+        const val MAX_TIMEOUT_SECONDS = 300L
+    }
+}
+
+private val CLIENT_WEBSOCKET_SKILL_DESCRIPTION: String by lazy {
+    val markdown = requireNotNull(
+        BackendClientToolCatalog::class.java.getResource("/skills/client-websocket/SKILL.md")
+    ) { "Missing client WebSocket Skill resource." }.readText()
+    SkillBundleParser.parse(markdown).let { parsed ->
+        "${parsed.manifest.description}\n\n${parsed.body}"
+    }
 }
