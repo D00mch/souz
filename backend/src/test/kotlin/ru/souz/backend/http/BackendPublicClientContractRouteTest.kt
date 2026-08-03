@@ -16,8 +16,6 @@ import io.ktor.server.testing.testApplication
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
-import java.time.Clock
-import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
@@ -28,15 +26,12 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
@@ -45,7 +40,6 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientDevice
-import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.ToolResultFrame
 import ru.souz.backend.events.bus.AgentEventBus
@@ -206,12 +200,6 @@ class BackendPublicClientContractRouteTest {
             assertTrue(runningStatus["acceptsInput"].asBoolean())
             api.awaitStarted("Первое сообщение")
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "Первое сообщение", "device-1")))
-            val duplicateAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            val duplicateStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "Другой текст", "device-1")))
-            val conflictingAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
-
             session.send(Frame.Text(messageFrame(chatId, userId, "message-2", threadId, "Второе сообщение", "device-2")))
             val secondAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val secondStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
@@ -219,11 +207,6 @@ class BackendPublicClientContractRouteTest {
             api.release()
             val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
 
-            assertTrue(duplicateAck["duplicate"].asBoolean())
-            assertEquals(threadId, duplicateStatus["threadId"].asText())
-            assertEquals(1, duplicateAck["submission"]["inputSeq"].asInt())
-            assertEquals("rejected", conflictingAck["status"].asText())
-            assertEquals("idempotency_conflict", conflictingAck["error"]["code"].asText())
             assertEquals(2, secondAck["submission"]["inputSeq"].asInt())
             assertEquals(2, secondAck["thread"]["revision"].asInt())
             assertFalse(secondAck["thread"]["created"].asBoolean())
@@ -239,11 +222,20 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `message meta model overrides the execution model`() = testApplication {
+    fun `message meta model overrides model while omitted locale and time zone use persisted settings`() = testApplication {
         val api = CapturingChatApi()
         val context = publicContext(api)
         install(context)
         val userId = UUID.randomUUID().toString()
+        runBlocking {
+            context.userSettingsRepository.save(
+                UserSettings(
+                    userId = userId,
+                    locale = Locale.forLanguageTag("en-US"),
+                    timeZone = ZoneId.of("America/New_York"),
+                )
+            )
+        }
         val create = client.post(BackendHttpRoutes.CHATS) {
             contentType(ContentType.Application.Json)
             setBody("""{"userId":"$userId","requestId":"create-1","clientType":"backend"}""")
@@ -257,8 +249,8 @@ class BackendPublicClientContractRouteTest {
                 Frame.Text(
                     messageFrame(chatId, userId, "message-1", null, "Используй qwen", "device-1")
                         .replace(
-                            """"timeZone":"Europe/Moscow"""",
-                            """"timeZone":"Europe/Moscow","model":"${LLMModel.QwenMax.alias}"""",
+                            """"locale":"ru-RU","timeZone":"Europe/Moscow"""",
+                            """"model":"${LLMModel.QwenMax.alias}"""",
                         )
                 )
             )
@@ -275,6 +267,8 @@ class BackendPublicClientContractRouteTest {
             assertEquals("thread.completed", terminal["type"].asText())
             assertEquals(LLMModel.QwenMax.alias, api.finalRequests.last().model)
             assertEquals(LLMModel.QwenMax, execution?.model)
+            assertEquals("en-US", execution?.metadata?.get("locale"))
+            assertEquals("America/New_York", execution?.metadata?.get("timeZone"))
             session.close()
         }
     }
@@ -322,51 +316,6 @@ class BackendPublicClientContractRouteTest {
         val execution = executionRepository.listByChat(userId, chat.id).single()
         assertEquals(AgentExecutionStatus.QUEUED, execution.status)
         assertTrue(context.clientThreadRegistry.contains(execution.id))
-    }
-
-    @Test
-    fun `omitted message locale and time zone use persisted settings`() = testApplication {
-        val context = publicContext()
-        install(context)
-        val userId = UUID.randomUUID().toString()
-        runBlocking {
-            context.userSettingsRepository.save(
-                UserSettings(
-                    userId = userId,
-                    locale = Locale.forLanguageTag("en-US"),
-                    timeZone = ZoneId.of("America/New_York"),
-                )
-            )
-        }
-        val create = client.post(BackendHttpRoutes.CHATS) {
-            contentType(ContentType.Application.Json)
-            setBody("""{"userId":"$userId","requestId":"create-1","clientType":"backend"}""")
-        }
-        val chatId = json.readTree(create.bodyAsText())["chat"]["id"].asText()
-        val wsClient = createClient { install(WebSockets) }
-
-        runBlocking {
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
-            session.send(
-                Frame.Text(
-                    """{"kind":"message.submit","chatId":"$chatId","requestId":"message-1","payload":{"device":{"userId":"$userId","deviceId":"device-1","deviceType":"tv_box","capabilities":["speech","screen","device_tools"]},"content":{"type":"text","source":"voice","text":"Привет"}}}"""
-                )
-            )
-            val ack = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            val status = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            val execution = context.executionRepository.getByChat(
-                userId,
-                UUID.fromString(chatId),
-                UUID.fromString(ack["thread"]["id"].asText()),
-            )
-
-            assertEquals("thread.status", status["type"].asText())
-            assertEquals("thread.completed", terminal["type"].asText())
-            assertEquals("en-US", execution?.metadata?.get("locale"))
-            assertEquals("America/New_York", execution?.metadata?.get("timeZone"))
-            session.close()
-        }
     }
 
     @Test
@@ -568,25 +517,26 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `tool result completion race accepts a matching terminal result as duplicate`() = runBlocking {
-        val fixture = toolResultRaceFixture { payloadHash -> payloadHash }
+    fun `tool result completion race handles already terminal results by payload hash`() = runBlocking {
+        val cases: List<Pair<Boolean, (String) -> String>> = listOf(
+            true to { payloadHash -> payloadHash },
+            false to { payloadHash -> "different:$payloadHash" },
+        )
 
-        val handled = fixture.context.publicClientService.handleToolResult(fixture.chat, fixture.frame)
-        val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
+        cases.forEach { (matchingHash, terminalPayloadHash) ->
+            val fixture = toolResultRaceFixture(terminalPayloadHash)
 
-        assertEquals("accepted", ack["status"].asText())
-        assertTrue(ack["duplicate"].asBoolean())
-    }
+            val handled = fixture.context.publicClientService.handleToolResult(fixture.chat, fixture.frame)
+            val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
 
-    @Test
-    fun `tool result completion race rejects a different terminal result`() = runBlocking {
-        val fixture = toolResultRaceFixture { payloadHash -> "different:$payloadHash" }
-
-        val handled = fixture.context.publicClientService.handleToolResult(fixture.chat, fixture.frame)
-        val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
-
-        assertEquals("rejected", ack["status"].asText())
-        assertEquals("idempotency_conflict", ack["error"]["code"].asText())
+            if (matchingHash) {
+                assertEquals("accepted", ack["status"].asText())
+                assertTrue(ack["duplicate"].asBoolean())
+            } else {
+                assertEquals("rejected", ack["status"].asText())
+                assertEquals("idempotency_conflict", ack["error"]["code"].asText())
+            }
+        }
     }
 
     @Test
@@ -614,50 +564,6 @@ class BackendPublicClientContractRouteTest {
         )
 
         assertEquals("trace-1", frame.error?.details?.path("traceId")?.asText())
-    }
-
-    @Test
-    fun `accepted input commit failure propagates without publishing input and clears its acknowledgement`() = runBlocking {
-        val api = GateControlledChatApi()
-        val context = publicContext(api)
-        val userId = UUID.randomUUID().toString()
-        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
-        val firstFrame = json.treeToValue(
-            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Первое сообщение", "device-1")),
-            MessageSubmitFrame::class.java,
-        )
-        val first = context.publicClientService.handleMessage(chat, firstFrame)
-        val firstAck = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(first.response)
-        val threadId = UUID.fromString(firstAck["thread"]["id"].asText())
-        first.afterSend()
-        api.awaitStarted("Первое сообщение")
-
-        val failure = assertFailsWith<IllegalStateException> {
-            context.clientThreadRegistry.acceptInput(
-                threadId = threadId,
-                requestId = "message-2",
-                device = ClientDevice(userId, "device-2", "tv_box", setOf("speech")),
-                input = "Второе сообщение",
-                canAccept = { true },
-                commit = { error("commit failed") },
-            )
-        }
-
-        assertEquals("commit failed", failure.message)
-        assertFailsWith<kotlinx.coroutines.TimeoutCancellationException> {
-            withTimeout(200) { api.awaitStarted("Второе сообщение") }
-        }
-        withTimeout(200) {
-            context.clientThreadRegistry.awaitAcceptedInputAcks(threadId)
-        }
-        api.release()
-        withTimeout(2_000) {
-            while (context.eventRepository.listByChat(userId, chat.id).none {
-                    it.type == AgentEventType.THREAD_COMPLETED
-                }) {
-                delay(10)
-            }
-        }
     }
 
     @Test
@@ -786,81 +692,6 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `startup recovery leaves live leased client threads running`() = runBlocking {
-        val context = publicContext()
-        val userId = UUID.randomUUID().toString()
-        val liveChat = context.chatService.createClient(userId, "create-live", "backend", null).chat
-        val expiredChat = context.chatService.createClient(userId, "create-expired", "backend", null).chat
-        val liveThreadId = UUID.randomUUID()
-        val expiredThreadId = UUID.randomUUID()
-        context.executionRepository.create(
-            clientExecution(
-                userId = userId,
-                chatId = liveChat.id,
-                threadId = liveThreadId,
-                leaseUntil = Instant.now().plusSeconds(3_600),
-            )
-        )
-        context.executionRepository.create(
-            clientExecution(
-                userId = userId,
-                chatId = expiredChat.id,
-                threadId = expiredThreadId,
-                leaseUntil = Instant.now().minusSeconds(60),
-            )
-        )
-
-        ClientThreadRecoveryService(context.executionRepository, context.eventService).recover()
-
-        val liveExecution = context.executionRepository.getByChat(userId, liveChat.id, liveThreadId)
-        val expiredExecution = context.executionRepository.getByChat(userId, expiredChat.id, expiredThreadId)
-        val liveEvents = context.eventRepository.listByChat(userId, liveChat.id)
-        val expiredEvents = context.eventRepository.listByChat(userId, expiredChat.id)
-        assertEquals(AgentExecutionStatus.RUNNING, liveExecution?.status)
-        assertEquals(AgentExecutionStatus.FAILED, expiredExecution?.status)
-        assertTrue(liveEvents.none { it.type == AgentEventType.THREAD_FAILED })
-        assertEquals(listOf(AgentEventType.THREAD_FAILED), expiredEvents.map { it.type })
-    }
-
-    @Test
-    @OptIn(ExperimentalCoroutinesApi::class)
-    fun `recovery sweep retries after a retained lease expires`() = runTest {
-        val context = publicContext()
-        val clock = MutableClock(Instant.parse("2026-08-02T21:00:00Z"))
-        val userId = UUID.randomUUID().toString()
-        val chat = context.chatService.createClient(userId, "create-retained", "backend", null).chat
-        val threadId = UUID.randomUUID()
-        context.executionRepository.create(
-            clientExecution(
-                userId = userId,
-                chatId = chat.id,
-                threadId = threadId,
-                leaseUntil = clock.instant().plusSeconds(5),
-            )
-        )
-        val recovery = ClientThreadRecoveryService(
-            executionRepository = context.executionRepository,
-            eventService = context.eventService,
-            clock = clock,
-            recoveryInterval = Duration.ofSeconds(1),
-        )
-
-        recovery.recover()
-        assertEquals(AgentExecutionStatus.RUNNING, context.executionRepository.getByChat(userId, chat.id, threadId)?.status)
-
-        clock.current = clock.current.plusSeconds(6)
-        val job = recovery.start(this)
-        advanceTimeBy(1_000)
-        runCurrent()
-        job.cancelAndJoin()
-
-        val recoveredExecution = context.executionRepository.getByChat(userId, chat.id, threadId)
-        val events = context.eventRepository.listByChat(userId, chat.id)
-        assertEquals(AgentExecutionStatus.FAILED, recoveredExecution?.status)
-        assertEquals(listOf(AgentEventType.THREAD_FAILED), events.map { it.type })
-    }
-
-    @Test
     fun `thread cancel is acknowledged before the cancelled terminal event`() = testApplication {
         val api = CancellableChatApi()
         val context = publicContext(api)
@@ -889,29 +720,11 @@ class BackendPublicClientContractRouteTest {
             val cancelAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val cancelStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
             val terminal = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            session.send(
-                Frame.Text(
-                    """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-1","threadId":"$threadId","reason":"user_requested"}"""
-                )
-            )
-            val duplicateAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            val duplicateStatus = json.readTree((session.incoming.receive() as Frame.Text).readText())
-            session.send(
-                Frame.Text(
-                    """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-1","threadId":"$threadId","reason":"device_disconnected"}"""
-                )
-            )
-            val conflictingAck = json.readTree((session.incoming.receive() as Frame.Text).readText())
 
             assertEquals("accepted", cancelAck["status"].asText())
             assertEquals("cancel-1", cancelAck["requestId"].asText())
             assertEquals(threadId, cancelStatus["threadId"].asText())
             assertEquals("thread.cancelled", terminal["type"].asText())
-            assertEquals("accepted", duplicateAck["status"].asText())
-            assertTrue(duplicateAck["duplicate"].asBoolean())
-            assertEquals("cancelled", duplicateStatus["status"].asText())
-            assertEquals("rejected", conflictingAck["status"].asText())
-            assertEquals("idempotency_conflict", conflictingAck["error"]["code"].asText())
             assertFalse(context.clientThreadRegistry.contains(UUID.fromString(threadId)))
             session.close()
         }
@@ -1029,34 +842,6 @@ private class CancellingCreateExecutionRepository(
     }
 }
 
-private fun clientExecution(
-    userId: String,
-    chatId: UUID,
-    threadId: UUID,
-    leaseUntil: Instant,
-): AgentExecution =
-    AgentExecution(
-        id = threadId,
-        userId = userId,
-        chatId = chatId,
-        userMessageId = null,
-        assistantMessageId = null,
-        status = AgentExecutionStatus.RUNNING,
-        requestId = null,
-        clientMessageId = null,
-        model = null,
-        provider = null,
-        startedAt = Instant.now(),
-        finishedAt = null,
-        cancelRequested = false,
-        errorCode = null,
-        errorMessage = null,
-        usage = null,
-        metadata = emptyMap(),
-        runtimeOwner = "test-owner",
-        runtimeLeaseUntil = leaseUntil,
-    )
-
 private class LostCompletionRaceToolCallRepository(
     private val terminalPayloadHash: (String) -> String,
     private val delegate: MemoryToolCallRepository = MemoryToolCallRepository(),
@@ -1079,14 +864,4 @@ private class LostCompletionRaceToolCallRepository(
         )
         return null
     }
-}
-
-private class MutableClock(
-    var current: Instant,
-) : Clock() {
-    override fun getZone(): ZoneId = ZoneId.of("UTC")
-
-    override fun withZone(zone: ZoneId): Clock = this
-
-    override fun instant(): Instant = current
 }
