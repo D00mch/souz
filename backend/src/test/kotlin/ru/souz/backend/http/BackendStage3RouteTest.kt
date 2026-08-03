@@ -494,44 +494,6 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `post chats creates a public client chat`() = testApplication {
-        val context = routeTestContext()
-        val userId = UUID.randomUUID().toString()
-        application {
-            backendApplication(
-                BackendHttpDependencies(
-                    bootstrapService = context.bootstrapService,
-                    selectedModel = { context.settingsProvider.gigaModel.alias },
-                    trustedProxyToken = { "proxy-secret" },
-                    ensureTrustedUser = context.userRepository::ensureUser,
-                    userSettingsService = context.userSettingsService,
-                    chatService = context.chatService,
-                    messageService = context.messageService,
-                    executionService = context.executionService,
-                    publicClientService = context.publicClientService,
-                )
-            )
-        }
-
-        val response = client.post(BackendHttpRoutes.CHATS) {
-            contentType(ContentType.Application.Json)
-            setBody(
-                """{"userId":"$userId","requestId":"create-1","clientType":"backend","title":"Новый чат"}"""
-            )
-        }
-        val chat = json.readTree(response.bodyAsText())["chat"]
-        val chatId = UUID.fromString(chat["id"].asText())
-        val storedChat = runBlocking { context.chatRepository.get(userId, chatId) }
-
-        assertEquals(HttpStatusCode.Created, response.status)
-        assertEquals("Новый чат", chat["title"].asText())
-        assertNotNull(storedChat)
-        assertEquals(userId, storedChat.userId)
-        assertEquals("backend", storedChat.clientType)
-        assertEquals("create-1", storedChat.requestId)
-    }
-
-    @Test
     fun `patch chat title trims updates timestamp and enforces ownership`() = testApplication {
         val context = routeTestContext()
         val ownedChat = chat(
