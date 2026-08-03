@@ -46,6 +46,10 @@ internal class ClientThreadRuntimeRegistry(
         states.containsKey(threadId)
     }
 
+    suspend fun isEmpty(): Boolean = mutex.withLock {
+        states.isEmpty()
+    }
+
     suspend fun register(threadId: UUID, device: ClientDevice) {
         mutex.withLock {
             states.putIfAbsent(threadId, State(latestDevice = device))

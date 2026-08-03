@@ -60,6 +60,7 @@ import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionFinalizer
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionRequestFactory
@@ -184,7 +185,7 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `patch me settings stores user intent and returns normalized effective settings`() = testApplication {
+    fun `patch me settings rejects unavailable default model without storing partial settings`() = testApplication {
         val context = routeTestContext()
         context.settingsProvider.qwenChatKey = null
         application {
@@ -201,6 +202,16 @@ class BackendStage3RouteTest {
             )
         }
 
+        runBlocking {
+            context.userSettingsRepository.save(
+                UserSettings(
+                    userId = "user-a",
+                    defaultModel = LLMModel.Max,
+                    contextSize = 24_000,
+                    enabledTools = setOf("ListFiles"),
+                )
+            )
+        }
         val response = client.patch(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
@@ -224,27 +235,54 @@ class BackendStage3RouteTest {
             )
         }
         val payload = json.readTree(response.bodyAsText())
-        val settings = payload["settings"]
         val storedIntent = runBlocking { context.userSettingsRepository.get("user-a") }
 
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(settings["defaultModel"].asText() != LLMModel.QwenMax.alias)
-        assertEquals(12_000, settings["contextSize"].asInt())
-        assertEquals(0.15, settings["temperature"].asDouble())
-        assertEquals("en-US", settings["locale"].asText())
-        assertEquals("Europe/Amsterdam", settings["timeZone"].asText())
-        assertEquals("be brief", settings["systemPrompt"].asText())
-        assertEquals(listOf("ListFiles"), settings["enabledTools"].map { it.asText() })
-        assertEquals(false, settings["showToolEvents"].asBoolean())
-        assertEquals(false, settings["streamingMessages"].asBoolean())
-        assertEquals("en", settings["interfaceLanguage"].asText())
-        assertEquals(45_000L, settings["requestTimeoutMillis"].asLong())
-        assertEquals(false, settings["useFewShotExamples"].asBoolean())
-        assertEquals(LLMModel.QwenMax, storedIntent?.defaultModel)
-        assertEquals(setOf("ListFiles", "OpenBrowser"), storedIntent?.enabledTools)
-        assertEquals("en", storedIntent?.interfaceLanguage)
-        assertEquals(45_000L, storedIntent?.requestTimeoutMillis)
-        assertEquals(false, storedIntent?.useFewShotExamples)
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
+        assertEquals(LLMModel.Max, storedIntent?.defaultModel)
+        assertEquals(24_000, storedIntent?.contextSize)
+        assertEquals(setOf("ListFiles"), storedIntent?.enabledTools)
+        assertNull(storedIntent?.interfaceLanguage)
+        assertNull(storedIntent?.requestTimeoutMillis)
+        assertNull(storedIntent?.useFewShotExamples)
+    }
+
+    @Test
+    fun `patch me settings rejects Codex model while backend runtime does not support Codex`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                regionProfile = "en"
+                anthropicKey = "anthropic-key"
+                codexAccessToken = "codex-token"
+            }
+        )
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
+            )
+        }
+
+        val response = client.patch(BackendHttpRoutes.SETTINGS) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"defaultModel":"${LLMModel.CodexGpt55.alias}"}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedIntent = runBlocking { context.userSettingsRepository.get("user-a") }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
+        assertTrue(storedIntent?.defaultModel != LLMModel.CodexGpt55)
     }
 
     @Test
@@ -1219,7 +1257,7 @@ internal data class RouteTestContext(
     val clientRequestRepository: MemoryClientRequestRepository,
     val clientThreadRegistry: ClientThreadRuntimeRegistry,
     val messageRepository: MemoryMessageRepository,
-    val executionRepository: MemoryAgentExecutionRepository,
+    val executionRepository: AgentExecutionRepository,
     val optionRepository: MemoryOptionRepository,
     val eventRepository: MemoryAgentEventRepository,
     val toolCallRepository: ToolCallRepository,
@@ -1250,7 +1288,7 @@ internal fun routeTestContext(
     userProviderKeyRepository: MemoryUserProviderKeyRepository = MemoryUserProviderKeyRepository(),
     chatRepository: MemoryChatRepository = MemoryChatRepository(),
     messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
-    executionRepository: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
+    executionRepository: AgentExecutionRepository = MemoryAgentExecutionRepository(),
     optionRepository: MemoryOptionRepository = MemoryOptionRepository(),
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
     toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),

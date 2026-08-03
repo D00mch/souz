@@ -27,6 +27,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
@@ -43,6 +44,7 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.TestSkillRegistryRepository
 import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientDevice
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.MessageSubmitFrame
@@ -54,7 +56,9 @@ import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.settings.model.UserSettings
+import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
@@ -275,6 +279,51 @@ class BackendPublicClientContractRouteTest {
             assertEquals(LLMModel.QwenMax, execution?.model)
             session.close()
         }
+    }
+
+    @Test
+    fun `invalid initial model is rejected before registering thread state`() = runBlocking {
+        val context = publicContext()
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val frame = json.treeToValue(
+            json.readTree(
+                messageFrame(chat.id.toString(), userId, "message-1", null, "Привет", "device-1")
+                    .replace(
+                        "\"timeZone\":\"Europe/Moscow\"",
+                        "\"timeZone\":\"Europe/Moscow\",\"model\":\"unknown-model\"",
+                    )
+            ),
+            MessageSubmitFrame::class.java,
+        )
+
+        val error = assertFailsWith<ClientContractException> {
+            context.publicClientService.handleMessage(chat, frame)
+        }
+
+        assertEquals("invalid_request", error.code)
+        assertTrue(context.clientThreadRegistry.isEmpty())
+        assertTrue(context.executionRepository.listByChat(userId, chat.id).isEmpty())
+    }
+
+    @Test
+    fun `initial thread startup propagates cancellation without discarding registry state`() = runBlocking {
+        val executionRepository = CancellingCreateExecutionRepository()
+        val context = publicContext(executionRepository = executionRepository)
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val frame = json.treeToValue(
+            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Привет", "device-1")),
+            MessageSubmitFrame::class.java,
+        )
+
+        assertFailsWith<CancellationException> {
+            context.publicClientService.handleMessage(chat, frame)
+        }
+
+        val execution = executionRepository.listByChat(userId, chat.id).single()
+        assertEquals(AgentExecutionStatus.QUEUED, execution.status)
+        assertTrue(context.clientThreadRegistry.contains(execution.id))
     }
 
     @Test
@@ -947,9 +996,11 @@ class BackendPublicClientContractRouteTest {
     private fun publicContext(
         llmApi: ru.souz.llms.LLMChatAPI = CapturingChatApi(),
         toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
+        executionRepository: AgentExecutionRepository = MemoryAgentExecutionRepository(),
     ): RouteTestContext = routeTestContext(
         llmApi = llmApi,
         toolCallRepository = toolCallRepository,
+        executionRepository = executionRepository,
         featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = false, toolEvents = true),
         agentId = AgentId.SKILLS_GRAPH,
     )
@@ -972,6 +1023,15 @@ private data class ToolResultRaceFixture(
     val chat: Chat,
     val frame: ToolResultFrame,
 )
+
+private class CancellingCreateExecutionRepository(
+    private val delegate: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
+) : AgentExecutionRepository by delegate {
+    override suspend fun create(execution: AgentExecution): AgentExecution {
+        delegate.create(execution)
+        throw CancellationException("Initial execution startup was cancelled.")
+    }
+}
 
 private fun clientExecution(
     userId: String,

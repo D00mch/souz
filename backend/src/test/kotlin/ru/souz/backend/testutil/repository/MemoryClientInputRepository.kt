@@ -8,10 +8,11 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 
 class MemoryClientInputRepository(
     private val messageRepository: MemoryMessageRepository,
-    private val executionRepository: MemoryAgentExecutionRepository,
+    private val executionRepository: AgentExecutionRepository,
 ) : ClientInputRepository {
     private val mutex = Mutex()
 

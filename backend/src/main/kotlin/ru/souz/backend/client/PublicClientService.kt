@@ -7,6 +7,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -238,12 +239,12 @@ internal class PublicClientService(
         if (executionRepository.findActive(chat.userId, chat.id) != null) {
             return rejectedMessage(chat.id, requestId, "message_rejected", "The chat already has a running thread.", now)
         }
-        val threadId = UUID.randomUUID()
-        registry.register(threadId, frame.payload.device)
-        registry.registerAck(threadId, requestId)
         val deviceJson = mapper.writeValueAsString(frame.payload.device)
         val metadata = inputMetadata(frame, inputSeq = 1)
         val overrides = requestOverrides(frame.payload.meta)
+        val threadId = UUID.randomUUID()
+        registry.register(threadId, frame.payload.device)
+        registry.registerAck(threadId, requestId)
         val result = try {
             executionService.executeChatTurn(
                 userId = chat.userId,
@@ -258,6 +259,8 @@ internal class PublicClientService(
                 clientToolsEnabled = true,
                 forceBackground = true,
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             registry.ackSent(threadId, requestId)
             registry.discard(threadId)

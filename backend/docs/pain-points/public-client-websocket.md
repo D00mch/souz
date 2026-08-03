@@ -17,6 +17,7 @@ The client-Skill projection does not pass filesystem bundles through `SkillAppro
 ## Safe-change guidance
 
 - Keep strict JSON decoding and reject unknown fields.
+- Validate and serialize initial input before registering live thread state. Propagate startup cancellation instead of converting it to a rejected acknowledgement.
 - Serialize the shared `message.submit` and `thread.cancel` receipt check and acceptance in the single backend process.
 - Serialize input acceptance with terminal persistence. Reserve the Skills mailbox, commit the message and revision, then publish the input; release the reservation without publishing when the commit fails. Release the event gate immediately after the acknowledgement is sent and before status feedback.
 - Persist a tool result before acknowledging it; complete the suspended Skill only after sending the acknowledgement.
