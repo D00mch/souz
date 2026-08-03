@@ -8,8 +8,10 @@ import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
@@ -184,6 +186,16 @@ internal class PublicClientService(
         if (!execution.status.isRunningThread()) {
             return rejectedCancel(chat.id, requestId, threadId, "thread_already_terminal", "Thread is already terminal.", now)
         }
+        val ack = ThreadCancelAck(
+            chatId = chat.id.toString(),
+            requestId = requestId,
+            threadId = threadId.toString(),
+            status = "accepted",
+            duplicate = false,
+            error = null,
+            receivedAt = now.toString(),
+        )
+        val receipt = ClientRequest(chat.id, requestId, frame.kind, threadId, payloadHash, mapper.writeValueAsString(ack), now)
         val cancelled = try {
             registry.acceptCancellation(
                 threadId = threadId,
@@ -191,7 +203,13 @@ internal class PublicClientService(
                 canAccept = {
                     executionRepository.getByChat(chat.userId, chat.id, threadId)?.status?.isRunningThread() == true
                 },
-                commit = { executionService.cancelExecution(chat.userId, chat.id, threadId) },
+                commit = {
+                    executionService.cancelExecution(chat.userId, chat.id, threadId).also {
+                        withContext(NonCancellable) {
+                            clientRequestRepository.create(receipt)
+                        }
+                    }
+                },
             )
         } catch (error: BackendV1Exception) {
             if (error.code == "invalid_request" && error.message == "Execution is not active.") {
@@ -208,18 +226,6 @@ internal class PublicClientService(
                 rejectedCancel(chat.id, requestId, threadId, "message_rejected", "Live thread state is unavailable.", now)
             }
         }
-        val ack = ThreadCancelAck(
-            chatId = chat.id.toString(),
-            requestId = requestId,
-            threadId = threadId.toString(),
-            status = "accepted",
-            duplicate = false,
-            error = null,
-            receivedAt = now.toString(),
-        )
-        clientRequestRepository.create(
-            ClientRequest(chat.id, requestId, frame.kind, threadId, payloadHash, mapper.writeValueAsString(ack), now)
-        )
         return HandledClientFrame(ack) { registry.ackSent(threadId, requestId) }
     }
 
