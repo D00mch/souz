@@ -57,6 +57,8 @@ Route: `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`
 
 `afterSeq` is optional and exclusive. If omitted, Souz treats it as `0` and replays every durable event in the chat. On connect, Souz sends events with `seq > afterSeq` in order, then live frames. `seq` is chat-local, monotonic, and used for replay and deduplication. A separate `eventId` is not used.
 
+Active-thread live frames are owner-sticky. In multi-replica deployments, reconnects and retries for a running thread must be routed to the Souz runtime owner that holds the live registry state; the current single-owner contract rejects live frames as `message_rejected` when they reach a process that only sees the durable running row. Durable replay and thread status remain available from any process.
+
 Client frames:
 
 - `message.submit`: `{kind, chatId, requestId, threadId?, payload}`. `payload.device.userId` carries the trusted user scope. Omit `threadId` for the first submission in a thread.

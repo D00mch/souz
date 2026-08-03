@@ -133,8 +133,11 @@ internal class PublicClientService(
             return timeOutExpiredTool(chat.id, threadId, toolCallId, context, now)
         }
         val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
-        if (execution == null || !execution.status.isRunningThread() || !registry.contains(threadId)) {
+        if (execution == null || !execution.status.isRunningThread()) {
             return rejectedTool(chat.id, threadId, toolCallId, "thread_already_terminal", "Thread is not running.", now)
+        }
+        if (!registry.contains(threadId)) {
+            return rejectedTool(chat.id, threadId, toolCallId, "message_rejected", "Thread runtime is unavailable on this Souz instance.", now)
         }
         val completed = toolCallRepository.completeClientCall(
             context = context,

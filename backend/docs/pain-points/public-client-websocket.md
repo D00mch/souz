@@ -8,6 +8,8 @@ Accepted user inputs are `messages` with `inputSeq`, source, device, request ID,
 
 The live registry owns only process-local runtime references, acknowledgement gates, and one pending client-tool waiter. A single coroutine mutex protects its state. Active public executions store a runtime owner and renewable lease in PostgreSQL. Terminal entries remain until the runtime is detached and pending acknowledgements and tool work are clear, then they are discarded. Disconnect does not cancel a waiter. Before the server accepts connections, startup recovery fails expired public thread leases and emits or retries the required `thread.failed`; it does not reconstruct waiters. Public `thread.status` frames and `GET /v1/chats/{chatId}/threads/{threadId}` read durable execution state and are not replay events.
 
+Live `message.submit`, `tool.result`, and `thread.cancel` frames must reach the process-local runtime owner while the thread is active. The current deployment contract is single-owner/sticky; a replica that has only the durable row and no local registry state rejects live frames as unavailable rather than treating the thread as terminal.
+
 ## Why it is fragile
 
 An acknowledgement, tool event, runtime mailbox, and terminal state can race. Sending an event before its causal acknowledgement, accepting input after terminal state, or completing a waiter before the tool-result acknowledgement makes the wire trace contradictory even with one pod.
@@ -24,6 +26,7 @@ The client-Skill projection does not pass bundled resources through `SkillApprov
 - Send live `thread.status` feedback after accepted submit/cancel acknowledgements without adding it to durable replay.
 - Persist pending client tool calls as cancelled before propagating thread cancellation.
 - Refresh public thread runtime leases while the process owns the live runtime. Recovery must only fail expired leases or already failed recovered threads missing their terminal event.
+- Keep active-thread WebSocket routing sticky to the runtime owner. Do not report a local registry miss as terminal while the durable execution is still running.
 - Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate client operations.
 - Keep client Skills in their relevant request-scoped catalog categories rather than adding them to the Skills graph core-tool list. Define client transport metadata and operation payloads in bundled `SKILL.md`, not Kotlin tool definitions.
 - Do not allow arbitrary user-installed bundles to declare the client WebSocket transport.

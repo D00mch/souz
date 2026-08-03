@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
+import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
 
@@ -120,6 +121,10 @@ internal class AgentExecutionLauncher(
                         leaseUntil = nextLeaseUntil,
                     )
                     if (refreshed == null) {
+                        val current = repository.getByChat(execution.userId, execution.chatId, execution.id)
+                        if (current != null && !current.status.isActive()) {
+                            return@launch
+                        }
                         activeJobs.cancel(
                             execution.id,
                             reason = "Client thread runtime lease is no longer owned by this execution.",

@@ -6,10 +6,12 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -27,6 +29,7 @@ import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
 import ru.souz.backend.testutil.repository.MemoryAgentStateRepository
@@ -45,7 +48,7 @@ class AgentExecutionLauncherLeaseTest {
         val chatRepository = MemoryChatRepository()
         val messageRepository = MemoryMessageRepository()
         val optionRepository = MemoryOptionRepository()
-        val executionRepository = MemoryAgentExecutionRepository()
+        val executionRepository = LostLeaseAgentExecutionRepository()
         val eventRepository = MemoryAgentEventRepository()
         val toolCallRepository = MemoryToolCallRepository()
         val registry = ClientThreadRuntimeRegistry(runtimeOwner = "owner-1")
@@ -130,23 +133,124 @@ class AgentExecutionLauncherLeaseTest {
             }
         }
         started.await()
-        executionRepository.update(
-            execution.copy(
-                status = AgentExecutionStatus.FAILED,
-                finishedAt = Instant.now(),
-                errorCode = "process_restarted",
-                errorMessage = "Recovered elsewhere.",
-            )
-        )
+        executionRepository.loseLease = true
 
         advanceTimeBy(1)
         runCurrent()
 
         assertFailsWith<ExecutionCancelledException> { running.await() }
         assertEquals(
-            AgentExecutionStatus.FAILED,
+            AgentExecutionStatus.CANCELLED,
             executionRepository.getByChat(chat.userId, chat.id, execution.id)?.status,
         )
+    }
+
+    @Test
+    fun `tracked client thread keeps terminal durable state when lease refresh sees completion`() = runTest {
+        val chatRepository = MemoryChatRepository()
+        val messageRepository = MemoryMessageRepository()
+        val optionRepository = MemoryOptionRepository()
+        val executionRepository = MemoryAgentExecutionRepository()
+        val eventRepository = MemoryAgentEventRepository()
+        val toolCallRepository = MemoryToolCallRepository()
+        val registry = ClientThreadRuntimeRegistry(runtimeOwner = "owner-1")
+        val eventService = AgentEventService(
+            chatRepository = chatRepository,
+            eventRepository = eventRepository,
+            eventBus = AgentEventBus(),
+        )
+        val finalizer = AgentExecutionFinalizer(
+            agentStateRepository = MemoryAgentStateRepository(),
+            chatRepository = chatRepository,
+            executionRepository = executionRepository,
+            turnRunner = NeverUsedTurnRunner,
+            clientThreadRegistry = registry,
+        )
+        val launcher = AgentExecutionLauncher(
+            executionScope = this,
+            finalizer = finalizer,
+            executionRepository = executionRepository,
+            clientThreadRegistry = registry,
+            leaseRefreshInterval = Duration.ofMillis(1),
+        )
+        val chat = Chat(
+            id = UUID.randomUUID(),
+            userId = "user-lease-terminal",
+            title = "lease terminal",
+            archived = false,
+            createdAt = Instant.parse("2026-08-03T00:00:00Z"),
+            updatedAt = Instant.parse("2026-08-03T00:00:00Z"),
+        )
+        chatRepository.create(chat)
+        val execution = AgentExecution(
+            id = UUID.randomUUID(),
+            userId = chat.userId,
+            chatId = chat.id,
+            userMessageId = null,
+            assistantMessageId = null,
+            status = AgentExecutionStatus.RUNNING,
+            requestId = null,
+            clientMessageId = "message-1",
+            model = null,
+            provider = null,
+            startedAt = Instant.parse("2026-08-03T00:00:01Z"),
+            finishedAt = null,
+            cancelRequested = false,
+            errorCode = null,
+            errorMessage = null,
+            usage = null,
+            metadata = emptyMap(),
+            runtimeOwner = registry.runtimeOwner,
+            runtimeLeaseUntil = Instant.now().plusSeconds(60),
+        )
+        executionRepository.create(execution)
+        registry.register(
+            execution.id,
+            ClientDevice(
+                userId = chat.userId,
+                deviceId = "device-1",
+                deviceType = "tv_box",
+                capabilities = setOf("speech"),
+            ),
+        )
+        val eventSink = BackendAgentRuntimeEventSink(
+            userId = chat.userId,
+            chatId = chat.id,
+            executionId = execution.id,
+            messageRepository = messageRepository,
+            optionRepository = optionRepository,
+            executionRepository = executionRepository,
+            eventService = eventService,
+            toolCallRepository = toolCallRepository,
+            streamingMessagesEnabled = true,
+            toolEventsEnabled = true,
+            publicClientThread = true,
+        )
+        val started = CompletableDeferred<Unit>()
+
+        val running = async {
+            launcher.runTrackedExecution(execution, eventSink) {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        started.await()
+        executionRepository.update(
+            execution.copy(
+                status = AgentExecutionStatus.COMPLETED,
+                finishedAt = Instant.now(),
+            )
+        )
+
+        advanceTimeBy(1)
+        runCurrent()
+
+        assertTrue(running.isActive)
+        assertEquals(
+            AgentExecutionStatus.COMPLETED,
+            executionRepository.getByChat(chat.userId, chat.id, execution.id)?.status,
+        )
+        running.cancelAndJoin()
     }
 
     private object NeverUsedTurnRunner : BackendConversationTurnRunner {
@@ -169,4 +273,19 @@ class AgentExecutionLauncherLeaseTest {
             ),
         )
     }
+}
+
+private class LostLeaseAgentExecutionRepository(
+    private val delegate: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
+) : AgentExecutionRepository by delegate {
+    var loseLease: Boolean = false
+
+    override suspend fun refreshClientThreadLease(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        runtimeOwner: String,
+        leaseUntil: Instant,
+    ): AgentExecution? =
+        if (loseLease) null else delegate.refreshClientThreadLease(userId, chatId, executionId, runtimeOwner, leaseUntil)
 }

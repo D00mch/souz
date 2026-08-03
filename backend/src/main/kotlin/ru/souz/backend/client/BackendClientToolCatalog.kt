@@ -18,6 +18,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
@@ -215,7 +216,18 @@ private class ClientWebSocketSkill(
             payloadHash = payloadHash,
             receivedAt = now(),
         )
-        if (completed == null) return pending.result.await()
+        if (completed == null) {
+            val storedOutcome = toolCallRepository.get(context)
+                ?.takeIf { it.target == "client" && it.status != ToolCallStatus.RUNNING }
+                ?.toClientToolOutcome()
+            if (storedOutcome != null) {
+                registry.finishTool(threadId, toolCallId, storedOutcome)
+                return storedOutcome
+            }
+            val outcome = ClientToolOutcome("timed_out", null, error)
+            registry.finishTool(threadId, toolCallId, outcome)
+            return outcome
+        }
         val outcome = ClientToolOutcome("timed_out", null, error)
         registry.finishTool(threadId, toolCallId, outcome)
         return outcome
@@ -237,6 +249,16 @@ private class ClientWebSocketSkill(
             role = LLMMessageRole.function,
             content = restJsonMapper.writeValueAsString(mapOf("error" to ClientError(code, message))),
             name = functionName,
+        )
+
+    private fun ToolCall.toClientToolOutcome(): ClientToolOutcome =
+        ClientToolOutcome(
+            status = status.value,
+            result = resultJson?.let { restJsonMapper.readTree(it) },
+            error = errorJson?.let { stored ->
+                runCatching { restJsonMapper.readValue(stored, ClientError::class.java) }
+                    .getOrElse { ClientError("client_tool_failed", "Client tool failed.") }
+            },
         )
 }
 
