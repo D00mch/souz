@@ -27,6 +27,7 @@ import ru.souz.backend.http.requireUserIdFromTrustedProxy
 import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toDto
 import ru.souz.backend.http.v1ErrorResponses
+import ru.souz.llms.LlmProvider
 
 internal fun Route.providerKeyRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.PROVIDER_KEYS) {
@@ -54,11 +55,15 @@ internal fun Route.providerKeyRoutes(deps: BackendHttpDependencies) {
         val request = call.receiveOrV1BadRequest<BackendV1PutProviderKeyRequest>()
         val apiKey = request.apiKey.trim().takeIf { it.isNotEmpty() }
             ?: throw invalidV1Request("apiKey must not be empty.")
+        val provider = call.requireProvider()
+        if (provider == LlmProvider.CODEX) {
+            throw invalidV1Request("Codex uses server-managed OAuth credentials on the backend.")
+        }
         call.respond(
             BackendV1PutProviderKeyResponse(
                 providerKey = service.put(
                     userId = call.requireUserIdFromTrustedProxy(),
-                    provider = call.requireProvider(),
+                    provider = provider,
                     apiKey = apiKey,
                 ).toDto()
             )

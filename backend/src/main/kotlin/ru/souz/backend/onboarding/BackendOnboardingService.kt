@@ -38,7 +38,7 @@ class BackendOnboardingService(
                 )
             }
         val userManagedProviders = LLMModel.entries
-            .filter { it.provider != LlmProvider.LOCAL }
+            .filter { it.provider != LlmProvider.LOCAL && it.provider != LlmProvider.CODEX }
             .groupBy { it.provider.name.lowercase() }
             .toSortedMap()
             .map { (provider, models) ->

@@ -249,7 +249,7 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `patch me settings rejects Codex model while backend runtime does not support Codex`() = testApplication {
+    fun `patch me settings accepts Codex model with server managed OAuth`() = testApplication {
         val context = routeTestContext(
             settingsProvider = TestSettingsProvider().apply {
                 regionProfile = "en"
@@ -276,13 +276,10 @@ class BackendStage3RouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"defaultModel":"${LLMModel.CodexGpt55.alias}"}""")
         }
-        val payload = json.readTree(response.bodyAsText())
         val storedIntent = runBlocking { context.userSettingsRepository.get("user-a") }
 
-        assertEquals(HttpStatusCode.BadRequest, response.status)
-        assertEquals("invalid_request", payload["error"]["code"].asText())
-        assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
-        assertTrue(storedIntent?.defaultModel != LLMModel.CodexGpt55)
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(LLMModel.CodexGpt55, storedIntent?.defaultModel)
     }
 
     @Test

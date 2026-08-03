@@ -147,6 +147,12 @@ private class CredentialOverrideSettingsProvider(
             delegate.openaiKey = value
         }
 
+    override var codexAccessToken: String?
+        get() = if (overrideProvider == LlmProvider.CODEX) apiKey else delegate.codexAccessToken
+        set(value) {
+            delegate.codexAccessToken = value
+        }
+
     override var saluteSpeechKey: String?
         get() = delegate.saluteSpeechKey
         set(value) {

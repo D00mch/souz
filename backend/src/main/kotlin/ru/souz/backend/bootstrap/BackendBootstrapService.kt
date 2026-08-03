@@ -22,7 +22,8 @@ class BackendBootstrapService(
 ) {
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
         val buildProfile = LlmBuildProfile(settingsProvider, localModelAvailability)
-        val userManagedProviders = userProviderKeyRepository.list(identity.userId).map { it.provider }.toSet()
+        val userManagedProviders = userProviderKeyRepository.list(identity.userId)
+            .mapNotNullTo(linkedSetOf()) { key -> key.provider.takeUnless { it == LlmProvider.CODEX } }
         val effectiveSettings = effectiveSettingsResolver.resolve(
             userId = identity.userId,
             userManagedProviders = userManagedProviders,
@@ -33,7 +34,6 @@ class BackendBootstrapService(
             addAll(LlmProvider.entries.filter { provider ->
                 provider != LlmProvider.LOCAL && settingsProvider.hasKey(provider)
             })
-            remove(LlmProvider.CODEX)
         }
         return BootstrapResponse(
             user = BootstrapUser(id = identity.userId),

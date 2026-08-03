@@ -73,6 +73,7 @@ import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
@@ -170,6 +171,7 @@ fun backendDiModule(
         RuntimeProviderChatApiBuilder(
             tokenLogging = instance(),
             retryPolicy = appConfig.providerRetryPolicy,
+            codexOAuthService = instance<CodexOAuthService>(),
         )
     }
     bindSingleton<LlmClientFactory> {

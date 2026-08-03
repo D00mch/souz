@@ -130,6 +130,28 @@ class EffectiveSettingsResolverTest {
     }
 
     @Test
+    fun `resolver keeps Codex model with server managed OAuth access`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            codexAccessToken = "server-codex-access-token"
+            openaiKey = null
+            anthropicKey = null
+            qwenChatKey = null
+        }
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.CodexGpt55,
+            )
+        )
+
+        val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
+
+        assertEquals(LLMModel.CodexGpt55, effective.defaultModel)
+    }
+
+    @Test
     fun `resolver keeps selected local model when it is available`() = runTest {
         val repository = MemoryUserSettingsRepository()
         repository.save(

@@ -12,12 +12,14 @@ class StoredProviderCredentialResolver(
         userId: String,
         provider: LlmProvider,
     ): ResolvedProviderCredential? {
-        userProviderKeyService.decrypt(userId, provider)?.let { apiKey ->
-            return ResolvedProviderCredential(
-                provider = provider,
-                apiKey = apiKey,
-                source = CredentialSource.USER_MANAGED,
-            )
+        if (provider != LlmProvider.CODEX) {
+            userProviderKeyService.decrypt(userId, provider)?.let { apiKey ->
+                return ResolvedProviderCredential(
+                    provider = provider,
+                    apiKey = apiKey,
+                    source = CredentialSource.USER_MANAGED,
+                )
+            }
         }
         val serverManaged = when (provider) {
             LlmProvider.GIGA -> baseSettingsProvider.gigaChatKey
@@ -26,7 +28,7 @@ class StoredProviderCredentialResolver(
             LlmProvider.ANTHROPIC -> baseSettingsProvider.anthropicKey
             LlmProvider.OPENAI -> baseSettingsProvider.openaiKey
             LlmProvider.LOCAL -> null
-            LlmProvider.CODEX -> null
+            LlmProvider.CODEX -> baseSettingsProvider.codexAccessToken
         }
         return serverManaged
             ?.takeIf { it.isNotBlank() }

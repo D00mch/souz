@@ -169,7 +169,7 @@ class EffectiveSettingsResolver(
     ): Boolean =
         when (provider) {
             LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
-            LlmProvider.CODEX -> false
+            LlmProvider.CODEX -> baseSettingsProvider.hasKey(provider)
             else -> baseSettingsProvider.hasKey(provider) || provider in (userManagedProviders ?: loadUserManagedProviders(userId))
         }
 

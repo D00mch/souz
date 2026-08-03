@@ -73,7 +73,7 @@ curl -X PATCH http://127.0.0.1:8080/v1/me/settings \
   -d '{"defaultModel":"gpt-5.2"}'
 ```
 
-`gpt-5.5` is the shared Codex GPT-5.5 alias, not an OpenAI API-key model. The backend currently removes the `CODEX` provider from advertised capabilities and does not build a backend chat client for Codex OAuth, so `{"defaultModel":"gpt-5.5"}` is not a supported Docker backend setup. Use an `OPENAI` provider alias such as `gpt-5.2`, `gpt-5-mini`, or `gpt-5-nano` with an OpenAI API key.
+Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` on the backend, then select a Codex alias such as `gpt-5.5` through the settings API. The per-user provider-key endpoint does not accept `codex`.
 
 ## Project structure
 
@@ -467,6 +467,10 @@ ANTHROPIC_API_KEY=...
 QWEN_KEY=...
 GIGA_KEY=...
 AITUNNEL_KEY=...
+CODEX_ACCESS_TOKEN=...
+CODEX_REFRESH_TOKEN=...
+CODEX_ACCOUNT_ID=...
+CODEX_EXPIRES_AT=... # Unix epoch seconds
 
 # Feature flags
 SOUZ_FEATURE_WS_EVENTS=true
@@ -561,7 +565,7 @@ Souz supports:
 
 Provider/model selection is key-aware: chat, embeddings, and voice-recognition model lists are filtered by configured provider keys or Codex OAuth state, and invalid saved selections are normalized to available providers.
 
-The backend supports API-key providers and local models for chat execution. Codex aliases are available to desktop/shared OAuth flows, but backend execution excludes the `CODEX` provider.
+The backend supports API-key providers, server-managed Codex OAuth models, and local models for chat execution. Per-user provider keys do not represent Codex OAuth sessions.
 
 ## Local models
 
