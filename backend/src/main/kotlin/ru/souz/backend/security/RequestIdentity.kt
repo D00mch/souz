@@ -41,9 +41,11 @@ val RequestIdentityPlugin = createApplicationPlugin(
 private fun ApplicationCall.isPublicClientContractRequest(): Boolean {
     val path = request.path()
     if (request.httpMethod == HttpMethod.Post && path == "/v1/chats") return true
-    return request.httpMethod == HttpMethod.Get &&
-        path.startsWith("/v1/chats/") &&
-        path.removePrefix("/v1/chats/").let { suffix -> suffix.endsWith("/ws") && '/' !in suffix.removeSuffix("/ws") }
+    if (request.httpMethod != HttpMethod.Get || !path.startsWith("/v1/chats/")) return false
+    val suffix = path.removePrefix("/v1/chats/")
+    if (suffix.endsWith("/ws") && '/' !in suffix.removeSuffix("/ws")) return true
+    val parts = suffix.split('/')
+    return parts.size == 3 && parts[1] == "threads" && parts.all { it.isNotBlank() }
 }
 
 fun ApplicationCall.requestIdentity(): RequestIdentity =

@@ -17,6 +17,7 @@ internal object BackendHttpRoutes {
     private const val PROVIDER_PARAMETER = "{provider}"
     private const val CHAT_ID_PARAMETER = "{chatId}"
     private const val EXECUTION_ID_PARAMETER = "{executionId}"
+    private const val THREAD_ID_PARAMETER = "{threadId}"
     private const val OPTION_ID_PARAMETER = "{optionId}"
 
     const val PROVIDER_KEY_PATTERN = "$PROVIDER_KEYS/$PROVIDER_PARAMETER"
@@ -27,6 +28,7 @@ internal object BackendHttpRoutes {
     const val CHAT_TELEGRAM_BOT_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/telegram-bot"
     const val CHAT_EVENTS_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/events"
     const val CHAT_WS_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/ws"
+    const val CHAT_THREAD_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/threads/$THREAD_ID_PARAMETER"
     const val CHAT_CANCEL_ACTIVE_PATTERN = "$CHATS/$CHAT_ID_PARAMETER/cancel-active"
     const val CHAT_EXECUTION_CANCEL_PATTERN =
         "$CHATS/$CHAT_ID_PARAMETER/executions/$EXECUTION_ID_PARAMETER/cancel"
@@ -47,6 +49,8 @@ internal object BackendHttpRoutes {
     fun chatEvents(chatId: Any): String = "$CHATS/$chatId/events"
 
     fun chatWebSocket(chatId: Any): String = "$CHATS/$chatId/ws"
+
+    fun chatThread(chatId: Any, threadId: Any): String = "$CHATS/$chatId/threads/$threadId"
 
     fun cancelActive(chatId: Any): String = "$CHATS/$chatId/cancel-active"
 

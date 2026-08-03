@@ -15,7 +15,9 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
+import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.BackendV1Exception
@@ -55,6 +57,12 @@ internal class PublicClientService(
             throw ClientContractException("invalid_request", "clientType does not match the chat.")
         }
         return chat
+    }
+
+    suspend fun threadStatus(chat: Chat, threadId: UUID, now: Instant = Instant.now()): PublicThreadStatusResponse {
+        val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
+            ?: throw ClientContractException("thread_not_found", "Thread not found.")
+        return execution.toPublicThreadStatus(chat.id, now)
     }
 
     suspend fun handleMessage(chat: Chat, frame: MessageSubmitFrame): HandledClientFrame =
@@ -411,6 +419,27 @@ internal class PublicClientService(
             },
         )
 
+    private fun AgentExecution.toPublicThreadStatus(chatId: UUID, now: Instant): PublicThreadStatusResponse {
+        val active = status.isActive()
+        val leaseAlive = runtimeLeaseUntil?.let { it.isAfter(now) } ?: true
+        val alive = active && leaseAlive
+        return PublicThreadStatusResponse(
+            chatId = chatId.toString(),
+            threadId = id.toString(),
+            status = status.value,
+            alive = alive,
+            acceptsInput = status.isRunningThread() && alive,
+            revision = revision,
+            startedAt = startedAt.toString(),
+            finishedAt = finishedAt?.toString(),
+            runtimeLeaseExpiresAt = runtimeLeaseUntil?.toString(),
+            error = errorCode?.let { code ->
+                ClientError(code.toPublicClientErrorCode(), errorMessage ?: "Thread failed.")
+            },
+            observedAt = now.toString(),
+        )
+    }
+
     private fun terminalToolResult(
         chatId: UUID,
         threadId: UUID,
@@ -505,3 +534,19 @@ private fun String.toToolCallStatus(): ToolCallStatus = when (this) {
 
 private fun AgentExecutionStatus.isRunningThread(): Boolean =
     this == AgentExecutionStatus.QUEUED || this == AgentExecutionStatus.RUNNING
+
+private fun String.toPublicClientErrorCode(): String =
+    if (this in publicClientErrorCodes) this else "internal_error"
+
+private val publicClientErrorCodes = setOf(
+    "invalid_request",
+    "chat_not_found",
+    "thread_not_found",
+    "thread_already_terminal",
+    "tool_call_not_found",
+    "idempotency_conflict",
+    "feature_disabled",
+    "message_rejected",
+    "client_tool_timed_out",
+    "internal_error",
+)

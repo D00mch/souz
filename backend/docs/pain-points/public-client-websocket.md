@@ -6,7 +6,7 @@
 
 Accepted user inputs are `messages` with `inputSeq`, source, device, request ID, and request metadata. The execution keeps the latest revision and device JSON. Client tool calls are tool-backed Skills in the request-scoped catalog, so the Skills graph discovers them and invokes them through `RunSkillCommand`.
 
-The live registry owns only process-local runtime references, acknowledgement gates, and one pending client-tool waiter. A single coroutine mutex protects its state. Active public executions store a runtime owner and renewable lease in PostgreSQL. Terminal entries remain until the runtime is detached and pending acknowledgements and tool work are clear, then they are discarded. Disconnect does not cancel a waiter. Before the server accepts connections, startup recovery fails expired public thread leases and emits or retries the required `thread.failed`; it does not reconstruct waiters.
+The live registry owns only process-local runtime references, acknowledgement gates, and one pending client-tool waiter. A single coroutine mutex protects its state. Active public executions store a runtime owner and renewable lease in PostgreSQL. Terminal entries remain until the runtime is detached and pending acknowledgements and tool work are clear, then they are discarded. Disconnect does not cancel a waiter. Before the server accepts connections, startup recovery fails expired public thread leases and emits or retries the required `thread.failed`; it does not reconstruct waiters. Public `thread.status` frames and `GET /v1/chats/{chatId}/threads/{threadId}` read durable execution state and are not replay events.
 
 ## Why it is fragile
 
@@ -18,6 +18,7 @@ An acknowledgement, tool event, runtime mailbox, and terminal state can race. Se
 - Serialize the shared `message.submit` and `thread.cancel` receipt check and acceptance in the single backend process.
 - Serialize input acceptance with terminal persistence. Commit the message and revision only when `submitToActiveRun` accepts it; release its event gate only after the acknowledgement is sent.
 - Persist a tool result before acknowledging it; complete the suspended Skill only after sending the acknowledgement.
+- Send live `thread.status` feedback after accepted submit/cancel acknowledgements without adding it to durable replay.
 - Persist pending client tool calls as cancelled before propagating thread cancellation.
 - Refresh public thread runtime leases while the process owns the live runtime. Recovery must only fail expired leases or already failed recovered threads missing their terminal event.
 - Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate either hardcoded Skill.

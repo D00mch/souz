@@ -37,6 +37,7 @@ import ru.souz.backend.client.ThreadCancelFrame
 import ru.souz.backend.client.ToolResultAck
 import ru.souz.backend.client.ToolResultFrame
 import ru.souz.backend.client.supportedClientTypes
+import ru.souz.backend.client.toStatusFrame
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
@@ -169,6 +170,7 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
                             break
                         }
                         sendJson(handled.response)
+                        sendStatusFeedback(clientService, chat, handled.response, ::sendJson)
                         handled.afterSend()
                     }
                 } finally {
@@ -216,6 +218,26 @@ private suspend fun handleClientFrame(
     } catch (error: ClientContractException) {
         rejectedFor(node, chat.id, kind, error.code, error.message)
     }
+}
+
+private suspend fun sendStatusFeedback(
+    service: PublicClientService,
+    chat: ru.souz.backend.chat.model.Chat,
+    response: Any,
+    sendJson: suspend (Any) -> Unit,
+) {
+    val requestAndThread = when (response) {
+        is ru.souz.backend.client.AcceptedMessageAck ->
+            response.requestId to runCatching { UUID.fromString(response.thread.id) }.getOrNull()
+        is ThreadCancelAck ->
+            response.requestId.takeIf { response.status == "accepted" } to
+                runCatching { UUID.fromString(response.threadId) }.getOrNull()
+        else -> null to null
+    }
+    val requestId = requestAndThread.first ?: return
+    val threadId = requestAndThread.second ?: return
+    val status = runCatching { service.threadStatus(chat, threadId).toStatusFrame(requestId) }.getOrNull() ?: return
+    sendJson(status)
 }
 
 private fun <T> decodeClientFrame(node: JsonNode, type: Class<T>): T = try {

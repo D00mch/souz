@@ -24,6 +24,7 @@ POST /v1/chats {userId, requestId, clientType} -> chatId
 connect /v1/chats/{chatId}/ws?clientType=...
 client -> souz: message.submit
 souz -> client: ack with threadId, inputSeq, revision
+souz -> client: status with current thread liveness
 souz -> client: tool.call.started
 client -> souz: tool.result
 souz -> client: tool result ack
@@ -48,6 +49,8 @@ Success response:
 
 Create-chat idempotency is scoped by `(userId, requestId)`, where `userId` comes from the JSON body. The normalized payload includes `clientType` and `title`. Same key and payload returns the same chat with `duplicate = true`; same key with different payload returns `409 idempotency_conflict`.
 
+`GET /v1/chats/{chatId}/threads/{threadId}?clientType=...` returns the current durable status for a public thread. Use it as a liveness probe when a socket is disconnected, when no event has arrived within the client's expected window, or when an idempotent retry returns a stored acknowledgement. The response includes `status`, `alive`, `acceptsInput`, `revision`, timestamps, runtime lease expiry, and terminal `error` when present.
+
 ## WebSocket
 
 Route: `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`
@@ -63,6 +66,7 @@ Client frames:
 Souz frames:
 
 - `ack`: acknowledgement for accepted or rejected client frames.
+- `status` with `type = thread.status`: live-only current thread status sent after accepted `message.submit` and `thread.cancel` acknowledgements. This frame is not durable and is not replayed.
 - `event` with `type = tool.call.started`: includes `threadId`, `toolCallId`, `target`, `name`, `arguments`, optional `deviceId`, and optional `deadlineAt`.
 - terminal `event` with `type = thread.completed | thread.failed | thread.cancelled`.
 
@@ -90,6 +94,10 @@ Souz-to-Client acknowledgements:
 - `AcceptedThreadCancelAck`: `{kind: "ack", chatId, requestId, threadId, status: "accepted", duplicate, error: null, receivedAt}`.
 - `RejectedThreadCancelAck`: `{kind: "ack", chatId, requestId, threadId, status: "rejected", duplicate, error, receivedAt}`.
 
+Souz-to-Client live status:
+
+- `ThreadStatusFrame`: `{kind: "status", type: "thread.status", chatId, threadId, requestId, status, alive, acceptsInput, revision, startedAt, finishedAt, runtimeLeaseExpiresAt, error, observedAt}`.
+
 Souz-to-Client events:
 
 - `ToolCallStartedEvent`: `{kind: "event", seq, type: "tool.call.started", chatId, threadId, payload, createdAt}`.
@@ -109,7 +117,7 @@ The first accepted `message.submit` creates a thread. The acknowledgement return
 - `thread.status = running`.
 - `thread.revision`: latest accepted input sequence.
 
-Additional accepted submissions to a running thread append to its input log. The agent must observe every committed input before terminal state. A public `thread.started` event is not emitted because the first ack carries that state.
+Additional accepted submissions to a running thread append to its input log. The agent must observe every committed input before terminal state. A public `thread.started` event is not emitted because the first ack carries that state; live `thread.status` frames provide immediate non-replayable feedback.
 
 Each thread has exactly one terminal event. If completion and cancellation race, first persisted terminal state wins. If `message.submit` commits before terminal, terminal output must account for it; if terminal commits first, the submission is rejected with `thread_already_terminal`.
 

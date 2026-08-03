@@ -68,7 +68,9 @@ class BackendOpenApiTest {
 
             operations(document).forEach { (path, method, operation) ->
                 val publicClientCreate = path == "/v1/chats" && method == "post"
-                if (path.startsWith("/v1/") && !publicClientCreate) {
+                val publicClientThreadStatus =
+                    path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get"
+                if (path.startsWith("/v1/") && !publicClientCreate && !publicClientThreadStatus) {
                     val security = assertNotNull(operation["security"])
                     assertEquals(1, security.size())
                     assertEquals(
@@ -81,7 +83,7 @@ class BackendOpenApiTest {
                     assertTrue(operation["responses"].has("500"), "$path must document internal failures")
                 } else {
                     assertNull(operation["security"], "$path must remain public")
-                    if (publicClientCreate) {
+                    if (publicClientCreate || publicClientThreadStatus) {
                         assertFalse(operation["responses"].has("401"))
                         assertTrue(operation["responses"].has("500"))
                     }
@@ -372,8 +374,8 @@ class BackendOpenApiTest {
         }
 
         assertEquals(expected, actual)
-        assertEquals(if (telegramEnabled) 18 else 17, actual.size)
-        assertEquals(if (telegramEnabled) 24 else 21, actual.values.sumOf(Set<String>::size))
+        assertEquals(if (telegramEnabled) 19 else 18, actual.size)
+        assertEquals(if (telegramEnabled) 25 else 22, actual.values.sumOf(Set<String>::size))
         assertFalse(actual.containsKey(BackendHttpRoutes.DOCS))
         assertFalse(actual.containsKey(BackendHttpRoutes.OPENAPI_DOCUMENT))
         assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
@@ -472,6 +474,7 @@ class BackendOpenApiTest {
                 "/v1/me/provider-keys" to setOf("get"),
                 "/v1/me/provider-keys/{provider}" to setOf("put", "delete"),
                 "/v1/chats" to setOf("get", "post"),
+                "/v1/chats/{chatId}/threads/{threadId}" to setOf("get"),
                 "/v1/chats/{chatId}/title" to setOf("patch"),
                 "/v1/chats/{chatId}/archive" to setOf("post"),
                 "/v1/chats/{chatId}/unarchive" to setOf("post"),
@@ -502,6 +505,10 @@ class BackendOpenApiTest {
                 "createClientChat" to OperationExpectation(
                     "Chats",
                     setOf("200", "201", "400", "409", "500"),
+                ),
+                "getClientThreadStatus" to OperationExpectation(
+                    "Chats",
+                    setOf("200", "400", "404", "500"),
                 ),
                 "updateChatTitle" to v1Expectation("Chats", "200", "400", "404"),
                 "archiveChat" to v1Expectation("Chats", "200", "400", "404"),
