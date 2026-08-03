@@ -12,6 +12,8 @@ The live registry owns only process-local runtime references, acknowledgement ga
 
 An acknowledgement, tool event, runtime mailbox, and terminal state can race. Sending an event before its causal acknowledgement, accepting input after terminal state, or completing a waiter before the tool-result acknowledgement makes the wire trace contradictory even with one pod.
 
+The client-Skill projection does not pass filesystem bundles through `SkillApprovalGate`. Any user-scoped bundle that declares `souz.transport: client-websocket` is promoted to an enabled compiled tool, its `SKILL.md` body becomes the tool description, and compiled-tool precedence bypasses file-backed approval during discovery and invocation. This is an accepted trust boundary only while production client-Skill bundles are selected and reviewed manually before entering the backend registry.
+
 ## Safe-change guidance
 
 - Keep strict JSON decoding and reject unknown fields.
@@ -23,6 +25,7 @@ An acknowledgement, tool event, runtime mailbox, and terminal state can race. Se
 - Refresh public thread runtime leases while the process owns the live runtime. Recovery must only fail expired leases or already failed recovered threads missing their terminal event.
 - Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate client operations.
 - Keep client Skills in their relevant request-scoped catalog categories rather than adding them to the Skills graph core-tool list. Define client transport metadata and operation payloads in `SKILL.md`, not Kotlin tool definitions.
+- Do not allow arbitrary user-installed bundles to declare the client WebSocket transport in production. If that deployment constraint changes, approve each current bundle before adding it to the compiled catalog or keep it on the approval-gated file-backed path.
 - Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
 
 ## Verification
