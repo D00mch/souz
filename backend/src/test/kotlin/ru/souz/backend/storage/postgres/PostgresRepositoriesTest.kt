@@ -35,6 +35,8 @@ import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionStatus
 import ru.souz.backend.options.repository.OptionAnswerUpdateResult
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.ExecutionCancelledPayload
+import ru.souz.backend.events.model.ExecutionFinishedPayload
 import ru.souz.backend.events.model.ThreadCompletedPayload
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
@@ -403,6 +405,22 @@ class PostgresRepositoriesTest {
                 payload = ru.souz.backend.events.model.ThreadCancelledPayload("user_requested"),
             )
             assertEquals(firstTerminal.id, repeatedTerminal.id)
+
+            val firstExecutionTerminal = eventService.appendDurable(
+                userId = userId,
+                chatId = chat.id,
+                executionId = execution.id,
+                type = AgentEventType.EXECUTION_FINISHED,
+                payload = ExecutionFinishedPayload(execution.id, status = "succeeded"),
+            )
+            val repeatedExecutionTerminal = eventService.appendDurable(
+                userId = userId,
+                chatId = chat.id,
+                executionId = execution.id,
+                type = AgentEventType.EXECUTION_CANCELLED,
+                payload = ExecutionCancelledPayload(execution.id),
+            )
+            assertEquals(firstExecutionTerminal.id, repeatedExecutionTerminal.id)
         }
     }
 
