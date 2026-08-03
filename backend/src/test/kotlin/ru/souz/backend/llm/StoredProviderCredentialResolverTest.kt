@@ -2,6 +2,7 @@ package ru.souz.backend.llm
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.keys.service.UserProviderKeyService
@@ -17,6 +18,9 @@ class StoredProviderCredentialResolverTest {
         val resolver = StoredProviderCredentialResolver(
             baseSettingsProvider = TestSettingsProvider().apply {
                 codexAccessToken = "server-codex-token"
+                codexRefreshToken = "server-codex-refresh-token"
+                codexAccountId = "server-codex-account-id"
+                codexExpiresAt = 1_800_000_000L
             },
             userProviderKeyService = keyService,
         )
@@ -25,5 +29,17 @@ class StoredProviderCredentialResolverTest {
 
         assertEquals("server-codex-token", credential?.apiKey)
         assertEquals(CredentialSource.SERVER_MANAGED, credential?.source)
+    }
+
+    @Test
+    fun `Codex does not resolve an incomplete server managed OAuth credential`() = runTest {
+        val resolver = StoredProviderCredentialResolver(
+            baseSettingsProvider = TestSettingsProvider().apply {
+                codexAccessToken = "server-codex-token"
+            },
+            userProviderKeyService = UserProviderKeyService(MemoryUserProviderKeyRepository(), "test-master-key"),
+        )
+
+        assertNull(resolver.resolve("user-a", LlmProvider.CODEX))
     }
 }

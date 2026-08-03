@@ -2,6 +2,7 @@ package ru.souz.backend.bootstrap
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.spi.AgentToolCatalog
@@ -71,6 +72,9 @@ class BackendBootstrapServiceTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "en"
             codexAccessToken = "server-codex-access-token"
+            codexRefreshToken = "server-codex-refresh-token"
+            codexAccountId = "server-codex-account-id"
+            codexExpiresAt = 1_800_000_000L
         }
         val providerKeyRepository = CountingUserProviderKeyRepository(
             keys = listOf(
@@ -105,6 +109,36 @@ class BackendBootstrapServiceTest {
         assertTrue(codexCapabilities.all { it.serverManagedKey })
         assertTrue(codexCapabilities.none { it.userManagedKey })
         assertEquals(LLMModel.CodexGpt54.alias, response.settings.defaultModel)
+    }
+
+    @Test
+    fun `bootstrap hides Codex when server managed OAuth is incomplete`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            codexAccessToken = "server-codex-access-token"
+            openaiKey = "server-openai-key"
+        }
+        val providerKeyRepository = CountingUserProviderKeyRepository(emptyList())
+        val bootstrapService = BackendBootstrapService(
+            settingsProvider = settingsProvider,
+            effectiveSettingsResolver = EffectiveSettingsResolver(
+                baseSettingsProvider = settingsProvider,
+                userSettingsRepository = MemoryUserSettingsRepository(),
+                userProviderKeyRepository = providerKeyRepository,
+                featureFlags = BackendFeatureFlags(),
+                toolCatalog = testToolCatalog(),
+                localModelAvailability = unavailableLocalModels(),
+            ),
+            toolCatalog = testToolCatalog(),
+            featureFlags = BackendFeatureFlags(),
+            localModelAvailability = unavailableLocalModels(),
+            userProviderKeyRepository = providerKeyRepository,
+        )
+
+        val response = bootstrapService.response(RequestIdentity(userId = "user-a"))
+
+        assertFalse(response.capabilities.models.any { it.provider == "codex" })
+        assertEquals(LLMModel.OpenAIGpt5Nano.alias, response.settings.defaultModel)
     }
 
     private fun testToolCatalog(): AgentToolCatalog =

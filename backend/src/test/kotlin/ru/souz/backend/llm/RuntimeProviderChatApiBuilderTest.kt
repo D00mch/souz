@@ -17,7 +17,9 @@ class RuntimeProviderChatApiBuilderTest {
     fun `builder creates backend Codex chat API`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             codexAccessToken = "server-codex-token"
+            codexRefreshToken = "server-codex-refresh-token"
             codexAccountId = "account-id"
+            codexExpiresAt = 1_800_000_000L
         }
         val api = RuntimeProviderChatApiBuilder(
             tokenLogging = NoopTokenLogging,

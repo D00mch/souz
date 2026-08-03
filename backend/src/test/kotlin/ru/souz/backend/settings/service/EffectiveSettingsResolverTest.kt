@@ -134,6 +134,9 @@ class EffectiveSettingsResolverTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "en"
             codexAccessToken = "server-codex-access-token"
+            codexRefreshToken = "server-codex-refresh-token"
+            codexAccountId = "server-codex-account-id"
+            codexExpiresAt = 1_800_000_000L
             openaiKey = null
             anthropicKey = null
             qwenChatKey = null
@@ -149,6 +152,28 @@ class EffectiveSettingsResolverTest {
         val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
 
         assertEquals(LLMModel.CodexGpt55, effective.defaultModel)
+    }
+
+    @Test
+    fun `resolver rejects Codex model with incomplete server managed OAuth access`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            codexAccessToken = "server-codex-access-token"
+            openaiKey = "server-openai-key"
+            anthropicKey = null
+            qwenChatKey = null
+        }
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.CodexGpt55,
+            )
+        )
+
+        val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
+
+        assertEquals(LLMModel.OpenAIGpt5Nano, effective.defaultModel)
     }
 
     @Test

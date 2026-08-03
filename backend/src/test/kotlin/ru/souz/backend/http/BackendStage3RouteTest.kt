@@ -255,6 +255,9 @@ class BackendStage3RouteTest {
                 regionProfile = "en"
                 anthropicKey = "anthropic-key"
                 codexAccessToken = "codex-token"
+                codexRefreshToken = "codex-refresh-token"
+                codexAccountId = "codex-account-id"
+                codexExpiresAt = 1_800_000_000L
             }
         )
         application {

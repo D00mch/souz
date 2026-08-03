@@ -29,6 +29,7 @@ class StoredProviderCredentialResolver(
             LlmProvider.OPENAI -> baseSettingsProvider.openaiKey
             LlmProvider.LOCAL -> null
             LlmProvider.CODEX -> baseSettingsProvider.codexAccessToken
+                .takeIf { baseSettingsProvider.hasCompleteCodexOAuthCredentials() }
         }
         return serverManaged
             ?.takeIf { it.isNotBlank() }
