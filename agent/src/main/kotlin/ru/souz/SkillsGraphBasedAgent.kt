@@ -111,6 +111,9 @@ class SkillsGraphBasedAgent internal constructor(
     override suspend fun submitToActiveRun(input: String): Boolean =
         activeRun.value?.submit(input) ?: false
 
+    override suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
+        activeRun.value?.submitAfter(input, beforePublish) ?: false
+
     override suspend fun execute(ctx: AgentContext<String>): String =
         executeWithTrace(ctx).output
 

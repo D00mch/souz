@@ -570,7 +570,7 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `accepted input commit failure propagates and clears its acknowledgement`() = runBlocking {
+    fun `accepted input commit failure propagates without publishing input and clears its acknowledgement`() = runBlocking {
         val api = GateControlledChatApi()
         val context = publicContext(api)
         val userId = UUID.randomUUID().toString()
@@ -597,7 +597,9 @@ class BackendPublicClientContractRouteTest {
         }
 
         assertEquals("commit failed", failure.message)
-        api.awaitStarted("Второе сообщение")
+        assertFailsWith<kotlinx.coroutines.TimeoutCancellationException> {
+            withTimeout(200) { api.awaitStarted("Второе сообщение") }
+        }
         withTimeout(200) {
             context.clientThreadRegistry.awaitAcceptedInputAcks(threadId)
         }

@@ -124,6 +124,9 @@ internal class BackendConversationRuntime(
 
     internal suspend fun submitToActiveRun(input: String): Boolean =
         executor.submitToActiveRun(activeAgentId, input)
+
+    internal suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
+        executor.submitToActiveRunAfter(activeAgentId, input, beforePublish)
 }
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */

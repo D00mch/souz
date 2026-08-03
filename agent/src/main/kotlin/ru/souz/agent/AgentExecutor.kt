@@ -23,6 +23,13 @@ class AgentExecutor internal constructor(
     suspend fun submitToActiveRun(agentId: AgentId, input: String): Boolean =
         agentById(agentId).submitToActiveRun(input)
 
+    /** Publishes input only after the selected agent keeps its run open and [beforePublish] succeeds. */
+    suspend fun submitToActiveRunAfter(
+        agentId: AgentId,
+        input: String,
+        beforePublish: suspend () -> Boolean,
+    ): Boolean = agentById(agentId).submitToActiveRunAfter(input, beforePublish)
+
     suspend fun execute(
         agentId: AgentId,
         context: AgentContext<String>,

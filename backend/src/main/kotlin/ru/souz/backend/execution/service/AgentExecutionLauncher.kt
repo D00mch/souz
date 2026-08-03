@@ -1,6 +1,7 @@
 package ru.souz.backend.execution.service
 
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -97,17 +98,45 @@ internal class AgentExecutionLauncher(
         val repository = executionRepository ?: return null
         val registry = clientThreadRegistry ?: return null
         if (!registry.contains(execution.id)) return null
+        val owner = registry.runtimeOwner
         return executionScope.launch {
+            var leaseExpiresAt = execution.runtimeLeaseUntil ?: ClientThreadRuntimeRegistry.leaseUntil()
             while (isActive) {
                 delay(leaseRefreshInterval.toMillis())
-                runCatching {
-                    repository.refreshClientThreadLease(
+                if (!Instant.now().isBefore(leaseExpiresAt)) {
+                    activeJobs.cancel(
+                        execution.id,
+                        reason = "Client thread runtime lease expired before it could be renewed.",
+                    )
+                    return@launch
+                }
+                try {
+                    val nextLeaseUntil = ClientThreadRuntimeRegistry.leaseUntil()
+                    val refreshed = repository.refreshClientThreadLease(
                         userId = execution.userId,
                         chatId = execution.chatId,
                         executionId = execution.id,
-                        runtimeOwner = registry.runtimeOwner,
-                        leaseUntil = ClientThreadRuntimeRegistry.leaseUntil(),
+                        runtimeOwner = owner,
+                        leaseUntil = nextLeaseUntil,
                     )
+                    if (refreshed == null) {
+                        activeJobs.cancel(
+                            execution.id,
+                            reason = "Client thread runtime lease is no longer owned by this execution.",
+                        )
+                        return@launch
+                    }
+                    leaseExpiresAt = refreshed.runtimeLeaseUntil ?: nextLeaseUntil
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    if (!Instant.now().isBefore(leaseExpiresAt)) {
+                        activeJobs.cancel(
+                            execution.id,
+                            reason = "Client thread runtime lease refresh failed until the lease expired.",
+                        )
+                        return@launch
+                    }
                 }
             }
         }

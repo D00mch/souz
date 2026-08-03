@@ -107,17 +107,17 @@ internal class ClientThreadRuntimeRegistry(
         if (!canAccept()) return@withLock null
         val pendingAck = state.pendingAcks.getOrPut(requestId) { CompletableDeferred() }
         try {
-            if (!runtime.submitToActiveRun(input)) {
-                clearAck(threadId, state, requestId, pendingAck)
-                return@withLock null
+            var committed: T? = null
+            val accepted = runtime.submitToActiveRunAfter(input) {
+                committed = commit()
+                committed != null
             }
-            val result = commit()
-            if (result == null) {
+            if (!accepted) {
                 clearAck(threadId, state, requestId, pendingAck)
                 return@withLock null
             }
             state.latestDevice = device
-            result
+            committed
         } catch (error: Exception) {
             clearAck(threadId, state, requestId, pendingAck)
             throw error
