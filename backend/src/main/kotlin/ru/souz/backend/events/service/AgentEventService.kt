@@ -38,7 +38,7 @@ class AgentEventService(
             id = id,
             createdAt = createdAt,
         )
-        eventBus.publish(event)
+        event.takeIf { it.id == id }?.let { eventBus.publish(it) }
         return event
     }
 
