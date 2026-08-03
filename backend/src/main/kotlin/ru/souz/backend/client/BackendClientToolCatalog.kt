@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -23,65 +24,66 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
-internal const val USER_ASK_SKILL = "user.ask"
-internal const val DEVICE_MEDIA_OPEN_SKILL = "device.media.open"
-internal val CLIENT_SKILL_NAMES = setOf(USER_ASK_SKILL, DEVICE_MEDIA_OPEN_SKILL)
+internal class BackendClientToolCatalogFactory(
+    private val skillRegistryRepository: SkillRegistryRepository,
+    private val registry: ClientThreadRuntimeRegistry,
+    private val toolCallRepository: ToolCallRepository,
+    private val eventService: AgentEventService,
+    private val now: () -> Instant = Instant::now,
+) {
+    suspend fun create(userId: String): AgentToolCatalog {
+        val skills = skillRegistryRepository.listSkills(userId).mapNotNull { storedSkill ->
+            if (storedSkill.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] != CLIENT_SKILL_TRANSPORT) {
+                return@mapNotNull null
+            }
+            val bundle = requireNotNull(skillRegistryRepository.loadSkillBundle(userId, storedSkill.skillId)) {
+                "Missing client Skill bundle: ${storedSkill.skillId.value}"
+            }
+            ClientSkillDefinition(
+                name = storedSkill.skillId.value,
+                category = storedSkill.manifest.clientCategory(),
+                timeout = storedSkill.manifest.clientTimeout(),
+                description = "${storedSkill.manifest.description}\n\n${bundle.skillMarkdownBody}",
+            )
+        }
+        return BackendClientToolCatalog(
+            skills = skills,
+            registry = registry,
+            toolCallRepository = toolCallRepository,
+            eventService = eventService,
+            now = now,
+        )
+    }
+}
 
-internal class BackendClientToolCatalog(
+private class BackendClientToolCatalog(
+    skills: List<ClientSkillDefinition>,
     registry: ClientThreadRuntimeRegistry,
     toolCallRepository: ToolCallRepository,
     eventService: AgentEventService,
-    now: () -> Instant = Instant::now,
+    now: () -> Instant,
 ) : AgentToolCatalog {
-    private val ask = ClientToolSetup(
-        name = USER_ASK_SKILL,
-        description = "Ask the user a short clarification question and wait for their answer.",
-        parameters = LLMRequest.Parameters(
-            type = "object",
-            properties = mapOf("question" to LLMRequest.Property("string", "Question shown to the user.")),
-            required = listOf("question"),
-        ),
-        timeout = Duration.ofMinutes(5),
-        registry = registry,
-        toolCallRepository = toolCallRepository,
-        eventService = eventService,
-        now = now,
-    )
-    private val mediaOpen = ClientToolSetup(
-        name = DEVICE_MEDIA_OPEN_SKILL,
-        description = "Open media on the user's latest device and wait for the device result.",
-        parameters = LLMRequest.Parameters(
-            type = "object",
-            properties = mapOf(
-                "query" to LLMRequest.Property("string", "Media title or search query."),
-                "genre" to LLMRequest.Property("string", "Optional media genre."),
-            ),
-            required = listOf("query"),
-        ),
-        timeout = Duration.ofMinutes(1),
-        registry = registry,
-        toolCallRepository = toolCallRepository,
-        eventService = eventService,
-        now = now,
-    )
-
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
-        ToolCategory.CHAT to mapOf(ask.fn.name to ask),
-        ToolCategory.APPLICATIONS to mapOf(mediaOpen.fn.name to mediaOpen),
-    )
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = skills
+        .groupBy { it.category }
+        .mapValues { (_, skills) ->
+            skills.associate { skill ->
+                skill.name to ClientWebSocketSkill(skill, registry, toolCallRepository, eventService, now)
+            }
+        }
 }
 
-private class ClientToolSetup(
-    name: String,
-    description: String,
-    parameters: LLMRequest.Parameters,
-    private val timeout: Duration,
+private class ClientWebSocketSkill(
+    private val skill: ClientSkillDefinition,
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val now: () -> Instant,
 ) : LLMToolSetup {
-    override val fn = LLMRequest.Function(name = name, description = description, parameters = parameters)
+    override val fn = LLMRequest.Function(
+        name = skill.name,
+        description = skill.description,
+        parameters = LLMRequest.Parameters("object"),
+    )
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
         errorMessage(functionCall.name, "client_context_missing", "Client tool context is unavailable.")
@@ -104,7 +106,7 @@ private class ClientToolSetup(
             is BeginClientToolResult.Started -> beginTool.device
         }
         val startedAt = now()
-        val deadlineAt = startedAt.plus(timeout)
+        val deadlineAt = startedAt.plus(skill.timeout)
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments)
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
         var clientCallStarted = false
@@ -230,4 +232,24 @@ private class ClientToolSetup(
             content = restJsonMapper.writeValueAsString(mapOf("error" to ClientError(code, message))),
             name = functionName,
         )
+}
+
+private data class ClientSkillDefinition(
+    val name: String,
+    val category: ToolCategory,
+    val timeout: Duration,
+    val description: String,
+)
+
+private fun ru.souz.agent.skills.bundle.SkillManifest.clientCategory(): ToolCategory {
+    val raw = metadata[CLIENT_SKILL_CATEGORY_METADATA]?.trim().orEmpty()
+    return ToolCategory.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        ?: error("Client Skill $name has an invalid metadata.$CLIENT_SKILL_CATEGORY_METADATA: $raw")
+}
+
+private fun ru.souz.agent.skills.bundle.SkillManifest.clientTimeout(): Duration {
+    val raw = metadata[CLIENT_SKILL_TIMEOUT_METADATA]?.trim().orEmpty()
+    return runCatching { Duration.parse(raw) }.getOrNull()
+        ?.takeIf { !it.isZero && !it.isNegative }
+        ?: error("Client Skill $name has an invalid metadata.$CLIENT_SKILL_TIMEOUT_METADATA: $raw")
 }
