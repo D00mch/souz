@@ -131,8 +131,18 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
         }
         val stream = eventService.openPublicStream(chat.userId, chat.id, afterSeq)
         val sendMutex = Mutex()
+        suspend fun writeJson(value: Any) {
+            send(Frame.Text(publicWebSocketMapper.writeValueAsString(value)))
+        }
         suspend fun sendJson(value: Any) {
-            sendMutex.withLock { send(Frame.Text(publicWebSocketMapper.writeValueAsString(value))) }
+            sendMutex.withLock { writeJson(value) }
+        }
+        suspend fun sendHandledFrame(handled: HandledClientFrame) {
+            sendMutex.withLock {
+                writeJson(handled.response)
+                handled.afterSend()
+                sendStatusFeedback(clientService, chat, handled.response, ::writeJson)
+            }
         }
 
         try {
@@ -169,9 +179,7 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
                             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message ?: "Invalid frame."))
                             break
                         }
-                        sendJson(handled.response)
-                        handled.afterSend()
-                        sendStatusFeedback(clientService, chat, handled.response, ::sendJson)
+                        sendHandledFrame(handled)
                     }
                 } finally {
                     sender.cancelAndJoin()
