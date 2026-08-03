@@ -81,13 +81,7 @@ internal class PublicClientService(
             )
         )
         clientRequestRepository.get(chat.id, requestId)?.let { stored ->
-            if (stored.kind != frame.kind || stored.payloadHash != payloadHash) {
-                return rejectedMessage(chat.id, requestId, "idempotency_conflict", "requestId was used with a different payload.", now)
-            }
-            val original = mapper.readValue(stored.ackJson, AcceptedMessageAck::class.java)
-            return HandledClientFrame(original.copy(duplicate = true)) {
-                registry.ackSent(UUID.fromString(original.thread.id), requestId)
-            }
+            return handledStoredMessage(stored, frame, payloadHash, now, duplicate = true)
         }
         return if (threadId == null) {
             startThread(chat, frame, requestId, payloadHash, now)
@@ -246,14 +240,32 @@ internal class PublicClientService(
         val metadata = inputMetadata(frame, inputSeq = 1)
         val overrides = requestOverrides(frame.payload.meta)
         val threadId = UUID.randomUUID()
+        val ack = AcceptedMessageAck(
+            chatId = chat.id.toString(),
+            requestId = requestId,
+            duplicate = false,
+            submission = SubmissionAck(1),
+            thread = ThreadAck(threadId.toString(), created = true, revision = 1),
+            receivedAt = now.toString(),
+        )
+        val receipt = ClientRequest(
+            chat.id,
+            requestId,
+            frame.kind,
+            threadId,
+            payloadHash,
+            mapper.writeValueAsString(ack),
+            now,
+        )
         registry.register(threadId, frame.payload.device)
         registry.registerAck(threadId, requestId)
-        val result = try {
+        try {
             executionService.executeChatTurn(
                 userId = chat.userId,
                 chatId = chat.id,
                 content = frame.payload.content.text,
                 clientMessageId = requestId,
+                initialClientRequest = receipt,
                 requestOverrides = overrides,
                 executionId = threadId,
                 revision = 1,
@@ -263,26 +275,20 @@ internal class PublicClientService(
                 forceBackground = true,
             )
         } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                runCatching { reconcileFailedStart(chat.id, requestId, threadId) }
+            }
             throw error
         } catch (error: Exception) {
-            registry.ackSent(threadId, requestId)
-            registry.discard(threadId)
-            return rejectedMessage(chat.id, requestId, "message_rejected", error.message ?: "Message was rejected.", now)
+            val stored = runCatching { reconcileFailedStart(chat.id, requestId, threadId) }
+                .getOrElse { throw error }
+            return stored?.let { request ->
+                handledStoredMessage(request, frame, payloadHash, now, duplicate = request.threadId != threadId)
+            } ?: rejectedMessage(
+                chat.id, requestId, "message_rejected", error.message ?: "Message was rejected.", now
+            )
         }
-        val executionId = result.execution.id
-        if (executionId != threadId) registry.discard(threadId)
-        val ack = AcceptedMessageAck(
-            chatId = chat.id.toString(),
-            requestId = requestId,
-            duplicate = false,
-            submission = SubmissionAck(1),
-            thread = ThreadAck(executionId.toString(), created = true, revision = 1),
-            receivedAt = now.toString(),
-        )
-        clientRequestRepository.create(
-            ClientRequest(chat.id, requestId, frame.kind, executionId, payloadHash, mapper.writeValueAsString(ack), now)
-        )
-        return HandledClientFrame(ack) { registry.ackSent(executionId, requestId) }
+        return HandledClientFrame(ack) { registry.ackSent(threadId, requestId) }
     }
 
     private suspend fun continueThread(
@@ -470,6 +476,30 @@ internal class PublicClientService(
             throw ClientContractException("invalid_request", "content.source must be voice or text.")
         }
         content.text.required("content.text")
+    }
+
+    private fun handledStoredMessage(
+        stored: ClientRequest, frame: MessageSubmitFrame, payloadHash: String, now: Instant, duplicate: Boolean,
+    ): HandledClientFrame {
+        if (stored.kind != frame.kind || stored.payloadHash != payloadHash) {
+            return rejectedMessage(
+                stored.chatId, stored.requestId, "idempotency_conflict",
+                "requestId was used with a different payload.", now,
+            )
+        }
+        val original = mapper.readValue(stored.ackJson, AcceptedMessageAck::class.java)
+        return HandledClientFrame(original.copy(duplicate = duplicate)) {
+            registry.ackSent(UUID.fromString(original.thread.id), stored.requestId)
+        }
+    }
+
+    private suspend fun reconcileFailedStart(
+        chatId: UUID, requestId: String, threadId: UUID,
+    ): ClientRequest? = clientRequestRepository.get(chatId, requestId).also { stored ->
+        if (stored?.threadId != threadId) {
+            registry.ackSent(threadId, requestId)
+            registry.discard(threadId)
+        }
     }
 
     private fun rejectedMessage(chatId: UUID, requestId: String, code: String, message: String, now: Instant) =

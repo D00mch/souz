@@ -5,6 +5,11 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -13,11 +18,69 @@ import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.http.GateControlledChatApi
 import ru.souz.backend.http.routeTestContext
+import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
+import ru.souz.backend.testutil.repository.MemoryClientRequestRepository
 
 class PublicClientServiceTest {
     private val json = jacksonObjectMapper()
+
+    @Test
+    fun `initial receipt failure rejects without leaving an execution or acknowledgement`() = runBlocking {
+        val executionRepository = MemoryAgentExecutionRepository()
+        val clientRequestRepository = FailingClientRequestRepository()
+        val context = routeTestContext(
+            executionRepository = executionRepository,
+            clientRequestRepository = clientRequestRepository,
+        )
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val frame = json.treeToValue(
+            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Привет", "device-1")),
+            MessageSubmitFrame::class.java,
+        )
+
+        val handled = context.publicClientService.handleMessage(chat, frame)
+
+        val response = assertIs<RejectedMessageAck>(handled.response)
+        assertEquals("message_rejected", response.error.code)
+        assertNull(executionRepository.findActive(userId, chat.id))
+        val attemptedThreadId = assertNotNull(clientRequestRepository.attemptedExecutionId)
+        assertFalse(context.clientThreadRegistry.contains(attemptedThreadId))
+    }
+
+    @Test
+    fun `startup cancellation after atomic commit leaves a receipt that releases the acknowledgement on retry`() = runBlocking {
+        val executionRepository = MemoryAgentExecutionRepository()
+        val clientRequestRepository = CancellingAfterCommitClientRequestRepository(executionRepository)
+        val context = routeTestContext(
+            executionRepository = executionRepository,
+            clientRequestRepository = clientRequestRepository,
+        )
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val frame = json.treeToValue(
+            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Привет", "device-1")),
+            MessageSubmitFrame::class.java,
+        )
+
+        assertFailsWith<CancellationException> {
+            context.publicClientService.handleMessage(chat, frame)
+        }
+        val receipt = assertNotNull(clientRequestRepository.get(chat.id, "message-1"))
+        val threadId = assertNotNull(receipt.threadId)
+        assertNotNull(executionRepository.get(userId, threadId))
+        assertEquals(true, context.clientThreadRegistry.contains(threadId))
+
+        val retry = context.publicClientService.handleMessage(chat, frame)
+        val retryAck = assertIs<AcceptedMessageAck>(retry.response)
+        assertEquals(true, retryAck.duplicate)
+        retry.afterSend()
+        withTimeout(200) { context.clientThreadRegistry.awaitAcceptedInputAcks(threadId) }
+        context.clientThreadRegistry.discard(threadId)
+    }
 
     @Test
     fun `accepted input commit failure propagates without publishing input and clears its acknowledgement`() = runBlocking {
@@ -130,7 +193,36 @@ class PublicClientServiceTest {
 }
 
 private class FailingClientRequestRepository : ClientRequestRepository {
+    var attemptedExecutionId: UUID? = null
+        private set
+
     override suspend fun create(request: ClientRequest): ClientRequest = error("receipt failed")
 
+    override suspend fun createWithExecution(
+        execution: AgentExecution,
+        request: ClientRequest,
+    ): AgentExecution {
+        attemptedExecutionId = execution.id
+        error("receipt failed")
+    }
+
     override suspend fun get(chatId: UUID, requestId: String): ClientRequest? = null
+}
+
+private class CancellingAfterCommitClientRequestRepository(
+    executionRepository: MemoryAgentExecutionRepository,
+) : ClientRequestRepository {
+    private val delegate = MemoryClientRequestRepository(executionRepository)
+
+    override suspend fun create(request: ClientRequest): ClientRequest = delegate.create(request)
+
+    override suspend fun createWithExecution(
+        execution: AgentExecution,
+        request: ClientRequest,
+    ): AgentExecution {
+        delegate.createWithExecution(execution, request)
+        throw CancellationException("cancelled after commit")
+    }
+
+    override suspend fun get(chatId: UUID, requestId: String): ClientRequest? = delegate.get(chatId, requestId)
 }

@@ -56,6 +56,7 @@ import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
+import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -1215,7 +1216,7 @@ internal data class RouteTestContext(
     val userProviderKeyRepository: MemoryUserProviderKeyRepository,
     val chatRepository: MemoryChatRepository,
     val clientInputRepository: MemoryClientInputRepository,
-    val clientRequestRepository: MemoryClientRequestRepository,
+    val clientRequestRepository: ClientRequestRepository,
     val clientThreadRegistry: ClientThreadRuntimeRegistry,
     val messageRepository: MemoryMessageRepository,
     val executionRepository: AgentExecutionRepository,
@@ -1250,6 +1251,7 @@ internal fun routeTestContext(
     chatRepository: MemoryChatRepository = MemoryChatRepository(),
     messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
     executionRepository: AgentExecutionRepository = MemoryAgentExecutionRepository(),
+    clientRequestRepository: ClientRequestRepository? = null,
     optionRepository: MemoryOptionRepository = MemoryOptionRepository(),
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
     toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
@@ -1271,7 +1273,7 @@ internal fun routeTestContext(
         eventBus = AgentEventBus(),
     )
     val clientThreadRegistry = ClientThreadRuntimeRegistry()
-    val clientRequestRepository = MemoryClientRequestRepository()
+    val resolvedClientRequestRepository = clientRequestRepository ?: MemoryClientRequestRepository(executionRepository)
     val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
     val clientToolCatalogFactory = BackendClientToolCatalogFactory(
         registry = clientThreadRegistry,
@@ -1320,6 +1322,7 @@ internal fun routeTestContext(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
         executionRepository = executionRepository,
+        clientRequestRepository = resolvedClientRequestRepository,
         optionRepository = optionRepository,
         eventService = eventService,
         toolCallRepository = toolCallRepository,
@@ -1371,7 +1374,7 @@ internal fun routeTestContext(
         chatRepository = chatRepository,
         executionRepository = executionRepository,
         clientInputRepository = clientInputRepository,
-        clientRequestRepository = clientRequestRepository,
+        clientRequestRepository = resolvedClientRequestRepository,
         toolCallRepository = toolCallRepository,
         executionService = executionService,
         registry = clientThreadRegistry,
@@ -1384,7 +1387,7 @@ internal fun routeTestContext(
         userProviderKeyRepository = userProviderKeyRepository,
         chatRepository = chatRepository,
         clientInputRepository = clientInputRepository,
-        clientRequestRepository = clientRequestRepository,
+        clientRequestRepository = resolvedClientRequestRepository,
         clientThreadRegistry = clientThreadRegistry,
         messageRepository = messageRepository,
         executionRepository = executionRepository,

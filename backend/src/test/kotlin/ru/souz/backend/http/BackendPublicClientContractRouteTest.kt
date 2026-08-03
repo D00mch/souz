@@ -25,7 +25,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -35,7 +34,6 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
-import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.client.BackendClientToolCatalogFactory
 import ru.souz.backend.client.ClientContractException
@@ -299,26 +297,6 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `initial thread startup propagates cancellation without discarding registry state`() = runBlocking {
-        val executionRepository = CancellingCreateExecutionRepository()
-        val context = publicContext(executionRepository = executionRepository)
-        val userId = UUID.randomUUID().toString()
-        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
-        val frame = json.treeToValue(
-            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Привет", "device-1")),
-            MessageSubmitFrame::class.java,
-        )
-
-        assertFailsWith<CancellationException> {
-            context.publicClientService.handleMessage(chat, frame)
-        }
-
-        val execution = executionRepository.listByChat(userId, chat.id).single()
-        assertEquals(AgentExecutionStatus.QUEUED, execution.status)
-        assertTrue(context.clientThreadRegistry.contains(execution.id))
-    }
-
-    @Test
     fun `concurrent retries of the same message execute once`() = testApplication {
         val api = GateControlledChatApi()
         val context = publicContext(api)
@@ -365,52 +343,6 @@ class BackendPublicClientContractRouteTest {
             firstSession.close()
             secondSession.close()
         }
-    }
-
-    @Test
-    fun `start thread receipt uses the execution id returned by the service`() = runBlocking {
-        val context = publicContext()
-        val userId = UUID.randomUUID().toString()
-        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
-        val existingMessage = context.messageRepository.append(
-            userId = userId,
-            chatId = chat.id,
-            role = ChatRole.USER,
-            content = "Уже принято",
-        )
-        val existingExecution = context.executionRepository.create(
-            AgentExecution(
-                id = UUID.randomUUID(),
-                userId = userId,
-                chatId = chat.id,
-                userMessageId = existingMessage.id,
-                assistantMessageId = null,
-                status = AgentExecutionStatus.COMPLETED,
-                requestId = null,
-                clientMessageId = "message-1",
-                model = null,
-                provider = null,
-                startedAt = Instant.now(),
-                finishedAt = Instant.now(),
-                cancelRequested = false,
-                errorCode = null,
-                errorMessage = null,
-                usage = null,
-                metadata = emptyMap(),
-            )
-        )
-        val frame = json.treeToValue(
-            json.readTree(messageFrame(chat.id.toString(), userId, "message-1", null, "Повтор", "device-1")),
-            MessageSubmitFrame::class.java,
-        )
-
-        val handled = context.publicClientService.handleMessage(chat, frame)
-        val ack = json.valueToTree<com.fasterxml.jackson.databind.JsonNode>(handled.response)
-        val receipt = context.clientRequestRepository.get(chat.id, "message-1")
-
-        assertEquals(existingExecution.id.toString(), ack["thread"]["id"].asText())
-        assertEquals(existingExecution.id, receipt?.threadId)
-        handled.afterSend()
     }
 
     @Test
@@ -832,15 +764,6 @@ private data class ToolResultRaceFixture(
     val chat: Chat,
     val frame: ToolResultFrame,
 )
-
-private class CancellingCreateExecutionRepository(
-    private val delegate: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
-) : AgentExecutionRepository by delegate {
-    override suspend fun create(execution: AgentExecution): AgentExecution {
-        delegate.create(execution)
-        throw CancellationException("Initial execution startup was cancelled.")
-    }
-}
 
 private class LostCompletionRaceToolCallRepository(
     private val terminalPayloadHash: (String) -> String,

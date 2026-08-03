@@ -274,6 +274,7 @@ fun backendDiModule(
             chatRepository = instance(),
             messageRepository = instance(),
             executionRepository = instance(),
+            clientRequestRepository = instance(),
             optionRepository = instance(),
             eventService = instance(),
             toolCallRepository = instance(),

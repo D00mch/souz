@@ -10,6 +10,8 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
+import ru.souz.backend.client.model.ClientRequest
+import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
@@ -32,6 +34,7 @@ class AgentExecutionService internal constructor(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
     private val executionRepository: AgentExecutionRepository,
+    private val clientRequestRepository: ClientRequestRepository,
     private val optionRepository: OptionRepository,
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
@@ -44,6 +47,7 @@ class AgentExecutionService internal constructor(
         chatId: UUID,
         content: String,
         clientMessageId: String? = null,
+        initialClientRequest: ClientRequest? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
         executionId: UUID = UUID.randomUUID(),
         revision: Long = 1,
@@ -66,24 +70,27 @@ class AgentExecutionService internal constructor(
             clientToolsEnabled = clientToolsEnabled,
             forceBackground = forceBackground,
         )
-        prepared.normalizedClientMessageId?.let { normalizedClientMessageId ->
-            executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
-                ?.let { existingExecution ->
-                    val userMessageId = existingExecution.userMessageId
-                    val userMessage = userMessageId?.let { messageRepository.getById(userId, chatId, it) }
-                    if (userMessage != null) {
-                        val assistantMessage = existingExecution.assistantMessageId
-                            ?.let { messageRepository.getById(userId, chatId, it) }
-                        return@supervisorScope SendMessageResult(
-                            userMessage = userMessage,
-                            assistantMessage = assistantMessage,
-                            execution = existingExecution,
-                        )
+        prepared.normalizedClientMessageId
+            ?.takeIf { initialClientRequest == null }
+            ?.let { normalizedClientMessageId ->
+                executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
+                    ?.let { existingExecution ->
+                        val userMessageId = existingExecution.userMessageId
+                        val userMessage = userMessageId?.let { messageRepository.getById(userId, chatId, it) }
+                        if (userMessage != null) {
+                            val assistantMessage = existingExecution.assistantMessageId
+                                ?.let { messageRepository.getById(userId, chatId, it) }
+                            return@supervisorScope SendMessageResult(
+                                userMessage = userMessage,
+                                assistantMessage = assistantMessage,
+                                execution = existingExecution,
+                            )
+                        }
                     }
-                }
-        }
+            }
         val queuedExecution = try {
-            executionRepository.create(prepared.execution)
+            initialClientRequest?.let { clientRequestRepository.createWithExecution(prepared.execution, it) }
+                ?: executionRepository.create(prepared.execution)
         } catch (e: ActiveAgentExecutionConflictException) {
             throw BackendV1Exception(
                 status = HttpStatusCode.Conflict,

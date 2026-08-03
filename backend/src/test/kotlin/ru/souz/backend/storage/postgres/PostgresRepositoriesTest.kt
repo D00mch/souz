@@ -425,6 +425,52 @@ class PostgresRepositoriesTest {
     }
 
     @Test
+    fun `initial client receipt and execution commit atomically`() = runTest {
+        val schema = newPostgresSchema("postgres_initial_client_receipt")
+
+        postgresRepositories(schema).use { repositories ->
+            val chat = chat(UUID.randomUUID().toString(), Instant.parse("2026-05-01T10:00:00Z"))
+            repositories.userRepository.ensureUser(chat.userId)
+            repositories.chatRepository.create(chat)
+            val firstExecution = execution(
+                userId = chat.userId,
+                chatId = chat.id,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.COMPLETED,
+                startedAt = Instant.parse("2026-05-01T10:01:00Z"),
+            ).copy(userMessageId = null)
+            val firstRequest = ClientRequest(
+                chatId = chat.id,
+                requestId = "message-1",
+                kind = "message.submit",
+                threadId = firstExecution.id,
+                payloadHash = "payload-1",
+                ackJson = "{}",
+                receivedAt = Instant.parse("2026-05-01T10:01:00Z"),
+            )
+
+            repositories.clientRequestRepository.createWithExecution(firstExecution, firstRequest)
+
+            assertEquals(firstExecution, repositories.executionRepository.get(chat.userId, firstExecution.id))
+            assertEquals(firstRequest, repositories.clientRequestRepository.get(chat.id, firstRequest.requestId))
+
+            val rolledBackExecution = firstExecution.copy(
+                id = UUID.randomUUID(),
+                startedAt = Instant.parse("2026-05-01T10:02:00Z"),
+            )
+            assertFailsWith<Exception> {
+                repositories.clientRequestRepository.createWithExecution(
+                    rolledBackExecution,
+                    firstRequest.copy(threadId = rolledBackExecution.id),
+                )
+            }
+
+            assertNull(repositories.executionRepository.get(chat.userId, rolledBackExecution.id))
+            assertEquals(firstRequest, repositories.clientRequestRepository.get(chat.id, firstRequest.requestId))
+        }
+    }
+
+    @Test
     fun `chat repository updates title and archived fields`() = runTest {
         val schema = newPostgresSchema("postgres_chat_updates")
         val userId = "opaque/user:42@example.com"

@@ -13,6 +13,10 @@ class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
 ) : AgentExecutionRepository {
     override suspend fun create(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
+        insert(connection, execution)
+    }
+
+    internal fun insert(connection: java.sql.Connection, execution: AgentExecution): AgentExecution {
         try {
             connection.prepareStatement(
                 """
@@ -51,7 +55,7 @@ class PostgresAgentExecutionRepository(
             }
             throw error
         }
-        execution
+        return execution
     }
 
     override suspend fun update(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
