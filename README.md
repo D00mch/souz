@@ -73,7 +73,7 @@ curl -X PATCH http://127.0.0.1:8080/v1/me/settings \
   -d '{"defaultModel":"gpt-5.2"}'
 ```
 
-Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` on the backend, then select a Codex alias such as `gpt-5.5` through the settings API. The per-user provider-key endpoint does not accept `codex`.
+Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` on the backend, then select a Codex alias such as `gpt-5.5` through the settings API. Docker Compose keeps rotated OAuth credentials in the `backend-preferences` volume. Preserve that volume and use the same `SOUZ_MASTER_KEY` when recreating the backend container. The per-user provider-key endpoint does not accept `codex`.
 
 ## Project structure
 
