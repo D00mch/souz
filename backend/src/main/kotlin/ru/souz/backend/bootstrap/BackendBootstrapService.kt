@@ -4,6 +4,7 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.backendSafeToolNames
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
+import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.security.RequestIdentity
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.db.SettingsProvider
@@ -22,7 +23,8 @@ class BackendBootstrapService(
 ) {
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
         val buildProfile = LlmBuildProfile(settingsProvider, localModelAvailability)
-        val userManagedProviders = userProviderKeyRepository.list(identity.userId).map { it.provider }.toSet()
+        val userManagedProviders = userProviderKeyRepository.list(identity.userId)
+            .mapNotNullTo(linkedSetOf()) { key -> key.provider.takeUnless { it == LlmProvider.CODEX } }
         val effectiveSettings = effectiveSettingsResolver.resolve(
             userId = identity.userId,
             userManagedProviders = userManagedProviders,
@@ -33,7 +35,9 @@ class BackendBootstrapService(
             addAll(LlmProvider.entries.filter { provider ->
                 provider != LlmProvider.LOCAL && settingsProvider.hasKey(provider)
             })
-            remove(LlmProvider.CODEX)
+            if (!settingsProvider.hasCompleteCodexOAuthCredentials()) {
+                remove(LlmProvider.CODEX)
+            }
         }
         return BootstrapResponse(
             user = BootstrapUser(id = identity.userId),
@@ -82,6 +86,7 @@ class BackendBootstrapService(
     private fun hasServerManagedAccess(model: LLMModel): Boolean =
         when (model.provider) {
             LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
+            LlmProvider.CODEX -> settingsProvider.hasCompleteCodexOAuthCredentials()
             else -> settingsProvider.hasKey(model.provider)
         }
 

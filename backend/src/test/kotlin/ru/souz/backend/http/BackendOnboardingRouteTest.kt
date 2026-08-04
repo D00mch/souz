@@ -61,6 +61,7 @@ class BackendOnboardingRouteTest {
         assertTrue(payload["availableServerManagedProviders"].isArray)
         assertTrue(payload["availableUserManagedProviders"].isArray)
         assertTrue(payload["availableUserManagedProviders"].size() > 0)
+        assertFalse(payload["availableUserManagedProviders"].any { it["provider"].asText() == "codex" })
         assertEquals(32_000, payload["currentSettings"]["contextSize"].asInt())
         assertTrue(payload["currentSettings"].has("defaultModel"))
         assertTrue(payload["currentSettings"].has("systemPrompt"))

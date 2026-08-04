@@ -6,6 +6,8 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.anthropic.AnthropicChatAPI
+import ru.souz.llms.codex.CodexChatAPI
+import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
@@ -15,6 +17,7 @@ import ru.souz.llms.tunnel.AiTunnelChatAPI
 class RuntimeProviderChatApiBuilder(
     private val tokenLogging: TokenLogging,
     private val retryPolicy: BackendProviderRetryPolicy,
+    private val codexOAuthService: CodexOAuthService,
 ) : ProviderChatApiBuilder {
     override fun build(
         provider: LlmProvider,
@@ -29,7 +32,7 @@ class RuntimeProviderChatApiBuilder(
             LlmProvider.ANTHROPIC -> AnthropicChatAPI(settingsProvider, tokenLogging)
             LlmProvider.OPENAI -> OpenAIChatAPI(settingsProvider, tokenLogging)
             LlmProvider.LOCAL -> error("Local provider is handled separately.")
-            LlmProvider.CODEX -> error("Codex OAuth provider is not supported in the backend.")
+            LlmProvider.CODEX -> CodexChatAPI(settingsProvider, tokenLogging, codexOAuthService)
         }
         return RetryingLlmChatApi(
             delegate = api,

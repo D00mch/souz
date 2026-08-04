@@ -106,6 +106,33 @@ class BackendProviderKeysRouteTest {
     }
 
     @Test
+    fun `put provider key rejects Codex because backend OAuth is server managed`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                )
+            )
+        }
+
+        val response = client.put(BackendHttpRoutes.providerKey("codex")) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"apiKey":"short-lived-access-token"}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertNull(runBlocking { context.userProviderKeyRepository.get("user-a", LlmProvider.CODEX) })
+    }
+
+    @Test
     fun `delete provider key is scoped to current user`() = testApplication {
         val context = routeTestContext()
         runBlocking {
