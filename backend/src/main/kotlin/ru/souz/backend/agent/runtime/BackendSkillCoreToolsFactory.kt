@@ -1,6 +1,6 @@
 package ru.souz.backend.agent.runtime
 
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -12,7 +12,7 @@ import ru.souz.tool.skills.ToolRunSkillCommand
 
 /** Creates request-scoped skill tools for the backend agent graphs. */
 class BackendSkillCoreToolsFactory(
-    private val skillRegistryRepository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider,
     private val legacyCommandTool: LLMToolSetup,
     private val commandTool: ToolRunSkillCommand,
 ) {
@@ -24,7 +24,7 @@ class BackendSkillCoreToolsFactory(
         ToolGetSkillByName(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
-            repository = skillRegistryRepository,
+            skillBundleProvider = skillBundleProvider,
             legacyCommandTool = legacyCommandTool,
             approvalGate = approvalGate,
         )
@@ -46,7 +46,7 @@ class BackendSkillCoreToolsFactory(
         ToolInvokeSkill(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
-            repository = skillRegistryRepository,
+            skillBundleProvider = skillBundleProvider,
             commandTool = commandTool,
             approvalGate = approvalGate,
         )

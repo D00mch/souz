@@ -38,6 +38,7 @@ import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
 import ru.souz.backend.testutil.repository.MemoryAgentStateRepository
 import ru.souz.backend.testutil.repository.MemoryChatRepository
+import ru.souz.backend.testutil.repository.MemoryClientRequestRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.backend.testutil.repository.MemoryOptionRepository
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
@@ -239,6 +240,7 @@ private suspend fun TestScope.asyncLifecycleContext(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
         executionRepository = executionRepository,
+        clientRequestRepository = MemoryClientRequestRepository(executionRepository),
         optionRepository = optionRepository,
         eventService = eventService,
         toolCallRepository = toolCallRepository,

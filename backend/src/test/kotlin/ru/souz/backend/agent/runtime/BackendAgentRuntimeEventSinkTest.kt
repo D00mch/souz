@@ -18,6 +18,7 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.MessageDeltaPayload
+import ru.souz.backend.events.model.ThreadFailedPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -136,6 +137,51 @@ class BackendAgentRuntimeEventSinkTest {
     }
 
     @Test
+    fun `public thread ignores option request`() = runTest {
+        val fixture = sinkFixture(optionsEnabled = true, publicClientThread = true)
+
+        fixture.sink.emit(
+            AgentRuntimeEvent.ChoiceRequested(
+                choiceId = UUID.randomUUID().toString(),
+                kind = "tool_confirmation",
+                title = "Continue?",
+                options = listOf(
+                    AgentRuntimeEvent.ChoiceRequested.ChoiceOption(
+                        id = "yes",
+                        label = "Yes",
+                        content = null,
+                    )
+                ),
+                selectionMode = "single",
+            )
+        )
+
+        val execution = fixture.executionRepository.get(fixture.chat.userId, fixture.execution.id)
+        val replayEvents = fixture.eventRepository.listByChat(fixture.chat.userId, fixture.chat.id)
+
+        assertFalse(fixture.sink.hasRequestedOption)
+        assertEquals(AgentExecutionStatus.RUNNING, execution?.status)
+        assertTrue(replayEvents.isEmpty())
+    }
+
+    @Test
+    fun `public execution failure maps internal error code`() = runTest {
+        val fixture = sinkFixture(publicClientThread = true)
+
+        fixture.sink.emitExecutionFailed(
+            errorCode = "agent_execution_failed",
+            errorMessage = "simulated failure",
+        )
+
+        val event = fixture.eventRepository.listByChat(fixture.chat.userId, fixture.chat.id).single()
+        val payload = event.payload as ThreadFailedPayload
+
+        assertEquals(AgentEventType.THREAD_FAILED, event.type)
+        assertEquals("internal_error", payload.error.code)
+        assertEquals("simulated failure", payload.error.message)
+    }
+
+    @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun `concurrent emit calls are serialized per sink instance`() = runTest {
         val toolCallRepository = BlockingToolCallRepository()
@@ -237,6 +283,8 @@ private suspend fun assertNoLiveEvent(stream: ru.souz.backend.events.bus.AgentEv
 private suspend fun sinkFixture(
     optionRepository: OptionRepository = MemoryOptionRepository(),
     toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
+    optionsEnabled: Boolean = false,
+    publicClientThread: Boolean = false,
 ): SinkFixture {
     val chatRepository = MemoryChatRepository()
     val messageRepository = MemoryMessageRepository()
@@ -294,6 +342,8 @@ private suspend fun sinkFixture(
             toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = true,
             toolEventsEnabled = false,
+            optionsEnabled = optionsEnabled,
+            publicClientThread = publicClientThread,
         ),
     )
 }
@@ -415,9 +465,9 @@ private class RecordingToolCallRepository : ToolCallRepository {
             executionId = context.executionId,
             toolCallId = context.toolCallId,
             name = name,
-            status = ToolCallStatus.FINISHED,
+            status = ToolCallStatus.SUCCEEDED,
             argumentsJson = "{}",
-            resultPreview = resultPreview,
+            resultJson = resultPreview,
             startedAt = finishedAt,
             finishedAt = finishedAt,
             durationMs = durationMs,
@@ -440,7 +490,7 @@ private class RecordingToolCallRepository : ToolCallRepository {
             name = name,
             status = ToolCallStatus.FAILED,
             argumentsJson = "{}",
-            error = error,
+            errorJson = error,
             startedAt = finishedAt,
             finishedAt = finishedAt,
             durationMs = durationMs,

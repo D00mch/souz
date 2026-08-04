@@ -36,6 +36,33 @@ import kotlin.test.assertTrue
 
 class SkillsGraphBasedAgentMidRunInputTest {
     @Test
+    fun `active run readiness callback fires after mailbox opens`() = runTest {
+        val ready = CompletableDeferred<Unit>()
+        val firstStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val harness = Harness(chatHandler = { _, ctx ->
+            firstStarted.complete(Unit)
+            release.await()
+            ctx.map { finalResponse("done") }
+        })
+
+        val execution = async {
+            harness.agent.executeWithTrace(
+                ctx = harness.context(),
+                onActiveRunReady = { ready.complete(Unit) },
+            )
+        }
+        ready.await()
+
+        assertTrue(harness.agent.submitToActiveRun("follow-up after readiness"))
+        firstStarted.await()
+        release.complete(Unit)
+
+        assertEquals("done", execution.await().output)
+        assertEquals("follow-up after readiness", harness.requestHistories.single().last().content)
+    }
+
+    @Test
     fun `submissions cancel only the active LLM and drain together in FIFO order`() = runTest {
         val firstStarted = CompletableDeferred<Unit>()
         val firstCancelled = CompletableDeferred<Unit>()

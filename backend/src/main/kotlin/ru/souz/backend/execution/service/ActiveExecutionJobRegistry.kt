@@ -20,9 +20,12 @@ internal class ActiveExecutionJobRegistry {
         }
     }
 
-    suspend fun cancel(executionId: UUID): Boolean = mutex.withLock {
+    suspend fun cancel(
+        executionId: UUID,
+        reason: String = "Execution cancelled by user request.",
+    ): Boolean = mutex.withLock {
         val job = jobs[executionId] ?: return@withLock false
-        job.cancel(CancellationException("Execution cancelled by user request."))
+        job.cancel(CancellationException(reason))
         true
     }
 }

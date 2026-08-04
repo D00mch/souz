@@ -19,6 +19,7 @@ import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.restJsonMapper
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
 
 internal data class PreparedChatTurn(
     val normalizedClientMessageId: String?,
@@ -40,6 +41,7 @@ internal data class PreparedContinuationTurn(
 internal class AgentExecutionRequestFactory(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
     private val featureFlags: BackendFeatureFlags,
+    private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
 ) {
     suspend fun prepareChatTurn(
         userId: String,
@@ -47,11 +49,17 @@ internal class AgentExecutionRequestFactory(
         content: String,
         clientMessageId: String? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
+        executionId: UUID = UUID.randomUUID(),
+        revision: Long = 1,
+        latestDeviceContextJson: String = "{}",
+        userMessageMetadataExtras: Map<String, String> = emptyMap(),
+        clientToolsEnabled: Boolean = false,
+        forceBackground: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
         val normalizedClientMessageId = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
         val execution = AgentExecution(
-            id = UUID.randomUUID(),
+            id = executionId,
             userId = userId,
             chatId = chatId,
             userMessageId = null,
@@ -79,6 +87,10 @@ internal class AgentExecutionRequestFactory(
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools,
             ),
+            revision = revision,
+            latestDeviceContextJson = latestDeviceContextJson,
+            runtimeOwner = clientThreadRegistry?.runtimeOwner?.takeIf { clientToolsEnabled },
+            runtimeLeaseUntil = ClientThreadRuntimeRegistry.leaseUntil().takeIf { clientToolsEnabled },
         )
 
         return PreparedChatTurn(
@@ -99,9 +111,10 @@ internal class AgentExecutionRequestFactory(
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
+                clientToolsEnabled = clientToolsEnabled,
             ),
-            userMessageMetadata = userMessageMetadata(normalizedClientMessageId),
-            shouldReturnRunning = effectiveSettings.streamingMessages && featureFlags.wsEvents,
+            userMessageMetadata = userMessageMetadata(normalizedClientMessageId) + userMessageMetadataExtras,
+            shouldReturnRunning = forceBackground || (effectiveSettings.streamingMessages && featureFlags.wsEvents),
         )
     }
 
@@ -141,7 +154,7 @@ internal class AgentExecutionRequestFactory(
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
         )
 
-    fun createEventSink(
+    suspend fun createEventSink(
         userId: String,
         chatId: UUID,
         execution: AgentExecution,
@@ -166,6 +179,8 @@ internal class AgentExecutionRequestFactory(
             toolEventsEnabled = toolEventsEnabled,
             optionsEnabled = featureFlags.options,
             assistantMessageId = execution.assistantMessageId,
+            beforePublicEvent = { clientThreadRegistry?.awaitAcceptedInputAcks(execution.id) },
+            publicClientThread = clientThreadRegistry?.contains(execution.id) == true,
         )
 
     private fun conversationKey(userId: String, chatId: UUID): AgentConversationKey =

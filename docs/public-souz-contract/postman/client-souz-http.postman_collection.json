@@ -1,0 +1,154 @@
+{
+  "info": {
+    "_postman_id": "b154672b-7265-45c0-a20f-2d4820b7c4c2",
+    "name": "Client-Souz Contract - HTTP",
+    "description": "HTTP setup requests for the Client-Souz public contract. Import with local.postman_environment.json, run Create chat, then use the generated wsUrl with the WebSocket payloads in ws-messages/.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Chat setup",
+      "item": [
+        {
+          "name": "Create chat",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200 or 201\", function () {",
+                  "  pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"response echoes the create request id\", function () {",
+                  "  pm.expect(body.requestId).to.eql(pm.variables.get(\"createChatRequestId\"));",
+                  "});",
+                  "",
+                  "pm.test(\"response contains a chat id\", function () {",
+                  "  pm.expect(body.chat).to.be.an(\"object\");",
+                  "  pm.expect(body.chat.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "  pm.expect(body.duplicate).to.be.a(\"boolean\");",
+                  "});",
+                  "",
+                  "const wsBaseUrl = pm.variables.get(\"wsBaseUrl\");",
+                  "const clientType = pm.variables.get(\"clientType\");",
+                  "pm.environment.set(\"chatId\", body.chat.id);",
+                  "pm.environment.set(\"wsUrl\", `${wsBaseUrl}/v1/chats/${body.chat.id}/ws?clientType=${clientType}`);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"requestId\": \"{{createChatRequestId}}\",\n  \"clientType\": \"{{clientType}}\",\n  \"title\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/chats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "chats"
+              ]
+            },
+            "description": "Creates the durable chat used by the WebSocket happy path. Re-running this request with the same requestId is an idempotent retry."
+          },
+          "response": []
+        },
+        {
+          "name": "Create chat idempotent retry",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is 200 on retry\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"retry returns duplicate chat\", function () {",
+                  "  pm.expect(body.requestId).to.eql(pm.variables.get(\"createChatRequestId\"));",
+                  "  pm.expect(body.duplicate).to.eql(true);",
+                  "  pm.expect(body.chat.id).to.eql(pm.variables.get(\"chatId\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"requestId\": \"{{createChatRequestId}}\",\n  \"clientType\": \"{{clientType}}\",\n  \"title\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/chats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "chats"
+              ]
+            },
+            "description": "Repeats Create chat with the same normalized payload and expects the stored idempotent result."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8080"
+    },
+    {
+      "key": "wsBaseUrl",
+      "value": "ws://127.0.0.1:8080"
+    },
+    {
+      "key": "clientType",
+      "value": "backend"
+    },
+    {
+      "key": "userId",
+      "value": "550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "key": "createChatRequestId",
+      "value": "client-create-chat-001"
+    }
+  ]
+}

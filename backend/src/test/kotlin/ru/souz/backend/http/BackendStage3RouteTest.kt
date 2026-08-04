@@ -38,9 +38,9 @@ import ru.souz.backend.testCoreTool
 import ru.souz.backend.testSearchMemoryTool
 import ru.souz.backend.testSkillCoreToolsFactory
 import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
+import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
@@ -48,14 +48,19 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
+import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
+import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
+import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionFinalizer
 import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.execution.service.AgentExecutionRequestFactory
@@ -70,12 +75,15 @@ import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryAgentStateRepository
 import ru.souz.backend.testutil.repository.MemoryChatRepository
+import ru.souz.backend.testutil.repository.MemoryClientInputRepository
+import ru.souz.backend.testutil.repository.MemoryClientRequestRepository
 import ru.souz.backend.testutil.repository.MemoryOptionRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.testutil.repository.MemoryUserRepository
 import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
 import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -177,7 +185,7 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `patch me settings stores user intent and returns normalized effective settings`() = testApplication {
+    fun `patch me settings rejects unavailable default model without storing partial settings`() = testApplication {
         val context = routeTestContext()
         context.settingsProvider.qwenChatKey = null
         application {
@@ -194,6 +202,16 @@ class BackendStage3RouteTest {
             )
         }
 
+        runBlocking {
+            context.userSettingsRepository.save(
+                UserSettings(
+                    userId = "user-a",
+                    defaultModel = LLMModel.Max,
+                    contextSize = 24_000,
+                    enabledTools = setOf("ListFiles"),
+                )
+            )
+        }
         val response = client.patch(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
@@ -217,27 +235,54 @@ class BackendStage3RouteTest {
             )
         }
         val payload = json.readTree(response.bodyAsText())
-        val settings = payload["settings"]
         val storedIntent = runBlocking { context.userSettingsRepository.get("user-a") }
 
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertTrue(settings["defaultModel"].asText() != LLMModel.QwenMax.alias)
-        assertEquals(12_000, settings["contextSize"].asInt())
-        assertEquals(0.15, settings["temperature"].asDouble())
-        assertEquals("en-US", settings["locale"].asText())
-        assertEquals("Europe/Amsterdam", settings["timeZone"].asText())
-        assertEquals("be brief", settings["systemPrompt"].asText())
-        assertEquals(listOf("ListFiles"), settings["enabledTools"].map { it.asText() })
-        assertEquals(false, settings["showToolEvents"].asBoolean())
-        assertEquals(false, settings["streamingMessages"].asBoolean())
-        assertEquals("en", settings["interfaceLanguage"].asText())
-        assertEquals(45_000L, settings["requestTimeoutMillis"].asLong())
-        assertEquals(false, settings["useFewShotExamples"].asBoolean())
-        assertEquals(LLMModel.QwenMax, storedIntent?.defaultModel)
-        assertEquals(setOf("ListFiles", "OpenBrowser"), storedIntent?.enabledTools)
-        assertEquals("en", storedIntent?.interfaceLanguage)
-        assertEquals(45_000L, storedIntent?.requestTimeoutMillis)
-        assertEquals(false, storedIntent?.useFewShotExamples)
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
+        assertEquals(LLMModel.Max, storedIntent?.defaultModel)
+        assertEquals(24_000, storedIntent?.contextSize)
+        assertEquals(setOf("ListFiles"), storedIntent?.enabledTools)
+        assertNull(storedIntent?.interfaceLanguage)
+        assertNull(storedIntent?.requestTimeoutMillis)
+        assertNull(storedIntent?.useFewShotExamples)
+    }
+
+    @Test
+    fun `patch me settings rejects Codex model while backend runtime does not support Codex`() = testApplication {
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                regionProfile = "en"
+                anthropicKey = "anthropic-key"
+                codexAccessToken = "codex-token"
+            }
+        )
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    chatService = context.chatService,
+                    messageService = context.messageService,
+                    executionService = context.executionService,
+                )
+            )
+        }
+
+        val response = client.patch(BackendHttpRoutes.SETTINGS) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"defaultModel":"${LLMModel.CodexGpt55.alias}"}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val storedIntent = runBlocking { context.userSettingsRepository.get("user-a") }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
+        assertTrue(storedIntent?.defaultModel != LLMModel.CodexGpt55)
     }
 
     @Test
@@ -450,39 +495,6 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `post chats creates chat for current user`() = testApplication {
-        val context = routeTestContext()
-        application {
-            backendApplication(
-                BackendHttpDependencies(
-                    bootstrapService = context.bootstrapService,
-                    selectedModel = { context.settingsProvider.gigaModel.alias },
-                    trustedProxyToken = { "proxy-secret" },
-                    userSettingsService = context.userSettingsService,
-                    chatService = context.chatService,
-                    messageService = context.messageService,
-                    executionService = context.executionService,
-                )
-            )
-        }
-
-        val response = client.post(BackendHttpRoutes.CHATS) {
-            trustedHeaders("user-a")
-            contentType(ContentType.Application.Json)
-            setBody("""{"title":"Новый чат"}""")
-        }
-        val chat = json.readTree(response.bodyAsText())["chat"]
-        val chatId = UUID.fromString(chat["id"].asText())
-        val storedChat = runBlocking { context.chatRepository.get("user-a", chatId) }
-
-        assertEquals(HttpStatusCode.Created, response.status)
-        assertEquals("Новый чат", chat["title"].asText())
-        assertEquals(false, chat["archived"].asBoolean())
-        assertNotNull(storedChat)
-        assertEquals("user-a", storedChat.userId)
-    }
-
-    @Test
     fun `patch chat title trims updates timestamp and enforces ownership`() = testApplication {
         val context = routeTestContext()
         val ownedChat = chat(
@@ -632,8 +644,9 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `first trusted user request provisions namespace before chats messages and settings`() = testApplication {
+    fun `public chat creation provisions namespace before proxy messages and settings`() = testApplication {
         val context = routeTestContext()
+        val userId = UUID.randomUUID().toString()
         application {
             backendApplication(
                 BackendHttpDependencies(
@@ -645,39 +658,41 @@ class BackendStage3RouteTest {
                     chatService = context.chatService,
                     messageService = context.messageService,
                     executionService = context.executionService,
+                    publicClientService = context.publicClientService,
                 )
             )
         }
 
         val createChatResponse = client.post(BackendHttpRoutes.CHATS) {
-            trustedHeaders("fresh-user")
             contentType(ContentType.Application.Json)
-            setBody("""{"title":"Provisioned"}""")
+            setBody(
+                """{"userId":"$userId","requestId":"create-1","clientType":"backend","title":"Provisioned"}"""
+            )
         }
         val createChatPayload = json.readTree(createChatResponse.bodyAsText())
         val chatId = UUID.fromString(createChatPayload["chat"]["id"].asText())
         val createMessageResponse = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-            trustedHeaders("fresh-user")
+            trustedHeaders(userId)
             contentType(ContentType.Application.Json)
             setBody("""{"content":"hello"}""")
         }
         val settingsResponse = client.get(BackendHttpRoutes.SETTINGS) {
-            trustedHeaders("fresh-user")
+            trustedHeaders(userId)
         }
         val settingsPayload = json.readTree(settingsResponse.bodyAsText())["settings"]
 
-        val userRecord = runBlocking { context.userRepository.get("fresh-user") }
-        val storedChat = runBlocking { context.chatRepository.get("fresh-user", chatId) }
-        val storedMessages = runBlocking { context.messageRepository.list("fresh-user", chatId) }
-        val storedSettings = runBlocking { context.userSettingsRepository.get("fresh-user") }
+        val userRecord = runBlocking { context.userRepository.get(userId) }
+        val storedChat = runBlocking { context.chatRepository.get(userId, chatId) }
+        val storedMessages = runBlocking { context.messageRepository.list(userId, chatId) }
+        val storedSettings = runBlocking { context.userSettingsRepository.get(userId) }
 
         assertEquals(HttpStatusCode.Created, createChatResponse.status)
         assertEquals(HttpStatusCode.OK, createMessageResponse.status)
         assertEquals(HttpStatusCode.OK, settingsResponse.status)
         assertNotNull(userRecord)
         assertNotNull(storedSettings)
-        assertEquals("fresh-user", storedChat?.userId)
-        assertEquals(listOf("fresh-user"), storedMessages.map { it.userId }.distinct())
+        assertEquals(userId, storedChat?.userId)
+        assertEquals(listOf(userId), storedMessages.map { it.userId }.distinct())
         assertEquals(1, runBlocking { context.userRepository.count() })
         assertEquals("ru", settingsPayload["interfaceLanguage"].asText())
         assertEquals(context.settingsProvider.requestTimeoutMillis, settingsPayload["requestTimeoutMillis"].asLong())
@@ -1200,11 +1215,14 @@ internal data class RouteTestContext(
     val userSettingsRepository: MemoryUserSettingsRepository,
     val userProviderKeyRepository: MemoryUserProviderKeyRepository,
     val chatRepository: MemoryChatRepository,
+    val clientInputRepository: MemoryClientInputRepository,
+    val clientRequestRepository: ClientRequestRepository,
+    val clientThreadRegistry: ClientThreadRuntimeRegistry,
     val messageRepository: MemoryMessageRepository,
-    val executionRepository: MemoryAgentExecutionRepository,
+    val executionRepository: AgentExecutionRepository,
     val optionRepository: MemoryOptionRepository,
     val eventRepository: MemoryAgentEventRepository,
-    val toolCallRepository: MemoryToolCallRepository,
+    val toolCallRepository: ToolCallRepository,
     val eventService: AgentEventService,
     val stateRepository: MemoryAgentStateRepository,
     val bootstrapService: BackendBootstrapService,
@@ -1215,6 +1233,7 @@ internal data class RouteTestContext(
     val executionService: AgentExecutionService,
     val optionService: OptionService,
     val messageService: MessageService,
+    val publicClientService: PublicClientService,
 )
 
 internal fun routeTestContext(
@@ -1231,10 +1250,11 @@ internal fun routeTestContext(
     userProviderKeyRepository: MemoryUserProviderKeyRepository = MemoryUserProviderKeyRepository(),
     chatRepository: MemoryChatRepository = MemoryChatRepository(),
     messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
-    executionRepository: MemoryAgentExecutionRepository = MemoryAgentExecutionRepository(),
+    executionRepository: AgentExecutionRepository = MemoryAgentExecutionRepository(),
+    clientRequestRepository: ClientRequestRepository? = null,
     optionRepository: MemoryOptionRepository = MemoryOptionRepository(),
     eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
-    toolCallRepository: MemoryToolCallRepository = MemoryToolCallRepository(),
+    toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
     stateRepository: MemoryAgentStateRepository = MemoryAgentStateRepository(),
     toolCatalog: AgentToolCatalog = toolCatalog(
         ToolCategory.FILES to fakeTool("ListFiles"),
@@ -1245,11 +1265,20 @@ internal fun routeTestContext(
         toolEvents = true,
     ),
     turnRunner: BackendConversationTurnRunner? = null,
+    agentId: AgentId = AgentId.default,
 ): RouteTestContext {
     val eventService = AgentEventService(
         chatRepository = chatRepository,
         eventRepository = eventRepository,
         eventBus = AgentEventBus(),
+    )
+    val clientThreadRegistry = ClientThreadRuntimeRegistry()
+    val resolvedClientRequestRepository = clientRequestRepository ?: MemoryClientRequestRepository(executionRepository)
+    val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
+    val clientToolCatalogFactory = BackendClientToolCatalogFactory(
+        registry = clientThreadRegistry,
+        toolCallRepository = toolCallRepository,
+        eventService = eventService,
     )
     val effectiveSettingsResolver = EffectiveSettingsResolver(
         baseSettingsProvider = settingsProvider,
@@ -1265,7 +1294,9 @@ internal fun routeTestContext(
         sessionRepository = AgentStateBackedSessionRepository(stateRepository),
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "global backend prompt",
+        configuredAgentId = agentId,
         toolCatalog = toolCatalog,
+        clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
         skillRegistryRepository = TestSkillRegistryRepository,
         skillCoreToolsFactory = testSkillCoreToolsFactory(),
         getKnowledgeTool = testCoreTool("GetKnowledge"),
@@ -1274,21 +1305,24 @@ internal fun routeTestContext(
         knowledgeStore = TestConversationKnowledgeStore,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
-    val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory)
+    val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory, clientThreadRegistry)
     val requestFactory = AgentExecutionRequestFactory(
         effectiveSettingsResolver = effectiveSettingsResolver,
         featureFlags = featureFlags,
+        clientThreadRegistry = clientThreadRegistry,
     )
     val finalizer = AgentExecutionFinalizer(
         agentStateRepository = stateRepository,
         chatRepository = chatRepository,
         executionRepository = executionRepository,
         turnRunner = conversationTurnRunner,
+        clientThreadRegistry = clientThreadRegistry,
     )
     val executionService = AgentExecutionService(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
         executionRepository = executionRepository,
+        clientRequestRepository = resolvedClientRequestRepository,
         optionRepository = optionRepository,
         eventService = eventService,
         toolCallRepository = toolCallRepository,
@@ -1297,6 +1331,8 @@ internal fun routeTestContext(
         launcher = AgentExecutionLauncher(
             executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             finalizer = finalizer,
+            executionRepository = executionRepository,
+            clientThreadRegistry = clientThreadRegistry,
         ),
     )
     val optionService = OptionService(
@@ -1334,6 +1370,15 @@ internal fun routeTestContext(
         userSettingsRepository = userSettingsRepository,
         userSettingsService = userSettingsService,
     )
+    val publicClientService = PublicClientService(
+        chatRepository = chatRepository,
+        executionRepository = executionRepository,
+        clientInputRepository = clientInputRepository,
+        clientRequestRepository = resolvedClientRequestRepository,
+        toolCallRepository = toolCallRepository,
+        executionService = executionService,
+        registry = clientThreadRegistry,
+    )
     return RouteTestContext(
         featureFlags = featureFlags,
         settingsProvider = settingsProvider,
@@ -1341,6 +1386,9 @@ internal fun routeTestContext(
         userSettingsRepository = userSettingsRepository,
         userProviderKeyRepository = userProviderKeyRepository,
         chatRepository = chatRepository,
+        clientInputRepository = clientInputRepository,
+        clientRequestRepository = resolvedClientRequestRepository,
+        clientThreadRegistry = clientThreadRegistry,
         messageRepository = messageRepository,
         executionRepository = executionRepository,
         optionRepository = optionRepository,
@@ -1356,6 +1404,7 @@ internal fun routeTestContext(
         executionService = executionService,
         optionService = optionService,
         messageService = messageService,
+        publicClientService = publicClientService,
     )
 }
 

@@ -10,6 +10,8 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
+import ru.souz.backend.client.model.ClientRequest
+import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
@@ -32,6 +34,7 @@ class AgentExecutionService internal constructor(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
     private val executionRepository: AgentExecutionRepository,
+    private val clientRequestRepository: ClientRequestRepository,
     private val optionRepository: OptionRepository,
     private val eventService: AgentEventService,
     private val toolCallRepository: ToolCallRepository,
@@ -44,7 +47,14 @@ class AgentExecutionService internal constructor(
         chatId: UUID,
         content: String,
         clientMessageId: String? = null,
+        initialClientRequest: ClientRequest? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
+        executionId: UUID = UUID.randomUUID(),
+        revision: Long = 1,
+        latestDeviceContextJson: String = "{}",
+        userMessageMetadata: Map<String, String> = emptyMap(),
+        clientToolsEnabled: Boolean = false,
+        forceBackground: Boolean = false,
     ): SendMessageResult = supervisorScope {
         val chat = requireOwnedChat(userId, chatId)
         val prepared = requestFactory.prepareChatTurn(
@@ -53,25 +63,34 @@ class AgentExecutionService internal constructor(
             content = content,
             clientMessageId = clientMessageId,
             requestOverrides = requestOverrides,
+            executionId = executionId,
+            revision = revision,
+            latestDeviceContextJson = latestDeviceContextJson,
+            userMessageMetadataExtras = userMessageMetadata,
+            clientToolsEnabled = clientToolsEnabled,
+            forceBackground = forceBackground,
         )
-        prepared.normalizedClientMessageId?.let { normalizedClientMessageId ->
-            executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
-                ?.let { existingExecution ->
-                    val userMessageId = existingExecution.userMessageId
-                    val userMessage = userMessageId?.let { messageRepository.getById(userId, chatId, it) }
-                    if (userMessage != null) {
-                        val assistantMessage = existingExecution.assistantMessageId
-                            ?.let { messageRepository.getById(userId, chatId, it) }
-                        return@supervisorScope SendMessageResult(
-                            userMessage = userMessage,
-                            assistantMessage = assistantMessage,
-                            execution = existingExecution,
-                        )
+        prepared.normalizedClientMessageId
+            ?.takeIf { initialClientRequest == null }
+            ?.let { normalizedClientMessageId ->
+                executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
+                    ?.let { existingExecution ->
+                        val userMessageId = existingExecution.userMessageId
+                        val userMessage = userMessageId?.let { messageRepository.getById(userId, chatId, it) }
+                        if (userMessage != null) {
+                            val assistantMessage = existingExecution.assistantMessageId
+                                ?.let { messageRepository.getById(userId, chatId, it) }
+                            return@supervisorScope SendMessageResult(
+                                userMessage = userMessage,
+                                assistantMessage = assistantMessage,
+                                execution = existingExecution,
+                            )
+                        }
                     }
-                }
-        }
+            }
         val queuedExecution = try {
-            executionRepository.create(prepared.execution)
+            initialClientRequest?.let { clientRequestRepository.createWithExecution(prepared.execution, it) }
+                ?: executionRepository.create(prepared.execution)
         } catch (e: ActiveAgentExecutionConflictException) {
             throw BackendV1Exception(
                 status = HttpStatusCode.Conflict,
@@ -261,25 +280,51 @@ class AgentExecutionService internal constructor(
         return CancelExecutionResult(cancelExecutionInternal(execution))
     }
 
+    internal suspend fun failQueuedStartup(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+    ): AgentExecution? {
+        val execution = executionRepository.getByChat(userId, chatId, executionId) ?: return null
+        if (execution.status != AgentExecutionStatus.QUEUED) return execution
+        return finalizer.markFailed(
+            executionId = execution.id,
+            userId = execution.userId,
+            chatId = execution.chatId,
+            errorCode = "agent_execution_failed",
+            errorMessage = "Thread startup was interrupted.",
+            usage = execution.usage,
+        )
+    }
+
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
-        if (!execution.status.isActiveForCancellation()) {
-            throw invalidV1Request("Execution is not active.")
-        }
-        val cancellingExecution = executionRepository.update(
-            execution.copy(
-                status = AgentExecutionStatus.CANCELLING,
-                cancelRequested = true,
+        return finalizer.withTerminalTransition(execution.id) {
+            val currentExecution = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)
+                ?: throw BackendV1Exception(
+                    status = HttpStatusCode.NotFound,
+                    code = "execution_not_found",
+                    message = "Execution not found.",
+                )
+            if (!currentExecution.status.isActiveForCancellation()) {
+                throw invalidV1Request("Execution is not active.")
+            }
+            val cancellingExecution = executionRepository.update(
+                currentExecution.copy(
+                    status = AgentExecutionStatus.CANCELLING,
+                    cancelRequested = true,
+                )
             )
-        )
-        if (launcher.cancel(cancellingExecution.id)) {
-            return cancellingExecution
+            if (launcher.cancel(cancellingExecution.id)) {
+                cancellingExecution
+            } else {
+                finalizer.persistCancelled(
+                    executionId = cancellingExecution.id,
+                    userId = cancellingExecution.userId,
+                    chatId = cancellingExecution.chatId,
+                    usage = cancellingExecution.usage,
+                )
+            }
         }
-        return finalizer.markCancelled(
-            executionId = cancellingExecution.id,
-            userId = cancellingExecution.userId,
-            chatId = cancellingExecution.chatId,
-            usage = cancellingExecution.usage,
-        )
     }
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID): Chat =

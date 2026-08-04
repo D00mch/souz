@@ -78,7 +78,7 @@ class AgentExecutionKernelFactory(
         val nodesSkillInventory = NodesSkillInventory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
-            skillRegistryRepository = skillRegistryRepository,
+            skillBundleProvider = skillRegistryRepository,
         )
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(

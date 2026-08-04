@@ -8,8 +8,11 @@ internal typealias GraphStepCallback =
     (step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit
 
 internal interface TraceableAgent : Agent {
+    suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean = false
+
     suspend fun executeWithTrace(
         ctx: AgentContext<String>,
+        onActiveRunReady: suspend () -> Unit = {},
         onStep: GraphStepCallback? = null,
     ): AgentExecutionResult
 }

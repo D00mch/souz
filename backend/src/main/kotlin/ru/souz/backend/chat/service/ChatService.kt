@@ -3,7 +3,11 @@ package ru.souz.backend.chat.service
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import ru.souz.backend.client.PublicPayloadHash
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.repository.ChatRequestConflictException
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.common.normalizePositiveLimit
@@ -20,10 +24,17 @@ data class ChatListPage(
     val nextCursor: String?,
 )
 
+data class CreateClientChatResult(
+    val chat: Chat,
+    val duplicate: Boolean,
+)
+
 class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
 ) {
+    private val createMutex = Mutex()
+
     suspend fun list(
         userId: String,
         limit: Int = ChatRepository.DEFAULT_LIMIT,
@@ -46,21 +57,55 @@ class ChatService(
         )
     }
 
-    suspend fun create(
+    suspend fun createClient(
         userId: String,
+        requestId: String,
+        clientType: String,
         title: String?,
-    ): Chat {
-        val now = Instant.now()
-        return chatRepository.create(
-            Chat(
-                id = UUID.randomUUID(),
-                userId = userId,
-                title = title?.trim()?.takeIf { it.isNotEmpty() },
-                archived = false,
-                createdAt = now,
-                updatedAt = now,
+    ): CreateClientChatResult = createMutex.withLock {
+        val normalizedTitle = title?.trim()?.takeIf { it.isNotEmpty() }
+        val payloadHash = PublicPayloadHash.ofValue(
+            linkedMapOf(
+                "clientType" to clientType,
+                "title" to normalizedTitle,
             )
         )
+        chatRepository.findByRequestId(userId, requestId)?.let { existing ->
+            if (existing.payloadHash != payloadHash) {
+                throw BackendV1Exception(
+                    status = HttpStatusCode.Conflict,
+                    code = "idempotency_conflict",
+                    message = "requestId was already used with a different chat payload.",
+                )
+            }
+            return@withLock CreateClientChatResult(existing, duplicate = true)
+        }
+        val now = Instant.now()
+        val chat = Chat(
+            id = UUID.randomUUID(),
+            userId = userId,
+            title = normalizedTitle,
+            archived = false,
+            createdAt = now,
+            updatedAt = now,
+            clientType = clientType,
+            requestId = requestId,
+            payloadHash = payloadHash,
+        )
+        try {
+            CreateClientChatResult(chatRepository.create(chat), duplicate = false)
+        } catch (conflict: ChatRequestConflictException) {
+            if (conflict.userId != userId || conflict.requestId != requestId) throw conflict
+            val existing = chatRepository.findByRequestId(userId, requestId) ?: throw conflict
+            if (existing.payloadHash != payloadHash) {
+                throw BackendV1Exception(
+                    status = HttpStatusCode.Conflict,
+                    code = "idempotency_conflict",
+                    message = "requestId was already used with a different chat payload.",
+                )
+            }
+            CreateClientChatResult(existing, duplicate = true)
+        }
     }
 
     suspend fun updateTitle(

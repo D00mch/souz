@@ -102,6 +102,7 @@ class GraphBasedAgent internal constructor(
 
     override suspend fun executeWithTrace(
         ctx: AgentContext<String>,
+        onActiveRunReady: suspend () -> Unit,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = ctx, onStep = onStep)
 

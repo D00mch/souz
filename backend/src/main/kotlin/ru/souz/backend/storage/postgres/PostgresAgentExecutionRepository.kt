@@ -1,6 +1,7 @@
 package ru.souz.backend.storage.postgres
 
 import java.sql.SQLException
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.execution.model.AgentExecution
@@ -12,6 +13,10 @@ class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
 ) : AgentExecutionRepository {
     override suspend fun create(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
+        insert(connection, execution)
+    }
+
+    internal fun insert(connection: java.sql.Connection, execution: AgentExecution): AgentExecution {
         try {
             connection.prepareStatement(
                 """
@@ -32,9 +37,13 @@ class PostgresAgentExecutionRepository(
                     error_code,
                     error_message,
                     usage_json,
-                    metadata
+                    metadata,
+                    revision,
+                    latest_device_context,
+                    runtime_owner,
+                    runtime_lease_until
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
                 bindExecution(statement, execution)
@@ -46,7 +55,7 @@ class PostgresAgentExecutionRepository(
             }
             throw error
         }
-        execution
+        return execution
     }
 
     override suspend fun update(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
@@ -67,7 +76,11 @@ class PostgresAgentExecutionRepository(
                     error_code = ?,
                     error_message = ?,
                     usage_json = ?,
-                    metadata = ?
+                    metadata = ?,
+                    revision = ?,
+                    latest_device_context = ?,
+                    runtime_owner = ?,
+                    runtime_lease_until = ?
                 where user_id = ? and id = ?
                 """.trimIndent()
             ).use { statement ->
@@ -152,6 +165,85 @@ class PostgresAgentExecutionRepository(
         }
     }
 
+    override suspend fun refreshClientThreadLease(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        runtimeOwner: String,
+        leaseUntil: Instant,
+    ): AgentExecution? = dataSource.write { connection ->
+        connection.prepareStatement(
+            """
+            update agent_executions
+            set runtime_owner = ?, runtime_lease_until = ?
+            where user_id = ? and chat_id = ? and id = ?
+              and status in ('queued', 'running', 'waiting_option', 'cancelling')
+            returning *
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, runtimeOwner)
+            statement.setInstant(2, leaseUntil)
+            statement.setString(3, userId)
+            statement.setObject(4, chatId)
+            statement.setObject(5, executionId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.toExecution() else null
+            }
+        }
+    }
+
+    override suspend fun failInterruptedClientThreads(now: Instant): List<AgentExecution> = dataSource.write { connection ->
+        connection.prepareStatement(
+            """
+            update agent_executions execution
+            set status = 'failed',
+                finished_at = ?,
+                error_code = 'process_restarted',
+                error_message = 'The Souz process restarted while the thread was running.'
+            from chats chat
+            where execution.chat_id = chat.id
+              and chat.payload_hash not like 'internal:%'
+              and execution.status in ('queued', 'running', 'waiting_option', 'cancelling')
+              and execution.runtime_lease_until is not null
+              and execution.runtime_lease_until < ?
+            returning execution.*
+            """.trimIndent()
+        ).use { statement ->
+            statement.setInstant(1, now)
+            statement.setInstant(2, now)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) add(resultSet.toExecution())
+                }
+            }
+        }
+    }
+
+    override suspend fun findRecoveredClientThreadsMissingTerminalEvents(): List<AgentExecution> = dataSource.read { connection ->
+        connection.prepareStatement(
+            """
+            select execution.*
+            from agent_executions execution
+            join chats chat on chat.id = execution.chat_id
+            where chat.payload_hash not like 'internal:%'
+              and execution.status = 'failed'
+              and execution.error_code = 'process_restarted'
+              and not exists (
+                select 1 from agent_events event
+                where event.execution_id = execution.id
+                  and event.type in ('thread.completed', 'thread.failed', 'thread.cancelled')
+              )
+            order by execution.started_at asc
+            """.trimIndent()
+        ).use { statement ->
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) add(resultSet.toExecution())
+                }
+            }
+        }
+    }
+
     override suspend fun listByChat(
         userId: String,
         chatId: UUID,
@@ -196,6 +288,10 @@ class PostgresAgentExecutionRepository(
         statement.setString(15, execution.errorMessage)
         statement.setJson(16, execution.usage?.toUsageJson())
         statement.setJson(17, postgresStorageMapper.writeValueAsString(execution.metadata))
+        statement.setLong(18, execution.revision)
+        statement.setJson(19, execution.latestDeviceContextJson)
+        statement.setString(20, execution.runtimeOwner)
+        statement.setInstant(21, execution.runtimeLeaseUntil)
     }
 
     private fun bindExecutionUpdate(statement: java.sql.PreparedStatement, execution: AgentExecution) {
@@ -213,7 +309,11 @@ class PostgresAgentExecutionRepository(
         statement.setString(12, execution.errorMessage)
         statement.setJson(13, execution.usage?.toUsageJson())
         statement.setJson(14, postgresStorageMapper.writeValueAsString(execution.metadata))
-        statement.setString(15, execution.userId)
-        statement.setObject(16, execution.id)
+        statement.setLong(15, execution.revision)
+        statement.setJson(16, execution.latestDeviceContextJson)
+        statement.setString(17, execution.runtimeOwner)
+        statement.setInstant(18, execution.runtimeLeaseUntil)
+        statement.setString(19, execution.userId)
+        statement.setObject(20, execution.id)
     }
 }

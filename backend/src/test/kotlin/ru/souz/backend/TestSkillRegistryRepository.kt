@@ -7,7 +7,6 @@ import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
 
 internal object TestSkillRegistryRepository : SkillRegistryRepository {
     override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
@@ -34,21 +33,4 @@ internal object TestSkillRegistryRepository : SkillRegistryRepository {
     ): SkillValidationRecord? = null
 
     override suspend fun saveValidation(record: SkillValidationRecord) = Unit
-
-    override suspend fun markValidationStatus(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-        status: SkillValidationStatus,
-        reason: String?,
-    ) = Unit
-
-    override suspend fun invalidateOtherValidations(
-        userId: String,
-        skillId: SkillId,
-        activeBundleHash: String,
-        policyVersion: String,
-        reason: String?,
-    ) = Unit
 }

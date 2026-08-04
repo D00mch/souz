@@ -48,6 +48,12 @@ class MemoryAgentEventRepository(
         events[EventKey(userId, eventId)]
     }
 
+    override suspend fun findTerminal(executionId: UUID): AgentEvent? = mutex.withLock {
+        events.values.firstOrNull { event ->
+            event.executionId == executionId && event.type in terminalEventTypes
+        }
+    }
+
     override suspend fun listByChat(
         userId: String,
         chatId: UUID,
@@ -72,4 +78,10 @@ private data class EventConversationKey(
 private data class EventKey(
     val userId: String,
     val eventId: UUID,
+)
+
+private val terminalEventTypes = setOf(
+    AgentEventType.THREAD_COMPLETED,
+    AgentEventType.THREAD_FAILED,
+    AgentEventType.THREAD_CANCELLED,
 )

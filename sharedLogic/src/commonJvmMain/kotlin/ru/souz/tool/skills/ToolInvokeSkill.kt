@@ -3,7 +3,7 @@ package ru.souz.tool.skills
 import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -25,7 +25,7 @@ import ru.souz.llms.restJsonMapper
 class ToolInvokeSkill(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
-    private val repository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider,
     private val commandTool: ToolRunSkillCommand,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
@@ -94,7 +94,7 @@ class ToolInvokeSkill(
             ).copy(name = outerFunctionName)
         }
 
-        val bundle = repository.loadSkillBundle(meta.userId, SkillId(skillId))
+        val bundle = skillBundleProvider.loadSkillBundle(meta.userId, SkillId(skillId))
         if (bundle != null) {
             val approval = approvalGate?.ensureApproved(
                 SkillApprovalGate.Input(

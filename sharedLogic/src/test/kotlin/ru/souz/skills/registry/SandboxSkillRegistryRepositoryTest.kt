@@ -13,9 +13,8 @@ import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillManifest
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.validation.SkillValidationFinding
+import ru.souz.agent.skills.validation.SkillValidationLevel
 import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationSeverity
-import ru.souz.agent.skills.validation.SkillValidationStatus
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.paths.SandboxSouzPaths
 import ru.souz.paths.SouzPaths
@@ -182,16 +181,13 @@ class FileSystemSkillRegistryRepositoryTest {
             userId = "user-1",
             skillId = SkillId("paper-summarize-academic"),
             bundleHash = VALIDATION_HASH_A,
-            status = SkillValidationStatus.APPROVED,
             policyVersion = "skills-policy/v1",
-            validatorVersion = "skills-validator/v1",
-            model = "gpt-test",
-            reasons = listOf("passed"),
+            approved = true,
             findings = listOf(
                 SkillValidationFinding(
                     code = "ok",
                     message = "Looks safe",
-                    severity = SkillValidationSeverity.INFO,
+                    level = SkillValidationLevel.INFO,
                     filePath = "SKILL.md",
                 )
             ),
@@ -268,31 +264,6 @@ class FileSystemSkillRegistryRepositoryTest {
             }
             assertTrue(error.message.orEmpty().contains("bundle hash", ignoreCase = true))
         }
-    }
-
-    @Test
-    fun `invalidates older approved validations without touching active bundle`() = runTest {
-        val stateRoot = createTempDirectory("skill-registry-validation-invalidate-")
-        val repository = createRepository(DefaultSouzPaths(stateRoot = stateRoot))
-        val active = sampleValidationRecord(bundleHash = VALIDATION_HASH_A)
-        val old = sampleValidationRecord(bundleHash = VALIDATION_HASH_B)
-        repository.saveValidation(active)
-        repository.saveValidation(old)
-
-        repository.invalidateOtherValidations(
-            userId = active.userId,
-            skillId = active.skillId,
-            activeBundleHash = active.bundleHash,
-            policyVersion = active.policyVersion,
-            reason = "new bundle",
-        )
-
-        val reloadedActive = repository.getValidation(active.userId, active.skillId, active.bundleHash, active.policyVersion)
-        val reloadedOld = repository.getValidation(old.userId, old.skillId, old.bundleHash, old.policyVersion)
-
-        assertEquals(SkillValidationStatus.APPROVED, reloadedActive?.status)
-        assertEquals(SkillValidationStatus.STALE, reloadedOld?.status)
-        assertEquals(listOf("passed", "new bundle"), reloadedOld?.reasons)
     }
 
     @Test
@@ -489,16 +460,13 @@ class FileSystemSkillRegistryRepositoryTest {
         userId = "user-1",
         skillId = SkillId("paper-summarize-academic"),
         bundleHash = bundleHash,
-        status = SkillValidationStatus.APPROVED,
         policyVersion = "skills-policy/v1",
-        validatorVersion = "skills-validator/v1",
-        model = "gpt-test",
-        reasons = listOf("passed"),
+        approved = true,
         findings = listOf(
             SkillValidationFinding(
                 code = "ok",
                 message = "Looks safe",
-                severity = SkillValidationSeverity.INFO,
+                level = SkillValidationLevel.INFO,
                 filePath = "SKILL.md",
             )
         ),

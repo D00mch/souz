@@ -13,4 +13,7 @@ enum class AgentEventType(val value: String) {
     EXECUTION_FINISHED("execution.finished"),
     EXECUTION_FAILED("execution.failed"),
     EXECUTION_CANCELLED("execution.cancelled"),
+    THREAD_COMPLETED("thread.completed"),
+    THREAD_FAILED("thread.failed"),
+    THREAD_CANCELLED("thread.cancelled"),
 }

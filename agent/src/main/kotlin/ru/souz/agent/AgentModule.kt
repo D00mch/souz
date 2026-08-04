@@ -68,7 +68,7 @@ fun agentDiModule(
         NodesSkillInventory(
             toolCatalog = instance(),
             toolsFilter = instance(),
-            skillRegistryRepository = instance<SkillRegistryRepository>(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
         )
     }
     bindSingleton { NodesMemory(instance(), instance()) }
@@ -88,7 +88,7 @@ fun agentDiModule(
     }
     bindSingleton {
         SkillApprovalGate.from(
-            registryRepository = instance<SkillRegistryRepository>(),
+            validationStore = instance<SkillRegistryRepository>(),
             llmApi = instance(),
             settingsProvider = instance(),
             jsonUtils = instance(),

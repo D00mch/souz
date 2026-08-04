@@ -8,10 +8,15 @@ data class ToolCall(
     val executionId: String,
     val toolCallId: String,
     val name: String,
+    val target: String = "souz",
+    val deviceId: String? = null,
     val status: ToolCallStatus,
     val argumentsJson: String,
-    val resultPreview: String? = null,
-    val error: String? = null,
+    val resultJson: String? = null,
+    val errorJson: String? = null,
+    val deadlineAt: Instant? = null,
+    val resultPayloadHash: String? = null,
+    val resultReceivedAt: Instant? = null,
     val startedAt: Instant,
     val finishedAt: Instant? = null,
     val durationMs: Long? = null,
@@ -19,6 +24,8 @@ data class ToolCall(
 
 enum class ToolCallStatus(val value: String) {
     RUNNING("running"),
-    FINISHED("finished"),
+    SUCCEEDED("succeeded"),
     FAILED("failed"),
+    CANCELLED("cancelled"),
+    TIMED_OUT("timed_out"),
 }

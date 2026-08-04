@@ -1,0 +1,52 @@
+name: souz
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${SOUZ_BACKEND_DB_NAME:-souz}
+      POSTGRES_USER: ${SOUZ_BACKEND_DB_USER:-souz}
+      POSTGRES_PASSWORD: ${SOUZ_BACKEND_DB_PASSWORD:-souz}
+    ports:
+      - "${SOUZ_POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SOUZ_BACKEND_HOST: 0.0.0.0
+      SOUZ_BACKEND_PORT: 8080
+      SOUZ_BACKEND_DB_HOST: postgres
+      SOUZ_BACKEND_DB_PORT: 5432
+      SOUZ_BACKEND_DB_NAME: ${SOUZ_BACKEND_DB_NAME:-souz}
+      SOUZ_BACKEND_DB_USER: ${SOUZ_BACKEND_DB_USER:-souz}
+      SOUZ_BACKEND_DB_PASSWORD: ${SOUZ_BACKEND_DB_PASSWORD:-souz}
+      SOUZ_MASTER_KEY: ${SOUZ_MASTER_KEY:-local-dev-master-key}
+      SOUZ_BACKEND_PROXY_TOKEN: ${SOUZ_BACKEND_PROXY_TOKEN:-local-dev-proxy-token}
+      SOUZ_FEATURE_WS_EVENTS: "true"
+      SOUZ_BACKEND_AGENT: skills
+      APP_LANGUAGE: ${APP_LANGUAGE:-en}
+      GIGA_MODEL: ${GIGA_MODEL:-gpt-5.2}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      QWEN_KEY: ${QWEN_KEY:-}
+      AITUNNEL_KEY: ${AITUNNEL_KEY:-}
+    ports:
+      - "${SOUZ_BACKEND_HOST_PORT:-8080}:8080"
+    volumes:
+      - backend-state:/root/.local/state/souz
+
+volumes:
+  postgres-data:
+  backend-state:

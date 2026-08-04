@@ -119,7 +119,7 @@ class BackendPayloadRedactionTest {
         val storedToolCall = fixture.toolCallRepository.get(fixture.toolCallContext("tool-2"))
 
         assertNotNull(storedToolCall)
-        assertEquals(ToolCallStatus.FINISHED, storedToolCall.status)
+        assertEquals(ToolCallStatus.SUCCEEDED, storedToolCall.status)
         assertEquals("tool-2", storedToolCall.toolCallId)
         assertEquals(42L, storedToolCall.durationMs)
         assertNotNull(storedToolCall.finishedAt)
@@ -128,10 +128,10 @@ class BackendPayloadRedactionTest {
         assertEquals("finished", transportPayload["status"])
         assertEquals(42L, transportPayload["durationMs"])
         assertNoSampleSecrets(restJsonMapper.writeValueAsString(finishedEvent.payload))
-        assertNoSampleSecrets(storedToolCall.resultPreview.orEmpty())
+        assertNoSampleSecrets(storedToolCall.resultJson.orEmpty())
         assertNoSampleSecrets(transportPayload.toString())
 
-        val storedPreview = restJsonMapper.readTree(storedToolCall.resultPreview)
+        val storedPreview = restJsonMapper.readTree(storedToolCall.resultJson)
         assertEquals("[REDACTED]", storedPreview["access_token"].asText())
         assertTrue(storedPreview["items"][0]["title"].asText().length < 2_048)
     }
@@ -171,11 +171,11 @@ class BackendPayloadRedactionTest {
         assertEquals("tool-3", transportPayload["toolCallId"])
         assertEquals("failed", transportPayload["status"])
         assertEquals(7L, transportPayload["durationMs"])
-        assertNoSampleSecrets(storedToolCall.error.orEmpty())
+        assertNoSampleSecrets(storedToolCall.errorJson.orEmpty())
         assertNoSampleSecrets(restJsonMapper.writeValueAsString(failedEvent.payload))
         assertNoSampleSecrets(transportPayload.toString())
-        assertFalse(storedToolCall.error.orEmpty().contains("DangerousStack"))
-        assertFalse(storedToolCall.error.orEmpty().contains("Dangerous.kt"))
+        assertFalse(storedToolCall.errorJson.orEmpty().contains("DangerousStack"))
+        assertFalse(storedToolCall.errorJson.orEmpty().contains("Dangerous.kt"))
     }
 
     @Test
@@ -201,9 +201,9 @@ class BackendPayloadRedactionTest {
         val storedToolCall = fixture.toolCallRepository.get(fixture.toolCallContext("tool-4"))
 
         assertNotNull(storedToolCall)
-        assertEquals(ToolCallStatus.FINISHED, storedToolCall.status)
+        assertEquals(ToolCallStatus.SUCCEEDED, storedToolCall.status)
         assertNoSampleSecrets(storedToolCall.argumentsJson)
-        assertNoSampleSecrets(storedToolCall.resultPreview.orEmpty())
+        assertNoSampleSecrets(storedToolCall.resultJson.orEmpty())
         assertTrue(fixture.eventRepository.listByChat(fixture.userId, fixture.chat.id).isEmpty())
     }
 

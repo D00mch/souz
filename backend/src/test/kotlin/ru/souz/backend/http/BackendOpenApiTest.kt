@@ -53,7 +53,7 @@ class BackendOpenApiTest {
     }
 
     @Test
-    fun `all V1 operations require both proxy schemes and public system operations are unsecured`() =
+    fun `proxy operations require both schemes and public operations are unsecured`() =
         testApplication {
             installBackend(BackendFeatureFlags(telegramBot = true))
             val document = openApiDocument()
@@ -66,8 +66,11 @@ class BackendOpenApiTest {
             assertApiKeyScheme(schemes["souzProxyAuth"], "X-Souz-Proxy-Auth")
             assertApiKeyScheme(schemes["souzUserIdentity"], "X-User-Id")
 
-            operations(document).forEach { (path, _, operation) ->
-                if (path.startsWith("/v1/")) {
+            operations(document).forEach { (path, method, operation) ->
+                val publicClientCreate = path == "/v1/chats" && method == "post"
+                val publicClientThreadStatus =
+                    path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get"
+                if (path.startsWith("/v1/") && !publicClientCreate && !publicClientThreadStatus) {
                     val security = assertNotNull(operation["security"])
                     assertEquals(1, security.size())
                     assertEquals(
@@ -80,6 +83,10 @@ class BackendOpenApiTest {
                     assertTrue(operation["responses"].has("500"), "$path must document internal failures")
                 } else {
                     assertNull(operation["security"], "$path must remain public")
+                    if (publicClientCreate || publicClientThreadStatus) {
+                        assertFalse(operation["responses"].has("401"))
+                        assertTrue(operation["responses"].has("500"))
+                    }
                 }
             }
         }
@@ -174,7 +181,7 @@ class BackendOpenApiTest {
             assertTrue(optionBody["properties"]["metadata"]["description"].asText().contains("non-whitespace"))
 
             assertEquals(
-                setOf("201", "400", "401", "500"),
+                setOf("200", "201", "400", "409", "500"),
                 responseCodes(document, "/v1/chats", "post"),
             )
             val deleteKeyResponses = operation(document, "/v1/me/provider-keys/{provider}", "delete")["responses"]
@@ -289,7 +296,12 @@ class BackendOpenApiTest {
             assertEquals(1.0, legacy["properties"]["seq"]["minimum"].asDouble())
             assertEquals(listOf(true), legacy["properties"]["durable"]["enum"].map { it.asBoolean() })
             assertEquals(
-                eventPayloadExpectations.keys + "message.delta",
+                eventPayloadExpectations.keys + setOf(
+                    "message.delta",
+                    "thread.completed",
+                    "thread.failed",
+                    "thread.cancelled",
+                ),
                 legacy["properties"]["type"]["enum"].map { it.asText() }.toSet(),
             )
             assertEquals("object", legacy["properties"]["payload"]["type"].asText())
@@ -362,8 +374,8 @@ class BackendOpenApiTest {
         }
 
         assertEquals(expected, actual)
-        assertEquals(if (telegramEnabled) 18 else 17, actual.size)
-        assertEquals(if (telegramEnabled) 24 else 21, actual.values.sumOf(Set<String>::size))
+        assertEquals(if (telegramEnabled) 19 else 18, actual.size)
+        assertEquals(if (telegramEnabled) 25 else 22, actual.values.sumOf(Set<String>::size))
         assertFalse(actual.containsKey(BackendHttpRoutes.DOCS))
         assertFalse(actual.containsKey(BackendHttpRoutes.OPENAPI_DOCUMENT))
         assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
@@ -462,6 +474,7 @@ class BackendOpenApiTest {
                 "/v1/me/provider-keys" to setOf("get"),
                 "/v1/me/provider-keys/{provider}" to setOf("put", "delete"),
                 "/v1/chats" to setOf("get", "post"),
+                "/v1/chats/{chatId}/threads/{threadId}" to setOf("get"),
                 "/v1/chats/{chatId}/title" to setOf("patch"),
                 "/v1/chats/{chatId}/archive" to setOf("post"),
                 "/v1/chats/{chatId}/unarchive" to setOf("post"),
@@ -489,7 +502,14 @@ class BackendOpenApiTest {
                 "putProviderKey" to v1Expectation("Provider Keys", "200", "400"),
                 "deleteProviderKey" to v1Expectation("Provider Keys", "204", "400"),
                 "listChats" to v1Expectation("Chats", "200", "400"),
-                "createChat" to v1Expectation("Chats", "201", "400"),
+                "createClientChat" to OperationExpectation(
+                    "Chats",
+                    setOf("200", "201", "400", "409", "500"),
+                ),
+                "getClientThreadStatus" to OperationExpectation(
+                    "Chats",
+                    setOf("200", "400", "404", "500"),
+                ),
                 "updateChatTitle" to v1Expectation("Chats", "200", "400", "404"),
                 "archiveChat" to v1Expectation("Chats", "200", "400", "404"),
                 "unarchiveChat" to v1Expectation("Chats", "200", "400", "404"),

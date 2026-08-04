@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -23,7 +23,7 @@ import ru.souz.llms.restJsonMapper
 class ToolGetSkillByName(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
-    private val repository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider,
     private val legacyCommandTool: LLMToolSetup,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
@@ -100,7 +100,7 @@ class ToolGetSkillByName(
                 skillId in enabledTools -> SkillLookupResponse(skill = enabledTools.getValue(skillId).toDetail())
                 else -> {
                     val parsedSkillId = SkillId(skillId)
-                    val bundle = repository.loadSkillBundle(meta.userId, parsedSkillId)
+                    val bundle = skillBundleProvider.loadSkillBundle(meta.userId, parsedSkillId)
                     when {
                         bundle != null -> approvedBundleResponse(
                             userId = meta.userId,

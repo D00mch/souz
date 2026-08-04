@@ -24,6 +24,10 @@ import ru.souz.backend.events.model.MessageDeltaPayload
 import ru.souz.backend.events.model.ToolCallFailedPayload
 import ru.souz.backend.events.model.ToolCallFinishedPayload
 import ru.souz.backend.events.model.ToolCallStartedPayload
+import ru.souz.backend.events.model.PublicErrorPayload
+import ru.souz.backend.events.model.ThreadCancelledPayload
+import ru.souz.backend.events.model.ThreadCompletedPayload
+import ru.souz.backend.events.model.ThreadFailedPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -57,6 +61,8 @@ internal class BackendAgentRuntimeEventSink(
     private val optionsEnabled: Boolean = false,
     private val assistantMessageId: UUID? = null,
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
+    private val beforePublicEvent: suspend () -> Unit = {},
+    private val publicClientThread: Boolean = false,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
     private val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
@@ -80,7 +86,7 @@ internal class BackendAgentRuntimeEventSink(
 
             is AgentRuntimeEvent.ToolCallFailed -> onToolCallFailed(event)
 
-            is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled) {
+            is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled && !publicClientThread) {
                 val option = persistOption(event)
                 requestedOptionId = option.id
                 executionRepository.get(userId, executionId)?.let { execution ->
@@ -99,11 +105,7 @@ internal class BackendAgentRuntimeEventSink(
                         title = option.title,
                         selectionMode = option.selectionMode,
                         options = option.options.map { item ->
-                            ChoiceOptionItemPayload(
-                                id = item.id,
-                                label = item.label,
-                                content = item.content,
-                            )
+                            ChoiceOptionItemPayload(item.id, item.label, item.content)
                         },
                     ),
                 )
@@ -112,6 +114,7 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     suspend fun emitExecutionStarted(execution: AgentExecution) {
+        if (publicClientThread) return
         appendDurableEvent(
             type = AgentEventType.EXECUTION_STARTED,
             payload = ExecutionStartedPayload(
@@ -132,18 +135,17 @@ internal class BackendAgentRuntimeEventSink(
             name = event.name,
             argumentsPreview = argumentsPreview,
         )
-        if (!toolEventsEnabled) {
-            return
+        if (!publicClientThread && toolEventsEnabled) {
+            appendDurableEvent(
+                type = AgentEventType.TOOL_CALL_STARTED,
+                payload = ToolCallStartedPayload(
+                    toolCallId = event.toolCallId,
+                    name = event.name,
+                    argumentKeys = event.arguments.keys.sorted(),
+                    argumentsPreview = argumentsPreviewNode,
+                ),
+            )
         }
-        appendDurableEvent(
-            type = AgentEventType.TOOL_CALL_STARTED,
-            payload = ToolCallStartedPayload(
-                toolCallId = event.toolCallId,
-                name = event.name,
-                argumentKeys = event.arguments.keys.sorted(),
-                argumentsPreview = argumentsPreviewNode,
-            ),
-        )
     }
 
     private suspend fun onToolCallFinished(event: AgentRuntimeEvent.ToolCallFinished) {
@@ -155,18 +157,17 @@ internal class BackendAgentRuntimeEventSink(
             resultPreview = resultPreview,
             durationMs = event.durationMs,
         )
-        if (!toolEventsEnabled) {
-            return
+        if (!publicClientThread && toolEventsEnabled) {
+            appendDurableEvent(
+                type = AgentEventType.TOOL_CALL_FINISHED,
+                payload = ToolCallFinishedPayload(
+                    toolCallId = event.toolCallId,
+                    name = event.name,
+                    resultPreview = resultPreviewNode,
+                    durationMs = event.durationMs,
+                ),
+            )
         }
-        appendDurableEvent(
-            type = AgentEventType.TOOL_CALL_FINISHED,
-            payload = ToolCallFinishedPayload(
-                toolCallId = event.toolCallId,
-                name = event.name,
-                resultPreview = resultPreviewNode,
-                durationMs = event.durationMs,
-            ),
-        )
     }
 
     private suspend fun onToolCallFailed(event: AgentRuntimeEvent.ToolCallFailed) {
@@ -177,18 +178,17 @@ internal class BackendAgentRuntimeEventSink(
             error = safeError,
             durationMs = event.durationMs,
         )
-        if (!toolEventsEnabled) {
-            return
+        if (!publicClientThread && toolEventsEnabled) {
+            appendDurableEvent(
+                type = AgentEventType.TOOL_CALL_FAILED,
+                payload = ToolCallFailedPayload(
+                    toolCallId = event.toolCallId,
+                    name = event.name,
+                    error = safeError,
+                    durationMs = event.durationMs,
+                ),
+            )
         }
-        appendDurableEvent(
-            type = AgentEventType.TOOL_CALL_FAILED,
-            payload = ToolCallFailedPayload(
-                toolCallId = event.toolCallId,
-                name = event.name,
-                error = safeError,
-                durationMs = event.durationMs,
-            ),
-        )
     }
 
     suspend fun completeAssistantMessage(content: String): ChatMessage {
@@ -219,75 +219,87 @@ internal class BackendAgentRuntimeEventSink(
         }
 
         assistantMessage = completedMessage
-        appendDurableEvent(
-            type = AgentEventType.MESSAGE_COMPLETED,
-            payload = MessageCompletedPayload(
-                messageId = completedMessage.id,
-                seq = completedMessage.seq,
-                role = completedMessage.role.value,
-                content = completedMessage.content,
-            ),
-        )
+        if (!publicClientThread) {
+            appendDurableEvent(
+                type = AgentEventType.MESSAGE_COMPLETED,
+                payload = MessageCompletedPayload(
+                    messageId = completedMessage.id,
+                    seq = completedMessage.seq,
+                    role = completedMessage.role.value,
+                    content = completedMessage.content,
+                ),
+            )
+        }
         return completedMessage
     }
 
     suspend fun emitExecutionFinished(execution: AgentExecution) {
-        appendDurableEvent(
-            type = AgentEventType.EXECUTION_FINISHED,
-            payload = ExecutionFinishedPayload(
-                executionId = execution.id,
-                assistantMessageId = execution.assistantMessageId,
-                status = execution.status.value,
-                usage = execution.usage?.let { usage ->
-                    ExecutionUsagePayload(
-                        promptTokens = usage.promptTokens,
-                        completionTokens = usage.completionTokens,
-                        totalTokens = usage.totalTokens,
-                        precachedTokens = usage.precachedTokens,
-                    )
-                },
-            ),
-        )
+        if (publicClientThread) {
+            beforePublicEvent()
+            appendDurableEvent(
+                type = AgentEventType.THREAD_COMPLETED,
+                payload = ThreadCompletedPayload(response = assistantMessage?.content.orEmpty()),
+            )
+        } else {
+            appendDurableEvent(
+                type = AgentEventType.EXECUTION_FINISHED,
+                payload = ExecutionFinishedPayload(
+                    executionId = execution.id,
+                    assistantMessageId = execution.assistantMessageId,
+                    status = execution.status.value,
+                    usage = execution.usage?.let { usage ->
+                        ExecutionUsagePayload(
+                            usage.promptTokens,
+                            usage.completionTokens,
+                            usage.totalTokens,
+                            usage.precachedTokens,
+                        )
+                    },
+                ),
+            )
+        }
     }
 
     suspend fun emitExecutionFailed(
         errorCode: String,
         errorMessage: String,
     ) {
-        appendDurableEvent(
-            type = AgentEventType.EXECUTION_FAILED,
-            payload = ExecutionFailedPayload(
-                executionId = executionId,
-                assistantMessageId = assistantMessage?.id,
-                errorCode = errorCode,
-                errorMessage = errorMessage,
-            ),
-        )
+        if (publicClientThread) {
+            beforePublicEvent()
+            appendDurableEvent(
+                type = AgentEventType.THREAD_FAILED,
+                payload = ThreadFailedPayload(PublicErrorPayload(errorCode.toPublicErrorCode(), errorMessage)),
+            )
+        } else {
+            appendDurableEvent(
+                type = AgentEventType.EXECUTION_FAILED,
+                payload = ExecutionFailedPayload(executionId, assistantMessage?.id, errorCode, errorMessage),
+            )
+        }
     }
 
     suspend fun emitExecutionCancelled() {
-        appendDurableEvent(
-            type = AgentEventType.EXECUTION_CANCELLED,
-            payload = ExecutionCancelledPayload(
-                executionId = executionId,
-                assistantMessageId = assistantMessage?.id,
-            ),
-        )
+        if (publicClientThread) {
+            beforePublicEvent()
+            appendDurableEvent(type = AgentEventType.THREAD_CANCELLED, payload = ThreadCancelledPayload())
+        } else {
+            appendDurableEvent(
+                type = AgentEventType.EXECUTION_CANCELLED,
+                payload = ExecutionCancelledPayload(executionId, assistantMessage?.id),
+            )
+        }
     }
 
     private suspend fun onLlmMessageDelta(event: AgentRuntimeEvent.LlmMessageDelta) {
-        if (!streamingMessagesEnabled || event.text.isEmpty()) return
-
+        if (publicClientThread || !streamingMessagesEnabled || event.text.isEmpty()) return
         publishLiveEvent(
             type = AgentEventType.MESSAGE_DELTA,
-            payload = MessageDeltaPayload(
-                messageId = finalAssistantMessageId,
-                delta = event.text,
-            ),
+            payload = MessageDeltaPayload(finalAssistantMessageId, event.text),
         )
     }
 
     suspend fun emitMessageCreated(message: ChatMessage) {
+        if (publicClientThread) return
         appendDurableEvent(
             type = AgentEventType.MESSAGE_CREATED,
             payload = MessageCreatedPayload(
@@ -383,3 +395,19 @@ internal class BackendAgentRuntimeEventSink(
     }
 
 }
+
+private fun String.toPublicErrorCode(): String =
+    if (this in publicErrorCodes) this else "internal_error"
+
+private val publicErrorCodes = setOf(
+    "invalid_request",
+    "chat_not_found",
+    "thread_not_found",
+    "thread_already_terminal",
+    "tool_call_not_found",
+    "idempotency_conflict",
+    "feature_disabled",
+    "message_rejected",
+    "client_tool_timed_out",
+    "internal_error",
+)

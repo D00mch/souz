@@ -36,6 +36,9 @@ class PostgresAgentEventRepository(
             """
             insert into agent_events(id, user_id, chat_id, execution_id, seq, type, payload, created_at)
             values (?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict (execution_id) where type in ('execution.finished', 'execution.failed', 'execution.cancelled')
+            do update set execution_id = agent_events.execution_id
+            returning *
             """.trimIndent()
         ).use { statement ->
             statement.setObject(1, id)
@@ -46,18 +49,11 @@ class PostgresAgentEventRepository(
             statement.setString(6, type.value)
             statement.setJson(7, postgresStorageMapper.writeValueAsString(AgentEventPayloadStorageCodec.toStorageJson(payload)))
             statement.setInstant(8, createdAt)
-            statement.executeUpdate()
+            statement.executeQuery().use { resultSet ->
+                check(resultSet.next()) { "Failed to append event for chat $chatId." }
+                resultSet.toEvent()
+            }
         }
-        AgentEvent(
-            id = id,
-            userId = userId,
-            chatId = chatId,
-            executionId = executionId,
-            seq = nextSeq,
-            type = type,
-            payload = payload,
-            createdAt = createdAt,
-        )
     }
 
     override suspend fun get(userId: String, eventId: UUID): AgentEvent? = dataSource.read { connection ->
@@ -66,6 +62,21 @@ class PostgresAgentEventRepository(
         ).use { statement ->
             statement.setString(1, userId)
             statement.setObject(2, eventId)
+            statement.executeQuery().use { resultSet ->
+                if (resultSet.next()) resultSet.toEvent() else null
+            }
+        }
+    }
+
+    override suspend fun findTerminal(executionId: UUID): AgentEvent? = dataSource.read { connection ->
+        connection.prepareStatement(
+            """
+            select * from agent_events
+            where execution_id = ? and type in ('thread.completed', 'thread.failed', 'thread.cancelled')
+            limit 1
+            """.trimIndent()
+        ).use { statement ->
+            statement.setObject(1, executionId)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toEvent() else null
             }

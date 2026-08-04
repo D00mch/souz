@@ -6,7 +6,6 @@ import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillValidationRecord
-import ru.souz.agent.skills.validation.SkillValidationStatus
 import java.time.Instant
 
 class InMemorySkillRegistryRepository : SkillRegistryRepository {
@@ -42,45 +41,6 @@ class InMemorySkillRegistryRepository : SkillRegistryRepository {
 
     override suspend fun saveValidation(record: SkillValidationRecord) {
         validations[ValidationKey(record.userId, record.skillId, record.bundleHash, record.policyVersion)] = record
-    }
-
-    override suspend fun markValidationStatus(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-        status: SkillValidationStatus,
-        reason: String?,
-    ) {
-        val key = ValidationKey(userId, skillId, bundleHash, policyVersion)
-        val current = validations[key] ?: return
-        validations[key] = current.copy(
-            status = status,
-            reasons = current.reasons + listOfNotNull(reason),
-        )
-    }
-
-    override suspend fun invalidateOtherValidations(
-        userId: String,
-        skillId: SkillId,
-        activeBundleHash: String,
-        policyVersion: String,
-        reason: String?,
-    ) {
-        validations.entries
-            .filter { (key, record) ->
-                key.userId == userId &&
-                        key.skillId == skillId &&
-                        key.policyVersion == policyVersion &&
-                        key.bundleHash != activeBundleHash &&
-                        record.status == SkillValidationStatus.APPROVED
-            }
-            .forEach { (key, record) ->
-                validations[key] = record.copy(
-                    status = SkillValidationStatus.STALE,
-                    reasons = record.reasons + listOfNotNull(reason),
-                )
-            }
     }
 
     private fun SkillBundle.toStoredSkill(userId: String): StoredSkill = StoredSkill(

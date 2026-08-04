@@ -1,0 +1,27 @@
+{
+  "kind": "message.submit",
+  "chatId": "{{chatId}}",
+  "requestId": "{{messageRequestId2}}",
+  "threadId": "{{threadId}}",
+  "payload": {
+    "device": {
+      "userId": "{{userId}}",
+      "deviceId": "{{deviceId}}",
+      "deviceType": "tv_box",
+      "capabilities": [
+        "speech",
+        "screen",
+        "device_tools"
+      ]
+    },
+    "content": {
+      "type": "text",
+      "source": "voice",
+      "text": "А лучше всё-таки включи фильм ужасов"
+    },
+    "meta": {
+      "locale": "ru-RU",
+      "timeZone": "Europe/Moscow"
+    }
+  }
+}

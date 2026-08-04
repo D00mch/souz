@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Client-Souz REST API
   version: 1.0.0-draft
-  description: Minimal REST contract for creating a durable chat before connecting to its WebSocket.
+  description: Minimal REST contract for creating a durable chat, checking thread status, and connecting to its WebSocket.
 servers:
   - url: https://souz.example.ru
 paths:
@@ -35,6 +35,39 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "409":
           $ref: "#/components/responses/Conflict"
+  /v1/chats/{chatId}/threads/{threadId}:
+    get:
+      operationId: getClientThreadStatus
+      tags: [Client Chats]
+      summary: Get thread status
+      description: Returns the current durable status for a Client-Souz thread. This API is only exposed inside a trusted environment, so credentials are not required.
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/UUID"
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/UUID"
+        - name: clientType
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/ClientType"
+      responses:
+        "200":
+          description: Current thread status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreadStatusSnapshot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   responses:
     BadRequest:
@@ -45,6 +78,12 @@ components:
             $ref: "#/components/schemas/ErrorEnvelope"
     Conflict:
       description: Request conflicts with idempotency state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Chat or thread not found.
       content:
         application/json:
           schema:
@@ -287,6 +326,7 @@ components:
       description: Souz-to-Client WebSocket frame.
       oneOf:
         - $ref: "#/components/schemas/SouzAck"
+        - $ref: "#/components/schemas/ThreadStatusFrame"
         - $ref: "#/components/schemas/SouzServerEvent"
     SouzAck:
       oneOf:
@@ -461,6 +501,114 @@ components:
           $ref: "#/components/schemas/Error"
         receivedAt:
           $ref: "#/components/schemas/DateTime"
+    ThreadStatus:
+      type: string
+      enum: [queued, running, waiting_option, cancelling, cancelled, completed, failed]
+    ThreadStatusSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - chatId
+        - threadId
+        - status
+        - alive
+        - acceptsInput
+        - revision
+        - startedAt
+        - finishedAt
+        - runtimeLeaseExpiresAt
+        - error
+        - observedAt
+      properties:
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        status:
+          $ref: "#/components/schemas/ThreadStatus"
+        alive:
+          type: boolean
+          description: True when the thread is active and its runtime lease has not expired.
+        acceptsInput:
+          type: boolean
+          description: True when the thread can accept `message.submit` follow-up input.
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        startedAt:
+          $ref: "#/components/schemas/DateTime"
+        finishedAt:
+          anyOf:
+            - $ref: "#/components/schemas/DateTime"
+            - type: "null"
+        runtimeLeaseExpiresAt:
+          anyOf:
+            - $ref: "#/components/schemas/DateTime"
+            - type: "null"
+        error:
+          anyOf:
+            - $ref: "#/components/schemas/Error"
+            - type: "null"
+        observedAt:
+          $ref: "#/components/schemas/DateTime"
+    ThreadStatusFrame:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - type
+        - chatId
+        - threadId
+        - requestId
+        - status
+        - alive
+        - acceptsInput
+        - revision
+        - startedAt
+        - finishedAt
+        - runtimeLeaseExpiresAt
+        - error
+        - observedAt
+      properties:
+        kind:
+          type: string
+          enum: [status]
+        type:
+          type: string
+          enum: [thread.status]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          type: [string, "null"]
+        status:
+          $ref: "#/components/schemas/ThreadStatus"
+        alive:
+          type: boolean
+        acceptsInput:
+          type: boolean
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        startedAt:
+          $ref: "#/components/schemas/DateTime"
+        finishedAt:
+          anyOf:
+            - $ref: "#/components/schemas/DateTime"
+            - type: "null"
+        runtimeLeaseExpiresAt:
+          anyOf:
+            - $ref: "#/components/schemas/DateTime"
+            - type: "null"
+        error:
+          anyOf:
+            - $ref: "#/components/schemas/Error"
+            - type: "null"
+        observedAt:
+          $ref: "#/components/schemas/DateTime"
     SouzServerEvent:
       oneOf:
         - $ref: "#/components/schemas/ToolCallStartedEvent"
@@ -608,6 +756,7 @@ components:
         - idempotency_conflict
         - feature_disabled
         - message_rejected
+        - client_tool_timed_out
         - internal_error
     Error:
       type: object

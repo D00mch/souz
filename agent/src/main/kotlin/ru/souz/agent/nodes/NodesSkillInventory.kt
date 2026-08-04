@@ -3,7 +3,7 @@ package ru.souz.agent.nodes
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
@@ -19,7 +19,7 @@ internal const val SKILL_INVENTORY_NODE_NAME = "Skill Inventory"
 internal class NodesSkillInventory(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
-    private val skillRegistryRepository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider,
 ) {
     private val logger = LoggerFactory.getLogger(NodesSkillInventory::class.java)
     private val promptAugmenter = SkillInventoryPromptAugmenter()
@@ -71,7 +71,7 @@ internal class NodesSkillInventory(
             .filterValues { it.isNotEmpty() }
 
         val fileBackedSkillIds = try {
-            skillRegistryRepository.listSkillInventoryIds(userId)
+            skillBundleProvider.listSkillInventoryIds(userId)
                 .map { it.value }
                 .filterNot { it in toolBackedSkillIds }
                 .distinct()

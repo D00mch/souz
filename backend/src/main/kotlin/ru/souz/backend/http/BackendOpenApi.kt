@@ -207,6 +207,17 @@ internal fun Parameters.Builder.nonNegativeLongQueryParameter(
     }
 }
 
+internal fun Parameters.Builder.clientTypeQueryParameter() {
+    query("clientType") {
+        description = "Client kind stored on the public chat."
+        required = true
+        schema = JsonSchema(
+            type = JsonType.STRING,
+            enum = listOf(GenericElement("backend"), GenericElement("mobile_app")),
+        )
+    }
+}
+
 internal fun Parameters.Builder.strictBooleanQueryParameter(
     name: String,
     description: String,

@@ -43,6 +43,13 @@ class EffectiveSettingsResolver(
     private val toolCatalog: AgentToolCatalog,
     private val localModelAvailability: LocalModelAvailability,
 ) {
+    suspend fun isSelectableDefaultModel(
+        userId: String,
+        model: LLMModel,
+        userManagedProviders: Set<LlmProvider>? = null,
+    ): Boolean =
+        isSelectableModel(userId, model, userManagedProviders)
+
     suspend fun resolve(
         userId: String,
         requestOverrides: UserSettingsOverrides? = null,
@@ -162,6 +169,7 @@ class EffectiveSettingsResolver(
     ): Boolean =
         when (provider) {
             LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
+            LlmProvider.CODEX -> false
             else -> baseSettingsProvider.hasKey(provider) || provider in (userManagedProviders ?: loadUserManagedProviders(userId))
         }
 

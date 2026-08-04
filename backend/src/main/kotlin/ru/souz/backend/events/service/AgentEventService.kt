@@ -14,12 +14,16 @@ import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.http.BackendV1Exception
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class AgentEventService(
     private val chatRepository: ChatRepository,
     private val eventRepository: AgentEventRepository,
     private val eventBus: AgentEventBus,
 ) {
+    private val terminalMutex = Mutex()
+
     suspend fun appendDurable(
         userId: String,
         chatId: UUID,
@@ -28,6 +32,24 @@ class AgentEventService(
         payload: AgentEventPayload,
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
+    ): AgentEvent {
+        if (type.isPublicTerminal() && executionId != null) {
+            return terminalMutex.withLock {
+                eventRepository.findTerminal(executionId)?.let { return@withLock it }
+                appendAndPublish(userId, chatId, executionId, type, payload, id, createdAt)
+            }
+        }
+        return appendAndPublish(userId, chatId, executionId, type, payload, id, createdAt)
+    }
+
+    private suspend fun appendAndPublish(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID?,
+        type: AgentEventType,
+        payload: AgentEventPayload,
+        id: UUID,
+        createdAt: Instant,
     ): AgentEvent {
         val event = eventRepository.append(
             userId = userId,
@@ -38,7 +60,7 @@ class AgentEventService(
             id = id,
             createdAt = createdAt,
         )
-        eventBus.publish(event)
+        event.takeIf { it.id == id }?.let { eventBus.publish(it) }
         return event
     }
 
@@ -125,6 +147,38 @@ class AgentEventService(
         }
     }
 
+    suspend fun openPublicStream(
+        userId: String,
+        chatId: UUID,
+        afterSeq: Long = 0,
+    ): AgentEventStream {
+        requireOwnedChat(userId, chatId)
+        val subscription = eventBus.subscribe(userId, chatId)
+        try {
+            return AgentEventStream(
+                replay = listPublicStreamReplay(userId, chatId, afterSeq),
+                liveEvents = subscription.events,
+                close = { subscription.close() },
+                replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
+            )
+        } catch (error: Throwable) {
+            subscription.close()
+            throw error
+        }
+    }
+
+    private suspend fun listPublicStreamReplay(
+        userId: String,
+        chatId: UUID,
+        afterSeq: Long,
+    ): List<AgentEvent> =
+        eventRepository.listByChat(
+            userId = userId,
+            chatId = chatId,
+            afterSeq = afterSeq,
+            limit = Int.MAX_VALUE,
+        )
+
     private suspend fun requireOwnedChat(userId: String, chatId: UUID) {
         if (chatRepository.get(userId, chatId) == null) {
             throw BackendV1Exception(
@@ -135,3 +189,8 @@ class AgentEventService(
         }
     }
 }
+
+private fun AgentEventType.isPublicTerminal(): Boolean =
+    this == AgentEventType.THREAD_COMPLETED ||
+        this == AgentEventType.THREAD_FAILED ||
+        this == AgentEventType.THREAD_CANCELLED

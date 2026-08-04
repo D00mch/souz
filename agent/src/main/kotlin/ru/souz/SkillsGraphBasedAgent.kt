@@ -111,11 +111,15 @@ class SkillsGraphBasedAgent internal constructor(
     override suspend fun submitToActiveRun(input: String): Boolean =
         activeRun.value?.submit(input) ?: false
 
+    override suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
+        activeRun.value?.submitAfter(input, beforePublish) ?: false
+
     override suspend fun execute(ctx: AgentContext<String>): String =
         executeWithTrace(ctx).output
 
     override suspend fun executeWithTrace(
         ctx: AgentContext<String>,
+        onActiveRunReady: suspend () -> Unit,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()
@@ -124,6 +128,7 @@ class SkillsGraphBasedAgent internal constructor(
         val executionGraph = graph(controller)
         activeRun.value = controller
         return try {
+            onActiveRunReady()
             executionDelegate.executeWithTrace(graph = executionGraph, ctx = restrictedContext, onStep = onStep)
         } finally {
             withContext(NonCancellable) {

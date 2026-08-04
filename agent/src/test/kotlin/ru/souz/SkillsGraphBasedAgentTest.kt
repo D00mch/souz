@@ -154,7 +154,7 @@ class SkillsGraphBasedAgentTest {
         nodesSkillInventory = NodesSkillInventory(
             toolCatalog = testCatalog(),
             toolsFilter = passThroughToolsFilter(),
-            skillRegistryRepository = emptySkillRegistry(),
+            skillBundleProvider = emptySkillRegistry(),
         ),
         nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
             nodesCommon = nodesCommon,

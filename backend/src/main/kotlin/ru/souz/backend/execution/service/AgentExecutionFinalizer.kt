@@ -18,6 +18,7 @@ import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.AgentExecutionUsage
@@ -35,6 +36,7 @@ internal class AgentExecutionFinalizer(
     private val chatRepository: ChatRepository,
     private val executionRepository: AgentExecutionRepository,
     private val turnRunner: BackendConversationTurnRunner,
+    private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
 ) {
     private val sessionRepository = AgentStateBackedSessionRepository(agentStateRepository)
 
@@ -228,8 +230,8 @@ internal class AgentExecutionFinalizer(
         errorCode: String,
         errorMessage: String,
         usage: AgentExecutionUsage?,
-    ): AgentExecution {
-        val currentExecution = executionRepository.getByChat(userId, chatId, executionId) ?: return AgentExecution(
+    ): AgentExecution = withTerminalTransition(executionId) {
+        val currentExecution = executionRepository.getByChat(userId, chatId, executionId) ?: return@withTerminalTransition AgentExecution(
             id = executionId,
             userId = userId,
             chatId = chatId,
@@ -248,7 +250,7 @@ internal class AgentExecutionFinalizer(
             usage = usage,
             metadata = emptyMap(),
         )
-        return executionRepository.update(
+        executionRepository.update(
             currentExecution.copy(
                 status = AgentExecutionStatus.FAILED,
                 finishedAt = Instant.now(),
@@ -260,6 +262,20 @@ internal class AgentExecutionFinalizer(
     }
 
     suspend fun markCancelled(
+        executionId: UUID,
+        userId: String,
+        chatId: UUID,
+        usage: AgentExecutionUsage?,
+    ): AgentExecution = withTerminalTransition(executionId) {
+        persistCancelled(
+            executionId = executionId,
+            userId = userId,
+            chatId = chatId,
+            usage = usage,
+        )
+    }
+
+    internal suspend fun persistCancelled(
         executionId: UUID,
         userId: String,
         chatId: UUID,
@@ -297,31 +313,31 @@ internal class AgentExecutionFinalizer(
         conversationKey: AgentConversationKey,
         eventSink: BackendAgentRuntimeEventSink,
     ): PersistedExecutionResult {
-        val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
-        sessionRepository.save(
-            conversationKey,
-            executionOutcome.session.copy(
-                basedOnMessageSeq = assistantMessage.seq,
+        val persisted = withTerminalTransition(execution.id) {
+            val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
+            sessionRepository.save(
+                conversationKey,
+                executionOutcome.session.copy(
+                    basedOnMessageSeq = assistantMessage.seq,
+                )
             )
-        )
-        chatRepository.update(chat.copy(updatedAt = assistantMessage.createdAt))
+            chatRepository.update(chat.copy(updatedAt = assistantMessage.createdAt))
 
-        val finalExecution = executionRepository.update(
-            currentExecution(execution.id, execution.userId, execution.chatId).copy(
-                assistantMessageId = assistantMessage.id,
-                status = AgentExecutionStatus.COMPLETED,
-                finishedAt = Instant.now(),
-                errorCode = null,
-                errorMessage = null,
-                usage = executionOutcome.usage.toExecutionUsage(),
+            val finalExecution = executionRepository.update(
+                currentExecution(execution.id, execution.userId, execution.chatId).copy(
+                    assistantMessageId = assistantMessage.id,
+                    status = AgentExecutionStatus.COMPLETED,
+                    finishedAt = Instant.now(),
+                    errorCode = null,
+                    errorMessage = null,
+                    usage = executionOutcome.usage.toExecutionUsage(),
+                )
             )
-        )
-        eventSink.emitExecutionFinished(finalExecution)
+            PersistedExecutionResult(assistantMessage = assistantMessage, execution = finalExecution)
+        }
+        eventSink.emitExecutionFinished(persisted.execution)
 
-        return PersistedExecutionResult(
-            assistantMessage = assistantMessage,
-            execution = finalExecution,
-        )
+        return persisted
     }
 
     private suspend fun persistWaitingOptionExecution(
@@ -349,6 +365,9 @@ internal class AgentExecutionFinalizer(
             },
         )
     }
+
+    internal suspend fun <T> withTerminalTransition(executionId: UUID, block: suspend () -> T): T =
+        clientThreadRegistry?.withTerminalTransition(executionId, block) ?: block()
 }
 
 private fun LLMResponse.Usage.toExecutionUsage(): AgentExecutionUsage =

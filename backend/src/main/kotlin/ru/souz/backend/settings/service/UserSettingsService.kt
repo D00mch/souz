@@ -1,6 +1,7 @@
 package ru.souz.backend.settings.service
 
 import java.time.Instant
+import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
@@ -16,6 +17,12 @@ class UserSettingsService(
         userId: String,
         overrides: UserSettingsOverrides,
     ): EffectiveUserSettings {
+        if (
+            overrides.defaultModel != null &&
+            !effectiveSettingsResolver.isSelectableDefaultModel(userId, overrides.defaultModel)
+        ) {
+            throw invalidV1Request("defaultModel must be available to the current user.")
+        }
         val existing = userSettingsRepository.get(userId)
         val now = Instant.now()
         userSettingsRepository.save(

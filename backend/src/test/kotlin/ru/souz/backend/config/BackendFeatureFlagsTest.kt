@@ -95,6 +95,20 @@ class BackendAppConfigTest {
     }
 
     @Test
+    fun `public websocket requires the skills graph`() {
+        val graphConfig = BackendAppConfig.load(
+            MapBackendConfigSource(env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"))
+        ).copy(
+            featureFlags = BackendFeatureFlags(wsEvents = true),
+            agentId = AgentId.GRAPH,
+        )
+
+        val error = assertFailsWith<BackendConfigurationException> { graphConfig.validate() }
+        assertTrue(error.message.orEmpty().contains("SOUZ_BACKEND_AGENT=skills"))
+        graphConfig.copy(agentId = AgentId.SKILLS_GRAPH).validate()
+    }
+
+    @Test
     fun `server config reads defaults and explicit settings`() {
         val defaultConfig = BackendAppConfig.load(
             MapBackendConfigSource(

@@ -6,7 +6,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import ru.souz.agent.skills.activation.SkillId
-import ru.souz.agent.skills.bundle.SkillManifest
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -14,7 +15,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class LlmSkillValidatorTest {
     @Test
@@ -66,39 +66,40 @@ class LlmSkillValidatorTest {
                 jsonUtils = JsonUtils(restJsonMapper),
             )
 
-            val verdict = validator.validate(validationInput())
+            val findings = validator.validate(validationInput())
 
-            assertEquals(SkillLlmValidationDecision.REJECT, verdict.decision, label)
-            assertEquals(1.0, verdict.confidence, label)
-            assertEquals(SkillRiskLevel.HIGH, verdict.riskLevel, label)
-            assertEquals("validator-model", verdict.model, label)
-            assertTrue(
-                verdict.reasons.single().startsWith("Validator returned malformed or unsupported output:"),
-                label,
-            )
-            assertEquals(1, verdict.findings.size, label)
-            assertEquals("validator_parse_failed", verdict.findings.single().code, label)
-            assertEquals(SkillValidationSeverity.ERROR, verdict.findings.single().severity, label)
+            assertEquals(1, findings.size, label)
+            assertEquals("validator_parse_failed", findings.single().code, label)
+            assertEquals(SkillValidationLevel.ERROR, findings.single().level, label)
         }
     }
 
-    private fun validationInput(): SkillLlmValidationInput = SkillLlmValidationInput(
+    private fun validationInput(): SkillValidationInput = SkillValidationInput(
         userId = "user-1",
         skillId = SkillId("paper-summarize"),
         bundleHash = "bundle-hash",
         policy = SkillValidationPolicy.default(),
-        manifest = SkillManifest(
-            name = "paper_summarize",
-            description = "Summarize academic papers.",
-            author = "test",
-            version = "1.0.0",
-            rawFrontmatter = "",
+        bundle = SkillBundle.fromFiles(
+            skillId = SkillId("paper-summarize"),
+            files = listOf(
+                SkillFile(
+                    normalizedPath = "SKILL.md",
+                    content = """
+                        ---
+                        name: paper_summarize
+                        description: Summarize academic papers.
+                        author: test
+                        version: 1.0.0
+                        ---
+                        # Paper Summarize
+                    """.trimIndent().toByteArray(),
+                ),
+                SkillFile(
+                    normalizedPath = "README.md",
+                    content = "Usage details".toByteArray(),
+                ),
+            ),
         ),
-        filePaths = listOf("SKILL.md"),
-        skillMarkdown = "# Paper Summarize",
-        supportingFileExcerpts = mapOf("README.md" to "Usage details"),
-        structuralFindings = emptyList(),
-        staticFindings = emptyList(),
     )
 
     private class FixedResponseChatApi(

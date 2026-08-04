@@ -1,9 +1,11 @@
 package ru.souz.backend.security
 
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.HttpMethod
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.createApplicationPlugin
 import io.ktor.server.request.header
+import io.ktor.server.request.httpMethod
 import io.ktor.server.request.path
 import io.ktor.util.AttributeKey
 import ru.souz.backend.http.BackendV1Exception
@@ -26,6 +28,7 @@ val RequestIdentityPlugin = createApplicationPlugin(
         if (!call.request.path().startsWith(pluginConfig.protectedPathPrefix)) {
             return@onCall
         }
+        if (call.isPublicClientContractRequest()) return@onCall
         val identity = resolveRequestIdentity(
             call = call,
             trustedProxyToken = pluginConfig.trustedProxyToken(),
@@ -33,6 +36,16 @@ val RequestIdentityPlugin = createApplicationPlugin(
         )
         call.attributes.put(RequestIdentityAttributeKey, identity)
     }
+}
+
+private fun ApplicationCall.isPublicClientContractRequest(): Boolean {
+    val path = request.path()
+    if (request.httpMethod == HttpMethod.Post && path == "/v1/chats") return true
+    if (request.httpMethod != HttpMethod.Get || !path.startsWith("/v1/chats/")) return false
+    val suffix = path.removePrefix("/v1/chats/")
+    if (suffix.endsWith("/ws") && '/' !in suffix.removeSuffix("/ws")) return true
+    val parts = suffix.split('/')
+    return parts.size == 3 && parts[1] == "threads" && parts.all { it.isNotBlank() }
 }
 
 fun ApplicationCall.requestIdentity(): RequestIdentity =

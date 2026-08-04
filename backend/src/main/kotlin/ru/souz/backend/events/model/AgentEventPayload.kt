@@ -7,6 +7,32 @@ import java.util.UUID
 
 sealed interface AgentEventPayload
 
+data class PublicToolCallStartedPayload(
+    val toolCallId: String,
+    val name: String,
+    val target: String = "client",
+    val deviceId: String? = null,
+    val arguments: JsonNode,
+    val deadlineAt: String? = null,
+) : AgentEventPayload
+
+data class ThreadCompletedPayload(
+    val response: String,
+) : AgentEventPayload
+
+data class PublicErrorPayload(
+    val code: String,
+    val message: String,
+)
+
+data class ThreadFailedPayload(
+    val error: PublicErrorPayload,
+) : AgentEventPayload
+
+data class ThreadCancelledPayload(
+    val reason: String? = null,
+) : AgentEventPayload
+
 data class MessageCreatedPayload(
     val messageId: UUID,
     val seq: Long,
@@ -137,7 +163,11 @@ internal object AgentEventPayloadStorageCodec {
                 AgentEventType.MESSAGE_CREATED -> mapper.treeToValue(payload, MessageCreatedPayload::class.java)
                 AgentEventType.MESSAGE_DELTA -> mapper.treeToValue(payload, MessageDeltaPayload::class.java)
                 AgentEventType.MESSAGE_COMPLETED -> mapper.treeToValue(payload, MessageCompletedPayload::class.java)
-                AgentEventType.TOOL_CALL_STARTED -> mapper.treeToValue(payload, ToolCallStartedPayload::class.java)
+                AgentEventType.TOOL_CALL_STARTED -> if (payload.has("target")) {
+                    mapper.treeToValue(payload, PublicToolCallStartedPayload::class.java)
+                } else {
+                    mapper.treeToValue(payload, ToolCallStartedPayload::class.java)
+                }
                 AgentEventType.TOOL_CALL_FINISHED -> mapper.treeToValue(payload, ToolCallFinishedPayload::class.java)
                 AgentEventType.TOOL_CALL_FAILED -> mapper.treeToValue(payload, ToolCallFailedPayload::class.java)
                 AgentEventType.OPTION_REQUESTED -> mapper.treeToValue(payload, ChoiceRequestedPayload::class.java)
@@ -146,6 +176,9 @@ internal object AgentEventPayloadStorageCodec {
                 AgentEventType.EXECUTION_FINISHED -> mapper.treeToValue(payload, ExecutionFinishedPayload::class.java)
                 AgentEventType.EXECUTION_FAILED -> mapper.treeToValue(payload, ExecutionFailedPayload::class.java)
                 AgentEventType.EXECUTION_CANCELLED -> mapper.treeToValue(payload, ExecutionCancelledPayload::class.java)
+                AgentEventType.THREAD_COMPLETED -> mapper.treeToValue(payload, ThreadCompletedPayload::class.java)
+                AgentEventType.THREAD_FAILED -> mapper.treeToValue(payload, ThreadFailedPayload::class.java)
+                AgentEventType.THREAD_CANCELLED -> mapper.treeToValue(payload, ThreadCancelledPayload::class.java)
             }
         }.getOrNull()
 

@@ -126,6 +126,11 @@ data class BackendAppConfig(
         if (telegramPollingMaxConcurrency <= 0) {
             throw BackendConfigurationException("Telegram polling max concurrency must be positive.")
         }
+        if (featureFlags.wsEvents && agentId != AgentId.SKILLS_GRAPH) {
+            throw BackendConfigurationException(
+                "SOUZ_FEATURE_WS_EVENTS requires SOUZ_BACKEND_AGENT=skills."
+            )
+        }
         llmLimits.validate()
         providerRetryPolicy.validate()
         return this
