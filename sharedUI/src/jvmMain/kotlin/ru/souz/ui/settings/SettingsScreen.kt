@@ -241,6 +241,8 @@ fun SettingsScreenMain(
                         SettingsSection.KEYS -> KeysSettingsContent(
                             state = state,
                             onApiKeyInput = { field, value -> viewModel.send(SettingsEvent.InputApiKey(field, value)) },
+                            onOpenAiBaseUrlInput = { viewModel.send(SettingsEvent.InputOpenAiBaseUrl(it)) },
+                            onOpenAiModelInput = { viewModel.send(SettingsEvent.InputOpenAiModel(it)) },
                             onApiKeyVisibilityToggle = { viewModel.send(SettingsEvent.ToggleApiKeyVisibility(it)) },
                             onOpenProviderLink = { viewModel.send(SettingsEvent.OpenProviderLink(it)) },
                             onStartCodexOAuth = { viewModel.send(SettingsEvent.StartCodexOAuth) },

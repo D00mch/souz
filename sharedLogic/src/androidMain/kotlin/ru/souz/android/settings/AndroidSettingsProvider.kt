@@ -54,6 +54,14 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         get() = secretString(OPENAI_KEY)
         set(value) = putSecretString(OPENAI_KEY, value)
 
+    override var openaiBaseUrl: String?
+        get() = string(OPENAI_BASE_URL)
+        set(value) = putString(OPENAI_BASE_URL, value?.trim())
+
+    override var openaiModel: String?
+        get() = string(OPENAI_MODEL)
+        set(value) = putString(OPENAI_MODEL, value?.trim())
+
     override var codexAccessToken: String?
         get() = secretString(CODEX_ACCESS_TOKEN)
         set(value) = putSecretString(CODEX_ACCESS_TOKEN, value)
@@ -277,6 +285,8 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
         const val ANTHROPIC_KEY = "ANTHROPIC_KEY"
         const val OPENAI_KEY = "OPENAI_KEY"
+        const val OPENAI_BASE_URL = "OPENAI_BASE_URL"
+        const val OPENAI_MODEL = "OPENAI_MODEL"
         const val CODEX_ACCESS_TOKEN = "CODEX_ACCESS_TOKEN"
         const val CODEX_REFRESH_TOKEN = "CODEX_REFRESH_TOKEN"
         const val CODEX_ACCOUNT_ID = "CODEX_ACCOUNT_ID"

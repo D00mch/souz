@@ -699,6 +699,24 @@ private fun AndroidSettingsScreen(
                     )
                 }
             }
+            if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
+                OutlinedTextField(
+                    value = state.openaiBaseUrl,
+                    onValueChange = { onEvent(SettingsEvent.InputOpenAiBaseUrl(it)) },
+                    label = { Text("OpenAI-compatible base URL") },
+                    placeholder = { Text("https://api.openai.com/v1") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = state.openaiModel,
+                    onValueChange = { onEvent(SettingsEvent.InputOpenAiModel(it)) },
+                    label = { Text("OpenAI-compatible model override") },
+                    placeholder = { Text("Leave empty to use selected OpenAI model") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
 
             OutlinedTextField(
                 value = state.systemPrompt,

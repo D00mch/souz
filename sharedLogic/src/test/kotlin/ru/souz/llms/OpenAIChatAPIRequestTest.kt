@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAIEndpointConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -32,6 +33,35 @@ class OpenAIChatAPIRequestTest {
         assertEquals("auto", request["tool_choice"])
         val tools = request["tools"] as List<*>
         assertEquals(1, tools.size)
+    }
+
+    @Test
+    fun `buildChatRequest uses configured OpenAI-compatible model override`() {
+        val api = createApi(openaiModel = "provider-chat-model")
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Mini.name,
+                maxTokens = 256,
+                messages = listOf(
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Hello"),
+                ),
+            ),
+            stream = false,
+        )
+
+        assertEquals("provider-chat-model", request["model"])
+    }
+
+    @Test
+    fun `OpenAI endpoint uses configured compatible base url`() {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.openaiBaseUrl } returns "https://example.test/openai/v1/"
+
+        assertEquals(
+            "https://example.test/openai/v1/chat/completions",
+            OpenAIEndpointConfig.endpoint(settingsProvider, "chat/completions"),
+        )
     }
 
     @Test
@@ -493,9 +523,11 @@ class OpenAIChatAPIRequestTest {
         assertEquals(setOf("call_a", "call_b"), toolChoices.mapNotNull { it.message.functionsStateId }.toSet())
     }
 
-    private fun createApi(): OpenAIChatAPI {
+    private fun createApi(openaiModel: String? = null): OpenAIChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.openaiKey } returns "test-key"
+        every { settingsProvider.openaiBaseUrl } returns null
+        every { settingsProvider.openaiModel } returns openaiModel
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
 

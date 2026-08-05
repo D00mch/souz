@@ -126,6 +126,10 @@
     <string name="label_key_aitunnel">AI Tunnel Key</string>
     <string name="label_key_anthropic">Anthropic Key</string>
     <string name="label_key_openai">OpenAI Key</string>
+    <string name="label_openai_base_url">OpenAI-compatible base URL</string>
+    <string name="label_openai_model_override">OpenAI-compatible model override</string>
+    <string name="placeholder_openai_base_url">https://api.openai.com/v1</string>
+    <string name="placeholder_openai_model_override">Leave empty to use selected OpenAI model</string>
     <string name="label_key_salutespeech">SaluteSpeech Key</string>
     <string name="header_where_to_get_keys">Where to get keys</string>
     

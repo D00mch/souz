@@ -65,7 +65,7 @@ class OpenAIImageGenerationGateway(
 
     override suspend fun generate(input: ImageGenerationInput): GeneratedImage = try {
         val outputFormat = (input.outputFormat ?: OpenAIImageGenerationRequestBuilder.DEFAULT_OUTPUT_FORMAT).lowercase()
-        val response = client.post(IMAGES_URL) {
+        val response = client.post(imagesUrl) {
             setBody(buildRequestPayload(input))
         }
         val text = response.bodyAsText()
@@ -99,7 +99,10 @@ class OpenAIImageGenerationGateway(
     }
 
     private companion object {
-        const val IMAGES_URL = "https://api.openai.com/v1/images/generations"
+        const val IMAGES_PATH = "images/generations"
         const val DEFAULT_IMAGE_MODEL = "gpt-image-1"
     }
+
+    private val imagesUrl: String
+        get() = OpenAIEndpointConfig.endpoint(settingsProvider, IMAGES_PATH)
 }

@@ -486,6 +486,8 @@ fun GeneralSettingsContent(
 fun KeysSettingsContent(
     state: SettingsState,
     onApiKeyInput: (ApiKeyField, String) -> Unit,
+    onOpenAiBaseUrlInput: (String) -> Unit,
+    onOpenAiModelInput: (String) -> Unit,
     onApiKeyVisibilityToggle: (ApiKeyField) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onStartCodexOAuth: () -> Unit,
@@ -519,6 +521,22 @@ fun KeysSettingsContent(
             },
             modifier = Modifier.fillMaxWidth(),
         )
+        if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
+            LabeledTextField(
+                label = stringResource(Res.string.label_openai_base_url),
+                value = state.openaiBaseUrl,
+                onValueChange = onOpenAiBaseUrlInput,
+                placeholder = stringResource(Res.string.placeholder_openai_base_url),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LabeledTextField(
+                label = stringResource(Res.string.label_openai_model_override),
+                value = state.openaiModel,
+                onValueChange = onOpenAiModelInput,
+                placeholder = stringResource(Res.string.placeholder_openai_model_override),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
@@ -2196,6 +2214,8 @@ private fun KeysSettingsContentPreview() {
         KeysSettingsContent(
             state = PreviewSettingsState,
             onApiKeyInput = { _, _ -> },
+            onOpenAiBaseUrlInput = {},
+            onOpenAiModelInput = {},
             onApiKeyVisibilityToggle = {},
             onOpenProviderLink = {},
             onStartCodexOAuth = {},

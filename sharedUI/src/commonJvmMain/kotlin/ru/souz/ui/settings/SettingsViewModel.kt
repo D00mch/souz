@@ -122,6 +122,12 @@ class SettingsViewModel(
         l.debug("handleEvent: {}", event)
         when(event) {
             is InputApiKey -> handleDeferredKeyInput(event.field, event.value)
+            is InputOpenAiBaseUrl -> {
+                handleDeferredTextSettingInput(DeferredTextSetting.OPENAI_BASE_URL, event.value)
+            }
+            is InputOpenAiModel -> {
+                handleDeferredTextSettingInput(DeferredTextSetting.OPENAI_MODEL, event.value)
+            }
             is OpenProviderLink -> {
                 externalLinkOpener.open(event.provider.url)
                     .onFailure { error ->
@@ -569,6 +575,10 @@ class SettingsViewModel(
     private suspend fun refreshFromProvider() = withContext(settingsDispatcher) {
         val voiceSpeed = settingsHostPreferences.voiceSpeed
         val mcpServersJson = pendingTextSettingDrafts[DeferredTextSetting.MCP_SERVERS_JSON] ?: (keysProvider.mcpServersJson ?: "")
+        val openaiBaseUrl = pendingTextSettingDrafts[DeferredTextSetting.OPENAI_BASE_URL]
+            ?: (keysProvider.openaiBaseUrl ?: "")
+        val openaiModel = pendingTextSettingDrafts[DeferredTextSetting.OPENAI_MODEL]
+            ?: (keysProvider.openaiModel ?: "")
         val supportEmail = pendingTextSettingDrafts[DeferredTextSetting.SUPPORT_EMAIL]
             ?: (keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL)
         val apiKeyAvailability = apiKeyAvailabilityUseCase.availability()
@@ -652,6 +662,8 @@ class SettingsViewModel(
                 availableApiKeyProviders = apiKeyAvailability.providers,
                 supportsVoiceRecognitionApiKeys = apiKeyAvailability.supportsVoiceRecognitionApiKeys,
                 configuredKeysCount = configuredKeysCount,
+                openaiBaseUrl = openaiBaseUrl,
+                openaiModel = openaiModel,
                 mcpServersJson = mcpServersJson,
                 useFewShotExamples = keysProvider.useFewShotExamples,
                 useStreaming = keysProvider.useStreaming,
@@ -871,6 +883,8 @@ class SettingsViewModel(
     private suspend fun setDeferredTextSettingState(field: DeferredTextSetting, value: String) {
         when (field) {
             DeferredTextSetting.MCP_SERVERS_JSON -> setState { copy(mcpServersJson = value) }
+            DeferredTextSetting.OPENAI_BASE_URL -> setState { copy(openaiBaseUrl = value) }
+            DeferredTextSetting.OPENAI_MODEL -> setState { copy(openaiModel = value) }
             DeferredTextSetting.SUPPORT_EMAIL -> setState {
                 copy(supportEmail = value, sendLogsMessage = null, sendLogsPath = null)
             }
@@ -883,6 +897,12 @@ class SettingsViewModel(
         when (field) {
             DeferredTextSetting.MCP_SERVERS_JSON -> withContext(Dispatchers.IO) {
                 keysProvider.mcpServersJson = value
+            }
+            DeferredTextSetting.OPENAI_BASE_URL -> withContext(Dispatchers.IO) {
+                keysProvider.openaiBaseUrl = value.trim().takeUnless(String::isBlank)
+            }
+            DeferredTextSetting.OPENAI_MODEL -> withContext(Dispatchers.IO) {
+                keysProvider.openaiModel = value.trim().takeUnless(String::isBlank)
             }
             DeferredTextSetting.SUPPORT_EMAIL -> withContext(Dispatchers.IO) {
                 keysProvider.supportEmail = value
@@ -1205,6 +1225,8 @@ class SettingsViewModel(
 
     private enum class DeferredTextSetting {
         MCP_SERVERS_JSON,
+        OPENAI_BASE_URL,
+        OPENAI_MODEL,
         SUPPORT_EMAIL,
         SYSTEM_PROMPT,
     }
