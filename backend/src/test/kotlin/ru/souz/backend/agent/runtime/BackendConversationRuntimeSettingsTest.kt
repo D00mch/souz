@@ -4,7 +4,10 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.io.File
 import java.util.UUID
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -12,11 +15,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.TestConversationKnowledgeStore
+import ru.souz.backend.TestSkillRegistryRepository
+import ru.souz.backend.client.BackendClientSkills
+import ru.souz.backend.testBackendClientSkills
 import ru.souz.backend.testCoreTool
+import ru.souz.backend.testRunSkillCommandTool
 import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
@@ -262,12 +270,108 @@ class BackendConversationRuntimeSettingsTest {
             requestCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
         )
     }
+
+    @Test
+    fun `enabled client Skills appear as file backed inventory without direct schemas`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "CHAT 100")
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            clientSkills = testBackendClientSkills(),
+        )
+        val request = turnRequest().copy(
+            clientToolsEnabled = true,
+            enabledTools = emptySet(),
+        )
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        val finalRequest = api.finalRequests.single()
+        val inventory = finalRequest.skillInventoryBlock()
+        val toolBacked = inventory.toolBackedSection()
+        val fileBacked = inventory.fileBackedSection()
+        assertContains(fileBacked, """- skillId: "device.media.open"""")
+        assertContains(fileBacked, """- skillId: "user.ask"""")
+        assertFalse(toolBacked.contains("device.media.open"))
+        assertFalse(toolBacked.contains("user.ask"))
+        assertFalse(finalRequest.functions.any { it.name in CLIENT_SKILL_IDS })
+    }
+
+    @Test
+    fun `client Skill inventory survives fallback provider inventory failure`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "CHAT 100")
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            clientSkills = testBackendClientSkills(),
+            skillRegistryRepository = ThrowingInventorySkillRegistryRepository,
+        )
+        val request = turnRequest().copy(clientToolsEnabled = true)
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        val fileBacked = api.finalRequests.single().skillInventoryBlock().fileBackedSection()
+        assertContains(fileBacked, """- skillId: "device.media.open"""")
+        assertContains(fileBacked, """- skillId: "user.ask"""")
+    }
+
+    @Test
+    fun `client Skill IDs cannot collide with direct tools`() = runTest {
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { ReplyingChatApi(classificationResponse = "CHAT 100") },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.CHAT,
+                tool = fakeTool(name = "user.ask", fewShotExamples = emptyList()),
+            ),
+            clientSkills = testBackendClientSkills(),
+        )
+
+        val thrown = assertFailsWith<IllegalArgumentException> {
+            runtimeFactory.create(
+                conversationKey(),
+                turnRequest().copy(clientToolsEnabled = true),
+            )
+        }
+
+        assertContains(thrown.message.orEmpty(), "user.ask")
+    }
+
+    @Test
+    fun `disabled client Skills are absent from inventory and direct schemas`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "CHAT 100")
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            clientSkills = testBackendClientSkills(),
+        )
+        val request = turnRequest().copy(clientToolsEnabled = false)
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        val finalRequest = api.finalRequests.single()
+        val inventory = finalRequest.skillInventoryBlock()
+        CLIENT_SKILL_IDS.forEach { skillId ->
+            assertFalse(inventory.contains(skillId))
+        }
+        assertFalse(finalRequest.functions.any { it.name in CLIENT_SKILL_IDS })
+    }
 }
 
 private fun runtimeFactory(
     settingsProvider: TestSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
     llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
+    clientSkills: BackendClientSkills? = null,
+    skillRegistryRepository: SkillRegistryRepository? = null,
     configuredAgentId: AgentId = AgentId.GRAPH,
     sessionRepository: InMemoryAgentSessionRepository = InMemoryAgentSessionRepository(),
 ): BackendConversationRuntimeFactory =
@@ -279,7 +383,10 @@ private fun runtimeFactory(
         systemPrompt = "backend test prompt",
         configuredAgentId = configuredAgentId,
         toolCatalog = toolCatalog,
-        skillCoreToolsFactory = testSkillCoreToolsFactory(),
+        clientSkills = clientSkills,
+        skillRegistryRepository = skillRegistryRepository,
+        legacySkillCommandTool = testCoreTool("RunSkillCommand"),
+        runSkillCommandTool = testRunSkillCommandTool(),
         getKnowledgeTool = testCoreTool("GetKnowledge"),
         searchKnowledgeTool = testCoreTool("SearchKnowledge"),
         searchMemoryTool = testSearchMemoryTool(),
@@ -315,6 +422,29 @@ private val CLASSIC_SKILL_CORE_TOOLS = listOf(
     "SearchMemory",
     "RunSkillCommand",
 )
+
+private val CLIENT_SKILL_IDS = setOf("device.media.open", "user.ask")
+
+private fun LLMRequest.Chat.skillInventoryBlock(): String {
+    val systemMessage = messages.first { it.role == LLMMessageRole.system }.content
+    val start = systemMessage.indexOf("<skill_inventory>")
+    val end = systemMessage.indexOf("</skill_inventory>", start)
+    check(start >= 0 && end >= start) { "Missing skill inventory block." }
+    return systemMessage.substring(start, end + "</skill_inventory>".length)
+}
+
+private fun String.toolBackedSection(): String =
+    substringAfter("Tool-backed Skills by category:\n")
+        .substringBefore("File-backed Skills (opaque skillId values only):")
+
+private fun String.fileBackedSection(): String =
+    substringAfter("File-backed Skills (opaque skillId values only):")
+        .substringBefore("</skill_inventory>")
+
+private object ThrowingInventorySkillRegistryRepository : SkillRegistryRepository by TestSkillRegistryRepository {
+    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
+        error("inventory unavailable")
+}
 
 private fun singleToolCatalog(
     category: ToolCategory,

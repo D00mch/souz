@@ -5,14 +5,10 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.skills.activation.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.bundle.SkillFile
-import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.backend.http.routeTestContext
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
@@ -24,28 +20,39 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 
-class BackendClientToolCatalogTest {
+class BackendClientSkillsTest {
     @Test
-    fun `catalog projects bundled client Skills`() = runTest {
+    fun `client Skills expose bundled resources and websocket adapters`() = runTest {
         val context = routeTestContext()
 
-        val catalog = BackendClientToolCatalogFactory(
+        val clientSkills = BackendClientSkills(
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create()
+        )
 
-        val ask = catalog.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
-        val openMedia = catalog.toolsByCategory.getValue(ToolCategory.APPLICATIONS).getValue("device.media.open")
-        assertEquals(setOf("user.ask", "device.media.open"), catalog.toolsByCategory.values.flatMap { it.keys }.toSet())
+        val ask = clientSkills.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
+        val openMedia = clientSkills.toolsByCategory.getValue(ToolCategory.APPLICATIONS).getValue("device.media.open")
+        val loadedAsk = assertNotNull(clientSkills.loadSkillBundle("user-a", SkillId("user.ask")))
+        assertEquals(setOf("user.ask", "device.media.open"), clientSkills.skillIds)
+        assertEquals(
+            listOf(SkillId("device.media.open"), SkillId("user.ask")),
+            clientSkills.listSkillInventoryIds("user-a"),
+        )
+        assertEquals("user-a", clientSkills.getSkill("user-a", SkillId("user.ask"))?.userId)
+        assertEquals("user.ask", loadedAsk.skillId.value)
         assertContains(ask.fn.description, "Ask the user")
+        assertContains(ask.fn.description, "# Ask the user")
         assertContains(openMedia.fn.description, "Open media")
+        assertContains(openMedia.fn.description, "# Open media")
     }
 
     @Test
     fun `client Skill recovers a persisted terminal result when the local ack is lost`() = runTest {
         val context = routeTestContext()
         val repository = TerminalRaceToolCallRepository()
+        val startedAt = Instant.parse("2026-01-01T00:00:00Z")
+        var current = startedAt
         val userId = UUID.randomUUID().toString()
         val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
         val threadId = UUID.randomUUID()
@@ -53,13 +60,17 @@ class BackendClientToolCatalogTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalogFactory(
-            skillBundleProvider = ShortTimeoutClientSkillBundleProvider,
+        val clientSkills = BackendClientSkills(
             registry = context.clientThreadRegistry,
             toolCallRepository = repository,
             eventService = context.eventService,
-        ).create()
-        val tool = catalog.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
+            now = {
+                current.also {
+                    current = startedAt.plusSeconds(10 * 60)
+                }
+            },
+        )
+        val tool = clientSkills.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
 
         val result = withTimeout(2_000) {
             tool.invoke(
@@ -73,50 +84,6 @@ class BackendClientToolCatalogTest {
         assertEquals("""{"answer":"stored"}""", result.content)
         assertEquals(ToolCallStatus.SUCCEEDED, repository.storedStatus)
     }
-}
-
-private object ShortTimeoutClientSkillBundleProvider : SkillBundleProvider {
-    private val bundle = SkillBundle.fromFiles(
-        skillId = SkillId("user.ask"),
-        files = listOf(
-            SkillFile(
-                normalizedPath = "SKILL.md",
-                content = """
-                    ---
-                    name: user-ask
-                    description: Ask the user.
-                    metadata:
-                      souz.skill-id: user.ask
-                      souz.transport: client-websocket
-                      souz.category: CHAT
-                      souz.timeout: PT0.001S
-                    ---
-
-                    # Ask the user
-                """.trimIndent().toByteArray(),
-            )
-        ),
-    )
-
-    override suspend fun listSkills(userId: String): List<StoredSkill> = listOf(stored(userId))
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? =
-        stored(userId).takeIf { it.skillId == skillId }
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
-        stored(userId).takeIf { it.manifest.name == name }
-
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? =
-        bundle.takeIf { it.skillId == skillId }
-
-    private fun stored(userId: String): StoredSkill =
-        StoredSkill(
-            userId = userId,
-            skillId = bundle.skillId,
-            manifest = bundle.manifest,
-            bundleHash = SkillBundleHasher.hash(bundle),
-            createdAt = Instant.EPOCH,
-        )
 }
 
 private class TerminalRaceToolCallRepository(

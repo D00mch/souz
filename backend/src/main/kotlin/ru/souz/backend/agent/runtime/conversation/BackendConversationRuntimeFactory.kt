@@ -1,11 +1,17 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentId
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
@@ -21,9 +27,9 @@ import ru.souz.backend.agent.runtime.BackendNoopMcpToolProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.runtime.BackendRequestToolCatalog
 import ru.souz.backend.agent.runtime.BackendRequestToolsFilter
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -34,9 +40,13 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
 import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.skills.ToolRunSkillCommand
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
-class BackendConversationRuntimeFactory(
+internal class BackendConversationRuntimeFactory(
     private val baseSettingsProvider: SettingsProvider,
     private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
     private val sessionRepository: AgentSessionRepository,
@@ -44,9 +54,10 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val clientToolCatalogProvider: suspend (String) -> AgentToolCatalog = { BackendNoopAgentToolCatalog },
+    private val clientSkills: BackendClientSkills? = null,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
-    private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
+    private val legacySkillCommandTool: LLMToolSetup,
+    private val runSkillCommandTool: ToolRunSkillCommand,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
@@ -67,24 +78,33 @@ class BackendConversationRuntimeFactory(
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
         settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
-        val clientToolCatalog = if (request.clientToolsEnabled) {
-            clientToolCatalogProvider(key.userId)
-        } else {
-            BackendNoopAgentToolCatalog
-        }
-        val executionToolCatalog = BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
-        val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
-            delegate = executionToolCatalog,
+        val activeClientSkills = clientSkills?.takeIf { request.clientToolsEnabled }
+        val directToolCatalog = BackendFewShotAwareToolCatalog(
+            delegate = toolCatalog,
             settingsProvider = settingsProvider,
         )
+        val directSkillIds = directToolCatalog.toolsByCategory.values
+            .flatMapTo(mutableSetOf()) { it.keys }
+        val conflictingSkillIds =
+            directSkillIds intersect activeClientSkills?.skillIds.orEmpty()
+        require(conflictingSkillIds.isEmpty()) {
+            "Client Skill IDs collide with direct tools: ${conflictingSkillIds.sorted().joinToString()}"
+        }
         val enabledTools = request.enabledTools?.plus(
-            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
+            activeClientSkills?.skillIds.orEmpty()
         )
         val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
-        val filteredToolCatalog = BackendRequestToolCatalog(
-            delegate = requestScopedToolCatalog,
+        val filteredDirectToolCatalog = BackendRequestToolCatalog(
+            delegate = directToolCatalog,
             toolsFilter = requestToolsFilter,
         )
+        val skillResolutionCatalog: AgentToolCatalog =
+            activeClientSkills?.let { clientCatalog ->
+                BackendMergedToolCatalog(
+                    primary = directToolCatalog,
+                    additional = clientCatalog,
+                )
+            } ?: directToolCatalog
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = key.userId,
@@ -103,29 +123,36 @@ class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
         )
-        val getSkillByNameTool = skillCoreToolsFactory.createGetSkillByName(
-            toolCatalog = requestScopedToolCatalog,
+        val effectiveSkillBundleProvider: SkillBundleProvider =
+            activeClientSkills?.withFallback(effectiveSkillRegistryRepository)
+                ?: effectiveSkillRegistryRepository
+        val getSkillByNameTool = ToolGetSkillByName(
+            toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = effectiveSkillBundleProvider,
+            legacyCommandTool = legacySkillCommandTool,
             approvalGate = skillApprovalGate,
         )
-        val getSkillsNamesByCategoryTool = skillCoreToolsFactory.createGetSkillsNamesByCategory(
-            toolCatalog = requestScopedToolCatalog,
+        val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
+            toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
             getSkillByName = getSkillByNameTool,
             getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
         )
-        val runtimeCommandTool = skillCoreToolsFactory.createRuntimeCommand(
-            toolCatalog = requestScopedToolCatalog,
+        val runtimeCommandTool = ToolInvokeSkill(
+            toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = effectiveSkillBundleProvider,
+            commandTool = runSkillCommandTool,
             approvalGate = skillApprovalGate,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
-            toolCatalog = filteredToolCatalog,
+            toolCatalog = filteredDirectToolCatalog,
             toolsFilter = requestToolsFilter,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
@@ -146,7 +173,7 @@ class BackendConversationRuntimeFactory(
             llmApi = usageTrackingApi,
             apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
-            skillRegistryRepository = effectiveSkillRegistryRepository,
+            skillBundleProvider = effectiveSkillBundleProvider,
             captureScope = agentBackgroundScope,
         ).create()
         return BackendConversationRuntime(
@@ -160,3 +187,62 @@ class BackendConversationRuntimeFactory(
         )
     }
 }
+
+private fun SkillBundleProvider.withFallback(
+    fallback: SkillBundleProvider,
+): SkillBundleProvider = object : SkillBundleProvider {
+    override suspend fun listSkills(userId: String): List<StoredSkill> =
+        (this@withFallback.listSkills(userId) + fallback.listSkills(userId))
+            .distinctBy { it.skillId }
+            .sortedBy { it.skillId.value }
+
+    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> {
+        val primaryIds = this@withFallback.listSkillInventoryIds(userId)
+        val fallbackIds = try {
+            fallback.listSkillInventoryIds(userId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            logger.warn("Failed to load fallback Skill inventory for user={}", userId, error)
+            emptyList()
+        }
+        return (primaryIds + fallbackIds)
+            .distinct()
+            .sortedBy { it.value }
+    }
+
+    override suspend fun getSkill(
+        userId: String,
+        skillId: SkillId,
+    ): StoredSkill? =
+        this@withFallback.getSkill(userId, skillId)
+            ?: fallback.getSkill(userId, skillId)
+
+    override suspend fun getSkillByName(
+        userId: String,
+        name: String,
+    ): StoredSkill? {
+        val primary = this@withFallback.getSkillByName(userId, name)
+        val secondary = fallback.getSkillByName(userId, name)
+        if (primary != null && secondary != null && primary.skillId != secondary.skillId) {
+            logger.warn(
+                "Ambiguous Skill manifest name user={} name={} primarySkillId={} fallbackSkillId={}",
+                userId,
+                name,
+                primary.skillId.value,
+                secondary.skillId.value,
+            )
+            return null
+        }
+        return primary ?: secondary
+    }
+
+    override suspend fun loadSkillBundle(
+        userId: String,
+        skillId: SkillId,
+    ): SkillBundle? =
+        this@withFallback.loadSkillBundle(userId, skillId)
+            ?: fallback.loadSkillBundle(userId, skillId)
+}
+
+private val logger = LoggerFactory.getLogger(BackendConversationRuntimeFactory::class.java)
