@@ -1,0 +1,8 @@
+services:
+  backend:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      SOUZ_BACKEND_HOST: 127.0.0.1
+      SOUZ_BACKEND_DB_HOST: 127.0.0.1

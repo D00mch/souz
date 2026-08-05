@@ -43,6 +43,12 @@ The backend listens on `http://127.0.0.1:8080` and PostgreSQL listens on `127.0.
 
 Docker Compose uses `SOUZ_DOCKER_SUBNET`, defaulting to `10.254.250.0/24`, for the local service network. Set it to another private subnet before `docker compose up` if that range overlaps with VPN or corporate routes.
 
+If a VPN route is reachable from the host but not from the backend container, run the backend with host networking:
+
+```bash
+docker compose -f compose.yaml -f compose.backend-host-network.yaml up --build
+```
+
 Protected `/v1` routes expect proxy-injected headers:
 
 ```bash
