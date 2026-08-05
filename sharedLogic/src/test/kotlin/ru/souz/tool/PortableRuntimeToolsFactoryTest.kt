@@ -1,6 +1,7 @@
 package ru.souz.tool
 
 import io.mockk.mockk
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.runtime.GeneratedImage
@@ -17,6 +18,9 @@ import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.skills.ToolCheckOAuthStatus
+import ru.souz.tool.skills.ToolConnectOAuthProvider
+import ru.souz.tool.skills.ToolSafeApiCall
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebPageText
@@ -32,6 +36,7 @@ class PortableRuntimeToolsFactoryTest {
         val webResearchClient = WebResearchClient()
         val api = mockk<LLMChatAPI>()
         val settingsProvider = mockk<SettingsProvider>()
+        val skillRegistryRepository = mockk<SkillRegistryRepository>()
 
         val factory = PortableRuntimeToolsFactory(
             toolListFiles = ToolListFiles(filesToolUtil),
@@ -54,6 +59,9 @@ class PortableRuntimeToolsFactoryTest {
             toolInternetSearch = ToolInternetSearch(api, settingsProvider, filesToolUtil, webResearchClient),
             toolInternetResearch = ToolInternetResearch(api, settingsProvider, filesToolUtil, webResearchClient),
             toolWebPageText = ToolWebPageText(webResearchClient),
+            toolConnectOAuthProvider = ToolConnectOAuthProvider(skillRegistryRepository, skillOAuthApi = null),
+            toolCheckOAuthStatus = ToolCheckOAuthStatus(skillRegistryRepository, skillOAuthApi = null),
+            toolSafeApiCall = ToolSafeApiCall(skillRegistryRepository, skillOAuthApi = null),
         )
 
         val tools = factory.toolsByCategory

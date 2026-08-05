@@ -6,6 +6,7 @@ import java.sql.DriverManager
 import java.util.Properties
 import org.flywaydb.core.Flyway
 import ru.souz.backend.app.BackendPostgresConfig
+import ru.souz.skilloauth.impl.SkillOAuthMigrations
 
 object PostgresDataSourceFactory {
     fun create(config: BackendPostgresConfig): HikariDataSource {
@@ -34,6 +35,10 @@ object PostgresDataSourceFactory {
                 .createSchemas(false)
                 .load()
                 .migrate()
+            // Separate location/table (see SkillOAuthMigrations) so this module's version sequence
+            // can never collide with the host's own; runs unconditionally since it needs only the
+            // datasource and schema, neither gated behind skill-OAuth-specific config.
+            SkillOAuthMigrations.migrate(dataSource, schema)
         }
     }
 

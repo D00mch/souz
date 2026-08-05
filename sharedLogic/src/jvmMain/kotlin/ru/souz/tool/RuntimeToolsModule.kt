@@ -25,6 +25,9 @@ import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadPdfPages
 import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.skills.ToolCheckOAuthStatus
+import ru.souz.tool.skills.ToolConnectOAuthProvider
+import ru.souz.tool.skills.ToolSafeApiCall
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebImageSearch
@@ -87,6 +90,9 @@ fun runtimeToolsDiModule(
             toolInternetResearch = instance(),
             toolWebImageSearch = if (includeWebImageSearch) instance() else null,
             toolWebPageText = instance(),
+            toolConnectOAuthProvider = instance(),
+            toolCheckOAuthStatus = instance(),
+            toolSafeApiCall = instance(),
         )
     }
     bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
@@ -115,6 +121,9 @@ class RuntimeToolsFactory(
     private val toolInternetResearch: ToolInternetResearch,
     private val toolWebImageSearch: ToolWebImageSearch?,
     private val toolWebPageText: ToolWebPageText,
+    private val toolConnectOAuthProvider: ToolConnectOAuthProvider,
+    private val toolCheckOAuthStatus: ToolCheckOAuthStatus,
+    private val toolSafeApiCall: ToolSafeApiCall,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -164,6 +173,12 @@ class RuntimeToolsFactory(
 
         ToolCategory.CALCULATOR -> listOf(
             toolCalculator.toGiga(),
+        )
+
+        ToolCategory.OAUTH -> listOf(
+            toolConnectOAuthProvider.toGiga(),
+            toolCheckOAuthStatus.toGiga(),
+            toolSafeApiCall.toGiga(),
         )
 
         ToolCategory.BROWSER,

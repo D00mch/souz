@@ -1,0 +1,8 @@
+[
+  {
+    "name": "yandex",
+    "authorizeEndpoint": "https://oauth.yandex.ru/authorize",
+    "tokenEndpoint": "https://oauth.yandex.ru/token",
+    "allowedApiHosts": ["api.iot.yandex.net", "login.yandex.ru", "cloud-api.yandex.net"]
+  }
+]
