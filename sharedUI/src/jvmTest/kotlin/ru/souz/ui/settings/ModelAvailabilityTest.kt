@@ -12,6 +12,8 @@ import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.service.speech.LocalMacOsSpeechHost
 import kotlin.test.AfterTest
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -106,5 +108,19 @@ class ModelAvailabilityTest {
             models,
         )
         assertEquals(listOf(LlmProvider.LOCAL, LlmProvider.LOCAL), models.map { it.provider })
+    }
+
+    @Test
+    fun `available llm models include custom OpenAI-compatible model only when configured`() {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.regionProfile } returns REGION_EN
+        every { settingsProvider.hasKey(LlmProvider.OPENAI) } returns true
+        val llmBuildProfile = LlmBuildProfile(settingsProvider)
+
+        every { settingsProvider.openaiModel } returns ""
+        assertFalse(LLMModel.OpenAICompatibleCustom in settingsProvider.availableLlmModels(llmBuildProfile))
+
+        every { settingsProvider.openaiModel } returns "provider-chat-model"
+        assertTrue(LLMModel.OpenAICompatibleCustom in settingsProvider.availableLlmModels(llmBuildProfile))
     }
 }

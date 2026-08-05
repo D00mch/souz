@@ -89,6 +89,7 @@ import ru.souz.ui.settings.ApiKeyFieldState
 import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 import ru.souz.ui.settings.SettingsState
 import ru.souz.ui.settings.SettingsViewModel
+import ru.souz.ui.settings.displayNameForConfiguredOpenAiModel
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.host.SettingsHostPreferences
 import souz.sharedui.generated.resources.Res
@@ -667,9 +668,13 @@ private fun AndroidSettingsScreen(
             state.availableLlmModels.forEach { model ->
                 val selected = model == state.gigaModel
                 if (selected) {
-                    Button(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) { Text(model.displayName) }
+                    Button(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) {
+                        Text(model.displayNameForConfiguredOpenAiModel(state.openaiModel))
+                    }
                 } else {
-                    TextButton(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) { Text(model.displayName) }
+                    TextButton(onClick = { onEvent(SettingsEvent.SelectModel(model)) }) {
+                        Text(model.displayNameForConfiguredOpenAiModel(state.openaiModel))
+                    }
                 }
             }
 
@@ -698,6 +703,24 @@ private fun AndroidSettingsScreen(
                         onToggleVisibility = { onEvent(SettingsEvent.ToggleApiKeyVisibility(it)) },
                     )
                 }
+            }
+            if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
+                OutlinedTextField(
+                    value = state.openaiBaseUrl,
+                    onValueChange = { onEvent(SettingsEvent.InputOpenAiBaseUrl(it)) },
+                    label = { Text("OpenAI-compatible base URL") },
+                    placeholder = { Text("https://api.openai.com/v1") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = state.openaiModel,
+                    onValueChange = { onEvent(SettingsEvent.InputOpenAiModel(it)) },
+                    label = { Text("OpenAI-compatible model") },
+                    placeholder = { Text("Adds this model to the selector") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
             }
 
             OutlinedTextField(

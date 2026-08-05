@@ -45,6 +45,7 @@ class BackendBootstrapService(
             capabilities = BootstrapCapabilities(
                 models = LLMModel.entries
                     .filter { model ->
+                        if (model == LLMModel.OpenAICompatibleCustom) return@filter false
                         when (model.provider) {
                             LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
                             else -> model.provider in capabilityProviders

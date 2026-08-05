@@ -166,6 +166,7 @@ enum class LLMModel(
     OpenAIGpt52("OpenAI GPT-5.2", "gpt-5.2", LlmProvider.OPENAI),
     OpenAIGpt5Mini("OpenAI GPT-5 mini", "gpt-5-mini", LlmProvider.OPENAI),
     OpenAIGpt5Nano("OpenAI GPT-5 nano", "gpt-5-nano", LlmProvider.OPENAI),
+    OpenAICompatibleCustom("OpenAI-compatible custom", "openai-compatible-custom", LlmProvider.OPENAI),
     AnthropicOpus45("Claude Opus 4.5", "claude-opus-4-5", LlmProvider.ANTHROPIC),
     AnthropicOpus46("Claude Opus 4.6", "claude-opus-4-6", LlmProvider.ANTHROPIC),
     AnthropicSonnet45("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", LlmProvider.ANTHROPIC),
