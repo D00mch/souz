@@ -123,7 +123,9 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         set(value) = putString(ACTIVE_AGENT_ID, value.storageValue)
 
     override var gigaModel: LLMModel
-        get() = modelFromAlias(chatModelAlias) ?: defaultLlmModel()
+        get() = modelFromAlias(chatModelAlias)
+            ?.takeUnless { it == LLMModel.OpenAICompatibleCustom && openaiModel.isNullOrBlank() }
+            ?: defaultLlmModel()
         set(value) {
             chatModelAlias = value.alias
         }

@@ -547,7 +547,9 @@ private fun SettingsState.toSharedModelsSettingsUiState(): SharedModelsSettingsU
         subtitle = stringResource(Res.string.settings_models_subtitle),
         chatModelLabel = stringResource(Res.string.label_model),
         selectedChatModelId = gigaModel.alias,
-        chatModelOptions = availableLlmModels.map { it.toSharedOption(includeAlias = true) },
+        chatModelOptions = availableLlmModels.map {
+            it.toSharedOption(includeAlias = true, openaiModel = openaiModel)
+        },
         embeddingsModelLabel = stringResource(Res.string.label_embeddings_model),
         selectedEmbeddingsModelId = embeddingsModel.alias,
         embeddingsModelOptions = availableEmbeddingsModels.map { it.toSharedOption() },
@@ -671,10 +673,10 @@ private fun ApiKeyProvider.toSharedProviderLink(): SharedProviderLinkUi =
         details = stringResource(details),
     )
 
-private fun LLMModel.toSharedOption(includeAlias: Boolean): SharedModelOptionUi =
+private fun LLMModel.toSharedOption(includeAlias: Boolean, openaiModel: String = ""): SharedModelOptionUi =
     SharedModelOptionUi(
         id = alias,
-        label = displayName,
+        label = displayNameForConfiguredOpenAiModel(openaiModel),
         detail = alias.takeIf { includeAlias },
     )
 

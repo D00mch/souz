@@ -324,6 +324,7 @@ class SettingsProviderImpl(
     private fun normalizeGigaModel(model: LLMModel): LLMModel {
         val availableProviders = LlmBuildProfile.defaultsForLanguage(regionProfile).keys
         return when {
+            model == LLMModel.OpenAICompatibleCustom && openaiModel.isNullOrBlank() -> defaultLlmModel()
             model.provider == LlmProvider.LOCAL && model !in localProviderAvailability.availableGigaModels() -> defaultLlmModel()
             model.provider !in availableProviders -> defaultLlmModel()
             else -> model

@@ -8,7 +8,7 @@ internal object OpenAIEndpointConfig {
     fun endpoint(settingsProvider: SettingsProvider, path: String): String =
         "${baseUrl(settingsProvider)}/${path.trimStart('/')}"
 
-    fun chatModelOverride(settingsProvider: SettingsProvider): String? =
+    fun customChatModel(settingsProvider: SettingsProvider): String? =
         settingsProvider.openaiModel.nonBlank()
 
     private fun baseUrl(settingsProvider: SettingsProvider): String =

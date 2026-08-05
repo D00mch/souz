@@ -902,7 +902,12 @@ class SettingsViewModel(
                 keysProvider.openaiBaseUrl = value.trim().takeUnless(String::isBlank)
             }
             DeferredTextSetting.OPENAI_MODEL -> withContext(Dispatchers.IO) {
+                val wasCustomOpenAiCompatibleModelSelected = keysProvider.gigaModel == LLMModel.OpenAICompatibleCustom
                 keysProvider.openaiModel = value.trim().takeUnless(String::isBlank)
+                if (wasCustomOpenAiCompatibleModelSelected && keysProvider.openaiModel.isNullOrBlank()) {
+                    keysProvider.gigaModel = keysProvider.defaultLlmModel(llmBuildProfile)
+                        ?: LLMModel.OpenAIGpt5Nano
+                }
             }
             DeferredTextSetting.SUPPORT_EMAIL -> withContext(Dispatchers.IO) {
                 keysProvider.supportEmail = value
@@ -914,6 +919,9 @@ class SettingsViewModel(
         }
         if (pendingTextSettingDrafts[field] == value) {
             pendingTextSettingDrafts.remove(field)
+        }
+        if (field == DeferredTextSetting.OPENAI_MODEL) {
+            refreshFromProvider()
         }
     }
 

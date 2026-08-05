@@ -662,7 +662,9 @@ class OpenAIChatAPI(
 
 
     private fun resolveChatModel(model: String): String {
-        OpenAIEndpointConfig.chatModelOverride(settingsProvider)?.let { return it }
+        if (model.isOpenAiCompatibleCustomModel()) {
+            OpenAIEndpointConfig.customChatModel(settingsProvider)?.let { return it }
+        }
 
         findOpenAiModelAlias(model)?.let { return it }
 
@@ -692,7 +694,7 @@ class OpenAIChatAPI(
         val model = LLMModel.entries.firstOrNull {
             it.alias.equals(normalized, ignoreCase = true) || it.name.equals(normalized, ignoreCase = true)
         } ?: return null
-        if (model.provider == LlmProvider.OPENAI) {
+        if (model.provider == LlmProvider.OPENAI && model != LLMModel.OpenAICompatibleCustom) {
             return model.alias
         }
         return null
@@ -709,6 +711,10 @@ class OpenAIChatAPI(
     private val embeddingsUrl: String
         get() = OpenAIEndpointConfig.endpoint(settingsProvider, EMBEDDINGS_PATH)
 }
+
+private fun String.isOpenAiCompatibleCustomModel(): Boolean =
+    equals(LLMModel.OpenAICompatibleCustom.alias, ignoreCase = true) ||
+        equals(LLMModel.OpenAICompatibleCustom.name, ignoreCase = true)
 
 private fun String.toNormalizedAssistantContent(): String? {
     if (this.isBlank()) return null

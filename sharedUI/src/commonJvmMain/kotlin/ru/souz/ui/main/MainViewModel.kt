@@ -52,6 +52,7 @@ import ru.souz.ui.host.PathOpener
 import ru.souz.ui.host.PermissionPromptService
 import ru.souz.ui.settings.availableLlmModels
 import ru.souz.ui.settings.defaultLlmModel
+import ru.souz.ui.settings.displayNameForConfiguredOpenAiModel
 import kotlin.time.Duration.Companion.minutes
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -133,6 +134,7 @@ class MainViewModel(
                 copy(
                     selectedModel = selectedModel.alias,
                     availableModelAliases = availableModels.map { it.alias },
+                    availableModelLabels = availableModels.modelLabels(settingsProvider.openaiModel),
                     selectedContextSize = settingsProvider.contextSize,
                     displayedText = randomTip,
                     chatStartTip = randomTip,
@@ -766,6 +768,7 @@ class MainViewModel(
             copy(
                 selectedModel = selectedModel.alias,
                 availableModelAliases = availableModels.map { it.alias },
+                availableModelLabels = availableModels.modelLabels(settingsProvider.openaiModel),
                 selectedContextSize = settingsProvider.contextSize,
                 localModelDownloadPrompt = downloadPrompt,
             )
@@ -795,6 +798,11 @@ class MainViewModel(
             model = model,
         )
     }
+
+    private fun List<LLMModel>.modelLabels(openaiModel: String?): Map<String, String> =
+        associate { model ->
+            model.alias to model.displayNameForConfiguredOpenAiModel(openaiModel.orEmpty())
+        }
 
     private suspend fun setPreviousText() {
         currentState.lastKnownAgentContext?.let { ctx ->

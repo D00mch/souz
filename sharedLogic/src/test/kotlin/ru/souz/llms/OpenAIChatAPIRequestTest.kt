@@ -36,12 +36,30 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest uses configured OpenAI-compatible model override`() {
+    fun `buildChatRequest keeps selected OpenAI model when custom compatible model is configured`() {
         val api = createApi(openaiModel = "provider-chat-model")
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.name,
+                maxTokens = 256,
+                messages = listOf(
+                    LLMRequest.Message(role = LLMMessageRole.user, content = "Hello"),
+                ),
+            ),
+            stream = false,
+        )
+
+        assertEquals(LLMModel.OpenAIGpt5Mini.alias, request["model"])
+    }
+
+    @Test
+    fun `buildChatRequest uses configured OpenAI-compatible model for custom model option`() {
+        val api = createApi(openaiModel = "provider-chat-model")
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAICompatibleCustom.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(role = LLMMessageRole.user, content = "Hello"),
