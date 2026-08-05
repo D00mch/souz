@@ -1,0 +1,9 @@
+services:
+  backend:
+    environment:
+      OPENAI_CA_CERTS_DIR: /etc/souz/openai-ca-certs
+    volumes:
+      - type: bind
+        source: ${OPENAI_CA_CERTS_DIR:?Set OPENAI_CA_CERTS_DIR to your host cert directory}
+        target: /etc/souz/openai-ca-certs
+        read_only: true
