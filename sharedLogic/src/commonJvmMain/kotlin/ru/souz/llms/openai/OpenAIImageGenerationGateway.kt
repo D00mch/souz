@@ -61,6 +61,7 @@ class OpenAIImageGenerationGateway(
             level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
+        openAiTlsDefaults()
     }
 
     override suspend fun generate(input: ImageGenerationInput): GeneratedImage = try {

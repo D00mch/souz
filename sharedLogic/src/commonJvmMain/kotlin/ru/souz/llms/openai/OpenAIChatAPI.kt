@@ -85,6 +85,7 @@ class OpenAIChatAPI(
             level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
+        openAiTlsDefaults()
     }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {

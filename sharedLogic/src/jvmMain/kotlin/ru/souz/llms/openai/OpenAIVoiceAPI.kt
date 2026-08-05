@@ -56,6 +56,7 @@ class OpenAIVoiceAPI(
         install(HttpTimeout) {
             requestTimeoutMillis = settingsProvider.requestTimeoutMillis
         }
+        openAiTlsDefaults()
     }
 
     suspend fun recognize(audio: ByteArray): String {
