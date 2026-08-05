@@ -56,7 +56,8 @@ class EffectiveSettingsResolver(
         requestOverrides: UserSettingsOverrides? = null,
         userManagedProviders: Set<LlmProvider>? = null,
     ): EffectiveUserSettings {
-        val persisted = userSettingsRepository.get(userId) ?: userSettingsRepository.save(defaultsFor(userId))
+        val persisted = userSettingsRepository.get(userId)
+            ?: userSettingsRepository.save(defaultsFor(userId, userManagedProviders))
 
         val locale = normalizeLocale(requestOverrides?.locale ?: persisted.locale ?: defaultLocale())
         val timeZone = requestOverrides?.timeZone ?: persisted.timeZone ?: ZoneId.systemDefault()
@@ -104,12 +105,15 @@ class EffectiveSettingsResolver(
         )
     }
 
-    private fun defaultsFor(userId: String): UserSettings {
+    private suspend fun defaultsFor(
+        userId: String,
+        userManagedProviders: Set<LlmProvider>?,
+    ): UserSettings {
         val locale = defaultLocale()
         val now = Instant.now()
         return UserSettings(
             userId = userId,
-            defaultModel = baseSettingsProvider.gigaModel,
+            defaultModel = defaultModelForNewSettings(userId, locale, userManagedProviders),
             contextSize = baseSettingsProvider.contextSize,
             temperature = baseSettingsProvider.temperature,
             locale = locale,
@@ -141,8 +145,18 @@ class EffectiveSettingsResolver(
         userManagedProviders: Set<LlmProvider>?,
     ): LLMModel {
         val fallback = fallbackModel(userId, locale, userManagedProviders)
-        val candidate = model ?: fallback
+        val candidate = (model ?: fallback).withConfiguredOpenAiCompatibleChatModel()
         return candidate.takeIf { isSelectableModel(userId, it, userManagedProviders) } ?: fallback
+    }
+
+    private suspend fun defaultModelForNewSettings(
+        userId: String,
+        locale: Locale,
+        userManagedProviders: Set<LlmProvider>?,
+    ): LLMModel {
+        val candidate = baseSettingsProvider.gigaModel.withConfiguredOpenAiCompatibleChatModel()
+        return candidate.takeIf { isSelectableModel(userId, it, userManagedProviders) }
+            ?: fallbackModel(userId, locale, userManagedProviders)
     }
 
     private suspend fun fallbackModel(
@@ -150,6 +164,12 @@ class EffectiveSettingsResolver(
         locale: Locale,
         userManagedProviders: Set<LlmProvider>?,
     ): LLMModel {
+        if (
+            hasConfiguredOpenAiCompatibleChatModel() &&
+            hasConfiguredAccess(userId, LlmProvider.OPENAI, userManagedProviders)
+        ) {
+            return LLMModel.OpenAICompatibleCustom
+        }
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
         val localDefault = localModelAvailability.defaultGigaModel()
         return LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
@@ -183,9 +203,24 @@ class EffectiveSettingsResolver(
         model: LLMModel,
         userManagedProviders: Set<LlmProvider>?,
     ): Boolean =
-        when (model.provider) {
-            LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
-            else -> hasConfiguredAccess(userId, model.provider, userManagedProviders)
+        if (model == LLMModel.OpenAICompatibleCustom) {
+            hasConfiguredOpenAiCompatibleChatModel() &&
+                hasConfiguredAccess(userId, LlmProvider.OPENAI, userManagedProviders)
+        } else {
+            when (model.provider) {
+                LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
+                else -> hasConfiguredAccess(userId, model.provider, userManagedProviders)
+            }
+        }
+
+    private fun hasConfiguredOpenAiCompatibleChatModel(): Boolean =
+        !baseSettingsProvider.openaiModel.isNullOrBlank()
+
+    private fun LLMModel.withConfiguredOpenAiCompatibleChatModel(): LLMModel =
+        if (provider == LlmProvider.OPENAI && hasConfiguredOpenAiCompatibleChatModel()) {
+            LLMModel.OpenAICompatibleCustom
+        } else {
+            this
         }
 
     private fun defaultLocale(): Locale =

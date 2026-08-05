@@ -138,7 +138,44 @@ class BackendBootstrapServiceTest {
         val response = bootstrapService.response(RequestIdentity(userId = "user-a"))
 
         assertFalse(response.capabilities.models.any { it.provider == "codex" })
+        assertFalse(response.capabilities.models.any { it.model == LLMModel.OpenAICompatibleCustom.alias })
         assertEquals(LLMModel.OpenAIGpt5Nano.alias, response.settings.defaultModel)
+    }
+
+    @Test
+    fun `bootstrap exposes configured OpenAI-compatible custom model`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            gigaModel = LLMModel.OpenAIGpt5Nano
+            openaiKey = "server-openai-key"
+            openaiModel = "provider-chat-model"
+        }
+        val providerKeyRepository = CountingUserProviderKeyRepository(emptyList())
+        val bootstrapService = BackendBootstrapService(
+            settingsProvider = settingsProvider,
+            effectiveSettingsResolver = EffectiveSettingsResolver(
+                baseSettingsProvider = settingsProvider,
+                userSettingsRepository = MemoryUserSettingsRepository(),
+                userProviderKeyRepository = providerKeyRepository,
+                featureFlags = BackendFeatureFlags(),
+                toolCatalog = testToolCatalog(),
+                localModelAvailability = unavailableLocalModels(),
+            ),
+            toolCatalog = testToolCatalog(),
+            featureFlags = BackendFeatureFlags(),
+            localModelAvailability = unavailableLocalModels(),
+            userProviderKeyRepository = providerKeyRepository,
+        )
+
+        val response = bootstrapService.response(RequestIdentity(userId = "user-a"))
+        val customModel = response.capabilities.models.single {
+            it.model == LLMModel.OpenAICompatibleCustom.alias
+        }
+
+        assertEquals(LLMModel.OpenAICompatibleCustom.alias, response.settings.defaultModel)
+        assertEquals(LlmProvider.OPENAI.name.lowercase(), customModel.provider)
+        assertTrue(customModel.serverManagedKey)
+        assertFalse(customModel.userManagedKey)
     }
 
     private fun testToolCatalog(): AgentToolCatalog =

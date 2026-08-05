@@ -338,12 +338,7 @@ private fun JsonSchema.withModelAliases(propertyName: String): JsonSchema =
     withProperty(propertyName) { property ->
         property.copy(
             description = "Known Souz model alias.",
-            enum = property.enumValuesPreservingNull(
-                LLMModel.entries
-                    .filterNot { it == LLMModel.OpenAICompatibleCustom }
-                    .map { it.alias }
-                    .distinct()
-            ),
+            enum = property.enumValuesPreservingNull(LLMModel.entries.map { it.alias }.distinct()),
         )
     }
 

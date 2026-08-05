@@ -157,10 +157,7 @@ class BackendOpenApiTest {
             assertEquals("\\S", settingsBody["properties"]["timeZone"]["pattern"].asText())
             assertEquals("\\S", settingsBody["properties"]["enabledTools"]["items"]["pattern"].asText())
             assertEquals(
-                LLMModel.entries
-                    .filterNot { it == LLMModel.OpenAICompatibleCustom }
-                    .map { it.alias }
-                    .distinct(),
+                LLMModel.entries.map { it.alias }.distinct(),
                 settingsBody["properties"]["defaultModel"]["enum"]
                     .filterNot(JsonNode::isNull)
                     .map(JsonNode::asText),

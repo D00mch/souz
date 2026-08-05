@@ -27,6 +27,9 @@ class BackendOnboardingService(
         val recommendedDefaultModel = bootstrap.settings.defaultModel
         val recommendedProvider = recommendedDefaultModel.toProviderOrNull()?.name?.lowercase()
         val hasUsableModelAccess = bootstrap.capabilities.models.any { it.serverManagedKey || it.userManagedKey }
+        val hasOpenAiCompatibleCustomModel = bootstrap.capabilities.models.any {
+            it.model == LLMModel.OpenAICompatibleCustom.alias
+        }
         val serverManagedProviders = bootstrap.capabilities.models
             .filter { it.serverManagedKey }
             .groupByProvider()
@@ -39,7 +42,7 @@ class BackendOnboardingService(
             }
         val userManagedProviders = LLMModel.entries
             .filter {
-                it != LLMModel.OpenAICompatibleCustom &&
+                (it != LLMModel.OpenAICompatibleCustom || hasOpenAiCompatibleCustomModel) &&
                     it.provider != LlmProvider.LOCAL &&
                     it.provider != LlmProvider.CODEX
             }
