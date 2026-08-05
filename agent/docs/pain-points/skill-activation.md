@@ -8,7 +8,7 @@ Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inve
 
 Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` tools remain outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all seven. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` in addition to classified direct tools. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
 
-Hosts that expose separate direct and exact-resolution catalogs must reject ID collisions between those views when the same ID would invoke different compiled adapters. Exact Skill ID collisions are resolved by compiled precedence; manifest-name collisions are ambiguous UX lookups unless the host documents a narrower policy.
+Hosts that expose separate direct and exact-resolution catalogs must reject ID collisions between those views when the same ID would invoke different compiled adapters. Exact Skill ID collisions are resolved by compiled precedence.
 
 ## Why this is fragile
 

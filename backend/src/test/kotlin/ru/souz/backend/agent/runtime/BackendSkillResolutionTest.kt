@@ -28,6 +28,7 @@ import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.runtime.conversation.BackendMergedToolCatalog
 import ru.souz.backend.testBackendClientSkills
 import ru.souz.backend.testCoreTool
+import ru.souz.backend.testRunSkillCommandTool
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -146,11 +147,11 @@ class BackendSkillResolutionTest {
             primary = catalog(),
             additional = clientSkills,
         )
-        val toolsFilter = BackendRequestToolsFilter(emptySet<String>() + clientSkills.skillIds)
+        val toolsFilter = BackendRequestToolsFilter(clientSkills.skillIds)
         val getSkillByName = ToolGetSkillByName(
             toolCatalog = catalog,
             toolsFilter = toolsFilter,
-            skillBundleProvider = clientSkills,
+            skillBundleProvider = TestSkillRegistryRepository,
             legacyCommandTool = testCoreTool("RunSkillCommand"),
         )
         val getSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
@@ -160,8 +161,8 @@ class BackendSkillResolutionTest {
         val runtimeCommand = ToolInvokeSkill(
             toolCatalog = catalog,
             toolsFilter = toolsFilter,
-            skillBundleProvider = clientSkills,
-            commandTool = testCommandTool(),
+            skillBundleProvider = TestSkillRegistryRepository,
+            commandTool = testRunSkillCommandTool(),
         )
         val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
 
@@ -222,7 +223,7 @@ class BackendSkillResolutionTest {
             toolCatalog = catalog,
             toolsFilter = toolsFilter,
             skillBundleProvider = repository,
-            commandTool = testCommandTool(),
+            commandTool = testRunSkillCommandTool(),
             approvalGate = approvingGate(repository),
         )
         val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
@@ -251,7 +252,7 @@ class BackendSkillResolutionTest {
             toolCatalog = catalog(),
             toolsFilter = BackendRequestToolsFilter(emptySet()),
             skillBundleProvider = TestSkillRegistryRepository,
-            commandTool = testCommandTool(),
+            commandTool = testRunSkillCommandTool(),
         )
         val getSkillsNamesByCategory = ToolGetSkillsNamesByCategory(
             toolCatalog = catalog(),
@@ -364,13 +365,6 @@ private fun skillBundle(
         skillMarkdownBody = body,
     )
 }
-
-private fun testCommandTool(): ToolRunSkillCommand =
-    ToolRunSkillCommand(
-        ToolInvocationRuntimeSandboxResolver {
-            error("The test skill command sandbox is not configured.")
-        }
-    )
 
 private fun approvingGate(repository: SkillRegistryRepository): SkillApprovalGate =
     SkillApprovalGate(

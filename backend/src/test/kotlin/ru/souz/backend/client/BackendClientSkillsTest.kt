@@ -5,10 +5,8 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.skills.activation.SkillId
 import ru.souz.backend.http.routeTestContext
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
@@ -33,14 +31,7 @@ class BackendClientSkillsTest {
 
         val ask = clientSkills.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
         val openMedia = clientSkills.toolsByCategory.getValue(ToolCategory.APPLICATIONS).getValue("device.media.open")
-        val loadedAsk = assertNotNull(clientSkills.loadSkillBundle("user-a", SkillId("user.ask")))
         assertEquals(setOf("user.ask", "device.media.open"), clientSkills.skillIds)
-        assertEquals(
-            listOf(SkillId("device.media.open"), SkillId("user.ask")),
-            clientSkills.listSkillInventoryIds("user-a"),
-        )
-        assertEquals("user-a", clientSkills.getSkill("user-a", SkillId("user.ask"))?.userId)
-        assertEquals("user.ask", loadedAsk.skillId.value)
         assertContains(ask.fn.description, "Ask the user")
         assertContains(ask.fn.description, "# Ask the user")
         assertContains(openMedia.fn.description, "Open media")

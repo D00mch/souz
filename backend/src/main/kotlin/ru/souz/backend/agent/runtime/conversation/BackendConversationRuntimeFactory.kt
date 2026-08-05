@@ -1,17 +1,13 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import org.slf4j.LoggerFactory
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentId
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.activation.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
@@ -123,13 +119,15 @@ internal class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
         )
-        val effectiveSkillBundleProvider: SkillBundleProvider =
-            activeClientSkills?.withFallback(effectiveSkillRegistryRepository)
+        val inventorySkillBundleProvider: SkillBundleProvider =
+            activeClientSkills?.let { clientSkills ->
+                effectiveSkillRegistryRepository.withAdditionalInventoryIds(clientSkills.skillIds)
+            }
                 ?: effectiveSkillRegistryRepository
         val getSkillByNameTool = ToolGetSkillByName(
             toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
-            skillBundleProvider = effectiveSkillBundleProvider,
+            skillBundleProvider = effectiveSkillRegistryRepository,
             legacyCommandTool = legacySkillCommandTool,
             approvalGate = skillApprovalGate,
         )
@@ -144,7 +142,7 @@ internal class BackendConversationRuntimeFactory(
         val runtimeCommandTool = ToolInvokeSkill(
             toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
-            skillBundleProvider = effectiveSkillBundleProvider,
+            skillBundleProvider = effectiveSkillRegistryRepository,
             commandTool = runSkillCommandTool,
             approvalGate = skillApprovalGate,
         )
@@ -173,7 +171,7 @@ internal class BackendConversationRuntimeFactory(
             llmApi = usageTrackingApi,
             apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
-            skillBundleProvider = effectiveSkillBundleProvider,
+            skillBundleProvider = inventorySkillBundleProvider,
             captureScope = agentBackgroundScope,
         ).create()
         return BackendConversationRuntime(
@@ -188,61 +186,14 @@ internal class BackendConversationRuntimeFactory(
     }
 }
 
-private fun SkillBundleProvider.withFallback(
-    fallback: SkillBundleProvider,
-): SkillBundleProvider = object : SkillBundleProvider {
-    override suspend fun listSkills(userId: String): List<StoredSkill> =
-        (this@withFallback.listSkills(userId) + fallback.listSkills(userId))
-            .distinctBy { it.skillId }
-            .sortedBy { it.skillId.value }
-
-    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> {
-        val primaryIds = this@withFallback.listSkillInventoryIds(userId)
-        val fallbackIds = try {
-            fallback.listSkillInventoryIds(userId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            logger.warn("Failed to load fallback Skill inventory for user={}", userId, error)
-            emptyList()
-        }
-        return (primaryIds + fallbackIds)
+private fun SkillBundleProvider.withAdditionalInventoryIds(
+    additionalSkillIds: Set<String>,
+): SkillBundleProvider = object : SkillBundleProvider by this@withAdditionalInventoryIds {
+    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
+        (
+            this@withAdditionalInventoryIds.listSkillInventoryIds(userId) +
+                additionalSkillIds.map(::SkillId)
+            )
             .distinct()
             .sortedBy { it.value }
-    }
-
-    override suspend fun getSkill(
-        userId: String,
-        skillId: SkillId,
-    ): StoredSkill? =
-        this@withFallback.getSkill(userId, skillId)
-            ?: fallback.getSkill(userId, skillId)
-
-    override suspend fun getSkillByName(
-        userId: String,
-        name: String,
-    ): StoredSkill? {
-        val primary = this@withFallback.getSkillByName(userId, name)
-        val secondary = fallback.getSkillByName(userId, name)
-        if (primary != null && secondary != null && primary.skillId != secondary.skillId) {
-            logger.warn(
-                "Ambiguous Skill manifest name user={} name={} primarySkillId={} fallbackSkillId={}",
-                userId,
-                name,
-                primary.skillId.value,
-                secondary.skillId.value,
-            )
-            return null
-        }
-        return primary ?: secondary
-    }
-
-    override suspend fun loadSkillBundle(
-        userId: String,
-        skillId: SkillId,
-    ): SkillBundle? =
-        this@withFallback.loadSkillBundle(userId, skillId)
-            ?: fallback.loadSkillBundle(userId, skillId)
 }
-
-private val logger = LoggerFactory.getLogger(BackendConversationRuntimeFactory::class.java)

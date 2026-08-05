@@ -15,11 +15,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
-import ru.souz.agent.skills.activation.SkillId
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.TestConversationKnowledgeStore
-import ru.souz.backend.TestSkillRegistryRepository
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.testBackendClientSkills
 import ru.souz.backend.testCoreTool
@@ -301,27 +298,6 @@ class BackendConversationRuntimeSettingsTest {
     }
 
     @Test
-    fun `client Skill inventory survives fallback provider inventory failure`() = runTest {
-        val api = ReplyingChatApi(classificationResponse = "CHAT 100")
-        val runtimeFactory = runtimeFactory(
-            llmApiFactory = { api },
-            clientSkills = testBackendClientSkills(),
-            skillRegistryRepository = ThrowingInventorySkillRegistryRepository,
-        )
-        val request = turnRequest().copy(clientToolsEnabled = true)
-
-        runtimeFactory.create(conversationKey(), request).execute(
-            request = request,
-            persistSession = false,
-            eventSink = AgentRuntimeEventSink.NONE,
-        )
-
-        val fileBacked = api.finalRequests.single().skillInventoryBlock().fileBackedSection()
-        assertContains(fileBacked, """- skillId: "device.media.open"""")
-        assertContains(fileBacked, """- skillId: "user.ask"""")
-    }
-
-    @Test
     fun `client Skill IDs cannot collide with direct tools`() = runTest {
         val runtimeFactory = runtimeFactory(
             llmApiFactory = { ReplyingChatApi(classificationResponse = "CHAT 100") },
@@ -371,7 +347,6 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientSkills: BackendClientSkills? = null,
-    skillRegistryRepository: SkillRegistryRepository? = null,
     configuredAgentId: AgentId = AgentId.GRAPH,
     sessionRepository: InMemoryAgentSessionRepository = InMemoryAgentSessionRepository(),
 ): BackendConversationRuntimeFactory =
@@ -384,7 +359,6 @@ private fun runtimeFactory(
         configuredAgentId = configuredAgentId,
         toolCatalog = toolCatalog,
         clientSkills = clientSkills,
-        skillRegistryRepository = skillRegistryRepository,
         legacySkillCommandTool = testCoreTool("RunSkillCommand"),
         runSkillCommandTool = testRunSkillCommandTool(),
         getKnowledgeTool = testCoreTool("GetKnowledge"),
@@ -440,11 +414,6 @@ private fun String.toolBackedSection(): String =
 private fun String.fileBackedSection(): String =
     substringAfter("File-backed Skills (opaque skillId values only):")
         .substringBefore("</skill_inventory>")
-
-private object ThrowingInventorySkillRegistryRepository : SkillRegistryRepository by TestSkillRegistryRepository {
-    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
-        error("inventory unavailable")
-}
 
 private fun singleToolCatalog(
     category: ToolCategory,

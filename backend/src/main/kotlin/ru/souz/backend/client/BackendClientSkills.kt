@@ -10,10 +10,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.skills.activation.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
-import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -36,7 +33,7 @@ internal class BackendClientSkills(
     private val eventService: AgentEventService,
     private val now: () -> Instant = Instant::now,
     classLoader: ClassLoader = BackendClientSkills::class.java.classLoader,
-) : SkillBundleProvider, AgentToolCatalog {
+) : AgentToolCatalog {
     private val bundlesById: Map<SkillId, SkillBundle> = loadBundledClientSkillBundles(classLoader)
 
     val skillIds: Set<String> =
@@ -56,32 +53,6 @@ internal class BackendClientSkills(
             }
         }
 
-    override suspend fun listSkills(userId: String): List<StoredSkill> = bundlesById.values
-        .map { bundle -> bundle.toStoredSkill(userId) }
-        .sortedBy { it.skillId.value }
-
-    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
-        bundlesById.keys.sortedBy { it.value }
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? =
-        bundlesById[skillId]?.toStoredSkill(userId)
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
-        bundlesById.values
-            .sortedBy { it.skillId.value }
-            .firstOrNull { it.manifest.name == name }
-            ?.toStoredSkill(userId)
-
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? =
-        bundlesById[skillId]
-
-    private fun SkillBundle.toStoredSkill(userId: String): StoredSkill = StoredSkill(
-        userId = userId,
-        skillId = skillId,
-        manifest = manifest,
-        bundleHash = SkillBundleHasher.hash(this),
-        createdAt = Instant.EPOCH,
-    )
 }
 
 private class ClientWebSocketSkill(
@@ -300,10 +271,7 @@ private fun loadBundledClientSkillBundles(classLoader: ClassLoader): Map<SkillId
         require(manifestBundle.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] == CLIENT_SKILL_TRANSPORT) {
             "Bundled client Skill $entry has invalid metadata.$CLIENT_SKILL_TRANSPORT_METADATA"
         }
-        val bundle = SkillBundle.fromFiles(
-            skillId = SkillId(skillId),
-            files = manifestBundle.files,
-        )
+        val bundle = manifestBundle.copy(skillId = SkillId(skillId))
         bundle.skillId to bundle
     }
     val duplicate = bundles.groupingBy { it.first.value }.eachCount().entries.firstOrNull { it.value > 1 }
