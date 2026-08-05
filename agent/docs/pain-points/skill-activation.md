@@ -28,4 +28,4 @@ The separately tagged tools merge compiled tools and stored bundles into one ID 
 
 ## Verification
 
-Run `./gradlew :agent:test` for graph and approval changes. For separately tagged runtime-tool changes, also run `./gradlew :sharedLogic:jvmTest :sharedLogic:compileAndroidMain`.
+Run `./gradlew :agent:test` for graph and approval changes. For separately tagged runtime-tool changes, also run `./gradlew :sharedLogic:jvmTest`.

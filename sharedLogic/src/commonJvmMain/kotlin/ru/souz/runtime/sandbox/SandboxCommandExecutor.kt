@@ -4,8 +4,7 @@ enum class SandboxCommandRuntime {
     PROCESS,
 
     /**
-     * Shell script runtime. Local and Docker sandboxes use GNU Bash when available;
-     * Android maps this runtime to POSIX `/system/bin/sh` for skill scripts.
+     * Shell script runtime. Local and Docker sandboxes use GNU Bash when available.
      */
     BASH,
 
