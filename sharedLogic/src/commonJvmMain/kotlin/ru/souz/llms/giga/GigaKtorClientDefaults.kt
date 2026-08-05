@@ -9,12 +9,8 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import ru.souz.db.SettingsProvider
-import java.io.InputStream
-import java.security.KeyStore
-import java.security.cert.CertificateFactory
+import ru.souz.llms.tls.trustManagerFromPem
 import java.util.*
-import javax.net.ssl.TrustManagerFactory
-import javax.net.ssl.X509TrustManager
 
 fun HttpClientConfig<CIOEngineConfig>.gigaDefaults(settingsProvider: SettingsProvider) {
     this.defaultRequest {
@@ -40,26 +36,3 @@ fun HttpClientConfig<CIOEngineConfig>.gigaDefaults(settingsProvider: SettingsPro
         }
     }
 }
-
-fun trustManagerFromPem(vararg resourcePaths: String): X509TrustManager {
-    val cf = CertificateFactory.getInstance("X.509")
-    val ks = KeyStore.getInstance(KeyStore.getDefaultType()).apply { load(null) }
-
-    resourcePaths.forEachIndexed { i, path ->
-        val ins: InputStream = resourceStream(path)
-        ins.use {
-            val cert = cf.generateCertificate(it)
-            ks.setCertificateEntry("extra-ca-$i", cert)
-        }
-    }
-
-    val tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
-        init(ks)
-    }
-    return tmf.trustManagers.filterIsInstance<X509TrustManager>().single()
-}
-
-private fun resourceStream(path: String): InputStream =
-    Thread.currentThread().contextClassLoader?.getResourceAsStream(path)
-        ?: GigaRestChatAPI::class.java.classLoader?.getResourceAsStream(path)
-        ?: error("Resource not found: $path")

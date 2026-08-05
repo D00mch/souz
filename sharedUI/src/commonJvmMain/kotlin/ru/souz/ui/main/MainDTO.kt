@@ -124,6 +124,7 @@ data class MainState(
     val chatSessionId: Long = 0L, // need this so local draft resets reliably when conversation resets.
     val selectedModel: String = "",
     val availableModelAliases: List<String> = emptyList(),
+    val availableModelLabels: Map<String, String> = emptyMap(),
     val selectedContextSize: Int = DEFAULT_MAX_TOKENS,
     val isSpeaking: Boolean = false,
     val isAwaitingToolReview: Boolean = false,

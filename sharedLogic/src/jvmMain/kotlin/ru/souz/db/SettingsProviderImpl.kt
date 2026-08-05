@@ -111,6 +111,8 @@ class SettingsProviderImpl(
     override var aiTunnelKey: String? by keyDelegate(configKey = AI_TUNNEL_KEY, envKey = "AITUNNEL_KEY")
     override var anthropicKey: String? by keyDelegate(configKey = ANTHROPIC_KEY, envKey = "ANTHROPIC_API_KEY")
     override var openaiKey: String? by keyDelegate(configKey = OPENAI_KEY, envKey = "OPENAI_API_KEY")
+    override var openaiBaseUrl: String? by keyDelegate(configKey = OPENAI_BASE_URL, envKey = OPENAI_BASE_URL)
+    override var openaiModel: String? by keyDelegate(configKey = OPENAI_MODEL, envKey = OPENAI_MODEL)
     override var codexAccessToken: String? by keyDelegate(configKey = CODEX_ACCESS_TOKEN, envKey = CODEX_ACCESS_TOKEN)
     override var codexRefreshToken: String? by keyDelegate(configKey = CODEX_REFRESH_TOKEN, envKey = CODEX_REFRESH_TOKEN)
     override var codexAccountId: String? by keyDelegate(configKey = CODEX_ACCOUNT_ID, envKey = CODEX_ACCOUNT_ID)
@@ -322,6 +324,7 @@ class SettingsProviderImpl(
     private fun normalizeGigaModel(model: LLMModel): LLMModel {
         val availableProviders = LlmBuildProfile.defaultsForLanguage(regionProfile).keys
         return when {
+            model == LLMModel.OpenAICompatibleCustom && openaiModel.isNullOrBlank() -> defaultLlmModel()
             model.provider == LlmProvider.LOCAL && model !in localProviderAvailability.availableGigaModels() -> defaultLlmModel()
             model.provider !in availableProviders -> defaultLlmModel()
             else -> model
@@ -371,6 +374,8 @@ class SettingsProviderImpl(
         const val AI_TUNNEL_KEY = "AI_TUNNEL_KEY"
         const val ANTHROPIC_KEY = "ANTHROPIC_KEY"
         const val OPENAI_KEY = "OPENAI_KEY"
+        const val OPENAI_BASE_URL = "OPENAI_BASE_URL"
+        const val OPENAI_MODEL = "OPENAI_MODEL"
         const val CODEX_ACCESS_TOKEN = "CODEX_ACCESS_TOKEN"
         const val CODEX_REFRESH_TOKEN = "CODEX_REFRESH_TOKEN"
         const val CODEX_ACCOUNT_ID = "CODEX_ACCOUNT_ID"

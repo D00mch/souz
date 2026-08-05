@@ -130,6 +130,10 @@
     <string name="label_key_aitunnel">AI Tunnel ключ</string>
     <string name="label_key_anthropic">Anthropic ключ</string>
     <string name="label_key_openai">OpenAI ключ</string>
+    <string name="label_openai_base_url">OpenAI-совместимый базовый URL</string>
+    <string name="label_openai_model_override">OpenAI-совместимая модель</string>
+    <string name="placeholder_openai_base_url">https://api.openai.com/v1</string>
+    <string name="placeholder_openai_model_override">Добавляет эту модель в список выбора</string>
     <string name="label_key_salutespeech">SaluteSpeech ключ</string>
     <string name="header_where_to_get_keys">Где получить ключи</string>
     

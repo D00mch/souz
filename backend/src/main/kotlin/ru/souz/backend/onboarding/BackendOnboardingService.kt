@@ -38,7 +38,10 @@ class BackendOnboardingService(
                 )
             }
         val userManagedProviders = LLMModel.entries
-            .filter { it.provider != LlmProvider.LOCAL }
+            .filter {
+                it != LLMModel.OpenAICompatibleCustom &&
+                    it.provider != LlmProvider.LOCAL
+            }
             .groupBy { it.provider.name.lowercase() }
             .toSortedMap()
             .map { (provider, models) ->

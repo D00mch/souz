@@ -8,8 +8,17 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 
-fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> =
-    llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
+fun SettingsProvider.availableLlmModels(llmBuildProfile: LlmBuildProfile): List<LLMModel> {
+    val availableModels = llmBuildProfile.availableModels.filter { model -> this.hasKey(model.provider) }
+    val hasConfiguredOpenAiCompatibleModel = LlmProvider.OPENAI in llmBuildProfile.availableProviders &&
+        this.hasKey(LlmProvider.OPENAI) &&
+        !openaiModel.isNullOrBlank()
+    return if (hasConfiguredOpenAiCompatibleModel) {
+        availableModels + LLMModel.OpenAICompatibleCustom
+    } else {
+        availableModels
+    }
+}
 
 fun SettingsProvider.defaultLlmModel(llmBuildProfile: LlmBuildProfile): LLMModel? {
     val availableModels = this.availableLlmModels(llmBuildProfile)

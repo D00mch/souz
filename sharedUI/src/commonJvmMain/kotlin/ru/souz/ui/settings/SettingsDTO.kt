@@ -60,6 +60,8 @@ data class SettingsState(
     val availableApiKeyProviders: List<ApiKeyProvider> = emptyList(),
     val supportsVoiceRecognitionApiKeys: Boolean = false,
     val configuredKeysCount: Int = 0,
+    val openaiBaseUrl: String = "",
+    val openaiModel: String = "",
     val mcpServersJson: String = "",
     val useFewShotExamples: Boolean = false,
     val useStreaming: Boolean = false,
@@ -132,6 +134,8 @@ sealed interface SettingsEvent : VMEvent {
     object OpenTools : SettingsEvent
     object RefreshFromProvider : SettingsEvent
     data class InputApiKey(val field: ApiKeyField, val value: String): SettingsEvent
+    data class InputOpenAiBaseUrl(val value: String) : SettingsEvent
+    data class InputOpenAiModel(val value: String) : SettingsEvent
     data class ToggleApiKeyVisibility(val field: ApiKeyField) : SettingsEvent
     object StartCodexOAuth : SettingsEvent
     object CancelCodexOAuth : SettingsEvent

@@ -142,6 +142,7 @@ internal fun ChatInputWithQuickSettings(
     focusRequester: FocusRequester,
     selectedModel: String,
     availableModelAliases: List<String>,
+    availableModelLabels: Map<String, String>,
     selectedContextSize: Int,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
@@ -164,10 +165,10 @@ internal fun ChatInputWithQuickSettings(
         isContextDropdownOpen = false
     }
 
-    val modelOptions = remember(availableModelAliases) {
+    val modelOptions = remember(availableModelAliases, availableModelLabels) {
         availableModelAliases.mapNotNull { alias ->
             LLMModel.entries.firstOrNull { it.alias == alias }?.let { model ->
-                QuickOption(value = model.alias, label = model.displayName)
+                QuickOption(value = model.alias, label = availableModelLabels[alias] ?: model.displayName)
             }
         }
     }

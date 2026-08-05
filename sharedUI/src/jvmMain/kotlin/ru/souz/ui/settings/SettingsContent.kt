@@ -486,6 +486,8 @@ fun GeneralSettingsContent(
 fun KeysSettingsContent(
     state: SettingsState,
     onApiKeyInput: (ApiKeyField, String) -> Unit,
+    onOpenAiBaseUrlInput: (String) -> Unit,
+    onOpenAiModelInput: (String) -> Unit,
     onApiKeyVisibilityToggle: (ApiKeyField) -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
     onStartCodexOAuth: () -> Unit,
@@ -519,6 +521,22 @@ fun KeysSettingsContent(
             },
             modifier = Modifier.fillMaxWidth(),
         )
+        if (ApiKeyField.OPENAI in state.availableApiKeyFields) {
+            LabeledTextField(
+                label = stringResource(Res.string.label_openai_base_url),
+                value = state.openaiBaseUrl,
+                onValueChange = onOpenAiBaseUrlInput,
+                placeholder = stringResource(Res.string.placeholder_openai_base_url),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LabeledTextField(
+                label = stringResource(Res.string.label_openai_model_override),
+                value = state.openaiModel,
+                onValueChange = onOpenAiModelInput,
+                placeholder = stringResource(Res.string.placeholder_openai_model_override),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
@@ -529,7 +547,9 @@ private fun SettingsState.toSharedModelsSettingsUiState(): SharedModelsSettingsU
         subtitle = stringResource(Res.string.settings_models_subtitle),
         chatModelLabel = stringResource(Res.string.label_model),
         selectedChatModelId = gigaModel.alias,
-        chatModelOptions = availableLlmModels.map { it.toSharedOption(includeAlias = true) },
+        chatModelOptions = availableLlmModels.map {
+            it.toSharedOption(includeAlias = true, openaiModel = openaiModel)
+        },
         embeddingsModelLabel = stringResource(Res.string.label_embeddings_model),
         selectedEmbeddingsModelId = embeddingsModel.alias,
         embeddingsModelOptions = availableEmbeddingsModels.map { it.toSharedOption() },
@@ -653,10 +673,10 @@ private fun ApiKeyProvider.toSharedProviderLink(): SharedProviderLinkUi =
         details = stringResource(details),
     )
 
-private fun LLMModel.toSharedOption(includeAlias: Boolean): SharedModelOptionUi =
+private fun LLMModel.toSharedOption(includeAlias: Boolean, openaiModel: String = ""): SharedModelOptionUi =
     SharedModelOptionUi(
         id = alias,
-        label = displayName,
+        label = displayNameForConfiguredOpenAiModel(openaiModel),
         detail = alias.takeIf { includeAlias },
     )
 
@@ -2196,6 +2216,8 @@ private fun KeysSettingsContentPreview() {
         KeysSettingsContent(
             state = PreviewSettingsState,
             onApiKeyInput = { _, _ -> },
+            onOpenAiBaseUrlInput = {},
+            onOpenAiModelInput = {},
             onApiKeyVisibilityToggle = {},
             onOpenProviderLink = {},
             onStartCodexOAuth = {},
