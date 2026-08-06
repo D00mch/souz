@@ -498,6 +498,8 @@ SOUZ_BACKEND_PROVIDER_BACKOFF_BASE_MS=500
 SOUZ_BACKEND_PROVIDER_BACKOFF_MAX_MS=5000
 
 # Postgres
+# Optional JDBC URL override for multi-host/TLS deployments.
+POSTGRES_DSN=jdbc:postgresql://172.24.69.16:5432,172.24.69.180:5432,172.24.69.229:5432/souz_preprod?sslmode=require
 SOUZ_BACKEND_DB_HOST=127.0.0.1
 SOUZ_BACKEND_DB_PORT=5432
 SOUZ_BACKEND_DB_NAME=souz
@@ -508,7 +510,7 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. WebSocket events require `skills`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. WebSocket events require `skills`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
 Backend executions snapshot each user's effective `enabledTools`. The snapshot controls direct-tool classification, tool-backed Skill inventory/category discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core Skill/Knowledge tools and user-installed file-backed skills remain available.
 

@@ -25,15 +25,19 @@ internal fun openAiTrustManagerFromPemDirectoryEnv(): X509TrustManager? {
     return trustManagerFromPemDirectory(File(directory))
 }
 
-internal fun trustManagerFromPemDirectory(directory: File): X509TrustManager {
-    require(directory.isDirectory) {
-        "$OPENAI_CA_CERTS_DIR_ENV must point to a directory: ${directory.absolutePath}"
+internal fun trustManagerFromPemDirectory(directory: File): X509TrustManager? {
+    if (!directory.isDirectory) {
+        return null
     }
 
     val certificateFiles = directory.listFiles()
         ?.filter { it.isFile && it.extension.lowercase() in certificateExtensions }
         ?.sortedBy { it.name }
         .orEmpty()
+
+    if (certificateFiles.isEmpty()) {
+        return null
+    }
 
     return trustManagerFromPemFiles(
         files = certificateFiles,
