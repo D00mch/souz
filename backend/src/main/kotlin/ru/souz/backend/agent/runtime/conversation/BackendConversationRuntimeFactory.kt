@@ -5,6 +5,8 @@ import kotlinx.coroutines.CoroutineScope
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.AgentId
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentTelemetry
@@ -21,9 +23,9 @@ import ru.souz.backend.agent.runtime.BackendNoopMcpToolProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.runtime.BackendRequestToolCatalog
 import ru.souz.backend.agent.runtime.BackendRequestToolsFilter
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -34,9 +36,13 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.tool.LocalRegexClassifier
 import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.skills.ToolRunSkillCommand
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
-class BackendConversationRuntimeFactory(
+internal class BackendConversationRuntimeFactory(
     private val baseSettingsProvider: SettingsProvider,
     private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
     private val sessionRepository: AgentSessionRepository,
@@ -44,9 +50,10 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val clientToolCatalogProvider: suspend (String) -> AgentToolCatalog = { BackendNoopAgentToolCatalog },
+    private val clientSkills: BackendClientSkills? = null,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
-    private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
+    private val legacySkillCommandTool: LLMToolSetup,
+    private val runSkillCommandTool: ToolRunSkillCommand,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
@@ -67,24 +74,33 @@ class BackendConversationRuntimeFactory(
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
         settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
-        val clientToolCatalog = if (request.clientToolsEnabled) {
-            clientToolCatalogProvider(key.userId)
-        } else {
-            BackendNoopAgentToolCatalog
-        }
-        val executionToolCatalog = BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
-        val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
-            delegate = executionToolCatalog,
+        val activeClientSkills = clientSkills?.takeIf { request.clientToolsEnabled }
+        val directToolCatalog = BackendFewShotAwareToolCatalog(
+            delegate = toolCatalog,
             settingsProvider = settingsProvider,
         )
+        val directSkillIds = directToolCatalog.toolsByCategory.values
+            .flatMapTo(mutableSetOf()) { it.keys }
+        val conflictingSkillIds =
+            directSkillIds intersect activeClientSkills?.skillIds.orEmpty()
+        require(conflictingSkillIds.isEmpty()) {
+            "Client Skill IDs collide with direct tools: ${conflictingSkillIds.sorted().joinToString()}"
+        }
         val enabledTools = request.enabledTools?.plus(
-            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
+            activeClientSkills?.skillIds.orEmpty()
         )
         val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
-        val filteredToolCatalog = BackendRequestToolCatalog(
-            delegate = requestScopedToolCatalog,
+        val filteredDirectToolCatalog = BackendRequestToolCatalog(
+            delegate = directToolCatalog,
             toolsFilter = requestToolsFilter,
         )
+        val skillResolutionCatalog: AgentToolCatalog =
+            activeClientSkills?.let { clientCatalog ->
+                BackendMergedToolCatalog(
+                    primary = directToolCatalog,
+                    additional = clientCatalog,
+                )
+            } ?: directToolCatalog
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = key.userId,
@@ -103,29 +119,38 @@ class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
         )
-        val getSkillByNameTool = skillCoreToolsFactory.createGetSkillByName(
-            toolCatalog = requestScopedToolCatalog,
+        val inventorySkillBundleProvider: SkillBundleProvider =
+            activeClientSkills?.let { clientSkills ->
+                effectiveSkillRegistryRepository.withAdditionalInventoryIds(clientSkills.skillIds)
+            }
+                ?: effectiveSkillRegistryRepository
+        val getSkillByNameTool = ToolGetSkillByName(
+            toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = effectiveSkillRegistryRepository,
+            legacyCommandTool = legacySkillCommandTool,
             approvalGate = skillApprovalGate,
         )
-        val getSkillsNamesByCategoryTool = skillCoreToolsFactory.createGetSkillsNamesByCategory(
-            toolCatalog = requestScopedToolCatalog,
+        val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
+            toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
             getSkillByName = getSkillByNameTool,
             getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
         )
-        val runtimeCommandTool = skillCoreToolsFactory.createRuntimeCommand(
-            toolCatalog = requestScopedToolCatalog,
+        val runtimeCommandTool = ToolInvokeSkill(
+            toolCatalog = skillResolutionCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = effectiveSkillRegistryRepository,
+            commandTool = runSkillCommandTool,
             approvalGate = skillApprovalGate,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
-            toolCatalog = filteredToolCatalog,
+            toolCatalog = filteredDirectToolCatalog,
             toolsFilter = requestToolsFilter,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
@@ -146,7 +171,7 @@ class BackendConversationRuntimeFactory(
             llmApi = usageTrackingApi,
             apiClassifier = ApiClassifier(delegateApi),
             localClassifier = LocalRegexClassifier,
-            skillRegistryRepository = effectiveSkillRegistryRepository,
+            skillBundleProvider = inventorySkillBundleProvider,
             captureScope = agentBackgroundScope,
         ).create()
         return BackendConversationRuntime(
@@ -159,4 +184,16 @@ class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
         )
     }
+}
+
+private fun SkillBundleProvider.withAdditionalInventoryIds(
+    additionalSkillIds: Set<String>,
+): SkillBundleProvider = object : SkillBundleProvider by this@withAdditionalInventoryIds {
+    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> =
+        (
+            this@withAdditionalInventoryIds.listSkillInventoryIds(userId) +
+                additionalSkillIds.map(::SkillId)
+            )
+            .distinct()
+            .sortedBy { it.value }
 }

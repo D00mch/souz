@@ -10,13 +10,11 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
@@ -25,7 +23,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.client.ClientThreadRecoveryService
@@ -214,21 +212,13 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        BackendSkillCoreToolsFactory(
-            skillBundleProvider = instance<SkillRegistryRepository>(),
-            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
-            commandTool = instance<ToolRunSkillCommand>(),
-        )
-    }
-    bindSingleton {
-        BackendClientToolCatalogFactory(
+        BackendClientSkills(
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
         )
     }
     bindSingleton {
-        val clientToolCatalogFactory = instance<BackendClientToolCatalogFactory>()
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
@@ -237,13 +227,14 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
-            clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
-            skillCoreToolsFactory = instance(),
+            clientSkills = instance(),
+            skillRegistryRepository = instance(),
+            legacySkillCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
+            runSkillCommandTool = instance<ToolRunSkillCommand>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
             searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
-            skillRegistryRepository = instance(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
         )
     }

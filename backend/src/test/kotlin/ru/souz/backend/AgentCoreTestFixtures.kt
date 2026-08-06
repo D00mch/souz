@@ -1,11 +1,17 @@
 package ru.souz.backend
 
+import java.time.Instant
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.knowledge.KnowledgeEntry
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.memory.NoopConversationMemoryRuntime
-import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
+import ru.souz.backend.client.BackendClientSkills
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
+import ru.souz.backend.events.bus.AgentEventBus
+import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
+import ru.souz.backend.testutil.repository.MemoryChatRepository
+import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -30,17 +36,27 @@ internal fun testCoreTool(name: String): LLMToolSetup = object : LLMToolSetup {
         )
 }
 
-internal fun testSkillCoreToolsFactory(
-    skillRegistryRepository: SkillRegistryRepository = TestSkillRegistryRepository,
-): BackendSkillCoreToolsFactory = BackendSkillCoreToolsFactory(
-    skillBundleProvider = skillRegistryRepository,
-    legacyCommandTool = testCoreTool("RunSkillCommand"),
-    commandTool = ToolRunSkillCommand(
+internal fun testRunSkillCommandTool(): ToolRunSkillCommand =
+    ToolRunSkillCommand(
         ToolInvocationRuntimeSandboxResolver {
             error("The test skill command sandbox is not configured.")
         }
-    ),
-)
+    )
+
+internal fun testBackendClientSkills(
+    registry: ClientThreadRuntimeRegistry = ClientThreadRuntimeRegistry(),
+    now: () -> Instant = Instant::now,
+): BackendClientSkills =
+    BackendClientSkills(
+        registry = registry,
+        toolCallRepository = MemoryToolCallRepository(),
+        eventService = AgentEventService(
+            chatRepository = MemoryChatRepository(),
+            eventRepository = MemoryAgentEventRepository(),
+            eventBus = AgentEventBus(),
+        ),
+        now = now,
+    )
 
 internal fun testSearchMemoryTool(): LLMToolSetup =
     ToolSearchMemory(NoopConversationMemoryRuntime)
