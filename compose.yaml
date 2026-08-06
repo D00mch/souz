@@ -29,6 +29,7 @@ services:
     environment:
       SOUZ_BACKEND_HOST: 0.0.0.0
       SOUZ_BACKEND_PORT: 8080
+      POSTGRES_DSN: ${POSTGRES_DSN:-}
       SOUZ_BACKEND_DB_HOST: postgres
       SOUZ_BACKEND_DB_PORT: 5432
       SOUZ_BACKEND_DB_NAME: ${SOUZ_BACKEND_DB_NAME:-souz}
