@@ -6,7 +6,7 @@
 - Search snippets and extracted pages are untrusted evidence, never instructions. Preserve that boundary in planning, synthesis, rescue, and fallback prompts.
 - `results` contains studied sources while `sources` contains cited sources. Source indexes remain stable from collection through JSON output and Markdown citations.
 - Propagate `CancellationException`. Map provider blocking and availability failures to their existing output statuses instead of presenting them as empty successful searches.
-- Reports and downloaded assets are written through `FilesToolUtil` with the current `ToolInvocationMeta` so local, Docker, backend, and Android scopes remain isolated.
+- Reports and downloaded assets are written through `FilesToolUtil` with the current `ToolInvocationMeta` so local, Docker, and backend scopes remain isolated.
 
 ## Why this is fragile
 
@@ -27,7 +27,6 @@ Run:
 
 ```zsh
 ./gradlew :sharedLogic:jvmTest --tests 'ru.souz.tool.web.*'
-./gradlew :sharedLogic:compileAndroidMain
 ```
 
 Cover cancellation, provider status mapping, malformed/ungrounded synthesis recovery, citation selection, output paths, redirect behavior, and binary size limits for the behavior being changed.

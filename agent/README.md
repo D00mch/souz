@@ -6,7 +6,7 @@
 
 - Own agent contracts, context construction, graph orchestration, execution, session tracing, and skill activation.
 - Adapt `:graph-engine` to agent state and use the shared request, response, and tool contracts from `:llms`.
-- Define the SPI boundary implemented by desktop, Android, backend, and test hosts.
+- Define the SPI boundary implemented by desktop, backend, and test hosts.
 
 ## Boundaries
 

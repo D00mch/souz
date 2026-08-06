@@ -3,7 +3,6 @@ package ru.souz.runtime.sandbox
 enum class SandboxMode {
     LOCAL,
     DOCKER,
-    ANDROID,
 }
 
 interface RuntimeSandbox {
