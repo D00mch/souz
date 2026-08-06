@@ -7,6 +7,7 @@ import java.time.Instant
 import java.util.Base64
 import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -22,13 +23,16 @@ import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.skills.validation.SkillValidator
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.http.routeTestContext
+import ru.souz.backend.testCoreTool
+import ru.souz.backend.testSkillCoreTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.giga.toGiga
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
@@ -36,9 +40,12 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolRunSkillCommand
 
-class BackendSkillCoreToolsFactoryTest {
+class BackendSkillResolutionTest {
     private val createdPaths = mutableListOf<Path>()
 
     @AfterTest
@@ -68,18 +75,19 @@ class BackendSkillCoreToolsFactoryTest {
             sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(sandbox),
             skillStorageScope = SkillStorageScope.USER_SCOPED,
         )
-        val factory = BackendSkillCoreToolsFactory(
-            skillBundleProvider = repository,
-            legacyCommandTool = commandTool.toGiga(),
-            commandTool = commandTool,
-        )
         val mutableEnabledTools = linkedSetOf("EnabledTool")
         val toolsFilter = BackendRequestToolsFilter(mutableEnabledTools)
         mutableEnabledTools += "DisabledTool"
 
         val approvalGate = approvingGate(repository)
-        val getSkillsNamesByCategory = factory.createGetSkillsNamesByCategory(catalog, toolsFilter)
-        val runtimeCommand = factory.createRuntimeCommand(catalog, toolsFilter, approvalGate)
+        val getSkillsNamesByCategory = ToolGetSkillsNamesByCategory(catalog, toolsFilter)
+        val runtimeCommand = ToolInvokeSkill(
+            toolCatalog = catalog,
+            toolsFilter = toolsFilter,
+            skillBundleProvider = repository,
+            commandTool = commandTool,
+            approvalGate = approvalGate,
+        )
         val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
         val compiledNames = getSkillsNamesByCategory.invoke(
             LLMResponse.FunctionCall(
@@ -128,6 +136,80 @@ class BackendSkillCoreToolsFactoryTest {
         assertEquals(0, disabledTool.invocationCount)
     }
 
+    @Test
+    fun `client skill IDs resolve through tool-backed discovery`() = runTest {
+        val clientSkills = testClientSkills()
+        val toolsFilter = BackendRequestToolsFilter(setOf("user.ask", "device.media.open"))
+        val getSkillByName = ToolGetSkillByName(
+            toolCatalog = clientSkills,
+            toolsFilter = toolsFilter,
+            skillBundleProvider = SingleBundleRepository(fileSkillBundle()),
+            legacyCommandTool = testCoreTool("RunSkillCommand"),
+            approvalGate = null,
+        )
+        val getSkillsByCategory = ToolGetSkillsNamesByCategory(
+            toolCatalog = clientSkills,
+            toolsFilter = toolsFilter,
+        )
+        val runtimeCommand = ToolInvokeSkill(
+            toolCatalog = clientSkills,
+            toolsFilter = toolsFilter,
+            skillBundleProvider = SingleBundleRepository(fileSkillBundle()),
+            commandTool = testSkillCoreTools().runSkillCommandTool,
+            approvalGate = null,
+        )
+        val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
+
+        val userAsk = getSkillByName.invoke(
+            LLMResponse.FunctionCall(name = ToolGetSkillByName.NAME, arguments = mapOf("skillId" to "user.ask")),
+            meta,
+        ).contentJson()
+        val mediaNames = getSkillsByCategory.invoke(
+            LLMResponse.FunctionCall(name = ToolGetSkillsNamesByCategory.NAME, arguments = mapOf("category" to ToolCategory.CHAT.name)),
+            meta,
+        ).contentJson()
+        val appNames = getSkillsByCategory.invoke(
+            LLMResponse.FunctionCall(name = ToolGetSkillsNamesByCategory.NAME, arguments = mapOf("category" to ToolCategory.APPLICATIONS.name)),
+            meta,
+        ).contentJson()
+
+        assertEquals("user.ask", userAsk["skill"]["skillId"].asText())
+        assertContains(userAsk["skill"]["description"].asText(), "Ask the user a concise clarification question")
+        assertTrue(userAsk["skill"]["skillMarkdownBody"].isMissingNode)
+        assertEquals("user.ask", runtimeCommand.delegatedToolName("user.ask"))
+        assertEquals("device.media.open", runtimeCommand.delegatedToolName("device.media.open"))
+        assertEquals(listOf("user.ask"), mediaNames["skillNames"].map { it.asText() })
+        assertEquals(listOf("device.media.open"), appNames["skillNames"].map { it.asText() })
+    }
+
+    @Test
+    fun `client catalog omission leaves client IDs undiscoverable and unavailable`() = runTest {
+        val catalog = catalog()
+        val commandTool = testSkillCoreTools().runSkillCommandTool
+        val toolsFilter = BackendRequestToolsFilter(emptySet())
+        val approvalGate = approvingGate(SingleBundleRepository(fileSkillBundle()))
+        val getSkillsNamesByCategory = ToolGetSkillsNamesByCategory(catalog, toolsFilter)
+        val runtimeCommand = ToolInvokeSkill(
+            toolCatalog = catalog,
+            toolsFilter = toolsFilter,
+            skillBundleProvider = SingleBundleRepository(fileSkillBundle()),
+            commandTool = commandTool,
+            approvalGate = approvalGate,
+        )
+        val meta = ToolInvocationMeta(userId = USER_ID, conversationId = "conversation-a")
+        val filesNames = getSkillsNamesByCategory.invoke(
+            LLMResponse.FunctionCall(name = ToolGetSkillsNamesByCategory.NAME, arguments = mapOf("category" to ToolCategory.FILES.name)),
+            meta,
+        ).contentJson()
+        val unavailable = runtimeCommand.invoke(
+            skillCall("user.ask"),
+            meta,
+        ).contentJson()
+
+        assertEquals(emptyList<String>(), filesNames["skillNames"].map { it.asText() })
+        assertEquals("skill_not_found", unavailable["error"]["code"].asText())
+    }
+
     private fun createUserScopedBundleRoot(
         stateRoot: Path,
         userId: String,
@@ -149,10 +231,19 @@ class BackendSkillCoreToolsFactoryTest {
         arguments = mapOf("skillId" to skillId, "arguments" to arguments),
     )
 
-    private companion object {
-        const val USER_ID = "backend-user"
-        const val FILE_SKILL_ID = "file-skill"
-    }
+private companion object {
+    const val USER_ID = "backend-user"
+    const val FILE_SKILL_ID = "file-skill"
+}
+
+private fun testClientSkills(): BackendClientSkills {
+    val context = routeTestContext()
+    return BackendClientSkills(
+        registry = context.clientThreadRegistry,
+        toolCallRepository = context.toolCallRepository,
+        eventService = context.eventService,
+    )
+}
 }
 
 private class RecordingTool(name: String) : LLMToolSetup {

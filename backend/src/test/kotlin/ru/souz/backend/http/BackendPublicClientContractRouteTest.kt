@@ -35,7 +35,7 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientDevice
 import ru.souz.backend.client.MessageSubmitFrame
@@ -376,11 +376,11 @@ class BackendPublicClientContractRouteTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalogFactory(
+        val catalog = BackendClientSkills(
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create()
+        )
         val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
         requireNotNull(catalog.toolsByCategory[ToolCategory.APPLICATIONS]?.get("device.media.open"))
         val invocation = async {
@@ -529,11 +529,11 @@ class BackendPublicClientContractRouteTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalogFactory(
+        val catalog = BackendClientSkills(
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create()
+        )
         val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
         val invocation = async {
             tool.invoke(

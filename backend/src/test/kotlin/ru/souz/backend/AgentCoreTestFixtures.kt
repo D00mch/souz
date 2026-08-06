@@ -4,8 +4,6 @@ import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.knowledge.KnowledgeEntry
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.memory.NoopConversationMemoryRuntime
-import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -30,12 +28,14 @@ internal fun testCoreTool(name: String): LLMToolSetup = object : LLMToolSetup {
         )
 }
 
-internal fun testSkillCoreToolsFactory(
-    skillRegistryRepository: SkillRegistryRepository = TestSkillRegistryRepository,
-): BackendSkillCoreToolsFactory = BackendSkillCoreToolsFactory(
-    skillBundleProvider = skillRegistryRepository,
-    legacyCommandTool = testCoreTool("RunSkillCommand"),
-    commandTool = ToolRunSkillCommand(
+internal data class TestSkillCoreTools(
+    val legacySkillCommandTool: LLMToolSetup,
+    val runSkillCommandTool: ToolRunSkillCommand,
+)
+
+internal fun testSkillCoreTools(): TestSkillCoreTools = TestSkillCoreTools(
+    legacySkillCommandTool = testCoreTool("RunSkillCommand"),
+    runSkillCommandTool = ToolRunSkillCommand(
         ToolInvocationRuntimeSandboxResolver {
             error("The test skill command sandbox is not configured.")
         }

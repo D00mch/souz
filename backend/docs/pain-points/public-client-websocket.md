@@ -14,7 +14,7 @@ Live `message.submit`, `tool.result`, and `thread.cancel` frames must reach the 
 
 An acknowledgement, tool event, runtime mailbox, and terminal state can race. Sending an event before its causal acknowledgement, accepting input after terminal state, or completing a waiter before the tool-result acknowledgement makes the wire trace contradictory even with one pod.
 
-The client-Skill projection does not pass bundled resources through `SkillApprovalGate`. Keep the bundle list backend-owned and reviewed; do not let user-scoped file-backed Skills declare the client WebSocket transport.
+`BackendClientSkills` exposes bundled resources through both an `AgentToolCatalog` adapter view and a `SkillBundleProvider` view. The adapter view participates in exact skill lookup, category discovery, and generic execution, while the provider view contributes IDs to prompt inventory. Bundled resources stay backend-owned and reviewed; do not let user-scoped file-backed Skills declare the client WebSocket transport.
 
 ## Safe-change guidance
 

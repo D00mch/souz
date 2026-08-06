@@ -19,7 +19,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.testCoreTool
 import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
+import ru.souz.backend.testSkillCoreTools
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
@@ -86,7 +86,9 @@ private fun runtimeTurnRunner(failure: Throwable): BackendConversationRuntimeTur
             logObjectMapper = jacksonObjectMapper(),
             systemPrompt = "backend test prompt",
             skillRegistryRepository = TestSkillRegistryRepository,
-            skillCoreToolsFactory = testSkillCoreToolsFactory(),
+            clientSkills = null,
+            legacySkillCommandTool = testSkillCoreTools().legacySkillCommandTool,
+            runSkillCommandTool = testSkillCoreTools().runSkillCommandTool,
             getKnowledgeTool = testCoreTool("GetKnowledge"),
             searchKnowledgeTool = testCoreTool("SearchKnowledge"),
             searchMemoryTool = testSearchMemoryTool(),

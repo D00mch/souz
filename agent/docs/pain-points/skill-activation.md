@@ -2,11 +2,11 @@
 
 ## Invariant
 
-Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inventory/core-tool installation, then MCP injection. Classification narrows only direct tool schemas advertised to the model; executable lookup may still contain the wider direct tool catalog supplied by the host. The compact Skill inventory is appended to the effective system message and lists enabled tool-backed Skill IDs plus user-scoped file-backed Skill IDs without loading file-backed bundles or manifest text.
+Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inventory/core-tool installation, then MCP injection. Classification narrows only direct tool schemas advertised to the model; executable lookup may still contain the wider direct tool catalog supplied by the host. The compact Skill inventory is appended to the effective system message and lists enabled tool-backed Skill IDs plus provider-backed file-backed Skill IDs without loading file-backed bundles or manifest text.
 
 `GetSkillByName` and generic `RunSkillCommand` are the only paths that load full file-backed bundle content for model use. Both require cached or fresh approval through the shared approval gate before returning `SKILL.md` or executing bundled commands. Validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle gets a different cache key. Changing validation rules requires a new policy version.
 
-Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` tools remain outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all seven. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` in addition to classified direct tools. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
+Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` tools remain outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all seven. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` in addition to classified direct tools. The provider-backed inventory list still includes enabled direct tool IDs and opaque IDs returned by `SkillBundleProvider`, while some compiled adapters are intentionally excluded from the direct catalog and only discoverable through exact skill resolution.
 
 ## Why this is fragile
 
@@ -16,7 +16,7 @@ The separately tagged tools merge compiled tools and stored bundles into one ID 
 
 ## Safe changes
 
-- Keep prompt inventory compact and user-scoped. Use an ID-only registry path and do not load `SKILL.md` or supporting files while rendering the inventory.
+- Keep prompt inventory compact and provider-backed. Use an ID-only registry path and do not load `SKILL.md` or supporting files while rendering the inventory.
 - Render file-backed Skill IDs as opaque escaped data only. Do not copy unapproved manifest names or descriptions into the system prompt.
 - Keep the order structural validation, static validation, then bounded LLM validation. Cache both approvals and rejections for the exact identity.
 - Treat a per-skill rejection as local to that skill lookup or invocation. Do not return `SKILL.md` or execute commands for rejected bundles.

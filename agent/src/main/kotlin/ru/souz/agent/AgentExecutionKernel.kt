@@ -15,7 +15,7 @@ import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
@@ -46,8 +46,8 @@ class AgentExecutionKernelFactory(
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
     private val getSkillByNameTool: LLMToolSetup,
-    private val getSkillsByCategoryTool: LLMToolSetup,
     private val getSkillsNamesByCategoryTool: LLMToolSetup,
+    private val getSkillsByCategoryTool: LLMToolSetup,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
@@ -58,7 +58,7 @@ class AgentExecutionKernelFactory(
     private val llmApi: LLMChatAPI,
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
-    private val skillRegistryRepository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
 ) {
@@ -78,7 +78,7 @@ class AgentExecutionKernelFactory(
         val nodesSkillInventory = NodesSkillInventory(
             toolCatalog = toolCatalog,
             toolsFilter = toolsFilter,
-            skillBundleProvider = skillRegistryRepository,
+            skillBundleProvider = skillBundleProvider,
         )
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(
