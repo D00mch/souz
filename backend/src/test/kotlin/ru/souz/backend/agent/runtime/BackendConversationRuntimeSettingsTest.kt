@@ -4,7 +4,9 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.io.File
 import java.util.UUID
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,11 +16,13 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.TestConversationKnowledgeStore
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.testCoreTool
 import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
+import ru.souz.backend.testSkillCoreTools
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.http.routeTestContext
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
@@ -244,6 +248,90 @@ class BackendConversationRuntimeSettingsTest {
     }
 
     @Test
+    fun `runtime includes enabled client skills in file-backed inventory`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "FILES 100")
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.FILES,
+                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+            ),
+            clientSkills = testClientSkills(),
+        )
+        val request = turnRequest().copy(clientToolsEnabled = true)
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        val finalRequest = api.finalRequests.single()
+        val inventory = finalRequest.skillInventoryBlock()
+        val toolBackedSection = inventory.toolBackedSkillSection()
+
+        assertContains(inventory, "File-backed Skills (opaque skillId values only):")
+        assertContains(inventory, "- skillId: \"device.media.open\"")
+        assertContains(inventory, "- skillId: \"user.ask\"")
+        assertFalse(toolBackedSection.contains("user.ask"))
+        assertFalse(toolBackedSection.contains("device.media.open"))
+        assertFalse(finalRequest.functions.any { it.name == "user.ask" || it.name == "device.media.open" })
+    }
+
+    @Test
+    fun `runtime excludes client skills when they are disabled`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "FILES 100")
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.FILES,
+                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+            ),
+            clientSkills = testClientSkills(),
+        )
+        val request = turnRequest().copy(clientToolsEnabled = false)
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        val inventory = api.finalRequests.single().skillInventoryBlock()
+
+        assertFalse(inventory.contains("- skillId: \"device.media.open\""))
+        assertFalse(inventory.contains("- skillId: \"user.ask\""))
+        assertFalse(api.finalRequests.single().functions.any { it.name == "user.ask" || it.name == "device.media.open" })
+    }
+
+    @Test
+    fun `runtime keeps client skills with an explicit empty enabled tool snapshot`() = runTest {
+        val api = ReplyingChatApi(classificationResponse = "FILES 100")
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            toolCatalog = singleToolCatalog(
+                category = ToolCategory.FILES,
+                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
+            ),
+            clientSkills = testClientSkills(),
+        )
+        val enabledTools = linkedSetOf<String>()
+        val request = turnRequest().copy(clientToolsEnabled = true, enabledTools = enabledTools)
+
+        runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        val inventory = api.finalRequests.single().skillInventoryBlock()
+
+        assertContains(inventory, "- skillId: \"device.media.open\"")
+        assertContains(inventory, "- skillId: \"user.ask\"")
+        assertEquals(CLASSIC_SKILL_CORE_TOOLS, api.finalRequests.single().functions.map { it.name })
+    }
+
+    @Test
     fun `request tool catalog captures an immutable enabled tool snapshot`() {
         val sourceCatalog = singleToolCatalog(
             category = ToolCategory.FILES,
@@ -268,6 +356,7 @@ private fun runtimeFactory(
     settingsProvider: TestSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
     llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
+    clientSkills: BackendClientSkills? = null,
     configuredAgentId: AgentId = AgentId.GRAPH,
     sessionRepository: InMemoryAgentSessionRepository = InMemoryAgentSessionRepository(),
 ): BackendConversationRuntimeFactory =
@@ -279,13 +368,24 @@ private fun runtimeFactory(
         systemPrompt = "backend test prompt",
         configuredAgentId = configuredAgentId,
         toolCatalog = toolCatalog,
-        skillCoreToolsFactory = testSkillCoreToolsFactory(),
+        clientSkills = clientSkills,
+        legacySkillCommandTool = testSkillCoreTools().legacySkillCommandTool,
+        runSkillCommandTool = testSkillCoreTools().runSkillCommandTool,
         getKnowledgeTool = testCoreTool("GetKnowledge"),
         searchKnowledgeTool = testCoreTool("SearchKnowledge"),
         searchMemoryTool = testSearchMemoryTool(),
         knowledgeStore = TestConversationKnowledgeStore,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
+
+private fun testClientSkills(): BackendClientSkills {
+    val context = routeTestContext()
+    return BackendClientSkills(
+        registry = context.clientThreadRegistry,
+        toolCallRepository = context.toolCallRepository,
+        eventService = context.eventService,
+    )
+}
 
 private fun conversationKey(): AgentConversationKey =
     AgentConversationKey(
@@ -375,6 +475,18 @@ private fun LLMRequest.Chat.isClassificationRequest(): Boolean =
         message.role == LLMMessageRole.system &&
             message.content.contains("Твоя задача — выбрать минимальный, но достаточный набор категорий")
     }
+
+private fun LLMRequest.Chat.skillInventoryBlock(): String = messages
+    .firstOrNull { it.role == LLMMessageRole.system }
+    ?.content
+    ?.substringAfter("<skill_inventory>", "")
+    ?.substringBefore("</skill_inventory>", "")
+    ?.trim()
+    ?.replace("<skill_inventory>", "")
+    ?: ""
+
+private fun String.toolBackedSkillSection(): String = substringAfter("Tool-backed Skills by category:\n", "")
+    .substringBefore("File-backed Skills (opaque skillId values only):", "")
 
 private fun reply(body: LLMRequest.Chat, content: String): LLMResponse.Chat.Ok =
     LLMResponse.Chat.Ok(

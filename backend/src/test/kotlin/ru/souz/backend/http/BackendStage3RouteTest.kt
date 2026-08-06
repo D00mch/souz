@@ -36,7 +36,7 @@ import ru.souz.backend.TestConversationKnowledgeStore
 import ru.souz.backend.TestSkillRegistryRepository
 import ru.souz.backend.testCoreTool
 import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
+import ru.souz.backend.testSkillCoreTools
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
@@ -48,7 +48,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.options.repository.OptionRepository
@@ -1275,11 +1275,13 @@ internal fun routeTestContext(
     val clientThreadRegistry = ClientThreadRuntimeRegistry()
     val resolvedClientRequestRepository = clientRequestRepository ?: MemoryClientRequestRepository(executionRepository)
     val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
-    val clientToolCatalogFactory = BackendClientToolCatalogFactory(
+    val clientToolCatalog = BackendClientSkills(
         registry = clientThreadRegistry,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
     )
+    val skillCoreTools = testSkillCoreTools()
+
     val effectiveSettingsResolver = EffectiveSettingsResolver(
         baseSettingsProvider = settingsProvider,
         userSettingsRepository = userSettingsRepository,
@@ -1296,9 +1298,10 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         configuredAgentId = agentId,
         toolCatalog = toolCatalog,
-        clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
+        clientSkills = clientToolCatalog,
         skillRegistryRepository = TestSkillRegistryRepository,
-        skillCoreToolsFactory = testSkillCoreToolsFactory(),
+        legacySkillCommandTool = skillCoreTools.legacySkillCommandTool,
+        runSkillCommandTool = skillCoreTools.runSkillCommandTool,
         getKnowledgeTool = testCoreTool("GetKnowledge"),
         searchKnowledgeTool = testCoreTool("SearchKnowledge"),
         searchMemoryTool = testSearchMemoryTool(),
