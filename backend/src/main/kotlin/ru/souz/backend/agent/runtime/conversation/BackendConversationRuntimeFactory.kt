@@ -26,7 +26,6 @@ import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.runtime.BackendRequestToolCatalog
 import ru.souz.backend.agent.runtime.BackendRequestToolsFilter
 import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
-import ru.souz.backend.agent.runtime.conversation.BackendMergedToolCatalog
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.llm.BackendLlmExecutionContext
@@ -45,7 +44,7 @@ import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.ToolRunSkillCommand
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
-class BackendConversationRuntimeFactory(
+internal class BackendConversationRuntimeFactory(
     private val baseSettingsProvider: SettingsProvider,
     private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
     private val sessionRepository: AgentSessionRepository,

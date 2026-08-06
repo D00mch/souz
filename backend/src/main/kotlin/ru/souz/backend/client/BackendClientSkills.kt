@@ -95,7 +95,11 @@ private class ClientWebSocketSkill(
     )
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-        invoke(functionCall, ToolInvocationMeta.localDefault())
+        errorMessage(
+            functionCall.name,
+            "client_context_missing",
+            "Client tool context is unavailable.",
+        )
 
     override suspend fun invoke(
         functionCall: LLMResponse.FunctionCall,

@@ -17,6 +17,7 @@ import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
 class BackendClientSkillsTest {
@@ -76,6 +77,24 @@ class BackendClientSkillsTest {
         assertEquals("user.ask", result.name)
         assertEquals("""{"answer":"stored"}""", result.content)
         assertEquals(ToolCallStatus.SUCCEEDED, repository.storedStatus)
+    }
+
+    @Test
+    fun `invoke without meta returns client context unavailable`() = runTest {
+        val context = routeTestContext()
+
+        val catalog = BackendClientSkills(
+            registry = context.clientThreadRegistry,
+            toolCallRepository = context.toolCallRepository,
+            eventService = context.eventService,
+        )
+        val tool = catalog.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
+        val result = tool.invoke(LLMResponse.FunctionCall("user.ask", mapOf("question" to "Ready?")))
+        val error = restJsonMapper.readTree(result.content)
+
+        assertEquals("user.ask", result.name)
+        assertEquals("client_context_missing", error["error"]["code"].asText())
+        assertEquals("Client tool context is unavailable.", error["error"]["message"].asText())
     }
 }
 

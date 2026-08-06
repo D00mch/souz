@@ -105,7 +105,7 @@ class AgentExecutionKernelFactory(
             nodesClassify = nodesClassification,
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
-            nodesMcp = nodesMcp,
+            nodesMCP = nodesMcp,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
