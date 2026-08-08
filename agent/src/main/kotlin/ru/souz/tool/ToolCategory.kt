@@ -14,6 +14,7 @@ enum class ToolCategory {
     MAIL,
     TEXT_REPLACE,
     CALCULATOR,
+    OAUTH,
     CHAT,
     TELEGRAM,
     DESKTOP,

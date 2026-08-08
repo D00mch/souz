@@ -9,6 +9,7 @@ import java.time.Clock
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.SkillToolBindingTags
@@ -85,6 +86,17 @@ import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.skills.registry.FileSystemSkillRegistryConfig
 import ru.souz.skills.registry.SkillStorageScope
+import ru.souz.skilloauth.SkillOAuthApi
+import ru.souz.skilloauth.impl.AuthorizationCodeOAuthClient
+import ru.souz.skilloauth.impl.AuthorizationCodeOAuthConfig
+import ru.souz.skilloauth.impl.OAuthProviderCatalog
+import ru.souz.skilloauth.impl.OAuthProviderClient
+import ru.souz.skilloauth.impl.PostgresSkillOAuthCredentialRepository
+import ru.souz.skilloauth.impl.PostgresSkillOAuthPendingStateRepository
+import ru.souz.skilloauth.impl.SkillOAuthApiImpl
+import ru.souz.skilloauth.impl.SkillOAuthCredentialRepository
+import ru.souz.skilloauth.impl.SkillOAuthPendingStateRepository
+import ru.souz.skilloauth.impl.SkillOAuthTokenCrypto
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.skills.ToolRunSkillCommand
 
@@ -137,12 +149,56 @@ fun backendDiModule(
     bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
     bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
     bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
+    bindSingleton<SkillOAuthCredentialRepository> { PostgresSkillOAuthCredentialRepository(instance()) }
+    bindSingleton<SkillOAuthPendingStateRepository> { PostgresSkillOAuthPendingStateRepository(instance()) }
+    // Not gated by a feature flag, but genuinely optional: a fresh backend deployment has no
+    // registered OAuth provider apps yet, and skill OAuth must never be able to take the whole
+    // process down over that (see incident where a missing SKILL_OAUTH_TOKEN_ENCRYPTION_KEY threw
+    // during eager DI resolution of BackendHttpDependencies and crash-looped the entire backend).
+    // Absent config here means SkillOAuthApi is simply not bound: instanceOrNull<SkillOAuthApi>()
+    // in the shared tool DI resolves to null, and the OAuth tools/callback route stay disabled.
+    // Every OAuthProviderCatalog entry with credentials configured (see BackendAppConfig) becomes
+    // a client here — adding a new standard-flow provider is a catalog entry + env vars, not a
+    // code change; nothing in this file is specific to any one provider by name.
+    val skillOAuthProviders: Map<String, OAuthProviderClient> = OAuthProviderCatalog.entries
+        .mapNotNull { entry ->
+            val credentials = appConfig.skillOAuthProviderCredentials[entry.name] ?: return@mapNotNull null
+            AuthorizationCodeOAuthClient(
+                AuthorizationCodeOAuthConfig(
+                    name = entry.name,
+                    authorizeEndpoint = entry.authorizeEndpoint,
+                    tokenEndpoint = entry.tokenEndpoint,
+                    clientId = credentials.clientId,
+                    clientSecret = credentials.clientSecret,
+                    redirectUri = credentials.redirectUri,
+                    allowedApiHosts = entry.allowedApiHosts,
+                ),
+            )
+        }
+        .associateBy { it.name }
+    val skillOAuthTokenEncryptionKey = appConfig.skillOAuthTokenEncryptionKey
+    if (skillOAuthTokenEncryptionKey != null) {
+        bindSingleton { SkillOAuthTokenCrypto(rawBase64Key = skillOAuthTokenEncryptionKey) }
+        bindSingleton {
+            SkillOAuthApiImpl(
+                credentialRepository = instance(),
+                pendingStateRepository = instance(),
+                crypto = instance(),
+                providers = skillOAuthProviders,
+            )
+        }
+        bindSingleton<SkillOAuthApi> { instance<SkillOAuthApiImpl>() }
+    }
     bindSingleton {
+        // Each AuthorizationCodeOAuthClient and SkillOAuthApiImpl owns its own Ktor CIO HttpClient
+        // (a selector-manager thread pool each); without closing them here they leak past backend
+        // shutdown.
         BackendRuntimeResources(
             closeables = listOf(
                 instance<BackendApplicationScope>(),
                 instance<HikariDataSource>(),
-            )
+            ) + skillOAuthProviders.values.filterIsInstance<AutoCloseable>() +
+                listOfNotNull(instanceOrNull<SkillOAuthApiImpl>())
         )
     }
     bindSingleton { AgentEventBus() }
@@ -361,6 +417,7 @@ fun backendDiModule(
         val userRepository = instance<UserRepository>()
         BackendHttpDependencies(
             bootstrapService = instance(),
+            skillOAuthApiImpl = if (skillOAuthTokenEncryptionKey != null) instance() else null,
             onboardingService = instance(),
             userSettingsService = instance(),
             providerKeyService = instance(),

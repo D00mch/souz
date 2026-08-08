@@ -5,6 +5,19 @@ import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.SystemBackendConfigSource
+import ru.souz.skilloauth.impl.OAuthProviderCatalog
+
+/**
+ * Credentials for one [OAuthProviderCatalog] entry — read from `<NAME>_OAUTH_CLIENT_ID` /
+ * `_CLIENT_SECRET` / `_REDIRECT_URI` env vars, `NAME` being the catalog entry's name upper-cased
+ * (e.g. `YANDEX_OAUTH_CLIENT_ID`). A provider only ends up in `BackendAppConfig.skillOAuthProviderCredentials`
+ * if all three are set.
+ */
+data class SkillOAuthProviderCredentials(
+    val clientId: String,
+    val clientSecret: String,
+    val redirectUri: String,
+)
 
 data class BackendLlmLimits(
     val perUserConcurrentExecutions: Int = 4,
@@ -125,6 +138,8 @@ data class BackendAppConfig(
     val masterKey: String? = null,
     val telegramTokenEncryptionKey: String? = null,
     val telegramPollingMaxConcurrency: Int = 4,
+    val skillOAuthTokenEncryptionKey: String? = null,
+    val skillOAuthProviderCredentials: Map<String, SkillOAuthProviderCredentials> = emptyMap(),
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
     val agentId: AgentId = AgentId.default,
@@ -148,6 +163,11 @@ data class BackendAppConfig(
                 "SOUZ_FEATURE_WS_EVENTS requires SOUZ_BACKEND_AGENT=skills."
             )
         }
+        // Skill OAuth config (skillOAuthTokenEncryptionKey/skillOAuthProviderCredentials) is
+        // intentionally not validated here — it is unconditionally wired in BackendDiModule (no
+        // feature flag), but each value is only required lazily at the point it's actually used
+        // there, so that config-validation tests unrelated to OAuth don't all need to supply
+        // provider credentials.
         llmLimits.validate()
         providerRetryPolicy.validate()
         return this
@@ -186,6 +206,30 @@ data class BackendAppConfig(
                     propertyKey = "souz.telegram.pollingMaxConcurrency",
                     default = 4,
                 ),
+                skillOAuthTokenEncryptionKey = source.value(
+                    envKey = "SKILL_OAUTH_TOKEN_ENCRYPTION_KEY",
+                    propertyKey = "souz.skillOAuth.tokenEncryptionKey",
+                )?.trim()?.takeIf { it.isNotEmpty() },
+                skillOAuthProviderCredentials = OAuthProviderCatalog.entries.mapNotNull { entry ->
+                    val envPrefix = entry.name.uppercase()
+                    val clientId = source.value(
+                        envKey = "${envPrefix}_OAUTH_CLIENT_ID",
+                        propertyKey = "souz.skillOAuth.${entry.name}.clientId",
+                    )?.trim()?.takeIf { it.isNotEmpty() }
+                    val clientSecret = source.value(
+                        envKey = "${envPrefix}_OAUTH_CLIENT_SECRET",
+                        propertyKey = "souz.skillOAuth.${entry.name}.clientSecret",
+                    )?.trim()?.takeIf { it.isNotEmpty() }
+                    val redirectUri = source.value(
+                        envKey = "${envPrefix}_OAUTH_REDIRECT_URI",
+                        propertyKey = "souz.skillOAuth.${entry.name}.redirectUri",
+                    )?.trim()?.takeIf { it.isNotEmpty() }
+                    if (clientId != null && clientSecret != null && redirectUri != null) {
+                        entry.name to SkillOAuthProviderCredentials(clientId, clientSecret, redirectUri)
+                    } else {
+                        null
+                    }
+                }.toMap(),
                 llmLimits = BackendLlmLimits(
                     perUserConcurrentExecutions = source.intValue(
                         envKey = "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS",
