@@ -36,13 +36,11 @@ import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.db.SettingsProvider
-import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 
 class BackendDiModuleTest {
     @Test
-    fun `backend binds only postgres repositories and keeps filesystem skill registry`() {
+    fun `backend binds only postgres repositories`() {
         val appConfig = testAppConfig()
         val dataSource = HikariDataSource()
         val di = testDi(appConfig, dataSource)
@@ -62,7 +60,6 @@ class BackendDiModuleTest {
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
             assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
-            assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
 
             val httpDependencies = di.direct.instance<BackendHttpDependencies>()
             assertSame(httpDependencies, di.direct.instance<BackendHttpDependencies>())

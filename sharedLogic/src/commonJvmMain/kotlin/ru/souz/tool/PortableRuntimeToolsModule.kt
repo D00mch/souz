@@ -21,7 +21,6 @@ import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
-import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolFindFilesByName
@@ -49,7 +48,6 @@ import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebResearchClient
 
 fun portableRuntimeToolsDiModule(
-    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
     bindAgentToolCatalog: Boolean = true,
 ): DI.Module = DI.Module("portableRuntimeTools") {
@@ -101,19 +99,13 @@ fun portableRuntimeToolsDiModule(
         bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
     }
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
-    import(portableSkillToolsDiModule(skillStorageScope = skillStorageScope))
 }
 
-fun portableSkillToolsDiModule(
-    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
-): DI.Module = DI.Module("portableSkillTools") {
+fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     bindSingleton { SandboxConversationKnowledgeStore(instance()) }
     bindSingleton<ConversationKnowledgeStore> { instance<SandboxConversationKnowledgeStore>() }
     bindSingleton {
-        ToolRunSkillCommand(
-            sandboxResolver = instance(),
-            skillStorageScope = skillStorageScope,
-        )
+        ToolRunSkillCommand(sandboxResolver = instance())
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
         instance<ToolRunSkillCommand>().toGiga()

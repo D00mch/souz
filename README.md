@@ -20,7 +20,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 - **Local inference** through a packaged native bridge with Qwen/Gemma chat profiles, EmbeddingGemma embeddings, prompt-family rendering, strict JSON tool output handling, model downloads, preload/warmup, and cancellation.
 - **MCP integration** over stdio/http with OAuth discovery and token refresh support.
 - **Voice, ambient, and desktop interaction** with audio capture/playback, cloud or local macOS speech recognition, ambient semantic blocks, bounded suggestions, global hotkeys, native media keys, screenshots, screen recording, and macOS integrations.
-- **ClawHub/OpenClaw skill support** with bundle parsing, canonical hashing, compact prompt inventory, desktop-first registry storage, backend user-scoped storage support, safe on-demand loading, structural/static/LLM approval, validation caching, and sandboxed command execution.
+- **ClawHub/OpenClaw skill support** with bundle parsing, canonical hashing, compact prompt inventory, desktop-first registry storage, safe on-demand loading, structural/static/LLM approval, validation caching, and sandboxed command execution.
 
 ## Installation
 
@@ -442,13 +442,14 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 - Other request bodies are never trusted for user identity.
 - Each chat, execution, option, and setting is scoped to the trusted user.
 - Backend host adapters replace desktop-only services with no-op implementations.
-- The backend uses the same shared agent execution kernel as desktop.
+- The backend composes request-scoped execution from shared agent contracts and graph nodes.
+- Backend turns run through one request-scoped steerable direct-tool graph.
 
 ### Backend storage
 
 PostgreSQL is the backend's only structured-data store. JDBC, HikariCP, and Flyway provide durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
 Telegram bot tokens are encrypted at rest via `TELEGRAM_TOKEN_ENCRYPTION_KEY`, pending links use one-time `/start <secret>` commands with only the secret hash stored server-side, and binding setup drops pending Telegram updates before long polling starts.
-Skill bundles and runtime sandbox workspaces remain filesystem-backed and are independent from backend database persistence.
+Runtime sandbox workspaces remain filesystem-backed and are independent from backend database persistence.
 
 ### Backend configuration
 
@@ -458,7 +459,6 @@ SOUZ_BACKEND_HOST=127.0.0.1
 SOUZ_BACKEND_PORT=8080
 SOUZ_BACKEND_PROXY_TOKEN=replace-with-shared-proxy-secret
 SOUZ_MASTER_KEY=replace-with-settings-secret
-SOUZ_BACKEND_AGENT=skills # graph or skills; WebSocket events require skills
 
 # Server-managed provider keys, optional. Docker Compose local setup
 # usually uses /v1/me/provider-keys/{provider} instead.
@@ -502,9 +502,9 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. WebSocket events require `skills`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
-Backend executions snapshot each user's effective `enabledTools`. The snapshot controls direct-tool classification, tool-backed Skill inventory/category discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core Skill/Knowledge tools and user-installed file-backed skills remain available.
+Backend executions snapshot each user's effective `enabledTools`. The snapshot controls request-scoped category selection and invocation of compiled direct tools and is retained when an execution resumes from an option. Built-in Client-Souz operations are ordinary typed tools added only to public client executions.
 
 Run the backend:
 
@@ -548,7 +548,6 @@ Skill safety and storage:
 - Bundles are loaded through safe filesystem access.
 - Desktop/local skills are persisted under `~/.local/state/souz/skills/{skillId}/`, with immutable bundles in `bundles/{bundleHash}/` and metadata in `stored-skill.json`.
 - Desktop/local validation records are persisted separately under `~/.local/state/souz/skill-validations/{skillId}/policies/{policy}/`.
-- Backend storage keeps the user-scoped scope available under `skills/users/{encodedUserId}/skills/{skillId}/` and `skill-validations/users/{encodedUserId}/skills/{skillId}/`.
 - Validation cache keys include user id, skill id, bundle hash, and policy version.
 - Stale validations are invalidated when the active bundle hash changes.
 - Rejected validations block instruction lookup and command execution for the exact cached identity.

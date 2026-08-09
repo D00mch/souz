@@ -8,12 +8,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import ru.souz.agent.skills.SkillId
-import ru.souz.agent.skills.bundle.SkillBundle
-import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.bundle.SkillFile
-import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -31,65 +25,62 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
 internal class BackendClientToolCatalogFactory(
-    private val skillBundleProvider: SkillBundleProvider = BackendBundledClientSkillBundleProvider(),
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val now: () -> Instant = Instant::now,
+    private val userAskTimeout: Duration = Duration.ofMinutes(5),
+    private val deviceMediaOpenTimeout: Duration = Duration.ofMinutes(1),
 ) {
-    suspend fun create(userId: String = CLIENT_SKILL_OWNER): AgentToolCatalog =
+    init {
+        require(!userAskTimeout.isZero && !userAskTimeout.isNegative) {
+            "userAskTimeout must be positive."
+        }
+        require(!deviceMediaOpenTimeout.isZero && !deviceMediaOpenTimeout.isNegative) {
+            "deviceMediaOpenTimeout must be positive."
+        }
+    }
+
+    fun create(): AgentToolCatalog =
         BackendClientToolCatalog(
-            skills = loadClientSkillDefinitions(userId),
+            tools = clientToolDefinitions(
+                userAskTimeout = userAskTimeout,
+                deviceMediaOpenTimeout = deviceMediaOpenTimeout,
+            ),
             registry = registry,
             toolCallRepository = toolCallRepository,
             eventService = eventService,
             now = now,
         )
-
-    private suspend fun loadClientSkillDefinitions(userId: String): List<ClientSkillDefinition> =
-        skillBundleProvider.listSkills(userId).map { storedSkill ->
-            val bundle = requireNotNull(skillBundleProvider.loadSkillBundle(userId, storedSkill.skillId)) {
-                "Bundled client Skill disappeared after listing: ${storedSkill.skillId.value}"
-            }
-            require(bundle.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] == CLIENT_SKILL_TRANSPORT) {
-                "Bundled client Skill ${storedSkill.skillId.value} has invalid metadata.$CLIENT_SKILL_TRANSPORT_METADATA"
-            }
-            ClientSkillDefinition(
-                name = storedSkill.skillId.value,
-                category = bundle.manifest.clientCategory(),
-                timeout = bundle.manifest.clientTimeout(),
-                description = "${bundle.manifest.description}\n\n${bundle.skillMarkdownBody}",
-            )
-        }
 }
 
 private class BackendClientToolCatalog(
-    skills: List<ClientSkillDefinition>,
+    tools: List<ClientToolDefinition>,
     registry: ClientThreadRuntimeRegistry,
     toolCallRepository: ToolCallRepository,
     eventService: AgentEventService,
     now: () -> Instant,
 ) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = skills
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = tools
         .groupBy { it.category }
-        .mapValues { (_, skills) ->
-            skills.associate { skill ->
-                skill.name to ClientWebSocketSkill(skill, registry, toolCallRepository, eventService, now)
+        .mapValues { (_, categoryTools) ->
+            categoryTools.associate { tool ->
+                tool.name to ClientWebSocketTool(tool, registry, toolCallRepository, eventService, now)
             }
         }
 }
 
-private class ClientWebSocketSkill(
-    private val skill: ClientSkillDefinition,
+private class ClientWebSocketTool(
+    private val tool: ClientToolDefinition,
     private val registry: ClientThreadRuntimeRegistry,
     private val toolCallRepository: ToolCallRepository,
     private val eventService: AgentEventService,
     private val now: () -> Instant,
 ) : LLMToolSetup {
     override val fn = LLMRequest.Function(
-        name = skill.name,
-        description = skill.description,
-        parameters = LLMRequest.Parameters("object"),
+        name = tool.name,
+        description = tool.description,
+        parameters = tool.parameters,
     )
 
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
@@ -99,6 +90,13 @@ private class ClientWebSocketSkill(
         functionCall: LLMResponse.FunctionCall,
         meta: ToolInvocationMeta,
     ): LLMRequest.Message {
+        invalidStringArgument(functionCall.arguments)?.let { argumentName ->
+            return errorMessage(
+                functionName = functionCall.name,
+                code = "invalid_arguments",
+                message = "Argument '$argumentName' must be a string.",
+            )
+        }
         val threadId = meta.requestId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
             ?: return errorMessage(functionCall.name, "client_context_missing", "Thread ID is unavailable.")
         val chatId = meta.conversationId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
@@ -113,7 +111,7 @@ private class ClientWebSocketSkill(
             is BeginClientToolResult.Started -> beginTool.device
         }
         val startedAt = now()
-        val deadlineAt = startedAt.plus(skill.timeout)
+        val deadlineAt = startedAt.plus(tool.timeout)
         val arguments = restJsonMapper.valueToTree<JsonNode>(functionCall.arguments)
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), toolCallId)
         var clientCallStarted = false
@@ -171,6 +169,15 @@ private class ClientWebSocketSkill(
             registry.clearTool(threadId, toolCallId)
         }
     }
+
+    private fun invalidStringArgument(arguments: Map<String, Any>): String? =
+        tool.parameters.properties.entries.firstOrNull { (argumentName, property) ->
+            property.type == "string" && when {
+                argumentName in tool.parameters.required -> arguments[argumentName] !is String
+                argumentName in arguments -> arguments[argumentName] !is String
+                else -> false
+            }
+        }?.key
 
     private suspend fun awaitResultUntilDeadline(
         context: ToolCallContext,
@@ -262,89 +269,49 @@ private class ClientWebSocketSkill(
         )
 }
 
-private data class ClientSkillDefinition(
+private data class ClientToolDefinition(
     val name: String,
     val category: ToolCategory,
     val timeout: Duration,
     val description: String,
+    val parameters: LLMRequest.Parameters,
 )
 
-private class BackendBundledClientSkillBundleProvider(
-    classLoader: ClassLoader = BackendClientToolCatalogFactory::class.java.classLoader,
-) : SkillBundleProvider {
-    private val bundles: Map<SkillId, SkillBundle> = loadBundledClientSkillBundles(classLoader)
-
-    override suspend fun listSkills(userId: String): List<StoredSkill> = bundles.values
-        .map { bundle -> bundle.toStoredSkill(userId) }
-        .sortedBy { it.skillId.value }
-
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = bundles[skillId]
-
-    private fun SkillBundle.toStoredSkill(userId: String): StoredSkill = StoredSkill(
-        userId = userId,
-        skillId = skillId,
-        manifest = manifest,
-        bundleHash = SkillBundleHasher.hash(this),
-        createdAt = Instant.EPOCH,
-    )
-}
-
-private fun loadBundledClientSkillBundles(classLoader: ClassLoader): Map<SkillId, SkillBundle> {
-    val entries = requireNotNull(classLoader.getResourceAsStream(CLIENT_SKILL_INDEX)) {
-        "Missing bundled client Skill index: $CLIENT_SKILL_INDEX"
-    }.bufferedReader().useLines { lines ->
-        lines
-            .map(String::trim)
-            .filter { it.isNotEmpty() && !it.startsWith('#') }
-            .toList()
-    }
-
-    val bundles = entries.map { entry ->
-        require('/' !in entry && '\\' !in entry) { "Invalid bundled client Skill entry: $entry" }
-        val resourcePath = "$CLIENT_SKILL_ROOT/$entry/SKILL.md"
-        val content = requireNotNull(classLoader.getResourceAsStream(resourcePath)) {
-            "Missing bundled client Skill resource: $resourcePath"
-        }.use { it.readBytes() }
-        val manifestBundle = SkillBundle.fromFiles(
-            skillId = SkillId(entry),
-            files = listOf(SkillFile(normalizedPath = "SKILL.md", content = content)),
-        )
-        val skillId = manifestBundle.manifest.metadata[CLIENT_SKILL_ID_METADATA]
-            ?.trim()
-            ?.takeIf(String::isNotEmpty)
-            ?: error("Bundled client Skill $entry is missing metadata.$CLIENT_SKILL_ID_METADATA")
-        require(manifestBundle.manifest.metadata[CLIENT_SKILL_TRANSPORT_METADATA] == CLIENT_SKILL_TRANSPORT) {
-            "Bundled client Skill $entry has invalid metadata.$CLIENT_SKILL_TRANSPORT_METADATA"
-        }
-        val bundle = SkillBundle.fromFiles(
-            skillId = SkillId(skillId),
-            files = manifestBundle.files,
-        )
-        bundle.skillId to bundle
-    }
-    val duplicate = bundles.groupingBy { it.first.value }.eachCount().entries.firstOrNull { it.value > 1 }
-    require(duplicate == null) { "Duplicate bundled client Skill ID: ${duplicate?.key}" }
-    return bundles.toMap()
-}
-
-private fun ru.souz.agent.skills.bundle.SkillManifest.clientCategory(): ToolCategory {
-    val raw = metadata[CLIENT_SKILL_CATEGORY_METADATA]?.trim().orEmpty()
-    return ToolCategory.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
-        ?: error("Client Skill $name has an invalid metadata.$CLIENT_SKILL_CATEGORY_METADATA: $raw")
-}
-
-private fun ru.souz.agent.skills.bundle.SkillManifest.clientTimeout(): Duration {
-    val raw = metadata[CLIENT_SKILL_TIMEOUT_METADATA]?.trim().orEmpty()
-    return runCatching { Duration.parse(raw) }.getOrNull()
-        ?.takeIf { !it.isZero && !it.isNegative }
-        ?: error("Client Skill $name has an invalid metadata.$CLIENT_SKILL_TIMEOUT_METADATA: $raw")
-}
-
-private const val CLIENT_SKILL_TRANSPORT_METADATA = "souz.transport"
-private const val CLIENT_SKILL_TRANSPORT = "client-websocket"
-private const val CLIENT_SKILL_CATEGORY_METADATA = "souz.category"
-private const val CLIENT_SKILL_TIMEOUT_METADATA = "souz.timeout"
-private const val CLIENT_SKILL_ID_METADATA = "souz.skill-id"
-private const val CLIENT_SKILL_ROOT = "skills/client"
-private const val CLIENT_SKILL_INDEX = "$CLIENT_SKILL_ROOT/index.txt"
-private const val CLIENT_SKILL_OWNER = "backend-client"
+private fun clientToolDefinitions(
+    userAskTimeout: Duration,
+    deviceMediaOpenTimeout: Duration,
+): List<ClientToolDefinition> = listOf(
+    ClientToolDefinition(
+        name = "user.ask",
+        category = ToolCategory.CHAT,
+        timeout = userAskTimeout,
+        description = buildString {
+            append("Ask the user a concise clarification question over the active public Souz WebSocket ")
+            append("and wait for their answer. Use the returned answer; do not invent the user's response.")
+        },
+        parameters = LLMRequest.Parameters(
+            type = "object",
+            properties = mapOf(
+                "question" to LLMRequest.Property("string", "Question shown to the user."),
+            ),
+            required = listOf("question"),
+        ),
+    ),
+    ClientToolDefinition(
+        name = "device.media.open",
+        category = ToolCategory.APPLICATIONS,
+        timeout = deviceMediaOpenTimeout,
+        description = buildString {
+            append("Open media on the user's active client device over the public Souz WebSocket and wait for the ")
+            append("device result. Claim success only when the result reports that the media was opened.")
+        },
+        parameters = LLMRequest.Parameters(
+            type = "object",
+            properties = mapOf(
+                "query" to LLMRequest.Property("string", "Media title or search query."),
+                "genre" to LLMRequest.Property("string", "Optional media genre."),
+            ),
+            required = listOf("query"),
+        ),
+    ),
+)

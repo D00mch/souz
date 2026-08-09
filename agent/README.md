@@ -12,6 +12,6 @@
 
 - Keep Compose UI, application DI, and concrete host services in their owning modules.
 - Supply settings, tools, telemetry, localization, MCP discovery, and runtime context through `ru.souz.agent.spi` rather than adding host dependencies.
-- Use `AgentFacade` for a stateful single-user conversation and `AgentExecutionKernelFactory` for request-scoped execution.
+- Use `AgentFacade` for a stateful single-user conversation. `AgentExecutionKernelFactory` builds an isolated, steerable `AgentId.GRAPH` execution from direct host tools; configured always-available tool names remain advertised after classification and throughout mid-run continuations.
 
 See [AGENTS.md](AGENTS.md) for maintenance constraints and verification guidance.

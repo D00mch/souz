@@ -3,7 +3,7 @@
 ## Invariants
 
 - Tools resolve a `RuntimeSandbox` from the current `ToolInvocationMeta`. The resolver maps invocation metadata to `SandboxScope` and may cache sandboxes by scope; tools must not cache a resolved path or sandbox for later users or conversations.
-- `FileSystemSkillRegistryRepository` and `RunSkillCommand` must use the same `SkillStorageScope`. `SINGLE_USER` and `USER_SCOPED` have different bundle and validation paths.
+- `FileSystemSkillRegistryRepository` and `RunSkillCommand` must use the same single-user bundle layout.
 - Skill metadata, immutable hash-addressed bundles, and validation records stay behind `SandboxFileSystem`. Bundle loading rejects escaping paths, symlinks, non-regular files, binary content, and invalid UTF-8.
 - `RunSkillCommand` accepts only a skill activated for the current turn and keeps its script and working directory within that skill bundle.
 - The legacy command and generic `RunSkillCommand` share one concrete executor. Generic bundle calls bind the current ID, hash, supporting paths, and active-skill authorization internally, then return the complete `SandboxCommandResult` for later Knowledge offloading.
@@ -17,7 +17,7 @@
 
 ## Why this is fragile
 
-The same contracts back local and Docker runtimes. JVM hosts select local or Docker mode. A storage-scope mismatch makes an installed skill visible to activation but unavailable to command execution.
+The same contracts back local and Docker runtimes. JVM hosts select local or Docker mode. A bundle-layout mismatch makes an installed skill visible to activation but unavailable to command execution.
 
 Skill discovery applies `AgentToolsFilter` on every discovery and invocation. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. Category discovery lists filtered compiled tools only. Compact graph inventory calls `SkillBundleProvider.listSkillInventoryIds`, which must not read loose `SKILL.md`, read supporting files, or hash loose bundles. Detail and execution load stored bundles by exact Skill ID.
 
@@ -31,7 +31,7 @@ JVM local mode supports `SandboxConversationKnowledgeStore` only when `stateRoot
 
 - Pass `ToolInvocationMeta` through every file or command operation and resolve paths at the call boundary.
 - Preserve path containment and bundle validation when adding repository or command features.
-- When changing skill layout or scope, update the repository, command tool, host DI wiring, Docker entrypoint, and tests together.
+- When changing the skill layout, update the repository, command tool, host DI wiring, Docker entrypoint, and tests together.
 - Keep the separately tagged skill tools out of the catalog until their graph owns them. Derive file-backed arguments from the legacy command schema while excluding model-supplied identity and authorization fields.
 - Do not adapt the Skill discovery tools or `ToolInvokeSkill` through `ToolSetup.toGiga()` unless `ToolSetup` gains structured result and attachment-preserving delegation support.
 - Keep Knowledge paths internal: callers provide opaque UUIDs, never filesystem paths. Preserve atomic JSON writes, the UTF-8 retention cap, whole-code-point head/tail boundaries, record validation, and conversation-only recursive cleanup.

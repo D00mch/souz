@@ -32,7 +32,6 @@ class BackendConversationSettingsProvider(
 
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
-    override var activeAgentId: AgentId = delegate.activeAgentId
     override var gigaModel: LLMModel = delegate.gigaModel
     override var useFewShotExamples: Boolean = useFewShotExamples
     override var useStreaming: Boolean = false
@@ -46,21 +45,17 @@ class BackendConversationSettingsProvider(
     override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
 
     fun restore(
-        activeAgentId: AgentId,
         temperature: Float,
         locale: String,
     ) {
-        this.activeAgentId = activeAgentId
         this.temperature = temperature
         this.regionProfile = localeToRegionProfile(locale)
     }
 
     internal fun applyRequest(
         request: BackendConversationTurnRequest,
-        activeAgentId: AgentId,
         temperature: Float,
     ) {
-        this.activeAgentId = activeAgentId
         this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
         this.contextSize = request.contextSize
         this.temperature = request.temperature ?: temperature

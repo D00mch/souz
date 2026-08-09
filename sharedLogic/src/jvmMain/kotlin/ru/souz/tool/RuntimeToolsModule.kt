@@ -33,17 +33,14 @@ import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
-import ru.souz.skills.registry.SkillStorageScope
 
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
-    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
 ): DI.Module = DI.Module("runtimeTools") {
     bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
     import(
         portableRuntimeToolsDiModule(
-            skillStorageScope = skillStorageScope,
             scopeResolver = scopeResolver,
             bindAgentToolCatalog = false,
         )

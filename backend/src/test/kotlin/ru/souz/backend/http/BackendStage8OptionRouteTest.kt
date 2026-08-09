@@ -24,7 +24,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
@@ -543,7 +542,6 @@ private fun seedWaitingOption(
                 userId = userId,
                 chatId = chat.id,
                 schemaVersion = 1,
-                activeAgentId = AgentId.default,
                 history = listOf(
                     LLMRequest.Message(role = LLMMessageRole.user, content = "need option")
                 ),
@@ -625,7 +623,6 @@ private fun sessionFor(
     assistant: String,
 ): AgentConversationSession =
     AgentConversationSession(
-        activeAgentId = AgentId.default,
         history = listOf(
             LLMRequest.Message(role = LLMMessageRole.user, content = prompt),
             LLMRequest.Message(role = LLMMessageRole.assistant, content = assistant),

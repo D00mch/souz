@@ -2,20 +2,15 @@ package ru.souz.agent
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
-import ru.souz.GraphBasedAgent
-import ru.souz.SkillsGraphBasedAgent
-import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.DirectToolGraphBasedAgent
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMCP
 import ru.souz.agent.nodes.NodesMemory
-import ru.souz.agent.nodes.NodesSkillInventory
-import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
@@ -26,7 +21,6 @@ import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMToolSetup
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.UserMessageClassifier
@@ -45,23 +39,17 @@ class AgentExecutionKernelFactory(
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
-    private val getSkillByNameTool: LLMToolSetup,
-    private val getSkillsByCategoryTool: LLMToolSetup,
-    private val getSkillsNamesByCategoryTool: LLMToolSetup,
-    private val getKnowledgeTool: LLMToolSetup,
-    private val searchKnowledgeTool: LLMToolSetup,
-    private val searchMemoryTool: LLMToolSetup,
-    private val runtimeCommandTool: LLMToolSetup,
-    private val knowledgeStore: ConversationKnowledgeStore,
+    alwaysAvailableToolNames: Set<String> = emptySet(),
     private val telemetry: AgentTelemetry,
     private val errorMessages: AgentErrorMessages,
     private val llmApi: LLMChatAPI,
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
-    private val skillRegistryRepository: SkillRegistryRepository,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
 ) {
+    private val alwaysAvailableToolNames = alwaysAvailableToolNames.toSet()
+
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
         val nodesCommon = NodesCommon(
@@ -70,15 +58,6 @@ class AgentExecutionKernelFactory(
             agentToolExecutor = agentToolExecutor,
             defaultBrowserProvider = defaultBrowserProvider,
             runtimeEnvironment = runtimeEnvironment,
-        )
-        val nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
-            nodesCommon = nodesCommon,
-            knowledgeStore = knowledgeStore,
-        )
-        val nodesSkillInventory = NodesSkillInventory(
-            toolCatalog = toolCatalog,
-            toolsFilter = toolsFilter,
-            skillBundleProvider = skillRegistryRepository,
         )
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesClassification = NodesClassification(
@@ -97,8 +76,9 @@ class AgentExecutionKernelFactory(
             settingsProvider = settingsProvider,
             systemPromptResolver = SystemPromptResolver(),
             toolCatalog = toolCatalog,
+            availableAgents = listOf(AgentId.GRAPH),
         )
-        val graphAgent = GraphBasedAgent(
+        val graphAgent = DirectToolGraphBasedAgent(
             logObjectMapper = logObjectMapper,
             nodesLLM = nodesLLM,
             nodesCommon = nodesCommon,
@@ -106,39 +86,12 @@ class AgentExecutionKernelFactory(
             nodesErrorHandling = nodesErrorHandling,
             nodesSummarization = nodesSummarization,
             nodesMCP = nodesMcp,
-            nodesSkillInventory = nodesSkillInventory,
-            nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
-            getSkillByNameTool = getSkillByNameTool,
-            getKnowledgeTool = getKnowledgeTool,
-            searchKnowledgeTool = searchKnowledgeTool,
-            searchMemoryTool = searchMemoryTool,
-            runtimeCommandTool = runtimeCommandTool,
-        )
-        val skillsGraphAgent = SkillsGraphBasedAgent(
-            logObjectMapper = logObjectMapper,
-            nodesLLM = nodesLLM,
-            nodesCommon = nodesCommon,
-            nodesErrorHandling = nodesErrorHandling,
-            nodesSummarization = nodesSummarization,
-            nodesMemory = nodesMemory,
-            nodesSkillInventory = nodesSkillInventory,
-            nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
-            getSkillByNameTool = getSkillByNameTool,
-            getSkillsByCategoryTool = getSkillsByCategoryTool,
-            getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,
-            getKnowledgeTool = getKnowledgeTool,
-            searchKnowledgeTool = searchKnowledgeTool,
-            searchMemoryTool = searchMemoryTool,
-            runtimeCommandTool = runtimeCommandTool,
+            alwaysAvailableToolNames = alwaysAvailableToolNames,
         )
         val executor = AgentExecutor(
-            agentProvider = { agentId ->
-                when (agentId) {
-                    AgentId.GRAPH -> graphAgent
-                    AgentId.SKILLS_GRAPH -> skillsGraphAgent
-                }
-            },
+            agentProvider = { graphAgent },
+            availableAgents = listOf(AgentId.GRAPH),
         )
         return AgentExecutionKernel(
             contextFactory = contextFactory,

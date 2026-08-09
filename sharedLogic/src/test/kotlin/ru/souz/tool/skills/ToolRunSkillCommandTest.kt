@@ -2,10 +2,8 @@ package ru.souz.tool.skills
 
 import io.mockk.every
 import io.mockk.mockk
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Base64
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.ToolInvocationMeta
@@ -13,7 +11,6 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
-import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.BadInputException
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -64,39 +61,6 @@ class ToolRunSkillCommandTest {
         assertContains(result, "skill=paper-summarize-academic")
         assertContains(result, "pwd=${skillRoot.toRealPath()}")
         assertContains(result, "input=hello")
-    }
-
-    @Test
-    fun `uses meta user id for user scoped skill storage`() = runTest {
-        val userId = "backend-user"
-        val skillId = "backend-skill"
-        val bundleHash = "b".repeat(64)
-        val home = createTempDirectory("skill-command-user-home-")
-        val stateRoot = home.resolve("state").createDirectories()
-        val bundleRoot = stateRoot
-            .resolve("skills/users/${encodeSegment(userId)}/skills/$skillId/bundles/$bundleHash")
-            .createDirectories()
-        bundleRoot.resolve("scripts").createDirectories()
-        bundleRoot.resolve("scripts/pwd.sh").writeText("printf '%s' \"${'$'}PWD\"")
-        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
-        val tool = ToolRunSkillCommand(
-            sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(sandbox),
-            skillStorageScope = SkillStorageScope.USER_SCOPED,
-        )
-
-        val result = tool.suspendInvoke(
-            ToolRunSkillCommand.Input(
-                skillId = skillId,
-                runtime = SandboxCommandRuntime.BASH,
-                script = "bash scripts/pwd.sh",
-                timeoutMillis = 1_000,
-                activeSkills = listOf(activeSkill(skillId, bundleHash)),
-            ),
-            ToolInvocationMeta(userId = userId),
-        )
-
-        assertContains(result, "exitCode: 0")
-        assertContains(result, bundleRoot.toRealPath().toString())
     }
 
     @Test
@@ -199,8 +163,4 @@ class ToolRunSkillCommandTest {
     private fun createTempDirectory(prefix: String): Path =
         Files.createTempDirectory(prefix).also(createdPaths::add)
 
-    private fun encodeSegment(raw: String): String =
-        Base64.getUrlEncoder()
-            .withoutPadding()
-            .encodeToString(raw.toByteArray(StandardCharsets.UTF_8))
 }

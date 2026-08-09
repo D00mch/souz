@@ -29,14 +29,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
-import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.TestConversationKnowledgeStore
-import ru.souz.backend.TestSkillRegistryRepository
-import ru.souz.backend.testCoreTool
-import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
@@ -935,7 +929,7 @@ class BackendStage3RouteTest {
         assertEquals(12_000, finalRequest.maxTokens)
         assertEquals(0.15f, finalRequest.temperature)
         val effectiveSystemPrompt = finalRequest.messages.first { it.role == LLMMessageRole.system }.content
-        assertEquals("be brief", effectiveSystemPrompt.substringBefore("\n\n<skill_inventory>"))
+        assertEquals("be brief", effectiveSystemPrompt)
         assertEquals(Locale.forLanguageTag("en-US"), storedState?.locale)
         assertEquals(ZoneId.of("Europe/Amsterdam"), storedState?.timeZone)
     }
@@ -1265,7 +1259,6 @@ internal fun routeTestContext(
         toolEvents = true,
     ),
     turnRunner: BackendConversationTurnRunner? = null,
-    agentId: AgentId = AgentId.default,
 ): RouteTestContext {
     val eventService = AgentEventService(
         chatRepository = chatRepository,
@@ -1294,15 +1287,8 @@ internal fun routeTestContext(
         sessionRepository = AgentStateBackedSessionRepository(stateRepository),
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "global backend prompt",
-        configuredAgentId = agentId,
         toolCatalog = toolCatalog,
-        clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
-        skillRegistryRepository = TestSkillRegistryRepository,
-        skillCoreToolsFactory = testSkillCoreToolsFactory(),
-        getKnowledgeTool = testCoreTool("GetKnowledge"),
-        searchKnowledgeTool = testCoreTool("SearchKnowledge"),
-        searchMemoryTool = testSearchMemoryTool(),
-        knowledgeStore = TestConversationKnowledgeStore,
+        clientToolCatalogProvider = clientToolCatalogFactory::create,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory, clientThreadRegistry)
@@ -1439,7 +1425,6 @@ private fun agentState(
         userId = userId,
         chatId = chatId,
         schemaVersion = 1,
-        activeAgentId = AgentId.default,
         history = history,
         temperature = 0.3f,
         locale = Locale.forLanguageTag("ru-RU"),

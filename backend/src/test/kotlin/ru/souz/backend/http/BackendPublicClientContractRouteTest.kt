@@ -32,7 +32,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.client.BackendClientToolCatalogFactory
@@ -170,7 +169,7 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `running skills thread accepts a second message on the same socket`() = testApplication {
+    fun `running thread accepts a second message on the same socket`() = testApplication {
         val api = GateControlledChatApi()
         val context = publicContext(api)
         install(context)
@@ -346,7 +345,7 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `client websocket skill waits for an idempotent client result`() = runBlocking {
+    fun `client websocket tool waits for an idempotent client result`() = runBlocking {
         val context = publicContext()
         val userId = UUID.randomUUID().toString()
         val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
@@ -743,7 +742,6 @@ class BackendPublicClientContractRouteTest {
         toolCallRepository = toolCallRepository,
         executionRepository = executionRepository,
         featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = false, toolEvents = true),
-        agentId = AgentId.SKILLS_GRAPH,
     )
 
     private fun messageFrame(

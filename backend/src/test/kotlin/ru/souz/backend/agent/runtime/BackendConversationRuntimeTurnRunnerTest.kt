@@ -13,13 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.TestSkillRegistryRepository
-import ru.souz.backend.TestConversationKnowledgeStore
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.testCoreTool
-import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
@@ -85,12 +80,6 @@ private fun runtimeTurnRunner(failure: Throwable): BackendConversationRuntimeTur
             sessionRepository = InMemoryAgentSessionRepository(),
             logObjectMapper = jacksonObjectMapper(),
             systemPrompt = "backend test prompt",
-            skillRegistryRepository = TestSkillRegistryRepository,
-            skillCoreToolsFactory = testSkillCoreToolsFactory(),
-            getKnowledgeTool = testCoreTool("GetKnowledge"),
-            searchKnowledgeTool = testCoreTool("SearchKnowledge"),
-            searchMemoryTool = testSearchMemoryTool(),
-            knowledgeStore = TestConversationKnowledgeStore,
             agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
     )

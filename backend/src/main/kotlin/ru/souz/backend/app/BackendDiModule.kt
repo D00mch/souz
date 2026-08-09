@@ -9,15 +9,10 @@ import java.time.Clock
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.souz.agent.knowledge.ConversationKnowledgeStore
-import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.spi.SkillToolBindingTags
-import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
-import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -83,10 +78,7 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
-import ru.souz.skills.registry.FileSystemSkillRegistryConfig
-import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.runtimeToolsDiModule
-import ru.souz.tool.skills.ToolRunSkillCommand
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -104,15 +96,10 @@ fun backendDiModule(
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
 
-    import(
-        runtimeCoreDiModule(
-            skillRegistryConfig = FileSystemSkillRegistryConfig(scope = SkillStorageScope.USER_SCOPED)
-        )
-    )
+    import(runtimeCoreDiModule())
     import(
         runtimeToolsDiModule(
             includeWebImageSearch = false,
-            skillStorageScope = SkillStorageScope.USER_SCOPED,
             scopeResolver = BackendSandboxScopeResolver,
         )
     )
@@ -214,13 +201,6 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        BackendSkillCoreToolsFactory(
-            skillBundleProvider = instance<SkillRegistryRepository>(),
-            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
-            commandTool = instance<ToolRunSkillCommand>(),
-        )
-    }
-    bindSingleton {
         BackendClientToolCatalogFactory(
             registry = instance(),
             toolCallRepository = instance(),
@@ -235,15 +215,8 @@ fun backendDiModule(
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
-            configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
-            clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
-            skillCoreToolsFactory = instance(),
-            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
-            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
-            knowledgeStore = instance<ConversationKnowledgeStore>(),
-            skillRegistryRepository = instance(),
+            clientToolCatalogProvider = clientToolCatalogFactory::create,
             agentBackgroundScope = instance<BackendApplicationScope>(),
         )
     }

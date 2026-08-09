@@ -17,7 +17,7 @@ Allowing the Client-Souz body identity outside its two explicit boundary operati
 - Apply ownership checks to every user resource, including nested chat, execution, option, event, Telegram, and provider-key operations.
 - Pass `ToolInvocationMeta.userId` into backend runtime work. Backend sandbox scope is user-scoped and does not currently add conversation scope.
 - Keep the backend tool catalog limited to backend-safe categories and exclude desktop-only tools and `WebImageSearch`.
-- Restrict compiled tools with the trusted user's effective `enabledTools` snapshot for discovery and invocation without hiding core or user-installed file-backed skills.
+- Restrict compiled direct tools with the trusted user's effective `enabledTools` snapshot for category selection and invocation. Add built-in client operations only to Client-Souz executions.
 - Keep backend Codex access server-managed. Its OAuth access token, refresh token, account ID, and expiry belong to one backend credential set; do not treat the per-user provider-key `apiKey` field as a complete Codex session. Container deployments must persist the Java Preferences path where refresh stores rotated credentials.
 - Document both proxy headers as jointly required OpenAPI security schemes for protected `/v1` operations. Keep `POST /v1/chats` unsecured in OpenAPI and the WebSocket contract in `docs/public-souz-contract`.
 

@@ -30,6 +30,6 @@ tool.result -> ack accepted -> thread.completed
 
 Use `GET {{baseUrl}}/v1/chats/{{chatId}}/threads/{{threadId}}?clientType={{clientType}}` to check whether a thread is still alive after reconnects or long gaps without events.
 
-For local backend testing, use the default `baseUrl` and `wsBaseUrl` values. The WebSocket route requires `SOUZ_FEATURE_WS_EVENTS=true` and `SOUZ_BACKEND_AGENT=skills`.
+For local backend testing, use the default `baseUrl` and `wsBaseUrl` values. The WebSocket route requires `SOUZ_FEATURE_WS_EVENTS=true`.
 
 Postman exports HTTP collections in the standard collection format. WebSocket requests are configured separately in Postman, so the WebSocket request URL and messages are stored here as portable JSON snippets rather than mixed into the HTTP collection.

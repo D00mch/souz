@@ -1,6 +1,5 @@
 package ru.souz.backend.app
 
-import ru.souz.agent.AgentId
 import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
@@ -127,7 +126,6 @@ data class BackendAppConfig(
     val telegramPollingMaxConcurrency: Int = 4,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
-    val agentId: AgentId = AgentId.default,
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -142,11 +140,6 @@ data class BackendAppConfig(
         }
         if (telegramPollingMaxConcurrency <= 0) {
             throw BackendConfigurationException("Telegram polling max concurrency must be positive.")
-        }
-        if (featureFlags.wsEvents && agentId != AgentId.SKILLS_GRAPH) {
-            throw BackendConfigurationException(
-                "SOUZ_FEATURE_WS_EVENTS requires SOUZ_BACKEND_AGENT=skills."
-            )
         }
         llmLimits.validate()
         providerRetryPolicy.validate()
@@ -224,10 +217,6 @@ data class BackendAppConfig(
                         propertyKey = "souz.backend.provider.backoffMaxMs",
                         default = 5_000L,
                     ),
-                ),
-                agentId = source.agentIdValue(
-                    envKey = "SOUZ_BACKEND_AGENT",
-                    propertyKey = "souz.backend.agent",
                 ),
             )
     }
@@ -320,19 +309,4 @@ private fun BackendConfigSource.longValue(
     val rawValue = value(envKey, propertyKey)?.trim()?.takeIf { it.isNotEmpty() } ?: return default
     return rawValue.toLongOrNull()
         ?: throw BackendConfigurationException("Invalid long value '$rawValue' for $envKey / $propertyKey.")
-}
-
-private fun BackendConfigSource.agentIdValue(
-    envKey: String,
-    propertyKey: String,
-): AgentId {
-    val rawValue = value(envKey, propertyKey)?.trim()?.takeIf { it.isNotEmpty() }
-        ?: return AgentId.default
-    return when (rawValue.lowercase()) {
-        AgentId.GRAPH.storageValue -> AgentId.GRAPH
-        AgentId.SKILLS_GRAPH.storageValue -> AgentId.SKILLS_GRAPH
-        else -> throw BackendConfigurationException(
-            "Invalid value '$rawValue' for $envKey / $propertyKey. Expected one of: graph, skills."
-        )
-    }
 }

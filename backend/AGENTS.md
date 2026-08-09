@@ -8,10 +8,10 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 
 - Treat proxy-provided identity as the authority for proxy routes. The public Client-Souz boundary accepts trusted UUID user identity only in `POST /v1/chats` and `message.submit.payload.device` and must keep those values equal for chat ownership.
 - Expose only backend-safe runtime tools; desktop integrations and UI dependencies must stay outside this module.
-- Apply each execution's immutable enabled-tool snapshot through request-scoped filters; keep core skill tools and user-scoped file-backed skills outside compiled-tool filtering.
-- Select the agent for new conversations from backend configuration and retain the agent stored in existing conversation state.
+- Apply each execution's immutable enabled-tool snapshot to compiled direct tools through request-scoped filters.
+- Build every turn with the backend's single request-scoped steerable direct-tool graph.
 - Keep product messages, thread lifecycle, agent continuation state, client tool calls, idempotency receipts, and replay events in their existing ownership layers.
-- PostgreSQL is the structured repository store. User skill bundles and sandbox workspaces remain filesystem-backed and user-scoped.
+- PostgreSQL is the structured repository store. Sandbox workspaces remain filesystem-backed and user-scoped.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket route out of the generated document and maintain its schema in `docs/public-souz-contract`.
 
 ## Verification

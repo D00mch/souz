@@ -1,8 +1,6 @@
 package ru.souz.tool.skills
 
-import java.nio.charset.StandardCharsets
 import java.nio.file.Path
-import java.util.Base64
 import kotlinx.coroutines.runBlocking
 import ru.souz.agent.skills.SkillId
 import ru.souz.llms.ToolInvocationMeta
@@ -11,7 +9,6 @@ import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
-import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -21,7 +18,6 @@ import ru.souz.tool.ToolSetup
 
 class ToolRunSkillCommand(
     private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
-    private val skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
 ) : ToolSetup<ToolRunSkillCommand.Input> {
     data class ActiveSkillInput(
         val skillId: String = "",
@@ -99,7 +95,7 @@ class ToolRunSkillCommand(
         val skill = input.activeSkills.firstOrNull { it.skillId == skillId.value }
             ?: throw BadInputException("Skill is not active for this turn: ${input.skillId}")
         val sandbox = sandboxResolver.resolve(meta)
-        val skillRoot = resolveSkillRoot(sandbox = sandbox, skill = skill, userId = meta.userId)
+        val skillRoot = resolveSkillRoot(sandbox = sandbox, skill = skill)
         val workingDirectory = resolveWorkingDirectory(skillRoot, input.workingDirectory)
         val scriptPath = resolveScriptPath(sandbox, skillRoot, input.scriptPath)
         val timeoutMillis = input.timeoutMillis.coerceIn(1L, MAX_TIMEOUT_MILLIS)
@@ -121,12 +117,10 @@ class ToolRunSkillCommand(
     private fun resolveSkillRoot(
         sandbox: RuntimeSandbox,
         skill: ActiveSkillInput,
-        userId: String,
     ): String {
         val fileSystem = sandbox.fileSystem
         val bundleRoot = bundleRootPath(
             skillsRootPath = sandbox.runtimePaths.skillsDirPath,
-            userId = userId,
             skill = skill,
         )
         val storedBundle = fileSystem.resolvePath(bundleRoot.toString())
@@ -136,7 +130,6 @@ class ToolRunSkillCommand(
 
         val looseRoot = skillRootPath(
             skillsRootPath = sandbox.runtimePaths.skillsDirPath,
-            userId = userId,
             skillId = SkillId(skill.skillId),
         )
         val looseBundle = fileSystem.resolvePath(looseRoot.toString())
@@ -179,27 +172,15 @@ class ToolRunSkillCommand(
 
     private fun bundleRootPath(
         skillsRootPath: String,
-        userId: String,
         skill: ActiveSkillInput,
-    ): Path = skillRootPath(skillsRootPath, userId, SkillId(skill.skillId))
+    ): Path = skillRootPath(skillsRootPath, SkillId(skill.skillId))
         .resolve(BUNDLES_DIRECTORY_NAME)
         .resolve(skill.bundleHash)
 
     private fun skillRootPath(
         skillsRootPath: String,
-        userId: String,
         skillId: SkillId,
-    ): Path {
-        val skillsRoot = Path.of(skillsRootPath)
-        return when (skillStorageScope) {
-            SkillStorageScope.SINGLE_USER -> skillsRoot.resolve(skillId.value)
-            SkillStorageScope.USER_SCOPED -> skillsRoot
-                .resolve("users")
-                .resolve(encodeSegment(userId))
-                .resolve("skills")
-                .resolve(skillId.value)
-        }
-    }
+    ): Path = Path.of(skillsRootPath).resolve(skillId.value)
 
     private fun defaultEnvironment(skill: ActiveSkillInput, skillRoot: String): Map<String, String> = mapOf(
         "SOUZ_SKILL_ID" to skill.skillId,
@@ -221,11 +202,6 @@ class ToolRunSkillCommand(
         val truncatedChars = length - MAX_OUTPUT_CHARS
         return take(MAX_OUTPUT_CHARS) + "\n...[truncated $truncatedChars chars]"
     }
-
-    private fun encodeSegment(raw: String): String =
-        Base64.getUrlEncoder()
-            .withoutPadding()
-            .encodeToString(raw.toByteArray(StandardCharsets.UTF_8))
 
     companion object {
         const val NAME = "RunSkillCommand"

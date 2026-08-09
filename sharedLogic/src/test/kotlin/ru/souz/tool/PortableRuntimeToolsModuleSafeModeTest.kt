@@ -10,6 +10,8 @@ import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
@@ -19,6 +21,7 @@ import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
+import ru.souz.tool.skills.ToolRunSkillCommand
 import kotlin.io.path.exists
 import kotlin.io.path.notExists
 import kotlin.io.path.readText
@@ -27,6 +30,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PortableRuntimeToolsModuleSafeModeTest {
@@ -123,6 +127,16 @@ class PortableRuntimeToolsModuleSafeModeTest {
         assertNotNull(directDI.instance<ToolDeleteFile>())
         assertNotNull(directDI.instance<ToolMoveFile>())
         assertNotNull(directDI.instance<ToolModifyFile>())
+    }
+
+    @Test
+    fun `portable runtime DI does not install skill dependencies`() {
+        val home = createTempDirectory("portable-no-skills-home-")
+        val stateRoot = createTempDirectory("portable-no-skills-state-")
+        val directDI = createDirectDI(home, stateRoot, safeModeEnabled = true, bindBrokers = false)
+
+        assertNull(directDI.instanceOrNull<SkillRegistryRepository>())
+        assertNull(directDI.instanceOrNull<ToolRunSkillCommand>())
     }
 
     private fun createDirectDI(
