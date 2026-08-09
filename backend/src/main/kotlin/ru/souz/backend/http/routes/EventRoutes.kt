@@ -306,12 +306,16 @@ private fun rejectedFor(
     }
 }
 
-private fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
+internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
     when (type) {
         AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
         AgentEventType.THREAD_COMPLETED,
         AgentEventType.THREAD_FAILED,
         AgentEventType.THREAD_CANCELLED -> true
+        // Out-of-band cross-channel push (ru.souz.backend.channels), never part of any thread this
+        // client started — ordinary in-thread messages always carry a non-null executionId and
+        // stay filtered out here, exactly as before.
+        AgentEventType.MESSAGE_CREATED -> executionId == null
         else -> false
     }
 

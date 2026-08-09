@@ -18,4 +18,5 @@ enum class ToolCategory {
     TELEGRAM,
     DESKTOP,
     HELP,
+    CHANNEL_MESSAGING,
 }

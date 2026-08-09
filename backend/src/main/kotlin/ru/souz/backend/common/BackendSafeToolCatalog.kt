@@ -11,6 +11,7 @@ val BACKEND_SAFE_TOOL_CATEGORIES: Set<ToolCategory> = setOf(
     ToolCategory.CONFIG,
     ToolCategory.DATA_ANALYTICS,
     ToolCategory.CALCULATOR,
+    ToolCategory.CHANNEL_MESSAGING,
 )
 
 fun backendSafeToolNames(toolCatalog: AgentToolCatalog): List<String> =

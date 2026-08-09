@@ -147,6 +147,14 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
         )
 
+        ToolCategory.CHANNEL_MESSAGING -> listOf(
+            WeightedRegex(Regex("перешли (это |сообщение |резюме |сводку )?(в|на) (телеграм|другой канал|мобильн)"), 2.0),
+            WeightedRegex(Regex("отправь .* (в|на) (другой канал|телеграм)"), 2.0),
+            WeightedRegex(Regex("как(ие|ой) у меня (есть |настроен)?.*канал"), 1.5),
+            WeightedRegex(Regex("список .*каналов|доступные каналы"), 1.2),
+        )
+
+
         ToolCategory.HELP -> listOf(
             WeightedRegex(Regex("что (ты )?(умеешь|можешь|знаешь делать)|что ты делаешь|какие .* функци|какие .* возможност"), 2.0),
             WeightedRegex(Regex("как (тебя |тобой )?пользоваться|что ты за приложение|чем .* помочь"), 1.5),

@@ -18,9 +18,16 @@ import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.runtime.conversation.BackendMergedToolCatalog
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.channels.ChannelProviderRegistry
+import ru.souz.backend.channels.PublicClientChannelProvider
+import ru.souz.backend.channels.TelegramChannelProvider
+import ru.souz.backend.channels.tool.BackendChannelToolCatalog
+import ru.souz.backend.channels.tool.ToolListActiveChannels
+import ru.souz.backend.channels.tool.ToolSendMessageToChannel
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
@@ -85,6 +92,7 @@ import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.skills.registry.FileSystemSkillRegistryConfig
 import ru.souz.skills.registry.SkillStorageScope
+import ru.souz.tool.RuntimeToolsFactory
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.skills.ToolRunSkillCommand
 
@@ -160,6 +168,20 @@ fun backendDiModule(
             eventBus = instance(),
         )
     }
+    bindSingleton {
+        val telegramBindingRepository = instance<TelegramBotBindingRepository>()
+        PublicClientChannelProvider(
+            chatRepository = instance(),
+            messageRepository = instance(),
+            eventService = instance(),
+            isClaimedByAnotherProvider = { chatId ->
+                // Only an active Telegram binding actually claims the chat away from the public-client
+                // provider — a pending (not yet /start-linked) or disabled binding must not hide the
+                // chat from ListActiveChannels, since TelegramChannelProvider itself won't list it either.
+                telegramBindingRepository.getByChat(chatId)?.let { it.enabled && it.linked } == true
+            },
+        )
+    }
     bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
@@ -187,7 +209,7 @@ fun backendDiModule(
             userSettingsRepository = instance(),
             userProviderKeyRepository = instance(),
             featureFlags = instance(),
-            toolCatalog = instance(),
+            toolCatalog = instance<BackendMergedToolCatalog>(),
             localModelAvailability = instance<LocalProviderAvailability>(),
         )
     }
@@ -236,7 +258,7 @@ fun backendDiModule(
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             configuredAgentId = appConfig.agentId,
-            toolCatalog = instance(),
+            toolCatalog = instance<BackendMergedToolCatalog>(),
             clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
             skillCoreToolsFactory = instance(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
@@ -312,6 +334,30 @@ fun backendDiModule(
                 maxConcurrency = appConfig.telegramPollingMaxConcurrency,
             )
         }
+        bindSingleton {
+            TelegramChannelProvider(
+                bindingRepository = instance(),
+                chatRepository = instance(),
+                messageRepository = instance(),
+                eventService = instance(),
+                telegramBotApi = instance(),
+                tokenCrypto = instance(),
+            )
+        }
+    }
+    bindSingleton {
+        ChannelProviderRegistry(
+            providers = listOfNotNull(
+                if (appConfig.featureFlags.telegramBot) instance<TelegramChannelProvider>() else null,
+                instance<PublicClientChannelProvider>(), // registered last: defers to the others for chats they claim
+            )
+        )
+    }
+    bindSingleton { ToolListActiveChannels(registry = instance()) }
+    bindSingleton { ToolSendMessageToChannel(registry = instance()) }
+    bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
+    bindSingleton {
+        BackendMergedToolCatalog(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
     }
     bindSingleton {
         OptionService(
@@ -349,7 +395,7 @@ fun backendDiModule(
         BackendBootstrapService(
             settingsProvider = instance(),
             effectiveSettingsResolver = instance(),
-            toolCatalog = instance(),
+            toolCatalog = instance<BackendMergedToolCatalog>(),
             featureFlags = instance(),
             localModelAvailability = instance<LocalProviderAvailability>(),
             userProviderKeyRepository = instance(),

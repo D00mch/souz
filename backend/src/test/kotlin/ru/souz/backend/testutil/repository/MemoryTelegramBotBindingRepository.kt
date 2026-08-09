@@ -25,6 +25,13 @@ class MemoryTelegramBotBindingRepository(
         chatId: UUID,
     ): TelegramBotBinding? = bindingsByChat[chatId]?.takeIf { it.userId == userId }
 
+    override suspend fun listForUser(userId: String): List<TelegramBotBinding> =
+        bindingsByChat.values
+            .asSequence()
+            .filter { it.userId == userId }
+            .sortedByDescending { it.updatedAt }
+            .toList()
+
     override suspend fun findByTokenHash(botTokenHash: String): TelegramBotBinding? =
         chatByTokenHash[botTokenHash]?.let(bindingsByChat::get)
 

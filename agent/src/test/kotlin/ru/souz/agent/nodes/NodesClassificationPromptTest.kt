@@ -50,6 +50,15 @@ class NodesClassificationPromptTest {
     }
 
     @Test
+    fun `buildPrompt lists channel messaging category when its tools are present`() {
+        val prompt = buildPromptWith(
+            mapOf(ToolCategory.CHANNEL_MESSAGING to mapOf("ListActiveChannels" to dummySetup("ListActiveChannels")))
+        )
+
+        assertTrue(prompt.contains("- CHANNEL_MESSAGING:"))
+    }
+
+    @Test
     fun `buildPrompt ignores disabled categories`() {
         val prompt = buildPromptWith(
             defaultTools - ToolCategory.BROWSER

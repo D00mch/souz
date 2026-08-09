@@ -246,7 +246,9 @@ internal data class PublicClientEventDto(
     val seq: Long,
     val type: String,
     val chatId: String,
-    val threadId: String,
+    // Null for out-of-band pushes not tied to any thread the client started — see
+    // isPublicClientEvent()/toPublicDto() for the message.created-with-no-executionId case.
+    val threadId: String?,
     val payload: Map<String, Any?>,
     val createdAt: String,
 )
@@ -379,7 +381,9 @@ internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
         seq = requireNotNull(seq),
         type = type.value,
         chatId = chatId.toString(),
-        threadId = requireNotNull(executionId).toString(),
+        // Non-null for every thread-scoped event (tool.call.started, thread.*). Null only for the
+        // out-of-band message.created case admitted by isPublicClientEvent() below.
+        threadId = executionId?.toString(),
         payload = payload.toTransportPayload(type),
         createdAt = createdAt.toString(),
     )

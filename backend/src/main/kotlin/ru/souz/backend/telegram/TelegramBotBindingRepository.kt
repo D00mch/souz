@@ -11,6 +11,8 @@ interface TelegramBotBindingRepository {
         chatId: UUID,
     ): TelegramBotBinding?
 
+    suspend fun listForUser(userId: String): List<TelegramBotBinding>
+
     suspend fun findByTokenHash(botTokenHash: String): TelegramBotBinding?
 
     suspend fun listEnabled(): List<TelegramBotBinding>
