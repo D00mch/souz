@@ -13,7 +13,7 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
         skillOAuthTestDataSource(schema).use { dataSource ->
             val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
             val now = Instant.parse("2026-01-01T00:00:00Z")
-            repository.create(
+            repository.upsertSupersedingByUserAndProvider(
                 SkillOAuthPendingState(
                     state = "state-1",
                     userId = "user-1",
@@ -50,7 +50,7 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
         skillOAuthTestDataSource(schema).use { dataSource ->
             val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
             val createdAt = Instant.parse("2026-01-01T00:00:00Z")
-            repository.create(
+            repository.upsertSupersedingByUserAndProvider(
                 SkillOAuthPendingState(
                     state = "state-2",
                     userId = "user-1",
@@ -65,6 +65,43 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
             assertNull(repository.consume("state-2", afterExpiry))
             // expired row must be gone even though it was rejected, so it cannot be replayed later.
             assertNull(repository.consume("state-2", createdAt))
+        }
+    }
+
+    @Test
+    fun `upsertSupersedingByUserAndProvider merges scopes and invalidates the old state atomically`() = runTest {
+        // Exercises the real unique index + `on conflict (user_id, provider) do update` in
+        // V1__skill_oauth.sql — an in-memory fake can't catch a mistake in that raw SQL.
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_upsert")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+            val now = Instant.parse("2026-01-01T00:00:00Z")
+
+            repository.upsertSupersedingByUserAndProvider(
+                SkillOAuthPendingState(
+                    state = "state-first",
+                    userId = "user-1",
+                    skillId = "skill-1",
+                    provider = "yandex",
+                    requestedScopes = listOf("login:info"),
+                    expiresAt = now.plusSeconds(600),
+                )
+            )
+            val second = repository.upsertSupersedingByUserAndProvider(
+                SkillOAuthPendingState(
+                    state = "state-second",
+                    userId = "user-1",
+                    skillId = "skill-2",
+                    provider = "yandex",
+                    requestedScopes = listOf("iot:control"),
+                    expiresAt = now.plusSeconds(600),
+                )
+            )
+
+            assertEquals(setOf("login:info", "iot:control"), second.requestedScopes.toSet())
+            // the old state must no longer be usable — superseded, not just left dangling.
+            assertNull(repository.consume("state-first", now))
+            assertEquals("state-second", repository.consume("state-second", now)?.state)
         }
     }
 }

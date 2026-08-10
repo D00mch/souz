@@ -50,7 +50,7 @@ class SkillOAuthApiImpl(
         val granted = credential?.grantedScopes.orEmpty()
         val missing = requiredScopes.filterNot { it in granted }
         return OAuthStatus(
-            connected = credential != null && missing.isEmpty(),
+            connected = credential != null && isCredentialUsable(credential) && missing.isEmpty(),
             grantedScopes = granted,
             missingScopes = missing,
         )
@@ -63,29 +63,23 @@ class SkillOAuthApiImpl(
         scopes: List<String>,
     ): AuthorizationUrl {
         val providerClient = requireProviderClient(provider)
-        val now = clock.instant()
-        // Supersede any still-pending flow for this exact (userId, provider) instead of letting a
-        // second one run alongside it: two live `state` tokens would mean two eventual callbacks,
-        // and whichever lands last would upsert its own requestedScopes over the first one's,
-        // silently dropping scopes the first flow just had the user grant. Folding the old pending
-        // scopes into this new request keeps the link the user ends up completing (whichever one
-        // that is) always asking for the full set requested so far; the superseded link, if opened
-        // afterwards, fails cleanly as an invalid/expired state rather than corrupting the grant.
-        val supersededScopes = pendingStateRepository.consumeActiveForUserAndProvider(userId, provider, now)
-            .flatMap { it.requestedScopes }
-        val mergedScopes = (supersededScopes + scopes).distinct()
         val state = generateState()
-        pendingStateRepository.create(
+        // A single atomic upsert (see [SkillOAuthPendingStateRepository.upsertSupersedingByUserAndProvider])
+        // rather than a separate read-then-write: two concurrent calls for the same (userId, provider)
+        // can never both "win" and leave two live pending states, and whichever link the user ends up
+        // completing always asks for the full scope set requested so far. The superseded link, if
+        // opened afterwards, fails cleanly as an invalid/expired state.
+        val stored = pendingStateRepository.upsertSupersedingByUserAndProvider(
             SkillOAuthPendingState(
                 state = state,
                 userId = userId,
                 skillId = skillId,
                 provider = provider,
-                requestedScopes = mergedScopes,
-                expiresAt = now.plusSeconds(PENDING_STATE_TTL_SECONDS),
+                requestedScopes = scopes,
+                expiresAt = clock.instant().plusSeconds(PENDING_STATE_TTL_SECONDS),
             )
         )
-        return AuthorizationUrl(providerClient.buildAuthorizeUrl(state = state, scopes = mergedScopes))
+        return AuthorizationUrl(providerClient.buildAuthorizeUrl(state = state, scopes = stored.requestedScopes))
     }
 
     override suspend fun callAuthorizedApi(
@@ -100,6 +94,12 @@ class SkillOAuthApiImpl(
             ?: throw SkillOAuthException(
                 "Skill '$skillId' is not connected to '$provider'. Use ConnectOAuthProvider first."
             )
+        if (!isCredentialUsable(credential)) {
+            throw SkillOAuthException(
+                "The OAuth connection for '$provider' has expired and cannot be refreshed. " +
+                    "Use ConnectOAuthProvider to reconnect."
+            )
+        }
         val missingScopes = requiredScopes.filterNot { it in credential.grantedScopes }
         if (missingScopes.isNotEmpty()) {
             throw SkillOAuthException(
@@ -173,6 +173,11 @@ class SkillOAuthApiImpl(
             return CallbackResult.ExchangeFailed(e.message ?: "OAuth token exchange failed.")
         }
         val now = clock.instant()
+        // credentialRepository.upsert merges grantedScopes with whatever's already stored for this
+        // (userId, provider) rather than replacing it — needed because this callback's own pending
+        // state is already consumed by the time we get here, so a second, unrelated authorization
+        // for the same (userId, provider) can start and even finish while this exchange is still in
+        // flight without either one erasing what the other just had the user grant.
         credentialRepository.upsert(
             SkillOAuthCredential(
                 userId = pending.userId,
@@ -188,6 +193,22 @@ class SkillOAuthApiImpl(
         return CallbackResult.Connected(pending.provider)
     }
 
+    /**
+     * Whether [credential] can still yield a usable access token: either it isn't expired yet, or
+     * it is but a refresh token is on file to recover with. Distinct from [ensureFreshAccessToken]'s
+     * own expiry check, which additionally applies [EXPIRY_SAFETY_MARGIN_SECONDS] to decide whether
+     * to *proactively* refresh — this one only asks whether recovery is possible at all, which is
+     * what [status] and [callAuthorizedApi] need: a credential that merely needs a refresh soon is
+     * still "connected"; one that has expired with no way to refresh is not, and must not be
+     * reported as connected just because a row for it exists (that would leave `ConnectOAuthProvider`
+     * permanently reporting "already connected" instead of ever issuing a fresh authorize URL).
+     */
+    private fun isCredentialUsable(credential: SkillOAuthCredential): Boolean {
+        val expiresAt = credential.expiresAt ?: return true
+        if (expiresAt.isAfter(clock.instant())) return true
+        return credential.refreshTokenEncrypted != null
+    }
+
     private suspend fun ensureFreshAccessToken(
         credential: SkillOAuthCredential,
         providerClient: OAuthProviderClient,
@@ -197,7 +218,10 @@ class SkillOAuthApiImpl(
             return crypto.decrypt(credential.accessTokenEncrypted)
         }
         val refreshTokenEncrypted = credential.refreshTokenEncrypted
-            ?: return crypto.decrypt(credential.accessTokenEncrypted)
+            ?: throw SkillOAuthException(
+                "OAuth access token for '${credential.provider}' has expired and no refresh token " +
+                    "is available. Use ConnectOAuthProvider to reconnect."
+            )
         val refreshed = providerClient.refresh(crypto.decrypt(refreshTokenEncrypted))
         val now = clock.instant()
         credentialRepository.upsert(

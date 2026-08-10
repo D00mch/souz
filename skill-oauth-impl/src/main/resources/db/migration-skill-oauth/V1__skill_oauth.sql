@@ -20,4 +20,4 @@ create table skill_oauth_pending_states (
 );
 
 create index skill_oauth_pending_states_expires_at_idx on skill_oauth_pending_states (expires_at);
-create index skill_oauth_pending_states_user_provider_idx on skill_oauth_pending_states (user_id, provider);
+create unique index skill_oauth_pending_states_user_provider_idx on skill_oauth_pending_states (user_id, provider);

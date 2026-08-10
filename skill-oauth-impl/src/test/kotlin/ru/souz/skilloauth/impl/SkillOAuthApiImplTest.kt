@@ -32,11 +32,7 @@ class SkillOAuthApiImplTest {
         credentialRepository: SkillOAuthCredentialRepository = InMemorySkillOAuthCredentialRepository(),
         pendingStateRepository: SkillOAuthPendingStateRepository = InMemorySkillOAuthPendingStateRepository(),
         httpClient: HttpClient = defaultSkillOAuthHttpClient(),
-    ) = SkillOAuthApiImpl(
-        credentialRepository = credentialRepository,
-        pendingStateRepository = pendingStateRepository,
-        crypto = SkillOAuthTokenCrypto(testCryptoKey),
-        providers = mapOf(
+        providers: Map<String, OAuthProviderClient> = mapOf(
             "yandex" to AuthorizationCodeOAuthClient(
                 config = AuthorizationCodeOAuthConfig(
                     name = "yandex",
@@ -49,9 +45,31 @@ class SkillOAuthApiImplTest {
                 ),
             )
         ),
+    ) = SkillOAuthApiImpl(
+        credentialRepository = credentialRepository,
+        pendingStateRepository = pendingStateRepository,
+        crypto = SkillOAuthTokenCrypto(testCryptoKey),
+        providers = providers,
         httpClient = httpClient,
         clock = fixedClock,
     )
+
+    /** Lets [handleCallback]-driving tests control exactly what a code exchange returns, without
+     *  a real HTTP call. */
+    private class FakeOAuthProviderClient(
+        override val name: String = "yandex",
+        override val allowedApiHosts: Set<String> = setOf("login.yandex.ru"),
+        private val exchangeResults: Map<String, OAuthTokenResult> = emptyMap(),
+    ) : OAuthProviderClient {
+        override fun buildAuthorizeUrl(state: String, scopes: List<String>): String =
+            "https://fake.example/authorize?state=$state&scope=${scopes.joinToString(" ")}"
+
+        override suspend fun exchangeCode(code: String): OAuthTokenResult =
+            exchangeResults[code] ?: throw SkillOAuthException("No fake exchange result for code '$code'.")
+
+        override suspend fun refresh(refreshToken: String): OAuthTokenResult =
+            throw UnsupportedOperationException("Not used in this test.")
+    }
 
     private suspend fun connectedCredentialRepository(
         grantedScopes: List<String> = listOf("login:info"),
@@ -137,7 +155,12 @@ class SkillOAuthApiImplTest {
         // Regression test: without superseding, two overlapping ConnectOAuthProvider calls for the
         // same (userId, provider) would leave two live `state` tokens; whichever callback landed
         // last would upsert only its own requestedScopes, silently dropping what the first flow's
-        // completed authorization just granted.
+        // completed authorization just granted. These two calls are sequential, not truly
+        // concurrent (a unit test can't reproduce real interleaving) — what this actually verifies
+        // is the *outcome* of the atomic upsert (old state invalidated, scopes merged), which holds
+        // regardless of timing. The race that survives even this fix — a pending state consumed by
+        // its own callback, with no window left to supersede — is covered separately below by
+        // `handleCallback merges grantedScopes across two independent authorizations...`.
         val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
         val api = newApi(pendingStateRepository = pendingStateRepository)
 
@@ -158,6 +181,118 @@ class SkillOAuthApiImplTest {
         assertTrue(pendingStateRepository.consume(firstState, fixedClock.instant()) == null)
         val secondScopeParam = second.url.substringAfter("scope=").substringBefore("&")
         assertEquals("login:info iot:control", java.net.URLDecoder.decode(secondScopeParam, "UTF-8"))
+    }
+
+    @Test
+    fun `status reports not connected when the access token has expired and there is no refresh token`() = runTest {
+        // Regression test: a credential row existing must not be conflated with it being usable —
+        // otherwise ConnectOAuthProvider would forever report "already connected" instead of ever
+        // issuing a fresh authorize URL once the token is truly unrecoverable.
+        val credentialRepository = InMemorySkillOAuthCredentialRepository()
+        credentialRepository.upsert(
+            SkillOAuthCredential(
+                userId = "user-1",
+                provider = "yandex",
+                accessTokenEncrypted = testCrypto.encrypt("stale-token"),
+                refreshTokenEncrypted = null,
+                grantedScopes = listOf("login:info"),
+                expiresAt = fixedClock.instant().minusSeconds(60),
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+            )
+        )
+        val api = newApi(credentialRepository = credentialRepository)
+
+        val status = api.status(userId = "user-1", provider = "yandex")
+
+        assertFalse(status.connected)
+    }
+
+    @Test
+    fun `status reports connected when the access token has expired but a refresh token is available`() = runTest {
+        val credentialRepository = InMemorySkillOAuthCredentialRepository()
+        credentialRepository.upsert(
+            SkillOAuthCredential(
+                userId = "user-1",
+                provider = "yandex",
+                accessTokenEncrypted = testCrypto.encrypt("stale-token"),
+                refreshTokenEncrypted = testCrypto.encrypt("refresh-token"),
+                grantedScopes = listOf("login:info"),
+                expiresAt = fixedClock.instant().minusSeconds(60),
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+            )
+        )
+        val api = newApi(credentialRepository = credentialRepository)
+
+        val status = api.status(userId = "user-1", provider = "yandex")
+
+        assertTrue(status.connected)
+    }
+
+    @Test
+    fun `callAuthorizedApi rejects an expired credential with no refresh token instead of sending a stale token`() = runTest {
+        val credentialRepository = InMemorySkillOAuthCredentialRepository()
+        credentialRepository.upsert(
+            SkillOAuthCredential(
+                userId = "user-1",
+                provider = "yandex",
+                accessTokenEncrypted = testCrypto.encrypt("stale-token"),
+                refreshTokenEncrypted = null,
+                grantedScopes = listOf("login:info"),
+                expiresAt = fixedClock.instant().minusSeconds(60),
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+            )
+        )
+        val api = newApi(credentialRepository = credentialRepository)
+
+        assertFailsWith<SkillOAuthException> {
+            api.callAuthorizedApi(
+                userId = "user-1",
+                provider = "yandex",
+                skillId = "skill-1",
+                requiredScopes = listOf("login:info"),
+                request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
+            )
+        }
+    }
+
+    @Test
+    fun `handleCallback merges grantedScopes across two independent authorizations for the same user and provider`() = runTest {
+        // The maintainer's own finding: startAuthorization's supersede-on-create only helps while a
+        // prior flow is still *pending*. Once a callback consumes its own pending state (the first
+        // thing handleCallback does), a second, unrelated ConnectOAuthProvider call for the same
+        // (userId, provider) has nothing left to supersede — so without a merge at the credential
+        // level, whichever callback's upsert ran last would silently drop the other's granted
+        // scopes. This drives the real API end-to-end (not a hand-rolled repository state) so the
+        // "nothing left to supersede" precondition arises naturally: by the time B's flow starts,
+        // A's own callback has already consumed A's pending state.
+        val credentialRepository = InMemorySkillOAuthCredentialRepository()
+        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
+        val provider = FakeOAuthProviderClient(
+            exchangeResults = mapOf(
+                "code-a" to OAuthTokenResult("token-a", null, null, listOf("login:info")),
+                "code-b" to OAuthTokenResult("token-b", null, null, listOf("iot:control")),
+            ),
+        )
+        val api = newApi(
+            credentialRepository = credentialRepository,
+            pendingStateRepository = pendingStateRepository,
+            providers = mapOf("yandex" to provider),
+        )
+
+        val authA = api.startAuthorization("user-1", "yandex", "skill-1", listOf("login:info"))
+        val stateA = authA.url.substringAfter("state=").substringBefore("&")
+        api.handleCallback(code = "code-a", state = stateA)
+
+        val authB = api.startAuthorization("user-1", "yandex", "skill-2", listOf("iot:control"))
+        val stateB = authB.url.substringAfter("state=").substringBefore("&")
+        api.handleCallback(code = "code-b", state = stateB)
+
+        val status = api.status("user-1", "yandex", requiredScopes = listOf("login:info", "iot:control"))
+        assertTrue(status.connected)
+        assertEquals(setOf("login:info", "iot:control"), status.grantedScopes.toSet())
     }
 
     @Test

@@ -6,7 +6,9 @@ import javax.sql.DataSource
 class PostgresSkillOAuthPendingStateRepository(
     private val dataSource: DataSource,
 ) : SkillOAuthPendingStateRepository {
-    override suspend fun create(pending: SkillOAuthPendingState) {
+    override suspend fun upsertSupersedingByUserAndProvider(
+        pending: SkillOAuthPendingState,
+    ): SkillOAuthPendingState =
         dataSource.write { connection ->
             connection.prepareStatement(
                 """
@@ -14,6 +16,12 @@ class PostgresSkillOAuthPendingStateRepository(
                     state, user_id, skill_id, provider, requested_scopes, expires_at
                 )
                 values (?, ?, ?, ?, ?, ?)
+                on conflict (user_id, provider) do update set
+                    state = excluded.state,
+                    skill_id = excluded.skill_id,
+                    requested_scopes = ${mergedScopesColumnSql("skill_oauth_pending_states", "requested_scopes")},
+                    expires_at = excluded.expires_at
+                returning *
                 """.trimIndent()
             ).use { statement ->
                 statement.setString(1, pending.state)
@@ -22,10 +30,12 @@ class PostgresSkillOAuthPendingStateRepository(
                 statement.setString(4, pending.provider)
                 statement.setString(5, pending.requestedScopes.toScopesColumn())
                 statement.setInstant(6, pending.expiresAt)
-                statement.executeUpdate()
+                statement.executeQuery().use { resultSet ->
+                    resultSet.next()
+                    resultSet.toPendingState()
+                }
             }
         }
-    }
 
     override suspend fun consume(state: String, now: Instant): SkillOAuthPendingState? =
         dataSource.write { connection ->
@@ -37,32 +47,6 @@ class PostgresSkillOAuthPendingStateRepository(
                     if (!resultSet.next()) return@write null
                     val pending = resultSet.toPendingState()
                     if (pending.expiresAt.isBefore(now)) null else pending
-                }
-            }
-        }
-
-    override suspend fun consumeActiveForUserAndProvider(
-        userId: String,
-        provider: String,
-        now: Instant,
-    ): List<SkillOAuthPendingState> =
-        dataSource.write { connection ->
-            connection.prepareStatement(
-                """
-                delete from skill_oauth_pending_states
-                where user_id = ? and provider = ? and expires_at >= ?
-                returning *
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, userId)
-                statement.setString(2, provider)
-                statement.setInstant(3, now)
-                statement.executeQuery().use { resultSet ->
-                    val results = mutableListOf<SkillOAuthPendingState>()
-                    while (resultSet.next()) {
-                        results += resultSet.toPendingState()
-                    }
-                    results
                 }
             }
         }

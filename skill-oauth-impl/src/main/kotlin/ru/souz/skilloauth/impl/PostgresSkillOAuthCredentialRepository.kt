@@ -30,7 +30,7 @@ class PostgresSkillOAuthCredentialRepository(
                 on conflict (user_id, provider) do update
                 set access_token_encrypted = excluded.access_token_encrypted,
                     refresh_token_encrypted = excluded.refresh_token_encrypted,
-                    granted_scopes = excluded.granted_scopes,
+                    granted_scopes = ${mergedScopesColumnSql("skill_oauth_credentials", "granted_scopes")},
                     expires_at = excluded.expires_at,
                     updated_at = excluded.updated_at
                 returning *

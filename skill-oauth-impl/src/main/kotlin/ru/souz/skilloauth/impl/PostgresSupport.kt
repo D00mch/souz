@@ -52,3 +52,22 @@ internal fun List<String>.toScopesColumn(): String = joinToString(",")
 
 internal fun String?.fromScopesColumn(): List<String> =
     this?.split(",")?.map(String::trim)?.filter(String::isNotEmpty) ?: emptyList()
+
+/**
+ * SQL fragment for an `on conflict ... do update set <column> = ...` clause that merges a
+ * comma-separated scopes column into the *union* of the pre-existing row's value ([table].[column])
+ * and the value being inserted (`excluded`.[column]), instead of letting `excluded` blindly
+ * overwrite it. [table] and [column] are always compile-time-fixed identifiers from this file's own
+ * call sites, never external input, so plain string interpolation here carries no injection risk.
+ */
+internal fun mergedScopesColumnSql(table: String, column: String): String =
+    """
+    (
+        select array_to_string(array(
+            select distinct x from unnest(
+                string_to_array(nullif($table.$column, ''), ',')
+                || string_to_array(nullif(excluded.$column, ''), ',')
+            ) as x
+        ), ',')
+    )
+    """.trimIndent()

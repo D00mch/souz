@@ -72,6 +72,52 @@ class PostgresSkillOAuthCredentialRepositoryTest {
     }
 
     @Test
+    fun `upsert merges grantedScopes with the previous credential instead of replacing them`() = runTest {
+        // Regression test for the race where a second, independent authorization for the same
+        // (userId, provider) completes while an earlier one's callback is still exchanging its
+        // code — see SkillOAuthApiImpl.handleCallback. Exercises the real `on conflict do update`
+        // merge SQL in PostgresSkillOAuthCredentialRepository, not just the in-memory fake.
+        val schema = newSkillOAuthTestSchema("skill_oauth_credential_merge")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthCredentialRepository(dataSource)
+            val now = Instant.parse("2026-01-01T00:00:00Z")
+            repository.upsert(
+                SkillOAuthCredential(
+                    userId = "user-1",
+                    provider = "yandex",
+                    accessTokenEncrypted = "enc-access-1",
+                    refreshTokenEncrypted = null,
+                    grantedScopes = listOf("login:info"),
+                    expiresAt = null,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            )
+
+            val stored = repository.upsert(
+                SkillOAuthCredential(
+                    userId = "user-1",
+                    provider = "yandex",
+                    accessTokenEncrypted = "enc-access-2",
+                    refreshTokenEncrypted = null,
+                    grantedScopes = listOf("iot:control"),
+                    expiresAt = null,
+                    createdAt = now,
+                    updatedAt = now.plusSeconds(60),
+                )
+            )
+
+            assertEquals(setOf("login:info", "iot:control"), stored.grantedScopes.toSet())
+            // the token itself is last-write-wins, unlike the scope bookkeeping.
+            assertEquals("enc-access-2", stored.accessTokenEncrypted)
+            assertEquals(
+                setOf("login:info", "iot:control"),
+                repository.find("user-1", "yandex")?.grantedScopes?.toSet(),
+            )
+        }
+    }
+
+    @Test
     fun `distinct providers for the same user are stored independently`() = runTest {
         val schema = newSkillOAuthTestSchema("skill_oauth_credential_multi_provider")
         skillOAuthTestDataSource(schema).use { dataSource ->
