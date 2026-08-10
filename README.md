@@ -235,11 +235,11 @@ flowchart TD
     errorNode --> finish
 ```
 
-The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, and `RunSkillCommand` to the LLM throughout a turn. Its execution boundary replaces both advertised functions and executable tool lookup with that fixed core tool set before the graph starts. It does not run direct-tool classification or MCP injection.
+The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and `RunSkillCommand` to the LLM throughout a turn. Its execution boundary replaces both advertised functions and executable tool lookup with that fixed core tool set before the graph starts. It does not run direct-tool classification or MCP injection.
 
 Additional input can be submitted only to an open Skills run. It cancels an active LLM request without cancelling the graph, waits for an already-started tool batch, and is appended after all tool results. Finalization begins only after an empty queue atomically seals the run.
 
-Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution, and both paths require cached or fresh `SkillApprovalGate` approval.
+Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution. Hosts may add `SkillApprovalGate`; the backend currently invokes its classpath and sandbox-backed providers without a gate.
 
 When conversation-scoped Knowledge storage is available and persistence succeeds, tool-result text larger than 8,192 UTF-8 bytes is retained as temporary Knowledge and replaced in history by a compact reference. Without conversation scope or usable storage, the result remains inline. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
 
@@ -442,7 +442,7 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 - Each chat, execution, option, and setting is scoped to the trusted user.
 - Backend host adapters replace desktop-only services with no-op implementations.
 - The backend composes request-scoped execution from shared agent contracts and graph nodes.
-- Backend turns run through one request-scoped steerable direct-tool graph.
+- Backend turns run through one request-scoped steerable `SkillsGraphBasedAgent` under `AgentId.SKILLS_GRAPH`.
 
 ### Backend storage
 
@@ -503,7 +503,7 @@ SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 
 The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
-Backend executions snapshot each user's effective `enabledTools`. The snapshot controls request-scoped category selection and invocation of compiled direct tools and is retained when an execution resumes from an option. Built-in Client-Souz operations are ordinary typed tools added only to public client executions.
+Backend executions snapshot each user's effective `enabledTools`. The snapshot filters compiled tool-backed Skills once and is retained when an execution resumes from an option. Built-in Client-Souz Skills are merged afterward only for public client executions. The backend model sees only Skill core tools and reaches catalog capabilities through inventory, discovery, and `RunSkillCommand`.
 
 Run the backend:
 
@@ -517,13 +517,15 @@ By default it binds to `127.0.0.1:8080`.
 
 Souz supports standalone ClawHub/OpenClaw-style skill bundles across `:agent` and `:sharedLogic`.
 
-Skill discovery and approval flow:
+Skill discovery with an optional host approval gate:
 
 ```mermaid
 flowchart LR
     inventory["Append compact Skill inventory"] --> lookup["GetSkillByName / RunSkillCommand"]
     lookup --> skillLoad["Load exact file-backed bundle"]
-    skillLoad --> skillHash["Canonical hash"]
+    skillLoad --> gate{"Host configured SkillApprovalGate?"}
+    gate -->|no| approval["Return instructions or execute command"]
+    gate -->|yes| skillHash["Canonical hash"]
     skillHash --> validationCache{"Cached validation?"}
     validationCache -->|approved| approval["Return instructions or execute command"]
     validationCache -->|rejected| rejection["Return rejection"]
@@ -542,14 +544,14 @@ Skill safety and storage:
 - Skill inventory is compact and user-scoped: enabled tool-backed Skill IDs by category plus opaque file-backed Skill IDs.
 - Tool-backed Skills are direct tools viewed through the Skill APIs; enabled tool-backed Skills take precedence over stored bundles with the same ID.
 - File-backed bundle content is loaded only on exact lookup or execution.
-- `GetSkillByName` returns the approved file-backed `SKILL.md` instruction body, parsed name and description, and supporting-file paths; raw YAML frontmatter is not returned.
+- `GetSkillByName` returns the file-backed `SKILL.md` instruction body, parsed name and description, and supporting-file paths; raw YAML frontmatter is not returned. A configured approval gate limits this to approved bundles.
 - `RunSkillCommand` executes file-backed Skill scripts inside the resolved runtime sandbox and binds active Skill identity internally.
 - Bundles are loaded through safe filesystem access.
 - Desktop/local skills are persisted under `~/.local/state/souz/skills/{skillId}/`, with immutable bundles in `bundles/{bundleHash}/` and metadata in `stored-skill.json`.
 - Desktop/local validation records are persisted separately under `~/.local/state/souz/skill-validations/{skillId}/policies/{policy}/`.
 - Validation cache keys include user id, skill id, bundle hash, and policy version.
 - Stale validations are invalidated when the active bundle hash changes.
-- Rejected validations block instruction lookup and command execution for the exact cached identity.
+- When a host configures `SkillApprovalGate`, rejected validations block instruction lookup and command execution for the exact cached identity. The backend intentionally passes no gate for its classpath- and sandbox-backed providers.
 
 ## LLM providers
 

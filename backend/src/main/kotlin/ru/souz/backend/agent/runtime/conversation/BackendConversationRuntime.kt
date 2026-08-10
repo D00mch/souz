@@ -46,7 +46,7 @@ internal class BackendConversationRuntime(
         )
 
         val seedContext = contextFactory.create(
-            agentId = AgentId.GRAPH,
+            agentId = AgentId.SKILLS_GRAPH,
             history = persistedSession?.history.orEmpty(),
             model = settingsProvider.gigaModel,
             contextSize = request.contextSize,
@@ -61,7 +61,7 @@ internal class BackendConversationRuntime(
         )
 
         val result = executor.execute(
-            agentId = AgentId.GRAPH,
+            agentId = AgentId.SKILLS_GRAPH,
             context = seedContext,
             input = request.prompt,
             eventSink = eventSink,
@@ -90,8 +90,8 @@ internal class BackendConversationRuntime(
     internal fun currentUsage(): LLMResponse.Usage = usageTrackingApi.cumulativeUsage()
 
     internal suspend fun submitToActiveRun(input: String): Boolean =
-        executor.submitToActiveRun(AgentId.GRAPH, input)
+        executor.submitToActiveRun(AgentId.SKILLS_GRAPH, input)
 
     internal suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
-        executor.submitToActiveRunAfter(AgentId.GRAPH, input, beforePublish)
+        executor.submitToActiveRunAfter(AgentId.SKILLS_GRAPH, input, beforePublish)
 }

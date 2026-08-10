@@ -29,12 +29,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
-import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
@@ -42,7 +44,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.options.repository.OptionRepository
@@ -929,7 +931,7 @@ class BackendStage3RouteTest {
         assertEquals(12_000, finalRequest.maxTokens)
         assertEquals(0.15f, finalRequest.temperature)
         val effectiveSystemPrompt = finalRequest.messages.first { it.role == LLMMessageRole.system }.content
-        assertEquals("be brief", effectiveSystemPrompt)
+        assertTrue(effectiveSystemPrompt.startsWith("be brief\n\n<skill_inventory>"))
         assertEquals(Locale.forLanguageTag("en-US"), storedState?.locale)
         assertEquals(ZoneId.of("Europe/Amsterdam"), storedState?.timeZone)
     }
@@ -1268,7 +1270,7 @@ internal fun routeTestContext(
     val clientThreadRegistry = ClientThreadRuntimeRegistry()
     val resolvedClientRequestRepository = clientRequestRepository ?: MemoryClientRequestRepository(executionRepository)
     val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
-    val clientToolCatalogFactory = BackendClientToolCatalogFactory(
+    val clientSkills = BackendClientSkills(
         registry = clientThreadRegistry,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
@@ -1281,14 +1283,15 @@ internal fun routeTestContext(
         toolCatalog = toolCatalog,
         localModelAvailability = unavailableLocalModels(),
     )
-    val runtimeFactory = BackendConversationRuntimeFactory(
+    val runtimeFactory = testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = { llmApi },
         sessionRepository = AgentStateBackedSessionRepository(stateRepository),
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
-        clientToolCatalogProvider = clientToolCatalogFactory::create,
+        clientToolCatalog = clientSkills,
+        clientSkillBundleProvider = clientSkills,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory, clientThreadRegistry)
@@ -1466,9 +1469,6 @@ internal class CapturingChatApi : LLMChatAPI {
     val finalRequests = ArrayList<LLMRequest.Chat>()
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        if (body.isClassificationRequest()) {
-            return reply(body, "HELP 90")
-        }
         finalRequests += body
         return reply(body, "assistant reply to ${body.conversationPrompt()}")
     }
@@ -1509,28 +1509,8 @@ internal class CapturingChatApi : LLMChatAPI {
 }
 
 internal class FailingChatApi : LLMChatAPI {
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        if (body.isClassificationRequest()) {
-            return LLMResponse.Chat.Ok(
-                choices = listOf(
-                    LLMResponse.Choice(
-                        message = LLMResponse.Message(
-                            content = "HELP 90",
-                            role = LLMMessageRole.assistant,
-                            functionCall = null,
-                            functionsStateId = null,
-                        ),
-                        index = 0,
-                        finishReason = LLMResponse.FinishReason.stop,
-                    )
-                ),
-                created = System.currentTimeMillis(),
-                model = body.model,
-                usage = LLMResponse.Usage(1, 1, 2, 0),
-            )
-        }
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
         error("simulated execution failure")
-    }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
         error("Streaming is not used in stage 3 route tests.")
@@ -1550,10 +1530,11 @@ internal class FailingChatApi : LLMChatAPI {
 
 internal class GateControlledChatApi : LLMChatAPI {
     private val startedByPrompt = LinkedHashMap<String, CompletableDeferred<Unit>>()
+    private val startedByPromptMutex = Mutex()
     private val release = CompletableDeferred<Unit>()
 
     suspend fun awaitStarted(prompt: String) {
-        startedByPrompt.getOrPut(prompt) { CompletableDeferred() }.await()
+        startedSignal(prompt).await()
     }
 
     fun release() {
@@ -1561,13 +1542,15 @@ internal class GateControlledChatApi : LLMChatAPI {
     }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        if (body.isClassificationRequest()) {
-            return reply(body, "HELP 90")
-        }
-        startedByPrompt.getOrPut(body.conversationPrompt()) { CompletableDeferred() }.complete(Unit)
+        startedSignal(body.conversationPrompt()).complete(Unit)
         release.await()
         return reply(body, "assistant reply to ${body.conversationPrompt()}")
     }
+
+    private suspend fun startedSignal(prompt: String): CompletableDeferred<Unit> =
+        startedByPromptMutex.withLock {
+            startedByPrompt.getOrPut(prompt) { CompletableDeferred() }
+        }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
         error("Streaming is not used in stage 4 route tests.")
@@ -1593,9 +1576,6 @@ internal class CancellableChatApi : LLMChatAPI {
     }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        if (body.isClassificationRequest()) {
-            return reply(body, "HELP 90")
-        }
         startedByPrompt.getOrPut(body.conversationPrompt()) { CompletableDeferred() }.complete(Unit)
         awaitCancellation()
     }
@@ -1639,12 +1619,6 @@ internal fun LLMRequest.Chat.conversationPrompt(): String =
     messages.lastOrNull { message ->
         message.role == LLMMessageRole.user && !message.content.contains("<context>")
     }?.content.orEmpty()
-
-internal fun LLMRequest.Chat.isClassificationRequest(): Boolean =
-    messages.any { message ->
-        message.role == LLMMessageRole.system &&
-            message.content.contains("Твоя задача — выбрать минимальный, но достаточный набор категорий")
-    }
 
 private class ThrowingTool : ToolSetup<ThrowingTool.Input> {
     data class Input(

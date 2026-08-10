@@ -17,7 +17,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
@@ -74,7 +74,7 @@ private fun runtimeTurnRunner(failure: Throwable): BackendConversationRuntimeTur
         useStreaming = false
     }
     return BackendConversationRuntimeTurnRunner(
-        runtimeFactory = BackendConversationRuntimeFactory(
+        runtimeFactory = testBackendConversationRuntimeFactory(
             baseSettingsProvider = settingsProvider,
             llmApiFactory = { ThrowingChatApi(failure) },
             sessionRepository = InMemoryAgentSessionRepository(),

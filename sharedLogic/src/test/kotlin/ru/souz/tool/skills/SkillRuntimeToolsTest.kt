@@ -40,6 +40,8 @@ import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.memory.ToolSearchMemory
+import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.portableSkillToolsDiModule
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
@@ -387,6 +389,7 @@ class SkillRuntimeToolsTest {
         val legacy = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL)
         val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
         val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
+        val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
         val getSkillByName = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL)
         val getSkillsByCategory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL)
         val getSkillsNamesByCategory =
@@ -398,6 +401,7 @@ class SkillRuntimeToolsTest {
         assertEquals(ToolRunSkillCommand.NAME, legacy.fn.name)
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
         assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
+        assertEquals(ToolSearchMemory.NAME, searchMemory.fn.name)
         assertEquals(ToolGetSkillByName.NAME, getSkillByName.fn.name)
         assertEquals(ToolGetSkillsByCategory.NAME, getSkillsByCategory.fn.name)
         assertEquals(ToolGetSkillsNamesByCategory.NAME, getSkillsNamesByCategory.fn.name)
@@ -408,12 +412,39 @@ class SkillRuntimeToolsTest {
             catalog.toolsByCategory.values.any {
                 ToolGetKnowledge.NAME in it ||
                     ToolSearchKnowledge.NAME in it ||
+                    ToolSearchMemory.NAME in it ||
                     ToolGetSkillByName.NAME in it ||
                     ToolGetSkillsByCategory.NAME in it ||
                     ToolGetSkillsNamesByCategory.NAME in it ||
                     ToolInvokeSkill.NAME in it
             }
         )
+    }
+
+    @Test
+    fun `portable Skill runtime composition does not require a catalog or registry`() {
+        val home = createTempDirectory("skill-runtime-di-home-")
+        val stateRoot = home.resolve("state").createDirectories()
+        val direct = DI.direct {
+            bindSingleton<ToolInvocationRuntimeSandboxResolver> {
+                ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot))
+            }
+            import(portableSkillRuntimeToolsDiModule())
+        }
+
+        val command = direct.instance<ToolRunSkillCommand>()
+        val legacy = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL)
+        val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
+        val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
+        val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
+        val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
+
+        assertEquals(ToolRunSkillCommand.NAME, command.name)
+        assertEquals(ToolRunSkillCommand.NAME, legacy.fn.name)
+        assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
+        assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
+        assertEquals(ToolSearchMemory.NAME, searchMemory.fn.name)
+        assertTrue(knowledgeStore is SandboxConversationKnowledgeStore)
     }
 
     private fun getSkillByNameTool(

@@ -10,7 +10,7 @@ The mailbox-backed continuation implementation gives each steerable execution `O
 
 Each accepted continuation advances an execution-scoped stream revision under the mailbox mutex. Every replacement LLM request captures that revision before its provider child starts, and every streamed text chunk carries the captured value. Consumers discard chunks from older revisions; they do not infer chunk ownership from collection time.
 
-Server-side and other concurrent callers must create an `AgentExecutionKernel` per request or isolated execution scope instead of sharing a facade, graph agent, or session service. The request-scoped kernel exposes one steerable direct-tool graph under `AgentId.GRAPH`; legacy agent IDs normalize to that graph. Classification narrows the advertised catalog, configured always-available tool names are then restored from that same catalog, and queued input keeps the resulting tool set for the remainder of the execution.
+Server-side and other concurrent callers must create an `AgentExecutionKernel` per request or isolated execution scope instead of sharing a facade, graph agent, or session service. The request-scoped kernel exposes one steerable skills graph under `AgentId.SKILLS_GRAPH`; unsupported persisted agent IDs normalize to the first configured agent. The graph advertises and executes only its fixed core Skill tools. Those tools discover capabilities from the request-scoped catalog through the Skill inventory, and queued input keeps the same core-tool boundary for the remainder of the execution.
 
 ## Why this is fragile
 

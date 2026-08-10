@@ -101,7 +101,13 @@ fun portableRuntimeToolsDiModule(
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
 }
 
-fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
+/**
+ * Catalog-independent Skill runtime tools that hosts can compose with a request-scoped catalog.
+ *
+ * Skill discovery and delegation remain in [portableSkillToolsDiModule] because they depend on the
+ * host's [AgentToolCatalog], [AgentToolsFilter], and [SkillRegistryRepository].
+ */
+fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRuntimeTools") {
     bindSingleton { SandboxConversationKnowledgeStore(instance()) }
     bindSingleton<ConversationKnowledgeStore> { instance<SandboxConversationKnowledgeStore>() }
     bindSingleton {
@@ -110,6 +116,20 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
         instance<ToolRunSkillCommand>().toGiga()
     }
+    bindSingleton { KnowledgeRetriever(instance()) }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
+        ToolGetKnowledge(retriever = instance())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
+        ToolSearchKnowledge(retriever = instance())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
+        ToolSearchMemory(instanceOrNull<ConversationMemoryRuntime>() ?: NoopConversationMemoryRuntime)
+    }
+}
+
+fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
+    import(portableSkillRuntimeToolsDiModule())
     bindSingleton {
         ToolGetSkillByName(
             toolCatalog = instance(),
@@ -139,16 +159,6 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL) {
         instance<ToolGetSkillsByCategory>()
-    }
-    bindSingleton { KnowledgeRetriever(instance()) }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
-        ToolGetKnowledge(retriever = instance())
-    }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
-        ToolSearchKnowledge(retriever = instance())
-    }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
-        ToolSearchMemory(instanceOrNull<ConversationMemoryRuntime>() ?: NoopConversationMemoryRuntime)
     }
     bindSingleton {
         ToolInvokeSkill(

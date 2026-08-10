@@ -2,9 +2,9 @@
 
 ## Invariant
 
-`AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation. For the Client-Souz contract, an execution is a thread and its `id` is the public `threadId`. Product messages are stored separately from runtime continuation state, and `conversationId = chatId.toString()` is the stable agent-session identity. Each turn uses the backend's single request-scoped steerable direct-tool graph. Request-scoped runtimes rebuild from persisted session state, while storage enforces one active execution per chat.
+`AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation. For the Client-Souz contract, an execution is a thread and its `id` is the public `threadId`. Product messages are stored separately from runtime continuation state, and `conversationId = chatId.toString()` is the stable agent-session identity. Each turn uses the backend's single request-scoped steerable skills graph. Request-scoped runtimes rebuild from persisted session state, while storage enforces one active execution per chat.
 
-Each initial execution snapshots its effective compiled-tool names into execution metadata, and option continuations reuse that snapshot. One immutable request-scoped catalog applies the snapshot to compiled tools for direct-tool category selection and invocation, then merges built-in client operations only for Client-Souz executions.
+Each initial execution snapshots its effective compiled-tool names into execution metadata, and option continuations reuse that snapshot. One immutable request-scoped catalog applies the snapshot to compiled tools, then merges built-in client operations only for Client-Souz executions. The skills graph uses that final catalog for inventory, lookup, and generic invocation while exposing only its fixed core tools to the model.
 
 The proxy-facing event API retains its internal durable events and live-only `message.delta`. The Client-Souz socket filters that stream to `tool.call.started` and exactly one terminal thread event. Public sequence values come from the shared chat-local `agent_events` sequence and can contain gaps caused by internal events.
 

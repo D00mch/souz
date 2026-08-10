@@ -1,5 +1,6 @@
 package ru.souz.backend.agent.runtime.conversation
 
+import java.util.Collections
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -14,8 +15,6 @@ internal class BackendExecutionToolCatalog(
     clientToolCatalog: AgentToolCatalog,
     includeFewShotExamples: Boolean,
 ) : AgentToolCatalog {
-    val alwaysAvailableToolNames: Set<String>
-
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>
 
     init {
@@ -23,24 +22,22 @@ internal class BackendExecutionToolCatalog(
         val selectedCompiledToolsByCategory = compiledToolCatalog.toolsByCategory.mapValues { (_, tools) ->
             enabledToolNames?.let { enabled ->
                 tools.filterKeys { toolName -> toolName in enabled }
-            } ?: tools
+            } ?: tools.toMap()
         }
-        val clientToolsByCategory = clientToolCatalog.toolsByCategory
-
-        alwaysAvailableToolNames = clientToolsByCategory.values
-            .flatMapTo(linkedSetOf()) { tools -> tools.keys }
-            .toSet()
+        val clientToolsByCategory = clientToolCatalog.toolsByCategory.mapValues { (_, tools) -> tools.toMap() }
 
         toolsByCategory = (selectedCompiledToolsByCategory.keys + clientToolsByCategory.keys)
             .associateWith { category ->
                 val mergedTools = selectedCompiledToolsByCategory[category].orEmpty() +
                     clientToolsByCategory[category].orEmpty()
-                if (includeFewShotExamples) {
+                val transformedTools = if (includeFewShotExamples) {
                     mergedTools
                 } else {
                     mergedTools.mapValues { (_, tool) -> tool.withoutFewShotExamples() }
                 }
+                Collections.unmodifiableMap(transformedTools)
             }
+            .let { categories -> Collections.unmodifiableMap(categories) }
     }
 }
 

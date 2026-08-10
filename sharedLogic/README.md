@@ -91,7 +91,10 @@ Run regular runtime tests without Docker:
 ## Skills Flow
 
 `FileSystemSkillRegistryRepository` owns stored skill metadata, immutable bundle contents, and validation records.
-Hosts opt into skill support through `fileSystemSkillRegistryDiModule` and `portableSkillToolsDiModule`; general runtime DI does not install either module.
+Hosts that own a request-scoped catalog can install command, Knowledge, and memory tools through
+`portableSkillRuntimeToolsDiModule`. The full `portableSkillToolsDiModule` includes those runtime tools plus
+catalog-dependent Skill discovery and delegation. Filesystem-backed hosts opt into registry storage through
+`fileSystemSkillRegistryDiModule`; general runtime DI installs none of these modules implicitly.
 
 Skills use one host-local storage layout:
 

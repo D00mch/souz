@@ -9,6 +9,9 @@ import java.time.Clock
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
@@ -20,7 +23,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.client.ClientThreadRecoveryService
@@ -72,6 +75,7 @@ import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
+import ru.souz.skills.registry.fileSystemSkillRegistryDiModule
 import ru.souz.backend.telegram.HttpTelegramBotApi
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingRepository
@@ -79,6 +83,8 @@ import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.tool.runtimeToolsDiModule
+import ru.souz.tool.portableSkillRuntimeToolsDiModule
+import ru.souz.tool.skills.ToolRunSkillCommand
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -104,6 +110,8 @@ fun backendDiModule(
         )
     )
     import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
+    import(fileSystemSkillRegistryDiModule())
+    import(portableSkillRuntimeToolsDiModule())
 
     bindSingleton { BackendApplicationScope() }
     bindSingleton<Clock> { Clock.systemUTC() }
@@ -201,14 +209,14 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        BackendClientToolCatalogFactory(
+        BackendClientSkills(
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
         )
     }
     bindSingleton {
-        val clientToolCatalogFactory = instance<BackendClientToolCatalogFactory>()
+        val clientSkills = instance<BackendClientSkills>()
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
@@ -216,7 +224,15 @@ fun backendDiModule(
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
-            clientToolCatalogProvider = clientToolCatalogFactory::create,
+            clientToolCatalog = clientSkills,
+            clientSkillBundleProvider = clientSkills,
+            skillRegistryRepository = instance<SkillRegistryRepository>(),
+            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
+            commandTool = instance<ToolRunSkillCommand>(),
+            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
+            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
+            knowledgeStore = instance<ConversationKnowledgeStore>(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
         )
     }

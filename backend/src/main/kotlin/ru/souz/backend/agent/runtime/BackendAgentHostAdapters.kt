@@ -8,7 +8,6 @@ import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
-import ru.souz.agent.spi.McpToolProvider
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -109,11 +108,6 @@ object BackendNoopAgentToolCatalog : AgentToolCatalog {
 /** Backend implementation for hosts without a meaningful default browser. */
 object BackendNoopDefaultBrowserProvider : DefaultBrowserProvider {
     override fun defaultBrowserDisplayName(): String? = null
-}
-
-/** Backend implementation for hosts without MCP discovery. */
-object BackendNoopMcpToolProvider : McpToolProvider {
-    override suspend fun tools(): List<LLMToolSetup> = emptyList()
 }
 
 /** Backend-owned user-facing error text for shared agent failure paths. */
