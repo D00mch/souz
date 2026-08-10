@@ -9,14 +9,11 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
-import ru.souz.backend.agent.runtime.BackendFewShotAwareToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
 import ru.souz.backend.agent.runtime.BackendNoopMcpToolProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
-import ru.souz.backend.agent.runtime.BackendRequestToolCatalog
-import ru.souz.backend.agent.runtime.BackendRequestToolsFilter
 import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.llm.BackendLlmExecutionContext
@@ -55,18 +52,11 @@ class BackendConversationRuntimeFactory(
         } else {
             BackendNoopAgentToolCatalog
         }
-        val executionToolCatalog = BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
-        val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
-            delegate = executionToolCatalog,
-            settingsProvider = settingsProvider,
-        )
-        val enabledTools = request.enabledTools?.plus(
-            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
-        )
-        val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
-        val filteredToolCatalog = BackendRequestToolCatalog(
-            delegate = requestScopedToolCatalog,
-            toolsFilter = requestToolsFilter,
+        val executionToolCatalog = BackendExecutionToolCatalog(
+            compiledToolCatalog = toolCatalog,
+            enabledCompiledToolNames = request.enabledTools,
+            clientToolCatalog = clientToolCatalog,
+            includeFewShotExamples = settingsProvider.useFewShotExamples,
         )
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
@@ -79,21 +69,18 @@ class BackendConversationRuntimeFactory(
             delegate = delegateApi,
             initialUsage = initialUsage,
         )
-        val clientToolNames = clientToolCatalog.toolsByCategory.values
-            .flatMapTo(linkedSetOf()) { tools -> tools.keys }
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
-            toolCatalog = filteredToolCatalog,
-            toolsFilter = requestToolsFilter,
+            toolCatalog = executionToolCatalog,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
                 localeTag = request.locale,
                 timeZone = request.timeZone,
             ),
             mcpToolProvider = BackendNoopMcpToolProvider,
-            alwaysAvailableToolNames = clientToolNames,
+            alwaysAvailableToolNames = executionToolCatalog.alwaysAvailableToolNames,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = usageTrackingApi,

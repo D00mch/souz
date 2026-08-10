@@ -15,6 +15,7 @@ import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.runtime.conversation.BackendExecutionToolCatalog
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -198,22 +199,24 @@ class BackendConversationRuntimeSettingsTest {
     }
 
     @Test
-    fun `request tool catalog captures an immutable enabled tool snapshot`() {
+    fun `execution tool catalog captures an immutable enabled tool snapshot`() {
         val sourceCatalog = singleToolCatalog(
             category = ToolCategory.FILES,
             tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
         )
         val enabledTools = linkedSetOf("ListFiles")
-        val requestCatalog = BackendRequestToolCatalog(
-            delegate = sourceCatalog,
-            toolsFilter = BackendRequestToolsFilter(enabledTools),
+        val executionCatalog = BackendExecutionToolCatalog(
+            compiledToolCatalog = sourceCatalog,
+            enabledCompiledToolNames = enabledTools,
+            clientToolCatalog = BackendNoopAgentToolCatalog,
+            includeFewShotExamples = true,
         )
 
         enabledTools.clear()
 
         assertEquals(
             setOf("ListFiles"),
-            requestCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
+            executionCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
         )
     }
 }

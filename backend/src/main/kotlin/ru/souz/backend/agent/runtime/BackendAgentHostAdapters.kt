@@ -16,7 +16,6 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.findLLMModel
 import ru.souz.tool.ToolCategory
 
@@ -77,35 +76,6 @@ class BackendConversationSettingsProvider(
         } else {
             SettingsProviderImpl.REGION_RU
         }
-    }
-}
-
-internal class BackendFewShotAwareToolCatalog(
-    private val delegate: AgentToolCatalog,
-    private val settingsProvider: SettingsProvider,
-) : AgentToolCatalog {
-    private val toolsWithoutFewShotExamples: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
-        delegate.toolsByCategory.mapValues { (_, toolsByName) ->
-            toolsByName.mapValues { (_, toolSetup) -> toolSetup.withoutFewShotExamples() }
-        }
-    }
-
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>
-        get() = if (settingsProvider.useFewShotExamples) delegate.toolsByCategory else toolsWithoutFewShotExamples
-}
-
-private fun LLMToolSetup.withoutFewShotExamples(): LLMToolSetup {
-    val delegate = this
-    return object : LLMToolSetup {
-        override val fn: LLMRequest.Function = delegate.fn.copy(fewShotExamples = emptyList())
-
-        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-            delegate.invoke(functionCall)
-
-        override suspend fun invoke(
-            functionCall: LLMResponse.FunctionCall,
-            meta: ToolInvocationMeta,
-        ): LLMRequest.Message = delegate.invoke(functionCall, meta)
     }
 }
 

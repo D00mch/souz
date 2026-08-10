@@ -17,7 +17,6 @@ import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.LLMChatAPI
@@ -35,7 +34,6 @@ class AgentExecutionKernelFactory(
     private val settingsProvider: AgentSettingsProvider,
     private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val toolCatalog: AgentToolCatalog,
-    private val toolsFilter: AgentToolsFilter,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
     private val mcpToolProvider: McpToolProvider,
@@ -66,7 +64,6 @@ class AgentExecutionKernelFactory(
             apiClassifier = apiClassifier,
             localClassifier = localClassifier,
             toolCatalog = toolCatalog,
-            toolsFilter = toolsFilter,
         )
         val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)

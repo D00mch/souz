@@ -5,10 +5,9 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.llms.LLMChatAPI
@@ -28,7 +27,6 @@ class AgentExecutionKernelFactoryTest {
             settingsProvider = mockk<AgentSettingsProvider>(relaxed = true),
             desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
             toolCatalog = EmptyToolCatalog,
-            toolsFilter = PassThroughToolsFilter,
             defaultBrowserProvider = mockk<DefaultBrowserProvider>(relaxed = true),
             runtimeEnvironment = mockk<AgentRuntimeEnvironment>(relaxed = true),
             mcpToolProvider = mockk<McpToolProvider>(relaxed = true),
@@ -49,10 +47,4 @@ class AgentExecutionKernelFactoryTest {
 
 private object EmptyToolCatalog : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = emptyMap()
-}
-
-private object PassThroughToolsFilter : AgentToolsFilter {
-    override fun applyFilter(
-        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-    ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
 }
