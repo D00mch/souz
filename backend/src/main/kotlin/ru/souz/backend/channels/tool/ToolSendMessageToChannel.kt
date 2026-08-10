@@ -59,6 +59,12 @@ class ToolSendMessageToChannel(
         if (channelType.isEmpty() || channelId.isEmpty()) {
             throw BadInputException("channelType and channelId must not be empty.")
         }
+        val currentConversationId = meta.conversationId?.takeIf { it.isNotBlank() }
+        if (channelId == currentConversationId) {
+            return restJsonMapper.writeValueAsString(
+                FailureOutput(false, "Cannot forward a message to the current channel.")
+            )
+        }
         return when (val result = registry.send(meta.userId, channelType, channelId, text)) {
             is ChannelSendResult.Delivered -> restJsonMapper.writeValueAsString(SuccessOutput(true, result.detail))
             is ChannelSendResult.Failed -> restJsonMapper.writeValueAsString(FailureOutput(false, result.reason))

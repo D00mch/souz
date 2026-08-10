@@ -5,9 +5,11 @@ import kotlinx.coroutines.CancellationException
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.telegram.TELEGRAM_TEXT_LIMIT
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
+import ru.souz.backend.telegram.telegramTextChunks
 
 class TelegramChannelProvider(
     private val bindingRepository: TelegramBotBindingRepository,
@@ -39,7 +41,10 @@ class TelegramChannelProvider(
         val telegramChatId = binding.telegramChatId
             ?: return ChannelSendResult.Failed("Telegram channel not found or not linked.")
         return try {
-            telegramBotApi.sendMessage(tokenCrypto.decrypt(binding.botTokenEncrypted), telegramChatId, text)
+            val token = tokenCrypto.decrypt(binding.botTokenEncrypted)
+            telegramTextChunks(text, TELEGRAM_TEXT_LIMIT).forEach { chunk ->
+                telegramBotApi.sendMessage(token, telegramChatId, chunk)
+            }
             persistChannelMessage(messageRepository, eventService, userId, binding.chatId, text)
             ChannelSendResult.Delivered("Sent via Telegram.")
         } catch (e: CancellationException) {

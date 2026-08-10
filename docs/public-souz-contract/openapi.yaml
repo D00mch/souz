@@ -615,6 +615,7 @@ components:
         - $ref: "#/components/schemas/ThreadCompletedEvent"
         - $ref: "#/components/schemas/ThreadFailedEvent"
         - $ref: "#/components/schemas/ThreadCancelledEvent"
+        - $ref: "#/components/schemas/MessageCreatedEvent"
     EventSeq:
       type: integer
       format: int64
@@ -745,6 +746,48 @@ components:
       properties:
         reason:
           type: string
+    MessageCreatedEvent:
+      description: >-
+        Out-of-band push into this chat's history that did not originate from a thread this client
+        started (e.g. a message forwarded here from another of the user's channels). threadId is
+        null in that case; ordinary in-thread messages are not delivered on this stream.
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        type:
+          type: string
+          enum: [message.created]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          anyOf:
+            - $ref: "#/components/schemas/UUID"
+            - type: "null"
+        payload:
+          $ref: "#/components/schemas/MessageCreatedPayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    MessageCreatedPayload:
+      type: object
+      additionalProperties: false
+      required: [messageId, seq, role, content]
+      properties:
+        messageId:
+          $ref: "#/components/schemas/UUID"
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+        role:
+          type: string
+        content:
+          type: string
+        clientMessageId:
+          type: [string, "null"]
     ErrorCode:
       type: string
       enum:

@@ -5,11 +5,13 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.telegram.TELEGRAM_TEXT_LIMIT
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.backend.telegram.TelegramGetMeResponse
@@ -118,6 +120,27 @@ class TelegramChannelProviderTest {
 
         assertIs<ChannelSendResult.Failed>(result)
         assertEquals(emptyList(), messageRepository.list(userId, chatId, afterSeq = null, beforeSeq = null, limit = 10))
+    }
+
+    @Test
+    fun `sendMessage chunks text longer than the Telegram limit but persists it as one message`() = runTest {
+        val bindingRepository = MemoryTelegramBotBindingRepository()
+        val chatId = UUID.randomUUID()
+        val stored = bindingRepository.upsertForChat(userId, chatId, "raw-token", "hash", "secret", now = Instant.now())
+        bindingRepository.claimTelegramUser(stored.id, "secret", 1L, 999L, null, null, null, Instant.now())
+        val api = FakeTelegramBotApi()
+        val (provider, messageRepository, _) = provider(bindingRepository, api = api)
+        val longText = "a".repeat(TELEGRAM_TEXT_LIMIT * 2 + 10)
+
+        val result = provider.sendMessage(userId, chatId.toString(), longText)
+
+        assertIs<ChannelSendResult.Delivered>(result)
+        assertTrue(api.sent.size > 1)
+        assertTrue(api.sent.all { it.text.length <= TELEGRAM_TEXT_LIMIT })
+        assertEquals(longText, api.sent.joinToString("") { it.text })
+        val messages = messageRepository.list(userId, chatId, afterSeq = null, beforeSeq = null, limit = 10)
+        assertEquals(1, messages.size)
+        assertEquals(longText, messages.single().content)
     }
 
     @Test

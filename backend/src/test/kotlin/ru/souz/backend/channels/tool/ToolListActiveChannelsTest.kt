@@ -37,4 +37,34 @@ class ToolListActiveChannelsTest {
 
         assertTrue(result.contains("\"channels\":[]"))
     }
+
+    @Test
+    fun `excludes the current conversation from the list`() = runTest {
+        val channels = listOf(
+            ChannelDescriptor("telegram", "chat-1", "Telegram"),
+            ChannelDescriptor("mobile_app", "chat-2", "Mobile"),
+        )
+        val tool = ToolListActiveChannels(ChannelProviderRegistry(listOf(FakeProvider(channels))))
+
+        val result = tool.suspendInvoke(
+            ToolListActiveChannels.Input(),
+            ToolInvocationMeta(userId = "user-1", conversationId = "chat-1"),
+        )
+
+        assertTrue(result.contains("\"channelId\":\"chat-2\""))
+        assertTrue(!result.contains("\"channelId\":\"chat-1\""))
+    }
+
+    @Test
+    fun `blank conversationId does not exclude anything`() = runTest {
+        val channels = listOf(ChannelDescriptor("telegram", "", "Telegram"))
+        val tool = ToolListActiveChannels(ChannelProviderRegistry(listOf(FakeProvider(channels))))
+
+        val result = tool.suspendInvoke(
+            ToolListActiveChannels.Input(),
+            ToolInvocationMeta(userId = "user-1", conversationId = ""),
+        )
+
+        assertTrue(result.contains("\"channelId\":\"\""))
+    }
 }
