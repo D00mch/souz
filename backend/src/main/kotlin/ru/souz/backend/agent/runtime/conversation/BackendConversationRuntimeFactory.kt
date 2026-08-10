@@ -5,7 +5,6 @@ import kotlinx.coroutines.CoroutineScope
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -40,8 +39,7 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val clientToolCatalog: AgentToolCatalog,
-    private val clientSkillBundleProvider: SkillBundleProvider,
-    private val skillRegistryRepository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider,
     private val commandExecutor: SkillCommandExecutor,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
@@ -72,12 +70,6 @@ class BackendConversationRuntimeFactory(
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = activeClientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
-        )
-        val skillBundleProvider = CompositeSkillBundleProvider(
-            providers = buildList {
-                if (request.clientToolsEnabled) add(clientSkillBundleProvider)
-                add(skillRegistryRepository)
-            }
         )
         val requestToolsFilter = requestPassThroughToolsFilter()
         val delegateApi = llmApiFactory(

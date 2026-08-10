@@ -1291,7 +1291,6 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
         clientToolCatalog = clientSkills,
-        clientSkillBundleProvider = clientSkills,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory, clientThreadRegistry)

@@ -8,9 +8,7 @@ import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.session.AgentSessionRepository
@@ -32,9 +30,8 @@ internal fun testBackendConversationRuntimeFactory(
     logObjectMapper: ObjectMapper,
     systemPrompt: String,
     toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    skillRegistryRepository: SkillRegistryRepository = EmptyTestSkillRegistryRepository,
+    skillBundleProvider: SkillBundleProvider = EmptyTestSkillBundleProvider,
     clientToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    clientSkillBundleProvider: SkillBundleProvider = skillRegistryRepository,
     commandExecutor: SkillCommandExecutor = SkillCommandExecutor(
         sandboxResolver = ToolInvocationRuntimeSandboxResolver {
             error("The test runtime sandbox was not configured.")
@@ -49,8 +46,7 @@ internal fun testBackendConversationRuntimeFactory(
     systemPrompt = systemPrompt,
     toolCatalog = toolCatalog,
     clientToolCatalog = clientToolCatalog,
-    clientSkillBundleProvider = clientSkillBundleProvider,
-    skillRegistryRepository = skillRegistryRepository,
+    skillBundleProvider = skillBundleProvider,
     commandExecutor = commandExecutor,
     getKnowledgeTool = testCoreTool("GetKnowledge"),
     searchKnowledgeTool = testCoreTool("SearchKnowledge"),
@@ -74,22 +70,10 @@ private fun testCoreTool(name: String): LLMToolSetup = object : LLMToolSetup {
         )
 }
 
-private object EmptyTestSkillRegistryRepository : SkillRegistryRepository {
+private object EmptyTestSkillBundleProvider : SkillBundleProvider {
     override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
 
-    override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill =
-        error("Saving Skills is not supported by this test repository.")
-
     override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null
-
-    override suspend fun getValidation(
-        userId: String,
-        skillId: SkillId,
-        bundleHash: String,
-        policyVersion: String,
-    ): SkillValidationRecord? = null
-
-    override suspend fun saveValidation(record: SkillValidationRecord) = Unit
 }
 
 private object EmptyTestKnowledgeStore : ConversationKnowledgeStore {

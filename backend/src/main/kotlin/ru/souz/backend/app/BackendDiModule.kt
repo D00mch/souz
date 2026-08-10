@@ -216,7 +216,6 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        val clientSkills = instance<BackendClientSkills>()
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
@@ -224,9 +223,8 @@ fun backendDiModule(
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
-            clientToolCatalog = clientSkills,
-            clientSkillBundleProvider = clientSkills,
-            skillRegistryRepository = instance<SkillRegistryRepository>(),
+            clientToolCatalog = instance<BackendClientSkills>(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandExecutor>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),

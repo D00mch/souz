@@ -18,8 +18,6 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
-import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -102,7 +100,7 @@ class BackendConversationRuntimeSettingsTest {
     fun `client tools remain available outside the compiled tool snapshot and selected category`() = runTest {
         val api = SkillLoopChatApi("user.ask")
         val clientTool = CapturingTool("user.ask")
-        val clientSkills = TestClientSkills(toolOverrides = mapOf("user.ask" to clientTool))
+        val clientTools = TestClientToolCatalog(toolOverrides = mapOf("user.ask" to clientTool))
         val key = conversationKey()
         val runtimeFactory = runtimeFactory(
             llmApiFactory = { api },
@@ -110,8 +108,7 @@ class BackendConversationRuntimeSettingsTest {
                 category = ToolCategory.FILES,
                 tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
             ),
-            clientToolCatalog = clientSkills,
-            clientSkillBundleProvider = clientSkills,
+            clientToolCatalog = clientTools,
         )
         val request = turnRequest().copy(
             enabledTools = emptySet(),
@@ -129,7 +126,6 @@ class BackendConversationRuntimeSettingsTest {
         assertTrue(api.requests.first().systemMessage().contains("user.ask"))
         assertTrue(api.requests.first().systemMessage().contains("device.media.open"))
         assertFalse(api.requests.first().systemMessage().contains("ListFiles"))
-        assertEquals(1, clientSkills.inventoryCalls)
         assertEquals(mapOf("value" to "delegated"), clientTool.arguments)
         assertEquals(
             ToolInvocationMeta(
@@ -146,11 +142,10 @@ class BackendConversationRuntimeSettingsTest {
     @Test
     fun `proxy runtime does not create or advertise client tools`() = runTest {
         val api = ReplyingChatApi()
-        val clientSkills = TestClientSkills()
+        val clientTools = TestClientToolCatalog()
         val runtimeFactory = runtimeFactory(
             llmApiFactory = { api },
-            clientToolCatalog = clientSkills,
-            clientSkillBundleProvider = clientSkills,
+            clientToolCatalog = clientTools,
         )
         val request = turnRequest().copy(
             enabledTools = emptySet(),
@@ -166,7 +161,6 @@ class BackendConversationRuntimeSettingsTest {
         val llmRequest = api.requests.single()
         assertFalse(llmRequest.systemMessage().contains("user.ask"))
         assertFalse(llmRequest.systemMessage().contains("device.media.open"))
-        assertEquals(0, clientSkills.inventoryCalls)
     }
 
     @Test
@@ -244,7 +238,7 @@ class BackendConversationRuntimeSettingsTest {
                 sessionRepository = InMemoryAgentSessionRepository(),
                 logObjectMapper = jacksonObjectMapper(),
                 systemPrompt = "backend test prompt",
-                skillRegistryRepository = skillRegistry,
+                skillBundleProvider = skillRegistry,
                 commandExecutor = commandExecutor,
                 agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             )
@@ -310,7 +304,6 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
-    clientSkillBundleProvider: SkillBundleProvider? = null,
 ): BackendConversationRuntimeFactory =
     ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
@@ -320,7 +313,6 @@ private fun runtimeFactory(
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,
         clientToolCatalog = clientToolCatalog,
-        clientSkillBundleProvider = clientSkillBundleProvider ?: TestClientSkills(emptySet()),
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
 
@@ -354,14 +346,11 @@ private fun singleToolCatalog(
             mapOf(category to mapOf(tool.fn.name to tool))
     }
 
-private class TestClientSkills(
-    private val ids: Set<String> = setOf("user.ask", "device.media.open"),
+private class TestClientToolCatalog(
     private val toolOverrides: Map<String, LLMToolSetup> = emptyMap(),
-) : ru.souz.agent.spi.AgentToolCatalog, SkillBundleProvider {
-    var inventoryCalls: Int = 0
-
+) : ru.souz.agent.spi.AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
-        if (ids.isEmpty()) emptyMap() else mapOf(
+        mapOf(
             ToolCategory.CHAT to mapOf(
                 "user.ask" to (toolOverrides["user.ask"]
                     ?: fakeTool(name = "user.ask", fewShotExamples = emptyList())),
@@ -371,15 +360,6 @@ private class TestClientSkills(
                     ?: fakeTool(name = "device.media.open", fewShotExamples = emptyList())),
             ),
         )
-
-    override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
-
-    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> {
-        inventoryCalls += 1
-        return ids.map(::SkillId)
-    }
-
-    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null
 }
 
 private fun fakeTool(

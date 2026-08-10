@@ -10,7 +10,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.skills.SkillId
 import ru.souz.backend.http.routeTestContext
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
@@ -25,7 +24,7 @@ import ru.souz.tool.ToolCategory
 
 class BackendClientSkillsTest {
     @Test
-    fun `catalog and provider project bundled client Skills`() = runTest {
+    fun `catalog projects bundled client Skills`() = runTest {
         val context = routeTestContext()
 
         val clientSkills = BackendClientSkills(
@@ -43,6 +42,7 @@ class BackendClientSkillsTest {
             clientSkills.toolsByCategory.values.flatMap { it.keys }.toSet(),
         )
         assertContains(ask.fn.description, "Ask the user")
+        assertContains(ask.fn.description, "RunSkillCommand")
         assertEquals("object", ask.fn.parameters.type)
         assertTrue(ask.fn.parameters.properties.isEmpty())
         assertTrue(ask.fn.parameters.required.isEmpty())
@@ -50,46 +50,6 @@ class BackendClientSkillsTest {
         assertEquals("object", openMedia.fn.parameters.type)
         assertTrue(openMedia.fn.parameters.properties.isEmpty())
         assertTrue(openMedia.fn.parameters.required.isEmpty())
-
-        val storedSkills = clientSkills.listSkills("user-a")
-        assertEquals(
-            listOf(SkillId("device.media.open"), SkillId("user.ask")),
-            storedSkills.map { it.skillId },
-        )
-        assertTrue(storedSkills.all { it.userId == "user-a" })
-        assertTrue(storedSkills.all { it.createdAt == Instant.EPOCH })
-        assertTrue(storedSkills.all { it.bundleHash.matches(Regex("[0-9a-f]{64}")) })
-        val otherUserSkills = clientSkills.listSkills("user-b")
-        assertTrue(otherUserSkills.all { it.userId == "user-b" })
-        assertEquals(
-            storedSkills.associate { it.skillId to it.bundleHash },
-            otherUserSkills.associate { it.skillId to it.bundleHash },
-        )
-        assertFailsWith<UnsupportedOperationException> {
-            @Suppress("UNCHECKED_CAST")
-            (storedSkills as MutableList).clear()
-        }
-        assertEquals(
-            listOf(SkillId("device.media.open"), SkillId("user.ask")),
-            clientSkills.listSkillInventoryIds("user-b"),
-        )
-
-        val askBundle = requireNotNull(clientSkills.loadSkillBundle("user-a", SkillId("user.ask")))
-        assertEquals("user-ask", askBundle.manifest.name)
-        assertEquals("client-websocket", askBundle.manifest.metadata["souz.transport"])
-        assertContains(askBundle.skillMarkdownBody, "RunSkillCommand")
-        val originalSkillMarkdown = askBundle.skillMarkdownFile.contentAsText()
-        askBundle.skillMarkdownFile.content[0] = 0
-        val reloadedAskBundle = requireNotNull(clientSkills.loadSkillBundle("user-a", SkillId("user.ask")))
-        assertEquals(originalSkillMarkdown, reloadedAskBundle.skillMarkdownFile.contentAsText())
-        assertFailsWith<UnsupportedOperationException> {
-            @Suppress("UNCHECKED_CAST")
-            (reloadedAskBundle.manifest.metadata as MutableMap<String, String>)["changed"] = "true"
-        }
-        assertFailsWith<UnsupportedOperationException> {
-            @Suppress("UNCHECKED_CAST")
-            (reloadedAskBundle.files as MutableList).clear()
-        }
     }
 
     @Test
