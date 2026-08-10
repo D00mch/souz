@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.assertThrows
 import org.slf4j.LoggerFactory
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope

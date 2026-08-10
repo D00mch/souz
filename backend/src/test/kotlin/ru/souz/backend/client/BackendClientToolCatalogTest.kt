@@ -7,7 +7,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
@@ -99,12 +99,6 @@ private object ShortTimeoutClientSkillBundleProvider : SkillBundleProvider {
     )
 
     override suspend fun listSkills(userId: String): List<StoredSkill> = listOf(stored(userId))
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? =
-        stored(userId).takeIf { it.skillId == skillId }
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
-        stored(userId).takeIf { it.manifest.name == name }
 
     override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? =
         bundle.takeIf { it.skillId == skillId }

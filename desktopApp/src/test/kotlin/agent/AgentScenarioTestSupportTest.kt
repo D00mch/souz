@@ -5,7 +5,7 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentId
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider

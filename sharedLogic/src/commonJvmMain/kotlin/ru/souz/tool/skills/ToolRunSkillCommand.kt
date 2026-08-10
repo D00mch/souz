@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.util.Base64
 import kotlinx.coroutines.runBlocking
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxCommandRequest

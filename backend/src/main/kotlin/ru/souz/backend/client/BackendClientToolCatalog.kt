@@ -8,7 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
@@ -277,12 +277,6 @@ private class BackendBundledClientSkillBundleProvider(
     override suspend fun listSkills(userId: String): List<StoredSkill> = bundles.values
         .map { bundle -> bundle.toStoredSkill(userId) }
         .sortedBy { it.skillId.value }
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? =
-        bundles[skillId]?.toStoredSkill(userId)
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
-        bundles.values.firstOrNull { it.manifest.name == name }?.toStoredSkill(userId)
 
     override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = bundles[skillId]
 

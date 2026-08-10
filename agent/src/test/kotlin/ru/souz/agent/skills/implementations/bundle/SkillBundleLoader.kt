@@ -2,7 +2,7 @@ package ru.souz.agent.skills.implementations.bundle
 
 import java.nio.file.Files
 import java.nio.file.Path
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillFile

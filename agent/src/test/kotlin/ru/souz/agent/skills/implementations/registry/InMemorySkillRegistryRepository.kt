@@ -2,7 +2,7 @@ package ru.souz.agent.skills.implementations.registry
 
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillValidationRecord
@@ -15,15 +15,6 @@ class InMemorySkillRegistryRepository : SkillRegistryRepository {
     override suspend fun listSkills(userId: String): List<StoredSkill> = skills.entries
         .filter { it.key.first == userId }
         .map { (_, bundle) -> bundle.toStoredSkill(userId) }
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? =
-        skills[userId to skillId]?.toStoredSkill(userId)
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
-        skills.entries
-            .firstOrNull { (key, bundle) -> key.first == userId && bundle.manifest.name == name }
-            ?.value
-            ?.toStoredSkill(userId)
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill {
         skills[userId to bundle.skillId] = bundle

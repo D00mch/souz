@@ -1,4 +1,4 @@
-package ru.souz.agent.skills.implementations.activation
+package ru.souz.agent.skills.implementations.validation
 
 import ru.souz.agent.skills.validation.SkillValidationFinding
 import ru.souz.agent.skills.validation.SkillValidationInput
