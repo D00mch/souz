@@ -1,5 +1,7 @@
 package ru.souz.skilloauth.impl
 
+import ru.souz.skilloauth.SkillOAuthException
+
 /**
  * Adapter for one external OAuth2 provider. [SkillOAuthApiImpl] is generic over this interface —
  * it knows nothing about any specific provider. A provider's name (e.g. "yandex") only ever
@@ -36,3 +38,17 @@ data class OAuthTokenResult(
     val expiresInSeconds: Long?,
     val scopes: List<String>,
 )
+
+/**
+ * Thrown when a provider's token endpoint responds with a structured `error` code (RFC 6749 §5.2)
+ * instead of a token. [errorCode] is preserved so callers can distinguish `invalid_grant` — the
+ * refresh/authorization grant itself is dead — from codes that say nothing about the grant's
+ * validity (`invalid_client` is *our* misconfiguration; `server_error`/`temporarily_unavailable`
+ * are meant to be retried, per the RFC). Treating every provider error alike would, for example,
+ * make [SkillOAuthApiImpl.ensureFreshAccessToken] discard a perfectly good refresh token over a
+ * transient provider hiccup.
+ */
+internal class OAuthProviderErrorException(
+    val errorCode: String,
+    message: String,
+) : SkillOAuthException(message)

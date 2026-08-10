@@ -36,7 +36,6 @@ import ru.souz.skilloauth.SkillOAuthException
 class SkillOAuthApiImpl(
     private val credentialRepository: SkillOAuthCredentialRepository,
     private val pendingStateRepository: SkillOAuthPendingStateRepository,
-    private val requestedScopesRepository: SkillOAuthRequestedScopesRepository,
     private val crypto: SkillOAuthTokenCrypto,
     private val providers: Map<String, OAuthProviderClient>,
     private val httpClient: HttpClient = defaultSkillOAuthHttpClient(),
@@ -67,35 +66,26 @@ class SkillOAuthApiImpl(
     ): AuthorizationUrl {
         val providerClient = requireProviderClient(provider)
         val now = clock.instant()
-        // Widen the request to the full cumulative union ever requested for this (userId,
-        // provider), not just this call's own [scopes] — see
-        // [SkillOAuthRequestedScopesRepository.mergeAndBump]'s doc comment for why this, and not
-        // the (transient) pending-states table, is what actually closes the race where a second
-        // authorization starts after a first one's pending state is already consumed by its own
-        // callback but before that callback has saved a credential. A request untouched for longer
-        // than the same TTL a pending link itself lives for is treated as abandoned, not widened on.
-        val requested = requestedScopesRepository.mergeAndBump(
-            userId, provider, scopes,
+        val state = generateState()
+        // Atomically widens the request to the full cumulative union ever requested for this
+        // (userId, provider) — not just this call's own [scopes] — and supersedes any existing
+        // pending state, all under one row lock. See
+        // [SkillOAuthPendingStateRepository.beginAuthorization]'s doc comment for why both need to
+        // happen in the same transaction (splitting them left a window where an older, paused call
+        // could overwrite a newer call's already-written pending state). A request untouched for
+        // longer than the same TTL a pending link itself lives for is treated as abandoned, not
+        // widened on.
+        val pending = pendingStateRepository.beginAuthorization(
+            state = state,
+            userId = userId,
+            skillId = skillId,
+            provider = provider,
+            scopes = scopes,
             now = now,
             activeSince = now.minusSeconds(PENDING_STATE_TTL_SECONDS),
+            expiresAt = now.plusSeconds(PENDING_STATE_TTL_SECONDS),
         )
-        val state = generateState()
-        // A single atomic upsert (see [SkillOAuthPendingStateRepository.upsertSupersedingByUserAndProvider])
-        // rather than a separate read-then-write: two concurrent calls for the same (userId, provider)
-        // can never both "win" and leave two live pending states. The superseded link, if opened
-        // afterwards, fails cleanly as an invalid/expired state.
-        pendingStateRepository.upsertSupersedingByUserAndProvider(
-            SkillOAuthPendingState(
-                state = state,
-                userId = userId,
-                skillId = skillId,
-                provider = provider,
-                requestedScopes = requested.requestedScopes,
-                generation = requested.generation,
-                expiresAt = now.plusSeconds(PENDING_STATE_TTL_SECONDS),
-            )
-        )
-        return AuthorizationUrl(providerClient.buildAuthorizeUrl(state = state, scopes = requested.requestedScopes))
+        return AuthorizationUrl(providerClient.buildAuthorizeUrl(state = state, scopes = pending.requestedScopes))
     }
 
     override suspend fun callAuthorizedApi(
@@ -110,6 +100,7 @@ class SkillOAuthApiImpl(
         if (credential == null || !isCredentialUsable(credential)) {
             return reconnectRequired(
                 userId, provider, skillId, requiredScopes,
+                existingGrantedScopes = credential?.grantedScopes.orEmpty(),
                 reason = if (credential == null) {
                     "Skill '$skillId' is not connected to '$provider'."
                 } else {
@@ -121,6 +112,7 @@ class SkillOAuthApiImpl(
         if (missingScopes.isNotEmpty()) {
             return reconnectRequired(
                 userId, provider, skillId, requiredScopes,
+                existingGrantedScopes = credential.grantedScopes,
                 reason = "Skill '$skillId' requires scopes not yet granted for '$provider': $missingScopes.",
             )
         }
@@ -133,7 +125,11 @@ class SkillOAuthApiImpl(
             // reconnecting is the only way forward. A transient network failure reaching the
             // provider throws a *different* exception type and is deliberately not caught here —
             // that's not something a fresh authorize link would fix.
-            return reconnectRequired(userId, provider, skillId, requiredScopes, reason = e.message ?: "OAuth token refresh failed.")
+            return reconnectRequired(
+                userId, provider, skillId, requiredScopes,
+                existingGrantedScopes = credential.grantedScopes,
+                reason = e.message ?: "OAuth token refresh failed.",
+            )
         }
         val apiRequest = request
         val response = httpClient.request(apiRequest.url) {
@@ -161,21 +157,30 @@ class SkillOAuthApiImpl(
 
     /**
      * Generates a fresh authorize link (via [startAuthorization], which itself widens the request
-     * to cover everything ever asked for this `(userId, provider)` — see
-     * [SkillOAuthRequestedScopesRepository]) and packages it as a normal [ApiCallOutcome], computed
-     * exactly once per [callAuthorizedApi] call. There is no tool-level or executor-level retry of
-     * a failed call in this codebase (unlike MCP tools, which do retry once) — if one is ever added
-     * for this path, it must sit *outside* this method, since calling it twice would mint (and
-     * supersede) a second link for the same turn.
+     * further still to cover everything ever asked for this `(userId, provider)`) and packages it
+     * as a normal [ApiCallOutcome], computed exactly once per [callAuthorizedApi] call. There is no
+     * tool-level or executor-level retry of a failed call in this codebase (unlike MCP tools, which
+     * do retry once) — if one is ever added for this path, it must sit *outside* this method, since
+     * calling it twice would mint (and supersede) a second link for the same turn.
+     *
+     * [existingGrantedScopes] — the credential's *current* grantedScopes, if any — is folded in
+     * explicitly rather than relying solely on [startAuthorization]'s own widening: that widening
+     * reads the durable requested-scope tracking, which has its own staleness cutoff (see
+     * [SkillOAuthPendingStateRepository.beginAuthorization]) and can therefore treat an old,
+     * completed grant as "abandoned" and drop it. Without this, reconnecting for one skill whose
+     * own token merely expired could silently narrow (and kick out) another skill's still-valid
+     * grant on the same shared credential the moment the callback saves a scope-narrower token.
      */
     private suspend fun reconnectRequired(
         userId: String,
         provider: String,
         skillId: String,
         requiredScopes: List<String>,
+        existingGrantedScopes: List<String>,
         reason: String,
     ): ApiCallReconnectRequired {
-        val authorization = startAuthorization(userId, provider, skillId, requiredScopes)
+        val scopesToRequest = (existingGrantedScopes + requiredScopes).distinct()
+        val authorization = startAuthorization(userId, provider, skillId, scopesToRequest)
         return ApiCallReconnectRequired(
             authorizationUrl = authorization.url,
             message = "$reason Open this link to reconnect, then retry: ${authorization.url}",
@@ -227,9 +232,10 @@ class SkillOAuthApiImpl(
         // own pending state was already consumed above, so a second, unrelated authorization could
         // have started (and even finished) while this exchange was in flight. In the common case
         // that second authorization already widened its own request to include this one's scopes
-        // (see startAuthorization/SkillOAuthRequestedScopesRepository), so nothing real is lost even
-        // when this write does get discarded — the browser still reports success to this callback's
-        // user regardless, since their consent with the provider genuinely succeeded.
+        // (see startAuthorization/SkillOAuthPendingStateRepository.beginAuthorization), so nothing
+        // real is lost even when this write does get discarded — the browser still reports success
+        // to this callback's user regardless, since their consent with the provider genuinely
+        // succeeded.
         credentialRepository.upsert(
             SkillOAuthCredential(
                 userId = pending.userId,
@@ -287,16 +293,19 @@ class SkillOAuthApiImpl(
             )
         val refreshed = try {
             providerClient.refresh(crypto.decrypt(refreshToken))
-        } catch (e: SkillOAuthException) {
-            // A confirmed OAuth error from the provider (e.g. invalid_grant) — as opposed to a
-            // network-level failure to even reach it, which throws a different exception type and
-            // is deliberately not caught here — means this refresh token can never work again.
-            // Clear it (generation-guarded, so this can't clobber a fresher credential that's since
-            // replaced this one) so the next status()/callAuthorizedApi call correctly reports
-            // "not connected" instead of retrying the same broken refresh token forever.
-            credentialRepository.upsert(credential.copy(refreshTokenEncrypted = null))
+        } catch (e: OAuthProviderErrorException) {
+            // Only `invalid_grant` (RFC 6749 §5.2) actually confirms the refresh token/grant itself
+            // is dead. Other codes say nothing about the token's validity: `invalid_client` is our
+            // own client_id/secret misconfiguration, and `server_error`/`temporarily_unavailable`
+            // are meant to be retried, not treated as "reconnect required" — clearing a perfectly
+            // good refresh token over one of those would force a needless full consent flow.
+            if (e.errorCode == "invalid_grant") {
+                // Generation-guarded, so this can't clobber a fresher credential that's since
+                // replaced this one — see credentialRepository.upsert's doc comment.
+                credentialRepository.upsert(credential.copy(refreshTokenEncrypted = null))
+            }
             throw SkillOAuthException(
-                "OAuth refresh token for '${credential.provider}' is no longer valid (${e.message})."
+                "OAuth refresh for '${credential.provider}' failed (${e.errorCode}): ${e.message}."
             )
         }
         val now = clock.instant()

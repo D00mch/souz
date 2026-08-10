@@ -90,8 +90,9 @@ class AuthorizationCodeOAuthClient(
     private fun String.toTokenResult(): OAuthTokenResult {
         val parsed = mapper.readValue(this, OAuthTokenResponse::class.java)
         val accessToken = parsed.access_token
-            ?: throw SkillOAuthException(
-                "OAuth token request failed: ${parsed.error ?: "unknown_error"} ${parsed.error_description.orEmpty()}"
+            ?: throw OAuthProviderErrorException(
+                errorCode = parsed.error ?: "unknown_error",
+                message = "OAuth token request failed: ${parsed.error ?: "unknown_error"} ${parsed.error_description.orEmpty()}",
             )
         return OAuthTokenResult(
             accessToken = accessToken,

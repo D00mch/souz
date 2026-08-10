@@ -97,4 +97,4 @@ data class ApiCallReconnectRequired(
     val message: String,
 ) : ApiCallOutcome
 
-class SkillOAuthException(message: String) : Exception(message)
+open class SkillOAuthException(message: String) : Exception(message)

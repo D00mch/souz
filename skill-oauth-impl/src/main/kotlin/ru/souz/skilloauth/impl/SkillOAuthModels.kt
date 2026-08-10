@@ -49,63 +49,46 @@ data class SkillOAuthPendingState(
     val skillId: String,
     val provider: String,
     val requestedScopes: List<String>,
-    /** Snapshot of [SkillOAuthRequestedScopesRepository]'s generation at the moment this state was
-     *  created — carried into [SkillOAuthCredential.generation] once this flow's callback saves. */
+    /** Snapshot of the durable requested-scope tracking's generation counter (see
+     *  [SkillOAuthPendingStateRepository.beginAuthorization]) at the moment this state was created —
+     *  carried into [SkillOAuthCredential.generation] once this flow's callback saves. */
     val generation: Long,
     val expiresAt: Instant,
 )
 
 interface SkillOAuthPendingStateRepository {
     /**
-     * Creates [pending], or — if a still-live pending state already exists for the same
-     * `(userId, provider)` — supersedes it in place: the old `state` becomes invalid. Backed by a
-     * single DB upsert (`insert ... on conflict (user_id, provider) do update`, guarded by a unique
-     * index on that pair), not a separate read-then-write — two concurrent calls for the same
-     * `(userId, provider)` can therefore never both "win" and leave two live pending states. Unlike
-     * an earlier version of this method, it does *not* merge `requestedScopes` itself — the caller
-     * (`startAuthorization`) is expected to have already computed the right value via
-     * [SkillOAuthRequestedScopesRepository], which survives past this state being consumed and is
-     * therefore the actual source of truth for "what's been requested so far".
-     */
-    suspend fun upsertSupersedingByUserAndProvider(pending: SkillOAuthPendingState): SkillOAuthPendingState
-
-    /** Atomically deletes and returns the pending state if present and not expired as of [now]. */
-    suspend fun consume(state: String, now: Instant): SkillOAuthPendingState?
-}
-
-/** The cumulative union of every scope ever requested for one `(userId, provider)` pair, plus a
- *  monotonic [generation] counter bumped alongside it — see [SkillOAuthRequestedScopesRepository]. */
-data class SkillOAuthRequestedScopesState(
-    val requestedScopes: List<String>,
-    val generation: Long,
-)
-
-interface SkillOAuthRequestedScopesRepository {
-    /**
-     * Atomically folds [scopes] into whatever's already on file for `(userId, provider)` and bumps
-     * the generation counter, under a single row lock (`select ... for update`) — a concurrent call
-     * for the same pair blocks until this one commits, then sees its result rather than racing it.
+     * Starts (or supersedes) the one live authorization attempt for `(userId, provider)`, atomically:
+     * 1. folds [scopes] into the durable, per-`(userId, provider)` requested-scope tracking — which,
+     *    unlike a pending state, is never deleted just because a callback consumed its state, so a
+     *    second, unrelated authorization still widens on top of a first one that's mid-exchange —
+     *    treating a row untouched since before [activeSince] as absent (a long-abandoned request
+     *    doesn't get silently resurrected into an unrelated, much later authorization);
+     * 2. bumps that pair's monotonic generation counter;
+     * 3. supersedes any existing pending state for the same pair with a fresh one ([state]) carrying
+     *    the merged scopes and new generation — the old `state`, if opened afterwards, fails cleanly
+     *    as invalid/expired rather than corrupting anything.
      *
-     * This is what actually closes the race a unique index on the (transient) pending-states table
-     * alone cannot: by the time a callback consumes its own pending state (the first thing
-     * `handleCallback` does), that row is gone, so a second, unrelated `startAuthorization` call has
-     * nothing left to supersede *there*. This table's row, unlike a pending state, is never deleted
-     * except on an explicit disconnect — so the second call still sees, and widens on top of,
-     * everything requested by the first, in-flight one. In the common case both flows converge on
-     * the same (unioned) request before either is completed by the user, so neither one's real grant
-     * ends up narrower than the other's.
-     *
-     * A row last touched before [activeSince] is treated as if it didn't exist — its scopes are
-     * *not* folded in, only [scopes] is used as the new baseline (though [generation] still keeps
-     * increasing regardless) — so a long-abandoned request (its own authorize link expired, user
-     * never completed it) doesn't get silently resurrected into an unrelated, much later
-     * authorization.
+     * All three happen under one row lock (`select ... for update` on the requested-scope tracking
+     * row, held for the whole transaction) rather than as separate round-trips — a concurrent call
+     * for the same pair blocks until this one fully commits, including its pending-state write. That
+     * matters: splitting this into two separate transactions (bump generation, *then* separately
+     * write the pending state) leaves a window where an older call, paused between the two, can
+     * still unconditionally overwrite a newer call's already-written pending state with its own
+     * stale one — bumping the generation first doesn't help if the pending-state write itself isn't
+     * guarded by it too. A single lock spanning both closes that window instead of just narrowing it.
      */
-    suspend fun mergeAndBump(
+    suspend fun beginAuthorization(
+        state: String,
         userId: String,
+        skillId: String,
         provider: String,
         scopes: List<String>,
         now: Instant,
         activeSince: Instant,
-    ): SkillOAuthRequestedScopesState
+        expiresAt: Instant,
+    ): SkillOAuthPendingState
+
+    /** Atomically deletes and returns the pending state if present and not expired as of [now]. */
+    suspend fun consume(state: String, now: Instant): SkillOAuthPendingState?
 }

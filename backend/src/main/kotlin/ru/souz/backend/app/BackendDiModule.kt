@@ -93,11 +93,9 @@ import ru.souz.skilloauth.impl.OAuthProviderCatalog
 import ru.souz.skilloauth.impl.OAuthProviderClient
 import ru.souz.skilloauth.impl.PostgresSkillOAuthCredentialRepository
 import ru.souz.skilloauth.impl.PostgresSkillOAuthPendingStateRepository
-import ru.souz.skilloauth.impl.PostgresSkillOAuthRequestedScopesRepository
 import ru.souz.skilloauth.impl.SkillOAuthApiImpl
 import ru.souz.skilloauth.impl.SkillOAuthCredentialRepository
 import ru.souz.skilloauth.impl.SkillOAuthPendingStateRepository
-import ru.souz.skilloauth.impl.SkillOAuthRequestedScopesRepository
 import ru.souz.skilloauth.impl.SkillOAuthTokenCrypto
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.skills.ToolRunSkillCommand
@@ -153,7 +151,6 @@ fun backendDiModule(
     bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
     bindSingleton<SkillOAuthCredentialRepository> { PostgresSkillOAuthCredentialRepository(instance()) }
     bindSingleton<SkillOAuthPendingStateRepository> { PostgresSkillOAuthPendingStateRepository(instance()) }
-    bindSingleton<SkillOAuthRequestedScopesRepository> { PostgresSkillOAuthRequestedScopesRepository(instance()) }
     // Not gated by a feature flag, but genuinely optional: a fresh backend deployment has no
     // registered OAuth provider apps yet, and skill OAuth must never be able to take the whole
     // process down over that (see incident where a missing SKILL_OAUTH_TOKEN_ENCRYPTION_KEY threw
@@ -186,7 +183,6 @@ fun backendDiModule(
             SkillOAuthApiImpl(
                 credentialRepository = instance(),
                 pendingStateRepository = instance(),
-                requestedScopesRepository = instance(),
                 crypto = instance(),
                 providers = skillOAuthProviders,
             )
