@@ -12,7 +12,7 @@ Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCate
 
 Loading bundles into the inventory would expand the prompt and trust surface. For hosts that enable approval, reusing it across users, hashes, or policies can return or execute content that was never approved.
 
-The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before reusing the legacy command implementation.
+The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before using the concrete command executor.
 
 ## Safe changes
 

@@ -30,7 +30,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.giga.toGiga
 import ru.souz.llms.restJsonMapper
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
@@ -334,7 +333,7 @@ class SkillRuntimeToolsTest {
         assertFalse(genericResult["stdout"].asText().contains("truncated"))
         coVerify(exactly = 1) { repository.loadSkillBundle(USER_ID, fileSkill.skillId) }
 
-        val legacyResult = commandTool.suspendInvoke(
+        val directResult = commandTool.suspendInvoke(
             ToolRunSkillCommand.Input(
                 skillId = "file-skill",
                 runtime = SandboxCommandRuntime.BASH,
@@ -349,7 +348,7 @@ class SkillRuntimeToolsTest {
             ),
             ToolInvocationMeta(userId = USER_ID),
         )
-        assertContains(legacyResult, "...[truncated")
+        assertContains(directResult, "...[truncated")
     }
 
     @Test
@@ -386,7 +385,7 @@ class SkillRuntimeToolsTest {
             import(portableSkillToolsDiModule())
         }
 
-        val legacy = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL)
+        val command = direct.instance<ToolRunSkillCommand>()
         val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
         val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
         val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
@@ -398,7 +397,7 @@ class SkillRuntimeToolsTest {
         val concreteRuntimeCommand = direct.instance<ToolInvokeSkill>()
         val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
-        assertEquals(ToolRunSkillCommand.NAME, legacy.fn.name)
+        assertEquals(ToolRunSkillCommand.NAME, command.name)
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
         assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
         assertEquals(ToolSearchMemory.NAME, searchMemory.fn.name)
@@ -433,14 +432,12 @@ class SkillRuntimeToolsTest {
         }
 
         val command = direct.instance<ToolRunSkillCommand>()
-        val legacy = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL)
         val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
         val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
         val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
         val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
         assertEquals(ToolRunSkillCommand.NAME, command.name)
-        assertEquals(ToolRunSkillCommand.NAME, legacy.fn.name)
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
         assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
         assertEquals(ToolSearchMemory.NAME, searchMemory.fn.name)
@@ -456,7 +453,6 @@ class SkillRuntimeToolsTest {
         toolCatalog = catalog,
         toolsFilter = filter,
         skillBundleProvider = repository,
-        legacyCommandTool = ToolRunSkillCommand(mockk(relaxed = true)).toGiga(),
         approvalGate = approvalGate,
     )
 

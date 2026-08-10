@@ -227,7 +227,6 @@ fun backendDiModule(
             clientToolCatalog = clientSkills,
             clientSkillBundleProvider = clientSkills,
             skillRegistryRepository = instance<SkillRegistryRepository>(),
-            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             commandTool = instance<ToolRunSkillCommand>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),

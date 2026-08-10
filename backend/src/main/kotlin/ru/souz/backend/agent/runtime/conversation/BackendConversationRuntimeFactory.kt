@@ -42,7 +42,6 @@ class BackendConversationRuntimeFactory(
     private val clientToolCatalog: AgentToolCatalog,
     private val clientSkillBundleProvider: SkillBundleProvider,
     private val skillRegistryRepository: SkillRegistryRepository,
-    private val legacyCommandTool: LLMToolSetup,
     private val commandTool: ToolRunSkillCommand,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
@@ -96,7 +95,6 @@ class BackendConversationRuntimeFactory(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
-            legacyCommandTool = legacyCommandTool,
             approvalGate = null,
         )
         val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(

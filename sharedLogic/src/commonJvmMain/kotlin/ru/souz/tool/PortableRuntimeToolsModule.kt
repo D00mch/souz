@@ -113,9 +113,6 @@ fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRun
     bindSingleton {
         ToolRunSkillCommand(sandboxResolver = instance())
     }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
-        instance<ToolRunSkillCommand>().toGiga()
-    }
     bindSingleton { KnowledgeRetriever(instance()) }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
         ToolGetKnowledge(retriever = instance())
@@ -135,7 +132,6 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
             toolCatalog = instance(),
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
-            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }

@@ -3,7 +3,9 @@ package ru.souz.tool.skills
 import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import ru.souz.agent.skills.SkillId
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.giga.toolInputParameters
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandResult
@@ -205,6 +207,10 @@ class ToolRunSkillCommand(
 
     companion object {
         const val NAME = "RunSkillCommand"
+
+        internal fun executionInputParameters(): LLMRequest.Parameters =
+            toolInputParameters<Input>()
+
         private const val BUNDLES_DIRECTORY_NAME = "bundles"
         private const val DEFAULT_TIMEOUT_MILLIS = 60_000L
         private const val MAX_TIMEOUT_MILLIS = 300_000L

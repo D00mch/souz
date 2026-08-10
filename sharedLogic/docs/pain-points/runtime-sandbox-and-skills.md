@@ -6,7 +6,7 @@
 - `FileSystemSkillRegistryRepository` and `RunSkillCommand` must use the same single-user bundle layout.
 - Skill metadata, immutable hash-addressed bundles, and validation records stay behind `SandboxFileSystem`. Bundle loading rejects escaping paths, symlinks, non-regular files, binary content, and invalid UTF-8.
 - `RunSkillCommand` accepts only a skill activated for the current turn and keeps its script and working directory within that skill bundle.
-- The legacy command and generic `RunSkillCommand` share one concrete executor. Generic bundle calls bind the current ID, hash, supporting paths, and active-skill authorization internally, then return the complete `SandboxCommandResult` for later Knowledge offloading.
+- `ToolRunSkillCommand` owns the file-backed execution input schema and concrete executor. Generic bundle calls bind the current ID, hash, supporting paths, and active-skill authorization internally, then return the complete `SandboxCommandResult` for later Knowledge offloading.
 - `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` form the separately tagged core-tool family and remain outside `AgentToolCatalog`. `SearchMemory` is universal to both agent graphs; its `ConversationMemoryRuntime` host may report structured `memory_unavailable`. Desktop search uses the persistent owner and only global plus current-conversation session scopes. File-backed Skill detail and generic execution require shared approval before returning `SKILL.md` or running bundled commands when an approval gate is provided by the host.
 
 - The Skill discovery tools and `ToolInvokeSkill` implement `LLMToolSetup` directly so their structured results are serialized exactly once. `ToolInvokeSkill` must also preserve the complete `LLMRequest.Message`, including attachments, when delegating to a compiled tool. `ToolSetup.toGiga()` cannot preserve these behaviors because its contract returns `String` and serializes that value again.
@@ -32,7 +32,7 @@ JVM local mode supports `SandboxConversationKnowledgeStore` only when `stateRoot
 - Pass `ToolInvocationMeta` through every file or command operation and resolve paths at the call boundary.
 - Preserve path containment and bundle validation when adding repository or command features.
 - When changing the skill layout, update the repository, command tool, host DI wiring, Docker entrypoint, and tests together.
-- Keep the separately tagged skill tools out of the catalog until their graph owns them. Derive file-backed arguments from the legacy command schema while excluding model-supplied identity and authorization fields.
+- Keep the separately tagged skill tools out of the catalog until their graph owns them. Derive file-backed arguments from the concrete command input schema while excluding model-supplied identity and authorization fields.
 - Do not adapt the Skill discovery tools or `ToolInvokeSkill` through `ToolSetup.toGiga()` unless `ToolSetup` gains structured result and attachment-preserving delegation support.
 - Keep Knowledge paths internal: callers provide opaque UUIDs, never filesystem paths. Preserve atomic JSON writes, the UTF-8 retention cap, whole-code-point head/tail boundaries, record validation, and conversation-only recursive cleanup.
 - Build Knowledge paths as slash-delimited sandbox strings. Docker runtime paths are POSIX container paths and must not pass through host `Path` semantics.

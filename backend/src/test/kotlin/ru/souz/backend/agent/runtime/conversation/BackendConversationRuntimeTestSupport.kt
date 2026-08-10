@@ -22,7 +22,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.giga.toGiga
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.tool.skills.ToolRunSkillCommand
 
@@ -52,7 +51,6 @@ internal fun testBackendConversationRuntimeFactory(
     clientToolCatalog = clientToolCatalog,
     clientSkillBundleProvider = clientSkillBundleProvider,
     skillRegistryRepository = skillRegistryRepository,
-    legacyCommandTool = commandTool.toGiga(),
     commandTool = commandTool,
     getKnowledgeTool = testCoreTool("GetKnowledge"),
     searchKnowledgeTool = testCoreTool("SearchKnowledge"),

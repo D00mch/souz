@@ -24,9 +24,11 @@ class ToolGetSkillByName(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
-    private val legacyCommandTool: LLMToolSetup,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
+    private val fileSkillInputSchema =
+        ToolRunSkillCommand.executionInputParameters().withoutInternalBindings()
+
     data class Input(
         val skillId: String = "",
     )
@@ -182,7 +184,7 @@ class ToolGetSkillByName(
     )
 
     private fun fileSkillExecutionSchema(): SkillExecutionSchema = SkillExecutionSchema(
-        inputSchema = legacyCommandTool.fn.parameters.withoutLegacyBindings(),
+        inputSchema = fileSkillInputSchema,
         returnSchema = sandboxCommandResultSchema(),
     )
 
@@ -196,7 +198,7 @@ class ToolGetSkillByName(
             .filterNot { it == SKILL_MARKDOWN_PATH },
     )
 
-    private fun LLMRequest.Parameters.withoutLegacyBindings(): LLMRequest.Parameters = copy(
+    private fun LLMRequest.Parameters.withoutInternalBindings(): LLMRequest.Parameters = copy(
         properties = properties - setOf("skillId", "activeSkills"),
         required = required - setOf("skillId", "activeSkills"),
     )
