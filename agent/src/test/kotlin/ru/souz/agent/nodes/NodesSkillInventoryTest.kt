@@ -6,11 +6,10 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillManifest
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.agent.skills.registry.toInventoryEntry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
@@ -59,7 +58,6 @@ class NodesSkillInventoryTest {
         assertFalse(result.history.first().content.contains("Summarize papers."))
         assertFalse(result.history.first().content.contains("obsolete effective prompt"))
         coVerify(exactly = 1) { repository.listSkillInventoryIds(any()) }
-        coVerify(exactly = 0) { repository.listSkillInventory(any()) }
     }
 
     @Test
@@ -186,8 +184,6 @@ class NodesSkillInventoryTest {
 
     private fun repository(vararg skills: StoredSkill): SkillRegistryRepository =
         mockk(relaxed = true) {
-            coEvery { listSkills(any()) } returns skills.toList()
-            coEvery { listSkillInventory(any()) } returns skills.map { it.toInventoryEntry() }
             coEvery { listSkillInventoryIds(any()) } returns skills.map { it.skillId }
         }
 

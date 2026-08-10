@@ -1,7 +1,7 @@
 package ru.souz.backend
 
 import java.time.Instant
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.registry.SkillRegistryRepository
@@ -10,10 +10,6 @@ import ru.souz.agent.skills.validation.SkillValidationRecord
 
 internal object TestSkillRegistryRepository : SkillRegistryRepository {
     override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = null
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? = null
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = StoredSkill(
         userId = userId,

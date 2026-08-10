@@ -1845,7 +1845,7 @@ class MemoryCoreTest {
                 MemoryConsolidationCandidate(
                     kind = MemoryFactKind.PROJECT_DECISION,
                     title = "Memory rollout boundary",
-                    body = "Memory stays desktop-only until Android and backend wiring are explicitly added.",
+                    body = "Memory stays desktop-only until backend wiring is explicitly added.",
                     canonicalKey = "project.decision.memory.rollout.boundary",
                     confidence = 0.9f,
                     importance = 0.9f,

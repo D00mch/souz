@@ -1,6 +1,6 @@
 # Souz
 
-Souz is a Kotlin Multiplatform AI assistant with desktop, Android, and backend hosts over shared agent and runtime modules.
+Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over shared agent and runtime modules.
 
 - Read and maintain this file and `docs/pain-points.md` before changing the repository.
 - Keep documentation concise and current-state only. Do not write change-history phrases such as “now we do”.
@@ -24,10 +24,9 @@ Souz is a Kotlin Multiplatform AI assistant with desktop, Android, and backend h
 - `:agent` — graph-based agent behavior, sessions, skills, and host SPIs.
 - `:native` — local llama.cpp runtime and native bridge.
 - `:ambientAgent` — ambient transcription semantics and local task analysis.
-- `:sharedLogic` — Android/JVM shared runtime logic, providers, tools, skills, memory, and sandboxes.
-- `:sharedUI` — Android/Desktop UI logic, ViewModels, host ports, and Compose UI.
+- `:sharedLogic` — shared JVM runtime logic, providers, tools, skills, memory, and sandboxes.
+- `:sharedUI` — shared desktop UI logic, ViewModels, host ports, and Compose UI.
 - `:desktopApp` — desktop composition root, OS integrations, persistence, and packaging.
-- `:androidApp` — Android application host and platform bindings.
 - `:backend` — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
 
 ## Verification
@@ -35,6 +34,5 @@ Souz is a Kotlin Multiplatform AI assistant with desktop, Android, and backend h
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.
 - Run the affected module's command from its `AGENTS.md`; use `./gradlew check` for repository-wide verification when the change warrants it.
 - Desktop entry point: `./gradlew :desktopApp:run`.
-- Android package: `./gradlew :androidApp:assembleDebug`.
 - Backend entry point: `./gradlew :backend:run`.
 - For documentation-only changes, validate local links and run `git diff --check`; runtime tests are unnecessary unless source behavior also changes.

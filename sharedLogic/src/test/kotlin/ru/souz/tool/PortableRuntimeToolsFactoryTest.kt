@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
 
 class PortableRuntimeToolsFactoryTest {
     @Test
-    fun `portable catalog exposes android safe tool categories`() {
+    fun `portable catalog exposes runtime safe tool categories`() {
         val filesToolUtil = mockk<FilesToolUtil>()
         val webResearchClient = WebResearchClient()
         val api = mockk<LLMChatAPI>()

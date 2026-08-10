@@ -6,7 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillBundleHasher
@@ -89,14 +89,8 @@ class FileSystemSkillRegistryRepositoryTest {
         repository.saveSkillBundle(userId = "user-1", bundle = bundle)
 
         val listed = repository.listSkills("user-1")
-        val byId = repository.getSkill("user-1", bundle.skillId)
-        val byName = repository.getSkillByName("user-1", bundle.manifest.name)
-
         assertEquals(1, listed.size)
         assertEquals(bundle.skillId, listed.single().skillId)
-        assertEquals(bundle.manifest, byId?.manifest)
-        assertEquals(bundle.skillId, byName?.skillId)
-        assertEquals(bundle.skillId, repository.getSkill("user-2", bundle.skillId)?.skillId)
     }
 
     @Test
@@ -125,38 +119,8 @@ class FileSystemSkillRegistryRepositoryTest {
         assertEquals(skillId, listed.skillId)
         assertEquals("loose_skill", listed.manifest.name)
         assertEquals(SkillBundleHasher.hash(loaded), listed.bundleHash)
-        assertEquals(listed, repository.getSkill("user-1", skillId))
         assertTrue(!skillRoot.resolve("stored-skill.json").exists())
         assertTrue(loaded.files.any { it.normalizedPath == "README.md" })
-    }
-
-    @Test
-    fun `lists loose skill inventory without loading supporting files or hashing bundle`() = runTest {
-        val stateRoot = createTempDirectory("skill-registry-loose-inventory-")
-        val paths = DefaultSouzPaths(stateRoot = stateRoot)
-        val repository = createRepository(paths)
-        val skillId = SkillId("loose-inventory-skill")
-        val skillRoot = paths.skillsDir.resolve(skillId.value)
-        Files.createDirectories(skillRoot)
-        Files.writeString(
-            skillRoot.resolve("SKILL.md"),
-            """
-                ---
-                name: loose_inventory_skill
-                description: Loose inventory fixture skill
-                ---
-                Loose instructions.
-            """.trimIndent(),
-        )
-        Files.writeString(skillRoot.resolve("payload.bin"), "This file is not allowed in full bundles.")
-
-        val inventory = repository.listSkillInventory("user-1").single()
-
-        assertEquals(skillId, inventory.skillId)
-        assertEquals("loose_inventory_skill", inventory.manifest.name)
-        assertEquals("Loose inventory fixture skill", inventory.manifest.description)
-        assertEquals(Instant.EPOCH, inventory.createdAt)
-        assertTrue(repository.listSkills("user-1").isEmpty())
     }
 
     @Test
@@ -170,7 +134,6 @@ class FileSystemSkillRegistryRepositoryTest {
         Files.write(skillRoot.resolve("SKILL.md"), ByteArray(2 * 1024 * 1024) { 'x'.code.toByte() })
 
         assertEquals(listOf(skillId), repository.listSkillInventoryIds("user-1"))
-        assertTrue(repository.listSkillInventory("user-1").isEmpty())
     }
 
     @Test
@@ -338,7 +301,7 @@ class FileSystemSkillRegistryRepositoryTest {
             .resolve("../../escape.txt")
             .normalize()
         assertTrue(!escapedPath.exists(), "Unexpected write outside bundle root: $escapedPath")
-        assertNull(repository.getSkill("user-1", skillId))
+        assertNull(repository.loadSkillBundle("user-1", skillId))
     }
 
     @Test

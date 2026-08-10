@@ -3,13 +3,6 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
     repositories {
-        google {
-            mavenContent {
-                includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
-                includeGroupAndSubgroups("com.google")
-            }
-        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -20,8 +13,6 @@ dependencyResolutionManagement {
         google {
             mavenContent {
                 includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
-                includeGroupAndSubgroups("com.google")
             }
         }
         mavenCentral()
@@ -44,5 +35,4 @@ include(":sharedUI")
 include(":skill-oauth-api")
 include(":skill-oauth-impl")
 include(":desktopApp")
-include(":androidApp")
 include(":backend")

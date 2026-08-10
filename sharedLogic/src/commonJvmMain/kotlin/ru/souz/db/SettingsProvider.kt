@@ -19,6 +19,8 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var aiTunnelKey: String?
     var anthropicKey: String?
     var openaiKey: String?
+    var openaiBaseUrl: String?
+    var openaiModel: String?
     var codexAccessToken: String?
     var codexRefreshToken: String?
     var codexAccountId: String?

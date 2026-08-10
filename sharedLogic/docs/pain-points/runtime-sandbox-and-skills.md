@@ -17,13 +17,13 @@
 
 ## Why this is fragile
 
-The same contracts back three different runtimes. JVM hosts select local or Docker mode; Android uses app-private filesystem roots and executes shell skills with POSIX `/system/bin/sh`. Android does not provide the Python or Node skill runtimes, and its `BASH` option is compatibility naming rather than a GNU Bash guarantee. A storage-scope mismatch makes an installed skill visible to activation but unavailable to command execution.
+The same contracts back local and Docker runtimes. JVM hosts select local or Docker mode. A storage-scope mismatch makes an installed skill visible to activation but unavailable to command execution.
 
 Skill discovery applies `AgentToolsFilter` on every discovery and invocation. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. Category discovery lists filtered compiled tools only. Compact graph inventory calls `SkillBundleProvider.listSkillInventoryIds`, which must not read loose `SKILL.md`, read supporting files, or hash loose bundles. Detail and execution load stored bundles by exact Skill ID.
 
 Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
 
-Local and Android sandboxes can share physical state roots across logical scopes, and Backend scope resolution can omit conversation identity. Knowledge isolation therefore comes from its internal hashed user/conversation path rather than `RuntimeSandbox.scope`. Local process execution is not a cross-tenant filesystem security boundary.
+Local sandboxes can share physical state roots across logical scopes, and Backend scope resolution can omit conversation identity. Knowledge isolation therefore comes from its internal hashed user/conversation path rather than `RuntimeSandbox.scope`. Local process execution is not a cross-tenant filesystem security boundary.
 
 JVM local mode supports `SandboxConversationKnowledgeStore` only when `stateRootPath` is located beneath `homePath`. `LocalSandboxFileSystem` permits filesystem access only beneath the home root, so a local state root outside it cannot be read, written, or cleared through the Knowledge store. This unsupported configuration remains a limitation to revisit if external local state roots are needed.
 
@@ -31,7 +31,6 @@ JVM local mode supports `SandboxConversationKnowledgeStore` only when `stateRoot
 
 - Pass `ToolInvocationMeta` through every file or command operation and resolve paths at the call boundary.
 - Preserve path containment and bundle validation when adding repository or command features.
-- Keep Android skill scripts POSIX-compatible unless Android explicitly gains another runtime.
 - When changing skill layout or scope, update the repository, command tool, host DI wiring, Docker entrypoint, and tests together.
 - Keep the separately tagged skill tools out of the catalog until their graph owns them. Derive file-backed arguments from the legacy command schema while excluding model-supplied identity and authorization fields.
 - Do not adapt the Skill discovery tools or `ToolInvokeSkill` through `ToolSetup.toGiga()` unless `ToolSetup` gains structured result and attachment-preserving delegation support.
@@ -46,7 +45,6 @@ Run:
 
 ```zsh
 ./gradlew :sharedLogic:jvmTest --tests 'ru.souz.runtime.sandbox.*' --tests 'ru.souz.skills.*' --tests 'ru.souz.tool.skills.*' --tests 'ru.souz.tool.memory.*'
-./gradlew :sharedLogic:compileAndroidMain
 ```
 
 For Knowledge storage changes, include `--tests 'ru.souz.knowledge.*'` in the JVM test selection.

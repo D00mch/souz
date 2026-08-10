@@ -66,8 +66,6 @@ class DefaultRuntimeSandboxFactory(
                 DockerRuntimeSandbox.defaultContainerName(scope),
             )
         }
-
-        SandboxMode.ANDROID -> error("Android sandbox mode is not available in the JVM runtime.")
     }
 
     companion object {

@@ -29,9 +29,12 @@ class LlmBuildProfile(
 
     fun normalizeModel(model: LLMModel): LLMModel = if (isModelAvailable(model)) model else defaultModel
 
-    fun isModelAvailable(model: LLMModel): Boolean = when (model.provider) {
-        LlmProvider.LOCAL -> model in localProviderAvailability.availableGigaModels()
-        else -> model.provider in availableProviders
+    fun isModelAvailable(model: LLMModel): Boolean {
+        if (model == LLMModel.OpenAICompatibleCustom) return false
+        return when (model.provider) {
+            LlmProvider.LOCAL -> model in localProviderAvailability.availableGigaModels()
+            else -> model.provider in availableProviders
+        }
     }
 
     fun findModelByAlias(alias: String): LLMModel? = findLLMModel(alias)?.takeIf(::isModelAvailable)

@@ -5,7 +5,7 @@ import io.mockk.mockk
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.db.SettingsProvider

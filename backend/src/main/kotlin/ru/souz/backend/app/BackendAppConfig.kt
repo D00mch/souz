@@ -89,13 +89,23 @@ data class BackendPostgresConfig(
     val schema: String,
     val maxPoolSize: Int,
     val connectionTimeoutMs: Long,
+    val dsn: String? = null,
 ) {
     fun validate(): BackendPostgresConfig {
-        requireText(host, "SOUZ_BACKEND_DB_HOST / souz.backend.db.host")
-        if (port !in 1..65_535) {
-            throw BackendConfigurationException("Postgres port must be between 1 and 65535.")
+        if (dsn == null) {
+            requireText(host, "SOUZ_BACKEND_DB_HOST / souz.backend.db.host")
+            if (port !in 1..65_535) {
+                throw BackendConfigurationException("Postgres port must be between 1 and 65535.")
+            }
+            requireText(database, "SOUZ_BACKEND_DB_NAME / souz.backend.db.name")
+        } else {
+            requireText(dsn, "POSTGRES_DSN / souz.backend.db.dsn")
+            if (!dsn.startsWith(POSTGRES_JDBC_PREFIX)) {
+                throw BackendConfigurationException(
+                    "POSTGRES_DSN / souz.backend.db.dsn must be a PostgreSQL JDBC URL."
+                )
+            }
         }
-        requireText(database, "SOUZ_BACKEND_DB_NAME / souz.backend.db.name")
         requireText(user, "SOUZ_BACKEND_DB_USER / souz.backend.db.user")
         requireText(schema, "SOUZ_BACKEND_DB_SCHEMA / souz.backend.db.schema")
         if (maxPoolSize <= 0) {
@@ -111,6 +121,13 @@ data class BackendPostgresConfig(
         if (value.isBlank()) {
             throw BackendConfigurationException("$keyDescription must not be blank.")
         }
+    }
+
+    fun jdbcUrl(): String =
+        dsn ?: "jdbc:postgresql://$host:$port/$database"
+
+    private companion object {
+        const val POSTGRES_JDBC_PREFIX = "jdbc:postgresql:"
     }
 }
 
@@ -175,47 +192,7 @@ data class BackendAppConfig(
                         propertyKey = "souz.backend.proxyToken",
                     )?.trim()?.takeIf { it.isNotEmpty() },
                 ),
-                postgres = BackendPostgresConfig(
-                    host = source.stringValue(
-                        envKey = "SOUZ_BACKEND_DB_HOST",
-                        propertyKey = "souz.backend.db.host",
-                        default = "127.0.0.1",
-                    ),
-                    port = source.intValue(
-                        envKey = "SOUZ_BACKEND_DB_PORT",
-                        propertyKey = "souz.backend.db.port",
-                        default = 5432,
-                    ),
-                    database = source.stringValue(
-                        envKey = "SOUZ_BACKEND_DB_NAME",
-                        propertyKey = "souz.backend.db.name",
-                        default = "souz",
-                    ),
-                    user = source.stringValue(
-                        envKey = "SOUZ_BACKEND_DB_USER",
-                        propertyKey = "souz.backend.db.user",
-                        default = "souz",
-                    ),
-                    password = source.value(
-                        envKey = "SOUZ_BACKEND_DB_PASSWORD",
-                        propertyKey = "souz.backend.db.password",
-                    )?.trim()?.takeIf { it.isNotEmpty() },
-                    schema = source.stringValue(
-                        envKey = "SOUZ_BACKEND_DB_SCHEMA",
-                        propertyKey = "souz.backend.db.schema",
-                        default = "public",
-                    ),
-                    maxPoolSize = source.intValue(
-                        envKey = "SOUZ_BACKEND_DB_MAX_POOL_SIZE",
-                        propertyKey = "souz.backend.db.maxPoolSize",
-                        default = 10,
-                    ),
-                    connectionTimeoutMs = source.longValue(
-                        envKey = "SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS",
-                        propertyKey = "souz.backend.db.connectionTimeoutMs",
-                        default = 30_000L,
-                    ),
-                ),
+                postgres = source.postgresConfig(),
                 masterKey = source.value(
                     envKey = "SOUZ_MASTER_KEY",
                     propertyKey = "souz.masterKey",
@@ -298,6 +275,68 @@ data class BackendAppConfig(
                 ),
             )
     }
+}
+
+private fun BackendConfigSource.postgresConfig(): BackendPostgresConfig {
+    val dsn = value(
+        envKey = "POSTGRES_DSN",
+        propertyKey = "souz.backend.db.dsn",
+    )?.trim()?.takeIf { it.isNotEmpty() }
+
+    return BackendPostgresConfig(
+        host = if (dsn == null) {
+            stringValue(
+                envKey = "SOUZ_BACKEND_DB_HOST",
+                propertyKey = "souz.backend.db.host",
+                default = "127.0.0.1",
+            )
+        } else {
+            "127.0.0.1"
+        },
+        port = if (dsn == null) {
+            intValue(
+                envKey = "SOUZ_BACKEND_DB_PORT",
+                propertyKey = "souz.backend.db.port",
+                default = 5432,
+            )
+        } else {
+            5432
+        },
+        database = if (dsn == null) {
+            stringValue(
+                envKey = "SOUZ_BACKEND_DB_NAME",
+                propertyKey = "souz.backend.db.name",
+                default = "souz",
+            )
+        } else {
+            "souz"
+        },
+        user = stringValue(
+            envKey = "SOUZ_BACKEND_DB_USER",
+            propertyKey = "souz.backend.db.user",
+            default = "souz",
+        ),
+        password = value(
+            envKey = "SOUZ_BACKEND_DB_PASSWORD",
+            propertyKey = "souz.backend.db.password",
+        )?.trim()?.takeIf { it.isNotEmpty() },
+        schema = stringValue(
+            envKey = "SOUZ_BACKEND_DB_SCHEMA",
+            propertyKey = "souz.backend.db.schema",
+            default = "public",
+        ),
+        maxPoolSize = intValue(
+            envKey = "SOUZ_BACKEND_DB_MAX_POOL_SIZE",
+            propertyKey = "souz.backend.db.maxPoolSize",
+            default = 10,
+        ),
+        connectionTimeoutMs = longValue(
+            envKey = "SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS",
+            propertyKey = "souz.backend.db.connectionTimeoutMs",
+            default = 30_000L,
+        ),
+        dsn = dsn,
+    )
 }
 
 private fun BackendConfigSource.stringValue(

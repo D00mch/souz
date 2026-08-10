@@ -2,15 +2,15 @@
 
 [Website](https://souz.app) · [Releases](https://github.com/D00mch/souz/releases) · [Contributing](docs/CONTRIBUTING.md)
 
-Souz is a Kotlin Multiplatform AI assistant focused on **safe, observable, user-approved automation**. It combines a Compose Desktop app, an Android chat-agent entry point, a reusable graph-based agent runtime, shared backend-safe tools, local and cloud LLM providers, sandbox-aware file/process access, and an HTTP backend for web/API integrations.
+Souz is a Kotlin Multiplatform AI assistant focused on **safe, observable, user-approved automation**. It combines a Compose Desktop app, a reusable graph-based agent runtime, shared backend-safe tools, local and cloud LLM providers, sandbox-aware file/process access, and an HTTP backend for web/API integrations.
 
 The project is designed around one core idea: an AI agent should be useful enough to operate your desktop and data, but transparent and constrained enough that users can trust what it is doing.
 
 ## Highlights
 
-- **Kotlin Multiplatform app surfaces** built with Compose for Desktop plus an Android chat-agent entry point.
+- **Kotlin Multiplatform app surfaces** built with Compose for Desktop.
 - **Selectable graph agents**: the default `GraphBasedAgent` uses memory recall, direct-tool classification, compact Skill inventory, and MCP injection, while `SkillsGraphBasedAgent` exposes only Skill/Knowledge core tools.
-- **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools, plus an Android-safe LLM runtime surface for the Android chat-agent host.
+- **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, OpenAPI/Swagger docs, onboarding, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, and calculator.
@@ -40,6 +40,14 @@ docker compose up --build
 ```
 
 The backend listens on `http://127.0.0.1:8080` and PostgreSQL listens on `127.0.0.1:5432`. Override host ports with `SOUZ_BACKEND_HOST_PORT` and `SOUZ_POSTGRES_HOST_PORT` when needed. Local defaults use `SOUZ_MASTER_KEY=local-dev-master-key` and `SOUZ_BACKEND_PROXY_TOKEN=local-dev-proxy-token`.
+
+Docker Compose uses `SOUZ_DOCKER_SUBNET`, defaulting to `10.254.250.0/24`, for the local service network. Set it to another private subnet before `docker compose up` if that range overlaps with VPN or corporate routes.
+
+If a VPN route is reachable from the host but not from the backend container, run the backend with host networking:
+
+```bash
+docker compose -f compose.yaml -f compose.backend-host-network.yaml up --build
+```
 
 Protected `/v1` routes expect proxy-injected headers:
 
@@ -84,10 +92,9 @@ Codex models use one server-managed OAuth session because the refresh token, acc
 ├── llms/                   # Shared LLM DTOs, provider enums, model profiles, token logging
 ├── native/                 # llama.cpp bridge and local model runtime
 ├── ambientAgent/           # Ambient transcription semantics and local task analysis
-├── sharedLogic/            # Shared Android/JVM runtime logic, providers, tools, and sandboxes
+├── sharedLogic/            # Shared JVM runtime logic, providers, tools, and sandboxes
 ├── sharedUI/               # Shared Compose and desktop UI, view models, host ports, UI adapters, UI resources
 ├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
-├── androidApp/             # Android chat-agent host over sharedUI, sharedLogic, and graph agents
 ├── backend/                # Ktor HTTP backend over the shared agent runtime
 ├── scripts/                # Build, release, and packaging helper scripts
 ├── docs/                   # Project documentation
@@ -105,13 +112,12 @@ Gradle modules included by the build:
 :sharedLogic
 :sharedUI
 :desktopApp
-:androidApp
 :backend
 ```
 
 Module docs:
 
-- [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared Android/JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
+- [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
 
 ## Architecture (module structure)
 
@@ -119,10 +125,6 @@ Module docs:
 flowchart LR
     userNode["User"] --> desktopApp[":desktopApp\nDesktop entry + packaging"]
     desktopApp --> sharedUi[":sharedUI\nCompose UI + UI adapters"]
-    userNode --> androidApp[":androidApp\nAndroid chat entry"]
-    androidApp --> sharedUi
-    androidApp --> agentNode
-    androidApp --> runtimeNode
     sharedUi --> agentNode[":agent\nGraph agents"]
     sharedUi --> ambientNode[":ambientAgent\nAmbient speech analysis"]
     backendApi[":backend\nHTTP API"] --> agentNode
@@ -149,7 +151,6 @@ flowchart LR
 
 `:sharedUI` owns shared UI surfaces and the desktop experience:
 
-- Android-capable shared chat/settings surface for the Android chat-agent entry point.
 - Compose screens, ViewModels, app theme, reusable UI components, and setup/settings flows for desktop.
 - Chat UI with model/context selectors, attachments, send/mic controls, streaming state, speech output, and graph/thinking visualization.
 - Tool-management UI and permission/selection approval flows.
@@ -166,11 +167,10 @@ Souz keeps platform-specific logic at the edges:
 - `:graph-engine` contains no LLM/tool/agent knowledge; it only runs typed suspendable graph nodes.
 - `:agent` implements agent behavior on top of the graph engine.
 - `:ambientAgent` contains shared semantic-block and local task-analysis contracts plus the JVM transcription service.
-- `:sharedLogic` contains Android/JVM shared runtime services, portable tools, sandbox/skills infrastructure, provider clients, and platform-specific runtime implementations. See [`sharedLogic/README.md`](sharedLogic/README.md).
+- `:sharedLogic` contains shared JVM runtime services, portable tools, sandbox/skills infrastructure, provider clients, and platform-specific runtime implementations. See [`sharedLogic/README.md`](sharedLogic/README.md).
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
-- `:sharedUI` contains shared Compose and Desktop/KMP UI, view models, UI adapters, and desktop test coverage.
+- `:sharedUI` contains shared Compose and desktop UI, view models, UI adapters, and desktop test coverage.
 - `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
-- `:androidApp` contains the Android entry point, Android storage/settings adapters, and the Android bridge from shared chat UI events to the selected graph agent.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
 
 ## Agent graphs
@@ -271,14 +271,14 @@ Souz separates tool behavior from the execution environment through `RuntimeSand
 
 ```text
 RuntimeSandbox
-├── mode: LOCAL | DOCKER | ANDROID
+├── mode: LOCAL | DOCKER
 ├── scope: SandboxScope
 ├── runtimePaths: home, workspace, state, sessions, vector index, logs, models, native libs, skills
 ├── fileSystem: SandboxFileSystem
 └── commandExecutor: SandboxCommandExecutor
 ```
 
-JVM hosts use `LocalRuntimeSandbox` by default or opt into `DockerRuntimeSandbox` through `SOUZ_SANDBOX_MODE=docker`; Docker mode requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Android uses `AndroidRuntimeSandbox` with app-private filesystem roots and `/system/bin/sh` command execution. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`sharedLogic/README.md`](sharedLogic/README.md) for setup details.
+JVM hosts use `LocalRuntimeSandbox` by default or opt into `DockerRuntimeSandbox` through `SOUZ_SANDBOX_MODE=docker`; Docker mode requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`sharedLogic/README.md`](sharedLogic/README.md) for setup details.
 
 The default JVM state layout is under:
 
@@ -490,6 +490,8 @@ SOUZ_BACKEND_PROVIDER_BACKOFF_BASE_MS=500
 SOUZ_BACKEND_PROVIDER_BACKOFF_MAX_MS=5000
 
 # Postgres
+# Optional JDBC URL override for multi-host/TLS deployments.
+POSTGRES_DSN=jdbc:postgresql://172.24.69.16:5432,172.24.69.180:5432,172.24.69.229:5432/souz_preprod?sslmode=require
 SOUZ_BACKEND_DB_HOST=127.0.0.1
 SOUZ_BACKEND_DB_PORT=5432
 SOUZ_BACKEND_DB_NAME=souz
@@ -500,7 +502,7 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. WebSocket events require `skills`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. `SOUZ_BACKEND_AGENT` and `souz.backend.agent` select `graph` or `skills` for new conversations and default to `graph`; persisted conversations retain their stored agent. WebSocket events require `skills`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
 Backend executions snapshot each user's effective `enabledTools`. The snapshot controls direct-tool classification, tool-backed Skill inventory/category discovery, and generic `RunSkillCommand` delegation, and is retained when an execution resumes from an option. Core Skill/Knowledge tools and user-installed file-backed skills remain available.
 

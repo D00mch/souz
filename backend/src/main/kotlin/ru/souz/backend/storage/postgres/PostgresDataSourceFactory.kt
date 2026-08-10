@@ -12,7 +12,7 @@ object PostgresDataSourceFactory {
     fun create(config: BackendPostgresConfig): HikariDataSource {
         val postgresConfig = config.validate()
         val schema = postgresConfig.schema.postgresIdentifier()
-        val jdbcUrl = "jdbc:postgresql://${postgresConfig.host}:${postgresConfig.port}/${postgresConfig.database}"
+        val jdbcUrl = postgresConfig.jdbcUrl()
         ensureSchemaExists(jdbcUrl, postgresConfig, schema)
 
         val hikariConfig = HikariConfig().apply {

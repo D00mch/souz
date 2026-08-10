@@ -1,6 +1,6 @@
 package ru.souz.agent.skills.validation
 
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 
 /**
  * Cache for validation outcomes keyed by user, skill, bundle hash, and policy version.

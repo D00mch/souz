@@ -85,10 +85,11 @@ class OpenAIChatAPI(
             level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
+        openAiTlsDefaults()
     }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val response = client.post(CHAT_COMPLETIONS_URL) {
+        val response = client.post(chatCompletionsUrl) {
             setBody(buildChatRequest(body, stream = false))
         }
         val text = response.bodyAsText()
@@ -114,7 +115,7 @@ class OpenAIChatAPI(
         try {
             val accumulator = OpenAiStreamAccumulator()
 
-            client.preparePost(CHAT_COMPLETIONS_URL) {
+            client.preparePost(chatCompletionsUrl) {
                 setBody(buildChatRequest(body, stream = true))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
@@ -159,7 +160,7 @@ class OpenAIChatAPI(
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
-        val response = client.post(EMBEDDINGS_URL) {
+        val response = client.post(embeddingsUrl) {
             setBody(buildEmbeddingsRequest(body))
         }
         val text = response.bodyAsText()
@@ -662,6 +663,10 @@ class OpenAIChatAPI(
 
 
     private fun resolveChatModel(model: String): String {
+        if (model.isOpenAiCompatibleCustomModel()) {
+            OpenAIEndpointConfig.customChatModel(settingsProvider)?.let { return it }
+        }
+
         findOpenAiModelAlias(model)?.let { return it }
 
         val settingsModel = settingsProvider.gigaModel
@@ -690,18 +695,27 @@ class OpenAIChatAPI(
         val model = LLMModel.entries.firstOrNull {
             it.alias.equals(normalized, ignoreCase = true) || it.name.equals(normalized, ignoreCase = true)
         } ?: return null
-        if (model.provider == LlmProvider.OPENAI) {
+        if (model.provider == LlmProvider.OPENAI && model != LLMModel.OpenAICompatibleCustom) {
             return model.alias
         }
         return null
     }
 
     companion object {
-        private const val BASE_URL = "https://api.openai.com/v1"
-        private const val CHAT_COMPLETIONS_URL = "$BASE_URL/chat/completions"
-        private const val EMBEDDINGS_URL = "$BASE_URL/embeddings"
+        private const val CHAT_COMPLETIONS_PATH = "chat/completions"
+        private const val EMBEDDINGS_PATH = "embeddings"
     }
+
+    private val chatCompletionsUrl: String
+        get() = OpenAIEndpointConfig.endpoint(settingsProvider, CHAT_COMPLETIONS_PATH)
+
+    private val embeddingsUrl: String
+        get() = OpenAIEndpointConfig.endpoint(settingsProvider, EMBEDDINGS_PATH)
 }
+
+private fun String.isOpenAiCompatibleCustomModel(): Boolean =
+    equals(LLMModel.OpenAICompatibleCustom.alias, ignoreCase = true) ||
+        equals(LLMModel.OpenAICompatibleCustom.name, ignoreCase = true)
 
 private fun String.toNormalizedAssistantContent(): String? {
     if (this.isBlank()) return null

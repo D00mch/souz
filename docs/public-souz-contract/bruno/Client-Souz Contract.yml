@@ -1,0 +1,366 @@
+opencollection: 1.0.0
+info:
+  name: Client-Souz Contract
+config:
+  environments:
+    - name: local
+      variables:
+        - name: baseUrl
+          value: http://127.0.0.1:8080
+        - name: wsBaseUrl
+          value: ws://127.0.0.1:8080
+        - name: clientType
+          value: backend
+        - name: userId
+          value: 550e8400-e29b-41d4-a716-446655440000
+        - name: deviceId
+          value: device-tv-456
+        - name: createChatRequestId
+          value: client-create-chat-003
+        - name: messageRequestId1
+          value: request-003
+        - name: messageRequestId2
+          value: request-004
+        - name: chatId
+          value: 31befd1c-ca6e-4ba1-ac96-a27bda36caa1
+        - name: threadId
+          value: ''
+        - name: toolCallIdAsk
+          value: ''
+        - name: toolCallIdOpenMedia
+          value: ''
+        - name: wsUrl
+          value: ws://127.0.0.1:8080/v1/chats/31befd1c-ca6e-4ba1-ac96-a27bda36caa1/ws?clientType=backend
+items:
+  - info:
+      name: http
+      type: folder
+    items:
+      - info:
+          name: Create chat
+          type: http
+          seq: 1
+        http:
+          method: POST
+          url: '{{baseUrl}}/v1/chats'
+          headers:
+            - name: Content-Type
+              value: application/json
+          body:
+            type: json
+            data: |-
+              {
+                "userId": "{{userId}}",
+                "requestId": "{{createChatRequestId}}",
+                "clientType": "{{clientType}}",
+                "title": null
+              }
+        runtime:
+          scripts:
+            - type: tests
+              code: |-
+                const body = res.getBody();
+
+                test("status is 200 or 201", function () {
+                  expect([200, 201]).to.include(res.getStatus());
+                });
+
+                test("response echoes the create request id", function () {
+                  expect(body.requestId).to.equal(bru.getEnvVar("createChatRequestId"));
+                });
+
+                test("response contains a chat id", function () {
+                  expect(body.chat).to.be.an("object");
+                  expect(body.chat.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+                  expect(body.duplicate).to.be.a("boolean");
+                });
+
+                const wsBaseUrl = bru.getEnvVar("wsBaseUrl");
+                const clientType = bru.getEnvVar("clientType");
+                bru.setEnvVar("chatId", body.chat.id, { persist: true });
+                bru.setEnvVar("wsUrl", `${wsBaseUrl}/v1/chats/${body.chat.id}/ws?clientType=${clientType}`, { persist: true });
+        settings:
+          encodeUrl: true
+          timeout: 0
+          followRedirects: true
+          maxRedirects: 5
+      - info:
+          name: Create chat idempotent retry
+          type: http
+          seq: 2
+        http:
+          method: POST
+          url: '{{baseUrl}}/v1/chats'
+          headers:
+            - name: Content-Type
+              value: application/json
+          body:
+            type: json
+            data: |-
+              {
+                "userId": "{{userId}}",
+                "requestId": "{{createChatRequestId}}",
+                "clientType": "{{clientType}}",
+                "title": null
+              }
+        runtime:
+          scripts:
+            - type: tests
+              code: |-
+                const body = res.getBody();
+
+                test("status is 200 on retry", function () {
+                  expect(res.getStatus()).to.equal(200);
+                });
+
+                test("retry returns duplicate chat", function () {
+                  expect(body.requestId).to.equal(bru.getEnvVar("createChatRequestId"));
+                  expect(body.duplicate).to.equal(true);
+                  expect(body.chat.id).to.equal(bru.getEnvVar("chatId"));
+                });
+        settings:
+          encodeUrl: true
+          timeout: 0
+          followRedirects: true
+          maxRedirects: 5
+      - info:
+          name: Get thread status
+          type: http
+          seq: 3
+        http:
+          method: GET
+          url: '{{baseUrl}}/v1/chats/{{chatId}}/threads/{{threadId}}?clientType={{clientType}}'
+        runtime:
+          scripts:
+            - type: tests
+              code: |-
+                const body = res.getBody();
+
+                test("status is 200", function () {
+                  expect(res.getStatus()).to.equal(200);
+                });
+
+                test("response is for the selected chat and thread", function () {
+                  expect(body.chatId).to.equal(bru.getEnvVar("chatId"));
+                  expect(body.threadId).to.equal(bru.getEnvVar("threadId"));
+                });
+
+                test("response contains current status fields", function () {
+                  expect(body.status).to.be.a("string");
+                  expect(body.alive).to.be.a("boolean");
+                  expect(body.acceptsInput).to.be.a("boolean");
+                  expect(body.revision).to.be.a("number");
+                });
+        settings:
+          encodeUrl: true
+          timeout: 0
+          followRedirects: true
+          maxRedirects: 5
+  - info:
+      name: websocket
+      type: folder
+    items:
+      - info:
+          name: Client-Souz WebSocket
+          type: websocket
+          seq: 1
+        websocket:
+          url: '{{wsUrl}}'
+          message:
+            - title: 01 message.submit initial
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "message.submit",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{messageRequestId1}}",
+                    "payload": {
+                      "device": {
+                        "userId": "{{userId}}",
+                        "deviceId": "{{deviceId}}",
+                        "deviceType": "tv_box",
+                        "capabilities": [
+                          "speech",
+                          "screen",
+                          "device_tools"
+                        ]
+                      },
+                      "content": {
+                        "type": "text",
+                        "source": "voice",
+                        "text": "Включи какой-нибудь интересный фильм"
+                      },
+                      "meta": {
+                        "locale": "ru-RU",
+                        "timeZone": "Europe/Moscow"
+                      }
+                    }
+                  }
+            - title: 02 tool.result user.ask
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "tool.result",
+                    "chatId": "{{chatId}}",
+                    "threadId": "{{threadId}}",
+                    "toolCallId": "{{toolCallIdAsk}}",
+                    "status": "succeeded",
+                    "result": {
+                      "answer": "Мне нравятся фантастика и триллеры."
+                    }
+                  }
+            - title: 03 message.submit continuation
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "message.submit",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{messageRequestId2}}",
+                    "threadId": "{{threadId}}",
+                    "payload": {
+                      "device": {
+                        "userId": "{{userId}}",
+                        "deviceId": "{{deviceId}}",
+                        "deviceType": "tv_box",
+                        "capabilities": [
+                          "speech",
+                          "screen",
+                          "device_tools"
+                        ]
+                      },
+                      "content": {
+                        "type": "text",
+                        "source": "voice",
+                        "text": "А лучше всё-таки включи фильм ужасов"
+                      },
+                      "meta": {
+                        "locale": "ru-RU",
+                        "timeZone": "Europe/Moscow"
+                      }
+                    }
+                  }
+            - title: 04 tool.result device.media.open
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "tool.result",
+                    "chatId": "{{chatId}}",
+                    "threadId": "{{threadId}}",
+                    "toolCallId": "{{toolCallIdOpenMedia}}",
+                    "status": "succeeded",
+                    "result": {
+                      "opened": true,
+                      "contentId": "the-thing-1982"
+                    }
+                  }
+          auth: inherit
+      - info:
+          name: Client-Souz WebSocket Live
+          type: websocket
+          seq: 2
+        websocket:
+          url: '{{wsUrl}}'
+          message:
+            - title: message 1
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "message.submit",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{messageRequestId1}}",
+                    "payload": {
+                      "device": {
+                        "userId": "{{userId}}",
+                        "deviceId": "{{deviceId}}",
+                        "deviceType": "tv_box",
+                        "capabilities": [
+                          "speech",
+                          "screen",
+                          "device_tools"
+                        ]
+                      },
+                      "content": {
+                        "type": "text",
+                        "source": "voice",
+                        "text": "Включи какой-нибудь интересный фильм"
+                      },
+                      "meta": {
+                        "locale": "ru-RU",
+                        "timeZone": "Europe/Moscow"
+                      }
+                    }
+                  }
+            - title: message 2
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "tool.result",
+                    "chatId": "{{chatId}}",
+                    "threadId": "{{threadId}}",
+                    "toolCallId": "{{toolCallIdAsk}}",
+                    "status": "succeeded",
+                    "result": {
+                      "answer": "Мне нравятся фантастика и триллеры."
+                    }
+                  }
+            - title: message 3
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "message.submit",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{messageRequestId2}}",
+                    "threadId": "{{threadId}}",
+                    "payload": {
+                      "device": {
+                        "userId": "{{userId}}",
+                        "deviceId": "{{deviceId}}",
+                        "deviceType": "tv_box",
+                        "capabilities": [
+                          "speech",
+                          "screen",
+                          "device_tools"
+                        ]
+                      },
+                      "content": {
+                        "type": "text",
+                        "source": "voice",
+                        "text": "А лучше всё-таки включи фильм ужасов"
+                      },
+                      "meta": {
+                        "locale": "ru-RU",
+                        "timeZone": "Europe/Moscow"
+                      }
+                    }
+                  }
+            - title: message 4
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "tool.result",
+                    "chatId": "{{chatId}}",
+                    "threadId": "{{threadId}}",
+                    "toolCallId": "{{toolCallIdOpenMedia}}",
+                    "status": "succeeded",
+                    "result": {
+                      "opened": true,
+                      "contentId": "the-thing-1982"
+                    }
+                  }
+          auth: inherit
+bundled: true
+extensions:
+  bruno:
+    ignore:
+      - node_modules
+      - .git
+    exportedAt: '2026-08-04T20:52:48.997Z'
+    exportedUsing: Bruno

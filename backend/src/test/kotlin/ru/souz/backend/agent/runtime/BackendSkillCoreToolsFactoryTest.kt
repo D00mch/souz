@@ -11,7 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
@@ -222,12 +222,6 @@ private class SingleBundleRepository(
     )
 
     override suspend fun listSkills(userId: String): List<StoredSkill> = listOf(stored)
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? =
-        stored.takeIf { it.skillId == skillId }
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
-        stored.takeIf { it.manifest.name == name }
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = stored
 

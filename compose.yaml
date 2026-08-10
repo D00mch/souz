@@ -11,6 +11,8 @@ services:
       - "${SOUZ_POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - souz-local
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -27,6 +29,7 @@ services:
     environment:
       SOUZ_BACKEND_HOST: 0.0.0.0
       SOUZ_BACKEND_PORT: 8080
+      POSTGRES_DSN: ${POSTGRES_DSN:-}
       SOUZ_BACKEND_DB_HOST: postgres
       SOUZ_BACKEND_DB_PORT: 5432
       SOUZ_BACKEND_DB_NAME: ${SOUZ_BACKEND_DB_NAME:-souz}
@@ -39,6 +42,8 @@ services:
       APP_LANGUAGE: ${APP_LANGUAGE:-en}
       GIGA_MODEL: ${GIGA_MODEL:-gpt-5.2}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
       CODEX_ACCESS_TOKEN: ${CODEX_ACCESS_TOKEN:-}
       CODEX_REFRESH_TOKEN: ${CODEX_REFRESH_TOKEN:-}
       CODEX_ACCOUNT_ID: ${CODEX_ACCOUNT_ID:-}
@@ -51,8 +56,16 @@ services:
     volumes:
       - backend-state:/root/.local/state/souz
       - backend-preferences:/root/.java/.userPrefs
+    networks:
+      - souz-local
 
 volumes:
   postgres-data:
   backend-state:
   backend-preferences:
+
+networks:
+  souz-local:
+    ipam:
+      config:
+        - subnet: ${SOUZ_DOCKER_SUBNET:-10.254.250.0/24}

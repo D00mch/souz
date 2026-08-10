@@ -1,0 +1,101 @@
+{
+  "name": "local",
+  "variables": [
+    {
+      "name": "baseUrl",
+      "value": "http://127.0.0.1:8080",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "wsBaseUrl",
+      "value": "ws://127.0.0.1:8080",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "clientType",
+      "value": "backend",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "userId",
+      "value": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "deviceId",
+      "value": "device-tv-456",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "createChatRequestId",
+      "value": "client-create-chat-003",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "messageRequestId1",
+      "value": "request-003",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "messageRequestId2",
+      "value": "request-004",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "chatId",
+      "value": "31befd1c-ca6e-4ba1-ac96-a27bda36caa1",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "threadId",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "toolCallIdAsk",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "toolCallIdOpenMedia",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "wsUrl",
+      "value": "ws://127.0.0.1:8080/v1/chats/31befd1c-ca6e-4ba1-ac96-a27bda36caa1/ws?clientType=backend",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    }
+  ],
+  "info": {
+    "type": "bruno-environment",
+    "exportedAt": "2026-08-04T21:24:33.124Z",
+    "exportedUsing": "Bruno/v4.0.0"
+  }
+}

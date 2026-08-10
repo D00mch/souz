@@ -177,6 +177,61 @@ class EffectiveSettingsResolverTest {
     }
 
     @Test
+    fun `resolver uses configured OpenAI-compatible model as backend default`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            gigaModel = LLMModel.OpenAIGpt5Nano
+            openaiKey = "server-openai-key"
+            openaiModel = "provider-chat-model"
+            codexAccessToken = null
+        }
+
+        val effective = resolver(settingsProvider = settingsProvider).resolve("user-a")
+
+        assertEquals(LLMModel.OpenAICompatibleCustom, effective.defaultModel)
+    }
+
+    @Test
+    fun `resolver maps persisted OpenAI default to configured OpenAI-compatible model`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            openaiKey = "server-openai-key"
+            openaiModel = "provider-chat-model"
+        }
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.OpenAIGpt52,
+            )
+        )
+
+        val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
+
+        assertEquals(LLMModel.OpenAICompatibleCustom, effective.defaultModel)
+    }
+
+    @Test
+    fun `resolver rejects OpenAI-compatible custom model when provider model is missing`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "en"
+            openaiKey = "server-openai-key"
+            openaiModel = null
+        }
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.OpenAICompatibleCustom,
+            )
+        )
+
+        val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
+
+        assertEquals(LLMModel.OpenAIGpt5Nano, effective.defaultModel)
+    }
+
+    @Test
     fun `resolver keeps selected local model when it is available`() = runTest {
         val repository = MemoryUserSettingsRepository()
         repository.save(

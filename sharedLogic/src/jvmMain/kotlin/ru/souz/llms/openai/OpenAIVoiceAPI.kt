@@ -56,6 +56,7 @@ class OpenAIVoiceAPI(
         install(HttpTimeout) {
             requestTimeoutMillis = settingsProvider.requestTimeoutMillis
         }
+        openAiTlsDefaults()
     }
 
     suspend fun recognize(audio: ByteArray): String {
@@ -74,7 +75,7 @@ class OpenAIVoiceAPI(
             AUDIO_SAMPLE_RATE_HZ,
             AUDIO_CHANNELS,
         )
-        val response = client.post(TRANSCRIPTIONS_URL) {
+        val response = client.post(transcriptionsUrl) {
             setBody(
                 MultiPartFormDataContent(
                     buildOpenAiTranscriptionFormData(
@@ -97,12 +98,15 @@ class OpenAIVoiceAPI(
     fun clear() = client.close()
 
     private companion object {
-        const val TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions"
+        const val TRANSCRIPTIONS_PATH = "audio/transcriptions"
         const val DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
         const val AUDIO_SAMPLE_RATE_HZ = 16_000
         const val AUDIO_BITS_PER_SAMPLE = 16
         const val AUDIO_CHANNELS = 1
     }
+
+    private val transcriptionsUrl: String
+        get() = OpenAIEndpointConfig.endpoint(settingsProvider, TRANSCRIPTIONS_PATH)
 }
 
 internal fun buildOpenAiTranscriptionFormData(

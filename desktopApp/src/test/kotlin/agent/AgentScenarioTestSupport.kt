@@ -382,8 +382,6 @@ private fun LLMToolSetup.withMockInvocation(mockedTool: LLMToolSetup): LLMToolSe
 
 internal fun emptySkillRegistryRepository(): SkillRegistryRepository = mockk {
     coEvery { listSkills(any()) } returns emptyList()
-    coEvery { getSkill(any(), any()) } returns null
-    coEvery { getSkillByName(any(), any()) } returns null
     coEvery { loadSkillBundle(any(), any()) } returns null
     coEvery { getValidation(any(), any(), any(), any()) } returns null
 }

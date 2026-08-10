@@ -4,7 +4,7 @@ Draft public contract for Client integrations with Souz Cloud.
 
 The canonical frame trace is [examples/happy-path.jsonl](examples/happy-path.jsonl). This document records the rules that are not obvious from that trace. [openapi.yaml](openapi.yaml) keeps the REST endpoint and reusable WebSocket frame schemas machine-readable.
 
-Local API-client setup for the HTTP request and WebSocket happy path is in [postman/](postman/) and [insomnia/](insomnia/).
+Local API-client setup for the HTTP request and WebSocket happy path is in [postman/](postman/) and [bruno/](bruno/).
 
 ## Boundary
 

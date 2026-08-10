@@ -1,6 +1,6 @@
 package ru.souz.agent.skills.bundle
 
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 
 internal const val SKILL_MD_PATH = "SKILL.md"
 

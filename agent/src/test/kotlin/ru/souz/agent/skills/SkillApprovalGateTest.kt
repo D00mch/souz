@@ -5,11 +5,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.implementations.activation.FakeSkillValidator
+import ru.souz.agent.skills.implementations.validation.FakeSkillValidator
 import ru.souz.agent.skills.implementations.bundle.SkillBundleLoader
 import ru.souz.agent.skills.implementations.bundle.skillFixturePath
 import ru.souz.agent.skills.implementations.registry.InMemorySkillRegistryRepository

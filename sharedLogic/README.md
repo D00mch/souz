@@ -1,8 +1,8 @@
 # Shared Logic Module
 
-`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by the Android app, desktop app, and HTTP backend.
+`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by the desktop app and HTTP backend.
 
-Android/JVM-compatible provider clients, settings and memory contracts, sandbox contracts, skill storage/loading, and portable tools live under `src/commonJvmMain`. Android settings and its app-private runtime sandbox live under `src/androidMain`. Desktop/backend-only configuration, native local models, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling live under `src/jvmMain`. OS-bound desktop services and tools remain in `:desktopApp`.
+Shared provider clients, settings and memory contracts, sandbox contracts, skill storage/loading, and portable tools live under `src/commonJvmMain`. Desktop/backend-only configuration, native local models, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling live under `src/jvmMain`. OS-bound desktop services and tools remain in `:desktopApp`.
 
 ## Sandbox Modes
 
@@ -10,8 +10,6 @@ On JVM hosts, `DefaultRuntimeSandboxFactory` chooses the active sandbox with `SO
 
 - `local`: default when `SOUZ_SANDBOX_MODE` is unset.
 - `docker`: uses `DockerRuntimeSandbox` and the `souz-runtime-sandbox:latest` image.
-
-Android uses `AndroidRuntimeSandboxFactory` directly. It always creates an app-private `AndroidRuntimeSandbox`; the JVM environment variable does not select Android mode.
 
 Local mode is enough for normal development:
 

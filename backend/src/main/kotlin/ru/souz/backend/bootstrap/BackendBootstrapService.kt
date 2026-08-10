@@ -45,6 +45,10 @@ class BackendBootstrapService(
             capabilities = BootstrapCapabilities(
                 models = LLMModel.entries
                     .filter { model ->
+                        if (model == LLMModel.OpenAICompatibleCustom) {
+                            return@filter hasConfiguredOpenAiCompatibleChatModel() &&
+                                LlmProvider.OPENAI in capabilityProviders
+                        }
                         when (model.provider) {
                             LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
                             else -> model.provider in capabilityProviders
@@ -80,14 +84,28 @@ class BackendBootstrapService(
             provider = model.provider.name.lowercase(),
             model = model.alias,
             serverManagedKey = hasServerManagedAccess(model),
-            userManagedKey = hasUserManagedAccess(model.provider, userManagedProviders),
+            userManagedKey = hasUserManagedAccess(model, userManagedProviders),
         )
 
     private fun hasServerManagedAccess(model: LLMModel): Boolean =
-        when (model.provider) {
-            LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
-            LlmProvider.CODEX -> settingsProvider.hasCompleteCodexOAuthCredentials()
-            else -> settingsProvider.hasKey(model.provider)
+        if (model == LLMModel.OpenAICompatibleCustom) {
+            hasConfiguredOpenAiCompatibleChatModel() && settingsProvider.hasKey(LlmProvider.OPENAI)
+        } else {
+            when (model.provider) {
+                LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
+                LlmProvider.CODEX -> settingsProvider.hasCompleteCodexOAuthCredentials()
+                else -> settingsProvider.hasKey(model.provider)
+            }
+        }
+
+    private fun hasUserManagedAccess(
+        model: LLMModel,
+        userManagedProviders: Set<LlmProvider>,
+    ): Boolean =
+        if (model == LLMModel.OpenAICompatibleCustom) {
+            hasConfiguredOpenAiCompatibleChatModel() && LlmProvider.OPENAI in userManagedProviders
+        } else {
+            hasUserManagedAccess(model.provider, userManagedProviders)
         }
 
     private fun hasUserManagedAccess(
@@ -95,4 +113,7 @@ class BackendBootstrapService(
         userManagedProviders: Set<LlmProvider>,
     ): Boolean =
         provider != LlmProvider.LOCAL && provider in userManagedProviders
+
+    private fun hasConfiguredOpenAiCompatibleChatModel(): Boolean =
+        !settingsProvider.openaiModel.isNullOrBlank()
 }
