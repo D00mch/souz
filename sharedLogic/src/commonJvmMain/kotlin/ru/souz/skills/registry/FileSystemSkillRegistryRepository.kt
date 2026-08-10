@@ -11,15 +11,12 @@ import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.bundle.SkillBundleParser
 import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.skills.registry.SkillInventoryEntry
 import ru.souz.agent.skills.registry.StoredSkill
-import ru.souz.agent.skills.registry.toInventoryEntry
 import ru.souz.agent.skills.validation.SkillValidationFinding
 import ru.souz.agent.skills.validation.SkillValidationRecord
 import ru.souz.llms.ToolInvocationMeta
@@ -107,37 +104,6 @@ class FileSystemSkillRegistryRepository(
         skills
     }
 
-    override suspend fun listSkillInventory(userId: String): List<SkillInventoryEntry> = withContext(Dispatchers.IO) {
-        val store = storeFor(userId)
-        val skillsRoot = store.resolvePath(skillsRoot(store.paths, userId))
-        if (!skillsRoot.exists || !skillsRoot.isDirectory) {
-            logSkillRootUnavailable(userId, store, skillsRoot)
-            return@withContext emptyList()
-        }
-
-        val skillRoots = store.fileSystem.listDescendants(
-            root = skillsRoot,
-            maxDepth = 1,
-            includeHidden = true,
-        )
-            .filter { it.isDirectory && it.parentPath == skillsRoot.path }
-
-        val inventory = skillRoots
-            .mapNotNull { skillRoot ->
-                readStoredSkillOrNull(store, store.resolveChildPath(skillRoot, STORED_SKILL_FILE_NAME))
-                    ?.toInventoryEntry()
-                    ?: readLooseSkillInventoryEntryOrNull(
-                        store = store,
-                        userId = userId,
-                        skillRoot = skillRoot,
-                    )
-            }
-            .sortedBy { it.skillId.value }
-
-        logSkillInventoryListed(userId, store, skillsRoot, skillRoots, inventory)
-        inventory
-    }
-
     override suspend fun listSkillInventoryIds(userId: String): List<SkillId> = withContext(Dispatchers.IO) {
         val store = storeFor(userId)
         val skillsRoot = store.resolvePath(skillsRoot(store.paths, userId))
@@ -168,19 +134,6 @@ class FileSystemSkillRegistryRepository(
         logSkillInventoryIdsListed(userId, store, skillsRoot, skillRoots, skillIds)
         skillIds
     }
-
-    override suspend fun getSkill(userId: String, skillId: SkillId): StoredSkill? = withContext(Dispatchers.IO) {
-        val store = storeFor(userId)
-        readStoredSkillOrNull(store, metadataPath(store.paths, userId, skillId))
-            ?: readLooseStoredSkillOrNull(
-                store = store,
-                userId = userId,
-                skillRoot = store.resolvePath(skillRoot(store.paths, userId, skillId)),
-            )
-    }
-
-    override suspend fun getSkillByName(userId: String, name: String): StoredSkill? =
-        listSkills(userId).firstOrNull { it.manifest.name == name }
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = withContext(Dispatchers.IO) {
         val store = storeFor(userId)
@@ -400,30 +353,6 @@ class FileSystemSkillRegistryRepository(
         )
     }
 
-    private fun readLooseSkillInventoryEntryOrNull(
-        store: Store,
-        userId: String,
-        skillRoot: SandboxPathInfo,
-    ): SkillInventoryEntry? {
-        val skillId = runCatching {
-            SkillId(requireSafePathSegment(skillRoot.name, "SkillId"))
-        }.getOrNull() ?: return null
-        if (!skillRoot.exists || !skillRoot.isDirectory) return null
-        val skillMarkdown = store.resolveChildPath(skillRoot, SKILL_MARKDOWN_FILE_NAME)
-        if (!skillMarkdown.exists || !skillMarkdown.isRegularFile) return null
-
-        return runCatching {
-            SkillInventoryEntry(
-                userId = userId,
-                skillId = skillId,
-                manifest = SkillBundleParser.parseManifest(store.fileSystem.readText(skillMarkdown)),
-                createdAt = LOOSE_SKILL_CREATED_AT,
-            )
-        }.onFailure { error ->
-            logLooseSkillInventoryReadFailed(skillRoot, error)
-        }.getOrNull()
-    }
-
     private fun readLooseSkillInventoryIdOrNull(
         store: Store,
         skillRoot: SandboxPathInfo,
@@ -631,13 +560,6 @@ class FileSystemSkillRegistryRepository(
         logger.warn("Failed to read loose skill bundle from {}: {}", path.path, error.message)
     }
 
-    private fun logLooseSkillInventoryReadFailed(
-        path: SandboxPathInfo,
-        error: Throwable,
-    ) {
-        logger.warn("Failed to read loose skill inventory metadata from {}: {}", path.path, error.message)
-    }
-
     private fun logValidationRecordReadFailed(
         path: SandboxPathInfo,
         error: Throwable,
@@ -668,26 +590,6 @@ class FileSystemSkillRegistryRepository(
             skillsRoot.path,
             skillRoots.size,
             skills.map { it.skillId.value },
-        )
-    }
-
-    private fun logSkillInventoryListed(
-        userId: String,
-        store: Store,
-        skillsRoot: SandboxPathInfo,
-        skillRoots: List<SandboxPathInfo>,
-        inventory: List<SkillInventoryEntry>,
-    ) {
-        logger.info(
-            "Skill registry listed {} inventory entry(s) for user={} scope={} sandboxMode={} root={} " +
-                    "candidateDirs={} ids={}",
-            inventory.size,
-            userId,
-            config.scope,
-            store.sandboxMode,
-            skillsRoot.path,
-            skillRoots.size,
-            inventory.map { it.skillId.value },
         )
     }
 

@@ -2,7 +2,7 @@ package ru.souz.tool.skills
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import kotlinx.coroutines.CancellationException
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
