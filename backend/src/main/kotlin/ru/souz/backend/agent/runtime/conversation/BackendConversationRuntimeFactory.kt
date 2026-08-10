@@ -7,7 +7,6 @@ import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
@@ -23,7 +22,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.tool.ToolCategory
+import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
@@ -71,7 +70,7 @@ class BackendConversationRuntimeFactory(
             clientToolCatalog = activeClientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
         )
-        val requestToolsFilter = requestPassThroughToolsFilter()
+        val requestToolsFilter = RuntimePassThroughToolsFilter
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = key.userId,
@@ -139,10 +138,4 @@ class BackendConversationRuntimeFactory(
             persistedSession = persistedSession,
         )
     }
-}
-
-private fun requestPassThroughToolsFilter(): AgentToolsFilter = object : AgentToolsFilter {
-    override fun applyFilter(
-        toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-    ): Map<ToolCategory, Map<String, LLMToolSetup>> = toolsByCategory
 }

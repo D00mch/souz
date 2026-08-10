@@ -21,7 +21,7 @@ internal class NodesClassification(
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
     private val toolCatalog: AgentToolCatalog,
-    private val toolsFilter: AgentToolsFilter? = null,
+    private val toolsFilter: AgentToolsFilter,
 ) {
     private val l = LoggerFactory.getLogger(NodesClassification::class.java)
 
@@ -39,9 +39,8 @@ internal class NodesClassification(
      * Modifies [AgentContext.activeTools] based on the classification algorithm and [AgentToolCatalog].
      */
     fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
-        val catalogTools = toolCatalog.toolsByCategory
         val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> =
-            (toolsFilter?.applyFilter(catalogTools) ?: catalogTools)
+            toolsFilter.applyFilter(toolCatalog.toolsByCategory)
                 .filterValues { it.isNotEmpty() }
         val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
 
