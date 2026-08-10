@@ -10,6 +10,13 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 
+/**
+ * Executes tool calls through [NodesCommon] while keeping large results out of the LLM history.
+ *
+ * Non-exempt results larger than [KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES] UTF-8 bytes are stored in
+ * conversation-scoped [ConversationKnowledgeStore] and replaced with a compact reference. Results
+ * stay inline when Knowledge storage or conversation scope is unavailable.
+ */
 internal class NodesToolUseWithKnowledge(
     private val nodesCommon: NodesCommon,
     private val knowledgeStore: ConversationKnowledgeStore?,
@@ -78,6 +85,8 @@ internal class NodesToolUseWithKnowledge(
             message
         }
     }
-}
 
-internal const val KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES = 8_192
+    companion object {
+        internal const val KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES = 8_192
+    }
+}
