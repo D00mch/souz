@@ -27,7 +27,7 @@ class ToolGetSkillByName(
     private val skillBundleProvider: SkillBundleProvider,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
-    private val fileSkillInputSchema = toolInputParameters<Args>()
+    private val fileSkillInputSchema = toolInputParameters<SkillCommandExecutor.Args>()
 
     data class Input(
         val skillId: String = "",

@@ -1,7 +1,5 @@
 package ru.souz.tool.skills
 
-import com.sun.org.apache.bcel.internal.util.Args
-import org.apache.tika.pipes.PipesConfigBase.DEFAULT_TIMEOUT_MILLIS
 import java.nio.file.Path
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
