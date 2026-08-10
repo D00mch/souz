@@ -1,6 +1,6 @@
 package ru.souz.tool.skills
 
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
