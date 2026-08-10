@@ -14,6 +14,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.giga.toolInputParameters
 import ru.souz.llms.restJsonMapper
 
 /**
@@ -26,8 +27,7 @@ class ToolGetSkillByName(
     private val skillBundleProvider: SkillBundleProvider,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
-    private val fileSkillInputSchema =
-        ToolRunSkillCommand.executionInputParameters().withoutInternalBindings()
+    private val fileSkillInputSchema = toolInputParameters<SkillCommandArguments>()
 
     data class Input(
         val skillId: String = "",
@@ -196,11 +196,6 @@ class ToolGetSkillByName(
         supportingFiles = files
             .map { it.normalizedPath }
             .filterNot { it == SKILL_MARKDOWN_PATH },
-    )
-
-    private fun LLMRequest.Parameters.withoutInternalBindings(): LLMRequest.Parameters = copy(
-        properties = properties - setOf("skillId", "activeSkills"),
-        required = required - setOf("skillId", "activeSkills"),
     )
 
     companion object {

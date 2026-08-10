@@ -46,7 +46,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMToolSetup
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendDiModuleTest {
     @Test
@@ -138,7 +138,7 @@ class BackendDiModuleTest {
         try {
             assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
             assertIs<BackendClientSkills>(di.direct.instance<BackendClientSkills>())
-            assertIs<ToolRunSkillCommand>(di.direct.instance<ToolRunSkillCommand>())
+            assertIs<SkillCommandExecutor>(di.direct.instance<SkillCommandExecutor>())
             assertNotNull(di.direct.instance<ConversationKnowledgeStore>())
             assertNotNull(
                 di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)

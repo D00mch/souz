@@ -39,7 +39,7 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendConversationRuntimeSettingsTest {
     @Test
@@ -217,7 +217,7 @@ class BackendConversationRuntimeSettingsTest {
                 workspaceRoot = home,
             )
             val commandInvocationMeta = mutableListOf<ToolInvocationMeta>()
-            val commandTool = ToolRunSkillCommand(
+            val commandExecutor = SkillCommandExecutor(
                 sandboxResolver = ToolInvocationRuntimeSandboxResolver { meta ->
                     commandInvocationMeta += meta
                     sandbox
@@ -245,7 +245,7 @@ class BackendConversationRuntimeSettingsTest {
                 logObjectMapper = jacksonObjectMapper(),
                 systemPrompt = "backend test prompt",
                 skillRegistryRepository = skillRegistry,
-                commandTool = commandTool,
+                commandExecutor = commandExecutor,
                 agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             )
 

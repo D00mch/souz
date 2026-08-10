@@ -45,7 +45,6 @@ import ru.souz.tool.portableSkillToolsDiModule
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -298,11 +297,11 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `file backed invocation binds authorization and preserves complete output`() = runTest {
+    fun `file backed invocation keeps authorization internal and preserves complete output`() = runTest {
         val home = createTempDirectory("future-skill-home-")
         val stateRoot = home.resolve("state").createDirectories()
         stateRoot.resolve("skills/file-skill").createDirectories()
-        val commandTool = ToolRunSkillCommand(
+        val commandExecutor = SkillCommandExecutor(
             ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot))
         )
         val fileSkill = bundle("file-skill")
@@ -311,12 +310,10 @@ class SkillRuntimeToolsTest {
             toolCatalog = catalog(),
             toolsFilter = TestToolsFilter(),
             skillBundleProvider = repository,
-            commandTool = commandTool,
+            commandExecutor = commandExecutor,
         )
         val largeOutput = "x".repeat(25_050)
         val arguments = mapOf<String, Any>(
-            "skillId" to "nested-wrong-id",
-            "activeSkills" to listOf(mapOf("skillId" to "nested-active")),
             "runtime" to SandboxCommandRuntime.BASH.name,
             "script" to "printf \"\$SOUZ_SKILL_ID:\"; printf '$largeOutput'",
             "timeoutMillis" to 5_000,
@@ -331,24 +328,12 @@ class SkillRuntimeToolsTest {
         assertTrue(genericResult["stdout"].asText().startsWith("file-skill:"))
         assertEquals("file-skill:".length + largeOutput.length, genericResult["stdout"].asText().length)
         assertFalse(genericResult["stdout"].asText().contains("truncated"))
-        coVerify(exactly = 1) { repository.loadSkillBundle(USER_ID, fileSkill.skillId) }
 
-        val directResult = commandTool.suspendInvoke(
-            ToolRunSkillCommand.Input(
-                skillId = "file-skill",
-                runtime = SandboxCommandRuntime.BASH,
-                script = "printf '$largeOutput'",
-                timeoutMillis = 5_000,
-                activeSkills = listOf(
-                    ToolRunSkillCommand.ActiveSkillInput(
-                        skillId = "file-skill",
-                        bundleHash = SkillBundleHasher.hash(fileSkill),
-                    )
-                ),
-            ),
-            ToolInvocationMeta(userId = USER_ID),
+        val spoofedResult = runner.call(
+            mapOf("skillId" to "file-skill", "arguments" to mapOf("activeSkills" to emptyList<Any>()))
         )
-        assertContains(directResult, "...[truncated")
+        assertEquals("skill_invocation_failed", spoofedResult["error"]["code"].asText())
+        coVerify(exactly = 2) { repository.loadSkillBundle(USER_ID, fileSkill.skillId) }
     }
 
     @Test
@@ -385,7 +370,6 @@ class SkillRuntimeToolsTest {
             import(portableSkillToolsDiModule())
         }
 
-        val command = direct.instance<ToolRunSkillCommand>()
         val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
         val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
         val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
@@ -397,7 +381,6 @@ class SkillRuntimeToolsTest {
         val concreteRuntimeCommand = direct.instance<ToolInvokeSkill>()
         val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
-        assertEquals(ToolRunSkillCommand.NAME, command.name)
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
         assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
         assertEquals(ToolSearchMemory.NAME, searchMemory.fn.name)
@@ -431,13 +414,11 @@ class SkillRuntimeToolsTest {
             import(portableSkillRuntimeToolsDiModule())
         }
 
-        val command = direct.instance<ToolRunSkillCommand>()
         val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
         val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
         val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
         val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
-        assertEquals(ToolRunSkillCommand.NAME, command.name)
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
         assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
         assertEquals(ToolSearchMemory.NAME, searchMemory.fn.name)
@@ -482,7 +463,7 @@ class SkillRuntimeToolsTest {
         toolCatalog = catalog,
         toolsFilter = filter,
         skillBundleProvider = repository,
-        commandTool = ToolRunSkillCommand(mockk(relaxed = true)),
+        commandExecutor = SkillCommandExecutor(mockk(relaxed = true)),
         approvalGate = approvalGate,
     )
 

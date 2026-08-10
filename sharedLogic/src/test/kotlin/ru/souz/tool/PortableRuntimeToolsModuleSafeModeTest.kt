@@ -21,7 +21,7 @@ import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.skills.SkillCommandExecutor
 import kotlin.io.path.exists
 import kotlin.io.path.notExists
 import kotlin.io.path.readText
@@ -136,7 +136,7 @@ class PortableRuntimeToolsModuleSafeModeTest {
         val directDI = createDirectDI(home, stateRoot, safeModeEnabled = true, bindBrokers = false)
 
         assertNull(directDI.instanceOrNull<SkillRegistryRepository>())
-        assertNull(directDI.instanceOrNull<ToolRunSkillCommand>())
+        assertNull(directDI.instanceOrNull<SkillCommandExecutor>())
     }
 
     private fun createDirectDI(

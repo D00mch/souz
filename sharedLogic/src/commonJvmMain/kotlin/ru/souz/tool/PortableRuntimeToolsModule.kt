@@ -41,7 +41,7 @@ import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebPageText
@@ -111,7 +111,7 @@ fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRun
     bindSingleton { SandboxConversationKnowledgeStore(instance()) }
     bindSingleton<ConversationKnowledgeStore> { instance<SandboxConversationKnowledgeStore>() }
     bindSingleton {
-        ToolRunSkillCommand(sandboxResolver = instance())
+        SkillCommandExecutor(sandboxResolver = instance())
     }
     bindSingleton { KnowledgeRetriever(instance()) }
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
@@ -161,7 +161,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
             toolCatalog = instance(),
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
-            commandTool = instance(),
+            commandExecutor = instance(),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }

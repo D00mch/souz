@@ -26,7 +26,7 @@ class ToolInvokeSkill(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
-    private val commandTool: ToolRunSkillCommand,
+    private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
     data class Input(
@@ -115,23 +115,18 @@ class ToolInvokeSkill(
                 null -> SkillBundleHasher.hash(bundle)
                 is SkillApprovalGate.Result.Rejected -> error("Rejected approval must return before execution.")
             }
-            val rawInput = restJsonMapper.convertValue(
-                input.arguments + ("skillId" to skillId) - "activeSkills",
-                ToolRunSkillCommand.Input::class.java,
-            )
-            val commandInput = rawInput.copy(
-                skillId = skillId,
-                activeSkills = listOf(
-                    ToolRunSkillCommand.ActiveSkillInput(
-                        skillId = skillId,
-                        bundleHash = bundleHash,
-                        supportingFiles = bundle.files
-                            .map { it.normalizedPath }
-                            .filterNot { it == SKILL_MARKDOWN_PATH },
-                    )
+            val arguments = restJsonMapper.convertValue(input.arguments, SkillCommandArguments::class.java)
+            val result = commandExecutor.execute(
+                activeSkill = ActiveSkillBinding(
+                    skillId = SkillId(skillId),
+                    bundleHash = bundleHash,
+                    supportingFiles = bundle.files
+                        .map { it.normalizedPath }
+                        .filterNot { it == SKILL_MARKDOWN_PATH },
                 ),
+                arguments = arguments,
+                meta = meta,
             )
-            val result = commandTool.executeCommand(commandInput, meta)
             return LLMRequest.Message(
                 role = LLMMessageRole.function,
                 content = restJsonMapper.writeValueAsString(result),

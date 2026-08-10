@@ -84,7 +84,7 @@ import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.skills.SkillCommandExecutor
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -227,7 +227,7 @@ fun backendDiModule(
             clientToolCatalog = clientSkills,
             clientSkillBundleProvider = clientSkills,
             skillRegistryRepository = instance<SkillRegistryRepository>(),
-            commandTool = instance<ToolRunSkillCommand>(),
+            commandExecutor = instance<SkillCommandExecutor>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
             searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),

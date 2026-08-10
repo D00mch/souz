@@ -25,11 +25,11 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
-import ru.souz.tool.skills.ToolRunSkillCommand
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 class BackendConversationRuntimeFactory(
@@ -42,7 +42,7 @@ class BackendConversationRuntimeFactory(
     private val clientToolCatalog: AgentToolCatalog,
     private val clientSkillBundleProvider: SkillBundleProvider,
     private val skillRegistryRepository: SkillRegistryRepository,
-    private val commandTool: ToolRunSkillCommand,
+    private val commandExecutor: SkillCommandExecutor,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
@@ -109,7 +109,7 @@ class BackendConversationRuntimeFactory(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
-            commandTool = commandTool,
+            commandExecutor = commandExecutor,
             approvalGate = null,
         )
         val kernel = AgentExecutionKernelFactory(

@@ -23,7 +23,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.skills.SkillCommandExecutor
 
 internal fun testBackendConversationRuntimeFactory(
     baseSettingsProvider: SettingsProvider,
@@ -35,7 +35,7 @@ internal fun testBackendConversationRuntimeFactory(
     skillRegistryRepository: SkillRegistryRepository = EmptyTestSkillRegistryRepository,
     clientToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientSkillBundleProvider: SkillBundleProvider = skillRegistryRepository,
-    commandTool: ToolRunSkillCommand = ToolRunSkillCommand(
+    commandExecutor: SkillCommandExecutor = SkillCommandExecutor(
         sandboxResolver = ToolInvocationRuntimeSandboxResolver {
             error("The test runtime sandbox was not configured.")
         }
@@ -51,7 +51,7 @@ internal fun testBackendConversationRuntimeFactory(
     clientToolCatalog = clientToolCatalog,
     clientSkillBundleProvider = clientSkillBundleProvider,
     skillRegistryRepository = skillRegistryRepository,
-    commandTool = commandTool,
+    commandExecutor = commandExecutor,
     getKnowledgeTool = testCoreTool("GetKnowledge"),
     searchKnowledgeTool = testCoreTool("SearchKnowledge"),
     searchMemoryTool = testCoreTool("SearchMemory"),
