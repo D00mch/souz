@@ -338,7 +338,6 @@ The backend-safe catalog avoids desktop-only APIs and includes:
 |---|---|
 | Files | List/find/create/delete/modify/move files, extract text, find files, read PDF pages, find folders |
 | Web search | Internet search, internet research, optional web image search, web page text |
-| Config | Sound config, sound config diff |
 | Data analytics | CSV plotting, Excel read, Excel report |
 | Calculator | Calculator |
 

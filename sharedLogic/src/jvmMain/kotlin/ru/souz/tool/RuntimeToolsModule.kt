@@ -7,8 +7,6 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
-import ru.souz.tool.config.ToolSoundConfig
-import ru.souz.tool.config.ToolSoundConfigDiff
 import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
 import ru.souz.tool.dataAnalytics.excel.ExcelRead
 import ru.souz.tool.dataAnalytics.excel.ExcelReport
@@ -48,9 +46,6 @@ fun runtimeToolsDiModule(
     bindSingleton { ToolExtractText(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
 
-    bindSingleton { ToolSoundConfig(instance()) }
-    bindSingleton { ToolSoundConfigDiff(instance()) }
-
     bindSingleton { ToolCreatePlotFromCsv(instance()) }
     bindSingleton { ExcelRead(instance()) }
     bindSingleton { ExcelReport(instance()) }
@@ -74,8 +69,6 @@ fun runtimeToolsDiModule(
             toolFindFolders = instance(),
             toolViewImage = instance(),
             toolGenerateImage = instance(),
-            toolSoundConfig = instance(),
-            toolSoundConfigDiff = instance(),
             toolCalculator = instance(),
             toolCreatePlotFromCsv = instance(),
             excelRead = instance(),
@@ -102,8 +95,6 @@ class RuntimeToolsFactory(
     private val toolFindFolders: ToolFindFolders,
     private val toolViewImage: ToolViewImage,
     private val toolGenerateImage: ToolGenerateImage,
-    private val toolSoundConfig: ToolSoundConfig,
-    private val toolSoundConfigDiff: ToolSoundConfigDiff,
     private val toolCalculator: ToolCalculator,
     private val toolCreatePlotFromCsv: ToolCreatePlotFromCsv,
     private val excelRead: ExcelRead,
@@ -148,11 +139,6 @@ class RuntimeToolsFactory(
             add(toolWebPageText.toGiga())
         }
 
-        ToolCategory.CONFIG -> listOf(
-            toolSoundConfig.toGiga(),
-            toolSoundConfigDiff.toGiga(),
-        )
-
         ToolCategory.DATA_ANALYTICS -> listOf(
             toolCreatePlotFromCsv.toGiga(),
             excelRead.toGiga(),
@@ -164,6 +150,7 @@ class RuntimeToolsFactory(
         )
 
         ToolCategory.BROWSER,
+        ToolCategory.CONFIG,
         ToolCategory.NOTES,
         ToolCategory.APPLICATIONS,
         ToolCategory.CALENDAR,

@@ -21,13 +21,13 @@ import ru.souz.llms.local.downloadPromptFor
 import ru.souz.service.speech.LocalMacOsSpeechHost
 import ru.souz.service.telegram.TelegramAuthState
 import ru.souz.service.telegram.TelegramAuthStep
-import ru.souz.tool.config.ToolSoundConfig
 import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.LocalModelDownloadPromptUi
 import ru.souz.ui.common.LocalModelDownloadStateUi
 import ru.souz.ui.common.LocalModelUiCoordinator
 import ru.souz.ui.common.FinderService
 import ru.souz.ui.common.toUi
+import ru.souz.ui.settings.DEFAULT_VOICE_SPEED
 import ru.souz.ui.settings.SupportLogSender
 import java.awt.Desktop
 import java.nio.file.Files
@@ -182,9 +182,9 @@ class DesktopSettingsHostPreferences(
     override val themeMode: StateFlow<ThemeMode> = themeModeState
 
     override var voiceSpeed: Int
-        get() = ConfigStore.get(ToolSoundConfig.SPEED_KEY, ToolSoundConfig.DEFAULT_SPEED)
+        get() = ConfigStore.get(VOICE_SPEED_KEY, DEFAULT_VOICE_SPEED)
         set(value) {
-            ConfigStore.put(ToolSoundConfig.SPEED_KEY, value)
+            ConfigStore.put(VOICE_SPEED_KEY, value)
         }
 
     override var useEnglishInterface: Boolean
@@ -217,6 +217,7 @@ class DesktopSettingsHostPreferences(
     }
 
     companion object {
+        private const val VOICE_SPEED_KEY = "sound_speed"
         private const val USE_ENGLISH_INTERFACE = "USE_ENGLISH_INTERFACE"
         private const val THEME_MODE = "THEME_MODE"
     }

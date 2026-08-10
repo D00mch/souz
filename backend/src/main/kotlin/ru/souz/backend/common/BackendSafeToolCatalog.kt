@@ -8,7 +8,6 @@ val BACKEND_SAFE_TOOL_CATEGORIES: Set<ToolCategory> = setOf(
     ToolCategory.IMAGE,
     ToolCategory.IMAGE_GENERATION,
     ToolCategory.WEB_SEARCH,
-    ToolCategory.CONFIG,
     ToolCategory.DATA_ANALYTICS,
     ToolCategory.CALCULATOR,
 )

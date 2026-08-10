@@ -146,7 +146,6 @@ If a seeded skill does not appear, remove the per-sandbox `state/skills/<skill>`
 
 - files
 - web search and research
-- config
 - data analytics
 - calculator
 

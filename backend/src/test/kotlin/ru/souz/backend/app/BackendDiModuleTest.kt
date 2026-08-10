@@ -6,10 +6,12 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
@@ -37,6 +39,7 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.tool.ToolCategory
 
 class BackendDiModuleTest {
     @Test
@@ -99,6 +102,22 @@ class BackendDiModuleTest {
                 di.direct.instance<TelegramBotBindingService>(),
                 httpDependencies.telegramBotBindingService,
             )
+        } finally {
+            dataSource.close()
+        }
+    }
+
+    @Test
+    fun `backend catalog excludes desktop sound configuration tools`() {
+        val dataSource = HikariDataSource()
+        val di = testDi(testAppConfig(), dataSource)
+
+        try {
+            val configTools = di.direct.instance<AgentToolCatalog>()
+                .toolsByCategory
+                .getValue(ToolCategory.CONFIG)
+
+            assertTrue(configTools.isEmpty())
         } finally {
             dataSource.close()
         }
