@@ -32,7 +32,7 @@ class ToolRunSkillCommand(
     data class Input(
         @InputParamDescription("Activated Skill ID whose bundle contains the script/supporting file to use.")
         val skillId: String,
-        @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands. Android maps BASH to POSIX /system/bin/sh, so Android skill scripts must avoid GNU Bash-only syntax.")
+        @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands.")
         val runtime: SandboxCommandRuntime = SandboxCommandRuntime.BASH,
         @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. Leave empty for BASH/PYTHON/NODE.")
         val command: List<String> = emptyList(),
@@ -58,7 +58,6 @@ class ToolRunSkillCommand(
     override val description: String = buildString {
         append("Run a command or script for one of the currently active Skills inside the Souz runtime sandbox. ")
         append("The working directory defaults to the selected skill bundle root, so supporting files can be used by relative path. ")
-        append("On Android, BASH uses POSIX /system/bin/sh rather than GNU Bash. ")
         append("Use only for files or instructions from active Skills, and only when a skill explicitly needs command execution. ")
         append("Do not use this tool just to list, inspect, or browse skill bundle files. ")
         append("Do not call it for instruction-only/template-only skills that can be followed from the system prompt.")

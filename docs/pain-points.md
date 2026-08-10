@@ -14,7 +14,6 @@ Before editing a module, open its index below and read only the topics related t
 - [`:sharedLogic`](../sharedLogic/docs/pain-points.md)
 - [`:sharedUI`](../sharedUI/docs/pain-points.md)
 - [`:desktopApp`](../desktopApp/docs/pain-points.md)
-- [`:androidApp`](../androidApp/docs/pain-points.md)
 - [`:backend`](../backend/docs/pain-points.md)
 
 ## Topic format

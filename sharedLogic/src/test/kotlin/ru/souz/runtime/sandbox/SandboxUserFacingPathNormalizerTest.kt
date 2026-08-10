@@ -59,7 +59,7 @@ class SandboxUserFacingPathNormalizerTest {
     fun `documents directory defaults to uppercase Documents under sandbox home`() {
         val filesToolUtil = FilesToolUtil(
             RuntimeSandboxStub(
-                AndroidStylePathSandboxFileSystem(
+                StubSandboxFileSystem(
                     existingDirectories = setOf("/", "/home"),
                 )
             )
@@ -72,7 +72,7 @@ class SandboxUserFacingPathNormalizerTest {
     fun `documents directory falls back to existing lowercase documents under sandbox home`() {
         val filesToolUtil = FilesToolUtil(
             RuntimeSandboxStub(
-                AndroidStylePathSandboxFileSystem(
+                StubSandboxFileSystem(
                     existingDirectories = setOf("/", "/home", "/home/documents"),
                 )
             )
@@ -87,8 +87,8 @@ class SandboxUserFacingPathNormalizerTest {
     private inner class RuntimeSandboxStub(
         override val fileSystem: SandboxFileSystem,
     ) : RuntimeSandbox {
-        override val mode: SandboxMode = SandboxMode.ANDROID
-        override val scope: SandboxScope = SandboxScope(userId = "android-user")
+        override val mode: SandboxMode = SandboxMode.LOCAL
+        override val scope: SandboxScope = SandboxScope(userId = "test-user")
         override val runtimePaths: SandboxRuntimePaths = fileSystem.runtimePaths
         override val commandExecutor: SandboxCommandExecutor = object : SandboxCommandExecutor {
             override suspend fun execute(request: SandboxCommandRequest): SandboxCommandResult =
@@ -96,7 +96,7 @@ class SandboxUserFacingPathNormalizerTest {
         }
     }
 
-    private inner class AndroidStylePathSandboxFileSystem(
+    private inner class StubSandboxFileSystem(
         private val existingDirectories: Set<String>,
     ) : SandboxFileSystem {
         override val runtimePaths: SandboxRuntimePaths = this@SandboxUserFacingPathNormalizerTest.runtimePaths

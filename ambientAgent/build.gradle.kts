@@ -1,15 +1,9 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidKotlinMultiplatformLibrary)
 }
 
 kotlin {
     jvm()
-    androidLibrary {
-        namespace = "ru.souz.ambientagent"
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
-        minSdk = libs.versions.android.minSdk.get().toInt()
-    }
 
     sourceSets {
         val commonMain by getting
@@ -21,10 +15,6 @@ kotlin {
                 implementation(libs.kotlinx.coroutines)
                 implementation(libs.slf4j.api)
             }
-        }
-
-        val androidMain by getting {
-            dependsOn(commonJvmMain)
         }
 
         val jvmMain by getting {

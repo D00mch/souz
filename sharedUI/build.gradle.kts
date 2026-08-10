@@ -1,17 +1,11 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidKotlinMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
 
 kotlin {
     jvm()
-    androidLibrary {
-        namespace = "ru.souz.sharedui"
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
-        minSdk = libs.versions.android.minSdk.get().toInt()
-    }
 
     sourceSets {
         val commonMain by getting
@@ -49,10 +43,6 @@ kotlin {
             implementation(compose.materialIconsExtended)
             implementation(libs.kotlinx.coroutines)
             implementation(libs.markdown)
-        }
-
-        val androidMain by getting {
-            dependsOn(commonJvmMain)
         }
 
         val jvmMain by getting {
