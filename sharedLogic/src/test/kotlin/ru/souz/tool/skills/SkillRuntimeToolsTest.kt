@@ -36,6 +36,7 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.tool.BadInputException
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
@@ -334,6 +335,26 @@ class SkillRuntimeToolsTest {
         )
         assertEquals("skill_invocation_failed", spoofedResult["error"]["code"].asText())
         coVerify(exactly = 2) { repository.loadSkillBundle(USER_ID, fileSkill.skillId) }
+    }
+
+    @Test
+    fun `command executor rejects script path outside skill root`() = runTest {
+        val home = createTempDirectory("skill-command-escape-home-")
+        val stateRoot = home.resolve("state").createDirectories()
+        stateRoot.resolve("skills/path-skill").createDirectories()
+        val bundle = bundle("path-skill")
+        val executor = SkillCommandExecutor(
+            ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot))
+        )
+
+        assertFailsWith<BadInputException> {
+            executor.execute(
+                bundle = bundle,
+                bundleHash = SkillBundleHasher.hash(bundle),
+                arguments = SkillCommandExecutor.Args(scriptPath = "../outside.sh"),
+                meta = ToolInvocationMeta(userId = USER_ID),
+            )
+        }
     }
 
     @Test
