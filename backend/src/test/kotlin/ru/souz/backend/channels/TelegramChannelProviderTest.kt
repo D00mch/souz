@@ -25,7 +25,10 @@ class TelegramChannelProviderTest {
     private val userId = "user-1"
     private val tokenCrypto = TelegramBotTokenCrypto(rawBase64Key = TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY)
 
-    private class FakeTelegramBotApi(private val shouldFail: Boolean = false) : TelegramBotApi {
+    private class FakeTelegramBotApi(
+        private val shouldFail: Boolean = false,
+        private val failAfterSuccessCount: Int = Int.MAX_VALUE,
+    ) : TelegramBotApi {
         data class SentMessage(val token: String, val chatId: Long, val text: String)
 
         val sent = mutableListOf<SentMessage>()
@@ -39,7 +42,7 @@ class TelegramChannelProviderTest {
         ): TelegramUpdatesResponse = error("Not used in this test")
 
         override suspend fun sendMessage(token: String, chatId: Long, text: String) {
-            if (shouldFail) error("boom")
+            if (shouldFail || sent.size >= failAfterSuccessCount) error("boom")
             sent += SentMessage(token, chatId, text)
         }
 
@@ -141,6 +144,27 @@ class TelegramChannelProviderTest {
         val messages = messageRepository.list(userId, chatId, afterSeq = null, beforeSeq = null, limit = 10)
         assertEquals(1, messages.size)
         assertEquals(longText, messages.single().content)
+    }
+
+    @Test
+    fun `sendMessage persists only the chunks actually delivered before a later chunk fails`() = runTest {
+        val bindingRepository = MemoryTelegramBotBindingRepository()
+        val chatId = UUID.randomUUID()
+        val stored = bindingRepository.upsertForChat(userId, chatId, "raw-token", "hash", "secret", now = Instant.now())
+        bindingRepository.claimTelegramUser(stored.id, "secret", 1L, 999L, null, null, null, Instant.now())
+        val api = FakeTelegramBotApi(failAfterSuccessCount = 1)
+        val (provider, messageRepository, eventRepository) = provider(bindingRepository, api = api)
+        val longText = "a".repeat(TELEGRAM_TEXT_LIMIT * 2 + 10)
+
+        val result = provider.sendMessage(userId, chatId.toString(), longText)
+
+        assertIs<ChannelSendResult.Failed>(result)
+        assertEquals(1, api.sent.size)
+        val messages = messageRepository.list(userId, chatId, afterSeq = null, beforeSeq = null, limit = 10)
+        assertEquals(1, messages.size)
+        assertEquals(api.sent.single().text, messages.single().content)
+        assertTrue(messages.single().content.length < longText.length)
+        assertEquals(1, eventRepository.listByChat(userId, chatId).size)
     }
 
     @Test

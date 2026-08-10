@@ -40,18 +40,35 @@ class TelegramChannelProvider(
             ?: return ChannelSendResult.Failed("Telegram channel not found or not linked.")
         val telegramChatId = binding.telegramChatId
             ?: return ChannelSendResult.Failed("Telegram channel not found or not linked.")
-        return try {
-            val token = tokenCrypto.decrypt(binding.botTokenEncrypted)
-            telegramTextChunks(text, TELEGRAM_TEXT_LIMIT).forEach { chunk ->
-                telegramBotApi.sendMessage(token, telegramChatId, chunk)
-            }
-            persistChannelMessage(messageRepository, eventService, userId, binding.chatId, text)
-            ChannelSendResult.Delivered("Sent via Telegram.")
+        val token = try {
+            tokenCrypto.decrypt(binding.botTokenEncrypted)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            ChannelSendResult.Failed("Telegram delivery failed: ${e.message}")
+            return ChannelSendResult.Failed("Telegram delivery failed: ${e.message}")
         }
+        val chunks = telegramTextChunks(text, TELEGRAM_TEXT_LIMIT)
+        val sentChunks = mutableListOf<String>()
+        for (chunk in chunks) {
+            try {
+                telegramBotApi.sendMessage(token, telegramChatId, chunk)
+                sentChunks += chunk
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Earlier chunks in this loop already reached Telegram and can't be un-sent — persist
+                // exactly what was actually delivered so Souz's own history matches reality, and report
+                // Failed (not Delivered) so the caller knows not to blindly resend the whole message.
+                if (sentChunks.isNotEmpty()) {
+                    persistChannelMessage(messageRepository, eventService, userId, binding.chatId, sentChunks.joinToString(""))
+                }
+                return ChannelSendResult.Failed(
+                    "Telegram delivery failed after ${sentChunks.size}/${chunks.size} part(s): ${e.message}"
+                )
+            }
+        }
+        persistChannelMessage(messageRepository, eventService, userId, binding.chatId, text)
+        return ChannelSendResult.Delivered("Sent via Telegram.")
     }
 
     private companion object {

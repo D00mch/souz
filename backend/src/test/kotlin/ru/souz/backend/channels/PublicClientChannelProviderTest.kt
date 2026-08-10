@@ -4,7 +4,9 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
@@ -114,6 +116,38 @@ class PublicClientChannelProviderTest {
         val (provider, _, _) = provider(chatRepository = chatRepository, claimed = setOf(mobile.id))
 
         val result = provider.sendMessage(userId, mobile.id.toString(), "hello")
+
+        assertIs<ChannelSendResult.Failed>(result)
+    }
+
+    @Test
+    fun `supports only known public client types, not any non-backend string`() = runTest {
+        val (provider, _, _) = provider()
+
+        assertTrue(provider.supports("mobile_app"))
+        assertFalse(provider.supports("backend"))
+        assertFalse(provider.supports("telegram"))
+        assertFalse(provider.supports("some_made_up_type"))
+    }
+
+    @Test
+    fun `listChannels excludes chats with an unrecognized clientType`() = runTest {
+        val chatRepository = MemoryChatRepository()
+        val unknown = chat("some_made_up_type")
+        chatRepository.create(unknown)
+        val (provider, _, _) = provider(chatRepository = chatRepository)
+
+        assertEquals(emptyList(), provider.listChannels(userId))
+    }
+
+    @Test
+    fun `sendMessage rejects a chat with an unrecognized clientType even if the id is otherwise valid`() = runTest {
+        val chatRepository = MemoryChatRepository()
+        val unknown = chat("some_made_up_type")
+        chatRepository.create(unknown)
+        val (provider, _, _) = provider(chatRepository = chatRepository)
+
+        val result = provider.sendMessage(userId, unknown.id.toString(), "hello")
 
         assertIs<ChannelSendResult.Failed>(result)
     }

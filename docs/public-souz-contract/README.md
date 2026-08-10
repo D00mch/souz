@@ -140,6 +140,6 @@ Tool-result acknowledgements are outside the event sequence.
 - `messages.metadata` stores accepted input sequence, source, device, request ID, and request metadata.
 - `client_requests` stores the shared message/cancel idempotency scope and original acknowledgement.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
-- `agent_events` stores replayable client tool-start and terminal events with chat-local sequence values.
+- `agent_events` stores replayable client tool-start, terminal, and out-of-band `message.created` (cross-channel push, `threadId = null`) events with chat-local sequence values.
 
 Client operations are backend-owned bundled tool-backed Skills provided through `SkillBundleProvider`. Definitions live under `backend/src/main/resources/skills/client`; each `SKILL.md` declares its operation ID, category, timeout, and instructions. All client Skills share one WebSocket transport, and each live invocation suspends until `tool.result` or its deadline. The WebSocket feature requires `SOUZ_BACKEND_AGENT=skills`.
