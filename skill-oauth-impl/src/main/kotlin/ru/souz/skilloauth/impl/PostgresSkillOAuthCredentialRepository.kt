@@ -18,21 +18,23 @@ class PostgresSkillOAuthCredentialRepository(
             }
         }
 
-    override suspend fun upsert(credential: SkillOAuthCredential): SkillOAuthCredential =
+    override suspend fun upsert(credential: SkillOAuthCredential): SkillOAuthCredential? =
         dataSource.write { connection ->
             connection.prepareStatement(
                 """
                 insert into skill_oauth_credentials(
                     user_id, provider, access_token_encrypted, refresh_token_encrypted,
-                    granted_scopes, expires_at, created_at, updated_at
+                    granted_scopes, expires_at, generation, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (user_id, provider) do update
                 set access_token_encrypted = excluded.access_token_encrypted,
                     refresh_token_encrypted = excluded.refresh_token_encrypted,
-                    granted_scopes = ${mergedScopesColumnSql("skill_oauth_credentials", "granted_scopes")},
+                    granted_scopes = excluded.granted_scopes,
                     expires_at = excluded.expires_at,
+                    generation = excluded.generation,
                     updated_at = excluded.updated_at
+                where excluded.generation >= skill_oauth_credentials.generation
                 returning *
                 """.trimIndent()
             ).use { statement ->
@@ -42,11 +44,14 @@ class PostgresSkillOAuthCredentialRepository(
                 statement.setString(4, credential.refreshTokenEncrypted)
                 statement.setString(5, credential.grantedScopes.toScopesColumn())
                 statement.setInstant(6, credential.expiresAt)
-                statement.setInstant(7, credential.createdAt)
-                statement.setInstant(8, credential.updatedAt)
+                statement.setLong(7, credential.generation)
+                statement.setInstant(8, credential.createdAt)
+                statement.setInstant(9, credential.updatedAt)
                 statement.executeQuery().use { resultSet ->
-                    resultSet.next()
-                    resultSet.toCredential()
+                    // No row means the `where` guard rejected the write — a fresher (or equally
+                    // fresh) credential already exists for this (userId, provider); see
+                    // SkillOAuthCredentialRepository.upsert's doc comment.
+                    if (resultSet.next()) resultSet.toCredential() else null
                 }
             }
         }
@@ -71,6 +76,7 @@ class PostgresSkillOAuthCredentialRepository(
             refreshTokenEncrypted = getString("refresh_token_encrypted"),
             grantedScopes = getString("granted_scopes").fromScopesColumn(),
             expiresAt = instantOrNull("expires_at"),
+            generation = getLong("generation"),
             createdAt = instant("created_at"),
             updatedAt = instant("updated_at"),
         )

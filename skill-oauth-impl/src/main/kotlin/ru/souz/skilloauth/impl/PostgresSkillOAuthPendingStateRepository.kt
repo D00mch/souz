@@ -13,13 +13,14 @@ class PostgresSkillOAuthPendingStateRepository(
             connection.prepareStatement(
                 """
                 insert into skill_oauth_pending_states(
-                    state, user_id, skill_id, provider, requested_scopes, expires_at
+                    state, user_id, skill_id, provider, requested_scopes, generation, expires_at
                 )
-                values (?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?)
                 on conflict (user_id, provider) do update set
                     state = excluded.state,
                     skill_id = excluded.skill_id,
-                    requested_scopes = ${mergedScopesColumnSql("skill_oauth_pending_states", "requested_scopes")},
+                    requested_scopes = excluded.requested_scopes,
+                    generation = excluded.generation,
                     expires_at = excluded.expires_at
                 returning *
                 """.trimIndent()
@@ -29,7 +30,8 @@ class PostgresSkillOAuthPendingStateRepository(
                 statement.setString(3, pending.skillId)
                 statement.setString(4, pending.provider)
                 statement.setString(5, pending.requestedScopes.toScopesColumn())
-                statement.setInstant(6, pending.expiresAt)
+                statement.setLong(6, pending.generation)
+                statement.setInstant(7, pending.expiresAt)
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     resultSet.toPendingState()
@@ -58,6 +60,7 @@ class PostgresSkillOAuthPendingStateRepository(
             skillId = getString("skill_id"),
             provider = getString("provider"),
             requestedScopes = getString("requested_scopes").fromScopesColumn(),
+            generation = getLong("generation"),
             expiresAt = instant("expires_at"),
         )
 }

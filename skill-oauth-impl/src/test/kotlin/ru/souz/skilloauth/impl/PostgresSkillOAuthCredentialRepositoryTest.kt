@@ -32,6 +32,7 @@ class PostgresSkillOAuthCredentialRepositoryTest {
                     refreshTokenEncrypted = "enc-refresh-1",
                     grantedScopes = listOf("login:info", "login:email"),
                     expiresAt = now.plusSeconds(3600),
+                    generation = 1,
                     createdAt = now,
                     updatedAt = now,
                 )
@@ -59,6 +60,7 @@ class PostgresSkillOAuthCredentialRepositoryTest {
                 refreshTokenEncrypted = "enc-refresh-1",
                 grantedScopes = listOf("login:info"),
                 expiresAt = now,
+                generation = 1,
                 createdAt = now,
                 updatedAt = now,
             )
@@ -72,12 +74,13 @@ class PostgresSkillOAuthCredentialRepositoryTest {
     }
 
     @Test
-    fun `upsert merges grantedScopes with the previous credential instead of replacing them`() = runTest {
-        // Regression test for the race where a second, independent authorization for the same
-        // (userId, provider) completes while an earlier one's callback is still exchanging its
-        // code — see SkillOAuthApiImpl.handleCallback. Exercises the real `on conflict do update`
-        // merge SQL in PostgresSkillOAuthCredentialRepository, not just the in-memory fake.
-        val schema = newSkillOAuthTestSchema("skill_oauth_credential_merge")
+    fun `upsert rejects a write whose generation is older than the stored credential's`() = runTest {
+        // Regression test for the race where a callback whose own pending state was already
+        // superseded by a fresher authorization (see SkillOAuthApiImpl.handleCallback) finishes its
+        // token exchange *after* that fresher one already saved — its stale write must not clobber
+        // the newer credential. Exercises the real `on conflict ... where` guard in Postgres, not
+        // just the in-memory fake.
+        val schema = newSkillOAuthTestSchema("skill_oauth_credential_stale")
         skillOAuthTestDataSource(schema).use { dataSource ->
             val repository = PostgresSkillOAuthCredentialRepository(dataSource)
             val now = Instant.parse("2026-01-01T00:00:00Z")
@@ -85,35 +88,72 @@ class PostgresSkillOAuthCredentialRepositoryTest {
                 SkillOAuthCredential(
                     userId = "user-1",
                     provider = "yandex",
-                    accessTokenEncrypted = "enc-access-1",
+                    accessTokenEncrypted = "enc-fresh",
                     refreshTokenEncrypted = null,
-                    grantedScopes = listOf("login:info"),
+                    grantedScopes = listOf("login:info", "iot:control"),
                     expiresAt = null,
+                    generation = 2,
                     createdAt = now,
                     updatedAt = now,
                 )
             )
 
-            val stored = repository.upsert(
+            val result = repository.upsert(
                 SkillOAuthCredential(
                     userId = "user-1",
                     provider = "yandex",
-                    accessTokenEncrypted = "enc-access-2",
+                    accessTokenEncrypted = "enc-stale",
                     refreshTokenEncrypted = null,
                     grantedScopes = listOf("iot:control"),
                     expiresAt = null,
+                    generation = 1,
                     createdAt = now,
                     updatedAt = now.plusSeconds(60),
                 )
             )
 
-            assertEquals(setOf("login:info", "iot:control"), stored.grantedScopes.toSet())
-            // the token itself is last-write-wins, unlike the scope bookkeeping.
-            assertEquals("enc-access-2", stored.accessTokenEncrypted)
-            assertEquals(
-                setOf("login:info", "iot:control"),
-                repository.find("user-1", "yandex")?.grantedScopes?.toSet(),
+            assertNull(result)
+            val stored = repository.find("user-1", "yandex")
+            assertEquals("enc-fresh", stored?.accessTokenEncrypted)
+            assertEquals(listOf("login:info", "iot:control"), stored?.grantedScopes)
+        }
+    }
+
+    @Test
+    fun `upsert accepts a write at the same generation, e g a routine token refresh`() = runTest {
+        val schema = newSkillOAuthTestSchema("skill_oauth_credential_same_gen")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthCredentialRepository(dataSource)
+            val now = Instant.parse("2026-01-01T00:00:00Z")
+            repository.upsert(
+                SkillOAuthCredential(
+                    userId = "user-1",
+                    provider = "yandex",
+                    accessTokenEncrypted = "enc-original",
+                    refreshTokenEncrypted = "enc-refresh",
+                    grantedScopes = listOf("login:info"),
+                    expiresAt = now,
+                    generation = 1,
+                    createdAt = now,
+                    updatedAt = now,
+                )
             )
+
+            val result = repository.upsert(
+                SkillOAuthCredential(
+                    userId = "user-1",
+                    provider = "yandex",
+                    accessTokenEncrypted = "enc-refreshed",
+                    refreshTokenEncrypted = "enc-refresh",
+                    grantedScopes = listOf("login:info"),
+                    expiresAt = now.plusSeconds(3600),
+                    generation = 1,
+                    createdAt = now,
+                    updatedAt = now.plusSeconds(60),
+                )
+            )
+
+            assertEquals("enc-refreshed", result?.accessTokenEncrypted)
         }
     }
 
@@ -124,10 +164,10 @@ class PostgresSkillOAuthCredentialRepositoryTest {
             val repository = PostgresSkillOAuthCredentialRepository(dataSource)
             val now = Instant.parse("2026-01-01T00:00:00Z")
             repository.upsert(
-                SkillOAuthCredential("user-1", "yandex", "enc-a", null, emptyList(), null, now, now)
+                SkillOAuthCredential("user-1", "yandex", "enc-a", null, emptyList(), null, 1, now, now)
             )
             repository.upsert(
-                SkillOAuthCredential("user-1", "github", "enc-b", null, emptyList(), null, now, now)
+                SkillOAuthCredential("user-1", "github", "enc-b", null, emptyList(), null, 1, now, now)
             )
 
             assertEquals("enc-a", repository.find("user-1", "yandex")?.accessTokenEncrypted)
@@ -142,7 +182,7 @@ class PostgresSkillOAuthCredentialRepositoryTest {
             val repository = PostgresSkillOAuthCredentialRepository(dataSource)
             val now = Instant.parse("2026-01-01T00:00:00Z")
             repository.upsert(
-                SkillOAuthCredential("user-1", "yandex", "enc-a", null, emptyList(), null, now, now)
+                SkillOAuthCredential("user-1", "yandex", "enc-a", null, emptyList(), null, 1, now, now)
             )
 
             repository.delete("user-1", "yandex")

@@ -31,15 +31,24 @@ interface SkillOAuthApi {
         scopes: List<String>,
     ): AuthorizationUrl
 
-    /** [requiredScopes] is enforced the same way as in [status] — the call is refused, not just
-     *  reported, if the shared credential doesn't cover the calling skill's own declared scopes. */
+    /**
+     * [requiredScopes] is enforced the same way as in [status] — the call is refused, not just
+     * reported, if the shared credential doesn't cover the calling skill's own declared scopes.
+     *
+     * Needing to (re)connect is a routine, expected outcome of calling this — tokens expire,
+     * scopes get added, refresh tokens get revoked — not a caller error, so it is modeled as a
+     * normal [ApiCallOutcome] rather than a thrown exception: see [ApiCallReconnectRequired].
+     * [SkillOAuthException] is still thrown for genuine caller mistakes (an unsupported provider,
+     * a malformed or disallowed [ApiCallRequest.url]) and for failures that aren't a matter of
+     * reconnecting (e.g. a transient network error reaching the provider during token refresh).
+     */
     suspend fun callAuthorizedApi(
         userId: String,
         provider: String,
         skillId: String,
         requiredScopes: List<String>,
         request: ApiCallRequest,
-    ): ApiCallResponse
+    ): ApiCallOutcome
 }
 
 data class OAuthStatus(
@@ -65,10 +74,27 @@ data class ApiCallRequest(
     val headers: Map<String, String> = emptyMap(),
 )
 
+/** Result of [SkillOAuthApi.callAuthorizedApi] — either the provider actually responded
+ *  ([ApiCallResponse]), or a (re)connect is needed first ([ApiCallReconnectRequired]). */
+sealed interface ApiCallOutcome
+
 data class ApiCallResponse(
     val statusCode: Int,
     val body: String,
     val headers: Map<String, String> = emptyMap(),
-)
+) : ApiCallOutcome
+
+/**
+ * No token exists yet, the stored one is unusable (expired with no way to refresh, or its refresh
+ * token was confirmed invalid by the provider), or the shared credential doesn't yet cover
+ * [requiredScopes] — either way, the caller needs a fresh trip through consent. [authorizationUrl]
+ * is already generated (an equivalent of calling [SkillOAuthApi.startAuthorization] with the
+ * calling skill's own required scopes) so the caller can relay it immediately, without a separate
+ * round trip.
+ */
+data class ApiCallReconnectRequired(
+    val authorizationUrl: String,
+    val message: String,
+) : ApiCallOutcome
 
 class SkillOAuthException(message: String) : Exception(message)

@@ -10,6 +10,8 @@ import ru.souz.agent.skills.bundle.SkillManifest
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.skilloauth.ApiCallOutcome
+import ru.souz.skilloauth.ApiCallReconnectRequired
 import ru.souz.skilloauth.ApiCallRequest
 import ru.souz.skilloauth.ApiCallResponse
 import ru.souz.skilloauth.AuthorizationUrl
@@ -44,7 +46,7 @@ class ToolSafeApiCallTest {
     }
 
     private class FakeSkillOAuthApi(
-        private val response: ApiCallResponse = ApiCallResponse(200, "{}"),
+        private val outcome: ApiCallOutcome = ApiCallResponse(200, "{}"),
     ) : SkillOAuthApi {
         var lastProvider: String? = null
             private set
@@ -67,10 +69,10 @@ class ToolSafeApiCallTest {
             skillId: String,
             requiredScopes: List<String>,
             request: ApiCallRequest,
-        ): ApiCallResponse {
+        ): ApiCallOutcome {
             lastProvider = provider
             lastRequiredScopes = requiredScopes
-            return response
+            return outcome
         }
     }
 
@@ -86,7 +88,7 @@ class ToolSafeApiCallTest {
         val repository = mockk<SkillRegistryRepository>()
         coEvery { repository.loadSkillBundle("user-1", SkillId("skill-1")) } returns
             bundleWith(oauthProvider = "yandex", oauthScopes = listOf("login:info"))
-        val api = FakeSkillOAuthApi(response = ApiCallResponse(200, "ok"))
+        val api = FakeSkillOAuthApi(outcome = ApiCallResponse(200, "ok"))
         val tool = ToolSafeApiCall(skillRegistryRepository = repository, skillOAuthApi = api)
 
         val result = tool.suspendInvoke(
@@ -97,6 +99,32 @@ class ToolSafeApiCallTest {
         assertEquals("yandex", api.lastProvider)
         assertEquals(listOf("login:info"), api.lastRequiredScopes)
         assertTrue(result.contains("\"statusCode\":200"))
+    }
+
+    @Test
+    fun `surfaces reconnectRequired as a normal output instead of throwing`() = runTest {
+        // Needing to (re)connect is a routine outcome (expired token, missing scope, revoked
+        // refresh token) — the tool must return it as data the model can relay to the user, not
+        // as a thrown exception the model has to interpret from a "Can't invoke function: ..."
+        // string.
+        val repository = mockk<SkillRegistryRepository>()
+        coEvery { repository.loadSkillBundle("user-1", SkillId("skill-1")) } returns
+            bundleWith(oauthProvider = "yandex", oauthScopes = listOf("login:info"))
+        val api = FakeSkillOAuthApi(
+            outcome = ApiCallReconnectRequired(
+                authorizationUrl = "https://oauth.yandex.ru/authorize?state=abc",
+                message = "The OAuth connection for 'yandex' has expired. Open this link to reconnect, then retry: https://oauth.yandex.ru/authorize?state=abc",
+            )
+        )
+        val tool = ToolSafeApiCall(skillRegistryRepository = repository, skillOAuthApi = api)
+
+        val result = tool.suspendInvoke(
+            ToolSafeApiCall.Input(skillId = "skill-1", method = "GET", url = "https://login.yandex.ru/info"),
+            ToolInvocationMeta(userId = "user-1"),
+        )
+
+        assertTrue(result.contains("\"reconnectRequired\":true"))
+        assertTrue(result.contains("https://oauth.yandex.ru/authorize?state=abc"))
     }
 
     @Test

@@ -5,7 +5,9 @@ import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
+import ru.souz.skilloauth.ApiCallReconnectRequired
 import ru.souz.skilloauth.ApiCallRequest
+import ru.souz.skilloauth.ApiCallResponse
 import ru.souz.skilloauth.SkillOAuthApi
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
@@ -41,10 +43,20 @@ class ToolSafeApiCall(
         val headers: Map<String, String> = emptyMap(),
     )
 
+    /**
+     * Exactly one of ([statusCode], [body]) or ([reconnectRequired] with [authorizationUrl]) is
+     * populated. Needing to (re)connect — no token yet, an expired/unrefreshable one, a revoked
+     * refresh token, or a scope the shared credential doesn't cover yet — is a normal outcome of
+     * calling this tool, not a failure: [authorizationUrl] is already generated, ready to relay to
+     * the user verbatim, without a separate `ConnectOAuthProvider` call first.
+     */
     data class Output(
-        val statusCode: Int,
-        val body: String,
+        val statusCode: Int? = null,
+        val body: String? = null,
         val headers: Map<String, String> = emptyMap(),
+        val reconnectRequired: Boolean = false,
+        val authorizationUrl: String? = null,
+        val message: String? = null,
     )
 
     override val name: String = "SafeApiCall"
@@ -52,7 +64,9 @@ class ToolSafeApiCall(
         "Calls a third-party API on behalf of the user using the OAuth connection a Skill declared " +
             "in its manifest. The access token is injected by the backend and never exposed here — " +
             "there is no way to target a provider other than the one the active Skill declared. " +
-            "Call ConnectOAuthProvider first if the provider is not yet connected."
+            "If the response has reconnectRequired=true, relay authorizationUrl to the user verbatim " +
+            "and ask them to retry once they're done — there is no need to call ConnectOAuthProvider " +
+            "separately first."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
@@ -70,6 +84,9 @@ class ToolSafeApiCall(
             "statusCode" to ReturnProperty("number", "HTTP status code returned by the provider."),
             "body" to ReturnProperty("string", "Response body returned by the provider."),
             "headers" to ReturnProperty("object", "Response headers returned by the provider."),
+            "reconnectRequired" to ReturnProperty("boolean", "True if a (re)connect is needed before this call can succeed."),
+            "authorizationUrl" to ReturnProperty("string", "URL to relay to the user when reconnectRequired is true."),
+            "message" to ReturnProperty("string", "Human-readable explanation of why reconnecting is needed."),
         )
     )
 
@@ -83,13 +100,21 @@ class ToolSafeApiCall(
         val provider = bundle.manifest.oauthProvider
             ?: throw BadInputException("Skill '$skillId' does not declare an oauthProvider in its manifest.")
 
-        val response = api.callAuthorizedApi(
+        val outcome = api.callAuthorizedApi(
             userId = meta.userId,
             provider = provider,
             skillId = skillId,
             requiredScopes = bundle.manifest.oauthScopes,
             request = ApiCallRequest(method = input.method, url = input.url, body = input.body, headers = input.headers),
         )
-        return restJsonMapper.writeValueAsString(Output(response.statusCode, response.body, response.headers))
+        val output = when (outcome) {
+            is ApiCallResponse -> Output(statusCode = outcome.statusCode, body = outcome.body, headers = outcome.headers)
+            is ApiCallReconnectRequired -> Output(
+                reconnectRequired = true,
+                authorizationUrl = outcome.authorizationUrl,
+                message = outcome.message,
+            )
+        }
+        return restJsonMapper.writeValueAsString(output)
     }
 }
