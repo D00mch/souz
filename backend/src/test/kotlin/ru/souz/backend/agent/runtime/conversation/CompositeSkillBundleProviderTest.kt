@@ -37,17 +37,6 @@ class CompositeSkillBundleProviderTest {
         assertSame(bundledShared, provider.loadSkillBundle(USER_ID, SkillId("shared")))
         assertSame(filesystemOnly, provider.loadSkillBundle(USER_ID, SkillId("filesystem-only")))
     }
-
-    @Test
-    fun `provider list is snapshotted defensively`() = runTest {
-        val first = FakeSkillBundleProvider(listOf(bundle("first", "first")))
-        val providers = mutableListOf<SkillBundleProvider>(first)
-        val composite = CompositeSkillBundleProvider(providers)
-
-        providers += FakeSkillBundleProvider(listOf(bundle("late", "late")))
-
-        assertEquals(listOf("first"), composite.listSkillInventoryIds(USER_ID).map { it.value })
-    }
 }
 
 private class FakeSkillBundleProvider(

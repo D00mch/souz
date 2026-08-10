@@ -1570,15 +1570,21 @@ internal class GateControlledChatApi : LLMChatAPI {
 
 internal class CancellableChatApi : LLMChatAPI {
     private val startedByPrompt = LinkedHashMap<String, CompletableDeferred<Unit>>()
+    private val startedByPromptMutex = Mutex()
 
     suspend fun awaitStarted(prompt: String) {
-        startedByPrompt.getOrPut(prompt) { CompletableDeferred() }.await()
+        startedSignal(prompt).await()
     }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        startedByPrompt.getOrPut(body.conversationPrompt()) { CompletableDeferred() }.complete(Unit)
+        startedSignal(body.conversationPrompt()).complete(Unit)
         awaitCancellation()
     }
+
+    private suspend fun startedSignal(prompt: String): CompletableDeferred<Unit> =
+        startedByPromptMutex.withLock {
+            startedByPrompt.getOrPut(prompt) { CompletableDeferred() }
+        }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
         error("Streaming is not used in stage 4 route tests.")

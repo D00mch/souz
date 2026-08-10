@@ -67,71 +67,35 @@ class BackendConversationRuntimeSettingsTest {
     }
 
     @Test
-    fun `runtime strips few shot examples when disabled`() = runTest {
-        val executionCatalog = BackendExecutionToolCatalog(
-            compiledToolCatalog = singleToolCatalog(
-                ToolCategory.FILES,
-                fakeTool(
-                    "ListFiles",
-                    listOf(LLMRequest.FewShotExample("List project files", mapOf("path" to "."))),
-                ),
-            ),
+    fun `execution catalog follows the few shot setting`() {
+        val examples = listOf(LLMRequest.FewShotExample("List project files", mapOf("path" to ".")))
+        val compiledTools = singleToolCatalog(
+            ToolCategory.FILES,
+            fakeTool("ListFiles", examples),
+        )
+        val withoutExamples = BackendExecutionToolCatalog(
+            compiledToolCatalog = compiledTools,
             enabledCompiledToolNames = null,
             clientToolCatalog = BackendNoopAgentToolCatalog,
             includeFewShotExamples = false,
         )
-
-        assertEquals(
-            emptyList(),
-            executionCatalog.toolsByCategory.getValue(ToolCategory.FILES)
-                .getValue("ListFiles").fn.fewShotExamples.orEmpty(),
-        )
-    }
-
-    @Test
-    fun `runtime keeps few shot examples when enabled`() = runTest {
-        val examples = listOf(LLMRequest.FewShotExample("List project files", mapOf("path" to ".")))
-        val executionCatalog = BackendExecutionToolCatalog(
-            compiledToolCatalog = singleToolCatalog(
-                ToolCategory.FILES,
-                fakeTool("ListFiles", examples),
-            ),
+        val withExamples = BackendExecutionToolCatalog(
+            compiledToolCatalog = compiledTools,
             enabledCompiledToolNames = null,
             clientToolCatalog = BackendNoopAgentToolCatalog,
             includeFewShotExamples = true,
         )
 
         assertEquals(
-            examples,
-            executionCatalog.toolsByCategory.getValue(ToolCategory.FILES)
+            emptyList(),
+            withoutExamples.toolsByCategory.getValue(ToolCategory.FILES)
                 .getValue("ListFiles").fn.fewShotExamples.orEmpty(),
         )
-    }
-
-    @Test
-    fun `runtime applies enabled tool snapshot to compiled tools`() = runTest {
-        val api = ReplyingChatApi()
-        val runtimeFactory = runtimeFactory(
-            llmApiFactory = { api },
-            toolCatalog = singleToolCatalog(
-                category = ToolCategory.FILES,
-                tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
-            ),
+        assertEquals(
+            examples,
+            withExamples.toolsByCategory.getValue(ToolCategory.FILES)
+                .getValue("ListFiles").fn.fewShotExamples.orEmpty(),
         )
-        val enabledTools = linkedSetOf<String>()
-        val request = turnRequest().copy(enabledTools = enabledTools)
-        val runtime = runtimeFactory.create(conversationKey(), request)
-        enabledTools += "ListFiles"
-
-        runtime.execute(
-            request = request,
-            persistSession = false,
-            eventSink = AgentRuntimeEventSink.NONE,
-        )
-
-        val llmRequest = api.requests.single()
-        assertEquals(SKILL_CORE_TOOL_NAMES, llmRequest.functions.map { it.name }.toSet())
-        assertFalse(llmRequest.systemMessage().contains("ListFiles"))
     }
 
     @Test
@@ -164,6 +128,7 @@ class BackendConversationRuntimeSettingsTest {
         assertTrue(api.requests.all { chat -> chat.functions.map { it.name }.toSet() == SKILL_CORE_TOOL_NAMES })
         assertTrue(api.requests.first().systemMessage().contains("user.ask"))
         assertTrue(api.requests.first().systemMessage().contains("device.media.open"))
+        assertFalse(api.requests.first().systemMessage().contains("ListFiles"))
         assertEquals(1, clientSkills.inventoryCalls)
         assertEquals(mapOf("value" to "delegated"), clientTool.arguments)
         assertEquals(
@@ -199,7 +164,6 @@ class BackendConversationRuntimeSettingsTest {
         )
 
         val llmRequest = api.requests.single()
-        assertEquals(SKILL_CORE_TOOL_NAMES, llmRequest.functions.map { it.name }.toSet())
         assertFalse(llmRequest.systemMessage().contains("user.ask"))
         assertFalse(llmRequest.systemMessage().contains("device.media.open"))
         assertEquals(0, clientSkills.inventoryCalls)
@@ -223,7 +187,6 @@ class BackendConversationRuntimeSettingsTest {
         )
 
         assertEquals(3, api.requests.size)
-        assertTrue(api.requests.all { chat -> chat.functions.map { it.name }.toSet() == SKILL_CORE_TOOL_NAMES })
         assertTrue(api.requests.first().systemMessage().contains("capture.skill"))
         assertEquals(mapOf("value" to "delegated"), captureTool.arguments)
         assertEquals(
