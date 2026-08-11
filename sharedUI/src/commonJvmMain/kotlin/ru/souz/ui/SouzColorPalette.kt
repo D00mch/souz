@@ -12,28 +12,14 @@ internal fun souzColors(isDark: Boolean): SouzColors =
 private fun createSouzColors(isDark: Boolean, scheme: ColorScheme): SouzColors = SouzColors(
     glass = if (isDark) {
         GlassColors(
-            heroBackground = listOf(Color(0xF21B1C20), Color(0xF21B1C20)),
-            heroOverlay = Color(0xB0000000),
-            heroBorder = listOf(
-                Color(0x3AFFFFFF),
-                Color(0x18FFFFFF),
-                Color(0x14FFFFFF),
-                Color(0x2AFFFFFF),
-            ),
-            innerBorder = Color(0x08FFFFFF),
+            heroBackground = listOf(Color(0xFE1E1E1E), Color(0xFE1E1E1E)),
+            heroBorder = Color(0x24FFFFFF),
             textPrimary = Color(0xD9FFFFFF),
         )
     } else {
         GlassColors(
-            heroBackground = listOf(Color.White, Color(0xFFF3F3F0)),
-            heroOverlay = Color.Transparent,
-            heroBorder = listOf(
-                Color(0x1F1F1F1D),
-                Color(0x0A1F1F1D),
-                Color(0x0A1F1F1D),
-                Color(0x1F1F1F1D),
-            ),
-            innerBorder = Color(0x061F1F1D),
+            heroBackground = listOf(Color(0xFEF0F0F0), Color(0xFEECECEC)),
+            heroBorder = Color(0x1F000000),
             textPrimary = Color(0xE61F1F1D),
         )
     },
@@ -46,8 +32,8 @@ private fun createSouzColors(isDark: Boolean, scheme: ColorScheme): SouzColors =
     ),
     settings = SettingsColors(
         contentBackground = if (isDark) Color.Transparent else scheme.background,
-        sidebarBackground = if (isDark) Color(0x5B3C4148) else Color(0xFFF1F1EE),
-        sidebarBorder = if (isDark) Color(0x14FFFFFF) else scheme.outlineVariant,
+        sidebarBackground = if (isDark) Color(0xFF242424) else Color(0xFFE8E8E8),
+        sidebarBorder = if (isDark) Color(0x14FFFFFF) else Color(0x14000000),
         selectedNavigationBackground = if (isDark) Color(0x1FFFFFFF) else scheme.primaryContainer,
         selectedNavigationContent = if (isDark) Color.White else scheme.onPrimaryContainer,
         navigationContent = if (isDark) Color(0x99FFFFFF) else scheme.onSurfaceVariant,
@@ -109,11 +95,11 @@ private fun createSouzColors(isDark: Boolean, scheme: ColorScheme): SouzColors =
         badgeContent = scheme.onSurface,
         edge = if (isDark) Color(0x4DFFFFFF) else scheme.outline,
         highlightedEdge = if (isDark) Color(0xFF00E5FF) else scheme.primary,
-        panelBackground = if (isDark) Color(0xFF171B20) else scheme.surface,
-        panelBorder = if (isDark) Color(0x1AFFFFFF) else scheme.outlineVariant,
+        panelBackground = scheme.surface,
+        panelBorder = scheme.outlineVariant,
         itemBackground = if (isDark) Color(0x0DFFFFFF) else scheme.surfaceVariant,
         selectedItemBackground = if (isDark) Color(0x14FFFFFF) else scheme.primaryContainer,
-        divider = if (isDark) Color(0x1AFFFFFF) else scheme.outlineVariant,
+        divider = scheme.outlineVariant,
         primaryText = scheme.onSurface,
         secondaryText = scheme.onSurfaceVariant,
         codeBackground = if (isDark) Color(0xFF101010) else Color(0xFFF2F2EF),

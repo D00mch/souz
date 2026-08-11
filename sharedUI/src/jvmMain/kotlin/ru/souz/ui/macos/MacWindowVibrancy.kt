@@ -10,6 +10,7 @@ import java.awt.Window
 import java.lang.reflect.Method
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
+import javax.swing.RootPaneContainer
 import org.slf4j.LoggerFactory
 
 /**
@@ -31,6 +32,7 @@ object MacWindowVibrancy {
                 return false
             }
 
+            configureNativeWindowAppearance(window)
             val effectViewPtr = attachVisualEffectView(nativeViewPtr)
             if (effectViewPtr == 0L) {
                 return false
@@ -124,6 +126,12 @@ object MacWindowVibrancy {
         ObjC.msgVoid(contentView, "addSubview:positioned:relativeTo:", view, NSWindowBelow.toLong(), Pointer.NULL)
 
         return Pointer.nativeValue(view)
+    }
+
+    private fun configureNativeWindowAppearance(window: Window) {
+        val rootPane = (window as? RootPaneContainer)?.rootPane ?: return
+        rootPane.putClientProperty("Window.shadow", true)
+        rootPane.putClientProperty("apple.awt.windowShadow.revalidateNow", true)
     }
 
     private fun isMacOs(): Boolean =
