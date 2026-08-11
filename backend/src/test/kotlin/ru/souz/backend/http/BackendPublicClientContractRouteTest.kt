@@ -32,10 +32,9 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.AgentId
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientDevice
 import ru.souz.backend.client.MessageSubmitFrame
@@ -170,7 +169,7 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `running skills thread accepts a second message on the same socket`() = testApplication {
+    fun `running thread accepts a second message on the same socket`() = testApplication {
         val api = GateControlledChatApi()
         val context = publicContext(api)
         install(context)
@@ -346,7 +345,7 @@ class BackendPublicClientContractRouteTest {
     }
 
     @Test
-    fun `client websocket skill waits for an idempotent client result`() = runBlocking {
+    fun `client websocket tool waits for an idempotent client result`() = runBlocking {
         val context = publicContext()
         val userId = UUID.randomUUID().toString()
         val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
@@ -376,11 +375,11 @@ class BackendPublicClientContractRouteTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalogFactory(
+        val catalog = BackendClientSkills(
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create()
+        )
         val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
         requireNotNull(catalog.toolsByCategory[ToolCategory.APPLICATIONS]?.get("device.media.open"))
         val invocation = async {
@@ -529,11 +528,11 @@ class BackendPublicClientContractRouteTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalogFactory(
+        val catalog = BackendClientSkills(
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create()
+        )
         val tool = requireNotNull(catalog.toolsByCategory[ToolCategory.CHAT]?.get("user.ask"))
         val invocation = async {
             tool.invoke(
@@ -657,7 +656,11 @@ class BackendPublicClientContractRouteTest {
             assertEquals("cancel-1", cancelAck["requestId"].asText())
             assertEquals(threadId, cancelStatus["threadId"].asText())
             assertEquals("thread.cancelled", terminal["type"].asText())
-            assertFalse(context.clientThreadRegistry.contains(UUID.fromString(threadId)))
+            withTimeout(2_000) {
+                while (context.clientThreadRegistry.contains(UUID.fromString(threadId))) {
+                    delay(10)
+                }
+            }
             session.close()
         }
     }
@@ -743,7 +746,6 @@ class BackendPublicClientContractRouteTest {
         toolCallRepository = toolCallRepository,
         executionRepository = executionRepository,
         featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = false, toolEvents = true),
-        agentId = AgentId.SKILLS_GRAPH,
     )
 
     private fun messageFrame(

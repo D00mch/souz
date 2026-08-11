@@ -11,7 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -61,7 +60,6 @@ class AgentExecutionServiceStateConflictTest {
                 userId = "user-state-conflict",
                 chatId = UUID.randomUUID(),
                 schemaVersion = 1,
-                activeAgentId = AgentId.default,
                 history = listOf(
                     LLMRequest.Message(
                         role = LLMMessageRole.user,
@@ -109,7 +107,6 @@ class AgentExecutionServiceStateConflictTest {
         )
         val turnRunner = CompletedTurnRunner(
             session = AgentConversationSession(
-                activeAgentId = AgentId.default,
                 history = listOf(
                     LLMRequest.Message(
                         role = LLMMessageRole.user,

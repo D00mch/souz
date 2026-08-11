@@ -3,25 +3,18 @@ package ru.souz.backend.agent.runtime.conversation
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import ru.souz.agent.AgentExecutionKernelFactory
-import ru.souz.agent.AgentId
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
-import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.agent.skills.validation.SkillApprovalGate
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
-import ru.souz.backend.agent.runtime.BackendFewShotAwareToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
-import ru.souz.backend.agent.runtime.BackendNoopMcpToolProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
-import ru.souz.backend.agent.runtime.BackendRequestToolCatalog
-import ru.souz.backend.agent.runtime.BackendRequestToolsFilter
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
 import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.llm.BackendLlmExecutionContext
@@ -29,11 +22,12 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.json.JsonUtils
-import ru.souz.llms.restJsonMapper
-import ru.souz.llms.runtime.ApiClassifier
-import ru.souz.tool.LocalRegexClassifier
+import ru.souz.tool.RuntimePassThroughToolsFilter
+import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.ToolInvokeSkill
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 class BackendConversationRuntimeFactory(
@@ -42,11 +36,10 @@ class BackendConversationRuntimeFactory(
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
-    private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val clientToolCatalogProvider: suspend (String) -> AgentToolCatalog = { BackendNoopAgentToolCatalog },
-    private val skillRegistryRepository: SkillRegistryRepository? = null,
-    private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
+    private val clientToolCatalog: AgentToolCatalog,
+    private val skillBundleProvider: SkillBundleProvider,
+    private val commandExecutor: SkillCommandExecutor,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
@@ -66,7 +59,18 @@ class BackendConversationRuntimeFactory(
             useFewShotExamples = request.useFewShotExamples ?: baseSettingsProvider.useFewShotExamples,
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
-        settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
+        val activeClientToolCatalog = if (request.clientToolsEnabled) {
+            clientToolCatalog
+        } else {
+            BackendNoopAgentToolCatalog
+        }
+        val executionToolCatalog = BackendExecutionToolCatalog(
+            compiledToolCatalog = toolCatalog,
+            enabledCompiledToolNames = request.enabledTools,
+            clientToolCatalog = activeClientToolCatalog,
+            includeFewShotExamples = settingsProvider.useFewShotExamples,
+        )
+        val requestToolsFilter = RuntimePassThroughToolsFilter
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = key.userId,
@@ -78,68 +82,39 @@ class BackendConversationRuntimeFactory(
             delegate = delegateApi,
             initialUsage = initialUsage,
         )
-        val effectiveSkillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository
-        val skillApprovalGate = SkillApprovalGate.from(
-            validationStore = effectiveSkillRegistryRepository,
-            llmApi = usageTrackingApi,
-            settingsProvider = settingsProvider,
-            jsonUtils = JsonUtils(restJsonMapper),
-        )
-        // Built request-scoped with the real skillApprovalGate above, then spliced into the tool
-        // catalog below — see BackendOAuthToolCatalogOverride's doc comment for why the
-        // DI-singleton catalog's own OAuth tools (approvalGate always null) can't be used as-is.
-        val oauthTools = skillCoreToolsFactory.createOAuthTools(skillApprovalGate)
-        val clientToolCatalog = if (request.clientToolsEnabled) {
-            clientToolCatalogProvider(key.userId)
-        } else {
-            BackendNoopAgentToolCatalog
-        }
-        val executionToolCatalog = BackendOAuthToolCatalogOverride(
-            delegate = BackendMergedToolCatalog(toolCatalog, clientToolCatalog),
-            oauthTools = oauthTools,
-        )
-        val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
-            delegate = executionToolCatalog,
-            settingsProvider = settingsProvider,
-        )
-        val enabledTools = request.enabledTools?.plus(
-            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
-        )
-        val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
-        val filteredToolCatalog = BackendRequestToolCatalog(
-            delegate = requestScopedToolCatalog,
+        val getSkillByNameTool = ToolGetSkillByName(
+            toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = skillBundleProvider,
+            approvalGate = null,
         )
-        val getSkillByNameTool = skillCoreToolsFactory.createGetSkillByName(
-            toolCatalog = requestScopedToolCatalog,
-            toolsFilter = requestToolsFilter,
-            approvalGate = skillApprovalGate,
-        )
-        val getSkillsNamesByCategoryTool = skillCoreToolsFactory.createGetSkillsNamesByCategory(
-            toolCatalog = requestScopedToolCatalog,
+        val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
+            toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
         )
         val getSkillsByCategoryTool = ToolGetSkillsByCategory(
             getSkillByName = getSkillByNameTool,
             getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
         )
-        val runtimeCommandTool = skillCoreToolsFactory.createRuntimeCommand(
-            toolCatalog = requestScopedToolCatalog,
+        val runtimeCommandTool = ToolInvokeSkill(
+            toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
-            approvalGate = skillApprovalGate,
+            skillBundleProvider = skillBundleProvider,
+            commandExecutor = commandExecutor,
+            approvalGate = null,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
-            toolCatalog = filteredToolCatalog,
+            toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = skillBundleProvider,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
                 localeTag = request.locale,
                 timeZone = request.timeZone,
             ),
-            mcpToolProvider = BackendNoopMcpToolProvider,
             getSkillByNameTool = getSkillByNameTool,
             getSkillsByCategoryTool = getSkillsByCategoryTool,
             getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,
@@ -151,9 +126,6 @@ class BackendConversationRuntimeFactory(
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = usageTrackingApi,
-            apiClassifier = ApiClassifier(delegateApi),
-            localClassifier = LocalRegexClassifier,
-            skillRegistryRepository = effectiveSkillRegistryRepository,
             captureScope = agentBackgroundScope,
         ).create()
         return BackendConversationRuntime(

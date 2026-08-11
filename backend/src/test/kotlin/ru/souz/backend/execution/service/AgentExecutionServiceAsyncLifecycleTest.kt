@@ -17,7 +17,6 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.AgentId
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -330,7 +329,6 @@ private class HangingTurnRunner : BackendConversationTurnRunner {
 
 private fun completedSession(): AgentConversationSession =
     AgentConversationSession(
-        activeAgentId = AgentId.default,
         history = listOf(
             LLMRequest.Message(
                 role = LLMMessageRole.user,

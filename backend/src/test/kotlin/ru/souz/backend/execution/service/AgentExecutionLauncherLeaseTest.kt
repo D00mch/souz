@@ -15,7 +15,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.AgentId
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
@@ -263,7 +262,6 @@ class AgentExecutionLauncherLeaseTest {
             output = "unused",
             usage = LLMResponse.Usage(0, 0, 0, 0),
             session = AgentConversationSession(
-                activeAgentId = AgentId.default,
                 history = listOf(LLMRequest.Message(LLMMessageRole.user, "unused")),
                 temperature = 0.6f,
                 locale = "ru-RU",

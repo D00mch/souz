@@ -11,7 +11,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.testCoreTool
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.config.BackendFeatureFlags
@@ -27,7 +26,11 @@ import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
 import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
@@ -247,6 +250,21 @@ class AgentExecutionRequestFactoryTest {
 
 private fun toolCatalog(vararg toolNames: String): AgentToolCatalog = object : AgentToolCatalog {
     override val toolsByCategory = mapOf(
-        ToolCategory.FILES to toolNames.associateWith(::testCoreTool)
+        ToolCategory.FILES to toolNames.associateWith(::testTool)
     )
+}
+
+private fun testTool(name: String): LLMToolSetup = object : LLMToolSetup {
+    override val fn = LLMRequest.Function(
+        name = name,
+        description = "backend test tool",
+        parameters = LLMRequest.Parameters(type = "object", properties = emptyMap()),
+    )
+
+    override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
+        LLMRequest.Message(
+            role = LLMMessageRole.function,
+            content = "ok",
+            name = functionCall.name,
+        )
 }

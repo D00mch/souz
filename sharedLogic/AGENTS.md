@@ -13,8 +13,9 @@ Keep this module UI-free. Compose resources and UI adapters belong in `:sharedUI
 
 - Code in `commonJvmMain` must stay portable across JVM hosts; keep desktop-only APIs and dependencies in their platform source set.
 - Portable tools must remain usable without desktop services. Add host-specific capabilities by composition in the owning host.
+- Keep skill registry and skill-tool DI opt-in; general runtime modules must not install them implicitly.
 - Resolve filesystem and command access from each `ToolInvocationMeta`; do not retain user-specific paths in singleton tools.
-- Keep skill registry storage scope and `RunSkillCommand` storage scope aligned so activation and execution resolve the same bundle.
+- Keep the skill registry and `RunSkillCommand` on the same single-user bundle layout so activation and execution resolve the same bundle.
 - Use sandbox filesystem abstractions for tool and skill IO whenever they are available.
 
 ## Verification

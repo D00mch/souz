@@ -22,7 +22,6 @@ import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
-import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolFindFilesByName
@@ -39,13 +38,13 @@ import ru.souz.tool.knowledge.KnowledgeRetriever
 import ru.souz.tool.knowledge.ToolGetKnowledge
 import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
-import ru.souz.tool.skills.ToolCheckOAuthStatus
-import ru.souz.tool.skills.ToolConnectOAuthProvider
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.skills.ToolCheckOAuthStatus
+import ru.souz.tool.skills.ToolConnectOAuthProvider
 import ru.souz.tool.skills.ToolSafeApiCall
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
@@ -53,7 +52,6 @@ import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebResearchClient
 
 fun portableRuntimeToolsDiModule(
-    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
     bindAgentToolCatalog: Boolean = true,
 ): DI.Module = DI.Module("portableRuntimeTools") {
@@ -135,29 +133,39 @@ fun portableRuntimeToolsDiModule(
         bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
     }
     bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
-    import(portableSkillToolsDiModule(skillStorageScope = skillStorageScope))
 }
 
-fun portableSkillToolsDiModule(
-    skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
-): DI.Module = DI.Module("portableSkillTools") {
+/**
+ * Catalog-independent Skill runtime tools that hosts can compose with a request-scoped catalog.
+ *
+ * Skill discovery and delegation remain in [portableSkillToolsDiModule] because they depend on the
+ * host's [AgentToolCatalog], [AgentToolsFilter], and [SkillRegistryRepository].
+ */
+fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRuntimeTools") {
     bindSingleton { SandboxConversationKnowledgeStore(instance()) }
     bindSingleton<ConversationKnowledgeStore> { instance<SandboxConversationKnowledgeStore>() }
     bindSingleton {
-        ToolRunSkillCommand(
-            sandboxResolver = instance(),
-            skillStorageScope = skillStorageScope,
-        )
+        SkillCommandExecutor(sandboxResolver = instance())
     }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.COMMAND_TOOL) {
-        instance<ToolRunSkillCommand>().toGiga()
+    bindSingleton { KnowledgeRetriever(instance()) }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
+        ToolGetKnowledge(retriever = instance())
     }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
+        ToolSearchKnowledge(retriever = instance())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
+        ToolSearchMemory(instanceOrNull<ConversationMemoryRuntime>() ?: NoopConversationMemoryRuntime)
+    }
+}
+
+fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
+    import(portableSkillRuntimeToolsDiModule())
     bindSingleton {
         ToolGetSkillByName(
             toolCatalog = instance(),
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
-            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }
@@ -182,22 +190,12 @@ fun portableSkillToolsDiModule(
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL) {
         instance<ToolGetSkillsByCategory>()
     }
-    bindSingleton { KnowledgeRetriever(instance()) }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
-        ToolGetKnowledge(retriever = instance())
-    }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
-        ToolSearchKnowledge(retriever = instance())
-    }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
-        ToolSearchMemory(instanceOrNull<ConversationMemoryRuntime>() ?: NoopConversationMemoryRuntime)
-    }
     bindSingleton {
         ToolInvokeSkill(
             toolCatalog = instance(),
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
-            commandTool = instance(),
+            commandExecutor = instance(),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }
