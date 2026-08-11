@@ -38,7 +38,7 @@ interface SkillOAuthCredentialRepository {
      * provider's response: (1) a callback whose own pending state was already superseded by a
      * fresher authorization for the same `(userId, provider)` must not clobber that fresher one's
      * credential just because its network round-trip happened to finish later; (2) a background
-     * token refresh (which never bumps generation — see [SkillOAuthApiImpl.ensureFreshAccessToken])
+     * token refresh (which never bumps generation — see [SkillOAuthGatewayImpl.ensureFreshAccessToken])
      * must not silently undo a broader authorization the user completed while the refresh was in
      * flight; (3) two token refreshes racing for the same `(userId, provider)` share one
      * generation, so `generation` alone can't order them — without `revision`, the `>=` guard lets

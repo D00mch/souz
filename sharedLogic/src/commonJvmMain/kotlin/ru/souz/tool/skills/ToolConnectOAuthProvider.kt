@@ -5,7 +5,8 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.skilloauth.SkillOAuthApi
+import ru.souz.skilloauth.AuthorizationState
+import ru.souz.skilloauth.SkillOAuthGateway
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -24,17 +25,20 @@ import ru.souz.tool.ToolSetup
  * be constructed request-scoped with a real gate on any host that enforces approval, exactly like
  * [ToolGetSkillByName]/[ToolInvokeSkill] are (see `BackendSkillCoreToolsFactory`); a `null` default
  * here exists only for hosts that don't gate skills by approval at all.
+ *
+ * Only constructed (and only bound into [ru.souz.tool.ToolCategory.OAUTH]) when a real
+ * [SkillOAuthGateway] is available — see `portableRuntimeToolsDiModule`.
  */
 class ToolConnectOAuthProvider(
     private val skillBundleProvider: SkillBundleProvider,
-    private val skillOAuthApi: SkillOAuthApi?,
+    private val gateway: SkillOAuthGateway,
     private val approvalGate: SkillApprovalGate? = null,
 ) : ToolSetup<ToolConnectOAuthProvider.Input> {
     data class Input(
         @InputParamDescription("Activated Skill ID that declares an oauthProvider in its manifest.")
         val skillId: String,
         @InputParamDescription(
-            "Set true to issue a fresh authorize link even if status() still reports 'connected' — " +
+            "Set true to issue a fresh authorize link even if this still reports 'connected' — " +
                 "use this only when the user says the connection stopped working (e.g. calls keep " +
                 "failing) despite ConnectOAuthProvider previously reporting success, since a token can " +
                 "be revoked on the provider's side without this service finding out until it's used."
@@ -74,27 +78,19 @@ class ToolConnectOAuthProvider(
     override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
-        val api = skillOAuthApi
-            ?: throw BadInputException("OAuth connections are not available in this runtime.")
         val skillId = input.skillId.trim()
         val bundle = loadApprovedOAuthSkillBundle(skillBundleProvider, approvalGate, meta.userId, skillId)
         val provider = bundle.manifest.oauthProvider
             ?: throw BadInputException("Skill '$skillId' does not declare an oauthProvider in its manifest.")
-        val requiredScopes = bundle.manifest.oauthScopes
+        val requiredScopes = bundle.manifest.oauthScopes.toSet()
 
-        val status = api.status(meta.userId, provider, requiredScopes)
-        val output = if (status.connected && !input.forceReconnect) {
-            Output(connected = true, message = "Already connected to $provider.")
-        } else {
-            // Request the union of what's already granted plus what this skill declares, so
-            // connecting a second, broader-scoped skill doesn't shrink access for skills already
-            // relying on the shared (userId, provider) credential.
-            val scopesToRequest = (status.grantedScopes + requiredScopes).distinct()
-            val authorization = api.startAuthorization(meta.userId, provider, skillId, scopesToRequest)
-            Output(
+        val state = gateway.ensureAuthorized(meta.userId, provider, requiredScopes, force = input.forceReconnect)
+        val output = when (state) {
+            is AuthorizationState.Connected -> Output(connected = true, message = "Already connected to $provider.")
+            is AuthorizationState.AuthorizationRequired -> Output(
                 connected = false,
-                authorizationUrl = authorization.url,
-                message = "Open this link to connect $provider, then retry: ${authorization.url}",
+                authorizationUrl = state.url,
+                message = "Open this link to connect $provider, then retry: ${state.url}",
             )
         }
         return restJsonMapper.writeValueAsString(output)

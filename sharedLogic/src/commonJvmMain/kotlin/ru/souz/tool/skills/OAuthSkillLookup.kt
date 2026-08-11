@@ -7,13 +7,13 @@ import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.tool.BadInputException
 
 /**
- * Shared by [ToolConnectOAuthProvider], [ToolCheckOAuthStatus], and [ToolSafeApiCall]: loads the
+ * Shared by [ToolConnectOAuthProvider] and [ToolSafeApiCall]: loads the
  * bundle fresh (never trusting a caller-supplied provider/manifest) and routes it through the same
  * [SkillApprovalGate] that [ToolGetSkillByName]/[ToolInvokeSkill] use before running or exposing a
  * file-backed skill. Without this, a stored-but-never-approved (or rejected) bundle declaring
  * `oauthProvider` could drive a real OAuth connection or API call. [approvalGate] must be a real,
  * request-scoped gate on any host that enforces approval at all — see the constructor docs on
- * [ToolConnectOAuthProvider]/[ToolCheckOAuthStatus]/[ToolSafeApiCall] for why a null default here
+ * [ToolConnectOAuthProvider]/[ToolSafeApiCall] for why a null default here
  * would silently disable that enforcement.
  */
 internal suspend fun loadApprovedOAuthSkillBundle(

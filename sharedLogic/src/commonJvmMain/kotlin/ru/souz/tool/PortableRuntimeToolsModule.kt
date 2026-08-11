@@ -15,7 +15,7 @@ import ru.souz.llms.giga.toGiga
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
-import ru.souz.skilloauth.SkillOAuthApi
+import ru.souz.skilloauth.SkillOAuthGateway
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -43,7 +43,6 @@ import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.SkillCommandExecutor
-import ru.souz.tool.skills.ToolCheckOAuthStatus
 import ru.souz.tool.skills.ToolConnectOAuthProvider
 import ru.souz.tool.skills.ToolSafeApiCall
 import ru.souz.tool.web.ToolInternetResearch
@@ -82,28 +81,11 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
 
     bindSingleton {
-        ToolConnectOAuthProvider(
-            skillBundleProvider = instance<SkillRegistryRepository>(),
-            skillOAuthApi = instanceOrNull(),
-            approvalGate = instanceOrNull(),
-        )
-    }
-    bindSingleton {
-        ToolCheckOAuthStatus(
-            skillBundleProvider = instance<SkillRegistryRepository>(),
-            skillOAuthApi = instanceOrNull(),
-            approvalGate = instanceOrNull(),
-        )
-    }
-    bindSingleton {
-        ToolSafeApiCall(
-            skillBundleProvider = instance<SkillRegistryRepository>(),
-            skillOAuthApi = instanceOrNull(),
-            approvalGate = instanceOrNull(),
-        )
-    }
-
-    bindSingleton {
+        // Constructed only when a real SkillOAuthGateway is bound (a host with no OAuth service
+        // configured — a supported, valid deployment — simply never sees ToolCategory.OAUTH
+        // populated), mirroring how ToolDeleteFile resolves its own optional ToolPermissionBroker
+        // dependency inline rather than threading a separate "is it available" flag alongside it.
+        val gateway = instanceOrNull<SkillOAuthGateway>()
         PortableRuntimeToolsFactory(
             toolListFiles = instance(),
             toolFindInFiles = instance(),
@@ -119,14 +101,20 @@ fun portableRuntimeToolsDiModule(
             toolInternetSearch = instance(),
             toolInternetResearch = instance(),
             toolWebPageText = instance(),
-            toolConnectOAuthProvider = instance(),
-            toolCheckOAuthStatus = instance(),
-            toolSafeApiCall = instance(),
-            // The tools above are always constructed (they degrade to a clear "not available"
-            // error at call time when skillOAuthApi is null), but a host with no OAuth service
-            // bound at all — a supported, valid deployment — shouldn't advertise them as callable
-            // in the first place.
-            hasSkillOAuthApi = instanceOrNull<SkillOAuthApi>() != null,
+            toolConnectOAuthProvider = gateway?.let {
+                ToolConnectOAuthProvider(
+                    skillBundleProvider = instance<SkillRegistryRepository>(),
+                    gateway = it,
+                    approvalGate = instanceOrNull(),
+                )
+            },
+            toolSafeApiCall = gateway?.let {
+                ToolSafeApiCall(
+                    skillBundleProvider = instance<SkillRegistryRepository>(),
+                    gateway = it,
+                    approvalGate = instanceOrNull(),
+                )
+            },
         )
     }
     if (bindAgentToolCatalog) {
@@ -233,10 +221,8 @@ class PortableRuntimeToolsFactory(
     private val toolInternetSearch: ToolInternetSearch,
     private val toolInternetResearch: ToolInternetResearch,
     private val toolWebPageText: ToolWebPageText,
-    private val toolConnectOAuthProvider: ToolConnectOAuthProvider,
-    private val toolCheckOAuthStatus: ToolCheckOAuthStatus,
-    private val toolSafeApiCall: ToolSafeApiCall,
-    private val hasSkillOAuthApi: Boolean,
+    private val toolConnectOAuthProvider: ToolConnectOAuthProvider?,
+    private val toolSafeApiCall: ToolSafeApiCall?,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -265,15 +251,7 @@ class PortableRuntimeToolsFactory(
         )
         ToolCategory.CALCULATOR -> listOf(toolCalculator.toGiga())
 
-        ToolCategory.OAUTH -> if (hasSkillOAuthApi) {
-            listOf(
-                toolConnectOAuthProvider.toGiga(),
-                toolCheckOAuthStatus.toGiga(),
-                toolSafeApiCall.toGiga(),
-            )
-        } else {
-            emptyList()
-        }
+        ToolCategory.OAUTH -> listOfNotNull(toolConnectOAuthProvider?.toGiga(), toolSafeApiCall?.toGiga())
 
         ToolCategory.CONFIG,
         ToolCategory.DATA_ANALYTICS,

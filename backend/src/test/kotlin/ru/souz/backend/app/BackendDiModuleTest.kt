@@ -106,7 +106,24 @@ class BackendDiModuleTest {
         try {
             val httpDependencies = di.direct.instance<BackendHttpDependencies>()
 
-            assertNull(httpDependencies.skillOAuthApiImpl)
+            assertNull(httpDependencies.skillOAuthGatewayImpl)
+        } finally {
+            dataSource.close()
+        }
+    }
+
+    @Test
+    fun `backend DI resolves with the skill OAuth token key but no fully configured provider`() {
+        // A key with zero usable providers is just as inert as no key at all — SkillOAuthGateway
+        // must not come up promising a connection that can never succeed.
+        val appConfig = testAppConfig().copy(skillOAuthProviderCredentials = emptyMap())
+        val dataSource = HikariDataSource()
+        val di = testDi(appConfig, dataSource)
+
+        try {
+            val httpDependencies = di.direct.instance<BackendHttpDependencies>()
+
+            assertNull(httpDependencies.skillOAuthGatewayImpl)
         } finally {
             dataSource.close()
         }

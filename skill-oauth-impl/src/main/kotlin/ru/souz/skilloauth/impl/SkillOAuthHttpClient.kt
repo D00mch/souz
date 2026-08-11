@@ -8,7 +8,7 @@ private const val SKILL_OAUTH_HTTP_CALL_TIMEOUT_MILLIS = 30_000L
 
 /** Mirrors `McpHttpSession`'s HttpTimeout setup — without it, a stalled OAuth provider token
  *  endpoint or third-party API host hangs the calling coroutine indefinitely. Shared factory for
- *  [SkillOAuthApiImpl] and [AuthorizationCodeOAuthClient]'s default clients so the timeout config
+ *  [SkillOAuthGatewayImpl] and [AuthorizationCodeOAuthClient]'s default clients so the timeout config
  *  lives in exactly one place. */
 fun defaultSkillOAuthHttpClient(): HttpClient = HttpClient(CIO) {
     install(HttpTimeout) {

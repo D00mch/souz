@@ -76,7 +76,7 @@ class PostgresSkillOAuthCredentialRepositoryTest {
     @Test
     fun `upsert rejects a write whose generation is older than the stored credential's`() = runTest {
         // Regression test for the race where a callback whose own pending state was already
-        // superseded by a fresher authorization (see SkillOAuthApiImpl.handleCallback) finishes its
+        // superseded by a fresher authorization (see SkillOAuthGatewayImpl.handleCallback) finishes its
         // token exchange *after* that fresher one already saved — its stale write must not clobber
         // the newer credential. Exercises the real `on conflict ... where` guard in Postgres, not
         // just the in-memory fake.

@@ -8,7 +8,7 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.skilloauth.ApiCallReconnectRequired
 import ru.souz.skilloauth.ApiCallRequest
 import ru.souz.skilloauth.ApiCallResponse
-import ru.souz.skilloauth.SkillOAuthApi
+import ru.souz.skilloauth.SkillOAuthGateway
 import ru.souz.tool.BadInputException
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
@@ -24,12 +24,15 @@ import ru.souz.tool.ToolSetup
  * `BackendSkillCoreToolsFactory`). The backend injects the Authorization header itself (mirroring
  * `McpHttpSession`'s pattern) — the raw access token never enters this tool's input/output, the
  * LLM's context, or the skill's sandboxed process. `url` is still a model-supplied full URL, so
- * the provider layer (`SkillOAuthApiImpl.requireAllowedApiUrl`) enforces HTTPS + a per-provider
+ * the provider layer (`SkillOAuthGatewayImpl.requireAllowedApiUrl`) enforces HTTPS + a per-provider
  * host allowlist before attaching the token — this tool must not be trusted to police that itself.
+ *
+ * Only constructed (and only bound into [ru.souz.tool.ToolCategory.OAUTH]) when a real
+ * [SkillOAuthGateway] is available — see `portableRuntimeToolsDiModule`.
  */
 class ToolSafeApiCall(
     private val skillBundleProvider: SkillBundleProvider,
-    private val skillOAuthApi: SkillOAuthApi?,
+    private val gateway: SkillOAuthGateway,
     private val approvalGate: SkillApprovalGate? = null,
 ) : ToolSetup<ToolSafeApiCall.Input> {
     data class Input(
@@ -95,18 +98,15 @@ class ToolSafeApiCall(
     override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
-        val api = skillOAuthApi
-            ?: throw BadInputException("OAuth connections are not available in this runtime.")
         val skillId = input.skillId.trim()
         val bundle = loadApprovedOAuthSkillBundle(skillBundleProvider, approvalGate, meta.userId, skillId)
         val provider = bundle.manifest.oauthProvider
             ?: throw BadInputException("Skill '$skillId' does not declare an oauthProvider in its manifest.")
 
-        val outcome = api.callAuthorizedApi(
+        val outcome = gateway.call(
             userId = meta.userId,
             provider = provider,
-            skillId = skillId,
-            requiredScopes = bundle.manifest.oauthScopes,
+            requiredScopes = bundle.manifest.oauthScopes.toSet(),
             request = ApiCallRequest(method = input.method, url = input.url, body = input.body, headers = input.headers),
         )
         val output = when (outcome) {

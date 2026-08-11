@@ -11,11 +11,12 @@ import io.ktor.server.routing.get
  * Installs the OAuth provider redirect callback. Deliberately takes plain parameters rather than
  * any `:backend`-internal dependency type, since `:skill-oauth-impl` must not depend on `:backend`.
  *
- * This is the only OAuth-related HTTP route: `startAuthorization` on [SkillOAuthApiImpl] is an
- * in-process suspend call the tool invokes directly and returns the authorize URL from, so there is
- * nothing to expose as a "start" endpoint — the only inbound HTTP hit is the provider's own redirect.
+ * This is the only OAuth-related HTTP route: starting an authorization is an in-process suspend
+ * call the tool invokes directly (via [SkillOAuthGatewayImpl.ensureAuthorized]) and returns the
+ * authorize URL from, so there is nothing to expose as a "start" endpoint — the only inbound HTTP
+ * hit is the provider's own redirect.
  */
-fun Route.installSkillOAuthRoutes(api: SkillOAuthApiImpl, callbackPath: String) {
+fun Route.installSkillOAuthRoutes(api: SkillOAuthGatewayImpl, callbackPath: String) {
     get(callbackPath) {
         val code = call.request.queryParameters["code"]
         val state = call.request.queryParameters["state"]
