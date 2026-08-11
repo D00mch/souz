@@ -3,6 +3,7 @@ package ru.souz.tool
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -36,6 +37,7 @@ import ru.souz.tool.web.internal.WebImageDownloader
 import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
+import ru.souz.skilloauth.SkillOAuthApi
 import ru.souz.skills.registry.SkillStorageScope
 
 fun runtimeToolsDiModule(
@@ -93,6 +95,9 @@ fun runtimeToolsDiModule(
             toolConnectOAuthProvider = instance(),
             toolCheckOAuthStatus = instance(),
             toolSafeApiCall = instance(),
+            // See the matching comment in PortableRuntimeToolsModule.kt: the tools themselves
+            // always construct, but a host with no OAuth service bound shouldn't advertise them.
+            hasSkillOAuthApi = instanceOrNull<SkillOAuthApi>() != null,
         )
     }
     bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
@@ -124,6 +129,7 @@ class RuntimeToolsFactory(
     private val toolConnectOAuthProvider: ToolConnectOAuthProvider,
     private val toolCheckOAuthStatus: ToolCheckOAuthStatus,
     private val toolSafeApiCall: ToolSafeApiCall,
+    private val hasSkillOAuthApi: Boolean,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -175,11 +181,15 @@ class RuntimeToolsFactory(
             toolCalculator.toGiga(),
         )
 
-        ToolCategory.OAUTH -> listOf(
-            toolConnectOAuthProvider.toGiga(),
-            toolCheckOAuthStatus.toGiga(),
-            toolSafeApiCall.toGiga(),
-        )
+        ToolCategory.OAUTH -> if (hasSkillOAuthApi) {
+            listOf(
+                toolConnectOAuthProvider.toGiga(),
+                toolCheckOAuthStatus.toGiga(),
+                toolSafeApiCall.toGiga(),
+            )
+        } else {
+            emptyList()
+        }
 
         ToolCategory.BROWSER,
         ToolCategory.NOTES,

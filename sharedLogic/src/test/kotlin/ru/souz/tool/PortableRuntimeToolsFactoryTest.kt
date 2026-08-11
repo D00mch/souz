@@ -30,15 +30,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PortableRuntimeToolsFactoryTest {
-    @Test
-    fun `portable catalog exposes runtime safe tool categories`() {
+    private fun newFactory(hasSkillOAuthApi: Boolean): PortableRuntimeToolsFactory {
         val filesToolUtil = mockk<FilesToolUtil>()
         val webResearchClient = WebResearchClient()
         val api = mockk<LLMChatAPI>()
         val settingsProvider = mockk<SettingsProvider>()
         val skillRegistryRepository = mockk<SkillRegistryRepository>()
 
-        val factory = PortableRuntimeToolsFactory(
+        return PortableRuntimeToolsFactory(
             toolListFiles = ToolListFiles(filesToolUtil),
             toolFindInFiles = ToolFindInFiles(filesToolUtil),
             toolNewFile = ToolNewFile(filesToolUtil),
@@ -62,16 +61,28 @@ class PortableRuntimeToolsFactoryTest {
             toolConnectOAuthProvider = ToolConnectOAuthProvider(skillRegistryRepository, skillOAuthApi = null),
             toolCheckOAuthStatus = ToolCheckOAuthStatus(skillRegistryRepository, skillOAuthApi = null),
             toolSafeApiCall = ToolSafeApiCall(skillRegistryRepository, skillOAuthApi = null),
+            hasSkillOAuthApi = hasSkillOAuthApi,
         )
+    }
 
-        val tools = factory.toolsByCategory
+    @Test
+    fun `portable catalog exposes runtime safe tool categories`() {
+        val tools = newFactory(hasSkillOAuthApi = true).toolsByCategory
 
         assertTrue("ListFiles" in tools.getValue(ToolCategory.FILES))
         assertTrue("ViewImage" in tools.getValue(ToolCategory.IMAGE))
         assertTrue("GenerateImage" in tools.getValue(ToolCategory.IMAGE_GENERATION))
         assertTrue("InternetSearch" in tools.getValue(ToolCategory.WEB_SEARCH))
         assertTrue("Calculator" in tools.getValue(ToolCategory.CALCULATOR))
+        assertTrue("ConnectOAuthProvider" in tools.getValue(ToolCategory.OAUTH))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.DATA_ANALYTICS))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.DESKTOP))
+    }
+
+    @Test
+    fun `portable catalog omits OAuth tools when no OAuth service is bound`() {
+        val tools = newFactory(hasSkillOAuthApi = false).toolsByCategory
+
+        assertEquals(emptyMap(), tools.getValue(ToolCategory.OAUTH))
     }
 }

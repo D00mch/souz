@@ -67,24 +67,6 @@ class BackendConversationRuntimeFactory(
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
         settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
-        val clientToolCatalog = if (request.clientToolsEnabled) {
-            clientToolCatalogProvider(key.userId)
-        } else {
-            BackendNoopAgentToolCatalog
-        }
-        val executionToolCatalog = BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
-        val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
-            delegate = executionToolCatalog,
-            settingsProvider = settingsProvider,
-        )
-        val enabledTools = request.enabledTools?.plus(
-            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
-        )
-        val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
-        val filteredToolCatalog = BackendRequestToolCatalog(
-            delegate = requestScopedToolCatalog,
-            toolsFilter = requestToolsFilter,
-        )
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = key.userId,
@@ -102,6 +84,31 @@ class BackendConversationRuntimeFactory(
             llmApi = usageTrackingApi,
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
+        )
+        // Built request-scoped with the real skillApprovalGate above, then spliced into the tool
+        // catalog below — see BackendOAuthToolCatalogOverride's doc comment for why the
+        // DI-singleton catalog's own OAuth tools (approvalGate always null) can't be used as-is.
+        val oauthTools = skillCoreToolsFactory.createOAuthTools(skillApprovalGate)
+        val clientToolCatalog = if (request.clientToolsEnabled) {
+            clientToolCatalogProvider(key.userId)
+        } else {
+            BackendNoopAgentToolCatalog
+        }
+        val executionToolCatalog = BackendOAuthToolCatalogOverride(
+            delegate = BackendMergedToolCatalog(toolCatalog, clientToolCatalog),
+            oauthTools = oauthTools,
+        )
+        val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
+            delegate = executionToolCatalog,
+            settingsProvider = settingsProvider,
+        )
+        val enabledTools = request.enabledTools?.plus(
+            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
+        )
+        val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
+        val filteredToolCatalog = BackendRequestToolCatalog(
+            delegate = requestScopedToolCatalog,
+            toolsFilter = requestToolsFilter,
         )
         val getSkillByNameTool = skillCoreToolsFactory.createGetSkillByName(
             toolCatalog = requestScopedToolCatalog,

@@ -1,7 +1,7 @@
 package ru.souz.tool.skills
 
 import kotlinx.coroutines.runBlocking
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
@@ -19,14 +19,16 @@ import ru.souz.tool.ToolSetup
 /**
  * Note there is no `provider` field in [Input] anywhere: the target provider comes only from the
  * active Skill's own manifest, loaded (and approval-gated, see [loadApprovedOAuthSkillBundle])
- * fresh on every call. The backend injects the Authorization header itself (mirroring
+ * fresh on every call — [approvalGate] must be constructed request-scoped with a real gate on any
+ * host that enforces approval, exactly like [ToolGetSkillByName]/[ToolInvokeSkill] are (see
+ * `BackendSkillCoreToolsFactory`). The backend injects the Authorization header itself (mirroring
  * `McpHttpSession`'s pattern) — the raw access token never enters this tool's input/output, the
  * LLM's context, or the skill's sandboxed process. `url` is still a model-supplied full URL, so
  * the provider layer (`SkillOAuthApiImpl.requireAllowedApiUrl`) enforces HTTPS + a per-provider
  * host allowlist before attaching the token — this tool must not be trusted to police that itself.
  */
 class ToolSafeApiCall(
-    private val skillRegistryRepository: SkillRegistryRepository,
+    private val skillBundleProvider: SkillBundleProvider,
     private val skillOAuthApi: SkillOAuthApi?,
     private val approvalGate: SkillApprovalGate? = null,
 ) : ToolSetup<ToolSafeApiCall.Input> {
@@ -96,7 +98,7 @@ class ToolSafeApiCall(
         val api = skillOAuthApi
             ?: throw BadInputException("OAuth connections are not available in this runtime.")
         val skillId = input.skillId.trim()
-        val bundle = loadApprovedOAuthSkillBundle(skillRegistryRepository, approvalGate, meta.userId, skillId)
+        val bundle = loadApprovedOAuthSkillBundle(skillBundleProvider, approvalGate, meta.userId, skillId)
         val provider = bundle.manifest.oauthProvider
             ?: throw BadInputException("Skill '$skillId' does not declare an oauthProvider in its manifest.")
 

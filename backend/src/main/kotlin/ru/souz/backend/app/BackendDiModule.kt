@@ -274,6 +274,7 @@ fun backendDiModule(
             skillBundleProvider = instance<SkillRegistryRepository>(),
             legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
             commandTool = instance<ToolRunSkillCommand>(),
+            skillOAuthApi = instanceOrNull(),
         )
     }
     bindSingleton {

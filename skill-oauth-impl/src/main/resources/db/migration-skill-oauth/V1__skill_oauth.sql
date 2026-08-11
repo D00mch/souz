@@ -6,6 +6,13 @@ create table skill_oauth_credentials (
     granted_scopes text not null default '',
     expires_at timestamptz,
     generation bigint not null default 0,
+    -- Optimistic-concurrency counter bumped on every successful write, independent of
+    -- `generation` (which tracks authorization epochs, not individual writes). Two token
+    -- refreshes racing for the same (user_id, provider) share one generation, so `generation`
+    -- alone can't tell them apart; `revision` lets the second writer's CAS fail cleanly instead
+    -- of silently clobbering the first writer's token material. See
+    -- SkillOAuthCredentialRepository.upsert's doc comment.
+    revision bigint not null default 0,
     created_at timestamptz not null,
     updated_at timestamptz not null,
     primary key (user_id, provider)

@@ -108,16 +108,34 @@ class PostgresSkillOAuthPendingStateRepository(
 
     override suspend fun consume(state: String, now: Instant): SkillOAuthPendingState? =
         dataSource.write { connection ->
-            connection.prepareStatement(
+            val pending = connection.prepareStatement(
                 "delete from skill_oauth_pending_states where state = ? returning *"
             ).use { statement ->
                 statement.setString(1, state)
                 statement.executeQuery().use { resultSet ->
                     if (!resultSet.next()) return@write null
-                    val pending = resultSet.toPendingState()
-                    if (pending.expiresAt.isBefore(now)) null else pending
+                    val found = resultSet.toPendingState()
+                    if (found.expiresAt.isBefore(now)) null else found
                 }
+            } ?: return@write null
+
+            // Refreshes the durable requested-scope tracking row's freshness the moment its flow
+            // starts actually completing (this callback is about to exchange the code and save a
+            // credential) — not just when a *new* authorization is begun. Without this, a callback
+            // whose code exchange happens to take a while right around the staleness cutoff (see
+            // beginAuthorization's `activeSince`) could still be racing a concurrent new
+            // authorization that reads a stale `updated_at` and wrongly treats this in-flight flow
+            // as abandoned, discarding its requested scopes instead of widening on top of them.
+            connection.prepareStatement(
+                "update skill_oauth_requested_scopes set updated_at = ? where user_id = ? and provider = ?"
+            ).use { statement ->
+                statement.setInstant(1, now)
+                statement.setString(2, pending.userId)
+                statement.setString(3, pending.provider)
+                statement.executeUpdate()
             }
+
+            pending
         }
 
     private fun java.sql.ResultSet.toPendingState(): SkillOAuthPendingState =

@@ -7,6 +7,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
 import io.ktor.http.HttpMethod
 import io.ktor.http.URLProtocol
 import io.ktor.http.Url
@@ -21,6 +22,17 @@ import ru.souz.skilloauth.AuthorizationUrl
 import ru.souz.skilloauth.OAuthStatus
 import ru.souz.skilloauth.SkillOAuthApi
 import ru.souz.skilloauth.SkillOAuthException
+
+/**
+ * Thrown by [SkillOAuthApiImpl.ensureFreshAccessToken] only for failures that genuinely mean the
+ * user must go through consent again (no refresh token left, or the provider confirmed the grant
+ * itself is dead via `invalid_grant`). Kept as a distinct, internal subtype of [SkillOAuthException]
+ * so [SkillOAuthApiImpl.callAuthorizedApi] can convert *only* these into [ApiCallReconnectRequired]
+ * — a transient network error or a `server_error`/`invalid_client` response from the provider is a
+ * plain [SkillOAuthException] instead, and propagates normally rather than prompting a needless
+ * reconnect link for a problem reconnecting can't fix.
+ */
+internal class ReconnectRequiredException(message: String) : SkillOAuthException(message)
 
 /**
  * Provider-agnostic: this class knows nothing about Yandex or any other specific provider. It is
@@ -119,12 +131,13 @@ class SkillOAuthApiImpl(
         requireAllowedApiUrl(providerClient, request.url)
         val accessToken = try {
             ensureFreshAccessToken(credential, providerClient)
-        } catch (e: SkillOAuthException) {
-            // Both of ensureFreshAccessToken's own failure modes (no refresh token left, or a
-            // refresh token the provider just confirmed is invalid) mean the same thing here:
-            // reconnecting is the only way forward. A transient network failure reaching the
-            // provider throws a *different* exception type and is deliberately not caught here —
-            // that's not something a fresh authorize link would fix.
+        } catch (e: ReconnectRequiredException) {
+            // Both of ensureFreshAccessToken's own reconnect-worthy failure modes (no refresh
+            // token left, or a refresh token the provider just confirmed is invalid) mean the same
+            // thing here: reconnecting is the only way forward. A transient network failure or a
+            // provider-side/config error (server_error, invalid_client, ...) throws a plain
+            // SkillOAuthException instead and is deliberately not caught here — a fresh authorize
+            // link wouldn't fix either of those, so it propagates as a genuine failure.
             return reconnectRequired(
                 userId, provider, skillId, requiredScopes,
                 existingGrantedScopes = credential.grantedScopes,
@@ -132,20 +145,31 @@ class SkillOAuthApiImpl(
             )
         }
         val apiRequest = request
+        val callerContentType = apiRequest.headers.entries
+            .firstOrNull { (name, _) -> name.equals(HttpHeaders.ContentType, ignoreCase = true) }
+            ?.value
         val response = httpClient.request(apiRequest.url) {
             method = HttpMethod.parse(apiRequest.method.uppercase())
             // Caller-supplied headers are applied first so the Authorization header we inject
             // below always wins — a skill/LLM must never be able to smuggle in its own bearer
-            // token or overwrite the real one via a same-named header in `request.headers`.
+            // token or overwrite the real one via a same-named header in `request.headers`. Content-Type
+            // is excluded here and handled separately below via the `contentType()` DSL — Ktor
+            // determines the actual outgoing Content-Type from the request body's own metadata,
+            // not from a plain `header()` call, so setting it that way here wouldn't reliably work.
             apiRequest.headers.forEach { (name, value) ->
-                if (!name.equals(HttpHeaders.Authorization, ignoreCase = true)) {
+                if (!name.equals(HttpHeaders.Authorization, ignoreCase = true) &&
+                    !name.equals(HttpHeaders.ContentType, ignoreCase = true)
+                ) {
                     header(name, value)
                 }
             }
             header(HttpHeaders.Authorization, "Bearer $accessToken")
             apiRequest.body?.let {
-                header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-                setBody(it)
+                // Only default to JSON if the caller didn't already choose a Content-Type (e.g. a
+                // provider requiring form-urlencoded or XML) — defaulting unconditionally would
+                // silently override that explicit choice.
+                val contentType = callerContentType?.let(ContentType::parse) ?: ContentType.Application.Json
+                setBody(TextContent(it, contentType))
             }
         }
         return ApiCallResponse(
@@ -288,7 +312,7 @@ class SkillOAuthApiImpl(
             return crypto.decrypt(credential.accessTokenEncrypted)
         }
         val refreshToken = refreshTokenEncrypted
-            ?: throw SkillOAuthException(
+            ?: throw ReconnectRequiredException(
                 "OAuth access token for '${credential.provider}' has expired and no refresh token is available."
             )
         val refreshed = try {
@@ -303,6 +327,9 @@ class SkillOAuthApiImpl(
                 // Generation-guarded, so this can't clobber a fresher credential that's since
                 // replaced this one — see credentialRepository.upsert's doc comment.
                 credentialRepository.upsert(credential.copy(refreshTokenEncrypted = null))
+                throw ReconnectRequiredException(
+                    "OAuth refresh for '${credential.provider}' failed (${e.errorCode}): ${e.message}."
+                )
             }
             throw SkillOAuthException(
                 "OAuth refresh for '${credential.provider}' failed (${e.errorCode}): ${e.message}."

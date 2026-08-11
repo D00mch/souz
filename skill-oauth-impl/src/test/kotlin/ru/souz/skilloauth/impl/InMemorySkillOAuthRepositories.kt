@@ -2,24 +2,28 @@ package ru.souz.skilloauth.impl
 
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal class InMemorySkillOAuthCredentialRepository : SkillOAuthCredentialRepository {
     private val credentials = ConcurrentHashMap<Pair<String, String>, SkillOAuthCredential>()
-    private val lock = ReentrantLock()
+    private val mutex = Mutex()
 
     override suspend fun find(userId: String, provider: String): SkillOAuthCredential? =
         credentials[userId to provider]
 
-    override suspend fun upsert(credential: SkillOAuthCredential): SkillOAuthCredential? = lock.withLock {
+    override suspend fun upsert(credential: SkillOAuthCredential): SkillOAuthCredential? = mutex.withLock {
         val key = credential.userId to credential.provider
         val existing = credentials[key]
-        if (existing != null && credential.generation < existing.generation) {
+        val accepted = existing == null ||
+            credential.generation > existing.generation ||
+            (credential.generation == existing.generation && credential.revision == existing.revision)
+        if (!accepted) {
             return@withLock null
         }
-        credentials[key] = credential
-        credential
+        val stored = credential.copy(revision = (existing?.revision ?: -1) + 1)
+        credentials[key] = stored
+        stored
     }
 
     override suspend fun delete(userId: String, provider: String) {
@@ -36,7 +40,7 @@ internal class InMemorySkillOAuthPendingStateRepository : SkillOAuthPendingState
 
     private val pending = ConcurrentHashMap<String, SkillOAuthPendingState>()
     private val requestedScopes = ConcurrentHashMap<Pair<String, String>, RequestedScopesEntry>()
-    private val lock = ReentrantLock()
+    private val mutex = Mutex()
 
     override suspend fun beginAuthorization(
         state: String,
@@ -47,7 +51,7 @@ internal class InMemorySkillOAuthPendingStateRepository : SkillOAuthPendingState
         now: Instant,
         activeSince: Instant,
         expiresAt: Instant,
-    ): SkillOAuthPendingState = lock.withLock {
+    ): SkillOAuthPendingState = mutex.withLock {
         val key = userId to provider
         val existing = requestedScopes[key]
         val baseScopes = if (existing == null || existing.updatedAt.isBefore(activeSince)) {
@@ -74,8 +78,11 @@ internal class InMemorySkillOAuthPendingStateRepository : SkillOAuthPendingState
         created
     }
 
-    override suspend fun consume(state: String, now: Instant): SkillOAuthPendingState? {
-        val found = pending.remove(state) ?: return null
-        return if (found.expiresAt.isBefore(now)) null else found
+    override suspend fun consume(state: String, now: Instant): SkillOAuthPendingState? = mutex.withLock {
+        val found = pending.remove(state) ?: return@withLock null
+        if (found.expiresAt.isBefore(now)) return@withLock null
+        val key = found.userId to found.provider
+        requestedScopes[key]?.let { requestedScopes[key] = it.copy(updatedAt = now) }
+        found
     }
 }

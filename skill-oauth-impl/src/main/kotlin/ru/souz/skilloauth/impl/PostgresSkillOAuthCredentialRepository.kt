@@ -24,17 +24,24 @@ class PostgresSkillOAuthCredentialRepository(
                 """
                 insert into skill_oauth_credentials(
                     user_id, provider, access_token_encrypted, refresh_token_encrypted,
-                    granted_scopes, expires_at, generation, created_at, updated_at
+                    granted_scopes, expires_at, generation, revision, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (user_id, provider) do update
                 set access_token_encrypted = excluded.access_token_encrypted,
                     refresh_token_encrypted = excluded.refresh_token_encrypted,
                     granted_scopes = excluded.granted_scopes,
                     expires_at = excluded.expires_at,
                     generation = excluded.generation,
+                    -- Bumped relative to the *stored* row, not `excluded.revision` (which merely
+                    -- carries the revision this write was read at, for the CAS check below).
+                    revision = skill_oauth_credentials.revision + 1,
                     updated_at = excluded.updated_at
-                where excluded.generation >= skill_oauth_credentials.generation
+                where excluded.generation > skill_oauth_credentials.generation
+                   or (
+                        excluded.generation = skill_oauth_credentials.generation
+                        and excluded.revision = skill_oauth_credentials.revision
+                   )
                 returning *
                 """.trimIndent()
             ).use { statement ->
@@ -45,12 +52,13 @@ class PostgresSkillOAuthCredentialRepository(
                 statement.setString(5, credential.grantedScopes.toScopesColumn())
                 statement.setInstant(6, credential.expiresAt)
                 statement.setLong(7, credential.generation)
-                statement.setInstant(8, credential.createdAt)
-                statement.setInstant(9, credential.updatedAt)
+                statement.setLong(8, credential.revision)
+                statement.setInstant(9, credential.createdAt)
+                statement.setInstant(10, credential.updatedAt)
                 statement.executeQuery().use { resultSet ->
-                    // No row means the `where` guard rejected the write — a fresher (or equally
-                    // fresh) credential already exists for this (userId, provider); see
-                    // SkillOAuthCredentialRepository.upsert's doc comment.
+                    // No row means the `where` guard rejected the write — a fresher generation
+                    // already exists, or a same-generation write already landed since this
+                    // credential was read (see SkillOAuthCredentialRepository.upsert's doc comment).
                     if (resultSet.next()) resultSet.toCredential() else null
                 }
             }
@@ -77,6 +85,7 @@ class PostgresSkillOAuthCredentialRepository(
             grantedScopes = getString("granted_scopes").fromScopesColumn(),
             expiresAt = instantOrNull("expires_at"),
             generation = getLong("generation"),
+            revision = getLong("revision"),
             createdAt = instant("created_at"),
             updatedAt = instant("updated_at"),
         )

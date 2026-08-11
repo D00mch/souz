@@ -13,6 +13,10 @@ data class SkillOAuthCredential(
     /** Carried forward from the [SkillOAuthPendingState] that produced this save (or from the
      *  previous credential row, for a token refresh) — see [SkillOAuthCredentialRepository.upsert]. */
     val generation: Long,
+    /** The revision this credential was read at (or `0` for a brand-new authorization). Passed
+     *  back into [SkillOAuthCredentialRepository.upsert] unchanged by a same-generation write (a
+     *  refresh) as the optimistic-concurrency token proving no other write landed in between. */
+    val revision: Long = 0,
     val createdAt: Instant,
     val updatedAt: Instant,
 )
@@ -23,9 +27,10 @@ interface SkillOAuthCredentialRepository {
     /**
      * Stores [credential]'s token material as given (last write wins — there is only ever one
      * real access token on file per `(userId, provider)`), but rejects the write outright — returns
-     * `null`, no-op — if [SkillOAuthCredential.generation] is older than what's already stored.
+     * `null`, no-op — if [SkillOAuthCredential.generation] is older than what's already stored, or
+     * if it's equal but [SkillOAuthCredential.revision] no longer matches the stored row's revision.
      *
-     * This guards against two distinct hazards, neither of which can be resolved by comparing
+     * This guards against three distinct hazards, none of which can be resolved by comparing
      * `grantedScopes` between writes: the OAuth token response's `scope` field is OPTIONAL when it
      * matches what was requested (RFC 6749), so a "narrower-looking" write might just be one the
      * provider didn't bother to echo back, not an actually-narrower grant. `generation` sidesteps
@@ -35,7 +40,13 @@ interface SkillOAuthCredentialRepository {
      * credential just because its network round-trip happened to finish later; (2) a background
      * token refresh (which never bumps generation — see [SkillOAuthApiImpl.ensureFreshAccessToken])
      * must not silently undo a broader authorization the user completed while the refresh was in
-     * flight.
+     * flight; (3) two token refreshes racing for the same `(userId, provider)` share one
+     * generation, so `generation` alone can't order them — without `revision`, the `>=` guard lets
+     * both writes through and whichever happens to commit last wins, even if it's carrying an
+     * already-stale refresh token (providers that rotate refresh tokens on each use would then
+     * leave every subsequent refresh failing with `invalid_grant`). `revision` is bumped by exactly
+     * one on every successful write, so the loser of such a race gets its write cleanly rejected
+     * instead of silently corrupting the row.
      */
     suspend fun upsert(credential: SkillOAuthCredential): SkillOAuthCredential?
 

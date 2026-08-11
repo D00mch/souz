@@ -34,6 +34,14 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
+import ru.souz.agent.skills.validation.SkillValidationFinding
+import ru.souz.agent.skills.validation.SkillValidationLevel
+import ru.souz.skilloauth.ApiCallOutcome
+import ru.souz.skilloauth.ApiCallRequest
+import ru.souz.skilloauth.ApiCallResponse
+import ru.souz.skilloauth.AuthorizationUrl
+import ru.souz.skilloauth.OAuthStatus
+import ru.souz.skilloauth.SkillOAuthApi
 import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.ToolRunSkillCommand
@@ -128,6 +136,86 @@ class BackendSkillCoreToolsFactoryTest {
         assertEquals(0, disabledTool.invocationCount)
     }
 
+    @Test
+    fun `createOAuthTools returns no tools when no SkillOAuthApi is configured`() = runTest {
+        val repository = SingleBundleRepository(fileSkillBundle())
+        val factory = BackendSkillCoreToolsFactory(
+            skillBundleProvider = repository,
+            legacyCommandTool = ToolRunSkillCommand(
+                sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(mockRuntimeSandbox()),
+                skillStorageScope = SkillStorageScope.USER_SCOPED,
+            ).toGiga(),
+            commandTool = ToolRunSkillCommand(
+                sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(mockRuntimeSandbox()),
+                skillStorageScope = SkillStorageScope.USER_SCOPED,
+            ),
+            skillOAuthApi = null,
+        )
+
+        val tools = factory.createOAuthTools(approvingGate(repository))
+
+        assertEquals(emptyMap(), tools)
+    }
+
+    @Test
+    fun `createOAuthTools rejects a stored bundle that failed skill approval`() = runTest {
+        // Regression test for the approval-gate bypass: the backend must construct these tools
+        // request-scoped with a real SkillApprovalGate, not rely on the DI-singleton instances
+        // (whose approvalGate always resolves to null) — otherwise a stored-but-unapproved bundle
+        // declaring oauthProvider could still drive a real OAuth connection.
+        val oauthBundle = oauthSkillBundle()
+        val repository = SingleBundleRepository(oauthBundle)
+        val factory = BackendSkillCoreToolsFactory(
+            skillBundleProvider = repository,
+            legacyCommandTool = ToolRunSkillCommand(
+                sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(mockRuntimeSandbox()),
+                skillStorageScope = SkillStorageScope.USER_SCOPED,
+            ).toGiga(),
+            commandTool = ToolRunSkillCommand(
+                sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(mockRuntimeSandbox()),
+                skillStorageScope = SkillStorageScope.USER_SCOPED,
+            ),
+            skillOAuthApi = FakeSkillOAuthApi(),
+        )
+
+        val tools = factory.createOAuthTools(rejectingGate(repository))
+
+        assertEquals(setOf("ConnectOAuthProvider", "CheckOAuthStatus", "SafeApiCall"), tools.keys)
+        val result = tools.getValue("ConnectOAuthProvider").invoke(
+            LLMResponse.FunctionCall(name = "ConnectOAuthProvider", arguments = mapOf("skillId" to oauthBundle.skillId.value)),
+            ToolInvocationMeta(userId = "backend-user"),
+        ).contentJson()
+
+        assertTrue(result["result"].asText().contains("validation rejected"))
+    }
+
+    private fun oauthSkillBundle(): SkillBundle {
+        val manifest = SkillManifest(
+            name = "OAuth Skill",
+            description = "A skill that declares an oauthProvider.",
+            oauthProvider = "yandex",
+            oauthScopes = listOf("login:info"),
+            rawFrontmatter = "name: OAuth Skill",
+        )
+        return SkillBundle(
+            skillId = SkillId("oauth-skill"),
+            manifest = manifest,
+            files = listOf(SkillFile("SKILL.md", "Use the OAuth skill.".toByteArray())),
+            skillMarkdownBody = "Use the OAuth skill.",
+        )
+    }
+
+    private fun mockRuntimeSandbox(): LocalRuntimeSandbox {
+        val home = Files.createTempDirectory("backend-skill-tools-oauth-").also(createdPaths::add)
+        val stateRoot = home.resolve("state").also(Files::createDirectories)
+        return LocalRuntimeSandbox(
+            scope = SandboxScope(userId = USER_ID),
+            settingsProvider = TestSettingsProvider(),
+            homePath = home,
+            stateRoot = stateRoot,
+        )
+    }
+
     private fun createUserScopedBundleRoot(
         stateRoot: Path,
         userId: String,
@@ -209,6 +297,40 @@ private fun approvingGate(repository: SkillRegistryRepository): SkillApprovalGat
         validationStore = repository,
         llmValidator = SkillValidator { emptyList() },
     )
+
+private fun rejectingGate(repository: SkillRegistryRepository): SkillApprovalGate =
+    SkillApprovalGate(
+        validationStore = repository,
+        llmValidator = SkillValidator {
+            listOf(
+                SkillValidationFinding(
+                    code = "test.reject",
+                    message = "rejected in test",
+                    level = SkillValidationLevel.ERROR,
+                )
+            )
+        },
+    )
+
+private class FakeSkillOAuthApi : SkillOAuthApi {
+    override suspend fun status(userId: String, provider: String, requiredScopes: List<String>): OAuthStatus =
+        OAuthStatus(connected = false)
+
+    override suspend fun startAuthorization(
+        userId: String,
+        provider: String,
+        skillId: String,
+        scopes: List<String>,
+    ): AuthorizationUrl = AuthorizationUrl("https://example.com/authorize")
+
+    override suspend fun callAuthorizedApi(
+        userId: String,
+        provider: String,
+        skillId: String,
+        requiredScopes: List<String>,
+        request: ApiCallRequest,
+    ): ApiCallOutcome = ApiCallResponse(200, "{}")
+}
 
 private class SingleBundleRepository(
     private val bundle: SkillBundle,

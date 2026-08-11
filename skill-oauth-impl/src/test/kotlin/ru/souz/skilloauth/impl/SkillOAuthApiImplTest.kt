@@ -336,7 +336,7 @@ class SkillOAuthApiImplTest {
         )
 
         assertTrue(outcome is ApiCallReconnectRequired)
-        assertTrue((outcome as ApiCallReconnectRequired).authorizationUrl.startsWith("https://oauth.yandex.ru/authorize?"))
+        assertTrue(outcome.authorizationUrl.startsWith("https://oauth.yandex.ru/authorize?"))
     }
 
     @Test
@@ -411,11 +411,14 @@ class SkillOAuthApiImplTest {
     }
 
     @Test
-    fun `a non-invalid_grant refresh error does not clear the refresh token`() = runTest {
+    fun `a non-invalid_grant refresh error does not clear the refresh token and does not report reconnectRequired`() = runTest {
         // D00mch: toTokenResult() throws the same exception type for every OAuth error code —
         // invalid_client, invalid_scope, server_error, etc. are not evidence the refresh token
         // itself is dead, and clearing it over one of those forces a needless full reconnect that
         // wouldn't have been necessary once the transient issue (or our own config) is fixed.
+        // Reporting ApiCallReconnectRequired would be equally wrong here — a fresh authorize link
+        // doesn't fix a provider outage or our own client misconfiguration — so this must instead
+        // propagate as a plain SkillOAuthException, distinct from ReconnectRequiredException.
         val credentialRepository = InMemorySkillOAuthCredentialRepository()
         credentialRepository.upsert(
             SkillOAuthCredential(
@@ -435,15 +438,17 @@ class SkillOAuthApiImplTest {
         )
         val api = newApi(credentialRepository = credentialRepository, providers = mapOf("yandex" to provider))
 
-        val outcome = api.callAuthorizedApi(
-            userId = "user-1",
-            provider = "yandex",
-            skillId = "skill-1",
-            requiredScopes = listOf("login:info"),
-            request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
-        )
+        val thrown = assertFailsWith<SkillOAuthException> {
+            api.callAuthorizedApi(
+                userId = "user-1",
+                provider = "yandex",
+                skillId = "skill-1",
+                requiredScopes = listOf("login:info"),
+                request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
+            )
+        }
 
-        assertTrue(outcome is ApiCallReconnectRequired)
+        assertFalse(thrown is ReconnectRequiredException)
         assertEquals(
             "still-good-refresh-token",
             testCrypto.decrypt(credentialRepository.find("user-1", "yandex")!!.refreshTokenEncrypted!!),
@@ -468,7 +473,7 @@ class SkillOAuthApiImplTest {
         )
 
         assertTrue(outcome is ApiCallReconnectRequired)
-        val scopeParam = (outcome as ApiCallReconnectRequired).authorizationUrl
+        val scopeParam = outcome.authorizationUrl
             .substringAfter("scope=").substringBefore("&")
         assertEquals(
             setOf("other-skill:scope", "this-skill:scope"),
@@ -505,7 +510,7 @@ class SkillOAuthApiImplTest {
 
         assertTrue(outcome is ApiCallReconnectRequired)
         // widened to include what's already granted, not just the missing scope.
-        assertTrue((outcome as ApiCallReconnectRequired).authorizationUrl.contains("iot%3Acontrol"))
+        assertTrue(outcome.authorizationUrl.contains("iot%3Acontrol"))
     }
 
     @Test
@@ -570,6 +575,36 @@ class SkillOAuthApiImplTest {
 
         assertEquals("custom-value", capturedHeaders?.get("X-Custom"))
         assertEquals("provider-value", (outcome as ApiCallResponse).headers["X-Provider-Header"])
+    }
+
+    @Test
+    fun `callAuthorizedApi does not override a caller-supplied Content-Type`() = runTest {
+        // Regression test: defaulting to JSON unconditionally would silently override (or
+        // duplicate) a provider-required Content-Type like form-urlencoded or XML.
+        var capturedContentType: String? = null
+        val mockEngine = MockEngine { request ->
+            capturedContentType = request.body.contentType?.toString()
+            respond(content = "{}", status = HttpStatusCode.OK)
+        }
+        val api = newApi(
+            credentialRepository = connectedCredentialRepository(listOf("login:info")),
+            httpClient = HttpClient(mockEngine),
+        )
+
+        api.callAuthorizedApi(
+            userId = "user-1",
+            provider = "yandex",
+            skillId = "skill-1",
+            requiredScopes = listOf("login:info"),
+            request = ApiCallRequest(
+                method = "POST",
+                url = "https://login.yandex.ru/info",
+                body = "field=value",
+                headers = mapOf("Content-Type" to "application/x-www-form-urlencoded"),
+            ),
+        )
+
+        assertEquals("application/x-www-form-urlencoded", capturedContentType)
     }
 
     @Test

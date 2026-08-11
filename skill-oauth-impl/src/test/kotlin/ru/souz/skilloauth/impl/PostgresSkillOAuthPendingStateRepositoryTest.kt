@@ -147,6 +147,50 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
     }
 
     @Test
+    fun `consume refreshes the requested-scope row so an in-flight callback is not treated as abandoned`() = runTest {
+        // D00mch's finding: without touching updated_at here, a callback whose own code exchange
+        // happens to take a while right around the staleness cutoff could still be racing a
+        // concurrent new authorization that reads the *original* beginAuthorization's stale
+        // updated_at and wrongly treats this in-flight flow as abandoned, dropping its scopes
+        // instead of widening on top of them.
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_consume_refresh")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+
+            repository.beginAuthorization(
+                state = "state-first",
+                userId = "user-1",
+                skillId = "skill-1",
+                provider = "yandex",
+                scopes = listOf("login:info"),
+                now = now,
+                activeSince = activeSince,
+                expiresAt = now.plusSeconds(600),
+            )
+            // The callback's own code exchange finishes near the end of the pending state's TTL —
+            // consume() must touch updated_at at this point, not leave it at `now` above.
+            val consumeAt = now.plusSeconds(550)
+            repository.consume("state-first", consumeAt)
+
+            // A second, unrelated authorization begins after the *original* beginAuthorization's
+            // updated_at would already be stale, but not after the refreshed one.
+            val muchLater = now.plusSeconds(700)
+            val result = repository.beginAuthorization(
+                state = "state-second",
+                userId = "user-1",
+                skillId = "skill-2",
+                provider = "yandex",
+                scopes = listOf("iot:control"),
+                now = muchLater,
+                activeSince = muchLater.minusSeconds(600),
+                expiresAt = muchLater.plusSeconds(600),
+            )
+
+            assertEquals(setOf("login:info", "iot:control"), result.requestedScopes.toSet())
+        }
+    }
+
+    @Test
     fun `distinct providers for the same user are tracked independently`() = runTest {
         val schema = newSkillOAuthTestSchema("skill_oauth_pending_multi_provider")
         skillOAuthTestDataSource(schema).use { dataSource ->

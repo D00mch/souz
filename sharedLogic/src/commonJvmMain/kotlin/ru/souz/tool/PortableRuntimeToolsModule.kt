@@ -85,21 +85,21 @@ fun portableRuntimeToolsDiModule(
 
     bindSingleton {
         ToolConnectOAuthProvider(
-            skillRegistryRepository = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
             skillOAuthApi = instanceOrNull(),
             approvalGate = instanceOrNull(),
         )
     }
     bindSingleton {
         ToolCheckOAuthStatus(
-            skillRegistryRepository = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
             skillOAuthApi = instanceOrNull(),
             approvalGate = instanceOrNull(),
         )
     }
     bindSingleton {
         ToolSafeApiCall(
-            skillRegistryRepository = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
             skillOAuthApi = instanceOrNull(),
             approvalGate = instanceOrNull(),
         )
@@ -124,6 +124,11 @@ fun portableRuntimeToolsDiModule(
             toolConnectOAuthProvider = instance(),
             toolCheckOAuthStatus = instance(),
             toolSafeApiCall = instance(),
+            // The tools above are always constructed (they degrade to a clear "not available"
+            // error at call time when skillOAuthApi is null), but a host with no OAuth service
+            // bound at all — a supported, valid deployment — shouldn't advertise them as callable
+            // in the first place.
+            hasSkillOAuthApi = instanceOrNull<SkillOAuthApi>() != null,
         )
     }
     if (bindAgentToolCatalog) {
@@ -233,6 +238,7 @@ class PortableRuntimeToolsFactory(
     private val toolConnectOAuthProvider: ToolConnectOAuthProvider,
     private val toolCheckOAuthStatus: ToolCheckOAuthStatus,
     private val toolSafeApiCall: ToolSafeApiCall,
+    private val hasSkillOAuthApi: Boolean,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -261,11 +267,15 @@ class PortableRuntimeToolsFactory(
         )
         ToolCategory.CALCULATOR -> listOf(toolCalculator.toGiga())
 
-        ToolCategory.OAUTH -> listOf(
-            toolConnectOAuthProvider.toGiga(),
-            toolCheckOAuthStatus.toGiga(),
-            toolSafeApiCall.toGiga(),
-        )
+        ToolCategory.OAUTH -> if (hasSkillOAuthApi) {
+            listOf(
+                toolConnectOAuthProvider.toGiga(),
+                toolCheckOAuthStatus.toGiga(),
+                toolSafeApiCall.toGiga(),
+            )
+        } else {
+            emptyList()
+        }
 
         ToolCategory.CONFIG,
         ToolCategory.DATA_ANALYTICS,

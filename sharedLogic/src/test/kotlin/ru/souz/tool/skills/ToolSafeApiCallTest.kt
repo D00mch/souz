@@ -89,7 +89,7 @@ class ToolSafeApiCallTest {
         coEvery { repository.loadSkillBundle("user-1", SkillId("skill-1")) } returns
             bundleWith(oauthProvider = "yandex", oauthScopes = listOf("login:info"))
         val api = FakeSkillOAuthApi(outcome = ApiCallResponse(200, "ok"))
-        val tool = ToolSafeApiCall(skillRegistryRepository = repository, skillOAuthApi = api)
+        val tool = ToolSafeApiCall(skillBundleProvider = repository, skillOAuthApi = api)
 
         val result = tool.suspendInvoke(
             ToolSafeApiCall.Input(skillId = "skill-1", method = "GET", url = "https://login.yandex.ru/info"),
@@ -116,7 +116,7 @@ class ToolSafeApiCallTest {
                 message = "The OAuth connection for 'yandex' has expired. Open this link to reconnect, then retry: https://oauth.yandex.ru/authorize?state=abc",
             )
         )
-        val tool = ToolSafeApiCall(skillRegistryRepository = repository, skillOAuthApi = api)
+        val tool = ToolSafeApiCall(skillBundleProvider = repository, skillOAuthApi = api)
 
         val result = tool.suspendInvoke(
             ToolSafeApiCall.Input(skillId = "skill-1", method = "GET", url = "https://login.yandex.ru/info"),
@@ -131,7 +131,7 @@ class ToolSafeApiCallTest {
     fun `rejects a skill that does not declare an oauthProvider`() = runTest {
         val repository = mockk<SkillRegistryRepository>()
         coEvery { repository.loadSkillBundle("user-1", SkillId("skill-1")) } returns bundleWith(oauthProvider = null)
-        val tool = ToolSafeApiCall(skillRegistryRepository = repository, skillOAuthApi = FakeSkillOAuthApi())
+        val tool = ToolSafeApiCall(skillBundleProvider = repository, skillOAuthApi = FakeSkillOAuthApi())
 
         assertFailsWith<BadInputException> {
             tool.suspendInvoke(
@@ -144,7 +144,7 @@ class ToolSafeApiCallTest {
     @Test
     fun `fails clearly when no OAuth implementation is wired for this runtime`() = runTest {
         val repository = mockk<SkillRegistryRepository>()
-        val tool = ToolSafeApiCall(skillRegistryRepository = repository, skillOAuthApi = null)
+        val tool = ToolSafeApiCall(skillBundleProvider = repository, skillOAuthApi = null)
 
         assertFailsWith<BadInputException> {
             tool.suspendInvoke(
@@ -165,7 +165,7 @@ class ToolSafeApiCallTest {
         coEvery { approvalGate.ensureApproved(any()) } returns
             SkillApprovalGate.Result.Rejected(bundleHash = "hash", reason = "rejected in test", findings = emptyList())
         val tool = ToolSafeApiCall(
-            skillRegistryRepository = repository,
+            skillBundleProvider = repository,
             skillOAuthApi = FakeSkillOAuthApi(),
             approvalGate = approvalGate,
         )
