@@ -18,7 +18,7 @@ private fun createSouzColors(isDark: Boolean, scheme: ColorScheme): SouzColors =
         )
     } else {
         GlassColors(
-            heroBackground = listOf(Color(0xFEF0F0F0), Color(0xFEECECEC)),
+            heroBackground = listOf(Color(0xFEE8E8E6), Color(0xFEE3E3E1)),
             heroBorder = Color(0x1F000000),
             textPrimary = Color(0xE61F1F1D),
         )
@@ -32,7 +32,7 @@ private fun createSouzColors(isDark: Boolean, scheme: ColorScheme): SouzColors =
     ),
     settings = SettingsColors(
         contentBackground = if (isDark) Color.Transparent else scheme.background,
-        sidebarBackground = if (isDark) Color(0xFF242424) else Color(0xFFE8E8E8),
+        sidebarBackground = if (isDark) Color(0xFF242424) else Color(0xFFDEDEDC),
         sidebarBorder = if (isDark) Color(0x14FFFFFF) else Color(0x14000000),
         selectedNavigationBackground = if (isDark) Color(0x1FFFFFFF) else scheme.primaryContainer,
         selectedNavigationContent = if (isDark) Color.White else scheme.onPrimaryContainer,

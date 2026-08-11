@@ -6,6 +6,9 @@ import java.awt.Point
 import java.awt.Toolkit
 import java.awt.Window
 
+const val MAIN_WINDOW_MIN_WIDTH_PX = 860
+const val MAIN_WINDOW_MIN_HEIGHT_PX = 680
+
 /**
  * Applies minimum window size constraints and repositions window if needed to stay within screen bounds.
  *
