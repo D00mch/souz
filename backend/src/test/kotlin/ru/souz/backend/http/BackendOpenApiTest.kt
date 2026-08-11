@@ -279,6 +279,16 @@ class BackendOpenApiTest {
                 setOf("seq", "durable", "chatId", "executionId", "type", "payload", "createdAt"),
                 delta["required"].map { it.asText() }.toSet(),
             )
+            val deltaPayload = schemas["BackendMessageDeltaEventPayload"]
+            assertEquals(
+                setOf("messageId", "delta"),
+                deltaPayload["required"].map { it.asText() }.toSet(),
+            )
+            assertEquals(
+                listOf("content", "reasoning"),
+                deltaPayload["properties"]["kind"]["enum"].map { it.asText() },
+            )
+            assertTrue(deltaPayload["properties"]["kind"]["description"].asText().contains("Omitted"))
 
             val replayEvent = schemas[BackendEventOpenApiSchemas.REPLAY_EVENT]
             val legacy = schemas[BackendEventOpenApiSchemas.LEGACY_DURABLE_EVENT]

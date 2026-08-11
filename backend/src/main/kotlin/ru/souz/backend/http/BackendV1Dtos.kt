@@ -414,10 +414,11 @@ private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<Stri
             "clientMessageId" to clientMessageId,
         ).withoutNulls()
 
-        is MessageDeltaPayload -> linkedMapOf(
+        is MessageDeltaPayload -> linkedMapOf<String, Any?>(
             "messageId" to messageId.toString(),
             "delta" to delta,
-        )
+            "kind" to kind,
+        ).withoutNulls()
 
         is MessageCompletedPayload -> linkedMapOf(
             "messageId" to messageId.toString(),
@@ -523,6 +524,7 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyIfPresent("messageId")
             copyLongIfPresent("seq")
             copyIfPresent("delta")
+            copyIfPresent("kind")
         }
 
         AgentEventType.EXECUTION_STARTED -> buildLegacyPayload {

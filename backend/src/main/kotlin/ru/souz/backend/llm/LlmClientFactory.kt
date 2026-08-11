@@ -1,6 +1,7 @@
 package ru.souz.backend.llm
 
 import java.io.File
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.db.SettingsProvider
@@ -65,11 +66,15 @@ private class RoutingLlmChatApi(
     private val mutex = Mutex()
     private val apis = LinkedHashMap<LlmProvider, LLMChatAPI>()
 
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
-        apiFor(providerFor(body.model)).message(body)
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        val provider = providerFor(body.model)
+        return apiFor(provider).message(body.withBackendReasoning(provider))
+    }
 
-    override suspend fun messageStream(body: LLMRequest.Chat) =
-        apiFor(providerFor(body.model)).messageStream(body)
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
+        val provider = providerFor(body.model)
+        return apiFor(provider).messageStream(body.withBackendReasoning(provider))
+    }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
         apiFor(context.settingsProvider.embeddingsModel.provider).embeddings(body)
@@ -109,7 +114,16 @@ private class RoutingLlmChatApi(
 
     private fun providerFor(model: String): LlmProvider =
         findLLMModel(model)?.provider ?: context.settingsProvider.gigaModel.provider
+
+    private fun LLMRequest.Chat.withBackendReasoning(provider: LlmProvider): LLMRequest.Chat =
+        if (provider == LlmProvider.GIGA && context.settingsProvider.useStreaming && reasoningEffort == null) {
+            copy(reasoningEffort = BACKEND_GIGA_REASONING_EFFORT)
+        } else {
+            this
+        }
 }
+
+private const val BACKEND_GIGA_REASONING_EFFORT = "medium"
 
 private class CredentialOverrideSettingsProvider(
     private val delegate: SettingsProvider,

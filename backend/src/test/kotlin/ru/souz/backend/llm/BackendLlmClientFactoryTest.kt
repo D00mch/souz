@@ -104,11 +104,15 @@ class BackendLlmClientFactoryTest {
             BackendLlmExecutionContext(
                 userId = "user-a",
                 executionId = "exec-a",
-                settingsProvider = TestSettingsProvider().apply { gigaModel = LLMModel.OpenAIGpt52 },
+                settingsProvider = TestSettingsProvider().apply {
+                    gigaModel = LLMModel.OpenAIGpt52
+                    useStreaming = true
+                },
             )
         ).message(sampleRequest("GigaChat-Max"))
 
         assertEquals(LlmProvider.GIGA, builder.invocations.single().provider)
+        assertEquals("medium", builder.invocations.single().reasoningEffort)
     }
 
     @Test
@@ -161,6 +165,7 @@ private class RecordingProviderChatApiBuilder : ProviderChatApiBuilder {
                         else -> settingsProvider.openaiKey.orEmpty()
                     },
                     transport = sharedTransport,
+                    reasoningEffort = body.reasoningEffort,
                 )
                 return LLMResponse.Chat.Error(499, "recorded only")
             }
@@ -187,6 +192,7 @@ private data class ProviderClientInvocation(
     val provider: LlmProvider,
     val apiKey: String,
     val transport: SharedProviderTransport,
+    val reasoningEffort: String?,
 )
 
 private class StaticProviderCredentialResolver(

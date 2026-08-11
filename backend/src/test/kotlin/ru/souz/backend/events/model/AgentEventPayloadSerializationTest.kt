@@ -20,6 +20,7 @@ class AgentEventPayloadSerializationTest {
             AgentEventType.MESSAGE_DELTA to MessageDeltaPayload(
                 messageId = UUID.fromString("22222222-2222-2222-2222-222222222222"),
                 delta = "chunk",
+                kind = "reasoning",
             ),
             AgentEventType.MESSAGE_COMPLETED to MessageCompletedPayload(
                 messageId = UUID.fromString("33333333-3333-3333-3333-333333333333"),

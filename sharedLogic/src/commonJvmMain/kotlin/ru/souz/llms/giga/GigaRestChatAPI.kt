@@ -385,11 +385,11 @@ internal fun parseGigaStreamChunk(data: String): LLMResponse.Chat {
 
         LLMResponse.Choice(
             message = LLMResponse.Message(
-                content = delta["content"]?.asText() ?: "",
+                content = delta["content"].toGigaMessageText().orEmpty(),
                 role = role,
                 functionCall = functionCall,
                 functionsStateId = delta["functions_state_id"]?.asText(),
-                reasoningContent = delta["reasoning_content"]?.asText(),
+                reasoningContent = delta["reasoning_content"].toGigaMessageText(),
                 created = delta["created"]?.asLong(),
                 name = delta["name"]?.asText(),
             ),
@@ -404,6 +404,11 @@ internal fun parseGigaStreamChunk(data: String): LLMResponse.Chat {
         model = node["model"]?.asText() ?: "",
         usage = node["usage"]?.takeUnless { it.isNull }?.toGigaUsage() ?: LLMResponse.Usage(0, 0, 0, 0),
     )
+}
+
+private fun JsonNode?.toGigaMessageText(): String? {
+    if (this == null || isNull) return null
+    return asText().takeUnless { it.equals("null", ignoreCase = true) }
 }
 
 private fun JsonNode.toGigaFunctionCall(): LLMResponse.FunctionCall {

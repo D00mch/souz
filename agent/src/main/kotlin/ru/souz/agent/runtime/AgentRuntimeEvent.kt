@@ -25,7 +25,13 @@ sealed interface AgentRuntimeEvent {
 
     data class LlmMessageDelta(
         val text: String,
-    ) : AgentRuntimeEvent
+        val kind: Kind = Kind.CONTENT,
+    ) : AgentRuntimeEvent {
+        enum class Kind {
+            CONTENT,
+            REASONING,
+        }
+    }
 
     data class ToolCallStarted(
         val toolCallId: String,

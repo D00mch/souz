@@ -1,12 +1,19 @@
 package ru.souz.backend.llm
 
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -76,6 +83,90 @@ class RetryingLlmChatApiTest {
         assertEquals("final", response.message)
     }
 
+    @Test
+    fun `successful stream emits before delegate stream completes`() = runTest {
+        val firstResponse = okResponse("first")
+        val delegateCompletion = CompletableDeferred<Unit>()
+        val delegate = object : LLMChatAPI by ScriptedRetryChatApi(listOf(firstResponse)) {
+            override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
+                emit(firstResponse)
+                delegateCompletion.await()
+            }
+        }
+        val api = RetryingLlmChatApi(
+            delegate = delegate,
+            provider = LlmProvider.OPENAI,
+            retryPolicy = BackendProviderRetryPolicy(),
+        )
+
+        val firstChunk = backgroundScope.async {
+            api.messageStream(chatRequest()).first()
+        }
+        yield()
+
+        assertTrue(firstChunk.isCompleted)
+        assertEquals(firstResponse, firstChunk.await())
+    }
+
+    @Test
+    fun `stream retries when its only response is a 429`() = runTest {
+        val recordedDelays = mutableListOf<Long>()
+        val firstResponse = okResponse("first")
+        val finalResponse = okResponse("final")
+        val delegate = ScriptedRetryChatApi(
+            responses = listOf(firstResponse),
+            streamAttempts = listOf(
+                listOf(LLMResponse.Chat.Error(429, "rate limited; retry-after=1200")),
+                listOf(firstResponse, finalResponse),
+            ),
+        )
+        val api = RetryingLlmChatApi(
+            delegate = delegate,
+            provider = LlmProvider.OPENAI,
+            retryPolicy = BackendProviderRetryPolicy(
+                max429Retries = 2,
+                backoffBaseMs = 100L,
+                backoffMaxMs = 5_000L,
+            ),
+            delayMillis = { value -> recordedDelays.add(value) },
+        )
+
+        val responses = api.messageStream(chatRequest()).toList()
+
+        assertEquals(listOf(firstResponse, finalResponse), responses)
+        assertEquals(2, delegate.messageStreamCalls)
+        assertEquals(listOf(1_200L), recordedDelays)
+    }
+
+    @Test
+    fun `stream does not retry when a 429 is followed by another response`() = runTest {
+        val recordedDelays = mutableListOf<Long>()
+        val rateLimitError = LLMResponse.Chat.Error(429, "rate limited")
+        val finalResponse = okResponse("final")
+        val delegate = ScriptedRetryChatApi(
+            responses = listOf(finalResponse),
+            streamAttempts = listOf(listOf(rateLimitError, finalResponse)),
+        )
+        val api = RetryingLlmChatApi(
+            delegate = delegate,
+            provider = LlmProvider.OPENAI,
+            retryPolicy = BackendProviderRetryPolicy(),
+            delayMillis = { value -> recordedDelays.add(value) },
+        )
+
+        val responses = api.messageStream(chatRequest()).toList()
+
+        assertEquals(listOf(rateLimitError, finalResponse), responses)
+        assertEquals(1, delegate.messageStreamCalls)
+        assertTrue(recordedDelays.isEmpty())
+    }
+
+    private fun chatRequest(): LLMRequest.Chat =
+        LLMRequest.Chat(
+            model = "test-model",
+            messages = listOf(LLMRequest.Message(role = LLMMessageRole.user, content = "hello")),
+        )
+
     private fun okResponse(content: String): LLMResponse.Chat.Ok =
         LLMResponse.Chat.Ok(
             choices = listOf(
@@ -97,14 +188,20 @@ class RetryingLlmChatApiTest {
 
 private class ScriptedRetryChatApi(
     private val responses: List<LLMResponse.Chat>,
+    private val streamAttempts: List<List<LLMResponse.Chat>> = responses.map { listOf(it) },
 ) : LLMChatAPI {
     private var index: Int = 0
+    var messageStreamCalls: Int = 0
+        private set
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
         responses.getOrElse(index++) { responses.last() }
 
-    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
-        flowOf(message(body))
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
+        val responses = streamAttempts.getOrElse(messageStreamCalls) { streamAttempts.last() }
+        messageStreamCalls += 1
+        return flowOf(*responses.toTypedArray())
+    }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
         error("Embeddings are not used in this test.")

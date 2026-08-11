@@ -294,7 +294,14 @@ internal class BackendAgentRuntimeEventSink(
         if (publicClientThread || !streamingMessagesEnabled || event.text.isEmpty()) return
         publishLiveEvent(
             type = AgentEventType.MESSAGE_DELTA,
-            payload = MessageDeltaPayload(finalAssistantMessageId, event.text),
+            payload = MessageDeltaPayload(
+                messageId = finalAssistantMessageId,
+                delta = event.text,
+                kind = when (event.kind) {
+                    AgentRuntimeEvent.LlmMessageDelta.Kind.CONTENT -> null
+                    AgentRuntimeEvent.LlmMessageDelta.Kind.REASONING -> "reasoning"
+                },
+            ),
         )
     }
 
