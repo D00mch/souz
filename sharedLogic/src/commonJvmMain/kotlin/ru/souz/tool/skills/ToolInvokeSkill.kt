@@ -14,6 +14,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
+import kotlin.jvm.java
 
 /**
  * Routes a generic Skill invocation to either a compiled tool or a file-backed Skill.
@@ -26,7 +27,7 @@ class ToolInvokeSkill(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
-    private val commandTool: ToolRunSkillCommand,
+    private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
     data class Input(
@@ -110,28 +111,21 @@ class ToolInvokeSkill(
                     approval.reason,
                 )
             }
+            val executableBundle = when (approval) {
+                is SkillApprovalGate.Result.Approved -> approval.bundle
+                null -> bundle
+            }
             val bundleHash = when (approval) {
                 is SkillApprovalGate.Result.Approved -> approval.bundleHash
                 null -> SkillBundleHasher.hash(bundle)
-                is SkillApprovalGate.Result.Rejected -> error("Rejected approval must return before execution.")
             }
-            val rawInput = restJsonMapper.convertValue(
-                input.arguments + ("skillId" to skillId) - "activeSkills",
-                ToolRunSkillCommand.Input::class.java,
+            val arguments = restJsonMapper.convertValue(input.arguments, SkillCommandExecutor.Args::class.java)
+            val result = commandExecutor.execute(
+                bundle = executableBundle,
+                bundleHash = bundleHash,
+                arguments = arguments,
+                meta = meta,
             )
-            val commandInput = rawInput.copy(
-                skillId = skillId,
-                activeSkills = listOf(
-                    ToolRunSkillCommand.ActiveSkillInput(
-                        skillId = skillId,
-                        bundleHash = bundleHash,
-                        supportingFiles = bundle.files
-                            .map { it.normalizedPath }
-                            .filterNot { it == SKILL_MARKDOWN_PATH },
-                    )
-                ),
-            )
-            val result = commandTool.executeCommand(commandInput, meta)
             return LLMRequest.Message(
                 role = LLMMessageRole.function,
                 content = restJsonMapper.writeValueAsString(result),
@@ -169,6 +163,5 @@ class ToolInvokeSkill(
 
     companion object {
         const val NAME = "RunSkillCommand"
-        private const val SKILL_MARKDOWN_PATH = "SKILL.md"
     }
 }

@@ -108,7 +108,7 @@ import ru.souz.tool.web.internal.WebResearchClient
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLlmDiModule
 import ru.souz.runtime.files.FilesToolUtil
-import ru.souz.skills.registry.SkillStorageScope
+import ru.souz.skills.registry.fileSystemSkillRegistryDiModule
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.DesktopConversationMemoryRuntime
 import ru.souz.memory.DesktopMemoryMaintenanceBackgroundRunner
@@ -396,7 +396,8 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
 
     bindSingleton { ToolsFactory(di) }
     bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
-    import(portableSkillToolsDiModule(skillStorageScope = SkillStorageScope.SINGLE_USER))
+    import(fileSystemSkillRegistryDiModule())
+    import(portableSkillToolsDiModule())
     import(
         agentDiModule(
             logObjectMapperTag = DiTags.TAG_LOG,

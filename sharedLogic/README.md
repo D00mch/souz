@@ -90,21 +90,18 @@ Run regular runtime tests without Docker:
 
 ## Skills Flow
 
-`FileSystemSkillRegistryRepository` owns stored skill metadata, immutable bundle contents, and validation records. Its `FileSystemSkillRegistryConfig.scope` selects either desktop/local single-user storage or backend user-scoped storage.
+`FileSystemSkillRegistryRepository` owns stored skill metadata, immutable bundle contents, and validation records.
+Hosts that own a request-scoped catalog can install command, Knowledge, and memory tools through
+`portableSkillRuntimeToolsDiModule`. The full `portableSkillToolsDiModule` includes those runtime tools plus
+catalog-dependent Skill discovery and delegation. Filesystem-backed hosts opt into registry storage through
+`fileSystemSkillRegistryDiModule`; general runtime DI installs none of these modules implicitly.
 
-Desktop and local Docker runtimes use the single-user skill storage scope. A stored skill lives under:
+Skills use one host-local storage layout:
 
 ```text
 {state}/skills/{skillId}/stored-skill.json
 {state}/skills/{skillId}/bundles/{bundleHash}/...
 {state}/skill-validations/{skillId}/policies/{policy}/{bundleHash}.json
-```
-
-The backend can still opt into the user-scoped storage scope for multi-user storage:
-
-```text
-{state}/skills/users/{encodedUserId}/skills/{skillId}/...
-{state}/skill-validations/users/{encodedUserId}/skills/{skillId}/...
 ```
 
 The Docker image seeds the bundled paper skill directly into the registry-compatible desktop scope:
@@ -152,7 +149,6 @@ If a seeded skill does not appear, remove the per-sandbox `state/skills/<skill>`
 
 - files
 - web search and research
-- config
 - data analytics
 - calculator
 

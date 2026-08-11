@@ -10,7 +10,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
-/** Mutex-serialized mailbox for one Skills graph execution. */
+/** Mutex-serialized mailbox for one steerable graph execution. */
 internal class ActiveRunInputController(
     private val mutex: Mutex = Mutex(),
 ) {
@@ -95,7 +95,7 @@ internal class ActiveRunInputController(
     }
 
     private fun openState(): State.Open = state as? State.Open
-        ?: throw CancellationException("Active Skills graph run is closed")
+        ?: throw CancellationException("Active steerable graph run is closed")
 
     private fun drainLocked(open: State.Open): String {
         check(open.queuedInputs.isNotEmpty()) { "Queued input is required" }

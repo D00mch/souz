@@ -4,13 +4,11 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
-import ru.souz.agent.AgentId
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.llms.LLMRequest
 
 /** Persisted backend conversation snapshot used to resume the next agent turn. */
 data class AgentConversationSession(
-    val activeAgentId: AgentId,
     val history: List<LLMRequest.Message>,
     val temperature: Float,
     val locale: String,
@@ -37,7 +35,6 @@ class AgentStateBackedSessionRepository(
                 userId = key.userId,
                 chatId = key.chatId(),
                 schemaVersion = DEFAULT_SCHEMA_VERSION,
-                activeAgentId = session.activeAgentId,
                 history = session.history,
                 temperature = session.temperature,
                 locale = session.locale.toLocale(),
@@ -54,7 +51,6 @@ private fun AgentConversationKey.chatId(): UUID = UUID.fromString(conversationId
 
 private fun AgentConversationState.toConversationSession(): AgentConversationSession =
     AgentConversationSession(
-        activeAgentId = activeAgentId,
         history = history,
         temperature = temperature,
         locale = locale.languageTagOrDefault(),

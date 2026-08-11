@@ -3,7 +3,6 @@ package ru.souz.backend.llm
 import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import ru.souz.agent.AgentId
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
@@ -175,12 +174,6 @@ private class CredentialOverrideSettingsProvider(
         get() = delegate.regionProfile
         set(value) {
             delegate.regionProfile = value
-        }
-
-    override var activeAgentId: AgentId
-        get() = delegate.activeAgentId
-        set(value) {
-            delegate.activeAgentId = value
         }
 
     override var gigaModel: LLMModel

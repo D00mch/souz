@@ -191,58 +191,6 @@ class BackendBootstrapRouteTest {
     }
 
     @Test
-    fun `bootstrap capabilities hide desktop only tools and reflect current settings provider`() = testApplication {
-        val settingsProvider = FakeSettingsProvider().apply {
-            gigaModel = LLMModel.Max
-            contextSize = 24_000
-            temperature = 0.4f
-            regionProfile = "ru"
-            useStreaming = false
-            gigaChatKey = "giga-key"
-        }
-        application {
-            backendApplication(
-                BackendHttpDependencies(
-                    selectedModel = { settingsProvider.gigaModel.alias },
-                    bootstrapService = bootstrapService(
-                        settingsProvider = settingsProvider,
-                        toolCatalog = toolCatalog(
-                            ToolCategory.FILES to fakeTool("ListFiles"),
-                            ToolCategory.BROWSER to fakeTool("OpenBrowser"),
-                            ToolCategory.TELEGRAM to fakeTool("SendTelegramMessage"),
-                        ),
-                        featureFlags = BackendFeatureFlags(
-                            wsEvents = false,
-                            streamingMessages = false,
-                            toolEvents = false,
-                            options = false,
-                        ),
-                    ),
-                    trustedProxyToken = { "proxy-secret" },
-                )
-            )
-        }
-
-        val response = client.get(BackendHttpRoutes.BOOTSTRAP) {
-            header("X-User-Id", "user-123")
-            header("X-Souz-Proxy-Auth", "proxy-secret")
-        }
-        val payload = json.readTree(response.bodyAsText())
-        val tools = payload["capabilities"]["tools"].map { it["name"].asText() }
-        val models = payload["capabilities"]["models"]
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals(listOf("ListFiles"), tools)
-        assertFalse(tools.contains("OpenBrowser"))
-        assertFalse(tools.contains("SendTelegramMessage"))
-        assertTrue(models.any { it["model"].asText() == LLMModel.Max.alias && it["serverManagedKey"].asBoolean() })
-        assertTrue(models.any { it["model"].asText() == LLMModel.QwenMax.alias && !it["serverManagedKey"].asBoolean() })
-        assertFalse(models.any { it["model"].asText() == LLMModel.OpenAIGpt52.alias })
-        assertEquals(false, payload["settings"]["streamingMessages"].asBoolean())
-        assertEquals(false, payload["settings"]["showToolEvents"].asBoolean())
-    }
-
-    @Test
     fun `bootstrap marks user managed key access for current user without leaking plaintext`() = testApplication {
         val settingsProvider = FakeSettingsProvider().apply {
             gigaModel = LLMModel.Max

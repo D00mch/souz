@@ -17,8 +17,12 @@ class AgentContextFactory(
     // This list is also exposed by AgentFacade so callers can offer only agents with valid contexts.
     internal val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
 ) {
+    init {
+        require(availableAgents.isNotEmpty()) { "At least one agent must be available." }
+    }
+
     fun normalizeAgentId(agentId: AgentId): AgentId =
-        if (agentId in availableAgents) agentId else AgentId.default
+        if (agentId in availableAgents) agentId else availableAgents.first()
 
     fun systemPromptFor(agentId: AgentId, model: LLMModel): String =
         settingsProvider.getSystemPromptForAgentModel(agentId, model)

@@ -17,43 +17,47 @@ import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.isSubclassOf
 import kotlin.reflect.full.primaryConstructor
 
+@PublishedApi
+internal inline fun <reified Input : Any> toolInputParameters(): LLMRequest.Parameters =
+    LLMRequest.Parameters(
+        type = "object",
+        properties = HashMap<String, LLMRequest.Property>().apply {
+            val clazz = Input::class
+            for (kProperty: KCallable<*> in clazz.declaredMembers) {
+                val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
+                val description = annotation.value
+                val classifier = kProperty.returnType.classifier
+                @Suppress("UNCHECKED_CAST")
+                val enumValues: List<String>? =
+                    if (classifier is KClass<*> && classifier.isSubclassOf(Enum::class)) {
+                        (classifier.java.enumConstants as Array<out Enum<*>>).map { it.name }
+                    } else {
+                        null
+                    }
+                val type = classifier.toGigaSchemaType()
+                val itemType = kProperty.returnType.arguments.firstOrNull()
+                    ?.type
+                    ?.classifier
+                    .toGigaSchemaType()
+                put(
+                    kProperty.name,
+                    gigaProperty(type, description, enumValues, itemType)
+                )
+            }
+        },
+        required = Input::class.primaryConstructor?.parameters
+            ?.filter { !it.isOptional && !it.type.isMarkedNullable }
+            ?.mapNotNull { it.name }
+            ?: emptyList(),
+    )
+
 inline fun <reified Input : Any> ToolSetup<Input>.toGiga(): LLMToolSetup {
     val toolSetup = this
     return object : LLMToolSetup {
         override val fn: LLMRequest.Function = LLMRequest.Function(
             name = toolSetup.name,
             description = toolSetup.description,
-            parameters = LLMRequest.Parameters(
-                type = "object",
-                properties = HashMap<String, LLMRequest.Property>().apply {
-                    val clazz = Input::class
-                    for (kProperty: KCallable<*> in clazz.declaredMembers) {
-                        val annotation = kProperty.findAnnotation<InputParamDescription>() ?: continue
-                        val description = annotation.value
-                        val classifier = kProperty.returnType.classifier
-                        @Suppress("UNCHECKED_CAST")
-                        val enumValues: List<String>? =
-                            if (classifier is KClass<*> && classifier.isSubclassOf(Enum::class)) {
-                                (classifier.java.enumConstants as Array<out Enum<*>>).map { it.name }
-                            } else {
-                                null
-                            }
-                        val type = classifier.toGigaSchemaType()
-                        val itemType = kProperty.returnType.arguments.firstOrNull()
-                            ?.type
-                            ?.classifier
-                            .toGigaSchemaType()
-                        put(
-                            kProperty.name,
-                            gigaProperty(type, description, enumValues, itemType)
-                        )
-                    }
-                },
-                required = Input::class.primaryConstructor?.parameters
-                    ?.filter { !it.isOptional && !it.type.isMarkedNullable }
-                    ?.mapNotNull { it.name }
-                    ?: emptyList(),
-            ),
+            parameters = toolInputParameters<Input>(),
             fewShotExamples = toolSetup.fewShotExamples.map { LLMRequest.FewShotExample(it.request, it.params) },
             returnParameters = LLMRequest.Parameters(
                 type = toolSetup.returnParameters.type,

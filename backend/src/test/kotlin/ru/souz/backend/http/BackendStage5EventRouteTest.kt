@@ -288,12 +288,8 @@ private fun streamingRouteTestContext(
 private class StreamingEventChatApi(
     private val chunksByPrompt: Map<String, List<String>>,
 ) : LLMChatAPI {
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        if (body.isClassificationRequest()) {
-            return reply(body, "HELP 90")
-        }
-        return reply(body, "assistant reply to ${body.conversationPrompt()}")
-    }
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
+        reply(body, "assistant reply to ${body.conversationPrompt()}")
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         val prompt = body.conversationPrompt()
@@ -349,12 +345,8 @@ private class GateControlledStreamingEventChatApi : LLMChatAPI {
         release.complete(Unit)
     }
 
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        if (body.isClassificationRequest()) {
-            return reply(body, "HELP 90")
-        }
-        return reply(body, "assistant reply to ${body.conversationPrompt()}")
-    }
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
+        reply(body, "assistant reply to ${body.conversationPrompt()}")
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         val prompt = body.conversationPrompt()
@@ -402,12 +394,8 @@ private class CancellableStreamingEventChatApi : LLMChatAPI {
         startedByPrompt.getOrPut(prompt) { CompletableDeferred() }.await()
     }
 
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        if (body.isClassificationRequest()) {
-            return reply(body, "HELP 90")
-        }
-        return reply(body, "assistant reply to ${body.conversationPrompt()}")
-    }
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
+        reply(body, "assistant reply to ${body.conversationPrompt()}")
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         startedByPrompt.getOrPut(body.conversationPrompt()) { CompletableDeferred() }.complete(Unit)
