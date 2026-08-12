@@ -22,6 +22,8 @@ dependencies {
     implementation(project(":llms"))
     implementation(project(":native"))
     implementation(project(":sharedLogic"))
+    implementation(project(":skill-oauth-api"))
+    implementation(project(":skill-oauth-impl"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.jackson)

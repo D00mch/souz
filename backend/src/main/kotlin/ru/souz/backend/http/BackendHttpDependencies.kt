@@ -12,6 +12,7 @@ import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.telegram.TelegramBotBindingService
+import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 
 internal data class BackendHttpDependencies(
     val bootstrapService: BackendBootstrapService,
@@ -26,6 +27,9 @@ internal data class BackendHttpDependencies(
     val eventService: AgentEventService? = null,
     val publicClientService: PublicClientService? = null,
     val telegramBotBindingService: TelegramBotBindingService? = null,
+    // Always wired in real DI (see BackendDiModule) — nullable only so unrelated test fixtures
+    // that construct this data class directly don't all need to supply one.
+    val skillOAuthGatewayImpl: SkillOAuthGatewayImpl? = null,
     val featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     val trustedProxyToken: () -> String? = { null },
     val ensureTrustedUser: suspend (String) -> Unit = { _ -> },

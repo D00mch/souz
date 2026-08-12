@@ -15,6 +15,7 @@ import ru.souz.llms.giga.toGiga
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
+import ru.souz.skilloauth.SkillOAuthGateway
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.FactoryBackedToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
@@ -42,6 +43,8 @@ import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.skills.ToolConnectOAuthProvider
+import ru.souz.tool.skills.ToolSafeApiCall
 import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebPageText
@@ -78,6 +81,11 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
 
     bindSingleton {
+        // Constructed only when a real SkillOAuthGateway is bound (a host with no OAuth service
+        // configured — a supported, valid deployment — simply never sees ToolCategory.OAUTH
+        // populated), mirroring how ToolDeleteFile resolves its own optional ToolPermissionBroker
+        // dependency inline rather than threading a separate "is it available" flag alongside it.
+        val gateway = instanceOrNull<SkillOAuthGateway>()
         PortableRuntimeToolsFactory(
             toolListFiles = instance(),
             toolFindInFiles = instance(),
@@ -93,6 +101,20 @@ fun portableRuntimeToolsDiModule(
             toolInternetSearch = instance(),
             toolInternetResearch = instance(),
             toolWebPageText = instance(),
+            toolConnectOAuthProvider = gateway?.let {
+                ToolConnectOAuthProvider(
+                    skillBundleProvider = instance<SkillRegistryRepository>(),
+                    gateway = it,
+                    approvalGate = instanceOrNull(),
+                )
+            },
+            toolSafeApiCall = gateway?.let {
+                ToolSafeApiCall(
+                    skillBundleProvider = instance<SkillRegistryRepository>(),
+                    gateway = it,
+                    approvalGate = instanceOrNull(),
+                )
+            },
         )
     }
     if (bindAgentToolCatalog) {
@@ -199,6 +221,8 @@ class PortableRuntimeToolsFactory(
     private val toolInternetSearch: ToolInternetSearch,
     private val toolInternetResearch: ToolInternetResearch,
     private val toolWebPageText: ToolWebPageText,
+    private val toolConnectOAuthProvider: ToolConnectOAuthProvider?,
+    private val toolSafeApiCall: ToolSafeApiCall?,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
         ToolCategory.entries.associateWith { category ->
@@ -226,6 +250,8 @@ class PortableRuntimeToolsFactory(
             toolWebPageText.toGiga(),
         )
         ToolCategory.CALCULATOR -> listOf(toolCalculator.toGiga())
+
+        ToolCategory.OAUTH -> listOfNotNull(toolConnectOAuthProvider?.toGiga(), toolSafeApiCall?.toGiga())
 
         ToolCategory.CONFIG,
         ToolCategory.DATA_ANALYTICS,

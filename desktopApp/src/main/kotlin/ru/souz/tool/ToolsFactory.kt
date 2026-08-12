@@ -204,6 +204,8 @@ class ToolsFactory(di: DI) : AgentToolCatalog {
 
         ToolCategory.CHAT -> listOf()
         ToolCategory.HELP -> listOf()
+        // Skill OAuth needs a public HTTP callback endpoint, which only :backend exposes.
+        ToolCategory.OAUTH -> listOf()
 
         ToolCategory.TELEGRAM -> listOf(
             toolTelegramReadInbox.toGiga(),

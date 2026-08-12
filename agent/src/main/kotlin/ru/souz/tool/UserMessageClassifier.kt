@@ -147,6 +147,11 @@ object LocalRegexClassifier : UserMessageClassifier {
             WeightedRegex(Regex("\\d+\\s*[+\\-*/^]\\s*\\d+"), 1.5), // Simple math expressions
         )
 
+        ToolCategory.OAUTH -> listOf(
+            WeightedRegex(Regex("подключи (яндекс|провайдер|аккаунт)|авторизуй.*скилл|connect (yandex|provider)|oauth"), 2.0),
+            WeightedRegex(Regex("подключен.*скилл|авторизован.*скилл|is .* connected"), 1.5),
+        )
+
         ToolCategory.HELP -> listOf(
             WeightedRegex(Regex("что (ты )?(умеешь|можешь|знаешь делать)|что ты делаешь|какие .* функци|какие .* возможност"), 2.0),
             WeightedRegex(Regex("как (тебя |тобой )?пользоваться|что ты за приложение|чем .* помочь"), 1.5),
