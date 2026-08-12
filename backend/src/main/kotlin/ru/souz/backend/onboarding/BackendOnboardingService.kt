@@ -2,6 +2,7 @@ package ru.souz.backend.onboarding
 
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.bootstrap.BootstrapModelCapability
 import ru.souz.backend.http.BackendV1Exception
@@ -25,6 +26,8 @@ class BackendOnboardingService(
         val storedSettings = userSettingsRepository.get(identity.userId)
         val completed = storedSettings?.onboardingCompletedAt != null
         val recommendedDefaultModel = bootstrap.settings.defaultModel
+            .takeIf { alias -> findLLMModel(alias)?.let { it in BackendLlmSupport.chatModels } == true }
+            ?: BackendLlmSupport.fallbackChatModel.alias
         val recommendedProvider = recommendedDefaultModel.toProviderOrNull()?.name?.lowercase()
         val hasUsableModelAccess = bootstrap.capabilities.models.any { it.serverManagedKey || it.userManagedKey }
         val hasOpenAiCompatibleCustomModel = bootstrap.capabilities.models.any {
@@ -40,7 +43,7 @@ class BackendOnboardingService(
                     recommended = provider == recommendedProvider,
                 )
             }
-        val userManagedProviders = LLMModel.entries
+        val userManagedProviders = BackendLlmSupport.chatModels
             .filter {
                 (it != LLMModel.OpenAICompatibleCustom || hasOpenAiCompatibleCustomModel) &&
                     it.provider != LlmProvider.LOCAL &&
@@ -87,6 +90,9 @@ class BackendOnboardingService(
         identity: RequestIdentity,
         overrides: UserSettingsOverrides,
     ): OnboardingCompleteResponse {
+        if (overrides.defaultModel?.provider == LlmProvider.GIGA) {
+            throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+        }
         val bootstrap = bootstrapService.response(identity)
         val accessibleModelAliases = bootstrap.capabilities.models
             .filter { it.serverManagedKey || it.userManagedKey }

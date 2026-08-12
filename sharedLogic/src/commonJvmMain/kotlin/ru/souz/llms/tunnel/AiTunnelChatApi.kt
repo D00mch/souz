@@ -1,17 +1,10 @@
 package ru.souz.llms.tunnel
 
-import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
@@ -21,17 +14,16 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
-import io.ktor.serialization.jackson.jackson
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
 import java.io.File
@@ -39,12 +31,15 @@ import java.util.concurrent.ConcurrentHashMap
 
 class AiTunnelChatAPI(
     private val settingsProvider: SettingsProvider,
-    private val tokenLogging: TokenLogging,
+    private val client: HttpClient,
+    apiKey: String? = null,
 ) : LLMChatAPI {
     private val l = LoggerFactory.getLogger(AiTunnelChatAPI::class.java)
+    private val immutableApiKey = apiKey
 
     private val apiKey: String
-        get() = settingsProvider.aiTunnelKey
+        get() = immutableApiKey
+            ?: settingsProvider.aiTunnelKey
             ?: System.getenv("AITUNNEL_KEY")
             ?: System.getProperty("AITUNNEL_KEY")
             ?: throw IllegalStateException("AITUNNEL_KEY is not set")
@@ -59,33 +54,9 @@ class AiTunnelChatAPI(
             ?: System.getProperty("AITUNNEL_EMBEDDINGS_MODEL")
             ?: "text-embedding-3-small"
 
-    private val client = HttpClient(CIO) {
-        defaultRequest {
-            header(HttpHeaders.ContentType, ContentType.Application.Json)
-            header(HttpHeaders.Accept, ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $apiKey")
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
-        }
-        install(ContentNegotiation) {
-            jackson {
-                disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            }
-        }
-        install(Logging) {
-            logger = object : Logger {
-                override fun log(message: String) {
-                    l.debug(message)
-                }
-            }
-            level = LogLevel.INFO
-            sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
-        }
-    }
-
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(CHAT_COMPLETIONS_URL) {
+            applyRequestDefaults()
             setBody(buildChatRequest(body, stream = false))
         }
         val text = response.bodyAsText()
@@ -93,7 +64,6 @@ class AiTunnelChatAPI(
             parseCompletionsResponse(text, body.model).also { result ->
                 if (result is LLMResponse.Chat.Ok) {
                     l.info("Model: ${body.model}. Response received")
-                    tokenLogging.logTokenUsage(result, body)
                 }
             }
         } else {
@@ -102,6 +72,8 @@ class AiTunnelChatAPI(
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
         LLMResponse.Chat.Error(e.response.status.value, text)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Model: ${body.model}. Error in chat", t)
         LLMResponse.Chat.Error(-1, "Connection error: ${t.message}")
@@ -112,6 +84,7 @@ class AiTunnelChatAPI(
             val accumulator = StreamAccumulator()
 
             client.preparePost(CHAT_COMPLETIONS_URL) {
+                applyRequestDefaults()
                 setBody(buildChatRequest(body, stream = true))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
@@ -133,13 +106,15 @@ class AiTunnelChatAPI(
                             val created = chunkNode["created"]?.asLong() ?: (System.currentTimeMillis() / 1000)
 
                             val chunks = accumulator.processChunk(chunkNode)
+                            val usageNode = chunkNode["usage"]?.takeUnless { it.isNull }
 
-                            if (chunks.isNotEmpty()) {
-                                // Usage is typically null in chunks until the end, or never sent
-                                val usage = parseUsage(chunkNode["usage"])
-                                val chunks = prepareChoices(chunks)
-                                send(LLMResponse.Chat.Ok(chunks, created, model, usage))
+                            if (chunks.isNotEmpty() || usageNode != null) {
+                                val usage = parseUsage(usageNode)
+                                val choices = prepareChoices(chunks)
+                                send(LLMResponse.Chat.Ok(choices, created, model, usage))
                             }
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
                         } catch (e: Exception) {
                             l.warn("Model: ${body.model}. Failed to parse stream chunk: $data", e)
                         }
@@ -149,6 +124,8 @@ class AiTunnelChatAPI(
         } catch (e: ClientRequestException) {
             val text = e.response.bodyAsText()
             send(LLMResponse.Chat.Error(e.response.status.value, text))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (t: Throwable) {
             l.error("Model: ${body.model}. Error in AiTunnel stream chat", t)
             send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
@@ -157,6 +134,7 @@ class AiTunnelChatAPI(
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
         val response = client.post(EMBEDDINGS_URL) {
+            applyRequestDefaults()
             setBody(buildEmbeddingsRequest(body))
         }
         val text = response.bodyAsText()
@@ -168,6 +146,8 @@ class AiTunnelChatAPI(
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
         LLMResponse.Embeddings.Error(e.response.status.value, text)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Model: ${body.model}. Error in AiTunnel embeddings", t)
         LLMResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
@@ -185,12 +165,22 @@ class AiTunnelChatAPI(
         return LLMResponse.Balance.Error(-1, "Balance check not implemented for AiTunnel")
     }
 
+    private fun io.ktor.client.request.HttpRequestBuilder.applyRequestDefaults() {
+        header(HttpHeaders.ContentType, ContentType.Application.Json)
+        header(HttpHeaders.Accept, ContentType.Application.Json)
+        header(HttpHeaders.Authorization, "Bearer $apiKey")
+        timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
+    }
+
     private fun buildChatRequest(body: LLMRequest.Chat, stream: Boolean): Map<String, Any> {
         val tools = buildTools(body.functions)
         return buildMap {
             put("model", resolveChatModel(body.model))
             put("messages", buildMessages(body.messages))
             put("stream", stream)
+            if (stream) {
+                put("stream_options", mapOf("include_usage" to true))
+            }
 
             body.temperature?.let { put("temperature", it) }
             if (body.maxTokens > 0) {

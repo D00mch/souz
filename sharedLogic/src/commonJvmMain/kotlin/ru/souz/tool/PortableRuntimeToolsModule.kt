@@ -52,6 +52,7 @@ fun portableRuntimeToolsDiModule(
     skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
     bindAgentToolCatalog: Boolean = true,
+    includeLlmBackedTools: Boolean = true,
 ): DI.Module = DI.Module("portableRuntimeTools") {
     bindSingleton<ToolInvocationSandboxScopeResolver> { scopeResolver }
     bindSingleton<ToolInvocationRuntimeSandboxResolver> {
@@ -70,13 +71,17 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { ToolMoveFile(instance(), instanceOrNull<ToolPermissionBroker>()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolFindFolders(instance()) }
-    bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }
-    bindSingleton { ToolGenerateImage(filesToolUtil = instance(), imageGenerationGateway = instance()) }
+    if (includeLlmBackedTools) {
+        bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }
+        bindSingleton { ToolGenerateImage(filesToolUtil = instance(), imageGenerationGateway = instance()) }
+    }
     bindSingleton { ToolCalculator() }
 
     bindSingleton { WebResearchClient() }
-    bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
-    bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
+    if (includeLlmBackedTools) {
+        bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
+        bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
+    }
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
 
     bindSingleton {
@@ -89,11 +94,11 @@ fun portableRuntimeToolsDiModule(
             toolMoveFile = instance(),
             toolFindFilesByName = instance(),
             toolFindFolders = instance(),
-            toolViewImage = instance(),
-            toolGenerateImage = instance(),
+            toolViewImage = if (includeLlmBackedTools) instance() else null,
+            toolGenerateImage = if (includeLlmBackedTools) instance() else null,
             toolCalculator = instance(),
-            toolInternetSearch = instance(),
-            toolInternetResearch = instance(),
+            toolInternetSearch = if (includeLlmBackedTools) instance() else null,
+            toolInternetResearch = if (includeLlmBackedTools) instance() else null,
             toolWebPageText = instance(),
         )
     }
@@ -195,11 +200,11 @@ class PortableRuntimeToolsFactory(
     private val toolMoveFile: ToolMoveFile,
     private val toolFindFilesByName: ToolFindFilesByName,
     private val toolFindFolders: ToolFindFolders,
-    private val toolViewImage: ToolViewImage,
-    private val toolGenerateImage: ToolGenerateImage,
+    private val toolViewImage: ToolViewImage?,
+    private val toolGenerateImage: ToolGenerateImage?,
     private val toolCalculator: ToolCalculator,
-    private val toolInternetSearch: ToolInternetSearch,
-    private val toolInternetResearch: ToolInternetResearch,
+    private val toolInternetSearch: ToolInternetSearch?,
+    private val toolInternetResearch: ToolInternetResearch?,
     private val toolWebPageText: ToolWebPageText,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
@@ -220,11 +225,11 @@ class PortableRuntimeToolsFactory(
             toolFindFolders.toGiga(),
         )
 
-        ToolCategory.IMAGE -> listOf(toolViewImage.toGiga())
-        ToolCategory.IMAGE_GENERATION -> listOf(toolGenerateImage.toGiga())
-        ToolCategory.WEB_SEARCH -> listOf(
-            toolInternetSearch.toGiga(),
-            toolInternetResearch.toGiga(),
+        ToolCategory.IMAGE -> listOfNotNull(toolViewImage?.toGiga())
+        ToolCategory.IMAGE_GENERATION -> listOfNotNull(toolGenerateImage?.toGiga())
+        ToolCategory.WEB_SEARCH -> listOfNotNull(
+            toolInternetSearch?.toGiga(),
+            toolInternetResearch?.toGiga(),
             toolWebPageText.toGiga(),
         )
         ToolCategory.CALCULATOR -> listOf(toolCalculator.toGiga())

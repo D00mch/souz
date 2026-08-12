@@ -8,8 +8,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import ru.souz.android.agent.AndroidAgentRuntime
-import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.android.ui.SouzAndroidApp
 
 class MainActivity : ComponentActivity() {
@@ -34,8 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val settings = AndroidSettingsProvider(applicationContext)
-        val agentRuntime = AndroidAgentRuntime(applicationContext, settings)
+        val agentRuntime = (application as SouzApplication).agentRuntime
 
         setContent {
             SouzAndroidApp(

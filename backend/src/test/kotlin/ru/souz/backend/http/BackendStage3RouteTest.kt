@@ -32,11 +32,8 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.TestConversationKnowledgeStore
 import ru.souz.backend.TestSkillRegistryRepository
-import ru.souz.backend.testCoreTool
-import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
+import ru.souz.backend.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
@@ -48,7 +45,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalogFactory
+import ru.souz.backend.client.BackendClientToolCatalog
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.options.repository.OptionRepository
@@ -867,7 +864,7 @@ class BackendStage3RouteTest {
         assertEquals("client-42", payload["execution"]["clientMessageId"].asText())
         assertEquals(context.settingsProvider.gigaModel.alias, payload["execution"]["model"].asText())
         assertEquals(context.settingsProvider.gigaModel.provider.name, payload["execution"]["provider"].asText())
-        assertEquals(10, payload["execution"]["usage"]["totalTokens"].asInt())
+        assertEquals(20, payload["execution"]["usage"]["totalTokens"].asInt())
         assertEquals(listOf("Напиши ответ", "assistant reply to Напиши ответ"), storedMessages.map { it.content })
         assertEquals(2L, storedState?.basedOnMessageSeq)
         assertTrue(storedState?.history.orEmpty().any { it.content.contains("assistant reply to Напиши ответ") })
@@ -1241,6 +1238,7 @@ internal fun routeTestContext(
     settingsProvider: TestSettingsProvider = TestSettingsProvider().apply {
         gigaChatKey = "giga-key"
         qwenChatKey = "qwen-key"
+        gigaModel = LLMModel.QwenMax
         contextSize = 24_000
         temperature = 0.6f
         useStreaming = false
@@ -1275,7 +1273,7 @@ internal fun routeTestContext(
     val clientThreadRegistry = ClientThreadRuntimeRegistry()
     val resolvedClientRequestRepository = clientRequestRepository ?: MemoryClientRequestRepository(executionRepository)
     val clientInputRepository = MemoryClientInputRepository(messageRepository, executionRepository)
-    val clientToolCatalogFactory = BackendClientToolCatalogFactory(
+    val clientToolCatalog = BackendClientToolCatalog.bundled(
         registry = clientThreadRegistry,
         toolCallRepository = toolCallRepository,
         eventService = eventService,
@@ -1288,21 +1286,16 @@ internal fun routeTestContext(
         toolCatalog = toolCatalog,
         localModelAvailability = unavailableLocalModels(),
     )
-    val runtimeFactory = BackendConversationRuntimeFactory(
-        baseSettingsProvider = settingsProvider,
+    val runtimeFactory = testBackendConversationRuntimeFactory(
+        settingsProvider = settingsProvider,
         llmApiFactory = { llmApi },
         sessionRepository = AgentStateBackedSessionRepository(stateRepository),
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "global backend prompt",
         configuredAgentId = agentId,
         toolCatalog = toolCatalog,
-        clientToolCatalogProvider = { userId -> clientToolCatalogFactory.create(userId) },
+        clientToolCatalog = clientToolCatalog,
         skillRegistryRepository = TestSkillRegistryRepository,
-        skillCoreToolsFactory = testSkillCoreToolsFactory(),
-        getKnowledgeTool = testCoreTool("GetKnowledge"),
-        searchKnowledgeTool = testCoreTool("SearchKnowledge"),
-        searchMemoryTool = testSearchMemoryTool(),
-        knowledgeStore = TestConversationKnowledgeStore,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory, clientThreadRegistry)

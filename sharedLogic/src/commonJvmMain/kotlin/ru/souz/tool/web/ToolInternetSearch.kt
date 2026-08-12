@@ -36,7 +36,7 @@ class ToolInternetSearch(
         val maxSources: Int = 5,
     )
 
-    override val name: String = "InternetSearch"
+    override val name: String = NAME
     override val description: String =
         "Short factual internet lookup. Returns a concise answer plus raw search results and cited sources. Use this for direct questions, current facts, weather, dates, and concise answers from a few sources. Prefer `InternetResearch` for comparisons, tool selection, thematic обзоры, or multi-step analysis."
 
@@ -68,4 +68,8 @@ class ToolInternetSearch(
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
         mapper.writeValueAsString(executor.runQuickSearch(input.query, input.maxSources, meta))
+
+    companion object {
+        const val NAME = "InternetSearch"
+    }
 }

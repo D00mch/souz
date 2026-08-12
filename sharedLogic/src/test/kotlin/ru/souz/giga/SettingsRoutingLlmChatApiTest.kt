@@ -14,12 +14,12 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.tunnel.AiTunnelChatAPI
-import ru.souz.llms.runtime.LLMFactory
+import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-class LLMFactoryEmbeddingsTest {
+class SettingsRoutingLlmChatApiTest {
 
     @Test
     fun `embeddings injects selected alias when request uses default marker`() = runTest {
@@ -35,12 +35,12 @@ class LLMFactoryEmbeddingsTest {
             objectType = "list",
         )
 
-        val factory = LLMFactory(
+        val router = SettingsRoutingLlmChatApi(
             settingsProvider = settingsProvider,
             apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
         )
 
-        factory.embeddings(
+        router.embeddings(
             LLMRequest.Embeddings(
                 input = listOf("hello"),
             )
@@ -63,12 +63,12 @@ class LLMFactoryEmbeddingsTest {
             objectType = "list",
         )
 
-        val factory = LLMFactory(
+        val router = SettingsRoutingLlmChatApi(
             settingsProvider = settingsProvider,
             apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
         )
 
-        factory.embeddings(
+        router.embeddings(
             LLMRequest.Embeddings(
                 model = EmbeddingsModel.QwenEmbeddings.alias,
                 input = listOf("hello"),
@@ -95,12 +95,12 @@ class LLMFactoryEmbeddingsTest {
             usage = LLMResponse.Usage(0, 0, 0, 0),
         )
 
-        val factory = LLMFactory(
+        val router = SettingsRoutingLlmChatApi(
             settingsProvider = settingsProvider,
             apisByProvider = mapOf(LlmProvider.OPENAI to openAiApi),
         )
 
-        val response = factory.message(request)
+        val response = router.message(request)
 
         assertIs<LLMResponse.Chat.Ok>(response)
         assertEquals(LLMModel.OpenAIGpt5Nano.alias, response.model)
@@ -111,12 +111,12 @@ class LLMFactoryEmbeddingsTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.gigaModel } returns LLMModel.QwenFlash
 
-        val factory = LLMFactory(
+        val router = SettingsRoutingLlmChatApi(
             settingsProvider = settingsProvider,
             apisByProvider = emptyMap<LlmProvider, LLMChatAPI>(),
         )
 
-        val response = factory.message(
+        val response = router.message(
             LLMRequest.Chat(
                 model = LLMModel.QwenFlash.alias,
                 messages = emptyList(),

@@ -37,6 +37,7 @@ import ru.souz.skills.registry.SkillStorageScope
 
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
+    includeLlmBackedTools: Boolean = true,
     skillStorageScope: SkillStorageScope = SkillStorageScope.SINGLE_USER,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
 ): DI.Module = DI.Module("runtimeTools") {
@@ -46,6 +47,7 @@ fun runtimeToolsDiModule(
             skillStorageScope = skillStorageScope,
             scopeResolver = scopeResolver,
             bindAgentToolCatalog = false,
+            includeLlmBackedTools = includeLlmBackedTools,
         )
     )
     bindSingleton { ToolExtractText(instance()) }
@@ -75,16 +77,16 @@ fun runtimeToolsDiModule(
             toolFindFilesByName = instance(),
             toolReadPdfPages = instance(),
             toolFindFolders = instance(),
-            toolViewImage = instance(),
-            toolGenerateImage = instance(),
+            toolViewImage = if (includeLlmBackedTools) instance() else null,
+            toolGenerateImage = if (includeLlmBackedTools) instance() else null,
             toolSoundConfig = instance(),
             toolSoundConfigDiff = instance(),
             toolCalculator = instance(),
             toolCreatePlotFromCsv = instance(),
             excelRead = instance(),
             excelReport = instance(),
-            toolInternetSearch = instance(),
-            toolInternetResearch = instance(),
+            toolInternetSearch = if (includeLlmBackedTools) instance() else null,
+            toolInternetResearch = if (includeLlmBackedTools) instance() else null,
             toolWebImageSearch = if (includeWebImageSearch) instance() else null,
             toolWebPageText = instance(),
         )
@@ -103,16 +105,16 @@ class RuntimeToolsFactory(
     private val toolFindFilesByName: ToolFindFilesByName,
     private val toolReadPdfPages: ToolReadPdfPages,
     private val toolFindFolders: ToolFindFolders,
-    private val toolViewImage: ToolViewImage,
-    private val toolGenerateImage: ToolGenerateImage,
+    private val toolViewImage: ToolViewImage?,
+    private val toolGenerateImage: ToolGenerateImage?,
     private val toolSoundConfig: ToolSoundConfig,
     private val toolSoundConfigDiff: ToolSoundConfigDiff,
     private val toolCalculator: ToolCalculator,
     private val toolCreatePlotFromCsv: ToolCreatePlotFromCsv,
     private val excelRead: ExcelRead,
     private val excelReport: ExcelReport,
-    private val toolInternetSearch: ToolInternetSearch,
-    private val toolInternetResearch: ToolInternetResearch,
+    private val toolInternetSearch: ToolInternetSearch?,
+    private val toolInternetResearch: ToolInternetResearch?,
     private val toolWebImageSearch: ToolWebImageSearch?,
     private val toolWebPageText: ToolWebPageText,
 ) : AgentToolCatalog {
@@ -136,17 +138,13 @@ class RuntimeToolsFactory(
             toolFindFolders.toGiga(),
         )
 
-        ToolCategory.IMAGE -> listOf(
-            toolViewImage.toGiga(),
-        )
+        ToolCategory.IMAGE -> listOfNotNull(toolViewImage?.toGiga())
 
-        ToolCategory.IMAGE_GENERATION -> listOf(
-            toolGenerateImage.toGiga(),
-        )
+        ToolCategory.IMAGE_GENERATION -> listOfNotNull(toolGenerateImage?.toGiga())
 
         ToolCategory.WEB_SEARCH -> buildList {
-            add(toolInternetSearch.toGiga())
-            add(toolInternetResearch.toGiga())
+            toolInternetSearch?.let { add(it.toGiga()) }
+            toolInternetResearch?.let { add(it.toGiga()) }
             toolWebImageSearch?.let { add(it.toGiga()) }
             add(toolWebPageText.toGiga())
         }

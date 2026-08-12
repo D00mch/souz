@@ -1,19 +1,11 @@
 package ru.souz.llms.qwen
 
-import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.plugins.sse.sse
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -22,30 +14,31 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
-import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.TokenLogging
 import ru.souz.llms.toFinishReason
 import ru.souz.llms.restJsonMapper
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.time.Duration.Companion.seconds
 
 class QwenChatAPI(
     private val settingsProvider: SettingsProvider,
-    private val tokenLogging: TokenLogging,
+    private val client: HttpClient,
+    apiKey: String? = null,
 ) : LLMChatAPI {
     private val l = LoggerFactory.getLogger(QwenChatAPI::class.java)
+    private val immutableApiKey = apiKey
 
     private val apiKey: String
-        get() = settingsProvider.qwenChatKey
+        get() = immutableApiKey
+            ?: settingsProvider.qwenChatKey
             ?: System.getenv("QWEN_KEY")
             ?: System.getProperty("QWEN_KEY")
             ?: throw IllegalStateException("QWEN_KEY is not set")
@@ -60,37 +53,9 @@ class QwenChatAPI(
             ?: System.getProperty("QWEN_EMBEDDINGS_MODEL")
             ?: "text-embedding-v3"
 
-    private val client = HttpClient(CIO) {
-        defaultRequest {
-            header(HttpHeaders.ContentType, ContentType.Application.Json)
-            header(HttpHeaders.Accept, ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $apiKey")
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
-        }
-        install(ContentNegotiation) {
-            jackson {
-                disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            }
-        }
-        install(Logging) {
-            logger = object : Logger {
-                override fun log(message: String) {
-                    l.debug(message)
-                }
-            }
-            level = LogLevel.INFO
-            sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
-        }
-        install(SSE) {
-            maxReconnectionAttempts = 0
-            reconnectionTime = 3.seconds
-        }
-    }
-
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(CHAT_COMPLETIONS_URL) {
+            applyRequestDefaults()
             setBody(buildChatRequest(body))
         }
         val text = response.bodyAsText()
@@ -98,7 +63,6 @@ class QwenChatAPI(
             parseCompletionsResponse(text, resolveChatModel(body.model)).also { result ->
                 if (result is LLMResponse.Chat.Ok) {
                     l.info("Chat response: ")
-                    tokenLogging.logTokenUsage(result, body)
                 }
             }
         } else {
@@ -107,6 +71,8 @@ class QwenChatAPI(
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
         LLMResponse.Chat.Error(e.response.status.value, text)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Error in Qwen chat", t)
         LLMResponse.Chat.Error(-1, "Connection error: ${t.message}")
@@ -123,6 +89,7 @@ class QwenChatAPI(
             client.sse(
                 urlString = GENERATION_SSE_URL,
                 request = {
+                    applyRequestDefaults()
                     method = HttpMethod.Post
                     header("X-DashScope-SSE", "enable")
                     setBody(buildGenerationRequest(body))
@@ -138,7 +105,7 @@ class QwenChatAPI(
                             l.warn("Failed to parse Qwen stream chunk: $data", it)
                             return@collect
                         }
-                    if (chunk.choices.isNotEmpty()) {
+                    if (chunk.choices.isNotEmpty() || !chunk.usage.isEmpty()) {
                         send(chunk)
                     }
                 }
@@ -146,6 +113,8 @@ class QwenChatAPI(
         } catch (e: ClientRequestException) {
             val text = e.response.bodyAsText()
             send(LLMResponse.Chat.Error(e.response.status.value, text))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (t: Throwable) {
             l.error("Error in Qwen stream chat", t)
             send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
@@ -154,6 +123,7 @@ class QwenChatAPI(
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
         val response = client.post(EMBEDDINGS_URL) {
+            applyRequestDefaults()
             setBody(buildEmbeddingsRequest(body))
         }
         val text = response.bodyAsText()
@@ -165,6 +135,8 @@ class QwenChatAPI(
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
         LLMResponse.Embeddings.Error(e.response.status.value, text)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Error in Qwen embeddings", t)
         LLMResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
@@ -180,6 +152,13 @@ class QwenChatAPI(
 
     override suspend fun balance(): LLMResponse.Balance {
         return LLMResponse.Balance.Error(-1, "Qwen doesn't have billing API")
+    }
+
+    private fun io.ktor.client.request.HttpRequestBuilder.applyRequestDefaults() {
+        header(HttpHeaders.ContentType, ContentType.Application.Json)
+        header(HttpHeaders.Accept, ContentType.Application.Json)
+        header(HttpHeaders.Authorization, "Bearer $apiKey")
+        timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
     }
 
     private fun buildChatRequest(body: LLMRequest.Chat): Map<String, Any> {
@@ -397,6 +376,9 @@ class QwenChatAPI(
         val cached = node?.get("prompt_tokens_details")?.get("cached_tokens")?.asInt() ?: 0
         return LLMResponse.Usage(prompt, completion, total, cached)
     }
+
+    private fun LLMResponse.Usage.isEmpty(): Boolean =
+        promptTokens == 0 && completionTokens == 0 && totalTokens == 0 && precachedTokens == 0
 
     private fun parseEmbeddingsResponse(text: String): LLMResponse.Embeddings {
         val node = restJsonMapper.readTree(text)

@@ -36,7 +36,7 @@ class ToolInternetResearch(
         val maxSources: Int = 10,
     )
 
-    override val name: String = "InternetResearch"
+    override val name: String = NAME
     override val description: String =
         "Deep multi-source internet research. Returns a long-form cited answer plus the collected search results. Use this for comparisons, library/tool selection, thematic обзоры, market analysis, or requests that need planning, broader coverage, and a long-form cited report."
 
@@ -68,4 +68,8 @@ class ToolInternetResearch(
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String =
         mapper.writeValueAsString(executor.runResearch(input.query, input.maxSources, meta))
+
+    companion object {
+        const val NAME = "InternetResearch"
+    }
 }

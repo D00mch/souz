@@ -1,22 +1,15 @@
 package ru.souz.backend.agent.runtime
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.io.File
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.TestConversationKnowledgeStore
-import ru.souz.backend.testCoreTool
-import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
+import ru.souz.backend.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
@@ -139,8 +132,8 @@ class BackendConversationRuntimeSettingsTest {
                 gigaChatKey = "giga-key"
                 requestTimeoutMillis = 30_000L
             },
-            llmApiFactory = { context ->
-                capturedTimeouts += context.settingsProvider.requestTimeoutMillis
+            llmApiFactory = { settingsProvider ->
+                capturedTimeouts += settingsProvider.requestTimeoutMillis
                 ReplyingChatApi()
             },
         )
@@ -266,26 +259,17 @@ class BackendConversationRuntimeSettingsTest {
 
 private fun runtimeFactory(
     settingsProvider: TestSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
-    llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
+    llmApiFactory: suspend (ru.souz.db.SettingsProvider) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     configuredAgentId: AgentId = AgentId.GRAPH,
     sessionRepository: InMemoryAgentSessionRepository = InMemoryAgentSessionRepository(),
-): BackendConversationRuntimeFactory =
-    BackendConversationRuntimeFactory(
-        baseSettingsProvider = settingsProvider,
-        llmApiFactory = llmApiFactory,
-        sessionRepository = sessionRepository,
-        logObjectMapper = jacksonObjectMapper(),
-        systemPrompt = "backend test prompt",
-        configuredAgentId = configuredAgentId,
-        toolCatalog = toolCatalog,
-        skillCoreToolsFactory = testSkillCoreToolsFactory(),
-        getKnowledgeTool = testCoreTool("GetKnowledge"),
-        searchKnowledgeTool = testCoreTool("SearchKnowledge"),
-        searchMemoryTool = testSearchMemoryTool(),
-        knowledgeStore = TestConversationKnowledgeStore,
-        agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    )
+): BackendConversationRuntimeFactory = testBackendConversationRuntimeFactory(
+    settingsProvider = settingsProvider,
+    llmApiFactory = llmApiFactory,
+    sessionRepository = sessionRepository,
+    configuredAgentId = configuredAgentId,
+    toolCatalog = toolCatalog,
+)
 
 private fun conversationKey(): AgentConversationKey =
     AgentConversationKey(
@@ -296,7 +280,7 @@ private fun conversationKey(): AgentConversationKey =
 private fun turnRequest(): BackendConversationTurnRequest =
     BackendConversationTurnRequest(
         prompt = "List files in the project root.",
-        model = LLMModel.Max.alias,
+        model = LLMModel.QwenMax.alias,
         contextSize = 24_000,
         locale = "ru-RU",
         timeZone = "Europe/Moscow",

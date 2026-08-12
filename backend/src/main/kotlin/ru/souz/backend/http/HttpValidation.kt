@@ -8,6 +8,7 @@ import java.util.UUID
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.common.BackendRequestException
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.bus.AgentEventLimits
@@ -31,8 +32,15 @@ internal fun ApplicationCall.requireProvider(): LlmProvider {
         ?.takeIf { it.isNotEmpty() }
         ?: throw invalidV1Request("provider path parameter is required.")
     val normalized = raw.replace('-', '_')
-    return LlmProvider.entries.firstOrNull { it.name.equals(normalized, ignoreCase = true) }
+    val provider = LlmProvider.entries.firstOrNull { it.name.equals(normalized, ignoreCase = true) }
         ?: throw invalidV1Request("Unsupported provider '$raw'.")
+    if (provider == LlmProvider.GIGA) {
+        throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+    }
+    if (provider !in BackendLlmSupport.userManagedKeyProviders) {
+        throw invalidV1Request("Provider $provider does not accept user-managed keys on the backend.")
+    }
+    return provider
 }
 
 internal fun ApplicationCall.requireExecutionId(): UUID =

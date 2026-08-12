@@ -10,17 +10,22 @@ import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
-import ru.souz.backend.llm.LlmClientFactory
+import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.http.GigaHttpClientResource
+import ru.souz.llms.giga.GigaAuth
+import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
@@ -37,7 +42,6 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.agent.skills.registry.SkillRegistryRepository
-import ru.souz.db.SettingsProvider
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 
 class BackendDiModuleTest {
@@ -61,17 +65,21 @@ class BackendDiModuleTest {
             assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
-            assertIs<LlmClientFactory>(di.direct.instance<LlmClientFactory>())
+            assertIs<ProviderHttpClients>(di.direct.instance<ProviderHttpClients>())
+            assertNull(di.direct.instanceOrNull<GigaHttpClientResource>())
+            assertNull(di.direct.instanceOrNull<GigaAuth>())
+            assertNull(di.direct.instanceOrNull<GigaRestChatAPI>())
             assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
 
             val httpDependencies = di.direct.instance<BackendHttpDependencies>()
             assertSame(httpDependencies, di.direct.instance<BackendHttpDependencies>())
             assertSame(di.direct.instance<BackendFeatureFlags>(), httpDependencies.featureFlags)
             assertEquals("test-proxy-token", httpDependencies.trustedProxyToken())
-            assertEquals(
-                di.direct.instance<SettingsProvider>().gigaModel.alias,
-                httpDependencies.selectedModel(),
-            )
+            val configuredModel = di.direct.instance<ru.souz.db.SettingsProvider>().gigaModel
+            val expectedHealthModel = configuredModel
+                .takeIf { it in BackendLlmSupport.chatModels }
+                ?: BackendLlmSupport.fallbackChatModel
+            assertEquals(expectedHealthModel.alias, httpDependencies.selectedModel())
             assertNotNull(httpDependencies.onboardingService)
             assertNotNull(httpDependencies.userSettingsService)
             assertNotNull(httpDependencies.providerKeyService)
@@ -82,7 +90,7 @@ class BackendDiModuleTest {
             assertNotNull(httpDependencies.eventService)
             assertNull(httpDependencies.telegramBotBindingService)
         } finally {
-            dataSource.close()
+            di.direct.instance<BackendRuntimeResources>().close()
         }
     }
 
@@ -103,7 +111,7 @@ class BackendDiModuleTest {
                 httpDependencies.telegramBotBindingService,
             )
         } finally {
-            dataSource.close()
+            di.direct.instance<BackendRuntimeResources>().close()
         }
     }
 

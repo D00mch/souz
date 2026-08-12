@@ -38,7 +38,13 @@ class BackendBootstrapServiceTest {
                     provider = LlmProvider.OPENAI,
                     encryptedApiKey = "enc-openai-user-a",
                     keyHint = "...1234",
-                )
+                ),
+                UserProviderKey(
+                    userId = "user-a",
+                    provider = LlmProvider.GIGA,
+                    encryptedApiKey = "enc-stale-giga-user-a",
+                    keyHint = "...giga",
+                ),
             )
         )
         val bootstrapService = BackendBootstrapService(
@@ -65,6 +71,7 @@ class BackendBootstrapServiceTest {
         assertEquals(0, providerKeyRepository.getCalls)
         assertTrue(openAiCapabilities.isNotEmpty())
         assertTrue(openAiCapabilities.all { it.userManagedKey })
+        assertFalse(response.capabilities.models.any { it.provider == "giga" })
     }
 
     @Test

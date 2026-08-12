@@ -1,6 +1,7 @@
 package ru.souz.backend.keys.service
 
 import java.time.Instant
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
@@ -13,6 +14,7 @@ class UserProviderKeyService(
 ) {
     suspend fun list(userId: String): List<UserProviderKeyView> =
         repository.list(userId)
+            .filter { it.provider in BackendLlmSupport.userManagedKeyProviders }
             .sortedBy { it.provider.name }
             .map { key ->
                 UserProviderKeyView(

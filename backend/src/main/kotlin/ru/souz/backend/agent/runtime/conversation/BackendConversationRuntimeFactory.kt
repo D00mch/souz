@@ -13,6 +13,7 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
+import ru.souz.backend.agent.runtime.BackendExecutionLlmToolCatalog
 import ru.souz.backend.agent.runtime.BackendFewShotAwareToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
@@ -21,37 +22,60 @@ import ru.souz.backend.agent.runtime.BackendNoopMcpToolProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.runtime.BackendRequestToolCatalog
 import ru.souz.backend.agent.runtime.BackendRequestToolsFilter
-import ru.souz.backend.agent.runtime.BackendSkillCoreToolsFactory
-import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
-import ru.souz.backend.llm.BackendLlmExecutionContext
+import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.llm.BackendExecutionLlmChatApi
+import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.anthropic.AnthropicVisionGateway
+import ru.souz.llms.codex.CodexOAuthService
+import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.json.JsonUtils
+import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.local.LocalVisionGateway
+import ru.souz.llms.openai.OpenAIImageGenerationGateway
+import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.runtime.ApiClassifier
+import ru.souz.llms.runtime.LLMCapabilityResolver
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.LocalRegexClassifier
 import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.web.internal.WebResearchClient
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
-class BackendConversationRuntimeFactory(
+internal class BackendConversationRuntimeFactory(
     private val baseSettingsProvider: SettingsProvider,
-    private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
+    private val credentialResolver: ProviderCredentialResolver,
+    private val retryPolicy: BackendProviderRetryPolicy,
+    private val providerHttpClients: ProviderHttpClients,
+    private val localChatApi: LocalChatAPI,
+    private val codexOAuthService: CodexOAuthService,
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
     private val configuredAgentId: AgentId = AgentId.default,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    private val clientToolCatalogProvider: suspend (String) -> AgentToolCatalog = { BackendNoopAgentToolCatalog },
+    private val clientToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val skillRegistryRepository: SkillRegistryRepository? = null,
-    private val skillCoreToolsFactory: BackendSkillCoreToolsFactory,
+    private val legacyCommandTool: LLMToolSetup,
+    private val commandTool: ToolRunSkillCommand,
+    private val filesToolUtil: FilesToolUtil,
+    private val webResearchClient: WebResearchClient,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: CoroutineScope,
+    private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -67,48 +91,88 @@ class BackendConversationRuntimeFactory(
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
         settingsProvider.activeAgentId = persistedSession?.activeAgentId ?: configuredAgentId
-        val clientToolCatalog = if (request.clientToolsEnabled) {
-            clientToolCatalogProvider(key.userId)
+        val activeAgentId = persistedSession?.activeAgentId ?: settingsProvider.activeAgentId
+        val temperature = persistedSession?.temperature ?: settingsProvider.temperature
+        settingsProvider.restore(
+            activeAgentId = activeAgentId,
+            temperature = temperature,
+            locale = persistedSession?.locale ?: request.locale,
+        )
+        settingsProvider.applyRequest(
+            request = request,
+            activeAgentId = activeAgentId,
+            temperature = temperature,
+        )
+        val testApi = testLlmApiFactory?.invoke(settingsProvider)
+        val executionApi = BackendExecutionLlmChatApi(
+            userId = key.userId,
+            settingsProvider = settingsProvider,
+            credentialResolver = credentialResolver,
+            retryPolicy = retryPolicy,
+            httpClients = providerHttpClients,
+            localChatApi = localChatApi,
+            codexOAuthService = codexOAuthService,
+            initialUsage = initialUsage,
+            providerApiOverride = testApi?.let { api -> { api } },
+        )
+        val requestClientToolCatalog = if (request.clientToolsEnabled) {
+            clientToolCatalog
         } else {
             BackendNoopAgentToolCatalog
         }
-        val executionToolCatalog = BackendMergedToolCatalog(toolCatalog, clientToolCatalog)
+        val visionGateway = LLMCapabilityResolver(
+            settingsProvider = settingsProvider,
+            openAiGateway = OpenAIVisionGateway(settingsProvider, executionApi),
+            anthropicGateway = AnthropicVisionGateway(settingsProvider, executionApi),
+            additionalGateways = mapOf(
+                LlmProvider.LOCAL to LocalVisionGateway(settingsProvider, executionApi),
+            ),
+        )
+        val imageGenerationGateway = OpenAIImageGenerationGateway(
+            settingsProvider = settingsProvider,
+            client = providerHttpClients.openAi,
+            apiKeyProvider = { executionApi.credentialFor(LlmProvider.OPENAI) },
+        )
+        val executionLlmToolCatalog = BackendExecutionLlmToolCatalog(
+            llmApi = executionApi,
+            settingsProvider = settingsProvider,
+            filesToolUtil = filesToolUtil,
+            webResearchClient = webResearchClient,
+            visionGateway = visionGateway,
+            imageGenerationGateway = imageGenerationGateway,
+        )
+        val executionToolCatalog = BackendMergedToolCatalog(
+            toolCatalog,
+            executionLlmToolCatalog,
+            requestClientToolCatalog,
+        )
         val requestScopedToolCatalog = BackendFewShotAwareToolCatalog(
             delegate = executionToolCatalog,
             settingsProvider = settingsProvider,
         )
         val enabledTools = request.enabledTools?.plus(
-            clientToolCatalog.toolsByCategory.values.flatMap { it.keys }
+            requestClientToolCatalog.toolsByCategory.values.flatMap { it.keys }
         )
         val requestToolsFilter = BackendRequestToolsFilter(enabledTools)
         val filteredToolCatalog = BackendRequestToolCatalog(
             delegate = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,
         )
-        val delegateApi = llmApiFactory(
-            BackendLlmExecutionContext(
-                userId = key.userId,
-                executionId = request.executionId ?: key.conversationId,
-                settingsProvider = settingsProvider,
-            )
-        )
-        val usageTrackingApi = CumulativeUsageTrackingChatApi(
-            delegate = delegateApi,
-            initialUsage = initialUsage,
-        )
         val effectiveSkillRegistryRepository = skillRegistryRepository ?: BackendNoopSkillRegistryRepository
         val skillApprovalGate = SkillApprovalGate.from(
             validationStore = effectiveSkillRegistryRepository,
-            llmApi = usageTrackingApi,
+            llmApi = executionApi,
             settingsProvider = settingsProvider,
             jsonUtils = JsonUtils(restJsonMapper),
         )
-        val getSkillByNameTool = skillCoreToolsFactory.createGetSkillByName(
+        val getSkillByNameTool = ToolGetSkillByName(
             toolCatalog = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = effectiveSkillRegistryRepository,
+            legacyCommandTool = legacyCommandTool,
             approvalGate = skillApprovalGate,
         )
-        val getSkillsNamesByCategoryTool = skillCoreToolsFactory.createGetSkillsNamesByCategory(
+        val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
             toolCatalog = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,
         )
@@ -116,9 +180,11 @@ class BackendConversationRuntimeFactory(
             getSkillByName = getSkillByNameTool,
             getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
         )
-        val runtimeCommandTool = skillCoreToolsFactory.createRuntimeCommand(
+        val runtimeCommandTool = ToolInvokeSkill(
             toolCatalog = requestScopedToolCatalog,
             toolsFilter = requestToolsFilter,
+            skillBundleProvider = effectiveSkillRegistryRepository,
+            commandTool = commandTool,
             approvalGate = skillApprovalGate,
         )
         val kernel = AgentExecutionKernelFactory(
@@ -143,8 +209,8 @@ class BackendConversationRuntimeFactory(
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
-            llmApi = usageTrackingApi,
-            apiClassifier = ApiClassifier(delegateApi),
+            llmApi = executionApi,
+            apiClassifier = ApiClassifier(executionApi),
             localClassifier = LocalRegexClassifier,
             skillRegistryRepository = effectiveSkillRegistryRepository,
             captureScope = agentBackgroundScope,
@@ -155,7 +221,7 @@ class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             contextFactory = kernel.contextFactory,
             executor = kernel.executor,
-            usageTrackingApi = usageTrackingApi,
+            executionApi = executionApi,
             persistedSession = persistedSession,
         )
     }

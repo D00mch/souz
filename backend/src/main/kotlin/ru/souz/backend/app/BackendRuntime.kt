@@ -7,7 +7,6 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
-import ru.souz.llms.local.LocalLlamaRuntime
 
 /** Process-wide backend runtime container with shared services and LLM resources. */
 class BackendRuntime private constructor(
@@ -20,7 +19,6 @@ class BackendRuntime private constructor(
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val applicationScope: BackendApplicationScope by lazy { di.direct.instance() }
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
-    private val localRuntime: LocalLlamaRuntime by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
         if (httpDependencies.featureFlags.wsEvents) {
@@ -31,7 +29,6 @@ class BackendRuntime private constructor(
     }
 
     override fun close() {
-        localRuntime.close()
         resources.close()
     }
 

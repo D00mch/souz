@@ -7,8 +7,10 @@ import java.time.ZoneId
 import java.util.IllformedLocaleException
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.findLLMModel
 
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
@@ -70,8 +72,14 @@ internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSett
         systemPrompt = this?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() },
     )
 
-internal fun parseModel(rawModel: String, fieldName: String): LLMModel =
-    findLLMModel(rawModel) ?: throw invalidV1Request("$fieldName must be a known model alias.")
+internal fun parseModel(rawModel: String, fieldName: String): LLMModel {
+    val model = findLLMModel(rawModel)
+        ?: throw invalidV1Request("$fieldName must be a known model alias.")
+    if (model.provider == LlmProvider.GIGA) {
+        throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+    }
+    return model
+}
 
 internal fun parseLocale(rawLocale: String, fieldName: String): Locale =
     try {

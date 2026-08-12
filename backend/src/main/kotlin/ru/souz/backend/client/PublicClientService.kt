@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
@@ -30,6 +31,7 @@ import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.findLLMModel
+import ru.souz.llms.LlmProvider
 
 internal data class HandledClientFrame(
     val response: Any,
@@ -371,7 +373,12 @@ internal class PublicClientService(
 
     private fun requestOverrides(meta: ClientRequestMeta?): UserSettingsOverrides = UserSettingsOverrides(
         defaultModel = meta?.model?.let { raw ->
-            findLLMModel(raw) ?: throw ClientContractException("invalid_request", "payload.meta.model must be a known model alias.")
+            val model = findLLMModel(raw)
+                ?: throw ClientContractException("invalid_request", "payload.meta.model must be a known model alias.")
+            if (model.provider == LlmProvider.GIGA) {
+                throw ClientContractException("invalid_request", BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+            }
+            model
         },
         locale = meta?.locale?.let { Locale.forLanguageTag(it).takeIf { locale -> locale.language.isNotBlank() } },
         timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },

@@ -9,9 +9,15 @@ import ru.souz.llms.LLMModel
 
 class RequestParsingTest {
     @Test
-    fun `parseModel accepts legacy GigaChat aliases`() {
-        assertEquals(LLMModel.Max, parseModel("GigaChat-Max", fieldName = "defaultModel"))
-        assertEquals(LLMModel.Pro, parseModel("GigaChat-Pro", fieldName = "defaultModel"))
+    fun `parseModel rejects canonical and legacy Giga aliases`() {
+        listOf(LLMModel.Max.alias, "GigaChat-Max", "GigaChat-Pro").forEach { alias ->
+            val error = assertFailsWith<BackendV1Exception> {
+                parseModel(alias, fieldName = "defaultModel")
+            }
+
+            assertEquals("invalid_request", error.code)
+            assertEquals("Giga is not supported by the backend.", error.message)
+        }
     }
 
     @Test

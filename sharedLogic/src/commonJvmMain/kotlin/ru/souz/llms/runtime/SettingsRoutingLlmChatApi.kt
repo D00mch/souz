@@ -1,5 +1,6 @@
 package ru.souz.llms.runtime
 
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import ru.souz.db.SettingsProvider
@@ -8,27 +9,26 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
-import java.io.File
 
-class LLMFactory(
+/** Routes interactive-host calls using the providers currently selected in mutable settings. */
+class SettingsRoutingLlmChatApi(
     private val settingsProvider: SettingsProvider,
     private val apisByProvider: Map<LlmProvider, LLMChatAPI>,
 ) : LLMChatAPI {
-
-    fun current(): LLMChatAPI =
+    private fun currentChatApi(): LLMChatAPI =
         apiFor(settingsProvider.gigaModel.provider)
 
-    private fun currentEmbeddings(): LLMChatAPI =
+    private fun currentEmbeddingsApi(): LLMChatAPI =
         apiFor(settingsProvider.embeddingsModel.provider)
 
     private fun apiFor(provider: LlmProvider): LLMChatAPI =
         apisByProvider[provider] ?: UnsupportedProviderApi(provider)
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
-        current().message(body)
+        currentChatApi().message(body)
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
-        current().messageStream(body)
+        currentChatApi().messageStream(body)
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
         val request = if (body.model.equals(EmbeddingsModel.GigaEmbeddings.alias, ignoreCase = true)) {
@@ -36,17 +36,17 @@ class LLMFactory(
         } else {
             body
         }
-        return currentEmbeddings().embeddings(request)
+        return currentEmbeddingsApi().embeddings(request)
     }
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
-        current().uploadFile(file)
+        currentChatApi().uploadFile(file)
 
     override suspend fun downloadFile(fileId: String): String? =
-        current().downloadFile(fileId)
+        currentChatApi().downloadFile(fileId)
 
     override suspend fun balance(): LLMResponse.Balance =
-        current().balance()
+        currentChatApi().balance()
 }
 
 private class UnsupportedProviderApi(

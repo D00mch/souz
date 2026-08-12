@@ -11,6 +11,21 @@ import ru.souz.llms.LlmProvider
 
 class StoredProviderCredentialResolverTest {
     @Test
+    fun `Giga credentials are never resolved by the backend`() = runTest {
+        val repository = MemoryUserProviderKeyRepository()
+        val keyService = UserProviderKeyService(repository, "test-master-key")
+        keyService.put("user-a", LlmProvider.GIGA, "stored-giga-key")
+        val resolver = StoredProviderCredentialResolver(
+            baseSettingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = "server-giga-key"
+            },
+            userProviderKeyService = keyService,
+        )
+
+        assertNull(resolver.resolve("user-a", LlmProvider.GIGA))
+    }
+
+    @Test
     fun `Codex resolves only the server managed OAuth access token`() = runTest {
         val repository = MemoryUserProviderKeyRepository()
         val keyService = UserProviderKeyService(repository, "test-master-key")

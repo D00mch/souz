@@ -1,15 +1,8 @@
 package ru.souz.llms.openai
 
-import com.fasterxml.jackson.databind.DeserializationFeature
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.defaultRequest
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -17,8 +10,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
-import io.ktor.serialization.jackson.jackson
 import java.util.Base64
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.restJsonMapper
@@ -29,44 +22,23 @@ import ru.souz.llms.runtime.ImageGenerationInput
 
 class OpenAIImageGenerationGateway(
     private val settingsProvider: SettingsProvider,
-) : ImageGenerationGateway {
-    private val l = LoggerFactory.getLogger(OpenAIImageGenerationGateway::class.java)
-
-    private val apiKey: String
-        get() = settingsProvider.openaiKey
+    private val client: HttpClient,
+    private val apiKeyProvider: suspend () -> String = {
+        settingsProvider.openaiKey
             ?: System.getenv("OPENAI_API_KEY")
             ?: System.getProperty("OPENAI_API_KEY")
             ?: throw IllegalStateException("OPENAI_API_KEY is not set")
-
-    private val client = HttpClient(CIO) {
-        defaultRequest {
-            header(HttpHeaders.ContentType, ContentType.Application.Json)
-            header(HttpHeaders.Accept, ContentType.Application.Json)
-            header(HttpHeaders.Authorization, "Bearer $apiKey")
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
-        }
-        install(ContentNegotiation) {
-            jackson {
-                disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            }
-        }
-        install(Logging) {
-            logger = object : Logger {
-                override fun log(message: String) {
-                    l.debug(message)
-                }
-            }
-            level = LogLevel.INFO
-            sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
-        }
-        openAiTlsDefaults()
-    }
+    },
+) : ImageGenerationGateway {
+    private val l = LoggerFactory.getLogger(OpenAIImageGenerationGateway::class.java)
 
     override suspend fun generate(input: ImageGenerationInput): GeneratedImage = try {
         val outputFormat = (input.outputFormat ?: OpenAIImageGenerationRequestBuilder.DEFAULT_OUTPUT_FORMAT).lowercase()
         val response = client.post(imagesUrl) {
+            header(HttpHeaders.ContentType, ContentType.Application.Json)
+            header(HttpHeaders.Accept, ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer ${apiKeyProvider()}")
+            timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
             setBody(buildRequestPayload(input))
         }
         val text = response.bodyAsText()
@@ -77,6 +49,8 @@ class OpenAIImageGenerationGateway(
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
         throw IllegalStateException("OpenAI image generation failed: ${e.response.status.value}. $text")
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         throw IllegalStateException("OpenAI image generation failed: ${t.message}", t)
     }

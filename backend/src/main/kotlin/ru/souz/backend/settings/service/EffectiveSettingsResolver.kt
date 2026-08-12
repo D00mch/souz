@@ -4,7 +4,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.backend.common.backendSafeToolNames
+import ru.souz.backend.common.BackendAvailableToolNames
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
@@ -41,9 +42,25 @@ class EffectiveSettingsResolver(
     private val userSettingsRepository: UserSettingsRepository,
     private val userProviderKeyRepository: UserProviderKeyRepository,
     private val featureFlags: BackendFeatureFlags,
-    private val toolCatalog: AgentToolCatalog,
+    private val availableToolNames: BackendAvailableToolNames,
     private val localModelAvailability: LocalModelAvailability,
 ) {
+    constructor(
+        baseSettingsProvider: SettingsProvider,
+        userSettingsRepository: UserSettingsRepository,
+        userProviderKeyRepository: UserProviderKeyRepository,
+        featureFlags: BackendFeatureFlags,
+        toolCatalog: AgentToolCatalog,
+        localModelAvailability: LocalModelAvailability,
+    ) : this(
+        baseSettingsProvider = baseSettingsProvider,
+        userSettingsRepository = userSettingsRepository,
+        userProviderKeyRepository = userProviderKeyRepository,
+        featureFlags = featureFlags,
+        availableToolNames = BackendAvailableToolNames.fromProcessCatalog(toolCatalog),
+        localModelAvailability = localModelAvailability,
+    )
+
     suspend fun isSelectableDefaultModel(
         userId: String,
         model: LLMModel,
@@ -133,7 +150,7 @@ class EffectiveSettingsResolver(
     }
 
     private fun normalizeEnabledTools(enabledTools: Set<String>?): Set<String> {
-        val supportedTools = backendSafeToolNames(toolCatalog).toSet()
+        val supportedTools = availableToolNames.values
         val requested = enabledTools ?: supportedTools
         return requested.filterTo(linkedSetOf()) { it in supportedTools }
     }
@@ -144,6 +161,9 @@ class EffectiveSettingsResolver(
         locale: Locale,
         userManagedProviders: Set<LlmProvider>?,
     ): LLMModel {
+        if (model?.provider == LlmProvider.GIGA) {
+            return model
+        }
         val fallback = fallbackModel(userId, locale, userManagedProviders)
         val candidate = (model ?: fallback).withConfiguredOpenAiCompatibleChatModel()
         return candidate.takeIf { isSelectableModel(userId, it, userManagedProviders) } ?: fallback
@@ -173,6 +193,7 @@ class EffectiveSettingsResolver(
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
         val localDefault = localModelAvailability.defaultGigaModel()
         return LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
+            .filter { it in BackendLlmSupport.chatProviders }
             .firstNotNullOfOrNull { provider ->
                 when (provider) {
                     LlmProvider.LOCAL -> localDefault
@@ -180,7 +201,7 @@ class EffectiveSettingsResolver(
                 }
             }
             ?: localDefault
-            ?: defaults.values.first()
+            ?: defaults.values.first { it in BackendLlmSupport.chatModels }
     }
 
     private suspend fun hasConfiguredAccess(
@@ -188,22 +209,31 @@ class EffectiveSettingsResolver(
         provider: LlmProvider,
         userManagedProviders: Set<LlmProvider>?,
     ): Boolean =
-        when (provider) {
-            LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
-            LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
-            else -> baseSettingsProvider.hasKey(provider) || provider in (userManagedProviders ?: loadUserManagedProviders(userId))
+        if (provider !in BackendLlmSupport.chatProviders) {
+            false
+        } else {
+            when (provider) {
+                LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
+                LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
+                else -> baseSettingsProvider.hasKey(provider) ||
+                    provider in (userManagedProviders ?: loadUserManagedProviders(userId))
+            }
         }
 
     private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =
         userProviderKeyRepository.list(userId)
-            .mapTo(linkedSetOf()) { it.provider }
+            .mapNotNullTo(linkedSetOf()) { key ->
+                key.provider.takeIf { it in BackendLlmSupport.userManagedKeyProviders }
+            }
 
     private suspend fun isSelectableModel(
         userId: String,
         model: LLMModel,
         userManagedProviders: Set<LlmProvider>?,
     ): Boolean =
-        if (model == LLMModel.OpenAICompatibleCustom) {
+        if (model !in BackendLlmSupport.chatModels) {
+            false
+        } else if (model == LLMModel.OpenAICompatibleCustom) {
             hasConfiguredOpenAiCompatibleChatModel() &&
                 hasConfiguredAccess(userId, LlmProvider.OPENAI, userManagedProviders)
         } else {

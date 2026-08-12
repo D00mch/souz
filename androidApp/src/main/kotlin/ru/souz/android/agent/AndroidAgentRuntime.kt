@@ -10,6 +10,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
@@ -33,12 +34,15 @@ import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.SessionTokenLogging
 import ru.souz.llms.TokenLogging
+import ru.souz.llms.TokenLoggingChatApi
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.http.GigaHttpClientResource
+import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
@@ -46,7 +50,7 @@ import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.runtime.CapabilityBasedImageGenerationGateway
 import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
-import ru.souz.llms.runtime.LLMFactory
+import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.memory.ConversationMemoryRuntime
@@ -72,7 +76,7 @@ import java.nio.file.Path
 class AndroidAgentRuntime(
     context: Context,
     settings: AndroidSettingsProvider,
-) {
+) : AutoCloseable {
     val di: DI
     val agentFacade: AgentFacade
 
@@ -93,16 +97,24 @@ class AndroidAgentRuntime(
             bindSingleton<TokenLogging> {
                 SessionTokenLogging(instance(tag = DiTags.LOG_OBJECT_MAPPER))
             }
-            bindSingleton { GigaAuth(instance()) }
-            bindSingleton<GigaRestChatAPI> { GigaRestChatAPI(instance(), instance(), instance()) }
-            bindSingleton<QwenChatAPI> { QwenChatAPI(instance(), instance()) }
-            bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance()) }
-            bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance()) }
-            bindSingleton { OpenAIChatAPI(instance(), instance()) }
-            bindSingleton { CodexOAuthService(instance()) }
-            bindSingleton<CodexChatAPI> { CodexChatAPI(instance(), instance(), instance()) }
+            bindSingleton { ProviderHttpClients() }
+            bindSingleton { GigaHttpClientResource() }
+            bindSingleton { GigaAuth(instance(), instance<GigaHttpClientResource>().client) }
+            bindSingleton<GigaRestChatAPI> {
+                GigaRestChatAPI(instance(), instance(), instance<GigaHttpClientResource>().client)
+            }
+            bindSingleton<QwenChatAPI> { QwenChatAPI(instance(), instance<ProviderHttpClients>().standard) }
+            bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance<ProviderHttpClients>().standard) }
+            bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance<ProviderHttpClients>().standard) }
+            bindSingleton { OpenAIChatAPI(instance(), instance<ProviderHttpClients>().openAi) }
             bindSingleton {
-                LLMFactory(
+                CodexOAuthService(instance(), instance<ProviderHttpClients>().standard)
+            }
+            bindSingleton<CodexChatAPI> {
+                CodexChatAPI(instance(), instance(), instance<ProviderHttpClients>().standard)
+            }
+            bindSingleton {
+                SettingsRoutingLlmChatApi(
                     settingsProvider = instance(),
                     apisByProvider = mapOf(
                         LlmProvider.GIGA to instance<GigaRestChatAPI>(),
@@ -114,8 +126,10 @@ class AndroidAgentRuntime(
                     ),
                 )
             }
-            bindSingleton<LLMChatAPI> { instance<LLMFactory>() }
-            bindSingleton { OpenAIImageGenerationGateway(instance()) }
+            bindSingleton<LLMChatAPI> {
+                TokenLoggingChatApi(instance<SettingsRoutingLlmChatApi>(), instance())
+            }
+            bindSingleton { OpenAIImageGenerationGateway(instance(), instance<ProviderHttpClients>().openAi) }
             bindSingleton { OpenAIVisionGateway(instance(), instance()) }
             bindSingleton { AnthropicVisionGateway(instance(), instance()) }
             bindSingleton { LLMCapabilityResolver(instance(), instance(), instance()) }
@@ -175,6 +189,12 @@ class AndroidAgentRuntime(
             }
         }
         agentFacade = di.direct.instance()
+    }
+
+    override fun close() {
+        di.direct.instance<CoroutineScope>().cancel()
+        di.direct.instance<ProviderHttpClients>().close()
+        di.direct.instance<GigaHttpClientResource>().close()
     }
 
     private object DiTags {

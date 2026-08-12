@@ -1,10 +1,12 @@
 package ru.souz.backend.settings.service
 
 import java.time.Instant
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.llms.LlmProvider
 
 class UserSettingsService(
     private val userSettingsRepository: UserSettingsRepository,
@@ -17,6 +19,9 @@ class UserSettingsService(
         userId: String,
         overrides: UserSettingsOverrides,
     ): EffectiveUserSettings {
+        if (overrides.defaultModel?.provider == LlmProvider.GIGA) {
+            throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+        }
         if (
             overrides.defaultModel != null &&
             !effectiveSettingsResolver.isSelectableDefaultModel(userId, overrides.defaultModel)

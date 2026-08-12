@@ -37,7 +37,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines)
     implementation(libs.kotlinx.coroutinesAndroid)
     implementation(libs.jackson)
+    implementation(libs.ktor.clientCore)
     implementation(libs.slf4j.api)
     implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
     implementation(kotlin("stdlib-jdk8"))
+    testImplementation(libs.junit)
 }

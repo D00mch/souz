@@ -37,6 +37,8 @@ import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.http.GigaHttpClientResource
+import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
@@ -342,7 +344,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AgentTelemetry> { StructuredLoggingAgentTelemetry() }
 
     // API
-    bindSingleton { GigaVoiceAPI(instance(), instance()) }
+    bindSingleton {
+        GigaVoiceAPI(instance(), instance(), instance<GigaHttpClientResource>().client)
+    }
     bindSingleton<SpeechRecognitionLanguageProvider> {
         val settingsHostPreferences = instance<SettingsHostPreferences>()
         SpeechRecognitionLanguageProvider {
@@ -353,8 +357,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             }
         }
     }
-    bindSingleton { OpenAIVoiceAPI(instance(), instance()) }
-    bindSingleton { AiTunnelVoiceAPI(instance(), instance()) }
+    bindSingleton {
+        OpenAIVoiceAPI(instance(), instance<ProviderHttpClients>().openAi, instance())
+    }
+    bindSingleton {
+        AiTunnelVoiceAPI(instance(), instance<ProviderHttpClients>().standard, instance())
+    }
     bindSingleton { MacOsSpeechBridge() }
     bindSingleton<LiveSpeechTranscriptionProvider> { MacOsSpeechAnalyzerLiveTranscriptionProvider(instance()) }
     bindSingleton<AmbientTranscriptionService>(overrides = true) {

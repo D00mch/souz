@@ -20,6 +20,8 @@ import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.restJsonMapper
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
+import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.http.unsupportedBackendModel
 
 internal data class PreparedChatTurn(
     val normalizedClientMessageId: String?,
@@ -57,6 +59,9 @@ internal class AgentExecutionRequestFactory(
         forceBackground: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
+        if (effectiveSettings.defaultModel !in BackendLlmSupport.chatModels) {
+            throw unsupportedBackendModel()
+        }
         val normalizedClientMessageId = clientMessageId?.trim()?.takeIf { it.isNotEmpty() }
         val execution = AgentExecution(
             id = executionId,
@@ -134,11 +139,14 @@ internal class AgentExecutionRequestFactory(
     fun createContinuationTurnRequest(
         execution: AgentExecution,
         option: Option,
-    ): BackendConversationTurnRequest =
-        BackendConversationTurnRequest(
+    ): BackendConversationTurnRequest {
+        val model = execution.model ?: throw internalError("Execution model is missing.")
+        if (model !in BackendLlmSupport.chatModels) {
+            throw unsupportedBackendModel()
+        }
+        return BackendConversationTurnRequest(
             prompt = option.toContinuationInput(),
-            model = execution.model?.alias
-                ?: throw internalError("Execution model is missing."),
+            model = model.alias,
             contextSize = executionMetadataInt(execution, METADATA_CONTEXT_SIZE)
                 ?: throw internalError("Execution contextSize is missing."),
             locale = execution.metadata[METADATA_LOCALE]
@@ -153,6 +161,7 @@ internal class AgentExecutionRequestFactory(
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
         )
+    }
 
     suspend fun createEventSink(
         userId: String,

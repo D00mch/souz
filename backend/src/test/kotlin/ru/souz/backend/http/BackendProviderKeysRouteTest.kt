@@ -133,6 +133,61 @@ class BackendProviderKeysRouteTest {
     }
 
     @Test
+    fun `put provider key rejects Giga with the backend policy error`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                )
+            )
+        }
+
+        val response = client.put(BackendHttpRoutes.providerKey("giga")) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"apiKey":"giga-user-key"}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertEquals("Giga is not supported by the backend.", payload["error"]["message"].asText())
+        assertNull(runBlocking { context.userProviderKeyRepository.get("user-a", LlmProvider.GIGA) })
+    }
+
+    @Test
+    fun `put provider key rejects local provider`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                )
+            )
+        }
+
+        val response = client.put(BackendHttpRoutes.providerKey("local")) {
+            trustedHeaders("user-a")
+            contentType(ContentType.Application.Json)
+            setBody("""{"apiKey":"not-applicable"}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertNull(runBlocking { context.userProviderKeyRepository.get("user-a", LlmProvider.LOCAL) })
+    }
+
+    @Test
     fun `delete provider key is scoped to current user`() = testApplication {
         val context = routeTestContext()
         runBlocking {

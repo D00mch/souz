@@ -3,13 +3,9 @@ package ru.souz.llms.anthropic
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import io.ktor.client.plugins.logging.Logging
-import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.plugins.sse.sse
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.header
@@ -17,10 +13,12 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
@@ -32,14 +30,13 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
 import ru.souz.llms.toSystemPromptMessage
 import java.io.File
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.time.Duration.Companion.seconds
+import java.util.concurrent.ConcurrentLinkedQueue
 
 private const val DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 private val EPHEMERAL_CACHE_CONTROL = mapOf("type" to "ephemeral")
@@ -58,12 +55,15 @@ private data class ParsedToolCall(
 
 class AnthropicChatAPI(
     private val settingsProvider: SettingsProvider,
-    private val tokenLogging: TokenLogging,
+    private val client: HttpClient,
+    apiKey: String? = null,
 ) : LLMChatAPI {
     private val l = LoggerFactory.getLogger(AnthropicChatAPI::class.java)
+    private val immutableApiKey = apiKey
 
     private val apiKey: String?
-        get() = settingsProvider.anthropicKey
+        get() = immutableApiKey
+            ?: settingsProvider.anthropicKey
             ?: System.getenv("ANTHROPIC_API_KEY")
             ?: System.getProperty("ANTHROPIC_API_KEY")
 
@@ -72,47 +72,27 @@ class AnthropicChatAPI(
             ?: System.getProperty("ANTHROPIC_MODEL")
             ?: DEFAULT_ANTHROPIC_MODEL
 
-    private val client = HttpClient(CIO) {
-        anthropicDefaults(
-            apiKey = apiKey,
-            requestTimeoutMillis = settingsProvider.requestTimeoutMillis,
-        )
-        install(Logging) {
-            logger = object : Logger {
-                override fun log(message: String) {
-                    l.debug(message)
-                }
-            }
-            level = LogLevel.INFO
-            sanitizeHeader { it.equals("x-api-key", true) }
-        }
-        install(SSE) {
-            maxReconnectionAttempts = 0
-            reconnectionTime = 3.seconds
-        }
-    }
-
     private val fileTypes = ConcurrentHashMap<String, String>()
+    private val fileTypeInsertionOrder = ConcurrentLinkedQueue<String>()
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val model = resolveChatModel(body.model)
         val response = client.post(MESSAGES_URL) {
+            applyRequestDefaults()
             header("anthropic-beta", FILES_API_BETA)
             setBody(buildChatRequest(body, model, stream = false))
         }
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
-            parseMessageResponse(text, model).also { result ->
-                if (result is LLMResponse.Chat.Ok) {
-                    tokenLogging.logTokenUsage(result, body.copy(model = model))
-                }
-            }
+            parseMessageResponse(text, model)
         } else {
             LLMResponse.Chat.Error(response.status.value, text)
         }
     } catch (e: ClientRequestException) {
         val text = e.response.bodyAsText()
         LLMResponse.Chat.Error(e.response.status.value, text)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Model: ${body.model}. Error in Anthropic chat", t)
         LLMResponse.Chat.Error(-1, "Connection error: ${t.message}")
@@ -121,12 +101,14 @@ class AnthropicChatAPI(
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         val model = resolveChatModel(body.model)
         val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
+        val streamUsage = AnthropicStreamUsage()
         var streamModel = model
 
         try {
             client.sse(
                 urlString = MESSAGES_URL,
                 request = {
+                    applyRequestDefaults()
                     method = HttpMethod.Post
                     header("anthropic-beta", FILES_API_BETA)
                     setBody(buildChatRequest(body, model, stream = true))
@@ -147,6 +129,7 @@ class AnthropicChatAPI(
                     when (node["type"]?.asText()) {
                         "message_start" -> {
                             streamModel = node["message"]?.get("model")?.asText() ?: streamModel
+                            streamUsage.update(node["message"]?.get("usage"))
                         }
 
                         "content_block_start" -> {
@@ -172,7 +155,7 @@ class AnthropicChatAPI(
                                 "text_delta" -> {
                                     val textChunk = delta["text"]?.asText().orEmpty()
                                     if (textChunk.isNotEmpty()) {
-                                        send(toTextChunk(textChunk, streamModel, index))
+                                        send(toTextChunk(textChunk, streamModel, index, streamUsage.snapshot()))
                                     }
                                 }
 
@@ -186,7 +169,7 @@ class AnthropicChatAPI(
                                 else -> {
                                     val textChunk = delta?.get("text")?.asText().orEmpty()
                                     if (textChunk.isNotEmpty()) {
-                                        send(toTextChunk(textChunk, streamModel, index))
+                                        send(toTextChunk(textChunk, streamModel, index, streamUsage.snapshot()))
                                     }
                                     val partialJson = delta?.get("partial_json")?.asText()
                                     if (!partialJson.isNullOrEmpty()) {
@@ -205,16 +188,20 @@ class AnthropicChatAPI(
                                 block.initialInput
                             }
                             val args = parseFunctionArguments(jsonArgs)
-                            send(toToolChunk(block.name, args, block.id, streamModel, index))
+                            send(toToolChunk(block.name, args, block.id, streamModel, index, streamUsage.snapshot()))
                         }
 
                         "message_delta" -> {
+                            val usageNode = node["usage"]?.takeUnless { it.isNull }
+                            streamUsage.update(usageNode)
                             val finishReason = node["delta"]
                                 ?.get("stop_reason")
                                 ?.asText()
                                 .toAnthropicFinishReason()
                             if (finishReason != null && finishReason != LLMResponse.FinishReason.function_call) {
-                                send(toFinishChunk(finishReason, streamModel))
+                                send(toFinishChunk(finishReason, streamModel, streamUsage.snapshot()))
+                            } else if (usageNode != null) {
+                                send(toUsageChunk(streamModel, streamUsage.snapshot()))
                             }
                         }
                     }
@@ -223,6 +210,8 @@ class AnthropicChatAPI(
         } catch (e: ClientRequestException) {
             val text = e.response.bodyAsText()
             send(LLMResponse.Chat.Error(e.response.status.value, text))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (t: Throwable) {
             l.error("Model: ${body.model}. Error in Anthropic stream chat", t)
             send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
@@ -255,6 +244,7 @@ class AnthropicChatAPI(
                 )
             },
         ) {
+            applyRequestDefaults()
             header("anthropic-beta", FILES_API_BETA)
         }
 
@@ -273,7 +263,7 @@ class AnthropicChatAPI(
             purpose = node["purpose"]?.asText() ?: "general",
             accessPolicy = node["access_policy"]?.asText() ?: "",
         )
-        fileTypes[upload.id] = mime
+        rememberFileType(upload.id, mime)
         return upload
     }
 
@@ -283,6 +273,14 @@ class AnthropicChatAPI(
 
     override suspend fun balance(): LLMResponse.Balance {
         return LLMResponse.Balance.Error(-1, "Balance check not implemented for Anthropic")
+    }
+
+    private fun io.ktor.client.request.HttpRequestBuilder.applyRequestDefaults() {
+        header(HttpHeaders.ContentType, ContentType.Application.Json)
+        header(HttpHeaders.Accept, ContentType.Application.Json)
+        apiKey?.takeIf { it.isNotBlank() }?.let { header("x-api-key", it) }
+        header("anthropic-version", "2023-06-01")
+        timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
     }
 
     private fun buildChatRequest(
@@ -465,6 +463,16 @@ class AnthropicChatAPI(
         return if (mime.startsWith("image/", ignoreCase = true)) "image" else "document"
     }
 
+    private fun rememberFileType(fileId: String, mime: String) {
+        if (fileTypes.put(fileId, mime) == null) {
+            fileTypeInsertionOrder.add(fileId)
+        }
+        while (fileTypes.size > FILE_TYPE_CACHE_LIMIT) {
+            val oldestFileId = fileTypeInsertionOrder.poll() ?: break
+            fileTypes.remove(oldestFileId)
+        }
+    }
+
     private fun parseAssistantToolCall(content: String): ParsedToolCall? {
         return runCatching {
             val contentNode = restJsonMapper.readTree(content)
@@ -638,7 +646,12 @@ class AnthropicChatAPI(
         return null
     }
 
-    private fun toTextChunk(text: String, model: String, index: Int): LLMResponse.Chat.Ok {
+    private fun toTextChunk(
+        text: String,
+        model: String,
+        index: Int,
+        usage: LLMResponse.Usage,
+    ): LLMResponse.Chat.Ok {
         val choice = LLMResponse.Choice(
             message = LLMResponse.Message(
                 content = text,
@@ -653,7 +666,7 @@ class AnthropicChatAPI(
             choices = listOf(choice),
             created = System.currentTimeMillis() / 1000,
             model = model,
-            usage = LLMResponse.Usage(0, 0, 0, 0),
+            usage = usage,
         )
     }
 
@@ -663,6 +676,7 @@ class AnthropicChatAPI(
         functionsStateId: String?,
         model: String,
         index: Int,
+        usage: LLMResponse.Usage,
     ): LLMResponse.Chat.Ok {
         val choice = LLMResponse.Choice(
             message = LLMResponse.Message(
@@ -678,13 +692,14 @@ class AnthropicChatAPI(
             choices = listOf(choice),
             created = System.currentTimeMillis() / 1000,
             model = model,
-            usage = LLMResponse.Usage(0, 0, 0, 0),
+            usage = usage,
         )
     }
 
     private fun toFinishChunk(
         finishReason: LLMResponse.FinishReason,
         model: String,
+        usage: LLMResponse.Usage,
     ): LLMResponse.Chat.Ok {
         val choice = LLMResponse.Choice(
             message = LLMResponse.Message(
@@ -700,14 +715,51 @@ class AnthropicChatAPI(
             choices = listOf(choice),
             created = System.currentTimeMillis() / 1000,
             model = model,
-            usage = LLMResponse.Usage(0, 0, 0, 0),
+            usage = usage,
         )
     }
 
+    private fun toUsageChunk(model: String, usage: LLMResponse.Usage): LLMResponse.Chat.Ok =
+        LLMResponse.Chat.Ok(
+            choices = emptyList(),
+            created = System.currentTimeMillis() / 1000,
+            model = model,
+            usage = usage,
+        )
+
     companion object {
+        private const val FILE_TYPE_CACHE_LIMIT = 512
         private const val MESSAGES_URL = "https://api.anthropic.com/v1/messages"
         private const val FILES_URL = "https://api.anthropic.com/v1/files"
         private const val FILES_API_BETA = "files-api-2025-04-14"
+    }
+}
+
+private class AnthropicStreamUsage {
+    private var inputTokens = 0
+    private var cacheCreationInputTokens = 0
+    private var cacheReadInputTokens = 0
+    private var outputTokens = 0
+
+    fun update(node: JsonNode?) {
+        node?.get("input_tokens")?.takeUnless { it.isNull }?.asInt()?.let { inputTokens = it }
+        node?.get("cache_creation_input_tokens")?.takeUnless { it.isNull }?.asInt()?.let {
+            cacheCreationInputTokens = it
+        }
+        node?.get("cache_read_input_tokens")?.takeUnless { it.isNull }?.asInt()?.let {
+            cacheReadInputTokens = it
+        }
+        node?.get("output_tokens")?.takeUnless { it.isNull }?.asInt()?.let { outputTokens = it }
+    }
+
+    fun snapshot(): LLMResponse.Usage {
+        val promptTokens = inputTokens + cacheCreationInputTokens
+        return LLMResponse.Usage(
+            promptTokens = promptTokens,
+            completionTokens = outputTokens,
+            totalTokens = promptTokens + outputTokens,
+            precachedTokens = cacheReadInputTokens,
+        )
     }
 }
 

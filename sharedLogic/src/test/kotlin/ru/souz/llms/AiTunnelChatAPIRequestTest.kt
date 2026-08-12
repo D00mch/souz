@@ -2,6 +2,7 @@ package ru.souz.llms
 
 import io.mockk.every
 import io.mockk.mockk
+import io.ktor.client.HttpClient
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import kotlin.test.Test
@@ -9,6 +10,20 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 class AiTunnelChatAPIRequestTest {
+
+    @Test
+    fun `stream request asks AiTunnel to include usage`() {
+        val request = invokeBuildChatRequest(
+            api = createApi(),
+            body = LLMRequest.Chat(
+                model = LLMModel.AiTunnelGpt5Nano.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            ),
+            stream = true,
+        )
+
+        assertEquals(mapOf("include_usage" to true), request["stream_options"])
+    }
 
     @Test
     fun `buildChatRequest includes items schema for array properties`() {
@@ -62,8 +77,7 @@ class AiTunnelChatAPIRequestTest {
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.AiTunnelGpt5Nano
 
-        val tokenLogging = mockk<TokenLogging>(relaxed = true)
-        return AiTunnelChatAPI(settingsProvider, tokenLogging)
+        return AiTunnelChatAPI(settingsProvider, mockk<HttpClient>())
     }
 
     @Suppress("UNCHECKED_CAST")

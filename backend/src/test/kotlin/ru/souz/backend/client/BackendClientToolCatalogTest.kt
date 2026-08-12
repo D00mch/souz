@@ -29,11 +29,11 @@ class BackendClientToolCatalogTest {
     fun `catalog projects bundled client Skills`() = runTest {
         val context = routeTestContext()
 
-        val catalog = BackendClientToolCatalogFactory(
+        val catalog = BackendClientToolCatalog.bundled(
             registry = context.clientThreadRegistry,
             toolCallRepository = context.toolCallRepository,
             eventService = context.eventService,
-        ).create()
+        )
 
         val ask = catalog.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
         val openMedia = catalog.toolsByCategory.getValue(ToolCategory.APPLICATIONS).getValue("device.media.open")
@@ -53,12 +53,12 @@ class BackendClientToolCatalogTest {
             threadId,
             ClientDevice(userId, "device-tv", "tv_box", setOf("speech", "screen", "device_tools")),
         )
-        val catalog = BackendClientToolCatalogFactory(
+        val catalog = BackendClientToolCatalog.fromSkillBundleProvider(
             skillBundleProvider = ShortTimeoutClientSkillBundleProvider,
             registry = context.clientThreadRegistry,
             toolCallRepository = repository,
             eventService = context.eventService,
-        ).create()
+        )
         val tool = catalog.toolsByCategory.getValue(ToolCategory.CHAT).getValue("user.ask")
 
         val result = withTimeout(2_000) {

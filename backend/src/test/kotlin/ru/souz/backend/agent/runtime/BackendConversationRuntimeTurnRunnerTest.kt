@@ -1,6 +1,5 @@
 package ru.souz.backend.agent.runtime
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.io.File
 import java.util.UUID
 import kotlin.test.Test
@@ -8,22 +7,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSkillRegistryRepository
-import ru.souz.backend.TestConversationKnowledgeStore
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.testCoreTool
-import ru.souz.backend.testSearchMemoryTool
-import ru.souz.backend.testSkillCoreToolsFactory
+import ru.souz.backend.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
-import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -79,19 +70,10 @@ private fun runtimeTurnRunner(failure: Throwable): BackendConversationRuntimeTur
         useStreaming = false
     }
     return BackendConversationRuntimeTurnRunner(
-        runtimeFactory = BackendConversationRuntimeFactory(
-            baseSettingsProvider = settingsProvider,
+        runtimeFactory = testBackendConversationRuntimeFactory(
+            settingsProvider = settingsProvider,
             llmApiFactory = { ThrowingChatApi(failure) },
-            sessionRepository = InMemoryAgentSessionRepository(),
-            logObjectMapper = jacksonObjectMapper(),
-            systemPrompt = "backend test prompt",
             skillRegistryRepository = TestSkillRegistryRepository,
-            skillCoreToolsFactory = testSkillCoreToolsFactory(),
-            getKnowledgeTool = testCoreTool("GetKnowledge"),
-            searchKnowledgeTool = testCoreTool("SearchKnowledge"),
-            searchMemoryTool = testSearchMemoryTool(),
-            knowledgeStore = TestConversationKnowledgeStore,
-            agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
     )
 }
@@ -105,7 +87,7 @@ private fun conversationKey(): AgentConversationKey =
 private fun turnRequest(): BackendConversationTurnRequest =
     BackendConversationTurnRequest(
         prompt = "test prompt",
-        model = "GigaChat-Max",
+        model = "qwen-max",
         contextSize = 24_000,
         locale = "ru-RU",
         timeZone = "Europe/Moscow",

@@ -2,6 +2,7 @@ package ru.souz.llms
 
 import io.mockk.every
 import io.mockk.mockk
+import io.ktor.client.HttpClient
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.openai.OpenAIChatAPI
 import ru.souz.llms.openai.OpenAIEndpointConfig
@@ -12,6 +13,20 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class OpenAIChatAPIRequestTest {
+
+    @Test
+    fun `stream request asks OpenAI to include usage`() {
+        val request = invokeBuildChatRequest(
+            api = createApi(),
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Nano.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            ),
+            stream = true,
+        )
+
+        assertEquals(mapOf("include_usage" to true), request["stream_options"])
+    }
 
     @Test
     fun `buildChatRequest resolves OpenAI model by enum name and includes tool choice`() {
@@ -549,8 +564,7 @@ class OpenAIChatAPIRequestTest {
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
 
-        val tokenLogging = mockk<TokenLogging>(relaxed = true)
-        return OpenAIChatAPI(settingsProvider, tokenLogging)
+        return OpenAIChatAPI(settingsProvider, mockk<HttpClient>())
     }
 
     @Suppress("UNCHECKED_CAST")
