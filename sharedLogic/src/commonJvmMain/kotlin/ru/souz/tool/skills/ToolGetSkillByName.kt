@@ -2,7 +2,7 @@ package ru.souz.tool.skills
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import kotlinx.coroutines.CancellationException
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
@@ -14,6 +14,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.giga.toolInputParameters
 import ru.souz.llms.restJsonMapper
 
 /**
@@ -24,9 +25,10 @@ class ToolGetSkillByName(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
-    private val legacyCommandTool: LLMToolSetup,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
+    private val fileSkillInputSchema = toolInputParameters<SkillCommandExecutor.Args>()
+
     data class Input(
         val skillId: String = "",
     )
@@ -182,7 +184,7 @@ class ToolGetSkillByName(
     )
 
     private fun fileSkillExecutionSchema(): SkillExecutionSchema = SkillExecutionSchema(
-        inputSchema = legacyCommandTool.fn.parameters.withoutLegacyBindings(),
+        inputSchema = fileSkillInputSchema,
         returnSchema = sandboxCommandResultSchema(),
     )
 
@@ -194,11 +196,6 @@ class ToolGetSkillByName(
         supportingFiles = files
             .map { it.normalizedPath }
             .filterNot { it == SKILL_MARKDOWN_PATH },
-    )
-
-    private fun LLMRequest.Parameters.withoutLegacyBindings(): LLMRequest.Parameters = copy(
-        properties = properties - setOf("skillId", "activeSkills"),
-        required = required - setOf("skillId", "activeSkills"),
     )
 
     companion object {

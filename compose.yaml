@@ -38,7 +38,6 @@ services:
       SOUZ_MASTER_KEY: ${SOUZ_MASTER_KEY:-local-dev-master-key}
       SOUZ_BACKEND_PROXY_TOKEN: ${SOUZ_BACKEND_PROXY_TOKEN:-local-dev-proxy-token}
       SOUZ_FEATURE_WS_EVENTS: "true"
-      SOUZ_BACKEND_AGENT: skills
       APP_LANGUAGE: ${APP_LANGUAGE:-en}
       GIGA_MODEL: ${GIGA_MODEL:-gpt-5.2}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

@@ -1,5 +1,6 @@
 package ru.souz.backend.agent.runtime
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.io.File
 import java.util.UUID
 import kotlin.test.Test
@@ -7,14 +8,17 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.TestSkillRegistryRepository
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
+import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -71,9 +75,12 @@ private fun runtimeTurnRunner(failure: Throwable): BackendConversationRuntimeTur
     }
     return BackendConversationRuntimeTurnRunner(
         runtimeFactory = testBackendConversationRuntimeFactory(
-            settingsProvider = settingsProvider,
+            baseSettingsProvider = settingsProvider,
             llmApiFactory = { ThrowingChatApi(failure) },
-            skillRegistryRepository = TestSkillRegistryRepository,
+            sessionRepository = InMemoryAgentSessionRepository(),
+            logObjectMapper = jacksonObjectMapper(),
+            systemPrompt = "backend test prompt",
+            agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
     )
 }

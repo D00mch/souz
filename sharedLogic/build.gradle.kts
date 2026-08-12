@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidKotlinMultiplatformLibrary)
 }
 
 fun skikoAwtRuntimeModule(): String {
@@ -28,11 +27,6 @@ val dockerCli = providers.environmentVariable("SOUZ_DOCKER_CLI")
 
 kotlin {
     jvm()
-    androidLibrary {
-        namespace = "ru.souz.sharedlogic"
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
-        minSdk = libs.versions.android.minSdk.get().toInt()
-    }
 
     sourceSets {
         val commonMain by getting
@@ -52,12 +46,6 @@ kotlin {
                 implementation(libs.jsoup)
                 implementation(libs.re2j)
                 implementation(libs.slf4j.api)
-            }
-        }
-
-        val androidMain by getting {
-            dependsOn(commonJvmMain)
-            dependencies {
             }
         }
 

@@ -1,7 +1,7 @@
 package ru.souz.agent.skills.validation
 
 import java.time.Instant
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SKILL_MD_PATH
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillManifest

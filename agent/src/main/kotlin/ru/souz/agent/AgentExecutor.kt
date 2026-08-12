@@ -10,6 +10,10 @@ class AgentExecutor internal constructor(
     // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
     private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
 ) {
+    init {
+        require(availableAgents.isNotEmpty()) { "At least one agent must be available." }
+    }
+
     fun sideEffects(agentId: AgentId): Flow<AgentStreamChunk> = agentById(agentId).sideEffects
 
     fun supportsActiveRunInput(agentId: AgentId): Boolean =
@@ -64,5 +68,5 @@ class AgentExecutor internal constructor(
     private fun agentById(agentId: AgentId): TraceableAgent = agentProvider(normalizeAgentId(agentId))
 
     private fun normalizeAgentId(agentId: AgentId): AgentId =
-        if (agentId in availableAgents) agentId else AgentId.default
+        if (agentId in availableAgents) agentId else availableAgents.first()
 }

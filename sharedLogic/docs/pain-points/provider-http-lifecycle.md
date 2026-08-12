@@ -4,7 +4,7 @@
 
 - Remote provider adapters receive host-owned `HttpClient` instances. They do not create, derive, or close clients.
 - Credentials, selected models, endpoints, sessions, and timeouts are request state and are applied explicitly to each request.
-- Desktop and Android may support Giga through their own application-scoped transport and token state. Backend composition excludes Giga entirely.
+- Desktop may support Giga through its application-scoped transport and token state. Backend composition excludes Giga entirely.
 - The host that creates a provider transport closes it exactly once after in-flight application work is stopped.
 
 ## Why this is fragile
@@ -21,4 +21,4 @@ Each Ktor client owns an engine, connection pool, plugins, and coroutine lifecyc
 
 ## Verification
 
-Run `./gradlew :sharedLogic:jvmTest :sharedLogic:compileAndroidMain`. Cover concurrent credential and timeout isolation, shared-client reuse, Giga token invalidation, and exactly-once host shutdown.
+Run `./gradlew :sharedLogic:jvmTest`. Cover concurrent credential and timeout isolation, shared-client reuse, Giga token invalidation, and exactly-once host shutdown.

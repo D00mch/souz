@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime.conversation
 
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutor
+import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -22,9 +23,6 @@ internal class BackendConversationRuntime(
     private val executionApi: BackendExecutionLlmChatApi,
     private val persistedSession: AgentConversationSession?,
 ) {
-    private val activeAgentId = contextFactory.normalizeAgentId(
-        persistedSession?.activeAgentId ?: settingsProvider.activeAgentId
-    )
     internal suspend fun execute(
         request: BackendConversationTurnRequest,
         persistSession: Boolean = true,
@@ -32,7 +30,7 @@ internal class BackendConversationRuntime(
         onActiveRunReady: suspend () -> Unit = {},
     ): BackendConversationExecution {
         val seedContext = contextFactory.create(
-            agentId = activeAgentId,
+            agentId = AgentId.SKILLS_GRAPH,
             history = persistedSession?.history.orEmpty(),
             model = settingsProvider.gigaModel,
             contextSize = request.contextSize,
@@ -47,15 +45,13 @@ internal class BackendConversationRuntime(
         )
 
         val result = executor.execute(
-            agentId = activeAgentId,
+            agentId = AgentId.SKILLS_GRAPH,
             context = seedContext,
             input = request.prompt,
             eventSink = eventSink,
             onActiveRunReady = onActiveRunReady,
         )
-        val nextAgentId = contextFactory.normalizeAgentId(settingsProvider.activeAgentId)
         val nextSession = AgentConversationSession(
-            activeAgentId = nextAgentId,
             history = result.context.history,
             temperature = result.context.settings.temperature,
             locale = request.locale,
@@ -78,8 +74,8 @@ internal class BackendConversationRuntime(
     internal suspend fun currentUsage(): LLMResponse.Usage = executionApi.cumulativeUsage()
 
     internal suspend fun submitToActiveRun(input: String): Boolean =
-        executor.submitToActiveRun(activeAgentId, input)
+        executor.submitToActiveRun(AgentId.SKILLS_GRAPH, input)
 
     internal suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
-        executor.submitToActiveRunAfter(activeAgentId, input, beforePublish)
+        executor.submitToActiveRunAfter(AgentId.SKILLS_GRAPH, input, beforePublish)
 }

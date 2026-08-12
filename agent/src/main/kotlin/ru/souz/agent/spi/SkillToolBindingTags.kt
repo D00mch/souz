@@ -2,7 +2,6 @@ package ru.souz.agent.spi
 
 // Tags for DI
 object SkillToolBindingTags {
-    const val COMMAND_TOOL = "skill-command-tool"
     const val GET_KNOWLEDGE_TOOL = "get-knowledge-tool"
     const val SEARCH_KNOWLEDGE_TOOL = "search-knowledge-tool"
     const val SEARCH_MEMORY_TOOL = "search-memory-tool"

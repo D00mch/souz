@@ -1,8 +1,8 @@
 # Shared Logic Module
 
-`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by the Android app, desktop app, and HTTP backend.
+`:sharedLogic` is the Kotlin Multiplatform runtime layer shared by the desktop app and HTTP backend.
 
-Android/JVM-compatible provider clients, settings and memory contracts, sandbox contracts, skill storage/loading, and portable tools live under `src/commonJvmMain`. Android settings and its app-private runtime sandbox live under `src/androidMain`. Desktop/backend-only configuration, native local models, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling live under `src/jvmMain`. OS-bound desktop services and tools remain in `:desktopApp`.
+Shared provider clients, settings and memory contracts, sandbox contracts, skill storage/loading, and portable tools live under `src/commonJvmMain`. Desktop/backend-only configuration, native local models, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling live under `src/jvmMain`. OS-bound desktop services and tools remain in `:desktopApp`.
 
 ## Sandbox Modes
 
@@ -10,8 +10,6 @@ On JVM hosts, `DefaultRuntimeSandboxFactory` chooses the active sandbox with `SO
 
 - `local`: default when `SOUZ_SANDBOX_MODE` is unset.
 - `docker`: uses `DockerRuntimeSandbox` and the `souz-runtime-sandbox:latest` image.
-
-Android uses `AndroidRuntimeSandboxFactory` directly. It always creates an app-private `AndroidRuntimeSandbox`; the JVM environment variable does not select Android mode.
 
 Local mode is enough for normal development:
 
@@ -92,21 +90,18 @@ Run regular runtime tests without Docker:
 
 ## Skills Flow
 
-`FileSystemSkillRegistryRepository` owns stored skill metadata, immutable bundle contents, and validation records. Its `FileSystemSkillRegistryConfig.scope` selects either desktop/local single-user storage or backend user-scoped storage.
+`FileSystemSkillRegistryRepository` owns stored skill metadata, immutable bundle contents, and validation records.
+Hosts that own a request-scoped catalog can install command, Knowledge, and memory tools through
+`portableSkillRuntimeToolsDiModule`. The full `portableSkillToolsDiModule` includes those runtime tools plus
+catalog-dependent Skill discovery and delegation. Filesystem-backed hosts opt into registry storage through
+`fileSystemSkillRegistryDiModule`; general runtime DI installs none of these modules implicitly.
 
-Desktop and local Docker runtimes use the single-user skill storage scope. A stored skill lives under:
+Skills use one host-local storage layout:
 
 ```text
 {state}/skills/{skillId}/stored-skill.json
 {state}/skills/{skillId}/bundles/{bundleHash}/...
 {state}/skill-validations/{skillId}/policies/{policy}/{bundleHash}.json
-```
-
-The backend can still opt into the user-scoped storage scope for multi-user storage:
-
-```text
-{state}/skills/users/{encodedUserId}/skills/{skillId}/...
-{state}/skill-validations/users/{encodedUserId}/skills/{skillId}/...
 ```
 
 The Docker image seeds the bundled paper skill directly into the registry-compatible desktop scope:
@@ -154,7 +149,6 @@ If a seeded skill does not appear, remove the per-sandbox `state/skills/<skill>`
 
 - files
 - web search and research
-- config
 - data analytics
 - calculator
 

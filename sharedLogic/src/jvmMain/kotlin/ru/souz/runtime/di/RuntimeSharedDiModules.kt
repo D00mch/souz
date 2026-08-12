@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
-import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl
@@ -43,13 +42,8 @@ import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
-import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
-import ru.souz.skills.registry.FileSystemSkillRegistryConfig
-import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 
-fun runtimeCoreDiModule(
-    skillRegistryConfig: FileSystemSkillRegistryConfig = FileSystemSkillRegistryConfig(),
-): DI.Module = DI.Module("runtimeCore") {
+fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { ConfigStore }
     bindSingleton<SouzPaths> { DefaultSouzPaths() }
     bindSingleton { LocalHostInfoProvider() }
@@ -60,12 +54,6 @@ fun runtimeCoreDiModule(
     bindSingleton { LocalStrictJsonParser() }
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
     bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
-    bindSingleton<SkillRegistryRepository> {
-        FileSystemSkillRegistryRepository(
-            sandboxResolver = instance<ToolInvocationRuntimeSandboxResolver>(),
-            config = skillRegistryConfig,
-        )
-    }
 }
 
 fun runtimeLlmDiModule(

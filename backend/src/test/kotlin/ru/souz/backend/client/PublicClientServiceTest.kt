@@ -19,7 +19,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import ru.souz.agent.AgentId
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
@@ -192,7 +191,6 @@ class PublicClientServiceTest {
         val context = routeTestContext(
             llmApi = api,
             featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = false, toolEvents = true),
-            agentId = AgentId.SKILLS_GRAPH,
         )
         val userId = UUID.randomUUID().toString()
         val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
@@ -240,7 +238,6 @@ class PublicClientServiceTest {
         val context = routeTestContext(
             llmApi = api,
             featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = false, toolEvents = true),
-            agentId = AgentId.SKILLS_GRAPH,
         )
         val userId = UUID.randomUUID().toString()
         val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat

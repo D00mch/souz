@@ -1,11 +1,12 @@
 # Skill Validation
 
-This package is the approval boundary for file-backed Skill bundles.
+This package provides the optional approval boundary for file-backed Skill bundles.
 
-Discovery and execution load a `SkillBundle` first, then call `SkillApprovalGate` before exposing
-`SKILL.md` or running bundled commands. The gate hashes the bundle, checks the exact validation
-cache, runs validators on a miss, stores the result, and returns either an approved bundle or a
-local rejection.
+Hosts that configure `SkillApprovalGate` pass it a loaded `SkillBundle` before exposing `SKILL.md`
+or running bundled commands. The gate hashes the bundle, checks the exact validation cache, runs
+validators on a miss, stores the result, and returns either an approved bundle or a local rejection.
+Discovery tools also support a null gate; the backend intentionally uses that mode for classpath-
+and sandbox-backed Skills.
 
 ```mermaid
 flowchart TD

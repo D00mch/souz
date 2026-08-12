@@ -1,5 +1,6 @@
 package ru.souz.backend.storage.postgres
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import java.sql.Connection
@@ -16,7 +17,6 @@ import javax.sql.DataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.postgresql.util.PSQLException
-import ru.souz.agent.AgentId
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
@@ -161,9 +161,9 @@ internal data class StoredSettingsPayload(
     val onboardingCompletedAt: String? = null,
 )
 
+@JsonIgnoreProperties(value = ["activeAgentId"])
 internal data class StoredConversationContext(
     val schemaVersion: Int,
-    val activeAgentId: String,
     val history: List<LLMRequest.Message>,
     val temperature: Float,
     val locale: String,
@@ -243,7 +243,6 @@ internal fun ResultSet.toState(): AgentConversationState {
         userId = getString("user_id"),
         chatId = getObject("chat_id", java.util.UUID::class.java),
         schemaVersion = context.schemaVersion,
-        activeAgentId = AgentId.fromStorageValue(context.activeAgentId),
         history = context.history,
         temperature = context.temperature,
         locale = context.locale.toLocaleOrDefault(),
@@ -415,7 +414,6 @@ internal fun AgentConversationState.toContextJson(): String =
     postgresStorageMapper.writeValueAsString(
         StoredConversationContext(
             schemaVersion = schemaVersion,
-            activeAgentId = activeAgentId.storageValue,
             history = history,
             temperature = temperature,
             locale = locale.toLanguageTag(),

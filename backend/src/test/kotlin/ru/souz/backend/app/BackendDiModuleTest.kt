@@ -6,11 +6,17 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.SkillToolBindingTags
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
@@ -41,12 +47,14 @@ import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
-import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.llms.LLMToolSetup
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
+import ru.souz.tool.ToolCategory
+import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendDiModuleTest {
     @Test
-    fun `backend binds only postgres repositories and keeps filesystem skill registry`() {
+    fun `backend binds only postgres repositories`() {
         val appConfig = testAppConfig()
         val dataSource = HikariDataSource()
         val di = testDi(appConfig, dataSource)
@@ -112,6 +120,46 @@ class BackendDiModuleTest {
             )
         } finally {
             di.direct.instance<BackendRuntimeResources>().close()
+        }
+    }
+
+    @Test
+    fun `backend catalog excludes desktop sound configuration tools`() {
+        val dataSource = HikariDataSource()
+        val di = testDi(testAppConfig(), dataSource)
+
+        try {
+            val configTools = di.direct.instance<AgentToolCatalog>()
+                .toolsByCategory
+                .getValue(ToolCategory.CONFIG)
+
+            assertTrue(configTools.isEmpty())
+        } finally {
+            dataSource.close()
+        }
+    }
+
+    @Test
+    fun `backend binds filesystem and bundled Skill runtime dependencies`() {
+        val dataSource = HikariDataSource()
+        val di = testDi(testAppConfig(), dataSource)
+
+        try {
+            assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
+            assertIs<BackendClientSkills>(di.direct.instance<BackendClientSkills>())
+            assertIs<SkillCommandExecutor>(di.direct.instance<SkillCommandExecutor>())
+            assertNotNull(di.direct.instance<ConversationKnowledgeStore>())
+            assertNotNull(
+                di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
+            )
+            assertNotNull(
+                di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
+            )
+            assertNotNull(
+                di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
+            )
+        } finally {
+            dataSource.close()
         }
     }
 

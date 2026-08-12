@@ -1,7 +1,7 @@
 package ru.souz.skills.bundle
 
 import java.util.Locale
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillFile

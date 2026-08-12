@@ -16,6 +16,14 @@ import ru.souz.tool.ToolCategory
 
 internal const val SKILL_INVENTORY_NODE_NAME = "Skill Inventory"
 
+/**
+ * Prepares Skill discovery for an agent turn.
+ *
+ * Adds a compact inventory to the turn's system message so the model knows which Skills are
+ * available. It also makes the supplied core Skill tools visible and callable, allowing the model
+ * to inspect or run a Skill when needed. The inventory contains identifiers only; full file-backed
+ * Skill instructions are loaded separately on demand.
+ */
 internal class NodesSkillInventory(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
@@ -24,6 +32,9 @@ internal class NodesSkillInventory(
     private val logger = LoggerFactory.getLogger(NodesSkillInventory::class.java)
     private val promptAugmenter = SkillInventoryPromptAugmenter()
 
+    /**
+     * Creates a graph node that loads the current user's compact inventory and installs [skillTools].
+     */
     fun node(
         skillTools: List<LLMToolSetup>,
         name: String = SKILL_INVENTORY_NODE_NAME,
@@ -44,6 +55,9 @@ internal class NodesSkillInventory(
         ) { it }
     }
 
+    /**
+     * Replaces the context's advertised and executable tools with [tools].
+     */
     fun restrictToTools(
         ctx: AgentContext<String>,
         tools: List<LLMToolSetup>,
@@ -60,6 +74,13 @@ internal class NodesSkillInventory(
         )
     }
 
+    /**
+     * Loads only inventory-safe IDs for [userId].
+     *
+     * File-backed discovery is optional: failures degrade to an empty file-backed list, while
+     * coroutine cancellation is always propagated. Enabled tool-backed IDs suppress colliding
+     * file-backed IDs.
+     */
     private suspend fun loadInventory(userId: String): SkillInventory {
         val filteredToolsByCategory = toolsFilter.applyFilter(toolCatalog.toolsByCategory)
         val toolBackedSkillIds = filteredToolsByCategory.values
@@ -95,6 +116,7 @@ private data class SkillInventory(
     val fileBackedSkillIds: List<String>,
 )
 
+/** Replaces the effective system message with the stable prompt plus one compact inventory block. */
 private class SkillInventoryPromptAugmenter {
     fun augment(
         systemPrompt: String,
@@ -139,6 +161,7 @@ private class SkillInventoryPromptAugmenter {
     }
 }
 
+/** Renders an opaque Skill ID as quoted data that cannot break out of the inventory block. */
 private fun renderSkillIdData(skillId: String): String = buildString(skillId.length + 2) {
     append('"')
     skillId.forEach { char ->

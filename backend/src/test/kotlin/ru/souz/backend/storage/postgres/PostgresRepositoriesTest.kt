@@ -19,7 +19,6 @@ import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.AgentId
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentConversationState
@@ -820,7 +819,6 @@ class PostgresRepositoriesTest {
                 conversationId = chatId.toString(),
             )
             val session = AgentConversationSession(
-                activeAgentId = AgentId.GRAPH,
                 history = listOf(
                     LLMRequest.Message(
                         role = LLMMessageRole.user,
@@ -843,7 +841,6 @@ class PostgresRepositoriesTest {
             val storedState = repositories.stateRepository.get(key.userId, chatId)
             assertEquals(session, repository.load(key))
             assertNotNull(storedState)
-            assertEquals(AgentId.GRAPH, storedState.activeAgentId)
             assertEquals(session.history, storedState.history)
             assertEquals(Locale.forLanguageTag("en-US"), storedState.locale)
             assertEquals(ZoneId.of("Europe/Amsterdam"), storedState.timeZone)
@@ -917,7 +914,6 @@ class PostgresRepositoriesTest {
             userId = userId,
             chatId = chatId,
             schemaVersion = 1,
-            activeAgentId = AgentId.default,
             history = history,
             temperature = 0.3f,
             locale = Locale.forLanguageTag("ru-RU"),

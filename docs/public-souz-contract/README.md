@@ -140,4 +140,11 @@ Tool-result acknowledgements are outside the event sequence.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
 - `agent_events` stores replayable client tool-start and terminal events with chat-local sequence values.
 
-Client operations are backend-owned bundled tool-backed Skills provided through `SkillBundleProvider`. Definitions live under `backend/src/main/resources/skills/client`; each `SKILL.md` declares its operation ID, category, timeout, and instructions. All client Skills share one WebSocket transport, and each live invocation suspends until `tool.result` or its deadline. The WebSocket feature requires `SOUZ_BACKEND_AGENT=skills`.
+Client operations are backend-owned tool-backed Skills defined by indexed classpath `SKILL.md` resources. Their argument shapes are documented below and forwarded as generic JSON objects. All client adapters share one WebSocket transport, and each live invocation suspends until `tool.result` or its deadline:
+
+| Operation | `tool.call.started.payload.arguments` | Successful `tool.result.result` | Deadline |
+| --- | --- | --- | --- |
+| `user.ask` | `question` (required string) | `answer` (string) | 5 minutes |
+| `device.media.open` | `query` (required string), `genre` (optional string) | `opened` (boolean), optional device-specific fields such as `contentId` | 1 minute |
+
+For `device.media.open`, `status = "succeeded"` reports transport completion; `opened` says whether the device actually opened the media. Client-Souz threads use the backend's single request-scoped steerable skills graph and discover these operations through its Skill inventory.

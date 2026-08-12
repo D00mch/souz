@@ -12,11 +12,10 @@ import org.kodein.di.instance
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.SkillToolBindingTags
-import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
-import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
+import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
@@ -24,7 +23,7 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
-import ru.souz.backend.client.BackendClientToolCatalog
+import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.client.ClientThreadRecoveryService
@@ -78,16 +77,16 @@ import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLocalLlmDiModule
 import ru.souz.runtime.di.runtimeProviderHttpDiModule
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.skills.registry.fileSystemSkillRegistryDiModule
 import ru.souz.backend.telegram.HttpTelegramBotApi
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
-import ru.souz.skills.registry.FileSystemSkillRegistryConfig
-import ru.souz.skills.registry.SkillStorageScope
 import ru.souz.tool.runtimeToolsDiModule
-import ru.souz.tool.skills.ToolRunSkillCommand
+import ru.souz.tool.portableSkillRuntimeToolsDiModule
+import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.web.internal.WebResearchClient
 
 private object BackendDiTags {
@@ -106,21 +105,18 @@ fun backendDiModule(
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
 
-    import(
-        runtimeCoreDiModule(
-            skillRegistryConfig = FileSystemSkillRegistryConfig(scope = SkillStorageScope.USER_SCOPED)
-        )
-    )
+    import(runtimeCoreDiModule())
     import(
         runtimeToolsDiModule(
             includeWebImageSearch = false,
             includeLlmBackedTools = false,
-            skillStorageScope = SkillStorageScope.USER_SCOPED,
             scopeResolver = BackendSandboxScopeResolver,
         )
     )
     import(runtimeProviderHttpDiModule())
     import(runtimeLocalLlmDiModule())
+    import(fileSystemSkillRegistryDiModule())
+    import(portableSkillRuntimeToolsDiModule())
 
     bindSingleton { BackendApplicationScope() }
     bindSingleton<Clock> { Clock.systemUTC() }
@@ -209,14 +205,13 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        BackendClientToolCatalog.bundled(
+        BackendClientSkills(
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
         )
     }
     bindSingleton {
-        val clientToolCatalog = instance<BackendClientToolCatalog>()
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
             credentialResolver = instance(),
@@ -227,18 +222,16 @@ fun backendDiModule(
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
-            configuredAgentId = appConfig.agentId,
             toolCatalog = instance(),
-            clientToolCatalog = clientToolCatalog,
-            legacyCommandTool = instance(tag = SkillToolBindingTags.COMMAND_TOOL),
-            commandTool = instance<ToolRunSkillCommand>(),
+            clientToolCatalog = instance<BackendClientSkills>(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
+            commandExecutor = instance<SkillCommandExecutor>(),
             filesToolUtil = instance<FilesToolUtil>(),
             webResearchClient = instance<WebResearchClient>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
             searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
-            skillRegistryRepository = instance(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
         )
     }

@@ -8,14 +8,12 @@ import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
-import ru.souz.agent.spi.McpToolProvider
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.findLLMModel
 import ru.souz.tool.ToolCategory
 
@@ -31,7 +29,6 @@ class BackendConversationSettingsProvider(
 
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
-    override var activeAgentId: AgentId = delegate.activeAgentId
     override var gigaModel: LLMModel = delegate.gigaModel
     override var useFewShotExamples: Boolean = useFewShotExamples
     override var useStreaming: Boolean = false
@@ -45,21 +42,17 @@ class BackendConversationSettingsProvider(
     override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
 
     fun restore(
-        activeAgentId: AgentId,
         temperature: Float,
         locale: String,
     ) {
-        this.activeAgentId = activeAgentId
         this.temperature = temperature
         this.regionProfile = localeToRegionProfile(locale)
     }
 
     internal fun applyRequest(
         request: BackendConversationTurnRequest,
-        activeAgentId: AgentId,
         temperature: Float,
     ) {
-        this.activeAgentId = activeAgentId
         this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
         this.contextSize = request.contextSize
         this.temperature = request.temperature ?: temperature
@@ -81,35 +74,6 @@ class BackendConversationSettingsProvider(
         } else {
             SettingsProviderImpl.REGION_RU
         }
-    }
-}
-
-internal class BackendFewShotAwareToolCatalog(
-    private val delegate: AgentToolCatalog,
-    private val settingsProvider: SettingsProvider,
-) : AgentToolCatalog {
-    private val toolsWithoutFewShotExamples: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
-        delegate.toolsByCategory.mapValues { (_, toolsByName) ->
-            toolsByName.mapValues { (_, toolSetup) -> toolSetup.withoutFewShotExamples() }
-        }
-    }
-
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>
-        get() = if (settingsProvider.useFewShotExamples) delegate.toolsByCategory else toolsWithoutFewShotExamples
-}
-
-private fun LLMToolSetup.withoutFewShotExamples(): LLMToolSetup {
-    val delegate = this
-    return object : LLMToolSetup {
-        override val fn: LLMRequest.Function = delegate.fn.copy(fewShotExamples = emptyList())
-
-        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-            delegate.invoke(functionCall)
-
-        override suspend fun invoke(
-            functionCall: LLMResponse.FunctionCall,
-            meta: ToolInvocationMeta,
-        ): LLMRequest.Message = delegate.invoke(functionCall, meta)
     }
 }
 
@@ -143,11 +107,6 @@ object BackendNoopAgentToolCatalog : AgentToolCatalog {
 /** Backend implementation for hosts without a meaningful default browser. */
 object BackendNoopDefaultBrowserProvider : DefaultBrowserProvider {
     override fun defaultBrowserDisplayName(): String? = null
-}
-
-/** Backend implementation for hosts without MCP discovery. */
-object BackendNoopMcpToolProvider : McpToolProvider {
-    override suspend fun tools(): List<LLMToolSetup> = emptyList()
 }
 
 /** Backend-owned user-facing error text for shared agent failure paths. */

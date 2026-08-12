@@ -4,7 +4,7 @@ import java.time.Clock
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
-import ru.souz.agent.skills.activation.SkillId
+import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.spi.AgentSettingsProvider
