@@ -22,14 +22,19 @@ package ru.souz.skilloauth
 interface SkillOAuthGateway {
     /**
      * Idempotent check-and-start: returns [AuthorizationState.Connected] when the shared credential
-     * already covers [requiredScopes], otherwise mints a fresh authorize link (widened to cover
-     * everything ever requested for this `(userId, provider)`, not just [requiredScopes]) and
-     * returns [AuthorizationState.AuthorizationRequired]. Calling this repeatedly while already
-     * connected is safe — it never starts a new authorization unless [force] is set.
+     * already covers [requiredScopes]. Otherwise returns [AuthorizationState.AuthorizationRequired]
+     * with an authorize link — reusing a still-live, not-yet-consumed link verbatim when one already
+     * covers everything requested, rather than minting (and invalidating) a new one on every call; a
+     * link is only (re)minted, widened to cover everything ever requested for this
+     * `(userId, provider)`, when there's no reusable one or [requiredScopes] genuinely widens beyond
+     * it. Calling this repeatedly is therefore safe on both counts — connected or not, it never
+     * starts a fresh authorization (and never invalidates an outstanding link) unless it actually
+     * has to, or [force] is set.
      *
-     * [force] bypasses the "already connected" short-circuit — use only when the caller has reason
-     * to believe the stored grant is stale (e.g. the user reports it stopped working), since a
-     * token can be revoked on the provider's side without this service finding out until it's used.
+     * [force] bypasses both the "already connected" short-circuit and link reuse, always minting a
+     * fresh link — use only when the caller has reason to believe the stored grant is stale (e.g.
+     * the user reports it stopped working), since a token can be revoked on the provider's side
+     * without this service finding out until it's used.
      */
     suspend fun ensureAuthorized(
         userId: String,

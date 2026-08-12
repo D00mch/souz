@@ -156,6 +156,57 @@ class SkillOAuthGatewayImplTest {
     }
 
     @Test
+    fun `ensureAuthorized reuses a still-live pending link instead of minting a new one`() = runTest {
+        // D00mch: ensureAuthorized is documented as idempotent, so a retry or an overlapping call
+        // asking for scopes an already-issued, unconsumed link already covers must not invalidate
+        // that link — the user could already have it open in a browser tab.
+        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
+        val api = newApi(pendingStateRepository = pendingStateRepository)
+
+        val first = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
+        val second = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
+
+        check(first is AuthorizationState.AuthorizationRequired)
+        check(second is AuthorizationState.AuthorizationRequired)
+        assertEquals(first.url, second.url)
+        val firstState = first.url.substringAfter("state=").substringBefore("&")
+        // Still consumable — reuse must not have superseded (or otherwise touched) the live state.
+        assertTrue(pendingStateRepository.consume(firstState, fixedClock.instant()) != null)
+    }
+
+    @Test
+    fun `ensureAuthorized reuse does not require an exact scope match, only coverage`() = runTest {
+        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
+        val api = newApi(pendingStateRepository = pendingStateRepository)
+
+        val first = api.ensureAuthorized(
+            userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info", "iot:control"),
+        )
+        val second = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
+
+        check(first is AuthorizationState.AuthorizationRequired)
+        check(second is AuthorizationState.AuthorizationRequired)
+        assertEquals(first.url, second.url)
+    }
+
+    @Test
+    fun `ensureAuthorized force always mints a fresh link even when a covering one is still live`() = runTest {
+        val pendingStateRepository = InMemorySkillOAuthPendingStateRepository()
+        val api = newApi(pendingStateRepository = pendingStateRepository)
+
+        val first = api.ensureAuthorized(userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"))
+        val second = api.ensureAuthorized(
+            userId = "user-1", provider = "yandex", requiredScopes = setOf("login:info"), force = true,
+        )
+
+        check(first is AuthorizationState.AuthorizationRequired)
+        check(second is AuthorizationState.AuthorizationRequired)
+        assertTrue(first.url != second.url)
+        val firstState = first.url.substringAfter("state=").substringBefore("&")
+        assertTrue(pendingStateRepository.consume(firstState, fixedClock.instant()) == null)
+    }
+
+    @Test
     fun `ensureAuthorized supersedes an existing pending state for the same user and provider`() = runTest {
         // Regression test: without superseding, two overlapping ConnectOAuthProvider calls for the
         // same (userId, provider) would leave two live `state` tokens. The scope-union itself is
@@ -486,6 +537,27 @@ class SkillOAuthGatewayImplTest {
         )
 
         assertTrue(outcome is ApiCallReconnectRequired)
+    }
+
+    @Test
+    fun `two overlapping calls needing reconnect for the same provider get the same authorize link`() = runTest {
+        // D00mch: without reuse, two API calls racing to reconnect for the same (userId, provider)
+        // would each mint (and invalidate) their own link — a link already relayed to the user from
+        // the first call would silently stop working the moment the second call's link is issued.
+        val api = newApi()
+
+        val first = api.call(
+            userId = "user-1", provider = "yandex", requiredScopes = emptySet(),
+            request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
+        )
+        val second = api.call(
+            userId = "user-1", provider = "yandex", requiredScopes = emptySet(),
+            request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
+        )
+
+        check(first is ApiCallReconnectRequired)
+        check(second is ApiCallReconnectRequired)
+        assertEquals(first.authorizationUrl, second.authorizationUrl)
     }
 
     @Test

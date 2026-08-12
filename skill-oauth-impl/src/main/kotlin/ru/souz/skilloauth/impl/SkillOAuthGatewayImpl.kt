@@ -74,7 +74,7 @@ class SkillOAuthGatewayImpl(
         // Widen to the union of what's already granted plus what this caller needs, so connecting
         // a second, broader-scoped skill doesn't shrink access for skills already relying on the
         // shared (userId, provider) credential.
-        val url = startAuthorization(userId, provider, granted + requiredScopes)
+        val url = startAuthorization(userId, provider, granted + requiredScopes, force = force)
         return AuthorizationState.AuthorizationRequired(url)
     }
 
@@ -158,16 +158,34 @@ class SkillOAuthGatewayImpl(
     }
 
     /**
-     * Atomically widens the request to the full cumulative union ever requested for this
+     * `ensureAuthorized` is documented as idempotent, so a retry or an overlapping call for the
+     * same `(userId, provider)` must not invalidate a link already handed to the user just because
+     * it asks for scopes that link already covers. Unless [force] (an explicit user-requested fresh
+     * link, e.g. `forceReconnect`), reuse the still-live [SkillOAuthPendingStateRepository.findActive]
+     * pending state's own URL verbatim whenever [scopes] is already a subset of what it requested —
+     * this is a pure read, so it never touches (and never extends) that state's `expiresAt`. Only
+     * when there's no active state, it's expired/consumed, or [scopes] genuinely widens beyond it
+     * does this fall through to [SkillOAuthPendingStateRepository.beginAuthorization], which
+     * atomically widens the request to the full cumulative union ever requested for this
      * `(userId, provider)` — not just this call's own [scopes] — and supersedes any existing
-     * pending state, all under one row lock. See
-     * [SkillOAuthPendingStateRepository.beginAuthorization]'s doc comment for why both need to
+     * pending state, all under one row lock. See that method's doc comment for why both need to
      * happen in the same transaction. A request untouched for longer than the same TTL a pending
      * link itself lives for is treated as abandoned, not widened on.
      */
-    private suspend fun startAuthorization(userId: String, provider: String, scopes: Set<String>): String {
+    private suspend fun startAuthorization(
+        userId: String,
+        provider: String,
+        scopes: Set<String>,
+        force: Boolean = false,
+    ): String {
         val providerClient = requireProviderClient(provider)
         val now = clock.instant()
+        if (!force) {
+            val active = pendingStateRepository.findActive(userId, provider, now)
+            if (active != null && scopes.all { it in active.requestedScopes }) {
+                return providerClient.buildAuthorizeUrl(state = active.state, scopes = active.requestedScopes)
+            }
+        }
         val state = generateState()
         val pending = pendingStateRepository.beginAuthorization(
             state = state,

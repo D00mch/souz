@@ -191,6 +191,64 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
     }
 
     @Test
+    fun `findActive returns the live pending state without consuming it`() = runTest {
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_find_active")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+            repository.beginAuthorization(
+                state = "state-1",
+                userId = "user-1",
+                skillId = "skill-1",
+                provider = "yandex",
+                scopes = listOf("login:info"),
+                now = now,
+                activeSince = activeSince,
+                expiresAt = now.plusSeconds(600),
+            )
+
+            val active = repository.findActive("user-1", "yandex", now)
+
+            assertEquals("state-1", active?.state)
+            assertEquals(listOf("login:info"), active?.requestedScopes)
+            // a read must not consume — the state is still there afterwards.
+            assertEquals("state-1", repository.consume("state-1", now)?.state)
+        }
+    }
+
+    @Test
+    fun `findActive returns null once expired, without deleting the row`() = runTest {
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_find_active_expired")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+            repository.beginAuthorization(
+                state = "state-1",
+                userId = "user-1",
+                skillId = "skill-1",
+                provider = "yandex",
+                scopes = listOf("login:info"),
+                now = now,
+                activeSince = activeSince,
+                expiresAt = now.plusSeconds(60),
+            )
+            val afterExpiry = now.plusSeconds(120)
+
+            assertNull(repository.findActive("user-1", "yandex", afterExpiry))
+            // unlike consume, a read must never delete — beginAuthorization can still supersede it.
+            assertEquals("state-1", repository.consume("state-1", now)?.state)
+        }
+    }
+
+    @Test
+    fun `findActive returns null when nothing is pending for that user and provider`() = runTest {
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_find_active_absent")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+
+            assertNull(repository.findActive("user-1", "yandex", now))
+        }
+    }
+
+    @Test
     fun `distinct providers for the same user are tracked independently`() = runTest {
         val schema = newSkillOAuthTestSchema("skill_oauth_pending_multi_provider")
         skillOAuthTestDataSource(schema).use { dataSource ->

@@ -25,6 +25,8 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 - `:native` — local llama.cpp runtime and native bridge.
 - `:ambientAgent` — ambient transcription semantics and local task analysis.
 - `:sharedLogic` — shared JVM runtime logic, providers, tools, skills, memory, and sandboxes.
+- `:skill-oauth-api` — provider-neutral Skill OAuth contracts (`SkillOAuthGateway`) with no host or persistence dependencies.
+- `:skill-oauth-impl` — Postgres-backed `SkillOAuthGateway` implementation, provider token exchange, and the OAuth callback route, consumed only by `:backend`.
 - `:sharedUI` — shared desktop UI logic, ViewModels, host ports, and Compose UI.
 - `:desktopApp` — desktop composition root, OS integrations, persistence, and packaging.
 - `:backend` — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.

@@ -138,6 +138,21 @@ class PostgresSkillOAuthPendingStateRepository(
             pending
         }
 
+    override suspend fun findActive(userId: String, provider: String, now: Instant): SkillOAuthPendingState? =
+        dataSource.read { connection ->
+            connection.prepareStatement(
+                "select * from skill_oauth_pending_states where user_id = ? and provider = ?"
+            ).use { statement ->
+                statement.setString(1, userId)
+                statement.setString(2, provider)
+                statement.executeQuery().use { resultSet ->
+                    if (!resultSet.next()) return@read null
+                    val found = resultSet.toPendingState()
+                    if (found.expiresAt.isBefore(now)) null else found
+                }
+            }
+        }
+
     private fun java.sql.ResultSet.toPendingState(): SkillOAuthPendingState =
         SkillOAuthPendingState(
             state = getString("state"),

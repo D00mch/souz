@@ -85,4 +85,10 @@ internal class InMemorySkillOAuthPendingStateRepository : SkillOAuthPendingState
         requestedScopes[key]?.let { requestedScopes[key] = it.copy(updatedAt = now) }
         found
     }
+
+    override suspend fun findActive(userId: String, provider: String, now: Instant): SkillOAuthPendingState? = mutex.withLock {
+        val found = pending.values.firstOrNull { it.userId == userId && it.provider == provider }
+            ?: return@withLock null
+        if (found.expiresAt.isBefore(now)) null else found
+    }
 }

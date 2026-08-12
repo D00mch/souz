@@ -80,7 +80,11 @@ object SkillBundleParser {
             val trimmed = line.trim()
             when {
                 trimmed.isEmpty() || trimmed.startsWith("#") -> lineIndex++
-                !line.startsWith("  ") -> return values
+                // Any positive indentation nests under the key — YAML doesn't mandate a specific
+                // width, and hardcoding one here (as this used to) meant a validly-indented single-
+                // space list like 'oauthScopes:\n - a' silently parsed as zero items instead of
+                // either accepting or rejecting it.
+                !line.startsWith(" ") && !line.startsWith("\t") -> return values
                 trimmed.startsWith("- ") -> {
                     values += trimmed.removePrefix("-").trim().trim('"', '\'')
                     lineIndex++
@@ -94,6 +98,9 @@ object SkillBundleParser {
     }
 
     private fun parseInlineScopeList(key: String, inlineValue: String): List<String> {
+        // A bare or explicit-null value (`key:` with nothing after it, or `key: null`/`key: ~`) is
+        // valid YAML for "no value" — treated the same as declaring no scopes at all, not an error.
+        if (inlineValue == "null" || inlineValue == "~") return emptyList()
         if (!inlineValue.startsWith("[") || !inlineValue.endsWith("]")) {
             throw SkillBundleException(
                 "SKILL.md frontmatter field '$key' must be a YAML list — either '$key: [a, b]' or a " +

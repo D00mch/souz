@@ -102,4 +102,15 @@ interface SkillOAuthPendingStateRepository {
 
     /** Atomically deletes and returns the pending state if present and not expired as of [now]. */
     suspend fun consume(state: String, now: Instant): SkillOAuthPendingState?
+
+    /**
+     * Read-only lookup of the live pending state for `(userId, provider)`, if any — `null` if none
+     * exists or the one on file has already expired as of [now]. Unlike [consume], this never
+     * deletes or otherwise mutates the row: it exists so [SkillOAuthGatewayImpl.startAuthorization]
+     * can decide whether an already-issued, still-valid authorize URL already covers what's being
+     * asked for and hand that same URL back instead of unconditionally minting (and invalidating) a
+     * new one via [beginAuthorization] on every call — see its own doc comment for why reuse must
+     * never touch [SkillOAuthPendingState.expiresAt].
+     */
+    suspend fun findActive(userId: String, provider: String, now: Instant): SkillOAuthPendingState?
 }
