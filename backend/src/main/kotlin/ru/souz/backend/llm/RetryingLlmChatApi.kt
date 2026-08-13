@@ -3,10 +3,7 @@ package ru.souz.backend.llm
 import java.io.File
 import kotlin.math.min
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.delay
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.llms.LLMChatAPI
@@ -39,18 +36,34 @@ class RetryingLlmChatApi(
         return lastError ?: LLMResponse.Chat.Error(429, "Rate limited.")
     }
 
-    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         var attempt = 0
-        while (attempt <= retryPolicy.max429Retries) {
-            val items = delegate.messageStream(body).toList()
-            val first = items.firstOrNull()
-            if (first !is LLMResponse.Chat.Error || first.status != 429 || items.size > 1 || attempt == retryPolicy.max429Retries) {
-                return flowOf(*items.toTypedArray())
+        while (true) {
+            var hasReceivedResponse = false
+            var soleRateLimitError: LLMResponse.Chat.Error? = null
+            delegate.messageStream(body).collect { response ->
+                if (!hasReceivedResponse) {
+                    hasReceivedResponse = true
+                    if (
+                        response is LLMResponse.Chat.Error &&
+                        response.status == 429 &&
+                        attempt < retryPolicy.max429Retries
+                    ) {
+                        soleRateLimitError = response
+                    } else {
+                        emit(response)
+                    }
+                } else {
+                    soleRateLimitError?.let { emit(it) }
+                    soleRateLimitError = null
+                    emit(response)
+                }
             }
-            delayMillis(backoffForAttempt(attempt, first.message))
+
+            val rateLimitError = soleRateLimitError ?: return@flow
+            delayMillis(backoffForAttempt(attempt, rateLimitError.message))
             attempt += 1
         }
-        return flow { }
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =

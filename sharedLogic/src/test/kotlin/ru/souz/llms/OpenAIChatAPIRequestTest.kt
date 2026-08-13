@@ -72,6 +72,22 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
+    fun `buildChatRequest forwards an explicit reasoning effort`() {
+        val api = createApi(openaiModel = "provider-reasoning-model")
+        val request = invokeBuildChatRequest(
+            api = api,
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAICompatibleCustom.alias,
+                messages = listOf(LLMRequest.Message(role = LLMMessageRole.user, content = "Hello")),
+                reasoningEffort = "medium",
+            ),
+            stream = true,
+        )
+
+        assertEquals("medium", request["reasoning_effort"])
+    }
+
+    @Test
     fun `OpenAI endpoint uses configured compatible base url`() {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.openaiBaseUrl } returns "https://example.test/openai/v1/"
@@ -430,6 +446,36 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
+    fun `parseCompletionsResponse preserves reasoning content separately from answer`() {
+        val api = createApi()
+        val response = invokeParseCompletionsResponse(
+            api = api,
+            text = """
+                {
+                  "created": 1739900000,
+                  "model": "provider-reasoning-model",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "finish_reason": "stop",
+                      "message": {
+                        "role": "assistant",
+                        "reasoning_content": "Check the relevant facts.",
+                        "content": "The answer is 42."
+                      }
+                    }
+                  ]
+                }
+            """.trimIndent(),
+            requestModel = LLMModel.OpenAICompatibleCustom.alias,
+        )
+
+        val message = (response as LLMResponse.Chat.Ok).choices.single().message
+        assertEquals("Check the relevant facts.", message.reasoningContent)
+        assertEquals("The answer is 42.", message.content)
+    }
+
+    @Test
     fun `buildEmbeddingsRequest includes float encoding format`() {
         val api = createApi()
         val request = invokeBuildEmbeddingsRequest(
@@ -491,15 +537,7 @@ class OpenAIChatAPIRequestTest {
 
     @Test
     fun `stream accumulator emits distinct indexes for multiple tool calls in one choice`() {
-        val classLoader = OpenAIChatAPI::class.java.classLoader
-        val clazz = Class.forName("ru.souz.llms.openai.OpenAiStreamAccumulator", true, classLoader)
-        val ctor = clazz.getDeclaredConstructor()
-        ctor.isAccessible = true
-        val accumulator = ctor.newInstance()
-        val processChunk = clazz.getDeclaredMethod("processChunk", com.fasterxml.jackson.databind.JsonNode::class.java)
-        processChunk.isAccessible = true
-
-        val node = restJsonMapper.readTree(
+        val choices = processStreamChunk(
             """
                 {
                   "choices": [
@@ -533,12 +571,35 @@ class OpenAIChatAPIRequestTest {
             """.trimIndent()
         )
 
-        @Suppress("UNCHECKED_CAST")
-        val choices = processChunk.invoke(accumulator, node) as List<LLMResponse.Choice>
         val toolChoices = choices.filter { it.message.functionCall != null }
         assertEquals(2, toolChoices.size)
         assertNotEquals(toolChoices[0].index, toolChoices[1].index)
         assertEquals(setOf("call_a", "call_b"), toolChoices.mapNotNull { it.message.functionsStateId }.toSet())
+    }
+
+    @Test
+    fun `stream accumulator preserves reasoning delta separately from answer content`() {
+        val choices = processStreamChunk(
+            """
+                {
+                  "choices": [
+                    {
+                      "index": 0,
+                      "delta": {
+                        "role": "assistant",
+                        "reasoning_content": "Consider both possibilities.",
+                        "content": null
+                      },
+                      "finish_reason": null
+                    }
+                  ]
+                }
+            """.trimIndent()
+        )
+
+        val message = choices.single().message
+        assertEquals("Consider both possibilities.", message.reasoningContent)
+        assertEquals("", message.content)
     }
 
     private fun createApi(openaiModel: String? = null): OpenAIChatAPI {
@@ -593,6 +654,18 @@ class OpenAIChatAPIRequestTest {
         )
         method.isAccessible = true
         return method.invoke(api, text, requestModel) as LLMResponse.Chat
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun processStreamChunk(text: String): List<LLMResponse.Choice> {
+        val classLoader = OpenAIChatAPI::class.java.classLoader
+        val clazz = Class.forName("ru.souz.llms.openai.OpenAiStreamAccumulator", true, classLoader)
+        val constructor = clazz.getDeclaredConstructor()
+        constructor.isAccessible = true
+        val accumulator = constructor.newInstance()
+        val processChunk = clazz.getDeclaredMethod("processChunk", com.fasterxml.jackson.databind.JsonNode::class.java)
+        processChunk.isAccessible = true
+        return processChunk.invoke(accumulator, restJsonMapper.readTree(text)) as List<LLMResponse.Choice>
     }
 
     private fun function(name: String): LLMRequest.Function = LLMRequest.Function(

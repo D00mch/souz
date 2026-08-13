@@ -44,6 +44,7 @@ data class MessageCreatedPayload(
 data class MessageDeltaPayload(
     val messageId: UUID,
     val delta: String,
+    val kind: String? = null,
 ) : AgentEventPayload
 
 data class MessageCompletedPayload(

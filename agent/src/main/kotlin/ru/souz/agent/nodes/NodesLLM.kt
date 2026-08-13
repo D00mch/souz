@@ -108,7 +108,18 @@ internal class NodesLLM(
                 response as LLMResponse.Chat.Ok
                 l.debug("choices: {}", response.choices)
 
-                val content = response.choices.firstOrNull()?.message?.content
+                val firstMessage = response.choices.firstOrNull()?.message
+                val reasoningContent = firstMessage?.reasoningContent
+                if (!reasoningContent.isNullOrEmpty()) {
+                    eventSink.emit(
+                        AgentRuntimeEvent.LlmMessageDelta(
+                            text = reasoningContent,
+                            kind = AgentRuntimeEvent.LlmMessageDelta.Kind.REASONING,
+                        )
+                    )
+                }
+
+                val content = firstMessage?.content
                 if (content?.isNotEmpty() == true) {
                     eventSink.emit(AgentRuntimeEvent.LlmMessageDelta(content))
                     pending.append(content)
@@ -150,6 +161,7 @@ internal class NodesLLM(
     private class ChoiceAccumulator(
         var role: LLMMessageRole,
         val content: StringBuilder = StringBuilder(),
+        val reasoningContent: StringBuilder = StringBuilder(),
         var functionCall: LLMResponse.FunctionCall? = null,
         var functionsStateId: String? = null,
         var finishReason: LLMResponse.FinishReason? = null,
@@ -158,6 +170,9 @@ internal class NodesLLM(
             val msg = choice.message
             if (msg.content.isNotBlank()) {
                 content.append(msg.content)
+            }
+            if (!msg.reasoningContent.isNullOrEmpty()) {
+                reasoningContent.append(msg.reasoningContent)
             }
             if (msg.functionCall != null) {
                 functionCall = msg.functionCall
@@ -175,6 +190,7 @@ internal class NodesLLM(
                 role = role,
                 functionCall = functionCall,
                 functionsStateId = functionsStateId,
+                reasoningContent = reasoningContent.toString().takeIf { it.isNotEmpty() },
             ),
             index = index,
             finishReason = finishReason,

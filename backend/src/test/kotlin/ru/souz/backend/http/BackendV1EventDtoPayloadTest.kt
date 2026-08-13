@@ -9,6 +9,7 @@ import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceRequestedPayload
 import ru.souz.backend.events.model.ChoiceOptionItemPayload
 import ru.souz.backend.events.model.MessageCreatedPayload
+import ru.souz.backend.events.model.MessageDeltaPayload
 import ru.souz.backend.events.model.RawAgentEventPayload
 import ru.souz.backend.events.model.ToolCallFinishedPayload
 import ru.souz.backend.events.model.ToolCallStartedPayload
@@ -37,6 +38,53 @@ class BackendV1EventDtoPayloadTest {
         val dto = event.toDto()
 
         assertEquals("client-42", dto.payload["clientMessageId"])
+    }
+
+    @Test
+    fun `typed reasoning delta dto exposes its kind`() {
+        val event = AgentEvent(
+            id = UUID.fromString("05050505-0505-0505-0505-050505050505"),
+            userId = "user-a",
+            chatId = UUID.fromString("06060606-0606-0606-0606-060606060606"),
+            executionId = UUID.fromString("07070707-0707-0707-0707-070707070707"),
+            seq = 3L,
+            type = AgentEventType.MESSAGE_DELTA,
+            payload = MessageDeltaPayload(
+                messageId = UUID.fromString("08080808-0808-0808-0808-080808080808"),
+                delta = "Check both options.",
+                kind = "reasoning",
+            ),
+            createdAt = Instant.parse("2026-05-02T09:59:59Z"),
+        )
+
+        val dto = event.toDto()
+
+        assertEquals("Check both options.", dto.payload["delta"])
+        assertEquals("reasoning", dto.payload["kind"])
+    }
+
+    @Test
+    fun `raw reasoning delta dto preserves its kind`() {
+        val event = AgentEvent(
+            id = UUID.fromString("09090909-0909-0909-0909-090909090909"),
+            userId = "user-a",
+            chatId = UUID.fromString("10101010-1010-1010-1010-101010101010"),
+            executionId = UUID.fromString("11111111-1111-1111-1111-111111111111"),
+            seq = 4L,
+            type = AgentEventType.MESSAGE_DELTA,
+            payload = RawAgentEventPayload(
+                values = mapOf(
+                    "messageId" to "12121212-1212-1212-1212-121212121212",
+                    "delta" to "Check both options.",
+                    "kind" to "reasoning",
+                )
+            ),
+            createdAt = Instant.parse("2026-05-02T09:59:59Z"),
+        )
+
+        val dto = event.toDto()
+
+        assertEquals("reasoning", dto.payload["kind"])
     }
 
     @Test

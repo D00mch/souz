@@ -52,10 +52,37 @@ class BackendAgentRuntimeEventSinkTest {
             assertEquals(AgentEventType.MESSAGE_DELTA, liveEvent.type)
             assertFalse(liveEvent.durable)
             assertNull(liveEvent.seq)
-            assertEquals("chunk-1", (liveEvent.payload as MessageDeltaPayload).delta)
+            val payload = liveEvent.payload as MessageDeltaPayload
+            assertEquals("chunk-1", payload.delta)
+            assertNull(payload.kind)
             assertTrue(replayEvents.isEmpty())
             assertTrue(messages.isEmpty())
             assertNull(execution?.assistantMessageId)
+        } finally {
+            stream.close()
+        }
+    }
+
+    @Test
+    fun `reasoning delta is tagged on the live message event`() = runTest {
+        val fixture = sinkFixture()
+        val stream = fixture.eventService.openStream(userId = fixture.chat.userId, chatId = fixture.chat.id)
+
+        try {
+            fixture.sink.emit(
+                AgentRuntimeEvent.LlmMessageDelta(
+                    text = "Check both options.",
+                    kind = AgentRuntimeEvent.LlmMessageDelta.Kind.REASONING,
+                )
+            )
+
+            val liveEvent = withTimeout(1_000) { stream.liveEvents.receive() }
+            val payload = liveEvent.payload as MessageDeltaPayload
+
+            assertEquals(AgentEventType.MESSAGE_DELTA, liveEvent.type)
+            assertEquals("Check both options.", payload.delta)
+            assertEquals("reasoning", payload.kind)
+            assertTrue(fixture.eventRepository.listByChat(fixture.chat.userId, fixture.chat.id).isEmpty())
         } finally {
             stream.close()
         }

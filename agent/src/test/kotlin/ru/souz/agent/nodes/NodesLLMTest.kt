@@ -69,7 +69,11 @@ class NodesLLMTest {
         }
         val nodes = NodesLLM(
             llmApi = StreamingChatApi(
-                chunks = listOf("Hello", " streaming", " world"),
+                chunks = listOf(
+                    StreamedMessage(content = "Hello"),
+                    StreamedMessage(content = " streaming"),
+                    StreamedMessage(content = " world"),
+                ),
                 model = "test-model",
             ),
             settingsProvider = settingsProvider,
@@ -103,6 +107,64 @@ class NodesLLMTest {
         assertEquals("Hello streaming world", result.history.last().content)
     }
 
+    @Test
+    fun `streaming chat emits typed reasoning deltas without adding reasoning to answer text`() = runTest {
+        val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
+        val settingsProvider = mockk<AgentSettingsProvider> {
+            every { useStreaming } returns true
+        }
+        val nodes = NodesLLM(
+            llmApi = StreamingChatApi(
+                chunks = listOf(
+                    StreamedMessage(reasoningContent = "Compare"),
+                    StreamedMessage(reasoningContent = " "),
+                    StreamedMessage(reasoningContent = "the evidence."),
+                    StreamedMessage(content = "Option A is stronger."),
+                ),
+                model = "reasoning-model",
+            ),
+            settingsProvider = settingsProvider,
+        )
+        val context = context(
+            history = listOf(LLMRequest.Message(role = LLMMessageRole.user, content = "Prompt")),
+            runtimeEventSink = object : AgentRuntimeEventSink {
+                override suspend fun emit(event: AgentRuntimeEvent) {
+                    runtimeEvents += event
+                }
+            },
+        )
+
+        val sideEffect = async { nodes.sideEffects.first() }
+        val result = nodes.chat(streamRevision = 8L).execute(
+            ctx = context,
+            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
+        )
+
+        assertEquals(
+            listOf<AgentRuntimeEvent>(
+                AgentRuntimeEvent.LlmMessageDelta(
+                    text = "Compare",
+                    kind = AgentRuntimeEvent.LlmMessageDelta.Kind.REASONING,
+                ),
+                AgentRuntimeEvent.LlmMessageDelta(
+                    text = " ",
+                    kind = AgentRuntimeEvent.LlmMessageDelta.Kind.REASONING,
+                ),
+                AgentRuntimeEvent.LlmMessageDelta(
+                    text = "the evidence.",
+                    kind = AgentRuntimeEvent.LlmMessageDelta.Kind.REASONING,
+                ),
+                AgentRuntimeEvent.LlmMessageDelta("Option A is stronger."),
+            ),
+            runtimeEvents,
+        )
+        assertEquals(AgentStreamChunk("Option A is stronger.", 8L), sideEffect.await())
+        val response = result.input as LLMResponse.Chat.Ok
+        assertEquals("Compare the evidence.", response.choices.single().message.reasoningContent)
+        assertEquals("Option A is stronger.", response.choices.single().message.content)
+        assertEquals("Option A is stronger.", result.history.last().content)
+    }
+
     private fun context(
         history: List<LLMRequest.Message>,
         runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
@@ -120,8 +182,13 @@ class NodesLLMTest {
     )
 }
 
+private data class StreamedMessage(
+    val content: String = "",
+    val reasoningContent: String? = null,
+)
+
 private class StreamingChatApi(
-    private val chunks: List<String>,
+    private val chunks: List<StreamedMessage>,
     private val model: String,
 ) : LLMChatAPI {
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
@@ -134,9 +201,10 @@ private class StreamingChatApi(
                     choices = listOf(
                         LLMResponse.Choice(
                             message = LLMResponse.Message(
-                                content = chunk,
+                                content = chunk.content,
                                 role = LLMMessageRole.assistant,
                                 functionsStateId = null,
+                                reasoningContent = chunk.reasoningContent,
                             ),
                             index = 0,
                             finishReason = if (index == chunks.lastIndex) {

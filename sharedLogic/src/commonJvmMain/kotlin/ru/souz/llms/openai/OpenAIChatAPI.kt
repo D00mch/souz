@@ -202,6 +202,7 @@ class OpenAIChatAPI(
             if (body.maxTokens > 0) {
                 put("max_completion_tokens", body.maxTokens)
             }
+            body.reasoningEffort?.let { put("reasoning_effort", it) }
             if (tools.isNotEmpty()) {
                 put("tools", tools)
                 put("tool_choice", "auto")
@@ -499,6 +500,7 @@ class OpenAIChatAPI(
             val messageNode = choiceNode[messageField]
 
             val messageContent = messageNode?.get("content").toOpenAiMessageContent()
+            val reasoningContent = messageNode?.get("reasoning_content").toOpenAiMessageContent()
             val role = messageNode?.get("role")?.asText().toOpenAiRole()
             val finishReason = choiceNode["finish_reason"]?.asText().toOpenAiFinishReasonValue()
             val choiceIndex = choiceNode["index"]?.asInt() ?: idx
@@ -528,13 +530,14 @@ class OpenAIChatAPI(
                 }
             }
 
-            if (messageContent.isNotEmpty()) {
+            if (messageContent.isNotEmpty() || reasoningContent.isNotEmpty()) {
                 choices += LLMResponse.Choice(
                     message = LLMResponse.Message(
                         content = messageContent,
                         role = role,
                         functionCall = null,
                         functionsStateId = null,
+                        reasoningContent = reasoningContent.takeIf { it.isNotEmpty() },
                     ),
                     index = choiceIndex,
                     finishReason = if (toolCallsNode != null && toolCallsNode.size() > 0) null else finishReason,
@@ -786,16 +789,18 @@ private class OpenAiStreamAccumulator {
             }
 
             // Append Content
-            val contentOrNull = delta?.get("content")?.asText()
-            if (!contentOrNull.isNullOrEmpty()) {
-                // Emit content immediately as stream
+            val content = delta?.get("content").toOpenAiMessageContent()
+            val reasoningContent = delta?.get("reasoning_content").toOpenAiMessageContent()
+            if (content.isNotEmpty() || reasoningContent.isNotEmpty()) {
+                // Emit text immediately as stream
                 resultChoices.add(
                     LLMResponse.Choice(
                         message = LLMResponse.Message(
-                            content = contentOrNull,
+                            content = content,
                             role = state.role ?: LLMMessageRole.assistant,
                             functionCall = null,
-                            functionsStateId = null
+                            functionsStateId = null,
+                            reasoningContent = reasoningContent.takeIf { it.isNotEmpty() },
                         ),
                         index = index,
                         finishReason = null

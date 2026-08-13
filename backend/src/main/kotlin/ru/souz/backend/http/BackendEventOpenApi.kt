@@ -174,6 +174,11 @@ internal object BackendEventOpenApiSchemas {
             properties = mapOf(
                 "messageId" to value(uuidSchema()),
                 "delta" to value(stringSchema()),
+                "kind" to value(
+                    stringEnum(listOf("content", "reasoning")).copy(
+                        description = "Omitted for content deltas; reasoning deltas use reasoning.",
+                    )
+                ),
             ),
         )
 
