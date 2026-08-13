@@ -40,8 +40,7 @@ internal class BackendExecutionLlmChatApi(
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = null,
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
-    private val credentials = mutableMapOf<LlmProvider, String>()
-    private val credentialResolutionAttempts = mutableSetOf<LlmProvider>()
+    private val credentials = mutableMapOf<LlmProvider, String?>()
     private val providerApis = mutableMapOf<LlmProvider, LLMChatAPI>()
 
     private val usageMutex = Mutex()
@@ -151,14 +150,14 @@ internal class BackendExecutionLlmChatApi(
     }
 
     private suspend fun resolveCredentialLocked(provider: LlmProvider): String {
-        credentials[provider]?.let { return it }
-        check(provider !in credentialResolutionAttempts) {
-            "Missing configured credential for provider $provider."
+        if (credentials.containsKey(provider)) {
+            return credentials.getValue(provider)
+                ?: error("Missing configured credential for provider $provider.")
         }
         val credential = credentialResolver.resolve(userId, provider)
-        credentialResolutionAttempts += provider
-        credential ?: error("Missing configured credential for provider $provider.")
-        return credential.apiKey.also { credentials[provider] = it }
+        credentials[provider] = credential?.apiKey
+        return credentials.getValue(provider)
+            ?: error("Missing configured credential for provider $provider.")
     }
 
     private suspend fun retryChat(request: suspend () -> LLMResponse.Chat): LLMResponse.Chat {
