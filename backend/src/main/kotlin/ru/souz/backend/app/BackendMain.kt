@@ -5,6 +5,8 @@ import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import ru.souz.backend.http.BackendHttpServer
+import ru.souz.runtime.OrderedShutdown
+import ru.souz.runtime.shutdownStep
 
 private val log = LoggerFactory.getLogger("SouzBackend")
 
@@ -48,20 +50,10 @@ internal suspend fun shutdownBackendProcess(
     stopHttpIntake: () -> Unit,
     shutdownRuntime: suspend () -> Unit,
 ) {
-    var failure: Throwable? = null
-    try {
-        stopHttpIntake()
-    } catch (stopFailure: Throwable) {
-        failure = stopFailure
-    }
-    try {
-        shutdownRuntime()
-    } catch (shutdownFailure: Throwable) {
-        if (failure == null) {
-            failure = shutdownFailure
-        } else {
-            failure.addSuppressed(shutdownFailure)
-        }
-    }
-    failure?.let { throw it }
+    OrderedShutdown(
+        steps = listOf(
+            shutdownStep("HTTP intake") { stopHttpIntake() },
+            shutdownStep("backend runtime", shutdownRuntime),
+        )
+    ).shutdown()
 }
