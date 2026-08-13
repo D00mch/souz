@@ -35,6 +35,8 @@ import ru.souz.ui.host.DesktopSettingsHostPreferences
 import ru.souz.ui.host.SettingsHostPreferences
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
+import ru.souz.ui.common.MAIN_WINDOW_MIN_HEIGHT_PX
+import ru.souz.ui.common.MAIN_WINDOW_MIN_WIDTH_PX
 import java.awt.Dimension
 import java.awt.SystemColor.window
 import java.util.concurrent.atomic.AtomicBoolean
@@ -119,15 +121,13 @@ fun main() {
                 println("Failed to set dock icon: ${e.message}")
             }
 
-            val minWindowWidthPx = 860
-            val minWindowHeightPx = 680
             val maxWindowWidthPx = 896
             val maxWindowHeightPx = 700
             val initialWidth = settingsProvider.initialWindowWidthDp
-                .coerceIn(minWindowWidthPx, maxWindowWidthPx)
+                .coerceIn(MAIN_WINDOW_MIN_WIDTH_PX, maxWindowWidthPx)
                 .dp
             val initialHeight = settingsProvider.initialWindowHeightDp
-                .coerceIn(minWindowHeightPx, maxWindowHeightPx)
+                .coerceIn(MAIN_WINDOW_MIN_HEIGHT_PX, maxWindowHeightPx)
                 .dp
 
             val windowState = rememberWindowState(
@@ -153,14 +153,14 @@ fun main() {
                 alwaysOnTop = false
             ) {
                 LaunchedEffect(window) {
-                    window.minimumSize = Dimension(minWindowWidthPx, minWindowHeightPx)
+                    window.minimumSize = Dimension(MAIN_WINDOW_MIN_WIDTH_PX, MAIN_WINDOW_MIN_HEIGHT_PX)
                     window.maximumSize = Dimension(maxWindowWidthPx, maxWindowHeightPx)
-                    if (window.width !in minWindowWidthPx..maxWindowWidthPx ||
-                        window.height !in minWindowHeightPx..maxWindowHeightPx
+                    if (window.width !in MAIN_WINDOW_MIN_WIDTH_PX..maxWindowWidthPx ||
+                        window.height !in MAIN_WINDOW_MIN_HEIGHT_PX..maxWindowHeightPx
                     ) {
                         window.setSize(
-                            window.width.coerceIn(minWindowWidthPx, maxWindowWidthPx),
-                            window.height.coerceIn(minWindowHeightPx, maxWindowHeightPx)
+                            window.width.coerceIn(MAIN_WINDOW_MIN_WIDTH_PX, maxWindowWidthPx),
+                            window.height.coerceIn(MAIN_WINDOW_MIN_HEIGHT_PX, maxWindowHeightPx)
                         )
                     }
 
