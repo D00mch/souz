@@ -20,6 +20,10 @@ internal class ActiveExecutionJobRegistry {
         }
     }
 
+    suspend fun contains(executionId: UUID): Boolean = mutex.withLock {
+        executionId in jobs
+    }
+
     suspend fun cancel(
         executionId: UUID,
         reason: String = "Execution cancelled by user request.",

@@ -29,7 +29,11 @@ class BackendRuntime private constructor(
     }
 
     override fun close() {
-        resources.close()
+        runBlocking { shutdown() }
+    }
+
+    suspend fun shutdown() {
+        resources.shutdown()
     }
 
     companion object {

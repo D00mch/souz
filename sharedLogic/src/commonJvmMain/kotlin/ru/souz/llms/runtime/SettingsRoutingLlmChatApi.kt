@@ -4,7 +4,7 @@ import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.DEFAULT_EMBEDDINGS_MODEL
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -31,10 +31,11 @@ class SettingsRoutingLlmChatApi(
         currentChatApi().messageStream(body)
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
-        val request = if (body.model.equals(EmbeddingsModel.GigaEmbeddings.alias, ignoreCase = true)) {
+        val normalizedModel = body.model.trim()
+        val request = if (normalizedModel.equals(DEFAULT_EMBEDDINGS_MODEL, ignoreCase = true)) {
             body.copy(model = settingsProvider.embeddingsModel.alias)
         } else {
-            body
+            body.copy(model = normalizedModel)
         }
         return currentEmbeddingsApi().embeddings(request)
     }

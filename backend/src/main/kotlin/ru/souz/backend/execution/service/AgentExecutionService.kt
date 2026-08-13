@@ -132,7 +132,7 @@ class AgentExecutionService internal constructor(
             eventSink.emitExecutionStarted(runningExecution)
 
             if (prepared.shouldReturnRunning) {
-                launcher.startBackgroundExecution(
+                val backgroundExecution = launcher.prepareBackgroundExecution(
                     execution = runningExecution,
                     eventSink = eventSink,
                 ) {
@@ -144,6 +144,7 @@ class AgentExecutionService internal constructor(
                         eventSink = eventSink,
                     )
                 }
+                backgroundExecution.start()
                 return@supervisorScope SendMessageResult(
                     userMessage = userMessage,
                     assistantMessage = null,
@@ -240,7 +241,7 @@ class AgentExecutionService internal constructor(
             streamingMessagesEnabled = prepared.streamingMessagesEnabled,
             toolEventsEnabled = prepared.toolEventsEnabled,
         )
-        launcher.startBackgroundExecution(
+        val backgroundExecution = launcher.prepareBackgroundExecution(
             execution = runningExecution,
             eventSink = eventSink,
         ) {
@@ -252,6 +253,7 @@ class AgentExecutionService internal constructor(
                 eventSink = eventSink,
             )
         }
+        backgroundExecution.start()
         return runningExecution
     }
 

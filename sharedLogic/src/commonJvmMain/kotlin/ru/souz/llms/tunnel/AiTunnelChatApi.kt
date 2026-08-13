@@ -455,8 +455,11 @@ class AiTunnelChatAPI(
     }
 
     private fun resolveEmbeddingsModel(model: String): String {
-        if (model.equals("Embeddings", ignoreCase = true)) return defaultEmbeddingsModel
-        return model
+        val normalized = model.trim()
+        if (normalized.equals(ru.souz.llms.DEFAULT_EMBEDDINGS_MODEL, ignoreCase = true)) {
+            return defaultEmbeddingsModel
+        }
+        return normalized
     }
 
     companion object {

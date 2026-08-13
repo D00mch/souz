@@ -308,7 +308,7 @@ object LLMRequest {
     )
 
     data class Embeddings(
-        val model: String = "Embeddings",
+        val model: String = DEFAULT_EMBEDDINGS_MODEL,
         val input: List<String>,
         @get:JsonIgnore
         @field:JsonIgnore

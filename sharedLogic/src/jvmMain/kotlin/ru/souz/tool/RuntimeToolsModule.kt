@@ -20,7 +20,6 @@ import ru.souz.tool.web.internal.WebResearchClient
 
 fun runtimeToolsDiModule(
     includeWebImageSearch: Boolean = true,
-    includeLlmBackedTools: Boolean = true,
     scopeResolver: ToolInvocationSandboxScopeResolver = defaultToolInvocationSandboxScopeResolver(),
 ): DI.Module = DI.Module("runtimeTools") {
     bindSingleton<RuntimeSandboxFactory> { DefaultRuntimeSandboxFactory(settingsProvider = instance()) }
@@ -28,7 +27,6 @@ fun runtimeToolsDiModule(
         portableRuntimeToolsDiModule(
             scopeResolver = scopeResolver,
             bindAgentToolCatalog = false,
-            includeLlmBackedTools = includeLlmBackedTools,
         )
     )
     bindSingleton { ToolExtractText(instance()) }
@@ -66,12 +64,15 @@ class RuntimeToolsFactory(
     private val excelReport: ExcelReport,
     private val toolWebImageSearch: ToolWebImageSearch?,
 ) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
-        ToolCategory.entries.associateWith { category ->
-            portableToolsFactory.toolsByCategory.getValue(category) +
-                category.jvmTools().associateBy { it.fn.name }
-        }
-    }
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
+        composeToolCatalogs(
+            listOf(
+                portableToolsFactory,
+                immutableToolCatalogFromLists(
+                    ToolCategory.entries.associateWith { category -> category.jvmTools() }
+                ),
+            )
+        ).toolsByCategory
 
     private fun ToolCategory.jvmTools(): List<LLMToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(

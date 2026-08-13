@@ -94,7 +94,7 @@ private fun conversationKey(): AgentConversationKey =
 private fun turnRequest(): BackendConversationTurnRequest =
     BackendConversationTurnRequest(
         prompt = "test prompt",
-        model = "qwen-max",
+        model = ru.souz.llms.LLMModel.QwenMax,
         contextSize = 24_000,
         locale = "ru-RU",
         timeZone = "Europe/Moscow",

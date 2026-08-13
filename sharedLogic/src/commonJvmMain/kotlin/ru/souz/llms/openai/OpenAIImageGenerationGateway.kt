@@ -79,5 +79,5 @@ class OpenAIImageGenerationGateway(
     }
 
     private val imagesUrl: String
-        get() = OpenAIEndpointConfig.endpoint(settingsProvider, IMAGES_PATH)
+        get() = settingsProvider.openAIEndpoint().endpoint(IMAGES_PATH)
 }

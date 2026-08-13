@@ -11,7 +11,8 @@ import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.findLLMModel
+import ru.souz.llms.ModelResolution
+import ru.souz.llms.resolveChatModel
 
 internal suspend inline fun <reified T : Any> ApplicationCall.receiveOrV1BadRequest(): T =
     receiveOrRequestError(::invalidV1Request)
@@ -73,12 +74,24 @@ internal fun BackendV1MessageOptionsRequest?.toUserSettingsOverrides(): UserSett
     )
 
 internal fun parseModel(rawModel: String, fieldName: String): LLMModel {
-    val model = findLLMModel(rawModel)
-        ?: throw invalidV1Request("$fieldName must be a known model alias.")
-    if (model.provider == LlmProvider.GIGA) {
-        throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+    return when (
+        val resolution = resolveChatModel(
+            rawModel = rawModel,
+            supportedProviders = BackendLlmSupport.chatProviders,
+        )
+    ) {
+        is ModelResolution.Resolved -> resolution.value
+        is ModelResolution.Unknown -> throw invalidV1Request("$fieldName must be a known model alias.")
+        is ModelResolution.Ambiguous -> throw invalidV1Request(
+            "$fieldName is ambiguous; use a model enum name."
+        )
+        is ModelResolution.UnsupportedProvider -> {
+            if (resolution.provider == LlmProvider.GIGA) {
+                throw invalidV1Request(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+            }
+            throw invalidV1Request("$fieldName uses an unsupported provider.")
+        }
     }
-    return model
 }
 
 internal fun parseLocale(rawLocale: String, fieldName: String): Locale =

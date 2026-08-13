@@ -13,6 +13,8 @@ import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
+import ru.souz.tool.LLM_BACKED_TOOL_NAMES
+import ru.souz.tool.LlmBackedToolCatalog
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.files.ToolGenerateImage
 import ru.souz.tool.files.ToolViewImage
@@ -20,10 +22,10 @@ import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.internal.WebResearchClient
 
-class BackendExecutionLlmToolCatalogTest {
+class LlmBackedToolCatalogTest {
     @Test
     fun `catalog contains only execution-bound LLM tools`() {
-        val catalog = BackendExecutionLlmToolCatalog(
+        val catalog = LlmBackedToolCatalog(
             llmApi = UnusedLlmApi,
             settingsProvider = TestSettingsProvider(),
             filesToolUtil = FilesToolUtil(ToolInvocationRuntimeSandboxResolver { error("not invoked") }),
@@ -43,6 +45,10 @@ class BackendExecutionLlmToolCatalogTest {
         assertEquals(
             setOf(ToolGenerateImage.NAME),
             catalog.toolsByCategory.getValue(ToolCategory.IMAGE_GENERATION).keys,
+        )
+        assertEquals(
+            LLM_BACKED_TOOL_NAMES,
+            catalog.toolsByCategory.values.flatMapTo(linkedSetOf()) { it.keys },
         )
     }
 }

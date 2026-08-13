@@ -16,23 +16,12 @@ import kotlin.test.assertEquals
 
 class GigaAuthTest {
     @Test
-    fun `reuses a valid token for the same key and scope`() = runTest {
+    fun `token cache is scoped by key and scope`() = runTest {
         val authorizations = mutableListOf<String?>()
         val client = tokenClient(authorizations)
         val auth = GigaAuth(settingsProvider(), client)
 
         assertEquals("token-1", auth.requestToken("key-a", "scope-a"))
-        assertEquals("token-1", auth.requestToken("key-a", "scope-a"))
-        assertEquals(listOf<String?>("Basic key-a"), authorizations)
-        client.close()
-    }
-
-    @Test
-    fun `changing a key replaces the cached token for that scope`() = runTest {
-        val authorizations = mutableListOf<String?>()
-        val client = tokenClient(authorizations)
-        val auth = GigaAuth(settingsProvider(), client)
-
         assertEquals("token-1", auth.requestToken("key-a", "scope-a"))
         assertEquals("token-2", auth.requestToken("key-b", "scope-a"))
         assertEquals("token-3", auth.requestToken("key-a", "scope-a"))

@@ -8,3 +8,4 @@ Read the topics relevant to the `:sharedLogic` code you plan to change. These no
 - [Web tools](pain-points/web-tools.md) — evidence handling, citations, provider behavior, sandboxed output, and URL limitations.
 - [Observability](pain-points/observability.md) — request bookkeeping, structured events, and host-owned logging sinks.
 - [Provider HTTP lifecycle](pain-points/provider-http-lifecycle.md) — client ownership, request-local credentials, and host shutdown.
+- [Tool catalog composition](pain-points/tool-catalog-composition.md) — LLM-backed ownership, duplicate rejection, source precedence, and immutable execution snapshots.

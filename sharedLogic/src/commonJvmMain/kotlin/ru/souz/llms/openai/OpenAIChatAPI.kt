@@ -180,7 +180,7 @@ class OpenAIChatAPI(
             put("model", model)
             put("messages", buildMessages(body.messages))
             put("stream", stream)
-            if (stream) {
+            if (stream && settingsProvider.openAIEndpoint().isOfficial) {
                 put("stream_options", mapOf("include_usage" to true))
             }
 
@@ -651,7 +651,7 @@ class OpenAIChatAPI(
 
     private fun resolveChatModel(model: String): String {
         if (model.isOpenAiCompatibleCustomModel()) {
-            OpenAIEndpointConfig.customChatModel(settingsProvider)?.let { return it }
+            settingsProvider.openaiModel?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
         }
 
         findOpenAiModelAlias(model)?.let { return it }
@@ -669,8 +669,11 @@ class OpenAIChatAPI(
     }
 
     private fun resolveEmbeddingsModel(model: String): String {
-        if (model.equals("Embeddings", ignoreCase = true)) return defaultEmbeddingsModel
-        return model
+        val normalized = model.trim()
+        if (normalized.equals(ru.souz.llms.DEFAULT_EMBEDDINGS_MODEL, ignoreCase = true)) {
+            return defaultEmbeddingsModel
+        }
+        return normalized
     }
 
     private fun findOpenAiModelAlias(value: String): String? {
@@ -694,15 +697,17 @@ class OpenAIChatAPI(
     }
 
     private val chatCompletionsUrl: String
-        get() = OpenAIEndpointConfig.endpoint(settingsProvider, CHAT_COMPLETIONS_PATH)
+        get() = settingsProvider.openAIEndpoint().endpoint(CHAT_COMPLETIONS_PATH)
 
     private val embeddingsUrl: String
-        get() = OpenAIEndpointConfig.endpoint(settingsProvider, EMBEDDINGS_PATH)
+        get() = settingsProvider.openAIEndpoint().endpoint(EMBEDDINGS_PATH)
 }
 
 private fun String.isOpenAiCompatibleCustomModel(): Boolean =
-    equals(LLMModel.OpenAICompatibleCustom.alias, ignoreCase = true) ||
-        equals(LLMModel.OpenAICompatibleCustom.name, ignoreCase = true)
+    trim().let { normalized ->
+        normalized.equals(LLMModel.OpenAICompatibleCustom.alias, ignoreCase = true) ||
+            normalized.equals(LLMModel.OpenAICompatibleCustom.name, ignoreCase = true)
+    }
 
 private fun String.toNormalizedAssistantContent(): String? {
     if (this.isBlank()) return null

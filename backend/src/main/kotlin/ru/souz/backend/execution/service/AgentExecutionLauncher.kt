@@ -4,8 +4,10 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -15,6 +17,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
@@ -30,36 +33,23 @@ internal class AgentExecutionLauncher(
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
     private val leaseRefreshInterval: Duration = ClientThreadRuntimeRegistry.LEASE_REFRESH_INTERVAL,
 ) {
-    suspend fun startBackgroundExecution(
+    suspend fun prepareBackgroundExecution(
         execution: AgentExecution,
         eventSink: BackendAgentRuntimeEventSink,
         block: suspend () -> Unit,
-    ) {
-        val leaseJob = startClientThreadLeaseRefresh(execution)
-        val executionJob = executionScope.launch(start = CoroutineStart.LAZY) {
+    ): PreparedBackgroundExecution {
+        val prepared = prepareExecution(
+            owningScope = executionScope,
+            execution = execution,
+            eventSink = eventSink,
+        ) {
             try {
                 block()
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by the finalizer path.
-            } finally {
-                leaseJob?.cancelAndJoin()
             }
         }
-        executionJob.invokeOnCompletion { cause ->
-            executionScope.launch(NonCancellable) {
-                activeJobs.unregister(execution.id, executionJob)
-                if (cause is CancellationException) {
-                    finalizer.finalizeCancelledExecutionIfNeeded(
-                        executionId = execution.id,
-                        userId = execution.userId,
-                        chatId = execution.chatId,
-                        eventSink = eventSink,
-                    )
-                }
-            }
-        }
-        activeJobs.register(execution.id, executionJob)
-        executionJob.start()
+        return PreparedBackgroundExecution(prepared)
     }
 
     suspend fun <T> runTrackedExecution(
@@ -67,40 +57,93 @@ internal class AgentExecutionLauncher(
         eventSink: BackendAgentRuntimeEventSink,
         block: suspend () -> T,
     ): T = coroutineScope {
-        val leaseJob = startClientThreadLeaseRefresh(execution)
-        val executionJob = async(start = CoroutineStart.LAZY) {
-            block()
-        }
-
-        activeJobs.register(execution.id, executionJob)
-        executionJob.start()
+        val prepared = prepareExecution(
+            owningScope = this,
+            execution = execution,
+            eventSink = eventSink,
+            block = block,
+        )
+        prepared.start()
         try {
-            executionJob.await()
+            prepared.await()
         } catch (e: CancellationException) {
             if (!currentCoroutineContext().isActive) {
                 throw e
             }
-            finalizer.finalizeCancelledExecutionIfNeeded(
-                executionId = execution.id,
-                userId = execution.userId,
-                chatId = execution.chatId,
-                eventSink = eventSink,
-            )
             throw ExecutionCancelledException
-        } finally {
-            leaseJob?.cancelAndJoin()
-            activeJobs.unregister(execution.id, executionJob)
         }
     }
 
     suspend fun cancel(executionId: UUID): Boolean = activeJobs.cancel(executionId)
 
-    private suspend fun startClientThreadLeaseRefresh(execution: AgentExecution): Job? {
+    private suspend fun <T> prepareExecution(
+        owningScope: CoroutineScope,
+        execution: AgentExecution,
+        eventSink: BackendAgentRuntimeEventSink,
+        block: suspend () -> T,
+    ): PreparedExecution<T> {
+        val startSignal = CompletableDeferred<Unit>()
+        val lifecycleReady = CompletableDeferred<Unit>()
+        lateinit var executionJob: Deferred<T>
+        executionJob = owningScope.async(start = CoroutineStart.LAZY) {
+            lifecycleReady.complete(Unit)
+            var leaseJob: Job? = null
+            try {
+                startSignal.await()
+                leaseJob = startClientThreadLeaseRefresh(owningScope, execution)
+                block()
+            } catch (cancelled: CancellationException) {
+                withContext(NonCancellable) {
+                    finalizer.finalizeCancelledExecutionIfNeeded(
+                        executionId = execution.id,
+                        userId = execution.userId,
+                        chatId = execution.chatId,
+                        eventSink = eventSink,
+                    )
+                }
+                throw cancelled
+            } finally {
+                withContext(NonCancellable) {
+                    try {
+                        leaseJob?.cancelAndJoin()
+                    } finally {
+                        activeJobs.unregister(execution.id, executionJob)
+                    }
+                }
+            }
+        }
+        activeJobs.register(execution.id, executionJob)
+        executionJob.invokeOnCompletion { lifecycleReady.complete(Unit) }
+        executionJob.start()
+        lifecycleReady.await()
+        if (executionJob.isCompleted && activeJobs.contains(execution.id)) {
+            withContext(NonCancellable) {
+                try {
+                    if (executionJob.isCancelled) {
+                        finalizer.finalizeCancelledExecutionIfNeeded(
+                            executionId = execution.id,
+                            userId = execution.userId,
+                            chatId = execution.chatId,
+                            eventSink = eventSink,
+                        )
+                    }
+                } finally {
+                    activeJobs.unregister(execution.id, executionJob)
+                }
+            }
+        }
+        return PreparedExecution(startSignal, executionJob)
+    }
+
+    private suspend fun startClientThreadLeaseRefresh(
+        owningScope: CoroutineScope,
+        execution: AgentExecution,
+    ): Job? {
         val repository = executionRepository ?: return null
         val registry = clientThreadRegistry ?: return null
         if (!registry.contains(execution.id)) return null
         val owner = registry.runtimeOwner
-        return executionScope.launch {
+        return owningScope.launch {
             var leaseExpiresAt = execution.runtimeLeaseUntil ?: ClientThreadRuntimeRegistry.leaseUntil()
             while (isActive) {
                 delay(leaseRefreshInterval.toMillis())
@@ -146,6 +189,33 @@ internal class AgentExecutionLauncher(
             }
         }
     }
+}
+
+internal class PreparedBackgroundExecution internal constructor(
+    private val prepared: PreparedExecution<Unit>,
+) {
+    val isComplete: Boolean
+        get() = prepared.isComplete
+
+    fun start(): Boolean = prepared.start()
+
+    suspend fun awaitCompletion() {
+        prepared.join()
+    }
+}
+
+internal class PreparedExecution<T>(
+    private val startSignal: CompletableDeferred<Unit>,
+    private val executionJob: Deferred<T>,
+) {
+    val isComplete: Boolean
+        get() = executionJob.isCompleted
+
+    fun start(): Boolean = startSignal.complete(Unit)
+
+    suspend fun await(): T = executionJob.await()
+
+    suspend fun join() = executionJob.join()
 }
 
 internal object ExecutionCancelledException : CancellationException("Agent execution was cancelled.")

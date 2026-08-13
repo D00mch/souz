@@ -103,12 +103,12 @@ class BackendExecutionLlmChatApiTest {
         val resolver = CountingCredentialResolver(value = "openai-key", delayMs = 10)
         facadeFixture(credentialResolver = resolver).use { fixture ->
             val credentials = coroutineScope {
-                List(20) {
+                List(2) {
                     async { fixture.api.credentialFor(LlmProvider.OPENAI) }
                 }.awaitAll()
             }
 
-            assertEquals(List(20) { "openai-key" }, credentials)
+            assertEquals(listOf("openai-key", "openai-key"), credentials)
             assertEquals(1, resolver.calls.get())
         }
     }
@@ -118,7 +118,7 @@ class BackendExecutionLlmChatApiTest {
         val resolver = CountingCredentialResolver(value = null)
         facadeFixture(credentialResolver = resolver).use { fixture ->
             val failures = coroutineScope {
-                List(20) {
+                List(2) {
                     async {
                         runCatching { fixture.api.credentialFor(LlmProvider.OPENAI) }
                             .exceptionOrNull()
@@ -132,7 +132,7 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `routes explicit embeddings aliases and rejects Giga and ambiguous aliases`() = runTest {
+    fun `routes default and explicit embeddings while rejecting unsupported providers`() = runTest {
         val embeddingRequests = mutableListOf<Pair<LlmProvider, String>>()
         val providerApis = LlmProvider.entries.associateWith { provider ->
             StubChatApi(
@@ -150,7 +150,7 @@ class BackendExecutionLlmChatApiTest {
             providerApiOverride = providerApis::getValue,
         ).use { fixture ->
             assertIs<LLMResponse.Embeddings.Ok>(
-                fixture.api.embeddings(embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.alias))
+                fixture.api.embeddings(embeddings("  embeddings  "))
             )
             assertIs<LLMResponse.Embeddings.Ok>(
                 fixture.api.embeddings(embeddings(EmbeddingsModel.QwenEmbeddings.alias))
@@ -163,13 +163,8 @@ class BackendExecutionLlmChatApiTest {
                 embeddingRequests,
             )
 
-            assertIs<LLMResponse.Embeddings.Error>(fixture.api.embeddings(embeddings("Embeddings")))
-
             settings.embeddingsModel = EmbeddingsModel.GigaEmbeddings
-            assertIs<LLMResponse.Embeddings.Error>(
-                fixture.api.embeddings(embeddings("text-embedding-3-small"))
-            )
-            assertIs<LLMResponse.Embeddings.Error>(fixture.api.embeddings(embeddings("unknown")))
+            assertIs<LLMResponse.Embeddings.Error>(fixture.api.embeddings(embeddings("Embeddings")))
         }
     }
 

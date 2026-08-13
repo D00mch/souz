@@ -30,7 +30,8 @@ import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.repository.ToolCallRepository
-import ru.souz.llms.findLLMModel
+import ru.souz.llms.ModelResolution
+import ru.souz.llms.resolveChatModel
 import ru.souz.llms.LlmProvider
 
 internal data class HandledClientFrame(
@@ -373,12 +374,30 @@ internal class PublicClientService(
 
     private fun requestOverrides(meta: ClientRequestMeta?): UserSettingsOverrides = UserSettingsOverrides(
         defaultModel = meta?.model?.let { raw ->
-            val model = findLLMModel(raw)
-                ?: throw ClientContractException("invalid_request", "payload.meta.model must be a known model alias.")
-            if (model.provider == LlmProvider.GIGA) {
-                throw ClientContractException("invalid_request", BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
+            when (
+                val resolution = resolveChatModel(
+                    rawModel = raw,
+                    supportedProviders = BackendLlmSupport.chatProviders,
+                )
+            ) {
+                is ModelResolution.Resolved -> resolution.value
+                is ModelResolution.Unknown -> throw ClientContractException(
+                    "invalid_request",
+                    "payload.meta.model must be a known model alias.",
+                )
+                is ModelResolution.Ambiguous -> throw ClientContractException(
+                    "invalid_request",
+                    "payload.meta.model is ambiguous; use a model enum name.",
+                )
+                is ModelResolution.UnsupportedProvider -> {
+                    val message = if (resolution.provider == LlmProvider.GIGA) {
+                        BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE
+                    } else {
+                        "payload.meta.model uses an unsupported provider."
+                    }
+                    throw ClientContractException("invalid_request", message)
+                }
             }
-            model
         },
         locale = meta?.locale?.let { Locale.forLanguageTag(it).takeIf { locale -> locale.language.isNotBlank() } },
         timeZone = meta?.timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() },

@@ -105,7 +105,7 @@ internal class AgentExecutionRequestFactory(
             conversationKey = conversationKey(userId, chatId),
             runtimeRequest = BackendConversationTurnRequest(
                 prompt = content,
-                model = effectiveSettings.defaultModel.alias,
+                model = effectiveSettings.defaultModel,
                 contextSize = effectiveSettings.contextSize,
                 locale = effectiveSettings.locale.toLanguageTag(),
                 timeZone = effectiveSettings.timeZone.id,
@@ -146,7 +146,7 @@ internal class AgentExecutionRequestFactory(
         }
         return BackendConversationTurnRequest(
             prompt = option.toContinuationInput(),
-            model = model.alias,
+            model = model,
             contextSize = executionMetadataInt(execution, METADATA_CONTEXT_SIZE)
                 ?: throw internalError("Execution contextSize is missing."),
             locale = execution.metadata[METADATA_LOCALE]

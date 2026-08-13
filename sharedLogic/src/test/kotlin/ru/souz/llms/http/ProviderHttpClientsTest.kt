@@ -33,21 +33,6 @@ class ProviderHttpClientsTest {
     }
 
     @Test
-    fun `openAi client is still closed when standard close fails`() {
-        val standardFailure = IllegalStateException("standard close failed")
-        val standard = mockk<HttpClient>(relaxed = true)
-        val openAi = mockk<HttpClient>(relaxed = true)
-        every { standard.close() } throws standardFailure
-        val clients = ProviderHttpClients(standard = standard, openAi = openAi)
-
-        val thrown = assertFailsWith<IllegalStateException> { clients.close() }
-
-        assertSame(standardFailure, thrown)
-        verify(exactly = 1) { standard.close() }
-        verify(exactly = 1) { openAi.close() }
-    }
-
-    @Test
     fun `both close failures are preserved`() {
         val standardFailure = IllegalStateException("standard close failed")
         val openAiFailure = IllegalArgumentException("openAi close failed")

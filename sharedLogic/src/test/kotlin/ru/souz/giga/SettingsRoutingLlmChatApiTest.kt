@@ -22,12 +22,11 @@ import kotlin.test.assertIs
 class SettingsRoutingLlmChatApiTest {
 
     @Test
-    fun `embeddings injects selected alias when request uses default marker`() = runTest {
+    fun `embeddings normalizes default marker and explicit request model`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
 
         val aiTunnelApi = mockk<AiTunnelChatAPI>()
-
         val requestSlot = slot<LLMRequest.Embeddings>()
         coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
             data = emptyList(),
@@ -40,33 +39,8 @@ class SettingsRoutingLlmChatApiTest {
             apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
         )
 
-        router.embeddings(
-            LLMRequest.Embeddings(
-                input = listOf("hello"),
-            )
-        )
-
+        router.embeddings(LLMRequest.Embeddings(input = listOf("hello")))
         assertEquals(EmbeddingsModel.AiTunnelEmbeddingAda.alias, requestSlot.captured.model)
-    }
-
-    @Test
-    fun `embeddings keeps explicit request model`() = runTest {
-        val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
-
-        val aiTunnelApi = mockk<AiTunnelChatAPI>()
-
-        val requestSlot = slot<LLMRequest.Embeddings>()
-        coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
-            data = emptyList(),
-            model = EmbeddingsModel.AiTunnelEmbeddingAda.alias,
-            objectType = "list",
-        )
-
-        val router = SettingsRoutingLlmChatApi(
-            settingsProvider = settingsProvider,
-            apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
-        )
 
         router.embeddings(
             LLMRequest.Embeddings(

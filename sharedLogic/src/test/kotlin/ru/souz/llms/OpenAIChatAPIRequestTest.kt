@@ -5,7 +5,7 @@ import io.mockk.mockk
 import io.ktor.client.HttpClient
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.openai.OpenAIEndpointConfig
+import ru.souz.llms.openai.OpenAIEndpoint
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -26,6 +26,20 @@ class OpenAIChatAPIRequestTest {
         )
 
         assertEquals(mapOf("include_usage" to true), request["stream_options"])
+    }
+
+    @Test
+    fun `stream request omits usage option for custom compatible endpoints`() {
+        val request = invokeBuildChatRequest(
+            api = createApi(openaiBaseUrl = "https://example.test/openai/v1/"),
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAICompatibleCustom.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+            ),
+            stream = true,
+        )
+
+        assertEquals(null, request["stream_options"])
     }
 
     @Test
@@ -87,14 +101,24 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
-    fun `OpenAI endpoint uses configured compatible base url`() {
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.openaiBaseUrl } returns "https://example.test/openai/v1/"
-
+    fun `OpenAI endpoint normalizes custom and equivalent official urls`() {
         assertEquals(
             "https://example.test/openai/v1/chat/completions",
-            OpenAIEndpointConfig.endpoint(settingsProvider, "chat/completions"),
+            OpenAIEndpoint.from(" https://example.test/openai/v1/// ").endpoint("chat/completions"),
         )
+        listOf(
+            null,
+            "https://api.openai.com/v1",
+            " HTTPS://API.OPENAI.COM/v1/ ",
+            "https://api.openai.com:443/v1///",
+        ).forEach { baseUrl ->
+            val endpoint = OpenAIEndpoint.from(baseUrl)
+            assertTrue(endpoint.isOfficial)
+            assertEquals("https://api.openai.com/v1/chat/completions", endpoint.endpoint("chat/completions"))
+        }
+        assertTrue(!OpenAIEndpoint.from("http://api.openai.com/v1").isOfficial)
+        assertTrue(!OpenAIEndpoint.from("https://api.openai.com:444/v1").isOfficial)
+        assertTrue(!OpenAIEndpoint.from("https://example.test/v1").isOfficial)
     }
 
     @Test
@@ -556,10 +580,13 @@ class OpenAIChatAPIRequestTest {
         assertEquals(setOf("call_a", "call_b"), toolChoices.mapNotNull { it.message.functionsStateId }.toSet())
     }
 
-    private fun createApi(openaiModel: String? = null): OpenAIChatAPI {
+    private fun createApi(
+        openaiModel: String? = null,
+        openaiBaseUrl: String? = null,
+    ): OpenAIChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.openaiKey } returns "test-key"
-        every { settingsProvider.openaiBaseUrl } returns null
+        every { settingsProvider.openaiBaseUrl } returns openaiBaseUrl
         every { settingsProvider.openaiModel } returns openaiModel
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano

@@ -11,7 +11,6 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
-import ru.souz.backend.agent.runtime.BackendExecutionLlmToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
@@ -35,6 +34,7 @@ import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
+import ru.souz.tool.LlmBackedToolCatalog
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
@@ -116,7 +116,7 @@ internal class BackendConversationRuntimeFactory(
             client = providerHttpClients.openAi,
             apiKeyProvider = { executionApi.credentialFor(LlmProvider.OPENAI) },
         )
-        val executionLlmToolCatalog = BackendExecutionLlmToolCatalog(
+        val executionLlmToolCatalog = LlmBackedToolCatalog(
             llmApi = executionApi,
             settingsProvider = settingsProvider,
             filesToolUtil = filesToolUtil,

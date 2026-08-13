@@ -14,7 +14,6 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.findLLMModel
 import ru.souz.tool.ToolCategory
 
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
@@ -53,7 +52,7 @@ class BackendConversationSettingsProvider(
         request: BackendConversationTurnRequest,
         temperature: Float,
     ) {
-        this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
+        this.gigaModel = request.model
         this.contextSize = request.contextSize
         this.temperature = request.temperature ?: temperature
         this.regionProfile = localeToRegionProfile(request.locale)
@@ -62,9 +61,6 @@ class BackendConversationSettingsProvider(
         this.useFewShotExamples = request.useFewShotExamples ?: this.useFewShotExamples
         this.requestTimeoutMillis = request.requestTimeoutMillis ?: this.requestTimeoutMillis
     }
-
-    private fun parseModel(rawModel: String): LLMModel? =
-        findLLMModel(rawModel)
 
     private fun localeToRegionProfile(locale: String): String {
         val language = runCatching { Locale.forLanguageTag(locale).language.lowercase() }

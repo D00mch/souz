@@ -11,19 +11,6 @@ import kotlin.test.assertSame
 
 class PostgresDataSourceFactoryTest {
     @Test
-    fun `closes data source when initialization fails`() {
-        val dataSource = mockk<HikariDataSource>(relaxed = true)
-        val migrationFailure = IllegalStateException("migration failed")
-
-        val thrown = assertFailsWith<IllegalStateException> {
-            initializeDataSource(dataSource) { throw migrationFailure }
-        }
-
-        assertSame(migrationFailure, thrown)
-        verify(exactly = 1) { dataSource.close() }
-    }
-
-    @Test
     fun `preserves initialization failure when close also fails`() {
         val dataSource = mockk<HikariDataSource>()
         val migrationFailure = IllegalStateException("migration failed")

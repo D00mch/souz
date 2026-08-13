@@ -30,31 +30,26 @@ import kotlin.test.assertEquals
 
 class ProviderStreamingFlowTest {
     @Test
-    fun `OpenAI flow emits its terminal usage-only chunk`() = runTest {
-        val client = streamClient(OPEN_AI_STREAM)
-        val api = OpenAIChatAPI(settings(), client, apiKey = "openai-key")
+    fun `OpenAI-shaped flows emit their terminal usage-only chunk`() = runTest {
+        val cases: List<Pair<String, (HttpClient) -> LLMChatAPI>> = listOf(
+            LLMModel.OpenAIGpt5Nano.alias to { client ->
+                OpenAIChatAPI(settings(), client, apiKey = "openai-key")
+            },
+            LLMModel.AiTunnelGpt5Nano.alias to { client ->
+                AiTunnelChatAPI(settings(), client, apiKey = "tunnel-key")
+            },
+        )
 
-        val chunks = api.messageStream(chatRequest(LLMModel.OpenAIGpt5Nano.alias))
-            .filterIsInstance<LLMResponse.Chat.Ok>()
-            .toList()
+        cases.forEach { (model, apiFactory) ->
+            val client = streamClient(OPEN_AI_STREAM)
+            val chunks = apiFactory(client).messageStream(chatRequest(model))
+                .filterIsInstance<LLMResponse.Chat.Ok>()
+                .toList()
 
-        assertEquals(LLMResponse.Usage(7, 3, 10, 0), chunks.last().usage)
-        assertEquals(emptyList(), chunks.last().choices)
-        client.close()
-    }
-
-    @Test
-    fun `AiTunnel flow emits its terminal usage-only chunk`() = runTest {
-        val client = streamClient(OPEN_AI_STREAM)
-        val api = AiTunnelChatAPI(settings(), client, apiKey = "tunnel-key")
-
-        val chunks = api.messageStream(chatRequest(LLMModel.AiTunnelGpt5Nano.alias))
-            .filterIsInstance<LLMResponse.Chat.Ok>()
-            .toList()
-
-        assertEquals(LLMResponse.Usage(7, 3, 10, 0), chunks.last().usage)
-        assertEquals(emptyList(), chunks.last().choices)
-        client.close()
+            assertEquals(LLMResponse.Usage(7, 3, 10, 0), chunks.last().usage)
+            assertEquals(emptyList(), chunks.last().choices)
+            client.close()
+        }
     }
 
     @Test

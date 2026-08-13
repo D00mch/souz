@@ -158,7 +158,7 @@ class AgentExecutionRequestFactoryTest {
 
         val runtimeRequest = prepared.runtimeRequest
         assertEquals("Summarize this chat.", runtimeRequest.prompt)
-        assertEquals(LLMModel.QwenMax.alias, runtimeRequest.model)
+        assertEquals(LLMModel.QwenMax, runtimeRequest.model)
         assertEquals(32_000, runtimeRequest.contextSize)
         assertEquals("en-US", runtimeRequest.locale)
         assertEquals("UTC", runtimeRequest.timeZone)
@@ -235,7 +235,7 @@ class AgentExecutionRequestFactoryTest {
 
         val request = factory.createContinuationTurnRequest(execution, option)
 
-        assertEquals(LLMModel.QwenMax.alias, request.model)
+        assertEquals(LLMModel.QwenMax, request.model)
         assertEquals(24_000, request.contextSize)
         assertEquals("ru-RU", request.locale)
         assertEquals("Europe/Moscow", request.timeZone)

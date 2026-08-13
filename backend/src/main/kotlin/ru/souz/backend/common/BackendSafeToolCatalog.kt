@@ -2,10 +2,7 @@ package ru.souz.backend.common
 
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.files.ToolGenerateImage
-import ru.souz.tool.files.ToolViewImage
-import ru.souz.tool.web.ToolInternetResearch
-import ru.souz.tool.web.ToolInternetSearch
+import ru.souz.tool.LLM_BACKED_TOOL_NAMES
 
 val BACKEND_SAFE_TOOL_CATEGORIES: Set<ToolCategory> = setOf(
     ToolCategory.FILES,
@@ -36,10 +33,7 @@ data class BackendAvailableToolNames(
             BackendAvailableToolNames(
                 values = buildSet {
                     addAll(backendSafeToolNames(toolCatalog))
-                    add(ToolInternetSearch.NAME)
-                    add(ToolInternetResearch.NAME)
-                    add(ToolViewImage.NAME)
-                    add(ToolGenerateImage.NAME)
+                    addAll(LLM_BACKED_TOOL_NAMES)
                 }
             )
     }

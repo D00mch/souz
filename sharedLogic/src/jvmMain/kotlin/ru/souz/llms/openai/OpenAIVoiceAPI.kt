@@ -95,7 +95,7 @@ class OpenAIVoiceAPI(
     }
 
     private val transcriptionsUrl: String
-        get() = OpenAIEndpointConfig.endpoint(settingsProvider, TRANSCRIPTIONS_PATH)
+        get() = settingsProvider.openAIEndpoint().endpoint(TRANSCRIPTIONS_PATH)
 }
 
 internal fun buildOpenAiTranscriptionFormData(

@@ -51,7 +51,10 @@ class TokenLoggingChatApiTest {
         val api = TokenLoggingChatApi(
             delegate = StubChatApi(messageResponse = response),
             tokenLogging = tokenLogging { _, _ -> throw loggingFailure },
-            onLoggingFailure = failures::add,
+            onLoggingFailure = {
+                failures += it
+                error("observer failed")
+            },
         )
 
         assertSame(response, api.message(request()))
@@ -67,18 +70,6 @@ class TokenLoggingChatApiTest {
         )
 
         assertSame(cancellation, assertFailsWith<CancellationException> { api.message(request()) })
-    }
-
-    @Test
-    fun `logging failure observer cannot replace a successful response`() = runTest {
-        val response = okResponse()
-        val api = TokenLoggingChatApi(
-            delegate = StubChatApi(messageResponse = response),
-            tokenLogging = tokenLogging { _, _ -> error("log failed") },
-            onLoggingFailure = { error("observer failed") },
-        )
-
-        assertSame(response, api.message(request()))
     }
 
     private fun tokenLogging(

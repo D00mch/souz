@@ -109,7 +109,6 @@ fun backendDiModule(
     import(
         runtimeToolsDiModule(
             includeWebImageSearch = false,
-            includeLlmBackedTools = false,
             scopeResolver = BackendSandboxScopeResolver,
         )
     )
@@ -139,12 +138,10 @@ fun backendDiModule(
     bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
     bindSingleton {
         BackendRuntimeResources(
-            closeables = listOf(
-                instance<BackendApplicationScope>(),
-                instance<ProviderHttpClients>(),
-                instance<ru.souz.llms.local.LocalLlamaRuntime>(),
-                instance<HikariDataSource>(),
-            )
+            cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
+            closeProviderClients = { instance<ProviderHttpClients>().close() },
+            closeLocalRuntime = { instance<ru.souz.llms.local.LocalLlamaRuntime>().close() },
+            closeDataSource = { instance<HikariDataSource>().close() },
         )
     }
     bindSingleton { AgentEventBus() }

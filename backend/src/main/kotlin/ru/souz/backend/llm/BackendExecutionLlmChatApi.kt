@@ -15,15 +15,18 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.EmbeddingsModel
+import ru.souz.llms.EmbeddingsModelSelection
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.ModelResolution
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.codex.CodexOAuthService
-import ru.souz.llms.findLLMModel
+import ru.souz.llms.resolveChatModel
+import ru.souz.llms.resolveEmbeddingsModel
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.openai.OpenAIChatAPI
@@ -52,23 +55,39 @@ internal class BackendExecutionLlmChatApi(
     private var usage = initialUsage
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        val provider = chatProvider(body.model)
-            ?: return unsupportedChatModel(body.model)
-        val response = retryChat { apiFor(provider).message(body) }
+        val model = when (val resolution = chatModel(body.model)) {
+            is ModelResolution.Resolved -> resolution.value
+            else -> return unsupportedChatModel(resolution)
+        }
+        val response = retryChat { apiFor(model.provider).message(body.copy(model = model.alias)) }
         recordUsage(response)
         return response
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
-        val provider = chatProvider(body.model)
-            ?: return flow { emit(unsupportedChatModel(body.model)) }
-        val api = apiFor(provider)
-        return retryingStream(api, body)
+        val model = when (val resolution = chatModel(body.model)) {
+            is ModelResolution.Resolved -> resolution.value
+            else -> return flow { emit(unsupportedChatModel(resolution)) }
+        }
+        val api = apiFor(model.provider)
+        return retryingStream(api, body.copy(model = model.alias))
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
-        val model = embeddingModel(body.model)
-            ?: return unsupportedEmbeddingModel(body.model)
+        val configuredModel = settingsProvider.embeddingsModel
+        val model = when (
+            val resolution = resolveEmbeddingsModel(
+                rawModel = body.model,
+                configuredModel = configuredModel,
+                supportedProviders = BackendLlmSupport.embeddingProviders,
+            )
+        ) {
+            is ModelResolution.Resolved -> when (val selection = resolution.value) {
+                EmbeddingsModelSelection.Default -> configuredModel
+                is EmbeddingsModelSelection.Explicit -> selection.model
+            }
+            else -> return unsupportedEmbeddingModel(resolution)
+        }
         return apiFor(model.provider).embeddings(body.copy(model = model.alias))
     }
 
@@ -92,25 +111,12 @@ internal class BackendExecutionLlmChatApi(
 
     private fun currentProvider(): LlmProvider = settingsProvider.gigaModel.provider
 
-    private fun chatProvider(model: String): LlmProvider? =
-        findLLMModel(model)?.provider?.takeIf { it in BackendLlmSupport.chatProviders }
-
-    private fun embeddingModel(alias: String): EmbeddingsModel? {
-        val configured = settingsProvider.embeddingsModel
-        if (
-            configured.provider in BackendLlmSupport.embeddingProviders &&
-            configured.alias.equals(alias, ignoreCase = true)
-        ) {
-            return configured
-        }
-
-        return EmbeddingsModel.entries
-            .filter { model ->
-                model.provider in BackendLlmSupport.embeddingProviders &&
-                    model.alias.equals(alias, ignoreCase = true)
-            }
-            .singleOrNull()
-    }
+    private fun chatModel(model: String): ModelResolution<LLMModel> =
+        resolveChatModel(
+            rawModel = model,
+            supportedProviders = BackendLlmSupport.chatProviders,
+            preferredModel = settingsProvider.gigaModel,
+        )
 
     private suspend fun apiFor(provider: LlmProvider): LLMChatAPI {
         if (provider == LlmProvider.GIGA) error(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)
@@ -252,17 +258,24 @@ internal class BackendExecutionLlmChatApi(
         return min(retryPolicy.backoffBaseMs * (attempt + 1), retryPolicy.backoffMaxMs)
     }
 
-    private fun unsupportedChatModel(model: String): LLMResponse.Chat.Error =
-        LLMResponse.Chat.Error(-1, "Unsupported backend chat model: $model.")
+    private fun unsupportedChatModel(resolution: ModelResolution<*>): LLMResponse.Chat.Error =
+        LLMResponse.Chat.Error(-1, "Unsupported backend chat model: ${resolution.description()}.")
 
-    private fun unsupportedEmbeddingModel(model: String): LLMResponse.Embeddings.Error =
-        LLMResponse.Embeddings.Error(-1, "Unsupported backend embeddings model: $model.")
+    private fun unsupportedEmbeddingModel(resolution: ModelResolution<*>): LLMResponse.Embeddings.Error =
+        LLMResponse.Embeddings.Error(-1, "Unsupported backend embeddings model: ${resolution.description()}.")
 
     private companion object {
         const val TOO_MANY_REQUESTS = 429
         val RETRY_AFTER = Regex("""retry-after=(\d+)""", RegexOption.IGNORE_CASE)
         val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
     }
+}
+
+private fun ModelResolution<*>.description(): String = when (this) {
+    is ModelResolution.Resolved -> value.toString()
+    is ModelResolution.Unknown -> normalizedInput
+    is ModelResolution.Ambiguous -> "$normalizedInput is ambiguous"
+    is ModelResolution.UnsupportedProvider -> "provider $provider is unsupported"
 }
 
 private fun LLMResponse.Usage.plus(other: LLMResponse.Usage): LLMResponse.Usage =
