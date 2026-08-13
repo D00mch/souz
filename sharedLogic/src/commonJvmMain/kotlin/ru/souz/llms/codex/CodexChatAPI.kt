@@ -6,6 +6,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
@@ -38,11 +39,13 @@ class CodexChatAPI(
     private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
     private val oauthService: CodexOAuthService,
+    providedHttpClient: HttpClient? = null,
 ) : LLMChatAPI {
 
     private val l = LoggerFactory.getLogger(CodexChatAPI::class.java)
 
-    private val client = HttpClient(CIO) {
+    private val usesSharedHttpClient = providedHttpClient != null
+    private val client = providedHttpClient ?: HttpClient(CIO) {
         install(HttpTimeout) { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
         install(ContentNegotiation) {
             jackson { disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
@@ -79,6 +82,11 @@ class CodexChatAPI(
             val requestBody = buildResponsesRequest(body, stream = true)
 
             client.preparePost(CODEX_BASE_URL) {
+                if (usesSharedHttpClient) {
+                    timeout {
+                        requestTimeoutMillis = settingsProvider.requestTimeoutMillis
+                    }
+                }
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.Authorization, "Bearer ${credentials.accessToken}")
                 header("Chatgpt-Account-Id", credentials.accountId.orEmpty())

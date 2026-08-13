@@ -31,8 +31,8 @@ data class CodexOAuthCredentials(
 }
 
 /**
- * Storage boundary used by OAuth refresh. Compare-and-set prevents a stale refresh from replacing
- * credentials written by another process.
+ * Storage boundary used by OAuth refresh. Compare-and-set protects the persisted version, while
+ * backend implementations lease the entire reload-and-refresh operation across processes.
  */
 interface CodexOAuthCredentialStore {
     suspend fun load(): CodexOAuthCredentials?
@@ -41,6 +41,14 @@ interface CodexOAuthCredentialStore {
         expectedVersion: Long?,
         credentials: CodexOAuthCredentials,
     ): Boolean
+
+    /**
+     * Runs a refresh attempt with exclusive ownership and a fresh storage view. Backend stores
+     * override this with a distributed lease; desktop keeps its existing process-local behavior.
+     */
+    suspend fun <T> withRefreshLease(
+        action: suspend (leasedStore: CodexOAuthCredentialStore) -> T,
+    ): T = action(this)
 }
 
 /** Desktop adapter that keeps the existing SettingsProvider persistence behavior. */

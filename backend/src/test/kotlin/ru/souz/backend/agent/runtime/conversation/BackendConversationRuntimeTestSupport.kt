@@ -31,8 +31,8 @@ internal fun testBackendConversationRuntimeFactory(
     logObjectMapper: ObjectMapper,
     systemPrompt: String,
     toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
-    skillBundleProvider: SkillBundleProvider = EmptyTestSkillBundleProvider,
-    userSkillBundleProvider: SkillBundleProvider = skillBundleProvider,
+    clientSkillBundleProvider: SkillBundleProvider,
+    userSkillBundleProvider: SkillBundleProvider,
     clientToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     commandExecutor: SkillCommandExecutor = SkillCommandExecutor(
         sandboxResolver = ToolInvocationRuntimeSandboxResolver {
@@ -48,7 +48,7 @@ internal fun testBackendConversationRuntimeFactory(
     systemPrompt = systemPrompt,
     toolCatalog = toolCatalog,
     clientToolCatalog = clientToolCatalog,
-    skillBundleProvider = skillBundleProvider,
+    clientSkillBundleProvider = clientSkillBundleProvider,
     userSkillBundleProvider = userSkillBundleProvider,
     commandExecutor = commandExecutor,
     getKnowledgeTool = testCoreTool("GetKnowledge"),
@@ -73,7 +73,7 @@ private fun testCoreTool(name: String): LLMToolSetup = object : LLMToolSetup {
         )
 }
 
-private object EmptyTestSkillBundleProvider : SkillBundleProvider {
+internal object EmptyTestSkillBundleProvider : SkillBundleProvider {
     override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
 
     override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null

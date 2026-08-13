@@ -158,8 +158,8 @@ class PostgresDisposableBackendStateIntegrationTest {
             connection.prepareStatement(
                 """
                 select encrypted_payload
-                from backend_mutable_credentials
-                where credential_key = 'codex_oauth'
+                from backend_codex_oauth_credentials
+                where singleton = true
                 """.trimIndent()
             ).use { statement ->
                 statement.executeQuery().use { resultSet ->
@@ -221,21 +221,26 @@ class PostgresDisposableBackendStateIntegrationTest {
         val scratchRoot: Path,
     ) : AutoCloseable {
         private val fixedClock = Clock.fixed(NOW, ZoneOffset.UTC)
+        private val clientContext = routeTestContext()
+        private val clientSkills = BackendClientSkills(
+            registry = clientContext.clientThreadRegistry,
+            toolCallRepository = clientContext.toolCallRepository,
+            eventService = clientContext.eventService,
+        )
         val users = PostgresUserRepository(dataSource)
         val chats = PostgresChatRepository(dataSource)
-        val userSkills = PostgresSkillRegistryRepository(dataSource, clock = fixedClock)
+        val userSkills = PostgresSkillRegistryRepository(
+            dataSource = dataSource,
+            builtInSkillBundleHashes = clientSkills.bundleHashesBySkillId,
+            clock = fixedClock,
+        )
         val knowledge = PostgresConversationKnowledgeStore(dataSource)
         val credentials = PostgresCodexOAuthCredentialStore(
             dataSource = dataSource,
             masterKey = MASTER_KEY,
         )
-        private val clientContext = routeTestContext()
         val composedSkills = BackendSkillBundleProvider(
-            resourceSkills = BackendClientSkills(
-                registry = clientContext.clientThreadRegistry,
-                toolCallRepository = clientContext.toolCallRepository,
-                eventService = clientContext.eventService,
-            ),
+            resourceSkills = clientSkills,
             userSkills = userSkills,
         )
 

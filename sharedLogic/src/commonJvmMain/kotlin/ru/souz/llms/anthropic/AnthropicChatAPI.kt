@@ -5,11 +5,13 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.plugins.sse.sse
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.header
@@ -61,17 +63,32 @@ class AnthropicChatAPI private constructor(
     private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
     private val configuredApiKey: () -> String?,
+    providedHttpClient: HttpClient?,
 ) : LLMChatAPI {
     constructor(settingsProvider: SettingsProvider, tokenLogging: TokenLogging) : this(
         settingsProvider = settingsProvider,
         tokenLogging = tokenLogging,
         configuredApiKey = { settingsProvider.anthropicKey },
+        providedHttpClient = null,
     )
 
     constructor(settingsProvider: ProviderSettings, tokenLogging: TokenLogging, apiKey: String) : this(
         settingsProvider = settingsProvider,
         tokenLogging = tokenLogging,
         configuredApiKey = { apiKey },
+        providedHttpClient = null,
+    )
+
+    constructor(
+        settingsProvider: ProviderSettings,
+        tokenLogging: TokenLogging,
+        apiKey: String,
+        httpClient: HttpClient,
+    ) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { apiKey },
+        providedHttpClient = httpClient,
     )
 
     private val l = LoggerFactory.getLogger(AnthropicChatAPI::class.java)
@@ -86,7 +103,8 @@ class AnthropicChatAPI private constructor(
             ?: System.getProperty("ANTHROPIC_MODEL")
             ?: DEFAULT_ANTHROPIC_MODEL
 
-    private val client = HttpClient(CIO) {
+    private val usesSharedHttpClient = providedHttpClient != null
+    private val client = providedHttpClient ?: HttpClient(CIO) {
         anthropicDefaults(
             apiKey = apiKey,
             requestTimeoutMillis = settingsProvider.requestTimeoutMillis,
@@ -111,6 +129,7 @@ class AnthropicChatAPI private constructor(
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val model = resolveChatModel(body.model)
         val response = client.post(MESSAGES_URL) {
+            applyRequestSettings(jsonContent = true)
             header("anthropic-beta", FILES_API_BETA)
             setBody(buildChatRequest(body, model, stream = false))
         }
@@ -142,6 +161,7 @@ class AnthropicChatAPI private constructor(
                 urlString = MESSAGES_URL,
                 request = {
                     method = HttpMethod.Post
+                    applyRequestSettings(jsonContent = true)
                     header("anthropic-beta", FILES_API_BETA)
                     setBody(buildChatRequest(body, model, stream = true))
                 },
@@ -269,6 +289,7 @@ class AnthropicChatAPI private constructor(
                 )
             },
         ) {
+            applyRequestSettings(jsonContent = false)
             header("anthropic-beta", FILES_API_BETA)
         }
 
@@ -297,6 +318,19 @@ class AnthropicChatAPI private constructor(
 
     override suspend fun balance(): LLMResponse.Balance {
         return LLMResponse.Balance.Error(-1, "Balance check not implemented for Anthropic")
+    }
+
+    private fun HttpRequestBuilder.applyRequestSettings(jsonContent: Boolean) {
+        if (!usesSharedHttpClient) return
+        if (jsonContent) {
+            header(HttpHeaders.ContentType, "application/json")
+        }
+        header(HttpHeaders.Accept, "application/json")
+        apiKey?.takeIf { it.isNotBlank() }?.let { header("x-api-key", it) }
+        header("anthropic-version", "2023-06-01")
+        timeout {
+            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
+        }
     }
 
     private fun buildChatRequest(

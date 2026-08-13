@@ -6,6 +6,8 @@
 
 Accepted user inputs are `messages` with `inputSeq`, source, device, request ID, and request metadata. The execution keeps the latest revision and device JSON. Built-in client operations are tool-backed Skills loaded from an explicit classpath index. Their `SKILL.md` resources own IDs, categories, instructions, and timeouts, while their request-scoped catalog adapters share one WebSocket transport and forward generic argument objects.
 
+Built-in client Skill IDs form a reserved namespace at the PostgreSQL user Skill write boundary. The client-tools execution flag controls whether those reviewed resources are present; it never selects a tenant bundle with the same ID.
+
 The live registry owns only process-local runtime references, acknowledgement gates, and one pending client-tool waiter. A single coroutine mutex protects its state. Active public executions store a runtime owner and renewable lease in PostgreSQL. Terminal entries remain until the runtime is detached and pending acknowledgements and tool work are clear, then they are discarded. Disconnect does not cancel a waiter. Before the server accepts connections, startup recovery fails expired public thread leases and emits or retries the required `thread.failed`; it does not reconstruct waiters. Public `thread.status` frames and `GET /v1/chats/{chatId}/threads/{threadId}` read durable execution state and are not replay events.
 
 Live `message.submit`, `tool.result`, and `thread.cancel` frames must reach the process-local runtime owner while the thread is active. The current deployment contract is single-owner/sticky; a replica that has only the durable row and no local registry state rejects live frames as unavailable rather than treating the thread as terminal.
@@ -29,6 +31,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 - Keep active-thread WebSocket routing sticky to the runtime owner. Do not report a local registry miss as terminal while the durable execution is still running.
 - Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate client operations.
 - Keep built-in client Skills in their relevant request-scoped catalog categories. Define operation IDs, instructions, categories, argument examples, and timeouts in indexed backend `SKILL.md` resources.
+- Reject user Skill registrations whose ID belongs to a built-in client Skill before persisting the bundle.
 - Do not allow user or runtime Skills to select the client WebSocket transport. Only reviewed classpath resources may create those adapters.
 - Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
 

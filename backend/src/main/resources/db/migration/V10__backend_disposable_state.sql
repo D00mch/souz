@@ -109,15 +109,21 @@ create table conversation_knowledge (
   )
 );
 
-create table backend_mutable_credentials (
-  credential_key text primary key,
+create table backend_codex_oauth_credentials (
+  singleton boolean primary key default true,
   encrypted_payload bytea not null,
   version bigint not null check (version >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint backend_mutable_credentials_known_key check (credential_key = 'codex_oauth'),
-  constraint backend_mutable_credentials_encrypted_payload_check check (
+  constraint backend_codex_oauth_credentials_singleton check (singleton),
+  constraint backend_codex_oauth_credentials_encrypted_payload_check check (
     octet_length(encrypted_payload) > 7
     and substring(encrypted_payload from 1 for 7) = convert_to('enc:v1:', 'UTF8')
   )
+);
+
+create table backend_codex_oauth_bootstrap (
+  singleton boolean primary key default true,
+  completed_at timestamptz not null default now(),
+  constraint backend_codex_oauth_bootstrap_singleton check (singleton)
 );

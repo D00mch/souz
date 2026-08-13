@@ -1,7 +1,9 @@
 package ru.souz.backend.skills
 
+import java.sql.Types
 import java.time.Clock
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -28,6 +30,7 @@ import ru.souz.backend.storage.postgres.PostgresSkillRegistryRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
+import ru.souz.llms.restJsonMapper
 
 class PostgresSkillRegistryRepositoryTest {
     @Test
@@ -69,8 +72,8 @@ class PostgresSkillRegistryRepositoryTest {
             val repository = repository(it)
             val firstBundle = bundle("validated", "first")
             val secondBundle = bundle("validated", "second")
+            val secondHash = SkillBundleHasher.hash(secondBundle)
             val firstHash = repository.saveSkillBundle(USER_A, firstBundle).bundleHash
-            val secondHash = repository.saveSkillBundle(USER_A, secondBundle).bundleHash
             repository.saveSkillBundle(USER_B, firstBundle)
             val record = validation(USER_A, firstBundle.skillId, firstHash, POLICY_A)
             repository.saveValidation(record)
@@ -83,6 +86,10 @@ class PostgresSkillRegistryRepositoryTest {
             assertNull(repository.getValidation(USER_A, firstBundle.skillId, secondHash, POLICY_A))
             assertNull(repository.getValidation(USER_A, firstBundle.skillId, firstHash, POLICY_B))
             assertNull(repository.getValidation(USER_A, SkillId("different"), firstHash, POLICY_A))
+
+            assertEquals(secondHash, repository.saveSkillBundle(USER_A, secondBundle).bundleHash)
+            assertNull(repository.getValidation(USER_A, firstBundle.skillId, firstHash, POLICY_A))
+            assertNull(repository.getValidation(USER_A, firstBundle.skillId, secondHash, POLICY_A))
         }
     }
 
@@ -92,12 +99,15 @@ class PostgresSkillRegistryRepositoryTest {
         val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
         dataSource.use {
             PostgresUserRepository(it).ensureUser(USER_A)
-            val repository = repository(it)
             val record = validation(
                 userId = USER_A,
                 skillId = SkillId("resource-skill"),
                 bundleHash = "a".repeat(64),
                 policyVersion = POLICY_A,
+            )
+            val repository = repository(
+                dataSource = it,
+                builtInSkillBundleHashes = mapOf(record.skillId to record.bundleHash),
             )
 
             repository.saveValidation(record)
@@ -118,6 +128,188 @@ class PostgresSkillRegistryRepositoryTest {
                         assertEquals(0, resultSet.getInt(1))
                     }
                 }
+            }
+        }
+    }
+
+    @Test
+    fun `replacement removes obsolete validations and collects bundle after its final registration leaves`() = runTest {
+        val schema = newPostgresSchema("postgres_skill_replacement_cleanup")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
+        dataSource.use {
+            val users = PostgresUserRepository(it)
+            users.ensureUser(USER_A)
+            users.ensureUser(USER_B)
+            val repository = repository(it)
+            val firstBundle = bundle("shared-skill", "first")
+            val secondBundle = bundle("shared-skill", "second")
+            val firstHash = repository.saveSkillBundle(USER_A, firstBundle).bundleHash
+            val secondHash = SkillBundleHasher.hash(secondBundle)
+            repository.saveSkillBundle(USER_B, firstBundle)
+
+            val firstUserValidation = validation(USER_A, firstBundle.skillId, firstHash, POLICY_A)
+            val secondUserValidation = validation(USER_B, firstBundle.skillId, firstHash, POLICY_A)
+            val historicalValidation = validation(
+                USER_A,
+                firstBundle.skillId,
+                "c".repeat(64),
+                POLICY_B,
+            )
+            val currentValidation = validation(USER_A, secondBundle.skillId, secondHash, POLICY_B)
+            repository.saveValidation(firstUserValidation)
+            repository.saveValidation(secondUserValidation)
+            insertValidationDirectly(it, historicalValidation)
+
+            repository.saveSkillBundle(USER_A, secondBundle)
+            repository.saveValidation(currentValidation)
+
+            assertNull(repository.getValidation(USER_A, firstBundle.skillId, firstHash, POLICY_A))
+            assertNull(
+                repository.getValidation(
+                    USER_A,
+                    firstBundle.skillId,
+                    historicalValidation.bundleHash,
+                    POLICY_B,
+                )
+            )
+            assertEquals(
+                currentValidation,
+                repository.getValidation(USER_A, secondBundle.skillId, secondHash, POLICY_B),
+            )
+            assertEquals(
+                secondUserValidation,
+                repository.getValidation(USER_B, firstBundle.skillId, firstHash, POLICY_A),
+            )
+            assertEquals(firstBundle.manifest, repository.loadSkillBundle(USER_B, firstBundle.skillId)?.manifest)
+            assertEquals(1, storedBundleCount(it, firstHash))
+            assertEquals(firstBundle.files.size, storedBundleFileCount(it, firstHash))
+
+            repository.saveSkillBundle(USER_B, secondBundle)
+
+            assertNull(repository.getValidation(USER_B, firstBundle.skillId, firstHash, POLICY_A))
+            assertEquals(0, storedBundleCount(it, firstHash))
+            assertEquals(0, storedBundleFileCount(it, firstHash))
+            assertEquals(secondBundle.manifest, repository.loadSkillBundle(USER_A, secondBundle.skillId)?.manifest)
+            assertEquals(secondBundle.manifest, repository.loadSkillBundle(USER_B, secondBundle.skillId)?.manifest)
+        }
+    }
+
+    @Test
+    fun `bundle cleanup cannot race a different user registering the same hash`() = runTest {
+        val schema = newPostgresSchema("postgres_skill_bundle_gc_race")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
+        dataSource.use { sharedDataSource ->
+            val users = PostgresUserRepository(sharedDataSource)
+            users.ensureUser(USER_A)
+            users.ensureUser(USER_B)
+            val first = repository(sharedDataSource)
+            val second = repository(sharedDataSource)
+
+            repeat(12) { index ->
+                val skillId = "gc-race-$index"
+                val oldBundle = bundle(skillId, "old-$index")
+                val replacement = bundle(skillId, "replacement-$index")
+                val oldHash = first.saveSkillBundle(USER_A, oldBundle).bundleHash
+
+                coroutineScope {
+                    listOf(
+                        async(Dispatchers.Default) {
+                            first.saveSkillBundle(USER_A, replacement)
+                        },
+                        async(Dispatchers.Default) {
+                            second.saveSkillBundle(USER_B, oldBundle)
+                        },
+                    ).awaitAll()
+                }
+
+                val retained = assertNotNull(first.loadSkillBundle(USER_B, oldBundle.skillId))
+                assertEquals(oldHash, SkillBundleHasher.hash(retained))
+                assertEquals(1, storedBundleCount(sharedDataSource, oldHash))
+            }
+        }
+    }
+
+    @Test
+    fun `reserved client Skill IDs are rejected before persistence`() = runTest {
+        val schema = newPostgresSchema("postgres_reserved_skill_id")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
+        dataSource.use {
+            PostgresUserRepository(it).ensureUser(USER_A)
+            val reservedId = SkillId("user.ask")
+            val repository = PostgresSkillRegistryRepository(
+                dataSource = it,
+                builtInSkillBundleHashes = mapOf(reservedId to "a".repeat(64)),
+                clock = Clock.fixed(NOW, ZoneOffset.UTC),
+            )
+
+            val error = assertFailsWith<IllegalArgumentException> {
+                repository.saveSkillBundle(USER_A, bundle(reservedId.value, "tenant override"))
+            }
+
+            assertTrue(error.message.orEmpty().contains(reservedId.value))
+            assertTrue(repository.listSkills(USER_A).isEmpty())
+            assertEquals(0, storedBundleCount(it))
+        }
+    }
+
+    @Test
+    fun `validation rejects bundles that are neither registered nor built in`() = runTest {
+        val schema = newPostgresSchema("postgres_unregistered_validation")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
+        dataSource.use {
+            PostgresUserRepository(it).ensureUser(USER_A)
+            val repository = repository(it)
+            val record = validation(
+                userId = USER_A,
+                skillId = SkillId("unregistered"),
+                bundleHash = "b".repeat(64),
+                policyVersion = POLICY_A,
+            )
+
+            assertFailsWith<IllegalArgumentException> {
+                repository.saveValidation(record)
+            }
+            assertNull(
+                repository.getValidation(
+                    record.userId,
+                    record.skillId,
+                    record.bundleHash,
+                    record.policyVersion,
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `concurrent replacement cannot leave validation for the old bundle`() = runTest {
+        val schema = newPostgresSchema("postgres_skill_validation_race")
+        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
+        dataSource.use { sharedDataSource ->
+            PostgresUserRepository(sharedDataSource).ensureUser(USER_A)
+            val first = repository(sharedDataSource)
+            val second = repository(sharedDataSource)
+
+            repeat(12) { index ->
+                val skillId = "validation-race-$index"
+                val oldBundle = bundle(skillId, "old-$index")
+                val replacement = bundle(skillId, "replacement-$index")
+                val oldHash = first.saveSkillBundle(USER_A, oldBundle).bundleHash
+                val oldValidation = validation(USER_A, oldBundle.skillId, oldHash, POLICY_A)
+
+                coroutineScope {
+                    listOf(
+                        async(Dispatchers.Default) {
+                            first.saveSkillBundle(USER_A, replacement)
+                        },
+                        async(Dispatchers.Default) {
+                            runCatching { second.saveValidation(oldValidation) }
+                        },
+                    ).awaitAll()
+                }
+
+                assertNull(
+                    first.getValidation(USER_A, oldBundle.skillId, oldHash, POLICY_A)
+                )
             }
         }
     }
@@ -147,6 +339,7 @@ class PostgresSkillRegistryRepositoryTest {
                 SkillBundleHasher.hash(loaded),
                 repositories.last().listSkills(USER_A).single().bundleHash,
             )
+            assertEquals(1, storedBundleCount(sharedDataSource))
         }
     }
 
@@ -186,10 +379,74 @@ class PostgresSkillRegistryRepositoryTest {
         }
     }
 
-    private fun repository(dataSource: javax.sql.DataSource) = PostgresSkillRegistryRepository(
+    private fun repository(
+        dataSource: javax.sql.DataSource,
+        builtInSkillBundleHashes: Map<SkillId, String> = emptyMap(),
+    ) = PostgresSkillRegistryRepository(
         dataSource = dataSource,
+        builtInSkillBundleHashes = builtInSkillBundleHashes,
         clock = Clock.fixed(NOW, ZoneOffset.UTC),
     )
+
+    private fun insertValidationDirectly(
+        dataSource: javax.sql.DataSource,
+        record: SkillValidationRecord,
+    ) {
+        dataSource.connection.use { connection ->
+            connection.prepareStatement(
+                """
+                insert into skill_validations(
+                  user_id, skill_id, bundle_hash, policy_version,
+                  approved, findings_json, created_at, updated_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, record.userId)
+                statement.setString(2, record.skillId.value)
+                statement.setString(3, record.bundleHash)
+                statement.setString(4, record.policyVersion)
+                statement.setBoolean(5, record.approved)
+                statement.setObject(6, restJsonMapper.writeValueAsString(record.findings), Types.OTHER)
+                statement.setObject(7, OffsetDateTime.ofInstant(record.createdAt, ZoneOffset.UTC))
+                statement.setObject(8, OffsetDateTime.ofInstant(record.createdAt, ZoneOffset.UTC))
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    private fun storedBundleCount(
+        dataSource: javax.sql.DataSource,
+        bundleHash: String? = null,
+    ): Int = dataSource.connection.use { connection ->
+        val sql = if (bundleHash == null) {
+            "select count(*) from skill_bundles"
+        } else {
+            "select count(*) from skill_bundles where bundle_hash = ?"
+        }
+        connection.prepareStatement(sql).use { statement ->
+            if (bundleHash != null) statement.setString(1, bundleHash)
+            statement.executeQuery().use { resultSet ->
+                assertTrue(resultSet.next())
+                resultSet.getInt(1)
+            }
+        }
+    }
+
+    private fun storedBundleFileCount(
+        dataSource: javax.sql.DataSource,
+        bundleHash: String,
+    ): Int = dataSource.connection.use { connection ->
+        connection.prepareStatement(
+            "select count(*) from skill_bundle_files where bundle_hash = ?"
+        ).use { statement ->
+            statement.setString(1, bundleHash)
+            statement.executeQuery().use { resultSet ->
+                assertTrue(resultSet.next())
+                resultSet.getInt(1)
+            }
+        }
+    }
 
     private fun validation(
         userId: String,

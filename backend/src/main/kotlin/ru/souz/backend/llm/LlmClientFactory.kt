@@ -16,17 +16,11 @@ data class BackendLlmExecutionContext(
     val settingsProvider: ProviderSettings,
 )
 
-data class SharedProviderTransport(
-    val id: String,
-)
-
 interface ProviderChatApiBuilder {
     fun build(
         provider: LlmProvider,
         settingsProvider: ProviderSettings,
         apiKey: String,
-        sharedTransport: SharedProviderTransport,
-        executionContext: BackendLlmExecutionContext,
     ): LLMChatAPI
 }
 
@@ -38,16 +32,11 @@ class BackendLlmClientFactory(
     private val credentialResolver: ProviderCredentialResolver,
     private val providerClientFactory: ProviderChatApiBuilder,
 ) : LlmClientFactory {
-    private val transports = LlmProvider.entries.associateWith { provider ->
-        SharedProviderTransport(id = provider.name.lowercase())
-    }
-
     override suspend fun create(context: BackendLlmExecutionContext): LLMChatAPI =
         RoutingLlmChatApi(
             context = context,
             credentialResolver = credentialResolver,
             providerClientFactory = providerClientFactory,
-            transports = transports,
         )
 }
 
@@ -55,7 +44,6 @@ private class RoutingLlmChatApi(
     private val context: BackendLlmExecutionContext,
     private val credentialResolver: ProviderCredentialResolver,
     private val providerClientFactory: ProviderChatApiBuilder,
-    private val transports: Map<LlmProvider, SharedProviderTransport>,
 ) : LLMChatAPI {
     private val mutex = Mutex()
     private val apis = LinkedHashMap<LlmProvider, LLMChatAPI>()
@@ -89,8 +77,6 @@ private class RoutingLlmChatApi(
                 provider = provider,
                 settingsProvider = context.settingsProvider,
                 apiKey = credential.apiKey,
-                sharedTransport = transports.getValue(provider),
-                executionContext = context,
             ).also { api -> apis[provider] = api }
         }
     }

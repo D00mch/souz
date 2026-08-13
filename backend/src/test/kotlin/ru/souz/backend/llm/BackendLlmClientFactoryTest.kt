@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertSame
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -46,40 +45,6 @@ class BackendLlmClientFactoryTest {
         userAApi.message(sampleRequest(LLMModel.OpenAIGpt52.alias))
         userBApi.message(sampleRequest(LLMModel.OpenAIGpt52.alias))
 
-        assertEquals("user-a", builder.invocations[0].userId)
-        assertEquals("user-a-openai", builder.invocations[0].apiKey)
-        assertEquals("user-b", builder.invocations[1].userId)
-        assertEquals("server-openai-key", builder.invocations[1].apiKey)
-    }
-
-    @Test
-    fun `shared transport is reused while execution scoped credentials stay isolated`() = runTest {
-        val builder = RecordingProviderChatApiBuilder()
-        val factory = BackendLlmClientFactory(
-            credentialResolver = StaticProviderCredentialResolver(
-                serverManaged = mapOf(LlmProvider.OPENAI to "server-openai-key"),
-                userManaged = mapOf("user-a" to mapOf(LlmProvider.OPENAI to "user-a-openai")),
-            ),
-            providerClientFactory = builder,
-        )
-
-        factory.create(
-            BackendLlmExecutionContext(
-                userId = "user-a",
-                executionId = "exec-a",
-                settingsProvider = TestSettingsProvider().apply { gigaModel = LLMModel.OpenAIGpt52 },
-            )
-        ).message(sampleRequest(LLMModel.OpenAIGpt52.alias))
-        factory.create(
-            BackendLlmExecutionContext(
-                userId = "user-b",
-                executionId = "exec-b",
-                settingsProvider = TestSettingsProvider().apply { gigaModel = LLMModel.OpenAIGpt52 },
-            )
-        ).message(sampleRequest(LLMModel.OpenAIGpt52.alias))
-
-        assertEquals(2, builder.invocations.size)
-        assertSame(builder.invocations[0].transport, builder.invocations[1].transport)
         assertEquals(
             listOf("user-a-openai", "server-openai-key"),
             builder.invocations.map { it.apiKey },
@@ -145,16 +110,12 @@ private class RecordingProviderChatApiBuilder : ProviderChatApiBuilder {
         provider: LlmProvider,
         settingsProvider: ProviderSettings,
         apiKey: String,
-        sharedTransport: SharedProviderTransport,
-        executionContext: BackendLlmExecutionContext,
     ): LLMChatAPI {
         return object : LLMChatAPI {
             override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
                 invocations += ProviderClientInvocation(
-                    userId = executionContext.userId,
                     provider = provider,
                     apiKey = apiKey,
-                    transport = sharedTransport,
                 )
                 return LLMResponse.Chat.Error(499, "recorded only")
             }
@@ -177,10 +138,8 @@ private class RecordingProviderChatApiBuilder : ProviderChatApiBuilder {
 }
 
 private data class ProviderClientInvocation(
-    val userId: String,
     val provider: LlmProvider,
     val apiKey: String,
-    val transport: SharedProviderTransport,
 )
 
 private class StaticProviderCredentialResolver(

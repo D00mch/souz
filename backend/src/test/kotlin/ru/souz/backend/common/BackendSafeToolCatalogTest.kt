@@ -25,7 +25,7 @@ class BackendSafeToolCatalogTest {
     }
 
     @Test
-    fun `capability filtering uses an explicit name allowlist within safe categories`() {
+    fun `capability filtering derives safe names and categories from the backend catalog`() {
         val catalog = object : AgentToolCatalog {
             override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
                 ToolCategory.WEB_SEARCH to mapOf(

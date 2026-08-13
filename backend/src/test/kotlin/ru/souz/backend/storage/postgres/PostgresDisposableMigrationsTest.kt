@@ -37,7 +37,8 @@ class PostgresDisposableMigrationsTest {
                 "user_skill_registrations",
                 "skill_validations",
                 "conversation_knowledge",
-                "backend_mutable_credentials",
+                "backend_codex_oauth_credentials",
+                "backend_codex_oauth_bootstrap",
             )
             durableTables.forEach { table ->
                 assertNotNull(registeredTable(dataSource, table), "Missing migrated table $table")
@@ -51,16 +52,16 @@ class PostgresDisposableMigrationsTest {
             assertTrue(knowledgeForeignKey.contains("REFERENCES chats(user_id, id) ON DELETE CASCADE"))
             assertTrue(constraintDefinition(dataSource, "conversation_knowledge_content_shape").contains("CHECK"))
             assertTrue(
-                constraintDefinition(dataSource, "backend_mutable_credentials_known_key")
-                    .contains("codex_oauth")
+                constraintDefinition(dataSource, "backend_codex_oauth_credentials_singleton")
+                    .contains("singleton")
             )
 
             val plaintextFailure = assertFailsWith<SQLException> {
                 dataSource.write { connection ->
                     connection.prepareStatement(
                         """
-                        insert into backend_mutable_credentials(credential_key, encrypted_payload, version)
-                        values ('codex_oauth', convert_to('plaintext', 'UTF8'), 0)
+                        insert into backend_codex_oauth_credentials(singleton, encrypted_payload, version)
+                        values (true, convert_to('plaintext', 'UTF8'), 0)
                         """.trimIndent()
                     ).use { statement -> statement.executeUpdate() }
                 }

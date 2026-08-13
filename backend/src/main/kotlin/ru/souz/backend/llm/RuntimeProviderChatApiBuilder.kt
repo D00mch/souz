@@ -18,22 +18,34 @@ class RuntimeProviderChatApiBuilder(
     private val tokenLogging: TokenLogging,
     private val retryPolicy: BackendProviderRetryPolicy,
     private val codexOAuthService: CodexOAuthService,
+    private val providerHttpClients: BackendProviderHttpClients,
 ) : ProviderChatApiBuilder {
     override fun build(
         provider: LlmProvider,
         settingsProvider: ProviderSettings,
         apiKey: String,
-        sharedTransport: SharedProviderTransport,
-        executionContext: BackendLlmExecutionContext,
     ): LLMChatAPI {
+        check(provider != LlmProvider.LOCAL) { "Local provider is handled separately." }
+        val httpClient = providerHttpClients.clientFor(provider)
         val api = when (provider) {
-            LlmProvider.GIGA -> GigaRestChatAPI(GigaAuth(settingsProvider), settingsProvider, tokenLogging, apiKey)
-            LlmProvider.QWEN -> QwenChatAPI(settingsProvider, tokenLogging, apiKey)
-            LlmProvider.AI_TUNNEL -> AiTunnelChatAPI(settingsProvider, tokenLogging, apiKey)
-            LlmProvider.ANTHROPIC -> AnthropicChatAPI(settingsProvider, tokenLogging, apiKey)
-            LlmProvider.OPENAI -> OpenAIChatAPI(settingsProvider, tokenLogging, apiKey)
-            LlmProvider.LOCAL -> error("Local provider is handled separately.")
-            LlmProvider.CODEX -> CodexChatAPI(settingsProvider, tokenLogging, codexOAuthService)
+            LlmProvider.GIGA -> GigaRestChatAPI(
+                auth = GigaAuth(settingsProvider, httpClient),
+                settingsProvider = settingsProvider,
+                tokenLogging = tokenLogging,
+                apiKey = apiKey,
+                httpClient = httpClient,
+            )
+            LlmProvider.QWEN -> QwenChatAPI(settingsProvider, tokenLogging, apiKey, httpClient)
+            LlmProvider.AI_TUNNEL -> AiTunnelChatAPI(settingsProvider, tokenLogging, apiKey, httpClient)
+            LlmProvider.ANTHROPIC -> AnthropicChatAPI(settingsProvider, tokenLogging, apiKey, httpClient)
+            LlmProvider.OPENAI -> OpenAIChatAPI(settingsProvider, tokenLogging, apiKey, httpClient)
+            LlmProvider.LOCAL -> error("Unreachable after the local provider check.")
+            LlmProvider.CODEX -> CodexChatAPI(
+                settingsProvider = settingsProvider,
+                tokenLogging = tokenLogging,
+                oauthService = codexOAuthService,
+                providedHttpClient = httpClient,
+            )
         }
         return RetryingLlmChatApi(
             delegate = api,

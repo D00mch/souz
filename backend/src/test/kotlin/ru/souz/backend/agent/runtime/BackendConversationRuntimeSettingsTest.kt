@@ -25,6 +25,7 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.conversation.BackendExecutionToolCatalog
+import ru.souz.backend.agent.runtime.conversation.EmptyTestSkillBundleProvider
 import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.LLMChatAPI
@@ -54,6 +55,8 @@ class BackendConversationRuntimeSettingsTest {
                 capturedTimeouts += context.settingsProvider.requestTimeoutMillis
                 ReplyingChatApi()
             },
+            clientSkillBundleProvider = EmptyTestSkillBundleProvider,
+            userSkillBundleProvider = EmptyTestSkillBundleProvider,
         )
         val request = turnRequest().copy(requestTimeoutMillis = 45_000L)
 
@@ -111,6 +114,8 @@ class BackendConversationRuntimeSettingsTest {
                 tool = fakeTool(name = "ListFiles", fewShotExamples = emptyList()),
             ),
             clientToolCatalog = clientTools,
+            clientSkillBundleProvider = EmptyTestSkillBundleProvider,
+            userSkillBundleProvider = EmptyTestSkillBundleProvider,
         )
         val request = turnRequest().copy(
             enabledTools = emptySet(),
@@ -148,6 +153,8 @@ class BackendConversationRuntimeSettingsTest {
         val runtimeFactory = runtimeFactory(
             llmApiFactory = { api },
             clientToolCatalog = clientTools,
+            clientSkillBundleProvider = EmptyTestSkillBundleProvider,
+            userSkillBundleProvider = EmptyTestSkillBundleProvider,
         )
         val request = turnRequest().copy(
             enabledTools = emptySet(),
@@ -174,7 +181,7 @@ class BackendConversationRuntimeSettingsTest {
         val proxyRequest = turnRequest().copy(clientToolsEnabled = false)
         runtimeFactory(
             llmApiFactory = { proxyApi },
-            skillBundleProvider = composedSkills,
+            clientSkillBundleProvider = composedSkills,
             userSkillBundleProvider = userSkills,
         ).create(
             conversationKey(),
@@ -193,7 +200,7 @@ class BackendConversationRuntimeSettingsTest {
         val clientRequest = turnRequest().copy(clientToolsEnabled = true)
         runtimeFactory(
             llmApiFactory = { clientApi },
-            skillBundleProvider = composedSkills,
+            clientSkillBundleProvider = composedSkills,
             userSkillBundleProvider = userSkills,
         ).create(conversationKey(), clientRequest).execute(
             request = clientRequest,
@@ -215,6 +222,8 @@ class BackendConversationRuntimeSettingsTest {
         val runtimeFactory = runtimeFactory(
             llmApiFactory = { api },
             toolCatalog = singleToolCatalog(ToolCategory.HELP, captureTool),
+            clientSkillBundleProvider = EmptyTestSkillBundleProvider,
+            userSkillBundleProvider = EmptyTestSkillBundleProvider,
         )
 
         runtimeFactory.create(key, request).execute(
@@ -281,7 +290,8 @@ class BackendConversationRuntimeSettingsTest {
                 sessionRepository = InMemoryAgentSessionRepository(),
                 logObjectMapper = jacksonObjectMapper(),
                 systemPrompt = "backend test prompt",
-                skillBundleProvider = skillRegistry,
+                clientSkillBundleProvider = skillRegistry,
+                userSkillBundleProvider = skillRegistry,
                 commandExecutor = commandExecutor,
                 agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             )
@@ -347,8 +357,8 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
-    skillBundleProvider: SkillBundleProvider = InventorySkillBundleProvider(),
-    userSkillBundleProvider: SkillBundleProvider = skillBundleProvider,
+    clientSkillBundleProvider: SkillBundleProvider,
+    userSkillBundleProvider: SkillBundleProvider,
 ): BackendConversationRuntimeFactory =
     ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
@@ -358,7 +368,7 @@ private fun runtimeFactory(
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,
         clientToolCatalog = clientToolCatalog,
-        skillBundleProvider = skillBundleProvider,
+        clientSkillBundleProvider = clientSkillBundleProvider,
         userSkillBundleProvider = userSkillBundleProvider,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )

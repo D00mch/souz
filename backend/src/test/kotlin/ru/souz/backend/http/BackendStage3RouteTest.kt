@@ -37,6 +37,7 @@ import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
+import ru.souz.backend.agent.runtime.conversation.EmptyTestSkillBundleProvider
 import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.chat.model.Chat
@@ -1297,6 +1298,8 @@ internal fun routeTestContext(
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
         clientToolCatalog = clientSkills,
+        clientSkillBundleProvider = clientSkills,
+        userSkillBundleProvider = EmptyTestSkillBundleProvider,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
     val conversationTurnRunner = turnRunner ?: BackendConversationRuntimeTurnRunner(runtimeFactory, clientThreadRegistry)

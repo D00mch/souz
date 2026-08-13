@@ -81,7 +81,7 @@ curl -X PATCH http://127.0.0.1:8080/v1/me/settings \
   -d '{"defaultModel":"gpt-5.2"}'
 ```
 
-Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` to seed an empty backend database, then select a Codex alias such as `gpt-5.5` through the settings API. PostgreSQL stores rotated OAuth credentials encrypted with `SOUZ_MASTER_KEY`; every pod and replacement deployment must use the same externally managed key or existing provider and OAuth credentials become unreadable. Backend containers need no preferences volume. The per-user provider-key endpoint does not accept `codex`.
+Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` to bootstrap an empty backend database once, then select a Codex alias such as `gpt-5.5` through the settings API. PostgreSQL records completion of that bootstrap separately, so removing the stored credentials revokes them without a later restart restoring the deployment seed. PostgreSQL stores rotated OAuth credentials encrypted with `SOUZ_MASTER_KEY`; every pod and replacement deployment must use the same externally managed key or existing provider and OAuth credentials become unreadable. Backend containers need no preferences volume. The per-user provider-key endpoint does not accept `codex`.
 
 ## Project structure
 

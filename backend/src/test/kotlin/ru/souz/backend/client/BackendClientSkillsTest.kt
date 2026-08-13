@@ -10,6 +10,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.skills.SkillId
 import ru.souz.backend.http.routeTestContext
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.toolcall.model.ToolCall
@@ -40,6 +41,10 @@ class BackendClientSkillsTest {
         assertEquals(
             setOf("user.ask", "device.media.open"),
             clientSkills.toolsByCategory.values.flatMap { it.keys }.toSet(),
+        )
+        assertEquals(
+            setOf(SkillId("user.ask"), SkillId("device.media.open")),
+            clientSkills.bundleHashesBySkillId.keys,
         )
         assertContains(ask.fn.description, "Ask the user")
         assertContains(ask.fn.description, "RunSkillCommand")

@@ -17,6 +17,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.runtime.conversation.EmptyTestSkillBundleProvider
 import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.llms.LLMChatAPI
@@ -80,6 +81,8 @@ private fun runtimeTurnRunner(failure: Throwable): BackendConversationRuntimeTur
             sessionRepository = InMemoryAgentSessionRepository(),
             logObjectMapper = jacksonObjectMapper(),
             systemPrompt = "backend test prompt",
+            clientSkillBundleProvider = EmptyTestSkillBundleProvider,
+            userSkillBundleProvider = EmptyTestSkillBundleProvider,
             agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
     )

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
@@ -19,7 +20,6 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,12 +46,25 @@ class CodexOAuthService internal constructor(
     private val refreshCredentials: (suspend (CodexOAuthCredentials) -> CodexOAuthCredentials?)?,
     private val nowEpochSeconds: () -> Long,
     private val allowAccessTokenWithoutRefresh: Boolean = false,
+    httpClient: HttpClient? = null,
 ) {
     constructor(credentialStore: CodexOAuthCredentialStore) : this(
         credentialStore = credentialStore,
         refreshCredentials = null,
         nowEpochSeconds = { System.currentTimeMillis() / 1000 },
         allowAccessTokenWithoutRefresh = false,
+    )
+
+    /** Backend constructor for an application-owned provider HTTP client. */
+    constructor(
+        credentialStore: CodexOAuthCredentialStore,
+        httpClient: HttpClient,
+    ) : this(
+        credentialStore = credentialStore,
+        refreshCredentials = null,
+        nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+        allowAccessTokenWithoutRefresh = false,
+        httpClient = httpClient,
     )
 
     constructor(settingsProvider: SettingsProvider) : this(
@@ -62,6 +75,7 @@ class CodexOAuthService internal constructor(
     )
 
     private val l = LoggerFactory.getLogger(CodexOAuthService::class.java)
+    private val client = httpClient ?: createHttpClient()
 
     private val _oauthState = MutableStateFlow<CodexOAuthState>(CodexOAuthState.Idle)
     val oauthState: StateFlow<CodexOAuthState> = _oauthState
@@ -69,7 +83,7 @@ class CodexOAuthService internal constructor(
     private val refreshMutex = Mutex()
     private var flowJob: Job? = null
 
-    private val client = HttpClient(CIO) {
+    private fun createHttpClient(): HttpClient = HttpClient(CIO) {
         install(HttpTimeout) { requestTimeoutMillis = 30_000 }
         install(ContentNegotiation) {
             jackson { disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
@@ -87,6 +101,7 @@ class CodexOAuthService internal constructor(
         try {
             // Step 1: request user code
             val userCodeResponse = client.post(USERCODE_URL) {
+                timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
                 contentType(ContentType.Application.Json)
                 setBody(mapOf("client_id" to CLIENT_ID))
             }
@@ -115,6 +130,7 @@ class CodexOAuthService internal constructor(
             while (attempts < MAX_POLL_ATTEMPTS) {
                 attempts++
                 val pollResponse = client.post(TOKEN_POLL_URL) {
+                    timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
                     contentType(ContentType.Application.Json)
                     setBody(mapOf("device_auth_id" to deviceAuthId, "user_code" to userCode))
                 }
@@ -158,11 +174,18 @@ class CodexOAuthService internal constructor(
      */
     suspend fun refreshTokenIfNeeded(): CodexOAuthCredentials = refreshMutex.withLock {
         val current = credentialStore.load() ?: error("Codex: not authenticated")
-        val expiresAt = current.expiresAtEpochSeconds ?: return@withLock current
-        val needsRefresh = nowEpochSeconds() >= expiresAt - REFRESH_BUFFER_SECONDS
-        if (!needsRefresh) return@withLock current
+        if (!current.needsRefreshAt(nowEpochSeconds())) return@withLock current
+
+        credentialStore.withRefreshLease(::refreshCredentialsWithLease)
+    }
+
+    private suspend fun refreshCredentialsWithLease(
+        leasedStore: CodexOAuthCredentialStore,
+    ): CodexOAuthCredentials {
+        val current = leasedStore.load() ?: error("Codex: not authenticated")
+        if (!current.needsRefreshAt(nowEpochSeconds())) return current
         if (current.refreshToken == null) {
-            if (allowAccessTokenWithoutRefresh) return@withLock current
+            if (allowAccessTokenWithoutRefresh) return current
             error("Codex: expired credentials have no refresh token")
         }
 
@@ -171,13 +194,19 @@ class CodexOAuthService internal constructor(
         } else {
             requestRefreshedCredentials(current)
         }
-        if (refreshed != null && credentialStore.compareAndSet(current.version, refreshed)) {
-            return@withLock refreshed
+        if (refreshed != null && leasedStore.compareAndSet(current.version, refreshed)) {
+            return refreshed
         }
 
-        val winner = awaitNewerValidCredentials(current)
-        if (winner != null) return@withLock winner
-        if (allowAccessTokenWithoutRefresh) return@withLock current
+        val winner = leasedStore.load()
+        if (
+            winner != null &&
+            winner.version > current.version &&
+            winner.isUsableAt(nowEpochSeconds())
+        ) {
+            return winner
+        }
+        if (allowAccessTokenWithoutRefresh) return current
         error("Codex: token refresh failed without a newer valid credential")
     }
 
@@ -193,6 +222,7 @@ class CodexOAuthService internal constructor(
                 append("&scope=openid%20profile%20email")
             }
             val response = client.post(OAUTH_TOKEN_URL) {
+                timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
                 contentType(ContentType.Application.FormUrlEncoded)
                 setBody(body)
             }
@@ -213,25 +243,6 @@ class CodexOAuthService internal constructor(
         return null
     }
 
-    private suspend fun awaitNewerValidCredentials(
-        stale: CodexOAuthCredentials,
-    ): CodexOAuthCredentials? {
-        repeat(REFRESH_WINNER_LOAD_ATTEMPTS) { attempt ->
-            val candidate = credentialStore.load()
-            if (
-                candidate != null &&
-                candidate.version > stale.version &&
-                candidate.isUsableAt(nowEpochSeconds())
-            ) {
-                return candidate
-            }
-            if (attempt + 1 < REFRESH_WINNER_LOAD_ATTEMPTS) {
-                delay(REFRESH_WINNER_LOAD_DELAY_MILLIS)
-            }
-        }
-        return null
-    }
-
     private suspend fun exchangeCodeForTokens(authorizationCode: String, codeVerifier: String) {
         val body = buildString {
             append("grant_type=authorization_code")
@@ -241,6 +252,7 @@ class CodexOAuthService internal constructor(
             append("&code_verifier=${codeVerifier.urlEncode()}")
         }
         val response = client.post(OAUTH_TOKEN_URL) {
+            timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
             contentType(ContentType.Application.FormUrlEncoded)
             setBody(body)
         }
@@ -312,6 +324,11 @@ class CodexOAuthService internal constructor(
         return epochSeconds < expiresAt - REFRESH_BUFFER_SECONDS
     }
 
+    private fun CodexOAuthCredentials.needsRefreshAt(epochSeconds: Long): Boolean {
+        val expiresAt = expiresAtEpochSeconds ?: return false
+        return epochSeconds >= expiresAt - REFRESH_BUFFER_SECONDS
+    }
+
     companion object {
         const val CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
         private const val ISSUER = "https://auth.openai.com"
@@ -320,9 +337,8 @@ class CodexOAuthService internal constructor(
         private const val OAUTH_TOKEN_URL = "$ISSUER/oauth/token"
         private const val REDIRECT_URI = "$ISSUER/deviceauth/callback"
         private const val VERIFY_URL = "https://auth.openai.com/codex/device"
+        private const val OAUTH_REQUEST_TIMEOUT_MILLIS = 30_000L
         private const val MAX_POLL_ATTEMPTS = 60
         private const val REFRESH_BUFFER_SECONDS = 300L
-        private const val REFRESH_WINNER_LOAD_ATTEMPTS = 5
-        private const val REFRESH_WINNER_LOAD_DELAY_MILLIS = 50L
     }
 }

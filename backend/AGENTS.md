@@ -12,6 +12,7 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 - Build every turn with the backend's single request-scoped steerable `AgentId.SKILLS_GRAPH`. Advertise only its fixed core Skill tools and discover catalog capabilities through Skill inventory.
 - Keep product messages, thread lifecycle, agent continuation state, client tool calls, idempotency receipts, and replay events in their existing ownership layers.
 - PostgreSQL is the source of truth for mutable durable backend state. Built-in Skills remain classpath resources; backend runtime does not construct local state directories.
+- User Skill updates remove obsolete validations and collect immutable bundle rows only after the final tenant registration stops referencing them. Built-in client Skill IDs are reserved at the user registration boundary.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket route out of the generated document and maintain its schema in `docs/public-souz-contract`.
 
 ## Verification

@@ -7,6 +7,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
@@ -14,6 +15,7 @@ import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.plugins.sse.sse
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -43,17 +45,32 @@ class QwenChatAPI private constructor(
     private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
     private val configuredApiKey: () -> String?,
+    providedHttpClient: HttpClient?,
 ) : LLMChatAPI {
     constructor(settingsProvider: SettingsProvider, tokenLogging: TokenLogging) : this(
         settingsProvider = settingsProvider,
         tokenLogging = tokenLogging,
         configuredApiKey = { settingsProvider.qwenChatKey },
+        providedHttpClient = null,
     )
 
     constructor(settingsProvider: ProviderSettings, tokenLogging: TokenLogging, apiKey: String) : this(
         settingsProvider = settingsProvider,
         tokenLogging = tokenLogging,
         configuredApiKey = { apiKey },
+        providedHttpClient = null,
+    )
+
+    constructor(
+        settingsProvider: ProviderSettings,
+        tokenLogging: TokenLogging,
+        apiKey: String,
+        httpClient: HttpClient,
+    ) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { apiKey },
+        providedHttpClient = httpClient,
     )
 
     private val l = LoggerFactory.getLogger(QwenChatAPI::class.java)
@@ -74,7 +91,8 @@ class QwenChatAPI private constructor(
             ?: System.getProperty("QWEN_EMBEDDINGS_MODEL")
             ?: "text-embedding-v3"
 
-    private val client = HttpClient(CIO) {
+    private val usesSharedHttpClient = providedHttpClient != null
+    private val client = providedHttpClient ?: HttpClient(CIO) {
         defaultRequest {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -105,6 +123,7 @@ class QwenChatAPI private constructor(
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(CHAT_COMPLETIONS_URL) {
+            applyRequestSettings()
             setBody(buildChatRequest(body))
         }
         val text = response.bodyAsText()
@@ -138,6 +157,7 @@ class QwenChatAPI private constructor(
                 urlString = GENERATION_SSE_URL,
                 request = {
                     method = HttpMethod.Post
+                    applyRequestSettings()
                     header("X-DashScope-SSE", "enable")
                     setBody(buildGenerationRequest(body))
                 },
@@ -168,6 +188,7 @@ class QwenChatAPI private constructor(
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
         val response = client.post(EMBEDDINGS_URL) {
+            applyRequestSettings()
             setBody(buildEmbeddingsRequest(body))
         }
         val text = response.bodyAsText()
@@ -194,6 +215,16 @@ class QwenChatAPI private constructor(
 
     override suspend fun balance(): LLMResponse.Balance {
         return LLMResponse.Balance.Error(-1, "Qwen doesn't have billing API")
+    }
+
+    private fun HttpRequestBuilder.applyRequestSettings() {
+        if (!usesSharedHttpClient) return
+        header(HttpHeaders.ContentType, ContentType.Application.Json)
+        header(HttpHeaders.Accept, ContentType.Application.Json)
+        header(HttpHeaders.Authorization, "Bearer $apiKey")
+        timeout {
+            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
+        }
     }
 
     private fun buildChatRequest(body: LLMRequest.Chat): Map<String, Any> {

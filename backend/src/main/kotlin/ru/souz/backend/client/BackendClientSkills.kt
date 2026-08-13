@@ -45,6 +45,10 @@ internal class BackendClientSkills(
     classLoader: ClassLoader = BackendClientSkills::class.java.classLoader,
 ) : AgentToolCatalog, SkillBundleProvider {
     private val skillsById: Map<SkillId, BundledClientSkill> = loadClientSkills(classLoader)
+    internal val bundleHashesBySkillId: Map<SkillId, String> =
+        Collections.unmodifiableMap(
+            skillsById.mapValues { (_, skill) -> skill.bundleHash },
+        )
 
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
         skillsById.values

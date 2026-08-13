@@ -24,8 +24,15 @@ import ru.souz.backend.skills.validateAndCopySkillBundle
 
 class PostgresSkillRegistryRepository(
     private val dataSource: DataSource,
+    builtInSkillBundleHashes: Map<SkillId, String>,
     private val clock: Clock = Clock.systemUTC(),
 ) : SkillRegistryRepository {
+    private val builtInSkillBundleHashes = builtInSkillBundleHashes.mapValues { (skillId, bundleHash) ->
+        requireSafeSkillId(skillId)
+        normalizeSkillBundleHash(bundleHash)
+    }
+    private val reservedSkillIds = this.builtInSkillBundleHashes.keys
+
     override suspend fun listSkills(userId: String): List<StoredSkill> {
         requireSkillUserId(userId)
         return dataSource.read { connection ->
@@ -75,20 +82,38 @@ class PostgresSkillRegistryRepository(
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill {
         requireSkillUserId(userId)
+        requireSafeSkillId(bundle.skillId)
+        require(bundle.skillId !in reservedSkillIds) {
+            "User Skill ID is reserved by a built-in backend Skill: ${bundle.skillId.value}"
+        }
         val normalizedBundle = validateAndCopySkillBundle(bundle)
         val bundleHash = SkillBundleHasher.hash(normalizedBundle)
         val now = clock.instant()
 
         return dataSource.write { connection ->
             connection.lockSkillRegistration(userId, normalizedBundle.skillId)
+            val previousBundleHash = connection.findRegisteredBundleHash(
+                userId = userId,
+                skillId = normalizedBundle.skillId,
+            )
+            connection.lockSkillBundles(previousBundleHash, bundleHash)
             connection.persistImmutableBundle(normalizedBundle, bundleHash, now)
-            connection.upsertSkillRegistration(
+            val stored = connection.upsertSkillRegistration(
                 userId = userId,
                 skillId = normalizedBundle.skillId,
                 bundleHash = bundleHash,
                 now = now,
                 manifest = normalizedBundle.manifest,
             )
+            connection.deleteObsoleteSkillValidations(
+                userId = userId,
+                skillId = normalizedBundle.skillId,
+                currentBundleHash = bundleHash,
+            )
+            if (previousBundleHash != null && previousBundleHash != bundleHash) {
+                connection.deleteUnreferencedSkillBundle(previousBundleHash)
+            }
+            stored
         }
     }
 
@@ -148,6 +173,22 @@ class PostgresSkillRegistryRepository(
         val normalizedRecord = validateRecord(record)
         val now = clock.instant()
         dataSource.write { connection ->
+            connection.lockSkillRegistration(normalizedRecord.userId, normalizedRecord.skillId)
+            require(
+                builtInSkillBundleHashes[normalizedRecord.skillId] == normalizedRecord.bundleHash ||
+                    connection.isCurrentSkillBundle(
+                        userId = normalizedRecord.userId,
+                        skillId = normalizedRecord.skillId,
+                        bundleHash = normalizedRecord.bundleHash,
+                    )
+            ) {
+                "Skill validation must target the user's current registered bundle."
+            }
+            connection.deleteObsoleteSkillValidations(
+                userId = normalizedRecord.userId,
+                skillId = normalizedRecord.skillId,
+                currentBundleHash = normalizedRecord.bundleHash,
+            )
             connection.prepareStatement(
                 """
                 insert into skill_validations(
@@ -173,6 +214,23 @@ class PostgresSkillRegistryRepository(
                 statement.executeUpdate()
             }
         }
+    }
+
+    private fun Connection.isCurrentSkillBundle(
+        userId: String,
+        skillId: SkillId,
+        bundleHash: String,
+    ): Boolean = prepareStatement(
+        """
+        select 1
+        from user_skill_registrations
+        where user_id = ? and skill_id = ? and bundle_hash = ?
+        """.trimIndent()
+    ).use { statement ->
+        statement.setString(1, userId)
+        statement.setString(2, skillId.value)
+        statement.setString(3, bundleHash)
+        statement.executeQuery().use { resultSet -> resultSet.next() }
     }
 
     private fun validateRecord(record: SkillValidationRecord): SkillValidationRecord {
@@ -327,6 +385,54 @@ class PostgresSkillRegistryRepository(
         }
     }
 
+    private fun Connection.findRegisteredBundleHash(
+        userId: String,
+        skillId: SkillId,
+    ): String? = prepareStatement(
+        "select bundle_hash from user_skill_registrations where user_id = ? and skill_id = ?"
+    ).use { statement ->
+        statement.setString(1, userId)
+        statement.setString(2, skillId.value)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) resultSet.getString("bundle_hash") else null
+        }
+    }
+
+    private fun Connection.deleteObsoleteSkillValidations(
+        userId: String,
+        skillId: SkillId,
+        currentBundleHash: String,
+    ) {
+        prepareStatement(
+            """
+            delete from skill_validations
+            where user_id = ? and skill_id = ? and bundle_hash <> ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setString(2, skillId.value)
+            statement.setString(3, currentBundleHash)
+            statement.executeUpdate()
+        }
+    }
+
+    private fun Connection.deleteUnreferencedSkillBundle(bundleHash: String) {
+        prepareStatement(
+            """
+            delete from skill_bundles b
+            where b.bundle_hash = ?
+              and not exists (
+                select 1
+                from user_skill_registrations r
+                where r.bundle_hash = b.bundle_hash
+              )
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, bundleHash)
+            statement.executeUpdate()
+        }
+    }
+
     private fun Connection.lockSkillRegistration(userId: String, skillId: SkillId) {
         prepareStatement(
             "select pg_advisory_xact_lock(hashtext(?), hashtext(?))"
@@ -335,6 +441,20 @@ class PostgresSkillRegistryRepository(
             statement.setString(2, skillId.value)
             statement.executeQuery().use { resultSet ->
                 check(resultSet.next()) { "Failed to acquire skill registration lock." }
+            }
+        }
+    }
+
+    private fun Connection.lockSkillBundles(vararg bundleHashes: String?) {
+        val hashes = bundleHashes.filterNotNull().distinct().sorted()
+        prepareStatement(
+            "select pg_advisory_xact_lock(hashtext('skill_bundle'), hashtext(?))"
+        ).use { statement ->
+            hashes.forEach { bundleHash ->
+                statement.setString(1, bundleHash)
+                statement.executeQuery().use { resultSet ->
+                    check(resultSet.next()) { "Failed to acquire skill bundle lock." }
+                }
             }
         }
     }

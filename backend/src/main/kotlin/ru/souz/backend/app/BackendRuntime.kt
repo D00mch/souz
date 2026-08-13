@@ -5,6 +5,7 @@ import org.kodein.di.direct
 import org.kodein.di.instance
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.http.BackendHttpDependencies
+import ru.souz.backend.storage.postgres.PostgresCodexOAuthCredentialStore
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
 
@@ -19,8 +20,10 @@ class BackendRuntime private constructor(
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val applicationScope: BackendApplicationScope by lazy { di.direct.instance() }
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
+    private val codexOAuthCredentialStore: PostgresCodexOAuthCredentialStore by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
+        runBlocking { codexOAuthCredentialStore.bootstrapInitialCredentials() }
         if (httpDependencies.featureFlags.wsEvents) {
             runBlocking { clientThreadRecoveryService.recover() }
             clientThreadRecoveryService.start(applicationScope)

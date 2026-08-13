@@ -48,6 +48,7 @@ import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.llm.BackendLlmClientFactory
+import ru.souz.backend.llm.BackendProviderHttpClients
 import ru.souz.backend.llm.LlmClientFactory
 import ru.souz.backend.llm.ProviderChatApiBuilder
 import ru.souz.backend.llm.ProviderCredentialResolver
@@ -78,6 +79,7 @@ import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.SessionTokenLogging
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.codex.CodexOAuthCredentialStore
@@ -135,7 +137,12 @@ fun backendDiModule(
     bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
     bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
     bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
-    bindSingleton<SkillRegistryRepository> { PostgresSkillRegistryRepository(instance()) }
+    bindSingleton<SkillRegistryRepository> {
+        PostgresSkillRegistryRepository(
+            dataSource = instance(),
+            builtInSkillBundleHashes = instance<BackendClientSkills>().bundleHashesBySkillId,
+        )
+    }
     bindSingleton<SkillBundleProvider> {
         BackendSkillBundleProvider(
             resourceSkills = instance<BackendClientSkills>(),
@@ -153,18 +160,26 @@ fun backendDiModule(
     bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
         ToolSearchMemory(NoopConversationMemoryRuntime)
     }
-    bindSingleton<CodexOAuthCredentialStore> {
+    bindSingleton {
         PostgresCodexOAuthCredentialStore(
             dataSource = instance<HikariDataSource>(),
             masterKey = appConfig.masterKey ?: error("Master key is required."),
             initialSeed = appConfig.codexOAuthSeed,
         )
     }
-    bindSingleton { CodexOAuthService(instance<CodexOAuthCredentialStore>()) }
+    bindSingleton<CodexOAuthCredentialStore> { instance<PostgresCodexOAuthCredentialStore>() }
+    bindSingleton { BackendProviderHttpClients() }
+    bindSingleton {
+        CodexOAuthService(
+            credentialStore = instance<CodexOAuthCredentialStore>(),
+            httpClient = instance<BackendProviderHttpClients>().clientFor(LlmProvider.CODEX),
+        )
+    }
     bindSingleton {
         BackendRuntimeResources(
             closeables = listOf(
                 instance<BackendApplicationScope>(),
+                instance<BackendProviderHttpClients>(),
                 instance<HikariDataSource>(),
             )
         )
@@ -197,6 +212,7 @@ fun backendDiModule(
             tokenLogging = instance(),
             retryPolicy = appConfig.providerRetryPolicy,
             codexOAuthService = instance<CodexOAuthService>(),
+            providerHttpClients = instance<BackendProviderHttpClients>(),
         )
     }
     bindSingleton<LlmClientFactory> {
@@ -253,7 +269,7 @@ fun backendDiModule(
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
             clientToolCatalog = instance<BackendClientSkills>(),
-            skillBundleProvider = instance<SkillBundleProvider>(),
+            clientSkillBundleProvider = instance<SkillBundleProvider>(),
             userSkillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandRunner>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),

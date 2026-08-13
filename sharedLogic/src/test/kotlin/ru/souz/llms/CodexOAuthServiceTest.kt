@@ -4,8 +4,6 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
@@ -19,21 +17,15 @@ import kotlin.test.assertFailsWith
 
 class CodexOAuthServiceTest {
     @Test
-    fun `concurrent services use the CAS winner and never return stale credentials`() = runTest {
+    fun `concurrent services under a shared refresh lease call upstream once`() = runTest {
         val stale = credentials("access-0", version = 0, expiresAt = NOW)
-        val store = MemoryCredentialStore(stale)
-        val refreshArrivals = Channel<Unit>(capacity = 2)
-        val releaseRefreshes = CompletableDeferred<Unit>()
-        val coordinator = async {
-            repeat(2) { refreshArrivals.receive() }
-            releaseRefreshes.complete(Unit)
-        }
+        val store = CoordinatedMemoryCredentialStore(stale)
+        var upstreamRefreshes = 0
         val services = listOf(
             CodexOAuthService(
                 credentialStore = store,
                 refreshCredentials = {
-                    refreshArrivals.send(Unit)
-                    releaseRefreshes.await()
+                    upstreamRefreshes += 1
                     credentials("access-a", version = 1, expiresAt = NOW + 3600)
                 },
                 nowEpochSeconds = { NOW },
@@ -41,8 +33,7 @@ class CodexOAuthServiceTest {
             CodexOAuthService(
                 credentialStore = store,
                 refreshCredentials = {
-                    refreshArrivals.send(Unit)
-                    releaseRefreshes.await()
+                    upstreamRefreshes += 1
                     credentials("access-b", version = 1, expiresAt = NOW + 3600)
                 },
                 nowEpochSeconds = { NOW },
@@ -52,9 +43,9 @@ class CodexOAuthServiceTest {
         val results = services.map { service ->
             async { service.refreshTokenIfNeeded() }
         }.awaitAll()
-        coordinator.await()
 
         val winner = store.load()
+        assertEquals(1, upstreamRefreshes)
         assertEquals(1, results.map { it.accessToken }.toSet().size)
         assertEquals(listOf(winner, winner), results)
         assertEquals(1L, results.first().version)
@@ -112,6 +103,29 @@ class CodexOAuthServiceTest {
             current = credentials
             true
         }
+    }
+
+    private class CoordinatedMemoryCredentialStore(
+        initial: CodexOAuthCredentials,
+    ) : CodexOAuthCredentialStore {
+        private val stateMutex = Mutex()
+        private val refreshLease = Mutex()
+        private var current = initial
+
+        override suspend fun load(): CodexOAuthCredentials = stateMutex.withLock { current }
+
+        override suspend fun compareAndSet(
+            expectedVersion: Long?,
+            credentials: CodexOAuthCredentials,
+        ): Boolean = stateMutex.withLock {
+            if (current.version != expectedVersion) return@withLock false
+            current = credentials
+            true
+        }
+
+        override suspend fun <T> withRefreshLease(
+            action: suspend (leasedStore: CodexOAuthCredentialStore) -> T,
+        ): T = refreshLease.withLock { action(this) }
     }
 
     private companion object {

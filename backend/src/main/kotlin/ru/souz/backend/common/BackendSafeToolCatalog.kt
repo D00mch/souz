@@ -6,22 +6,28 @@ import ru.souz.llms.giga.toGiga
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.math.ToolCalculator
 
-val BACKEND_SAFE_TOOL_CATEGORIES: Set<ToolCategory> = setOf(
-    ToolCategory.CALCULATOR,
+private data class BackendSafeTool(
+    val category: ToolCategory,
+    val setup: LLMToolSetup,
 )
 
-val BACKEND_SAFE_COMPILED_TOOL_NAMES: Set<String> = setOf(
-    "Calculator",
+private fun backendSafeTools(toolCalculator: ToolCalculator): List<BackendSafeTool> = listOf(
+    BackendSafeTool(ToolCategory.CALCULATOR, toolCalculator.toGiga()),
 )
+
+private val backendSafeToolNamesByCategory: Map<ToolCategory, Set<String>> =
+    backendSafeTools(ToolCalculator())
+        .groupBy(keySelector = BackendSafeTool::category, valueTransform = { tool -> tool.setup.fn.name })
+        .mapValues { (_, names) -> names.toSet() }
 
 fun backendSafeToolNames(toolCatalog: AgentToolCatalog): List<String> =
     toolCatalog.toolsByCategory
-        .filterKeys { it in BACKEND_SAFE_TOOL_CATEGORIES }
-        .values
         .asSequence()
-        .flatMap { tools -> tools.values.asSequence() }
+        .flatMap { (category, tools) ->
+            val safeNames = backendSafeToolNamesByCategory[category].orEmpty()
+            tools.values.asSequence().filter { tool -> tool.fn.name in safeNames }
+        }
         .map { tool -> tool.fn.name }
-        .filter { toolName -> toolName in BACKEND_SAFE_COMPILED_TOOL_NAMES }
         .distinct()
         .sorted()
         .toList()
@@ -34,10 +40,11 @@ class BackendSafeToolCatalog(
     toolCalculator: ToolCalculator = ToolCalculator(),
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
-        ToolCategory.entries.associateWith { category ->
-            when (category) {
-                ToolCategory.CALCULATOR -> listOf(toolCalculator.toGiga())
-                else -> emptyList()
-            }.associateBy { tool -> tool.fn.name }
-        }
+        backendSafeTools(toolCalculator)
+            .groupBy(keySelector = BackendSafeTool::category, valueTransform = BackendSafeTool::setup)
+            .let { toolsByCategory ->
+                ToolCategory.entries.associateWith { category ->
+                    toolsByCategory[category].orEmpty().associateBy { tool -> tool.fn.name }
+                }
+            }
 }

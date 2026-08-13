@@ -6,6 +6,8 @@
 
 Each initial execution snapshots its effective compiled-tool names into execution metadata, and option continuations reuse that snapshot. One immutable request-scoped catalog applies the snapshot to compiled tools, then merges built-in client operations only for Client-Souz executions. The skills graph uses that final catalog for inventory, lookup, and generic invocation while exposing only its fixed core tools to the model.
 
+Provider HTTP clients and connection pools are application-scoped. They contain only transport configuration; credentials and request timeouts are applied by each provider API request so one user's execution cannot retain another user's settings.
+
 The proxy-facing event API retains its internal durable events and live-only `message.delta`. The Client-Souz socket filters that stream to `tool.call.started` and exactly one terminal thread event. Public sequence values come from the shared chat-local `agent_events` sequence and can contain gaps caused by internal events.
 
 ## Why it is fragile
@@ -17,6 +19,7 @@ Generated OpenAPI is also easy to drift: route helpers and deferred registration
 ## Safe-change guidance
 
 - Keep execution launch/finalization in `AgentExecutionService` and session reconstruction in the runtime factory/repository layer.
+- Keep shared provider HTTP clients credential-free, and close their owner with the other backend runtime resources. Provider API instances may cache only credentials resolved for their own execution.
 - Do not read the shared JVM agent preference or mutate singleton tool policy. Build the immutable execution catalog from execution metadata and keep compiled-tool selection request-scoped.
 - Publish internal deltas only on the live bus. Client tool starts and thread terminals are durable `agent_events`; acknowledgements are not events.
 - Register a Client-Souz execution before launching its steerable runtime. Accepted mid-run input must use `submitToActiveRun`, and public events must wait until accepted acknowledgements are sent.

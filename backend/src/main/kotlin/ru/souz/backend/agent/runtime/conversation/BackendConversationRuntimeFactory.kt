@@ -38,8 +38,8 @@ class BackendConversationRuntimeFactory(
     private val systemPrompt: String,
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val clientToolCatalog: AgentToolCatalog,
-    private val skillBundleProvider: SkillBundleProvider,
-    private val userSkillBundleProvider: SkillBundleProvider = skillBundleProvider,
+    private val clientSkillBundleProvider: SkillBundleProvider,
+    private val userSkillBundleProvider: SkillBundleProvider,
     private val commandExecutor: SkillCommandRunner,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
@@ -66,7 +66,7 @@ class BackendConversationRuntimeFactory(
             BackendNoopAgentToolCatalog
         }
         val activeSkillBundleProvider = if (request.clientToolsEnabled) {
-            skillBundleProvider
+            clientSkillBundleProvider
         } else {
             userSkillBundleProvider
         }

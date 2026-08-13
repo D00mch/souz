@@ -7,12 +7,14 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logger
 import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.request.header
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
@@ -45,17 +47,32 @@ class OpenAIChatAPI private constructor(
     private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
     private val configuredApiKey: () -> String?,
+    providedHttpClient: HttpClient?,
 ) : LLMChatAPI {
     constructor(settingsProvider: SettingsProvider, tokenLogging: TokenLogging) : this(
         settingsProvider = settingsProvider,
         tokenLogging = tokenLogging,
         configuredApiKey = { settingsProvider.openaiKey },
+        providedHttpClient = null,
     )
 
     constructor(settingsProvider: ProviderSettings, tokenLogging: TokenLogging, apiKey: String) : this(
         settingsProvider = settingsProvider,
         tokenLogging = tokenLogging,
         configuredApiKey = { apiKey },
+        providedHttpClient = null,
+    )
+
+    constructor(
+        settingsProvider: ProviderSettings,
+        tokenLogging: TokenLogging,
+        apiKey: String,
+        httpClient: HttpClient,
+    ) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { apiKey },
+        providedHttpClient = httpClient,
     )
 
     private val l = LoggerFactory.getLogger(OpenAIChatAPI::class.java)
@@ -76,7 +93,8 @@ class OpenAIChatAPI private constructor(
             ?: System.getProperty("OPENAI_EMBEDDINGS_MODEL")
             ?: "text-embedding-3-small"
 
-    private val client = HttpClient(CIO) {
+    private val usesSharedHttpClient = providedHttpClient != null
+    private val client = providedHttpClient ?: HttpClient(CIO) {
         defaultRequest {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -104,6 +122,7 @@ class OpenAIChatAPI private constructor(
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(chatCompletionsUrl) {
+            applyRequestSettings()
             setBody(buildChatRequest(body, stream = false))
         }
         val text = response.bodyAsText()
@@ -130,6 +149,7 @@ class OpenAIChatAPI private constructor(
             val accumulator = OpenAiStreamAccumulator()
 
             client.preparePost(chatCompletionsUrl) {
+                applyRequestSettings()
                 setBody(buildChatRequest(body, stream = true))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
@@ -175,6 +195,7 @@ class OpenAIChatAPI private constructor(
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
         val response = client.post(embeddingsUrl) {
+            applyRequestSettings()
             setBody(buildEmbeddingsRequest(body))
         }
         val text = response.bodyAsText()
@@ -201,6 +222,16 @@ class OpenAIChatAPI private constructor(
 
     override suspend fun balance(): LLMResponse.Balance {
         return LLMResponse.Balance.Error(-1, "Balance check not implemented for OpenAI")
+    }
+
+    private fun HttpRequestBuilder.applyRequestSettings() {
+        if (!usesSharedHttpClient) return
+        header(HttpHeaders.ContentType, ContentType.Application.Json)
+        header(HttpHeaders.Accept, ContentType.Application.Json)
+        header(HttpHeaders.Authorization, "Bearer $apiKey")
+        timeout {
+            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
+        }
     }
 
     private fun buildChatRequest(body: LLMRequest.Chat, stream: Boolean): Map<String, Any> {
