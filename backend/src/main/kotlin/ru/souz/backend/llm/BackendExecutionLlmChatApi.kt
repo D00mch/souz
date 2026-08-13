@@ -2,14 +2,9 @@ package ru.souz.backend.llm
 
 import java.io.File
 import kotlin.math.min
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.app.BackendProviderRetryPolicy
@@ -182,49 +177,26 @@ internal class BackendExecutionLlmChatApi(
     private fun retryingStream(api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         var attempt = 0
         while (true) {
-            var retryError: LLMResponse.Chat.Error? = null
-            coroutineScope {
-                val responses = Channel<LLMResponse.Chat>(Channel.RENDEZVOUS)
-                val producer: Job = launch {
-                    try {
-                        api.messageStream(body).collect { responses.send(it) }
-                        responses.close()
-                    } catch (failure: Throwable) {
-                        responses.close(failure)
-                        throw failure
-                    } finally {
-                        responses.close()
-                    }
-                }
-                val firstResult = responses.receiveCatching()
-                if (firstResult.isClosed) {
-                    firstResult.exceptionOrNull()?.let { throw it }
-                    producer.join()
-                    return@coroutineScope
-                }
-
-                val first = firstResult.getOrThrow()
-                if (
-                    first is LLMResponse.Chat.Error &&
-                    first.status == TOO_MANY_REQUESTS &&
-                    attempt < retryPolicy.max429Retries
-                ) {
-                    retryError = first
-                    producer.cancelAndJoin()
-                    return@coroutineScope
-                }
-
+            try {
+                var emitted = false
                 var previousUsage = ZERO_USAGE
-                previousUsage = emitAndRecordStreamingUsage(first, previousUsage)
-                for (response in responses) {
+                api.messageStream(body).collect { response ->
+                    if (
+                        !emitted &&
+                        response is LLMResponse.Chat.Error &&
+                        response.status == TOO_MANY_REQUESTS &&
+                        attempt < retryPolicy.max429Retries
+                    ) {
+                        throw RetryFirstStreaming429(response)
+                    }
                     previousUsage = emitAndRecordStreamingUsage(response, previousUsage)
+                    emitted = true
                 }
-                producer.join()
+                return@flow
+            } catch (retry: RetryFirstStreaming429) {
+                delayMillis(backoffForAttempt(attempt, retry.error.message))
+                attempt += 1
             }
-
-            val error = retryError ?: return@flow
-            delayMillis(backoffForAttempt(attempt, error.message))
-            attempt += 1
         }
     }
 
@@ -265,6 +237,8 @@ internal class BackendExecutionLlmChatApi(
         val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
     }
 }
+
+private class RetryFirstStreaming429(val error: LLMResponse.Chat.Error) : Exception("retry", null, false, false)
 
 private fun ModelResolution<*>.description(): String = when (this) {
     is ModelResolution.Resolved -> value.toString()
