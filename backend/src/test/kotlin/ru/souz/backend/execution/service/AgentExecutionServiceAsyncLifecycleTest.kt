@@ -82,6 +82,28 @@ class AgentExecutionServiceAsyncLifecycleTest {
     }
 
     @Test
+    fun `execute chat turn and await completion returns completed execution and assistant message`() = runTest {
+        val runner = CountingCompletedTurnRunner()
+        val context = asyncLifecycleContext(runner)
+        try {
+            val result = context.service.executeChatTurnAndAwaitCompletion(
+                userId = context.chat.userId,
+                chatId = context.chat.id,
+                content = "wait for reply",
+            )
+            val messages = context.messageRepository.list(context.chat.userId, context.chat.id)
+
+            assertEquals(1, runner.startedCount)
+            assertEquals(AgentExecutionStatus.COMPLETED, result.execution.status)
+            assertEquals("assistant output", result.assistantMessage?.content)
+            assertEquals(result.assistantMessage?.id, result.execution.assistantMessageId)
+            assertEquals(listOf(ChatRole.USER, ChatRole.ASSISTANT), messages.map { it.role })
+        } finally {
+            context.close()
+        }
+    }
+
+    @Test
     fun `async execution is registered before start and cancel before body begins ends as cancelled`() = runTest {
         val runner = CountingCompletedTurnRunner()
         val context = asyncLifecycleContext(runner)

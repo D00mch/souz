@@ -166,6 +166,31 @@ class AgentExecutionService internal constructor(
         }
     }
 
+    suspend fun executeChatTurnAndAwaitCompletion(
+        userId: String,
+        chatId: UUID,
+        content: String,
+        clientMessageId: String? = null,
+        requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
+    ): SendMessageResult {
+        val started = executeChatTurn(
+            userId = userId,
+            chatId = chatId,
+            content = content,
+            clientMessageId = clientMessageId,
+            requestOverrides = requestOverrides,
+        )
+        launcher.join(started.execution.id)
+        val finishedExecution = executionRepository.getByChat(userId, chatId, started.execution.id)
+            ?: started.execution
+        val assistantMessage = finishedExecution.assistantMessageId
+            ?.let { messageRepository.getById(userId, chatId, it) }
+        return started.copy(
+            assistantMessage = assistantMessage,
+            execution = finishedExecution,
+        )
+    }
+
     private suspend fun launchExecution(
         chat: Chat,
         execution: AgentExecution,

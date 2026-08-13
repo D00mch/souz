@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import kotlin.time.Duration.Companion.milliseconds
 
 class AgentExecutionLauncherTest {
     @Test
@@ -37,10 +38,10 @@ class AgentExecutionLauncherTest {
             }
 
             assertTrue(fixture.registry.contains(fixture.execution.id))
-            withTimeout(5_000) { bodyStarted.await() }
+            withTimeout(5_000.milliseconds) { bodyStarted.await() }
             assertTrue(fixture.launcher.cancel(fixture.execution.id))
-            withTimeout(5_000) { cancellationObserved.await() }
-            withTimeout(5_000) { job.join() }
+            withTimeout(5_000.milliseconds) { cancellationObserved.await() }
+            withTimeout(5_000.milliseconds) { job.join() }
 
             assertFalse(fixture.registry.contains(fixture.execution.id))
         }
@@ -106,7 +107,7 @@ private class LauncherFixture(
     val launcher: AgentExecutionLauncher,
     val registry: ActiveExecutionJobRegistry,
     val execution: AgentExecution,
-    private val scope: CoroutineScope,
+    val scope: CoroutineScope,
     private val dispatcher: java.io.Closeable?,
 ) : AutoCloseable {
     override fun close() {

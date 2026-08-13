@@ -73,6 +73,8 @@ internal class AgentExecutionLauncher(
         return executionJob
     }
 
+    suspend fun join(executionId: UUID): Boolean = activeJobs.join(executionId)
+
     suspend fun cancel(executionId: UUID): Boolean = activeJobs.cancel(executionId)
 
     private suspend fun startClientThreadLeaseRefresh(

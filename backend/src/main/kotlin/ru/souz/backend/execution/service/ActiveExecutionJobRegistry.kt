@@ -25,6 +25,12 @@ internal class ActiveExecutionJobRegistry {
         executionId in jobs
     }
 
+    suspend fun join(executionId: UUID): Boolean {
+        val job = mutex.withLock { jobs[executionId] } ?: return false
+        job.join()
+        return true
+    }
+
     suspend fun cancel(
         executionId: UUID,
         reason: String = "Execution cancelled by user request.",
