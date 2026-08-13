@@ -30,7 +30,6 @@ internal data class PreparedChatTurn(
     val conversationKey: AgentConversationKey,
     val runtimeRequest: BackendConversationTurnRequest,
     val userMessageMetadata: Map<String, String>,
-    val shouldReturnRunning: Boolean,
 )
 
 internal data class PreparedContinuationTurn(
@@ -56,7 +55,6 @@ internal class AgentExecutionRequestFactory(
         latestDeviceContextJson: String = "{}",
         userMessageMetadataExtras: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
-        forceBackground: Boolean = false,
     ): PreparedChatTurn {
         val effectiveSettings = effectiveSettingsResolver.resolve(userId, requestOverrides)
         if (effectiveSettings.defaultModel !in BackendLlmSupport.chatModels) {
@@ -119,7 +117,6 @@ internal class AgentExecutionRequestFactory(
                 clientToolsEnabled = clientToolsEnabled,
             ),
             userMessageMetadata = userMessageMetadata(normalizedClientMessageId) + userMessageMetadataExtras,
-            shouldReturnRunning = forceBackground || (effectiveSettings.streamingMessages && featureFlags.wsEvents),
         )
     }
 

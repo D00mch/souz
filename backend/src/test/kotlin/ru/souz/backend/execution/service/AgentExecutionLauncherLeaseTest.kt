@@ -5,7 +5,6 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -125,11 +124,9 @@ class AgentExecutionLauncherLeaseTest {
         )
         val started = CompletableDeferred<Unit>()
 
-        val running = async {
-            launcher.runTrackedExecution(execution, eventSink) {
-                started.complete(Unit)
-                awaitCancellation()
-            }
+        val running = launcher.launchRegistered(execution, eventSink) {
+            started.complete(Unit)
+            awaitCancellation()
         }
         started.await()
         executionRepository.loseLease = true
@@ -137,7 +134,7 @@ class AgentExecutionLauncherLeaseTest {
         advanceTimeBy(1)
         runCurrent()
 
-        assertFailsWith<ExecutionCancelledException> { running.await() }
+        running.join()
         assertEquals(
             AgentExecutionStatus.CANCELLED,
             executionRepository.getByChat(chat.userId, chat.id, execution.id)?.status,
@@ -227,11 +224,9 @@ class AgentExecutionLauncherLeaseTest {
         )
         val started = CompletableDeferred<Unit>()
 
-        val running = async {
-            launcher.runTrackedExecution(execution, eventSink) {
-                started.complete(Unit)
-                awaitCancellation()
-            }
+        val running = launcher.launchRegistered(execution, eventSink) {
+            started.complete(Unit)
+            awaitCancellation()
         }
         started.await()
         executionRepository.update(

@@ -10,8 +10,9 @@ internal class ActiveExecutionJobRegistry {
     private val mutex = Mutex()
     private val jobs = LinkedHashMap<UUID, Job>()
 
-    suspend fun register(executionId: UUID, job: Job) = mutex.withLock {
+    suspend fun registerAndStart(executionId: UUID, job: Job) = mutex.withLock {
         jobs[executionId] = job
+        job.start()
     }
 
     suspend fun unregister(executionId: UUID, job: Job) = mutex.withLock {

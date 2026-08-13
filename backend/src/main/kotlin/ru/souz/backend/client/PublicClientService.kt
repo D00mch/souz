@@ -281,7 +281,6 @@ internal class PublicClientService(
                 latestDeviceContextJson = deviceJson,
                 userMessageMetadata = metadata,
                 clientToolsEnabled = true,
-                forceBackground = true,
             )
         } catch (error: CancellationException) {
             withContext(NonCancellable) {

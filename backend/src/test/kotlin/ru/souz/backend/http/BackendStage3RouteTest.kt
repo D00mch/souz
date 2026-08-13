@@ -816,7 +816,7 @@ class BackendStage3RouteTest {
     }
 
     @Test
-    fun `post chat message creates completed execution links messages and updates state separately`() = testApplication {
+    fun `post chat message creates running execution and background completion links messages and updates state`() = testApplication {
         val context = routeTestContext(llmApi = CapturingChatApi())
         val chat = chat(
             userId = "user-a",
@@ -847,32 +847,33 @@ class BackendStage3RouteTest {
             setBody("""{"content":"Напиши ответ","clientMessageId":"client-42"}""")
         }
         val payload = json.readTree(response.bodyAsText())
-        val storedMessages = runBlocking { context.messageRepository.list("user-a", chat.id) }
+        val storedExecution = awaitExecutionStatus(context, "user-a", chat.id, AgentExecutionStatus.COMPLETED)
+        val storedMessages = awaitVisibleMessages(context, "user-a", chat.id, expectedSize = 2)
         val storedState = runBlocking { context.stateRepository.get("user-a", chat.id) }
         val updatedChat = runBlocking { context.chatRepository.get("user-a", chat.id) }
-        val storedExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
+        val assistantMessage = storedMessages.single { it.role == ChatRole.ASSISTANT }
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("user", payload["message"]["role"].asText())
         assertEquals("Напиши ответ", payload["message"]["content"].asText())
-        assertEquals("assistant", payload["assistantMessage"]["role"].asText())
-        assertEquals("assistant reply to Напиши ответ", payload["assistantMessage"]["content"].asText())
-        assertEquals("completed", payload["execution"]["status"].asText())
+        assertTrue(payload["assistantMessage"].isNull)
+        assertEquals("running", payload["execution"]["status"].asText())
         assertEquals(payload["message"]["id"].asText(), payload["execution"]["userMessageId"].asText())
-        assertEquals(payload["assistantMessage"]["id"].asText(), payload["execution"]["assistantMessageId"].asText())
+        assertTrue(payload["execution"]["assistantMessageId"].isNull)
         assertEquals("client-42", payload["execution"]["clientMessageId"].asText())
         assertEquals(context.settingsProvider.gigaModel.alias, payload["execution"]["model"].asText())
         assertEquals(context.settingsProvider.gigaModel.provider.name, payload["execution"]["provider"].asText())
-        assertEquals(10, payload["execution"]["usage"]["totalTokens"].asInt())
+        assertTrue(payload["execution"]["usage"].isNull)
         assertEquals(listOf("Напиши ответ", "assistant reply to Напиши ответ"), storedMessages.map { it.content })
         assertEquals(2L, storedState?.basedOnMessageSeq)
         assertTrue(storedState?.history.orEmpty().any { it.content.contains("assistant reply to Напиши ответ") })
         assertTrue(updatedChat!!.updatedAt > chat.updatedAt)
         assertEquals(AgentExecutionStatus.COMPLETED, storedExecution.status)
         assertEquals(payload["message"]["id"].asText(), storedExecution.userMessageId?.toString())
-        assertEquals(payload["assistantMessage"]["id"].asText(), storedExecution.assistantMessageId?.toString())
+        assertEquals(assistantMessage.id, storedExecution.assistantMessageId)
         assertEquals("client-42", storedExecution.clientMessageId)
         assertEquals(context.settingsProvider.gigaModel, storedExecution.model)
+        assertEquals(10, storedExecution.usage?.totalTokens)
         assertNotNull(storedExecution.startedAt)
         assertNotNull(storedExecution.finishedAt)
     }
@@ -922,7 +923,8 @@ class BackendStage3RouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"Hello"}""")
         }
-        val finalRequest = api.finalRequests.last()
+        val finalRequest = runBlocking { eventually("captured LLM request") { api.finalRequests.lastOrNull() } }
+        awaitExecutionStatus(context, "user-a", chat.id, AgentExecutionStatus.COMPLETED)
         val storedState = runBlocking { context.stateRepository.get("user-a", chat.id) }
 
         assertEquals(HttpStatusCode.OK, patchResponse.status)
@@ -974,13 +976,11 @@ class BackendStage3RouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"trigger failure"}""")
         }
-        val payload = json.readTree(response.bodyAsText())
         val storedMessages = runBlocking { context.messageRepository.list("user-a", chat.id) }
+        val storedExecution = awaitExecutionStatus(context, "user-a", chat.id, AgentExecutionStatus.FAILED)
         val storedState = runBlocking { context.stateRepository.get("user-a", chat.id) }
-        val storedExecution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
 
-        assertEquals(HttpStatusCode.InternalServerError, response.status)
-        assertEquals("agent_execution_failed", payload["error"]["code"].asText())
+        assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(listOf("trigger failure"), storedMessages.map { it.content })
         assertEquals(originalState, storedState)
         assertEquals(AgentExecutionStatus.FAILED, storedExecution.status)
@@ -1134,11 +1134,15 @@ class BackendStage3RouteTest {
             assertEquals("cancelling", cancelPayload["execution"]["status"].asText())
 
             val cancelledResponse = sendResponse.await()
-            val cancelledPayload = json.readTree(cancelledResponse.bodyAsText())
-            val storedExecution = assertNotNull(context.executionRepository.getByChat("user-a", chat.id, activeExecution.id))
+            val storedExecution = awaitExecutionStatus(
+                context,
+                "user-a",
+                chat.id,
+                activeExecution.id,
+                AgentExecutionStatus.CANCELLED,
+            )
 
-            assertEquals(HttpStatusCode.Conflict, cancelledResponse.status)
-            assertEquals("agent_execution_cancelled", cancelledPayload["error"]["code"].asText())
+            assertEquals(HttpStatusCode.OK, cancelledResponse.status)
             assertEquals(AgentExecutionStatus.CANCELLED, storedExecution.status)
             assertTrue(storedExecution.cancelRequested)
             assertNull(storedExecution.assistantMessageId)
@@ -1195,9 +1199,15 @@ class BackendStage3RouteTest {
             assertEquals("cancelling", ownerPayload["execution"]["status"].asText())
 
             val cancelledResponse = sendResponse.await()
-            val storedExecution = assertNotNull(context.executionRepository.getByChat("user-a", chat.id, activeExecution.id))
+            val storedExecution = awaitExecutionStatus(
+                context,
+                "user-a",
+                chat.id,
+                activeExecution.id,
+                AgentExecutionStatus.CANCELLED,
+            )
 
-            assertEquals(HttpStatusCode.Conflict, cancelledResponse.status)
+            assertEquals(HttpStatusCode.OK, cancelledResponse.status)
             assertEquals(AgentExecutionStatus.CANCELLED, storedExecution.status)
         }
     }

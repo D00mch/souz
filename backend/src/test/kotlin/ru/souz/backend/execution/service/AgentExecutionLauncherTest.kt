@@ -9,10 +9,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -40,33 +44,35 @@ import ru.souz.llms.LLMResponse
 
 class AgentExecutionLauncherTest {
     @Test
-    fun `prepared background execution is registered but cannot run before explicit start`() = runBlocking {
+    fun `registered background execution can be cancelled through registry`() = runBlocking {
         launcherFixture().use { fixture ->
             val bodyStarted = CompletableDeferred<Unit>()
 
-            val prepared = fixture.launcher.prepareBackgroundExecution(
+            val job = fixture.launcher.launchRegistered(
                 execution = fixture.execution,
                 eventSink = fixture.eventSink,
             ) {
                 bodyStarted.complete(Unit)
+                awaitCancellation()
             }
 
             assertTrue(fixture.registry.contains(fixture.execution.id))
-            assertFalse(bodyStarted.isCompleted)
-
-            prepared.start()
             withTimeout(5_000) { bodyStarted.await() }
-            withTimeout(5_000) { prepared.awaitCompletion() }
+            assertTrue(fixture.launcher.cancel(fixture.execution.id))
+            withTimeout(5_000) { job.join() }
 
+            assertEquals(AgentExecutionStatus.CANCELLED, fixture.storedExecution().status)
             assertFalse(fixture.registry.contains(fixture.execution.id))
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `cancellation before start finalizes without entering execution body`() = runBlocking {
-        launcherFixture().use { fixture ->
+    fun `cancellation before body dispatch finalizes without entering execution body`() = runTest {
+        val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        launcherFixture(scope = scope).use { fixture ->
             var bodyStarted = false
-            val prepared = fixture.launcher.prepareBackgroundExecution(
+            val job = fixture.launcher.launchRegistered(
                 execution = fixture.execution,
                 eventSink = fixture.eventSink,
             ) {
@@ -74,7 +80,8 @@ class AgentExecutionLauncherTest {
             }
 
             assertTrue(fixture.launcher.cancel(fixture.execution.id))
-            withTimeout(5_000) { prepared.awaitCompletion() }
+            runCurrent()
+            withTimeout(5_000) { job.join() }
 
             assertFalse(bodyStarted)
             assertEquals(AgentExecutionStatus.CANCELLED, fixture.storedExecution().status)
@@ -92,24 +99,23 @@ class AgentExecutionLauncherTest {
         )
         launcherFixture(repository).use { fixture ->
             val bodyStarted = CompletableDeferred<Unit>()
-            val prepared = fixture.launcher.prepareBackgroundExecution(
+            val job = fixture.launcher.launchRegistered(
                 execution = fixture.execution,
                 eventSink = fixture.eventSink,
             ) {
                 bodyStarted.complete(Unit)
                 awaitCancellation()
             }
-            prepared.start()
             withTimeout(5_000) { bodyStarted.await() }
 
             assertTrue(fixture.launcher.cancel(fixture.execution.id))
             withTimeout(5_000) { finalizationStarted.await() }
 
             assertTrue(fixture.registry.contains(fixture.execution.id))
-            assertFalse(prepared.isComplete)
+            assertFalse(job.isCompleted)
 
             allowFinalization.complete(Unit)
-            withTimeout(5_000) { prepared.awaitCompletion() }
+            withTimeout(5_000) { job.join() }
 
             assertEquals(AgentExecutionStatus.CANCELLED, fixture.storedExecution().status)
             assertFalse(fixture.registry.contains(fixture.execution.id))
@@ -125,22 +131,23 @@ private class LauncherFixture(
     private val executionRepository: AgentExecutionRepository,
     private val chat: Chat,
     private val scope: CoroutineScope,
-    private val dispatcher: java.io.Closeable,
+    private val dispatcher: java.io.Closeable?,
 ) : AutoCloseable {
     suspend fun storedExecution(): AgentExecution =
         requireNotNull(executionRepository.getByChat(chat.userId, chat.id, execution.id))
 
     override fun close() {
         scope.cancel()
-        dispatcher.close()
+        dispatcher?.close()
     }
 }
 
 private suspend fun launcherFixture(
     executionRepository: AgentExecutionRepository = MemoryAgentExecutionRepository(),
+    scope: CoroutineScope? = null,
 ): LauncherFixture {
-    val dispatcher = Executors.newFixedThreadPool(4).asCoroutineDispatcher()
-    val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    val dispatcher = if (scope == null) Executors.newFixedThreadPool(4).asCoroutineDispatcher() else null
+    val executionScope = scope ?: CoroutineScope(SupervisorJob() + requireNotNull(dispatcher))
     val registry = ActiveExecutionJobRegistry()
     val chatRepository = MemoryChatRepository()
     val messageRepository = MemoryMessageRepository()
@@ -201,7 +208,7 @@ private suspend fun launcherFixture(
     )
     return LauncherFixture(
         launcher = AgentExecutionLauncher(
-            executionScope = scope,
+            executionScope = executionScope,
             finalizer = finalizer,
             activeJobs = registry,
         ),
@@ -210,7 +217,7 @@ private suspend fun launcherFixture(
         eventSink = eventSink,
         executionRepository = executionRepository,
         chat = chat,
-        scope = scope,
+        scope = executionScope,
         dispatcher = dispatcher,
     )
 }

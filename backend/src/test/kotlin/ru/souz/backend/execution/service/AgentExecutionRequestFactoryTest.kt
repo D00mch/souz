@@ -124,7 +124,6 @@ class AgentExecutionRequestFactoryTest {
             prepared.conversationKey,
         )
         assertEquals(mapOf("clientMessageId" to "client-42"), prepared.userMessageMetadata)
-        assertTrue(prepared.shouldReturnRunning)
 
         val effectiveSettings = prepared.effectiveSettings
         assertEquals(LLMModel.QwenMax, effectiveSettings.defaultModel)

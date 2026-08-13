@@ -54,7 +54,6 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
-        forceBackground: Boolean = false,
     ): SendMessageResult = supervisorScope {
         val chat = requireOwnedChat(userId, chatId)
         val prepared = requestFactory.prepareChatTurn(
@@ -68,7 +67,6 @@ class AgentExecutionService internal constructor(
             latestDeviceContextJson = latestDeviceContextJson,
             userMessageMetadataExtras = userMessageMetadata,
             clientToolsEnabled = clientToolsEnabled,
-            forceBackground = forceBackground,
         )
         prepared.normalizedClientMessageId
             ?.takeIf { initialClientRequest == null }
@@ -131,52 +129,23 @@ class AgentExecutionService internal constructor(
             eventSink.emitMessageCreated(userMessage)
             eventSink.emitExecutionStarted(runningExecution)
 
-            if (prepared.shouldReturnRunning) {
-                val backgroundExecution = launcher.prepareBackgroundExecution(
+            launcher.launchRegistered(
+                execution = runningExecution,
+                eventSink = eventSink,
+            ) {
+                finalizer.runExecution(
+                    chat = chat,
                     execution = runningExecution,
+                    conversationKey = prepared.conversationKey,
+                    turnRequest = prepared.runtimeRequest,
                     eventSink = eventSink,
-                ) {
-                    finalizer.runExecution(
-                        chat = chat,
-                        execution = runningExecution,
-                        conversationKey = prepared.conversationKey,
-                        turnRequest = prepared.runtimeRequest,
-                        eventSink = eventSink,
-                    )
-                }
-                backgroundExecution.start()
-                return@supervisorScope SendMessageResult(
-                    userMessage = userMessage,
-                    assistantMessage = null,
-                    execution = runningExecution,
-                )
-            }
-
-            val executionResult = try {
-                launcher.runTrackedExecution(
-                    execution = runningExecution,
-                    eventSink = eventSink,
-                ) {
-                    finalizer.runExecution(
-                        chat = chat,
-                        execution = runningExecution,
-                        conversationKey = prepared.conversationKey,
-                        turnRequest = prepared.runtimeRequest,
-                        eventSink = eventSink,
-                    )
-                }
-            } catch (_: ExecutionCancelledException) {
-                throw BackendV1Exception(
-                    status = HttpStatusCode.Conflict,
-                    code = "agent_execution_cancelled",
-                    message = "Agent execution was cancelled.",
                 )
             }
 
             SendMessageResult(
                 userMessage = userMessage,
-                assistantMessage = executionResult.assistantMessage,
-                execution = executionResult.execution,
+                assistantMessage = null,
+                execution = runningExecution,
             )
         } catch (e: BackendV1Exception) {
             throw e
@@ -241,7 +210,7 @@ class AgentExecutionService internal constructor(
             streamingMessagesEnabled = prepared.streamingMessagesEnabled,
             toolEventsEnabled = prepared.toolEventsEnabled,
         )
-        val backgroundExecution = launcher.prepareBackgroundExecution(
+        launcher.launchRegistered(
             execution = runningExecution,
             eventSink = eventSink,
         ) {
@@ -253,7 +222,6 @@ class AgentExecutionService internal constructor(
                 eventSink = eventSink,
             )
         }
-        backgroundExecution.start()
         return runningExecution
     }
 

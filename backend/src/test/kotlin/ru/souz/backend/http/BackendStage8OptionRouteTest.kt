@@ -15,14 +15,11 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
@@ -32,7 +29,6 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.session.AgentConversationSession
-import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.options.model.Option
@@ -349,7 +345,7 @@ class BackendStage8OptionRouteTest {
     }
 
     @Test
-    fun `sync fallback returns waiting option with no assistant message`() = testApplication {
+    fun `non websocket option request returns running and persists waiting option`() = testApplication {
         val runner = ScriptedOptionTurnRunner()
         val context = routeTestContext(
             settingsProvider = TestSettingsProvider().apply {
@@ -379,10 +375,12 @@ class BackendStage8OptionRouteTest {
             setBody("""{"content":"need option"}""")
         }
         val payload = stage8Json.readTree(response.bodyAsText())
+        val stored = awaitWaitingOption(context, "user-a", chat.id).execution
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertTrue(payload["assistantMessage"].isNull)
-        assertEquals("waiting_option", payload["execution"]["status"].asText())
+        assertEquals("running", payload["execution"]["status"].asText())
+        assertEquals(AgentExecutionStatus.WAITING_OPTION, stored.status)
     }
 }
 
@@ -439,45 +437,6 @@ private fun awaitWaitingOption(
         val option = context.optionRepository.listByExecution(userId, chatId, execution.id).singleOrNull()
             ?: return@eventually null
         WaitingOptionFixture(execution = execution, option = option)
-    }
-}
-
-private fun awaitExecutionStatus(
-    context: RouteTestContext,
-    userId: String,
-    chatId: UUID,
-    executionId: UUID,
-    status: AgentExecutionStatus,
-): AgentExecution = runBlocking {
-    eventually("execution $executionId to reach $status") {
-        context.executionRepository.getByChat(userId, chatId, executionId)
-            ?.takeIf { it.status == status }
-    }
-}
-
-private fun awaitVisibleMessages(
-    context: RouteTestContext,
-    userId: String,
-    chatId: UUID,
-    expectedSize: Int,
-): List<ChatMessage> = runBlocking {
-    eventually("$expectedSize visible messages for chat $chatId") {
-        context.messageRepository.list(userId, chatId)
-            .takeIf { it.size >= expectedSize }
-    }
-}
-
-private suspend fun <T : Any> eventually(
-    description: String,
-    block: suspend () -> T?,
-): T {
-    val timeout = TimeSource.Monotonic.markNow() + 2.seconds
-    while (true) {
-        block()?.let { return it }
-        if (timeout.hasPassedNow()) {
-            throw AssertionError("Timed out waiting for $description.")
-        }
-        delay(10)
     }
 }
 

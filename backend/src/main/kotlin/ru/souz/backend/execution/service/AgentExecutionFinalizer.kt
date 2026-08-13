@@ -16,7 +16,6 @@ import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateConflictException
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.model.Chat
-import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
@@ -25,11 +24,6 @@ import ru.souz.backend.execution.model.AgentExecutionUsage
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.llms.LLMResponse
-
-internal data class PersistedExecutionResult(
-    val assistantMessage: ChatMessage?,
-    val execution: AgentExecution,
-)
 
 internal class AgentExecutionFinalizer(
     agentStateRepository: AgentStateRepository,
@@ -46,7 +40,7 @@ internal class AgentExecutionFinalizer(
         conversationKey: AgentConversationKey,
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
-    ): PersistedExecutionResult {
+    ): AgentExecution {
         try {
             val executionOutcome = turnRunner.run(
                 conversationKey = conversationKey,
@@ -77,125 +71,9 @@ internal class AgentExecutionFinalizer(
                 )
             }
         } catch (e: CancellationException) {
-            withContext(NonCancellable) {
-                markCancelled(
-                    executionId = execution.id,
-                    userId = execution.userId,
-                    chatId = execution.chatId,
-                    usage = execution.usage,
-                )
-                eventSink.emitExecutionCancelled()
-            }
-            throw ExecutionCancelledException
-        } catch (e: BackendConversationTurnException) {
-            val cause = e.cause ?: e
-            if (cause is BackendV1Exception) {
-                withContext(NonCancellable) {
-                    markFailed(
-                        executionId = execution.id,
-                        userId = execution.userId,
-                        chatId = execution.chatId,
-                        errorCode = cause.code,
-                        errorMessage = cause.message,
-                        usage = e.usage.toExecutionUsage(),
-                    )
-                    eventSink.emitExecutionFailed(cause.code, cause.message)
-                }
-                throw cause
-            }
-            if (cause is AgentStateConflictException) {
-                withContext(NonCancellable) {
-                    markFailed(
-                        executionId = execution.id,
-                        userId = execution.userId,
-                        chatId = execution.chatId,
-                        errorCode = "state_conflict",
-                        errorMessage = "Agent state changed before save.",
-                        usage = e.usage.toExecutionUsage(),
-                    )
-                    eventSink.emitExecutionFailed(
-                        errorCode = "state_conflict",
-                        errorMessage = "Agent state changed before save.",
-                    )
-                }
-                throw BackendV1Exception(
-                    status = HttpStatusCode.InternalServerError,
-                    code = "agent_execution_failed",
-                    message = "Agent execution failed.",
-                )
-            }
-            withContext(NonCancellable) {
-                markFailed(
-                    executionId = execution.id,
-                    userId = execution.userId,
-                    chatId = execution.chatId,
-                    errorCode = "agent_execution_failed",
-                    errorMessage = cause.message ?: "Agent execution failed.",
-                    usage = e.usage.toExecutionUsage(),
-                )
-                eventSink.emitExecutionFailed(
-                    errorCode = "agent_execution_failed",
-                    errorMessage = cause.message ?: "Agent execution failed.",
-                )
-            }
-            throw BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            )
-        } catch (e: BackendV1Exception) {
-            withContext(NonCancellable) {
-                markFailed(
-                    executionId = execution.id,
-                    userId = execution.userId,
-                    chatId = execution.chatId,
-                    errorCode = e.code,
-                    errorMessage = e.message,
-                    usage = execution.usage,
-                )
-                eventSink.emitExecutionFailed(e.code, e.message)
-            }
-            throw e
-        } catch (e: AgentStateConflictException) {
-            withContext(NonCancellable) {
-                markFailed(
-                    executionId = execution.id,
-                    userId = execution.userId,
-                    chatId = execution.chatId,
-                    errorCode = "state_conflict",
-                    errorMessage = "Agent state changed before save.",
-                    usage = execution.usage,
-                )
-                eventSink.emitExecutionFailed(
-                    errorCode = "state_conflict",
-                    errorMessage = "Agent state changed before save.",
-                )
-            }
-            throw BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            )
+            cancelExecution(execution, eventSink)
         } catch (e: Exception) {
-            withContext(NonCancellable) {
-                markFailed(
-                    executionId = execution.id,
-                    userId = execution.userId,
-                    chatId = execution.chatId,
-                    errorCode = "agent_execution_failed",
-                    errorMessage = e.message ?: "Agent execution failed.",
-                    usage = execution.usage,
-                )
-                eventSink.emitExecutionFailed(
-                    errorCode = "agent_execution_failed",
-                    errorMessage = e.message ?: "Agent execution failed.",
-                )
-            }
-            throw BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            )
+            failExecution(execution, eventSink, e)
         }
     }
 
@@ -312,7 +190,7 @@ internal class AgentExecutionFinalizer(
         executionOutcome: BackendConversationTurnOutcome.Completed,
         conversationKey: AgentConversationKey,
         eventSink: BackendAgentRuntimeEventSink,
-    ): PersistedExecutionResult {
+    ): AgentExecution {
         val persisted = withTerminalTransition(execution.id) {
             val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
             sessionRepository.save(
@@ -323,7 +201,7 @@ internal class AgentExecutionFinalizer(
             )
             chatRepository.update(chat.copy(updatedAt = assistantMessage.createdAt))
 
-            val finalExecution = executionRepository.update(
+            executionRepository.update(
                 currentExecution(execution.id, execution.userId, execution.chatId).copy(
                     assistantMessageId = assistantMessage.id,
                     status = AgentExecutionStatus.COMPLETED,
@@ -333,9 +211,8 @@ internal class AgentExecutionFinalizer(
                     usage = executionOutcome.usage.toExecutionUsage(),
                 )
             )
-            PersistedExecutionResult(assistantMessage = assistantMessage, execution = finalExecution)
         }
-        eventSink.emitExecutionFinished(persisted.execution)
+        eventSink.emitExecutionFinished(persisted)
 
         return persisted
     }
@@ -344,30 +221,106 @@ internal class AgentExecutionFinalizer(
         execution: AgentExecution,
         executionOutcome: BackendConversationTurnOutcome.WaitingOption,
         conversationKey: AgentConversationKey,
-    ): PersistedExecutionResult {
+    ): AgentExecution {
         sessionRepository.save(conversationKey, executionOutcome.session)
         val waitingExecution = currentExecution(execution.id, execution.userId, execution.chatId)
-        return PersistedExecutionResult(
-            assistantMessage = null,
-            execution = if (waitingExecution.status == AgentExecutionStatus.WAITING_OPTION) {
-                executionRepository.update(
-                    waitingExecution.copy(
-                        usage = executionOutcome.usage.toExecutionUsage(),
-                    )
+        return if (waitingExecution.status == AgentExecutionStatus.WAITING_OPTION) {
+            executionRepository.update(
+                waitingExecution.copy(
+                    usage = executionOutcome.usage.toExecutionUsage(),
                 )
-            } else {
-                executionRepository.update(
-                    waitingExecution.copy(
-                        status = AgentExecutionStatus.WAITING_OPTION,
-                        usage = executionOutcome.usage.toExecutionUsage(),
-                    )
+            )
+        } else {
+            executionRepository.update(
+                waitingExecution.copy(
+                    status = AgentExecutionStatus.WAITING_OPTION,
+                    usage = executionOutcome.usage.toExecutionUsage(),
                 )
-            },
-        )
+            )
+        }
     }
 
     internal suspend fun <T> withTerminalTransition(executionId: UUID, block: suspend () -> T): T =
         clientThreadRegistry?.withTerminalTransition(executionId, block) ?: block()
+
+    private suspend fun cancelExecution(
+        execution: AgentExecution,
+        eventSink: BackendAgentRuntimeEventSink,
+    ): Nothing {
+        withContext(NonCancellable) {
+            markCancelled(
+                executionId = execution.id,
+                userId = execution.userId,
+                chatId = execution.chatId,
+                usage = execution.usage,
+            )
+            eventSink.emitExecutionCancelled()
+        }
+        throw CancellationException("Agent execution was cancelled.")
+    }
+
+    private suspend fun failExecution(
+        execution: AgentExecution,
+        eventSink: BackendAgentRuntimeEventSink,
+        error: Exception,
+    ): Nothing {
+        val failure = error.toExecutionFailure(execution)
+        withContext(NonCancellable) {
+            markFailed(
+                executionId = execution.id,
+                userId = execution.userId,
+                chatId = execution.chatId,
+                errorCode = failure.errorCode,
+                errorMessage = failure.errorMessage,
+                usage = failure.usage,
+            )
+            eventSink.emitExecutionFailed(failure.errorCode, failure.errorMessage)
+        }
+        throw failure.response
+    }
+}
+
+private data class ExecutionFailure(
+    val errorCode: String,
+    val errorMessage: String,
+    val usage: AgentExecutionUsage?,
+    val response: BackendV1Exception,
+)
+
+private fun Exception.toExecutionFailure(execution: AgentExecution): ExecutionFailure {
+    val turnException = this as? BackendConversationTurnException
+    val cause = turnException?.cause ?: this
+    val usage = turnException?.usage?.toExecutionUsage() ?: execution.usage
+    return when (cause) {
+        is BackendV1Exception -> ExecutionFailure(
+            errorCode = cause.code,
+            errorMessage = cause.message,
+            usage = usage,
+            response = cause,
+        )
+
+        is AgentStateConflictException -> ExecutionFailure(
+            errorCode = "state_conflict",
+            errorMessage = "Agent state changed before save.",
+            usage = usage,
+            response = BackendV1Exception(
+                status = HttpStatusCode.InternalServerError,
+                code = "agent_execution_failed",
+                message = "Agent execution failed.",
+            ),
+        )
+
+        else -> ExecutionFailure(
+            errorCode = "agent_execution_failed",
+            errorMessage = cause.message ?: "Agent execution failed.",
+            usage = usage,
+            response = BackendV1Exception(
+                status = HttpStatusCode.InternalServerError,
+                code = "agent_execution_failed",
+                message = "Agent execution failed.",
+            ),
+        )
+    }
 }
 
 private fun LLMResponse.Usage.toExecutionUsage(): AgentExecutionUsage =
