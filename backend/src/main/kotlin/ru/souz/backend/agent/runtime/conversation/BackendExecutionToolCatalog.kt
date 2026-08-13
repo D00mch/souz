@@ -1,13 +1,11 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.composeToolCatalogs
 import ru.souz.tool.immutableToolCatalogSnapshot
+import ru.souz.tool.withoutFewShotExamples
 
 /** Immutable tools available to one backend execution. Compiled-tool selection precedes client-tool merging. */
 internal class BackendExecutionToolCatalog(
@@ -48,20 +46,5 @@ internal class BackendExecutionToolCatalog(
             )
         }
         toolsByCategory = executionSnapshot.toolsByCategory
-    }
-}
-
-private fun LLMToolSetup.withoutFewShotExamples(): LLMToolSetup {
-    val delegate = this
-    return object : LLMToolSetup {
-        override val fn: LLMRequest.Function = delegate.fn.copy(fewShotExamples = emptyList())
-
-        override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-            delegate.invoke(functionCall)
-
-        override suspend fun invoke(
-            functionCall: LLMResponse.FunctionCall,
-            meta: ToolInvocationMeta,
-        ): LLMRequest.Message = delegate.invoke(functionCall, meta)
     }
 }
