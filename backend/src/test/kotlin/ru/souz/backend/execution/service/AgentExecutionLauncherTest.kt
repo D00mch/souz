@@ -8,11 +8,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -68,6 +71,36 @@ class AgentExecutionLauncherTest {
             assertFalse(bodyStarted)
             assertTrue(cancellationObserved.isCompleted)
             assertFalse(fixture.registry.contains(fixture.execution.id))
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `caller cancellation during launch handoff does not strand registered execution`() = runTest {
+        val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        launcherFixture(scope = scope).use { fixture ->
+            val bodyStarted = CompletableDeferred<Unit>()
+            val cancellationObserved = CompletableDeferred<Unit>()
+            val caller = async(start = CoroutineStart.UNDISPATCHED) {
+                fixture.launcher.launchRegistered(
+                    execution = fixture.execution,
+                    onCancelled = { cancellationObserved.complete(Unit) },
+                ) {
+                    bodyStarted.complete(Unit)
+                    awaitCancellation()
+                }
+            }
+
+            assertTrue(fixture.registry.contains(fixture.execution.id))
+            caller.cancel()
+            runCurrent()
+
+            withTimeout(5_000.milliseconds) { bodyStarted.await() }
+            assertTrue(fixture.launcher.cancel(fixture.execution.id))
+            runCurrent()
+            withTimeout(5_000.milliseconds) { cancellationObserved.await() }
+            assertFalse(fixture.registry.contains(fixture.execution.id))
+            caller.cancelAndJoin()
         }
     }
 

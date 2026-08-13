@@ -54,11 +54,11 @@ internal class AgentExecutionLauncher(
                 }
             }
         }
-        activeJobs.registerAndStart(execution.id, executionJob)
-        executionJob.invokeOnCompletion { lifecycleReady.complete(Unit) }
-        lifecycleReady.await()
-        if (executionJob.isCompleted && activeJobs.contains(execution.id)) {
-            withContext(NonCancellable) {
+        withContext(NonCancellable) {
+            activeJobs.registerAndStart(execution.id, executionJob)
+            executionJob.invokeOnCompletion { lifecycleReady.complete(Unit) }
+            lifecycleReady.await()
+            if (executionJob.isCompleted && activeJobs.contains(execution.id)) {
                 try {
                     if (executionJob.isCancelled) {
                         onCancelled()
@@ -66,9 +66,9 @@ internal class AgentExecutionLauncher(
                 } finally {
                     activeJobs.unregister(execution.id, executionJob)
                 }
+            } else {
+                startSignal.complete(Unit)
             }
-        } else {
-            startSignal.complete(Unit)
         }
         return executionJob
     }
