@@ -5,6 +5,9 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.supervisorScope
+import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
@@ -129,18 +132,13 @@ class AgentExecutionService internal constructor(
             eventSink.emitMessageCreated(userMessage)
             eventSink.emitExecutionStarted(runningExecution)
 
-            launcher.launchRegistered(
+            launchExecution(
+                chat = chat,
                 execution = runningExecution,
+                conversationKey = prepared.conversationKey,
+                turnRequest = prepared.runtimeRequest,
                 eventSink = eventSink,
-            ) {
-                finalizer.runExecution(
-                    chat = chat,
-                    execution = runningExecution,
-                    conversationKey = prepared.conversationKey,
-                    turnRequest = prepared.runtimeRequest,
-                    eventSink = eventSink,
-                )
-            }
+            )
 
             SendMessageResult(
                 userMessage = userMessage,
@@ -165,6 +163,38 @@ class AgentExecutionService internal constructor(
                 code = "agent_execution_failed",
                 message = "Agent execution failed.",
             )
+        }
+    }
+
+    private suspend fun launchExecution(
+        chat: Chat,
+        execution: AgentExecution,
+        conversationKey: AgentConversationKey,
+        turnRequest: BackendConversationTurnRequest,
+        eventSink: BackendAgentRuntimeEventSink,
+    ) {
+        launcher.launchRegistered(
+            execution = execution,
+            onCancelled = {
+                finalizer.finalizeCancelledExecutionIfNeeded(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    eventSink = eventSink,
+                )
+            },
+        ) {
+            try {
+                finalizer.runExecution(
+                    chat = chat,
+                    execution = execution,
+                    conversationKey = conversationKey,
+                    turnRequest = turnRequest,
+                    eventSink = eventSink,
+                )
+            } catch (_: BackendV1Exception) {
+                // Background failures are already persisted by AgentExecutionFinalizer.
+            }
         }
     }
 
@@ -210,18 +240,13 @@ class AgentExecutionService internal constructor(
             streamingMessagesEnabled = prepared.streamingMessagesEnabled,
             toolEventsEnabled = prepared.toolEventsEnabled,
         )
-        launcher.launchRegistered(
+        launchExecution(
+            chat = chat,
             execution = runningExecution,
+            conversationKey = prepared.conversationKey,
+            turnRequest = prepared.runtimeRequest,
             eventSink = eventSink,
-        ) {
-            finalizer.runExecution(
-                chat = chat,
-                execution = runningExecution,
-                conversationKey = prepared.conversationKey,
-                turnRequest = prepared.runtimeRequest,
-                eventSink = eventSink,
-            )
-        }
+        )
         return runningExecution
     }
 

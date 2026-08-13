@@ -1329,7 +1329,6 @@ internal fun routeTestContext(
         finalizer = finalizer,
         launcher = AgentExecutionLauncher(
             executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-            finalizer = finalizer,
             executionRepository = executionRepository,
             clientThreadRegistry = clientThreadRegistry,
         ),

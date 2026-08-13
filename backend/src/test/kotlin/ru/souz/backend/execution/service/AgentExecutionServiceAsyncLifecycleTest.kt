@@ -250,7 +250,6 @@ private suspend fun TestScope.asyncLifecycleContext(
         finalizer = finalizer,
         launcher = AgentExecutionLauncher(
             executionScope = executionScope,
-            finalizer = finalizer,
         ),
     )
     val chat = Chat(

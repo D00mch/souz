@@ -14,16 +14,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
-import ru.souz.backend.http.BackendV1Exception
 
 internal class AgentExecutionLauncher(
     private val executionScope: CoroutineScope,
-    private val finalizer: AgentExecutionFinalizer,
     private val activeJobs: ActiveExecutionJobRegistry = ActiveExecutionJobRegistry(),
     private val executionRepository: AgentExecutionRepository? = null,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
@@ -31,7 +28,7 @@ internal class AgentExecutionLauncher(
 ) {
     suspend fun launchRegistered(
         execution: AgentExecution,
-        eventSink: BackendAgentRuntimeEventSink,
+        onCancelled: suspend () -> Unit = {},
         block: suspend () -> Unit,
     ): Job {
         val startSignal = CompletableDeferred<Unit>()
@@ -44,17 +41,8 @@ internal class AgentExecutionLauncher(
                 startSignal.await()
                 leaseJob = startClientThreadLeaseRefresh(this, execution)
                 block()
-            } catch (_: BackendV1Exception) {
-                // Background failures are already persisted by the finalizer path.
             } catch (cancelled: CancellationException) {
-                withContext(NonCancellable) {
-                    finalizer.finalizeCancelledExecutionIfNeeded(
-                        executionId = execution.id,
-                        userId = execution.userId,
-                        chatId = execution.chatId,
-                        eventSink = eventSink,
-                    )
-                }
+                withContext(NonCancellable) { onCancelled() }
                 throw cancelled
             } finally {
                 withContext(NonCancellable) {
@@ -73,12 +61,7 @@ internal class AgentExecutionLauncher(
             withContext(NonCancellable) {
                 try {
                     if (executionJob.isCancelled) {
-                        finalizer.finalizeCancelledExecutionIfNeeded(
-                            executionId = execution.id,
-                            userId = execution.userId,
-                            chatId = execution.chatId,
-                            eventSink = eventSink,
-                        )
+                        onCancelled()
                     }
                 } finally {
                     activeJobs.unregister(execution.id, executionJob)

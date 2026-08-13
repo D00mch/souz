@@ -64,7 +64,6 @@ class AgentExecutionLauncherLeaseTest {
         )
         val launcher = AgentExecutionLauncher(
             executionScope = this,
-            finalizer = finalizer,
             executionRepository = executionRepository,
             clientThreadRegistry = registry,
             leaseRefreshInterval = Duration.ofMillis(1),
@@ -124,7 +123,17 @@ class AgentExecutionLauncherLeaseTest {
         )
         val started = CompletableDeferred<Unit>()
 
-        val running = launcher.launchRegistered(execution, eventSink) {
+        val running = launcher.launchRegistered(
+            execution = execution,
+            onCancelled = {
+                finalizer.finalizeCancelledExecutionIfNeeded(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    eventSink = eventSink,
+                )
+            },
+        ) {
             started.complete(Unit)
             awaitCancellation()
         }
@@ -164,7 +173,6 @@ class AgentExecutionLauncherLeaseTest {
         )
         val launcher = AgentExecutionLauncher(
             executionScope = this,
-            finalizer = finalizer,
             executionRepository = executionRepository,
             clientThreadRegistry = registry,
             leaseRefreshInterval = Duration.ofMillis(1),
@@ -224,7 +232,17 @@ class AgentExecutionLauncherLeaseTest {
         )
         val started = CompletableDeferred<Unit>()
 
-        val running = launcher.launchRegistered(execution, eventSink) {
+        val running = launcher.launchRegistered(
+            execution = execution,
+            onCancelled = {
+                finalizer.finalizeCancelledExecutionIfNeeded(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    eventSink = eventSink,
+                )
+            },
+        ) {
             started.complete(Unit)
             awaitCancellation()
         }

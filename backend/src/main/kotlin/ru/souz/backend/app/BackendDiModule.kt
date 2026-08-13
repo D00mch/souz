@@ -251,7 +251,6 @@ fun backendDiModule(
     bindSingleton {
         AgentExecutionLauncher(
             executionScope = instance<BackendApplicationScope>(),
-            finalizer = instance(),
             executionRepository = instance(),
             clientThreadRegistry = instance(),
         )

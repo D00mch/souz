@@ -140,7 +140,6 @@ class AgentExecutionServiceStateConflictTest {
             finalizer = finalizer,
             launcher = AgentExecutionLauncher(
                 executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-                finalizer = finalizer,
             ),
         )
 
