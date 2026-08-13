@@ -1,6 +1,5 @@
 package ru.souz.runtime
 
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -12,37 +11,38 @@ class OrderedShutdown(
     private val onStepFailure: (ShutdownStep, Throwable) -> Unit = { _, _ -> },
 ) {
     private val mutex = Mutex()
-    private var completion: CompletableDeferred<Result<Unit>>? = null
+    private var result: Result<Unit>? = null
 
     suspend fun shutdown() {
-        val (currentCompletion, ownsShutdown) = mutex.withLock {
-            completion?.let { it to false }
-                ?: CompletableDeferred<Result<Unit>>()
-                    .also { completion = it } to true
+        val shutdownResult = mutex.withLock {
+            result ?: withContext(NonCancellable) {
+                closeInOrder().also { result = it }
+            }
         }
-        if (!ownsShutdown) {
-            currentCompletion.await().getOrThrow()
-            return
-        }
-
-        val result = withContext(NonCancellable) {
-            beforeShutdown()
-            closeInOrder().also(currentCompletion::complete)
-        }
-        result.getOrThrow()
+        shutdownResult.getOrThrow()
     }
 
     private suspend fun closeInOrder(): Result<Unit> {
-        var failure: Throwable? = null
-        steps.forEach { step ->
-            try {
-                step.action()
-            } catch (stepFailure: Throwable) {
-                onStepFailure(step, stepFailure)
-                failure = failure?.also { it.addSuppressed(stepFailure) } ?: stepFailure
+        val failures = buildList {
+            runCatching { beforeShutdown() }.exceptionOrNull()?.let(::add)
+            steps.forEach { step ->
+                runCatching { step.action() }.exceptionOrNull()?.let { stepFailure ->
+                    add(stepFailure)
+                    runCatching { onStepFailure(step, stepFailure) }.exceptionOrNull()?.let(::add)
+                }
             }
         }
-        return failure?.let(Result.Companion::failure) ?: Result.success(Unit)
+        return failures.toShutdownResult()
+    }
+
+    private fun List<Throwable>.toShutdownResult(): Result<Unit> {
+        val first = firstOrNull() ?: return Result.success(Unit)
+        drop(1).forEach { failure ->
+            if (failure !== first) {
+                first.addSuppressed(failure)
+            }
+        }
+        return Result.failure(first)
     }
 }
 
