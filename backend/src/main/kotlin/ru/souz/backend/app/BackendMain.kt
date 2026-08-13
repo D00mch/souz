@@ -15,20 +15,56 @@ fun main() {
     }
 
     val runtime = BackendRuntime.create(appConfig)
-    val server = BackendHttpServer(
-        dependencies = runtime.httpDependencies,
-        bindAddress = InetSocketAddress(appConfig.server.host, appConfig.server.port),
-    )
+    val server = try {
+        BackendHttpServer(
+            dependencies = runtime.httpDependencies,
+            bindAddress = InetSocketAddress(appConfig.server.host, appConfig.server.port),
+        )
+    } catch (startupFailure: Throwable) {
+        try {
+            runtime.close()
+        } catch (closeFailure: Throwable) {
+            if (closeFailure !== startupFailure) {
+                startupFailure.addSuppressed(closeFailure)
+            }
+        }
+        throw startupFailure
+    }
     val shutdown = Runnable {
-        runCatching { server.close() }
-            .onFailure { log.warn("Failed to stop backend server: {}", it.message) }
-        runCatching { runtime.close() }
-            .onFailure { log.warn("Failed to close backend runtime: {}", it.message) }
+        var firstFailure: Throwable? = null
+        try {
+            server.close()
+        } catch (closeFailure: Throwable) {
+            log.warn("Failed to stop backend server: {}", closeFailure.message)
+            firstFailure = closeFailure
+        }
+        try {
+            runtime.close()
+        } catch (closeFailure: Throwable) {
+            log.warn("Failed to close backend runtime: {}", closeFailure.message)
+            if (firstFailure == null) {
+                firstFailure = closeFailure
+            } else if (closeFailure !== firstFailure) {
+                firstFailure.addSuppressed(closeFailure)
+            }
+        }
+        firstFailure?.let { throw it }
     }
     Runtime.getRuntime().addShutdownHook(Thread(shutdown, "souz-backend-shutdown"))
 
-    runtime.startBackgroundServices()
-    server.start()
+    try {
+        runtime.startBackgroundServices()
+        server.start()
+    } catch (startupFailure: Throwable) {
+        try {
+            shutdown.run()
+        } catch (closeFailure: Throwable) {
+            if (closeFailure !== startupFailure) {
+                startupFailure.addSuppressed(closeFailure)
+            }
+        }
+        throw startupFailure
+    }
     log.info(
         "Bootstrap API: GET http://{}:{}/v1/bootstrap",
         appConfig.server.host,

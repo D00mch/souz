@@ -6,18 +6,17 @@ import java.util.Locale
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.common.backendSafeToolNames
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.config.BackendSettingsConfig
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
-import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.model.ToolPermission
 import ru.souz.backend.settings.model.UserMcpServer
 import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.repository.UserSettingsRepository
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.LocalModelAvailability
+import ru.souz.llms.codex.CodexOAuthCredentialStore
 
 data class UserSettingsOverrides(
     val defaultModel: LLMModel? = null,
@@ -37,12 +36,12 @@ data class UserSettingsOverrides(
 )
 
 class EffectiveSettingsResolver(
-    private val baseSettingsProvider: SettingsProvider,
+    private val baseSettings: BackendSettingsConfig,
     private val userSettingsRepository: UserSettingsRepository,
     private val userProviderKeyRepository: UserProviderKeyRepository,
     private val featureFlags: BackendFeatureFlags,
     private val toolCatalog: AgentToolCatalog,
-    private val localModelAvailability: LocalModelAvailability,
+    private val codexOAuthCredentialStore: CodexOAuthCredentialStore? = null,
 ) {
     suspend fun isSelectableDefaultModel(
         userId: String,
@@ -69,7 +68,7 @@ class EffectiveSettingsResolver(
         val requestTimeoutMillis = normalizeRequestTimeoutMillis(
             requestOverrides?.requestTimeoutMillis
                 ?: persisted.requestTimeoutMillis
-                ?: baseSettingsProvider.requestTimeoutMillis
+                ?: baseSettings.requestTimeoutMillis
         )
         val defaultModel = normalizeModel(
             userId = userId,
@@ -81,7 +80,7 @@ class EffectiveSettingsResolver(
         val showToolEventsPreference = requestOverrides?.showToolEvents ?: persisted.showToolEvents ?: true
         val streamingPreference = requestOverrides?.streamingMessages
             ?: persisted.streamingMessages
-            ?: baseSettingsProvider.useStreaming
+            ?: baseSettings.useStreaming
         val useFewShotExamples = requestOverrides?.useFewShotExamples
             ?: persisted.useFewShotExamples
             ?: DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES
@@ -89,8 +88,8 @@ class EffectiveSettingsResolver(
         return EffectiveUserSettings(
             userId = userId,
             defaultModel = defaultModel,
-            contextSize = requestOverrides?.contextSize ?: persisted.contextSize ?: baseSettingsProvider.contextSize,
-            temperature = requestOverrides?.temperature ?: persisted.temperature ?: baseSettingsProvider.temperature,
+            contextSize = requestOverrides?.contextSize ?: persisted.contextSize ?: baseSettings.contextSize,
+            temperature = requestOverrides?.temperature ?: persisted.temperature ?: baseSettings.temperature,
             locale = locale,
             timeZone = timeZone,
             systemPrompt = requestOverrides?.systemPrompt ?: persisted.systemPrompt,
@@ -114,16 +113,16 @@ class EffectiveSettingsResolver(
         return UserSettings(
             userId = userId,
             defaultModel = defaultModelForNewSettings(userId, locale, userManagedProviders),
-            contextSize = baseSettingsProvider.contextSize,
-            temperature = baseSettingsProvider.temperature,
+            contextSize = baseSettings.contextSize,
+            temperature = baseSettings.temperature,
             locale = locale,
             timeZone = ZoneId.systemDefault(),
             systemPrompt = null,
             enabledTools = normalizeEnabledTools(null),
             showToolEvents = true,
-            streamingMessages = baseSettingsProvider.useStreaming,
+            streamingMessages = baseSettings.useStreaming,
             interfaceLanguage = defaultInterfaceLanguage(),
-            requestTimeoutMillis = normalizeRequestTimeoutMillis(baseSettingsProvider.requestTimeoutMillis),
+            requestTimeoutMillis = normalizeRequestTimeoutMillis(baseSettings.requestTimeoutMillis),
             useFewShotExamples = DEFAULT_BACKEND_USE_FEW_SHOT_EXAMPLES,
             toolPermissions = emptyMap(),
             mcp = emptyMap(),
@@ -154,7 +153,7 @@ class EffectiveSettingsResolver(
         locale: Locale,
         userManagedProviders: Set<LlmProvider>?,
     ): LLMModel {
-        val candidate = baseSettingsProvider.gigaModel.withConfiguredOpenAiCompatibleChatModel()
+        val candidate = baseSettings.gigaModel.withConfiguredOpenAiCompatibleChatModel()
         return candidate.takeIf { isSelectableModel(userId, it, userManagedProviders) }
             ?: fallbackModel(userId, locale, userManagedProviders)
     }
@@ -171,15 +170,11 @@ class EffectiveSettingsResolver(
             return LLMModel.OpenAICompatibleCustom
         }
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
-        val localDefault = localModelAvailability.defaultGigaModel()
         return LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
+            .filterNot { it == LlmProvider.LOCAL }
             .firstNotNullOfOrNull { provider ->
-                when (provider) {
-                    LlmProvider.LOCAL -> localDefault
-                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(userId, provider, userManagedProviders) }
-                }
+                defaults[provider]?.takeIf { hasConfiguredAccess(userId, provider, userManagedProviders) }
             }
-            ?: localDefault
             ?: defaults.values.first()
     }
 
@@ -189,9 +184,9 @@ class EffectiveSettingsResolver(
         userManagedProviders: Set<LlmProvider>?,
     ): Boolean =
         when (provider) {
-            LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
-            LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
-            else -> baseSettingsProvider.hasKey(provider) || provider in (userManagedProviders ?: loadUserManagedProviders(userId))
+            LlmProvider.LOCAL -> false
+            LlmProvider.CODEX -> hasCodexOAuthCredentials()
+            else -> baseSettings.hasKey(provider) || provider in (userManagedProviders ?: loadUserManagedProviders(userId))
         }
 
     private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =
@@ -208,13 +203,16 @@ class EffectiveSettingsResolver(
                 hasConfiguredAccess(userId, LlmProvider.OPENAI, userManagedProviders)
         } else {
             when (model.provider) {
-                LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
+                LlmProvider.LOCAL -> false
                 else -> hasConfiguredAccess(userId, model.provider, userManagedProviders)
             }
         }
 
     private fun hasConfiguredOpenAiCompatibleChatModel(): Boolean =
-        !baseSettingsProvider.openaiModel.isNullOrBlank()
+        !baseSettings.openaiModel.isNullOrBlank()
+
+    private suspend fun hasCodexOAuthCredentials(): Boolean =
+        codexOAuthCredentialStore?.load()?.isCompleteRotatingSet == true
 
     private fun LLMModel.withConfiguredOpenAiCompatibleChatModel(): LLMModel =
         if (provider == LlmProvider.OPENAI && hasConfiguredOpenAiCompatibleChatModel()) {
@@ -224,7 +222,7 @@ class EffectiveSettingsResolver(
         }
 
     private fun defaultLocale(): Locale =
-        if (baseSettingsProvider.regionProfile.equals(REGION_EN, ignoreCase = true)) {
+        if (baseSettings.regionProfile.equals(REGION_EN, ignoreCase = true)) {
             Locale.forLanguageTag("en-US")
         } else {
             Locale.forLanguageTag("ru-RU")
@@ -240,7 +238,7 @@ class EffectiveSettingsResolver(
         }
 
     private fun defaultInterfaceLanguage(): String =
-        if (baseSettingsProvider.regionProfile.equals(REGION_EN, ignoreCase = true)) {
+        if (baseSettings.regionProfile.equals(REGION_EN, ignoreCase = true)) {
             REGION_EN
         } else {
             REGION_RU
@@ -248,10 +246,10 @@ class EffectiveSettingsResolver(
 
     private fun normalizeRequestTimeoutMillis(requestTimeoutMillis: Long): Long =
         requestTimeoutMillis.takeIf { it >= MIN_REQUEST_TIMEOUT_MILLIS }
-            ?: baseSettingsProvider.requestTimeoutMillis.coerceAtLeast(MIN_REQUEST_TIMEOUT_MILLIS)
+            ?: baseSettings.requestTimeoutMillis.coerceAtLeast(MIN_REQUEST_TIMEOUT_MILLIS)
 
     private fun Locale.languageOrRegion(): String =
-        language.takeIf { it.isNotBlank() } ?: baseSettingsProvider.regionProfile
+        language.takeIf { it.isNotBlank() } ?: baseSettings.regionProfile
 
     private companion object {
         const val REGION_EN = "en"

@@ -8,13 +8,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.ProviderSettings
 
 class BackendLlmClientFactoryTest {
     @Test
@@ -26,7 +26,6 @@ class BackendLlmClientFactoryTest {
                 userManaged = mapOf("user-a" to mapOf(LlmProvider.OPENAI to "user-a-openai")),
             ),
             providerClientFactory = builder,
-            localChatApi = NoopChatApi(),
         )
 
         val userAApi = factory.create(
@@ -62,7 +61,6 @@ class BackendLlmClientFactoryTest {
                 userManaged = mapOf("user-a" to mapOf(LlmProvider.OPENAI to "user-a-openai")),
             ),
             providerClientFactory = builder,
-            localChatApi = NoopChatApi(),
         )
 
         factory.create(
@@ -97,7 +95,6 @@ class BackendLlmClientFactoryTest {
                 userManaged = emptyMap(),
             ),
             providerClientFactory = builder,
-            localChatApi = NoopChatApi(),
         )
 
         factory.create(
@@ -120,7 +117,6 @@ class BackendLlmClientFactoryTest {
                 userManaged = emptyMap(),
             ),
             providerClientFactory = builder,
-            localChatApi = NoopChatApi(),
         )
 
         factory.create(
@@ -147,7 +143,8 @@ private class RecordingProviderChatApiBuilder : ProviderChatApiBuilder {
 
     override fun build(
         provider: LlmProvider,
-        settingsProvider: SettingsProvider,
+        settingsProvider: ProviderSettings,
+        apiKey: String,
         sharedTransport: SharedProviderTransport,
         executionContext: BackendLlmExecutionContext,
     ): LLMChatAPI {
@@ -156,10 +153,7 @@ private class RecordingProviderChatApiBuilder : ProviderChatApiBuilder {
                 invocations += ProviderClientInvocation(
                     userId = executionContext.userId,
                     provider = provider,
-                    apiKey = when (provider) {
-                        LlmProvider.CODEX -> settingsProvider.codexAccessToken.orEmpty()
-                        else -> settingsProvider.openaiKey.orEmpty()
-                    },
+                    apiKey = apiKey,
                     transport = sharedTransport,
                 )
                 return LLMResponse.Chat.Error(499, "recorded only")

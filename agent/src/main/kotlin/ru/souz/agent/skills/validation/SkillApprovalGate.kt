@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentRuntimeSettings
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.json.JsonUtils
 
@@ -192,7 +192,7 @@ class SkillApprovalGate private constructor(
         fun from(
             validationStore: SkillValidationStore,
             llmApi: LLMChatAPI,
-            settingsProvider: AgentSettingsProvider,
+            settingsProvider: AgentRuntimeSettings,
             jsonUtils: JsonUtils,
         ): SkillApprovalGate = SkillApprovalGate(
             validationStore = validationStore,

@@ -4,13 +4,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.*
 import kotlin.math.pow
 
-/**
- * Routes a generic Skill invocation to either a compiled tool or a file-backed Skill.
- *
- * Implements [LLMToolSetup] directly to preserve delegated messages and attachments and to return
- * structured command results without the additional String serialization performed by
- * [ru.souz.llms.giga.toGiga].
- */
+/** Evaluates bounded arithmetic expressions without filesystem, process, or network access. */
 class ToolCalculator : ToolSetup<ToolCalculator.Input> {
 
     data class Input(
@@ -61,6 +55,9 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
     }
 
     private fun evaluate(expression: String): Double {
+        require(expression.length <= MAX_EXPRESSION_LENGTH) {
+            "Expression exceeds the $MAX_EXPRESSION_LENGTH character limit"
+        }
         return object : Any() {
             var pos = -1
             var ch = 0
@@ -80,37 +77,40 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
 
             fun parse(): Double {
                 nextChar()
-                val x = parseExpression()
+                val x = parseExpression(depth = 0)
                 if (pos < expression.length) throw RuntimeException("Unexpected: " + ch.toChar())
                 return x
             }
 
-            fun parseExpression(): Double {
-                var x = parseTerm()
+            fun parseExpression(depth: Int): Double {
+                var x = parseTerm(depth)
                 while (true) {
-                    if (eat('+'.code)) x += parseTerm() // addition
-                    else if (eat('-'.code)) x -= parseTerm() // subtraction
+                    if (eat('+'.code)) x += parseTerm(depth) // addition
+                    else if (eat('-'.code)) x -= parseTerm(depth) // subtraction
                     else return x
                 }
             }
 
-            fun parseTerm(): Double {
-                var x = parseFactor()
+            fun parseTerm(depth: Int): Double {
+                var x = parseFactor(depth)
                 while (true) {
-                    if (eat('*'.code)) x *= parseFactor() // multiplication
-                    else if (eat('/'.code)) x /= parseFactor() // division
+                    if (eat('*'.code)) x *= parseFactor(depth) // multiplication
+                    else if (eat('/'.code)) x /= parseFactor(depth) // division
                     else return x
                 }
             }
 
-            fun parseFactor(): Double {
-                if (eat('+'.code)) return parseFactor() // unary plus
-                if (eat('-'.code)) return -parseFactor() // unary minus
+            fun parseFactor(depth: Int): Double {
+                require(depth <= MAX_PARSE_DEPTH) {
+                    "Expression nesting exceeds the $MAX_PARSE_DEPTH level limit"
+                }
+                if (eat('+'.code)) return parseFactor(depth + 1) // unary plus
+                if (eat('-'.code)) return -parseFactor(depth + 1) // unary minus
 
                 var x: Double
                 val startPos = pos
                 if (eat('('.code)) { // parentheses
-                    x = parseExpression()
+                    x = parseExpression(depth + 1)
                     if (!eat(')'.code)) throw RuntimeException("Missing closing parenthesis")
                 } else if (ch in '0'.code..'9'.code || ch == '.'.code) { // numbers
                     while (ch in '0'.code..'9'.code || ch == '.'.code) nextChar()
@@ -118,7 +118,7 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
                 } else if (ch in 'a'.code..'z'.code) { // functions
                     while (ch in 'a'.code..'z'.code) nextChar()
                     val func = expression.substring(startPos, pos)
-                    x = parseFactor()
+                    x = parseFactor(depth + 1)
                     x = when (func) {
                         "sqrt" -> kotlin.math.sqrt(x)
                         "sin" -> kotlin.math.sin(Math.toRadians(x))
@@ -130,7 +130,7 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
                     throw RuntimeException("Unexpected: " + ch.toChar())
                 }
 
-                if (eat('^'.code)) x = x.pow(parseFactor()) // exponentiation
+                if (eat('^'.code)) x = x.pow(parseFactor(depth + 1)) // exponentiation
 
                 return x
             }
@@ -138,4 +138,9 @@ class ToolCalculator : ToolSetup<ToolCalculator.Input> {
     }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+
+    internal companion object {
+        const val MAX_EXPRESSION_LENGTH = 4_096
+        const val MAX_PARSE_DEPTH = 64
+    }
 }

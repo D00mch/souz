@@ -1,12 +1,14 @@
 package ru.souz.backend.llm
 
+import ru.souz.backend.config.BackendSettingsConfig
 import ru.souz.backend.keys.service.UserProviderKeyService
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.codex.CodexOAuthCredentialStore
 
 class StoredProviderCredentialResolver(
-    private val baseSettingsProvider: SettingsProvider,
+    private val settingsConfig: BackendSettingsConfig,
     private val userProviderKeyService: UserProviderKeyService,
+    private val codexOAuthCredentialStore: CodexOAuthCredentialStore,
 ) : ProviderCredentialResolver {
     override suspend fun resolve(
         userId: String,
@@ -22,14 +24,15 @@ class StoredProviderCredentialResolver(
             }
         }
         val serverManaged = when (provider) {
-            LlmProvider.GIGA -> baseSettingsProvider.gigaChatKey
-            LlmProvider.QWEN -> baseSettingsProvider.qwenChatKey
-            LlmProvider.AI_TUNNEL -> baseSettingsProvider.aiTunnelKey
-            LlmProvider.ANTHROPIC -> baseSettingsProvider.anthropicKey
-            LlmProvider.OPENAI -> baseSettingsProvider.openaiKey
+            LlmProvider.GIGA -> settingsConfig.gigaChatKey
+            LlmProvider.QWEN -> settingsConfig.qwenChatKey
+            LlmProvider.AI_TUNNEL -> settingsConfig.aiTunnelKey
+            LlmProvider.ANTHROPIC -> settingsConfig.anthropicKey
+            LlmProvider.OPENAI -> settingsConfig.openaiKey
             LlmProvider.LOCAL -> null
-            LlmProvider.CODEX -> baseSettingsProvider.codexAccessToken
-                .takeIf { baseSettingsProvider.hasCompleteCodexOAuthCredentials() }
+            LlmProvider.CODEX -> codexOAuthCredentialStore.load()
+                ?.takeIf { credentials -> credentials.isCompleteRotatingSet }
+                ?.accessToken
         }
         return serverManaged
             ?.takeIf { it.isNotBlank() }

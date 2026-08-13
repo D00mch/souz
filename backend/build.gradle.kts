@@ -1,4 +1,4 @@
-    import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
 
@@ -20,7 +20,6 @@ ktor {
 dependencies {
     implementation(project(":agent"))
     implementation(project(":llms"))
-    implementation(project(":native"))
     implementation(project(":sharedLogic"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)

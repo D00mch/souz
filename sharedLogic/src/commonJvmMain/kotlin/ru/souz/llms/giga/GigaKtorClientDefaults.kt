@@ -8,11 +8,11 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
-import ru.souz.db.SettingsProvider
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.tls.trustManagerFromPem
 import java.util.*
 
-fun HttpClientConfig<CIOEngineConfig>.gigaDefaults(settingsProvider: SettingsProvider) {
+fun HttpClientConfig<CIOEngineConfig>.gigaDefaults(settingsProvider: ProviderSettings) {
     this.defaultRequest {
         header(HttpHeaders.ContentType, "application/json")
         header(HttpHeaders.Accept, "application/json")

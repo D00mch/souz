@@ -68,7 +68,7 @@ fun runtimeLlmDiModule(
     bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance()) }
     bindSingleton { OpenAIImageGenerationGateway(instance()) }
     bindSingleton<LocalChatAPI> { LocalChatAPI(instance()) }
-    bindSingleton { CodexOAuthService(instance()) }
+    bindSingleton { CodexOAuthService(instance<SettingsProvider>()) }
     bindSingleton<CodexChatAPI> { CodexChatAPI(instance(), instance(), instance()) }
     bindSingleton { OpenAIVisionGateway(instance(), instance()) }
     bindSingleton { AnthropicVisionGateway(instance(), instance()) }

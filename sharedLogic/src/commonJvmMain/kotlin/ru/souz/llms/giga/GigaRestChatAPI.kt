@@ -28,6 +28,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
@@ -37,18 +38,38 @@ import java.nio.file.Path
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
-class GigaRestChatAPI(
+class GigaRestChatAPI private constructor(
     private val auth: GigaAuth,
-    private val keysProvider: SettingsProvider,
+    private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
+    private val configuredApiKey: () -> String?,
 ) : LLMChatAPI {
+    constructor(auth: GigaAuth, settingsProvider: SettingsProvider, tokenLogging: TokenLogging) : this(
+        auth = auth,
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { settingsProvider.gigaChatKey },
+    )
+
+    constructor(
+        auth: GigaAuth,
+        settingsProvider: ProviderSettings,
+        tokenLogging: TokenLogging,
+        apiKey: String,
+    ) : this(
+        auth = auth,
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { apiKey },
+    )
+
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
 
     private val apiKey: String
-        get() = keysProvider.gigaChatKey ?: throw IllegalStateException("GIGA_KEY is not set")
+        get() = configuredApiKey() ?: throw IllegalStateException("GIGA_KEY is not set")
 
     private val client = HttpClient(CIO) {
-        gigaDefaults(keysProvider)
+        gigaDefaults(settingsProvider)
         install(Logging) {
             val envLevel = System.getenv("GIGA_LOG_LEVEL")
                 ?.let { LogLevel.valueOf(it) } ?: LogLevel.INFO

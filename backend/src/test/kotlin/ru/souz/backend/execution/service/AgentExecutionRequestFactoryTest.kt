@@ -11,6 +11,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.config.BackendFeatureFlags
@@ -31,7 +32,6 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
@@ -52,12 +52,11 @@ class AgentExecutionRequestFactoryTest {
         }
         val factory = AgentExecutionRequestFactory(
             effectiveSettingsResolver = EffectiveSettingsResolver(
-                baseSettingsProvider = settingsProvider,
+                baseSettings = settingsProvider.toBackendSettingsConfig(),
                 userSettingsRepository = MemoryUserSettingsRepository(),
                 userProviderKeyRepository = MemoryUserProviderKeyRepository(),
                 featureFlags = featureFlags,
-                toolCatalog = toolCatalog("ListFiles", "InternetSearch"),
-                localModelAvailability = unavailableLocalModels(),
+                toolCatalog = toolCatalog("Calculator"),
             ),
             featureFlags = featureFlags,
         )
@@ -79,7 +78,7 @@ class AgentExecutionRequestFactoryTest {
                 interfaceLanguage = "en",
                 requestTimeoutMillis = 45_000L,
                 useFewShotExamples = false,
-                enabledTools = setOf("ListFiles"),
+                enabledTools = setOf("Calculator"),
             ),
         )
 
@@ -103,7 +102,7 @@ class AgentExecutionRequestFactoryTest {
         assertEquals("en", effectiveSettings.interfaceLanguage)
         assertEquals(45_000L, effectiveSettings.requestTimeoutMillis)
         assertFalse(effectiveSettings.useFewShotExamples)
-        assertEquals(setOf("ListFiles"), effectiveSettings.enabledTools)
+        assertEquals(setOf("Calculator"), effectiveSettings.enabledTools)
 
         val execution = prepared.execution
         assertEquals(AgentExecutionStatus.QUEUED, execution.status)
@@ -119,7 +118,8 @@ class AgentExecutionRequestFactoryTest {
         assertEquals("false", execution.metadata.getValue("showToolEvents"))
         assertEquals("45000", execution.metadata.getValue("requestTimeoutMillis"))
         assertEquals("false", execution.metadata.getValue("useFewShotExamples"))
-        assertEquals("[\"ListFiles\"]", execution.metadata.getValue("enabledTools"))
+        assertEquals("[\"Calculator\"]", execution.metadata.getValue("enabledTools"))
+        assertEquals("false", execution.metadata.getValue("clientToolsEnabled"))
 
         val runtimeRequest = prepared.runtimeRequest
         assertEquals("Summarize this chat.", runtimeRequest.prompt)
@@ -133,7 +133,7 @@ class AgentExecutionRequestFactoryTest {
         assertEquals(true, runtimeRequest.streamingMessages)
         assertEquals(45_000L, runtimeRequest.requestTimeoutMillis)
         assertEquals(false, runtimeRequest.useFewShotExamples)
-        assertEquals(setOf("ListFiles"), runtimeRequest.enabledTools)
+        assertEquals(setOf("Calculator"), runtimeRequest.enabledTools)
     }
 
     @Test
@@ -172,6 +172,7 @@ class AgentExecutionRequestFactoryTest {
                 "requestTimeoutMillis" to "46000",
                 "useFewShotExamples" to "false",
                 "enabledTools" to "[\"ListFiles\",\"InternetSearch\"]",
+                "clientToolsEnabled" to "true",
             ),
         )
         val option = Option(
@@ -211,6 +212,7 @@ class AgentExecutionRequestFactoryTest {
         assertEquals(46_000L, request.requestTimeoutMillis)
         assertEquals(false, request.useFewShotExamples)
         assertEquals(setOf("ListFiles", "InternetSearch"), request.enabledTools)
+        assertTrue(request.clientToolsEnabled)
         assertTrue(request.prompt.startsWith("__option_answer__ "))
 
         val payload = restJsonMapper.readTree(request.prompt.removePrefix("__option_answer__ "))
@@ -230,27 +232,23 @@ class AgentExecutionRequestFactoryTest {
 
     private fun stubResolver(): EffectiveSettingsResolver =
         EffectiveSettingsResolver(
-            baseSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
+            baseSettings = TestSettingsProvider().apply { gigaChatKey = "giga-key" }.toBackendSettingsConfig(),
             userSettingsRepository = MemoryUserSettingsRepository(),
             userProviderKeyRepository = MemoryUserProviderKeyRepository(),
             featureFlags = BackendFeatureFlags(),
             toolCatalog = BackendNoopAgentToolCatalog,
-            localModelAvailability = unavailableLocalModels(),
         )
 
-    private fun unavailableLocalModels(): LocalModelAvailability =
-        object : LocalModelAvailability {
-            override fun isProviderAvailable(): Boolean = false
-
-            override fun availableGigaModels() = emptyList<LLMModel>()
-
-            override fun defaultGigaModel(): LLMModel? = null
-        }
 }
 
 private fun toolCatalog(vararg toolNames: String): AgentToolCatalog = object : AgentToolCatalog {
     override val toolsByCategory = mapOf(
-        ToolCategory.FILES to toolNames.associateWith(::testTool)
+        ToolCategory.CALCULATOR to toolNames
+            .filter { it == "Calculator" }
+            .associateWith(::testTool),
+        ToolCategory.WEB_SEARCH to toolNames
+            .filter { it == "WebPageText" }
+            .associateWith(::testTool),
     )
 }
 

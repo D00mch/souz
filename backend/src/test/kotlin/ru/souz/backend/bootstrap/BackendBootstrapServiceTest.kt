@@ -7,6 +7,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
@@ -17,8 +18,9 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.codex.CodexOAuthCredentialStore
+import ru.souz.llms.codex.CodexOAuthCredentials
 import ru.souz.tool.ToolCategory
 
 class BackendBootstrapServiceTest {
@@ -42,18 +44,16 @@ class BackendBootstrapServiceTest {
             )
         )
         val bootstrapService = BackendBootstrapService(
-            settingsProvider = settingsProvider,
+            settingsConfig = settingsProvider.toBackendSettingsConfig(),
             effectiveSettingsResolver = EffectiveSettingsResolver(
-                baseSettingsProvider = settingsProvider,
+                baseSettings = settingsProvider.toBackendSettingsConfig(),
                 userSettingsRepository = MemoryUserSettingsRepository(),
                 userProviderKeyRepository = providerKeyRepository,
                 featureFlags = BackendFeatureFlags(),
                 toolCatalog = testToolCatalog(),
-                localModelAvailability = unavailableLocalModels(),
             ),
             toolCatalog = testToolCatalog(),
             featureFlags = BackendFeatureFlags(),
-            localModelAvailability = unavailableLocalModels(),
             userProviderKeyRepository = providerKeyRepository,
         )
 
@@ -87,19 +87,19 @@ class BackendBootstrapServiceTest {
             )
         )
         val bootstrapService = BackendBootstrapService(
-            settingsProvider = settingsProvider,
+            settingsConfig = settingsProvider.toBackendSettingsConfig(),
             effectiveSettingsResolver = EffectiveSettingsResolver(
-                baseSettingsProvider = settingsProvider,
+                baseSettings = settingsProvider.toBackendSettingsConfig(),
                 userSettingsRepository = MemoryUserSettingsRepository(),
                 userProviderKeyRepository = providerKeyRepository,
                 featureFlags = BackendFeatureFlags(),
                 toolCatalog = testToolCatalog(),
-                localModelAvailability = unavailableLocalModels(),
+                codexOAuthCredentialStore = completeCodexStore(),
             ),
             toolCatalog = testToolCatalog(),
             featureFlags = BackendFeatureFlags(),
-            localModelAvailability = unavailableLocalModels(),
             userProviderKeyRepository = providerKeyRepository,
+            codexOAuthCredentialStore = completeCodexStore(),
         )
 
         val response = bootstrapService.response(RequestIdentity(userId = "user-a"))
@@ -120,18 +120,16 @@ class BackendBootstrapServiceTest {
         }
         val providerKeyRepository = CountingUserProviderKeyRepository(emptyList())
         val bootstrapService = BackendBootstrapService(
-            settingsProvider = settingsProvider,
+            settingsConfig = settingsProvider.toBackendSettingsConfig(),
             effectiveSettingsResolver = EffectiveSettingsResolver(
-                baseSettingsProvider = settingsProvider,
+                baseSettings = settingsProvider.toBackendSettingsConfig(),
                 userSettingsRepository = MemoryUserSettingsRepository(),
                 userProviderKeyRepository = providerKeyRepository,
                 featureFlags = BackendFeatureFlags(),
                 toolCatalog = testToolCatalog(),
-                localModelAvailability = unavailableLocalModels(),
             ),
             toolCatalog = testToolCatalog(),
             featureFlags = BackendFeatureFlags(),
-            localModelAvailability = unavailableLocalModels(),
             userProviderKeyRepository = providerKeyRepository,
         )
 
@@ -152,18 +150,16 @@ class BackendBootstrapServiceTest {
         }
         val providerKeyRepository = CountingUserProviderKeyRepository(emptyList())
         val bootstrapService = BackendBootstrapService(
-            settingsProvider = settingsProvider,
+            settingsConfig = settingsProvider.toBackendSettingsConfig(),
             effectiveSettingsResolver = EffectiveSettingsResolver(
-                baseSettingsProvider = settingsProvider,
+                baseSettings = settingsProvider.toBackendSettingsConfig(),
                 userSettingsRepository = MemoryUserSettingsRepository(),
                 userProviderKeyRepository = providerKeyRepository,
                 featureFlags = BackendFeatureFlags(),
                 toolCatalog = testToolCatalog(),
-                localModelAvailability = unavailableLocalModels(),
             ),
             toolCatalog = testToolCatalog(),
             featureFlags = BackendFeatureFlags(),
-            localModelAvailability = unavailableLocalModels(),
             userProviderKeyRepository = providerKeyRepository,
         )
 
@@ -199,14 +195,20 @@ class BackendBootstrapServiceTest {
                 error("not used in tests")
         }
 
-    private fun unavailableLocalModels(): LocalModelAvailability =
-        object : LocalModelAvailability {
-            override fun availableGigaModels(): List<LLMModel> = emptyList()
+    private fun completeCodexStore(): CodexOAuthCredentialStore = object : CodexOAuthCredentialStore {
+        override suspend fun load() = CodexOAuthCredentials(
+            accessToken = "server-codex-access-token",
+            refreshToken = "server-codex-refresh-token",
+            accountId = "server-codex-account-id",
+            expiresAtEpochSeconds = 1_800_000_000L,
+            version = 0L,
+        )
 
-            override fun defaultGigaModel(): LLMModel? = null
-
-            override fun isProviderAvailable(): Boolean = false
-        }
+        override suspend fun compareAndSet(
+            expectedVersion: Long?,
+            credentials: CodexOAuthCredentials,
+        ): Boolean = error("not used")
+    }
 }
 
 private class CountingUserProviderKeyRepository(

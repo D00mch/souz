@@ -6,6 +6,7 @@ import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmBuildProfileSettings
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.VoiceRecognitionModel
 import ru.souz.llms.VoiceRecognitionProvider
 
@@ -13,14 +14,14 @@ const val REGION_RU = "ru"
 const val REGION_EN = "en"
 const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 400_000L
 
-interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
+interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings, ProviderSettings {
     var gigaChatKey: String?
     var qwenChatKey: String?
     var aiTunnelKey: String?
     var anthropicKey: String?
     var openaiKey: String?
-    var openaiBaseUrl: String?
-    var openaiModel: String?
+    override var openaiBaseUrl: String?
+    override var openaiModel: String?
     var codexAccessToken: String?
     var codexRefreshToken: String?
     var codexAccountId: String?
@@ -39,13 +40,13 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var safeModeEnabled: Boolean
     var needsOnboarding: Boolean
     var onboardingCompleted: Boolean
-    var requestTimeoutMillis: Long
+    override var requestTimeoutMillis: Long
     override var contextSize: Int
     var initialWindowWidthDp: Int
     var initialWindowHeightDp: Int
     override var temperature: Float
     var forbiddenFolders: List<String>
-    var embeddingsModel: EmbeddingsModel
+    override var embeddingsModel: EmbeddingsModel
     var voiceRecognitionModel: VoiceRecognitionModel
     var mcpServersJson: String?
     var mcpServersFile: String?

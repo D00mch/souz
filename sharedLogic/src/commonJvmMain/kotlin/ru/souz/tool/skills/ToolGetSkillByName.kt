@@ -26,6 +26,7 @@ class ToolGetSkillByName(
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
     private val approvalGate: SkillApprovalGate? = null,
+    private val fileSkillsExecutable: Boolean = true,
 ) : LLMToolSetup {
     private val fileSkillInputSchema = toolInputParameters<SkillCommandExecutor.Args>()
 
@@ -50,7 +51,7 @@ class ToolGetSkillByName(
             type = "object",
             properties = mapOf(
                 "skill" to LLMRequest.Property("object", "The full Skill description, or null on error."),
-                "executionSchema" to LLMRequest.Property("object", "Shared input and return schema for file-backed Skills. Tool-backed Skills keep individual schemas on the Skill entry."),
+                "executionSchema" to LLMRequest.Property("object", "Shared input and return schema for executable file-backed Skills, or null when the host disables their execution. Tool-backed Skills keep individual schemas on the Skill entry."),
                 "error" to LLMRequest.Property("object", "A lookup error, or null on success."),
             ),
         ),
@@ -147,7 +148,7 @@ class ToolGetSkillByName(
         val gate = approvalGate
             ?: return SkillLookupResponse(
                 skill = bundle.toDetail(),
-                executionSchema = fileSkillExecutionSchema(),
+                executionSchema = fileSkillExecutionSchemaOrNull(),
             )
 
         return when (
@@ -161,7 +162,7 @@ class ToolGetSkillByName(
         ) {
             is SkillApprovalGate.Result.Approved -> SkillLookupResponse(
                 skill = approval.bundle.toDetail(),
-                executionSchema = fileSkillExecutionSchema(),
+                executionSchema = fileSkillExecutionSchemaOrNull(),
             )
 
             is SkillApprovalGate.Result.Rejected -> SkillLookupResponse(
@@ -183,10 +184,15 @@ class ToolGetSkillByName(
         fewShotExamples = fn.fewShotExamples.orEmpty(),
     )
 
-    private fun fileSkillExecutionSchema(): SkillExecutionSchema = SkillExecutionSchema(
-        inputSchema = fileSkillInputSchema,
-        returnSchema = sandboxCommandResultSchema(),
-    )
+    private fun fileSkillExecutionSchemaOrNull(): SkillExecutionSchema? =
+        if (fileSkillsExecutable) {
+            SkillExecutionSchema(
+                inputSchema = fileSkillInputSchema,
+                returnSchema = sandboxCommandResultSchema(),
+            )
+        } else {
+            null
+        }
 
     private fun SkillBundle.toDetail(): BundleSkillDetail = BundleSkillDetail(
         skillId = skillId.value,
@@ -250,6 +256,14 @@ internal fun sandboxCommandResultSchema(): LLMRequest.Parameters = LLMRequest.Pa
         "stdout" to LLMRequest.Property("string", "Complete captured standard output."),
         "stderr" to LLMRequest.Property("string", "Complete captured standard error."),
         "timedOut" to LLMRequest.Property("boolean", "Whether the command timed out."),
+        "error" to LLMRequest.Property(
+            type = "object",
+            description = "Structured host error when command execution is unavailable.",
+            properties = mapOf(
+                "code" to LLMRequest.Property("string", "Stable error code."),
+                "message" to LLMRequest.Property("string", "Human-readable error message."),
+            ),
+        ),
     ),
     required = listOf("exitCode", "stdout", "stderr", "timedOut"),
 )

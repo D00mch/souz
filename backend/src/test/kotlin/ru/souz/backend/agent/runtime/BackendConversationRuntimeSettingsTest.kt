@@ -18,6 +18,8 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillFile
+import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -164,6 +166,47 @@ class BackendConversationRuntimeSettingsTest {
     }
 
     @Test
+    fun `resource Skills are available only when the client execution boundary is active`() = runTest {
+        val userSkills = InventorySkillBundleProvider("user.only")
+        val composedSkills = InventorySkillBundleProvider("resource.only", "user.only")
+
+        val proxyApi = ReplyingChatApi()
+        val proxyRequest = turnRequest().copy(clientToolsEnabled = false)
+        runtimeFactory(
+            llmApiFactory = { proxyApi },
+            skillBundleProvider = composedSkills,
+            userSkillBundleProvider = userSkills,
+        ).create(
+            conversationKey(),
+            proxyRequest,
+        ).execute(
+            request = proxyRequest,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        assertTrue(proxyApi.requests.single().systemMessage().contains("user.only"))
+        assertFalse(proxyApi.requests.single().systemMessage().contains("resource.only"))
+        assertEquals(0, composedSkills.inventoryLoads)
+
+        val clientApi = ReplyingChatApi()
+        val clientRequest = turnRequest().copy(clientToolsEnabled = true)
+        runtimeFactory(
+            llmApiFactory = { clientApi },
+            skillBundleProvider = composedSkills,
+            userSkillBundleProvider = userSkills,
+        ).create(conversationKey(), clientRequest).execute(
+            request = clientRequest,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        assertTrue(clientApi.requests.single().systemMessage().contains("resource.only"))
+        assertTrue(clientApi.requests.single().systemMessage().contains("user.only"))
+        assertEquals(1, composedSkills.inventoryLoads)
+    }
+
+    @Test
     fun `runtime discovers and delegates a compiled Skill with request metadata`() = runTest {
         val api = SkillLoopChatApi("capture.skill")
         val captureTool = CapturingTool("capture.skill")
@@ -304,6 +347,8 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
+    skillBundleProvider: SkillBundleProvider = InventorySkillBundleProvider(),
+    userSkillBundleProvider: SkillBundleProvider = skillBundleProvider,
 ): BackendConversationRuntimeFactory =
     ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
@@ -313,6 +358,8 @@ private fun runtimeFactory(
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,
         clientToolCatalog = clientToolCatalog,
+        skillBundleProvider = skillBundleProvider,
+        userSkillBundleProvider = userSkillBundleProvider,
         agentBackgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
 
@@ -360,6 +407,22 @@ private class TestClientToolCatalog(
                     ?: fakeTool(name = "device.media.open", fewShotExamples = emptyList())),
             ),
         )
+}
+
+private class InventorySkillBundleProvider(
+    vararg rawIds: String,
+) : SkillBundleProvider {
+    private val ids = rawIds.map(::SkillId)
+    var inventoryLoads: Int = 0
+
+    override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
+
+    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> {
+        inventoryLoads += 1
+        return ids
+    }
+
+    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = null
 }
 
 private fun fakeTool(

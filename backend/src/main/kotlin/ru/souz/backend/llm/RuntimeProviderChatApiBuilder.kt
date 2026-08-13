@@ -1,9 +1,9 @@
 package ru.souz.backend.llm
 
 import ru.souz.backend.app.BackendProviderRetryPolicy
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.codex.CodexChatAPI
@@ -21,16 +21,17 @@ class RuntimeProviderChatApiBuilder(
 ) : ProviderChatApiBuilder {
     override fun build(
         provider: LlmProvider,
-        settingsProvider: SettingsProvider,
+        settingsProvider: ProviderSettings,
+        apiKey: String,
         sharedTransport: SharedProviderTransport,
         executionContext: BackendLlmExecutionContext,
     ): LLMChatAPI {
         val api = when (provider) {
-            LlmProvider.GIGA -> GigaRestChatAPI(GigaAuth(settingsProvider), settingsProvider, tokenLogging)
-            LlmProvider.QWEN -> QwenChatAPI(settingsProvider, tokenLogging)
-            LlmProvider.AI_TUNNEL -> AiTunnelChatAPI(settingsProvider, tokenLogging)
-            LlmProvider.ANTHROPIC -> AnthropicChatAPI(settingsProvider, tokenLogging)
-            LlmProvider.OPENAI -> OpenAIChatAPI(settingsProvider, tokenLogging)
+            LlmProvider.GIGA -> GigaRestChatAPI(GigaAuth(settingsProvider), settingsProvider, tokenLogging, apiKey)
+            LlmProvider.QWEN -> QwenChatAPI(settingsProvider, tokenLogging, apiKey)
+            LlmProvider.AI_TUNNEL -> AiTunnelChatAPI(settingsProvider, tokenLogging, apiKey)
+            LlmProvider.ANTHROPIC -> AnthropicChatAPI(settingsProvider, tokenLogging, apiKey)
+            LlmProvider.OPENAI -> OpenAIChatAPI(settingsProvider, tokenLogging, apiKey)
             LlmProvider.LOCAL -> error("Local provider is handled separately.")
             LlmProvider.CODEX -> CodexChatAPI(settingsProvider, tokenLogging, codexOAuthService)
         }

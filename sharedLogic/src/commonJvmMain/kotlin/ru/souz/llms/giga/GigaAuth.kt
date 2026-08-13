@@ -7,11 +7,11 @@ import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import org.slf4j.LoggerFactory
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ProviderSettings
 
 class GigaAuth(
-    private val settingsProvider: SettingsProvider,
+    private val settingsProvider: ProviderSettings,
 ) {
     private val l = LoggerFactory.getLogger(GigaAuth::class.java)
 

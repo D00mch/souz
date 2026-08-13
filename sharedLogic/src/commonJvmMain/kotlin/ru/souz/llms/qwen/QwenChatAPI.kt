@@ -32,20 +32,34 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.toFinishReason
 import ru.souz.llms.restJsonMapper
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 
-class QwenChatAPI(
-    private val settingsProvider: SettingsProvider,
+class QwenChatAPI private constructor(
+    private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
+    private val configuredApiKey: () -> String?,
 ) : LLMChatAPI {
+    constructor(settingsProvider: SettingsProvider, tokenLogging: TokenLogging) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { settingsProvider.qwenChatKey },
+    )
+
+    constructor(settingsProvider: ProviderSettings, tokenLogging: TokenLogging, apiKey: String) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { apiKey },
+    )
+
     private val l = LoggerFactory.getLogger(QwenChatAPI::class.java)
 
     private val apiKey: String
-        get() = settingsProvider.qwenChatKey
+        get() = configuredApiKey()
             ?: System.getenv("QWEN_KEY")
             ?: System.getProperty("QWEN_KEY")
             ?: throw IllegalStateException("QWEN_KEY is not set")

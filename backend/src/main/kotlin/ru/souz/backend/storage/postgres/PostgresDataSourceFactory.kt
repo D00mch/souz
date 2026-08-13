@@ -25,16 +25,41 @@ object PostgresDataSourceFactory {
             addDataSourceProperty("currentSchema", schema)
             addDataSourceProperty("ApplicationName", "souz-backend")
         }
-        return HikariDataSource(hikariConfig).also { dataSource ->
-            Flyway.configure()
-                .dataSource(dataSource)
-                .locations("classpath:db/migration")
-                .defaultSchema(schema)
-                .schemas(schema)
-                .createSchemas(false)
-                .load()
-                .migrate()
+        return migrate(HikariDataSource(hikariConfig), schema)
+    }
+
+    internal fun migrate(
+        dataSource: HikariDataSource,
+        schema: String,
+        runMigration: (HikariDataSource, String) -> Unit = ::runMigration,
+    ): HikariDataSource {
+        try {
+            runMigration(dataSource, schema)
+        } catch (migrationFailure: Throwable) {
+            try {
+                dataSource.close()
+            } catch (closeFailure: Throwable) {
+                if (closeFailure !== migrationFailure) {
+                    migrationFailure.addSuppressed(closeFailure)
+                }
+            }
+            throw migrationFailure
         }
+        return dataSource
+    }
+
+    private fun runMigration(
+        dataSource: HikariDataSource,
+        schema: String,
+    ) {
+        Flyway.configure()
+            .dataSource(dataSource)
+            .locations("classpath:db/migration")
+            .defaultSchema(schema)
+            .schemas(schema)
+            .createSchemas(false)
+            .load()
+            .migrate()
     }
 
     private fun ensureSchemaExists(

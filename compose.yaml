@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${SOUZ_BACKEND_DB_USER:-souz}
       POSTGRES_PASSWORD: ${SOUZ_BACKEND_DB_PASSWORD:-souz}
     ports:
-      - "${SOUZ_POSTGRES_HOST_PORT:-5432}:5432"
+      - "${SOUZ_POSTGRES_BIND_ADDRESS:-127.0.0.1}:${SOUZ_POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -51,17 +51,12 @@ services:
       QWEN_KEY: ${QWEN_KEY:-}
       AITUNNEL_KEY: ${AITUNNEL_KEY:-}
     ports:
-      - "${SOUZ_BACKEND_HOST_PORT:-8080}:8080"
-    volumes:
-      - backend-state:/root/.local/state/souz
-      - backend-preferences:/root/.java/.userPrefs
+      - "${SOUZ_BACKEND_BIND_ADDRESS:-127.0.0.1}:${SOUZ_BACKEND_HOST_PORT:-8080}:8080"
     networks:
       - souz-local
 
 volumes:
   postgres-data:
-  backend-state:
-  backend-preferences:
 
 networks:
   souz-local:

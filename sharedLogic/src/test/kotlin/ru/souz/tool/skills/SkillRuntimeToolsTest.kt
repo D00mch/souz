@@ -218,6 +218,17 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `file backed lookup omits execution schema when the host disables execution`() = runTest {
+        val response = getSkillByNameTool(
+            repository = repository(bundle("read-only")),
+            fileSkillsExecutable = false,
+        ).call(mapOf("skillId" to "read-only"))
+
+        assertEquals("read-only", response["skill"]["skillId"].asText())
+        assertFalse(response.has("executionSchema"))
+    }
+
+    @Test
     fun `file backed lookup returns validation error when approval rejects`() = runTest {
         val repository = repository(bundle("unsafe"))
         val approvalGate = rejectingApprovalGate("Rejected by policy.")
@@ -451,11 +462,13 @@ class SkillRuntimeToolsTest {
         catalog: AgentToolCatalog = catalog(),
         filter: AgentToolsFilter = TestToolsFilter(),
         approvalGate: SkillApprovalGate? = null,
+        fileSkillsExecutable: Boolean = true,
     ): ToolGetSkillByName = ToolGetSkillByName(
         toolCatalog = catalog,
         toolsFilter = filter,
         skillBundleProvider = repository,
         approvalGate = approvalGate,
+        fileSkillsExecutable = fileSkillsExecutable,
     )
 
     private fun getSkillsNamesByCategoryTool(

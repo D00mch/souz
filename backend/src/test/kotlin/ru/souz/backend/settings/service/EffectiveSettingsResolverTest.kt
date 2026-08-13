@@ -9,6 +9,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.model.UserSettings
@@ -17,8 +18,9 @@ import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.codex.CodexOAuthCredentialStore
+import ru.souz.llms.codex.CodexOAuthCredentials
 import ru.souz.tool.ToolCategory
 
 class EffectiveSettingsResolverTest {
@@ -41,7 +43,7 @@ class EffectiveSettingsResolverTest {
                     locale = Locale.forLanguageTag("en-US"),
                     timeZone = null,
                     systemPrompt = "be brief",
-                    enabledTools = setOf("ListFiles"),
+                    enabledTools = setOf("Calculator"),
                     showToolEvents = false,
                     streamingMessages = true,
                     interfaceLanguage = "en",
@@ -67,7 +69,7 @@ class EffectiveSettingsResolverTest {
         assertEquals(Locale.forLanguageTag("en-US"), effective.locale)
         assertEquals(ZoneId.systemDefault(), effective.timeZone)
         assertEquals("be brief", effective.systemPrompt)
-        assertEquals(setOf("ListFiles"), effective.enabledTools)
+        assertEquals(setOf("Calculator"), effective.enabledTools)
         assertFalse(effective.showToolEvents)
         assertTrue(effective.streamingMessages)
         assertEquals("en", effective.interfaceLanguage)
@@ -91,7 +93,10 @@ class EffectiveSettingsResolverTest {
                 )
         )
 
-        val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
+        val effective = resolver(
+            settingsProvider = settingsProvider,
+            repository = repository,
+        ).resolve("user-a")
 
         assertEquals(LLMModel.QwenMax, effective.defaultModel)
     }
@@ -149,7 +154,11 @@ class EffectiveSettingsResolverTest {
             )
         )
 
-        val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
+        val effective = resolver(
+            settingsProvider = settingsProvider,
+            repository = repository,
+            codexOAuthCredentialStore = completeCodexStore(),
+        ).resolve("user-a")
 
         assertEquals(LLMModel.CodexGpt55, effective.defaultModel)
     }
@@ -232,7 +241,7 @@ class EffectiveSettingsResolverTest {
     }
 
     @Test
-    fun `resolver keeps selected local model when it is available`() = runTest {
+    fun `resolver rejects selected local model`() = runTest {
         val repository = MemoryUserSettingsRepository()
         repository.save(
             UserSettings(
@@ -241,19 +250,13 @@ class EffectiveSettingsResolverTest {
             )
         )
 
-        val effective = resolver(
-            repository = repository,
-            localModelAvailability = localModels(
-                available = listOf(LLMModel.LocalGemma4_E2B_It, LLMModel.LocalQwen3_4B_Instruct_2507),
-                default = LLMModel.LocalQwen3_4B_Instruct_2507,
-            ),
-        ).resolve("user-a")
+        val effective = resolver(repository = repository).resolve("user-a")
 
-        assertEquals(LLMModel.LocalGemma4_E2B_It, effective.defaultModel)
+        assertEquals(LLMModel.Max, effective.defaultModel)
     }
 
     @Test
-    fun `resolver falls back to available local default when remote providers are inaccessible`() = runTest {
+    fun `resolver never falls back to a local model when remote providers are inaccessible`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "en"
             openaiKey = null
@@ -268,16 +271,9 @@ class EffectiveSettingsResolverTest {
             )
         )
 
-        val effective = resolver(
-            settingsProvider = settingsProvider,
-            repository = repository,
-            localModelAvailability = localModels(
-                available = listOf(LLMModel.LocalGemma4_E4B_It),
-                default = LLMModel.LocalGemma4_E4B_It,
-            ),
-        ).resolve("user-a")
+        val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
 
-        assertEquals(LLMModel.LocalGemma4_E4B_It, effective.defaultModel)
+        assertEquals(LLMModel.CodexGpt54, effective.defaultModel)
     }
 
     @Test
@@ -353,13 +349,13 @@ class EffectiveSettingsResolverTest {
         repository.save(
                 UserSettings(
                     userId = "user-a",
-                    enabledTools = setOf("ListFiles", "OpenBrowser", "SendTelegramMessage"),
+                    enabledTools = setOf("Calculator", "OpenBrowser", "SendTelegramMessage"),
                 )
         )
 
         val effective = resolver(repository = repository).resolve("user-a")
 
-        assertEquals(setOf("ListFiles"), effective.enabledTools)
+        assertEquals(setOf("Calculator"), effective.enabledTools)
     }
 
     @Test
@@ -387,20 +383,35 @@ class EffectiveSettingsResolverTest {
             streamingMessages = true,
             toolEvents = true,
         ),
-        localModelAvailability: LocalModelAvailability = unavailableLocalModels(),
+        codexOAuthCredentialStore: CodexOAuthCredentialStore? = null,
     ): EffectiveSettingsResolver =
         EffectiveSettingsResolver(
-            baseSettingsProvider = settingsProvider,
+            baseSettings = settingsProvider.toBackendSettingsConfig(),
             userSettingsRepository = repository,
             userProviderKeyRepository = userProviderKeyRepository,
             featureFlags = featureFlags,
             toolCatalog = toolCatalog(
-                ToolCategory.FILES to fakeTool("ListFiles"),
+                ToolCategory.CALCULATOR to fakeTool("Calculator"),
                 ToolCategory.BROWSER to fakeTool("OpenBrowser"),
                 ToolCategory.TELEGRAM to fakeTool("SendTelegramMessage"),
             ),
-            localModelAvailability = localModelAvailability,
+            codexOAuthCredentialStore = codexOAuthCredentialStore,
         )
+
+    private fun completeCodexStore(): CodexOAuthCredentialStore = object : CodexOAuthCredentialStore {
+        override suspend fun load() = CodexOAuthCredentials(
+            accessToken = "server-codex-access-token",
+            refreshToken = "server-codex-refresh-token",
+            accountId = "server-codex-account-id",
+            expiresAtEpochSeconds = 1_800_000_000L,
+            version = 0L,
+        )
+
+        override suspend fun compareAndSet(
+            expectedVersion: Long?,
+            credentials: CodexOAuthCredentials,
+        ): Boolean = error("not used")
+    }
 
     private fun toolCatalog(vararg tools: Pair<ToolCategory, LLMToolSetup>): AgentToolCatalog =
         object : AgentToolCatalog {
@@ -421,24 +432,4 @@ class EffectiveSettingsResolverTest {
                 error("not used in tests")
         }
 
-    private fun unavailableLocalModels(): LocalModelAvailability =
-        object : LocalModelAvailability {
-            override fun availableGigaModels(): List<LLMModel> = emptyList()
-
-            override fun defaultGigaModel(): LLMModel? = null
-
-            override fun isProviderAvailable(): Boolean = false
-        }
-
-    private fun localModels(
-        available: List<LLMModel>,
-        default: LLMModel,
-    ): LocalModelAvailability =
-        object : LocalModelAvailability {
-            override fun availableGigaModels(): List<LLMModel> = available
-
-            override fun defaultGigaModel(): LLMModel = default
-
-            override fun isProviderAvailable(): Boolean = true
-        }
 }

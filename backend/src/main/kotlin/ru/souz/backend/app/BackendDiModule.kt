@@ -10,9 +10,11 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.SkillToolBindingTags
-import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
+import ru.souz.backend.agent.runtime.BackendSandboxUnavailableSkillCommandRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
@@ -30,6 +32,8 @@ import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.config.BackendSettingsConfig
+import ru.souz.backend.common.BackendSafeToolCatalog
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.events.repository.AgentEventRepository
@@ -60,9 +64,12 @@ import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresClientInputRepository
 import ru.souz.backend.storage.postgres.PostgresClientRequestRepository
+import ru.souz.backend.storage.postgres.PostgresCodexOAuthCredentialStore
+import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
+import ru.souz.backend.storage.postgres.PostgresSkillRegistryRepository
 import ru.souz.backend.storage.postgres.PostgresToolCallRepository
 import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
@@ -70,21 +77,23 @@ import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.user.repository.UserRepository
-import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.SessionTokenLogging
+import ru.souz.llms.TokenLogging
+import ru.souz.llms.codex.CodexOAuthCredentialStore
 import ru.souz.llms.codex.CodexOAuthService
-import ru.souz.llms.local.LocalProviderAvailability
-import ru.souz.runtime.di.runtimeCoreDiModule
-import ru.souz.runtime.di.runtimeLlmDiModule
-import ru.souz.skills.registry.fileSystemSkillRegistryDiModule
+import ru.souz.backend.skills.BackendSkillBundleProvider
 import ru.souz.backend.telegram.HttpTelegramBotApi
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
-import ru.souz.tool.runtimeToolsDiModule
-import ru.souz.tool.portableSkillRuntimeToolsDiModule
-import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.memory.NoopConversationMemoryRuntime
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.memory.ToolSearchMemory
+import ru.souz.tool.skills.SkillCommandRunner
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -102,20 +111,14 @@ fun backendDiModule(
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
 
-    import(runtimeCoreDiModule())
-    import(
-        runtimeToolsDiModule(
-            includeWebImageSearch = false,
-            scopeResolver = BackendSandboxScopeResolver,
-        )
-    )
-    import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
-    import(fileSystemSkillRegistryDiModule())
-    import(portableSkillRuntimeToolsDiModule())
-
     bindSingleton { BackendApplicationScope() }
     bindSingleton<Clock> { Clock.systemUTC() }
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
+    bindSingleton { appConfig.settings }
+    bindSingleton<TokenLogging> {
+        SessionTokenLogging(instance<ObjectMapper>(tag = BackendDiTags.LOG_OBJECT_MAPPER))
+    }
+    bindSingleton<AgentToolCatalog> { BackendSafeToolCatalog() }
     bindSingleton<HikariDataSource> {
         dataSourceFactory(appConfig.postgres)
     }
@@ -132,6 +135,32 @@ fun backendDiModule(
     bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
     bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
     bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
+    bindSingleton<SkillRegistryRepository> { PostgresSkillRegistryRepository(instance()) }
+    bindSingleton<SkillBundleProvider> {
+        BackendSkillBundleProvider(
+            resourceSkills = instance<BackendClientSkills>(),
+            userSkills = instance<SkillRegistryRepository>(),
+        )
+    }
+    bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance()) }
+    bindSingleton<SkillCommandRunner> { BackendSandboxUnavailableSkillCommandRunner }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
+        ToolGetKnowledge(instance<ConversationKnowledgeStore>())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
+        ToolSearchKnowledge(instance<ConversationKnowledgeStore>())
+    }
+    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
+        ToolSearchMemory(NoopConversationMemoryRuntime)
+    }
+    bindSingleton<CodexOAuthCredentialStore> {
+        PostgresCodexOAuthCredentialStore(
+            dataSource = instance<HikariDataSource>(),
+            masterKey = appConfig.masterKey ?: error("Master key is required."),
+            initialSeed = appConfig.codexOAuthSeed,
+        )
+    }
+    bindSingleton { CodexOAuthService(instance<CodexOAuthCredentialStore>()) }
     bindSingleton {
         BackendRuntimeResources(
             closeables = listOf(
@@ -158,8 +187,9 @@ fun backendDiModule(
     bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
-            baseSettingsProvider = instance(),
+            settingsConfig = instance<BackendSettingsConfig>(),
             userProviderKeyService = instance(),
+            codexOAuthCredentialStore = instance(),
         )
     }
     bindSingleton<ProviderChatApiBuilder> {
@@ -173,17 +203,16 @@ fun backendDiModule(
         BackendLlmClientFactory(
             credentialResolver = instance(),
             providerClientFactory = instance(),
-            localChatApi = instance(),
         )
     }
     bindSingleton {
         EffectiveSettingsResolver(
-            baseSettingsProvider = instance(),
+            baseSettings = instance<BackendSettingsConfig>(),
             userSettingsRepository = instance(),
             userProviderKeyRepository = instance(),
             featureFlags = instance(),
             toolCatalog = instance(),
-            localModelAvailability = instance<LocalProviderAvailability>(),
+            codexOAuthCredentialStore = instance(),
         )
     }
     bindSingleton<AgentSessionRepository> {
@@ -217,15 +246,16 @@ fun backendDiModule(
     }
     bindSingleton {
         BackendConversationRuntimeFactory(
-            baseSettingsProvider = instance(),
+            baseSettings = instance<BackendSettingsConfig>(),
             llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             toolCatalog = instance(),
             clientToolCatalog = instance<BackendClientSkills>(),
-            skillBundleProvider = instance<SkillRegistryRepository>(),
-            commandExecutor = instance<SkillCommandExecutor>(),
+            skillBundleProvider = instance<SkillBundleProvider>(),
+            userSkillBundleProvider = instance<SkillRegistryRepository>(),
+            commandExecutor = instance<SkillCommandRunner>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
             searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
@@ -333,17 +363,17 @@ fun backendDiModule(
     }
     bindSingleton {
         BackendBootstrapService(
-            settingsProvider = instance(),
+            settingsConfig = instance<BackendSettingsConfig>(),
             effectiveSettingsResolver = instance(),
             toolCatalog = instance(),
             featureFlags = instance(),
-            localModelAvailability = instance<LocalProviderAvailability>(),
             userProviderKeyRepository = instance(),
+            codexOAuthCredentialStore = instance(),
         )
     }
     bindSingleton {
         val featureFlags = instance<BackendFeatureFlags>()
-        val settingsProvider = instance<SettingsProvider>()
+        val settings = instance<BackendSettingsConfig>()
         val userRepository = instance<UserRepository>()
         BackendHttpDependencies(
             bootstrapService = instance(),
@@ -358,7 +388,7 @@ fun backendDiModule(
             publicClientService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             featureFlags = featureFlags,
-            selectedModel = { settingsProvider.gigaModel.alias },
+            selectedModel = { settings.gigaModel.alias },
             trustedProxyToken = { appConfig.server.proxyToken },
             ensureTrustedUser = userRepository::ensureUser,
         )

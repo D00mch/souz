@@ -25,17 +25,17 @@ import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.slf4j.LoggerFactory
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import java.io.File
 
 class CodexChatAPI(
-    private val settingsProvider: SettingsProvider,
+    private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
     private val oauthService: CodexOAuthService,
 ) : LLMChatAPI {
@@ -75,14 +75,13 @@ class CodexChatAPI(
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         try {
-            val token = oauthService.refreshTokenIfNeeded()
-            val accountId = settingsProvider.codexAccountId.orEmpty()
+            val credentials = oauthService.refreshTokenIfNeeded()
             val requestBody = buildResponsesRequest(body, stream = true)
 
             client.preparePost(CODEX_BASE_URL) {
                 contentType(ContentType.Application.Json)
-                header(HttpHeaders.Authorization, "Bearer $token")
-                header("Chatgpt-Account-Id", accountId)
+                header(HttpHeaders.Authorization, "Bearer ${credentials.accessToken}")
+                header("Chatgpt-Account-Id", credentials.accountId.orEmpty())
                 header("originator", ORIGINATOR)
                 header("OpenAI-Beta", OPENAI_BETA)
                 setBody(requestBody)

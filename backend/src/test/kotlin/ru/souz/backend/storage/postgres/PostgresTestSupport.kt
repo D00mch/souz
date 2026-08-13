@@ -1,8 +1,6 @@
 package ru.souz.backend.storage.postgres
 
 import java.util.UUID
-import org.junit.jupiter.api.Assumptions.assumeTrue
-import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.PostgreSQLContainer
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.app.BackendPostgresConfig
@@ -26,10 +24,6 @@ internal fun newPostgresSchema(prefix: String): String =
 internal fun postgresAppConfig(
     schema: String,
 ): BackendAppConfig {
-    assumeTrue(
-        runCatching { DockerClientFactory.instance().isDockerAvailable() }.getOrDefault(false),
-        "Docker is required for Postgres Testcontainers tests.",
-    )
     val container = SharedPostgresContainer.instance
     return BackendAppConfig(
         featureFlags = BackendFeatureFlags(),

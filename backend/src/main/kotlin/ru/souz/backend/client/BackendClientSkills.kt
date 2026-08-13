@@ -11,12 +11,20 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.bundle.SkillManifest
+import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.skills.MAX_STORED_SKILL_FILE_BYTES
+import ru.souz.backend.skills.copySkillBundle
+import ru.souz.backend.skills.requireSafeSkillId
+import ru.souz.backend.skills.requireSkillUserId
+import ru.souz.backend.skills.validateAndCopySkillBundle
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
@@ -35,12 +43,12 @@ internal class BackendClientSkills(
     private val eventService: AgentEventService,
     private val now: () -> Instant = Instant::now,
     classLoader: ClassLoader = BackendClientSkills::class.java.classLoader,
-) : AgentToolCatalog {
-    private val definitionsById: Map<SkillId, ClientSkillDefinition> =
-        loadClientSkillDefinitions(classLoader)
+) : AgentToolCatalog, SkillBundleProvider {
+    private val skillsById: Map<SkillId, BundledClientSkill> = loadClientSkills(classLoader)
 
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
-        definitionsById.values
+        skillsById.values
+            .map { skill -> skill.definition }
             .groupBy { it.category }
             .mapValues { (_, definitions) ->
                 Collections.unmodifiableMap(
@@ -56,6 +64,30 @@ internal class BackendClientSkills(
                 )
             }
             .let { Collections.unmodifiableMap(it) }
+
+    override suspend fun listSkills(userId: String): List<StoredSkill> {
+        requireSkillUserId(userId)
+        return skillsById.values.map { skill ->
+            StoredSkill(
+                userId = userId,
+                skillId = skill.bundle.skillId,
+                manifest = skill.bundle.manifest,
+                bundleHash = skill.bundleHash,
+                createdAt = Instant.EPOCH,
+            )
+        }
+    }
+
+    override suspend fun listSkillInventoryIds(userId: String): List<SkillId> {
+        requireSkillUserId(userId)
+        return skillsById.keys.toList()
+    }
+
+    override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? {
+        requireSkillUserId(userId)
+        requireSafeSkillId(skillId)
+        return skillsById[skillId]?.bundle?.let(::copySkillBundle)
+    }
 }
 
 private class ClientWebSocketSkill(
@@ -250,7 +282,13 @@ private data class ClientSkillDefinition(
     val timeout: Duration,
 )
 
-private fun loadClientSkillDefinitions(classLoader: ClassLoader): Map<SkillId, ClientSkillDefinition> {
+private data class BundledClientSkill(
+    val bundle: SkillBundle,
+    val bundleHash: String,
+    val definition: ClientSkillDefinition,
+)
+
+private fun loadClientSkills(classLoader: ClassLoader): Map<SkillId, BundledClientSkill> {
     val entries = requireNotNull(classLoader.getResourceAsStream(CLIENT_SKILL_INDEX)) {
         "Missing bundled client Skill index: $CLIENT_SKILL_INDEX"
     }.bufferedReader(Charsets.UTF_8).useLines { lines ->
@@ -264,7 +302,7 @@ private fun loadClientSkillDefinitions(classLoader: ClassLoader): Map<SkillId, C
     val duplicateEntry = entries.groupingBy { it }.eachCount().entries.firstOrNull { it.value > 1 }
     require(duplicateEntry == null) { "Duplicate bundled client Skill index entry: ${duplicateEntry?.key}" }
 
-    val definitionsById = linkedMapOf<SkillId, ClientSkillDefinition>()
+    val skillsById = linkedMapOf<SkillId, BundledClientSkill>()
     entries.forEach { entry ->
         require(CLIENT_SKILL_ENTRY_PATTERN.matches(entry)) {
             "Invalid bundled client Skill index entry: $entry"
@@ -272,7 +310,13 @@ private fun loadClientSkillDefinitions(classLoader: ClassLoader): Map<SkillId, C
         val resourcePath = "$CLIENT_SKILL_ROOT/$entry/SKILL.md"
         val content = requireNotNull(classLoader.getResourceAsStream(resourcePath)) {
             "Missing bundled client Skill resource: $resourcePath"
-        }.use { stream -> stream.readBytes() }
+        }.use { stream ->
+            stream.readNBytes(MAX_STORED_SKILL_FILE_BYTES + 1).also { bytes ->
+                require(bytes.size <= MAX_STORED_SKILL_FILE_BYTES) {
+                    "Bundled client Skill exceeds $MAX_STORED_SKILL_FILE_BYTES bytes: $resourcePath"
+                }
+            }
+        }
         val indexedBundle = SkillBundle.fromFiles(
             skillId = SkillId(entry),
             files = listOf(SkillFile(normalizedPath = "SKILL.md", content = content)),
@@ -288,9 +332,11 @@ private fun loadClientSkillDefinitions(classLoader: ClassLoader): Map<SkillId, C
         require(transport == CLIENT_SKILL_TRANSPORT) {
             "Bundled client Skill $entry has invalid metadata.$CLIENT_SKILL_TRANSPORT_METADATA: $transport"
         }
-        val bundle = SkillBundle.fromFiles(
-            skillId = SkillId(canonicalId),
-            files = indexedBundle.files,
+        val bundle = validateAndCopySkillBundle(
+            SkillBundle.fromFiles(
+                skillId = SkillId(canonicalId),
+                files = indexedBundle.files,
+            )
         )
         val definition = ClientSkillDefinition(
             skillId = bundle.skillId,
@@ -298,11 +344,16 @@ private fun loadClientSkillDefinitions(classLoader: ClassLoader): Map<SkillId, C
             category = bundle.manifest.clientCategory(),
             timeout = bundle.manifest.clientTimeout(),
         )
-        require(definitionsById.put(definition.skillId, definition) == null) {
+        val bundledSkill = BundledClientSkill(
+            bundle = bundle,
+            bundleHash = SkillBundleHasher.hash(bundle),
+            definition = definition,
+        )
+        require(skillsById.put(bundle.skillId, bundledSkill) == null) {
             "Duplicate bundled client Skill ID: ${bundle.skillId.value}"
         }
     }
-    return Collections.unmodifiableMap(definitionsById)
+    return Collections.unmodifiableMap(skillsById)
 }
 
 private fun SkillManifest.clientCategory(): ToolCategory {

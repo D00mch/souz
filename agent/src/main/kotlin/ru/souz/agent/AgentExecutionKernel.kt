@@ -16,7 +16,7 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentRuntimeSettings
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -33,7 +33,7 @@ class AgentExecutionKernel(
 
 class AgentExecutionKernelFactory(
     private val logObjectMapper: ObjectMapper,
-    private val settingsProvider: AgentSettingsProvider,
+    private val settingsProvider: AgentRuntimeSettings,
     private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,

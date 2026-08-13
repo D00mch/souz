@@ -12,6 +12,7 @@ import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.llm.BackendLlmExecutionContext
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
@@ -31,6 +32,7 @@ internal fun testBackendConversationRuntimeFactory(
     systemPrompt: String,
     toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     skillBundleProvider: SkillBundleProvider = EmptyTestSkillBundleProvider,
+    userSkillBundleProvider: SkillBundleProvider = skillBundleProvider,
     clientToolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     commandExecutor: SkillCommandExecutor = SkillCommandExecutor(
         sandboxResolver = ToolInvocationRuntimeSandboxResolver {
@@ -39,7 +41,7 @@ internal fun testBackendConversationRuntimeFactory(
     ),
     agentBackgroundScope: CoroutineScope,
 ): BackendConversationRuntimeFactory = BackendConversationRuntimeFactory(
-    baseSettingsProvider = baseSettingsProvider,
+    baseSettings = baseSettingsProvider.toBackendSettingsConfig(),
     llmApiFactory = llmApiFactory,
     sessionRepository = sessionRepository,
     logObjectMapper = logObjectMapper,
@@ -47,6 +49,7 @@ internal fun testBackendConversationRuntimeFactory(
     toolCatalog = toolCatalog,
     clientToolCatalog = clientToolCatalog,
     skillBundleProvider = skillBundleProvider,
+    userSkillBundleProvider = userSkillBundleProvider,
     commandExecutor = commandExecutor,
     getKnowledgeTool = testCoreTool("GetKnowledge"),
     searchKnowledgeTool = testCoreTool("SearchKnowledge"),

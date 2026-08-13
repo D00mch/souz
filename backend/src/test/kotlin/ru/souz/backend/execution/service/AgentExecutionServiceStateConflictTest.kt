@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
@@ -43,7 +44,6 @@ import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
 import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
 import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.LLMRequest
 
 class AgentExecutionServiceStateConflictTest {
@@ -98,12 +98,11 @@ class AgentExecutionServiceStateConflictTest {
         val featureFlags = BackendFeatureFlags()
         val userProviderKeyRepository = MemoryUserProviderKeyRepository()
         val effectiveSettingsResolver = EffectiveSettingsResolver(
-            baseSettingsProvider = settingsProvider,
+            baseSettings = settingsProvider.toBackendSettingsConfig(),
             userSettingsRepository = userSettingsRepository,
             userProviderKeyRepository = userProviderKeyRepository,
             featureFlags = featureFlags,
             toolCatalog = BackendNoopAgentToolCatalog,
-            localModelAvailability = unavailableLocalModels(),
         )
         val turnRunner = CompletedTurnRunner(
             session = AgentConversationSession(
@@ -168,12 +167,6 @@ class AgentExecutionServiceStateConflictTest {
         )
     }
 
-    private fun unavailableLocalModels(): LocalModelAvailability =
-        object : LocalModelAvailability {
-            override fun isProviderAvailable(): Boolean = false
-            override fun availableGigaModels() = emptyList<ru.souz.llms.LLMModel>()
-            override fun defaultGigaModel() = null
-        }
 }
 
 private class CompletedTurnRunner(

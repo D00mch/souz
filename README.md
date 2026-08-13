@@ -2,7 +2,7 @@
 
 [Website](https://souz.app) · [Releases](https://github.com/D00mch/souz/releases) · [Contributing](docs/CONTRIBUTING.md)
 
-Souz is a Kotlin Multiplatform AI assistant focused on **safe, observable, user-approved automation**. It combines a Compose Desktop app, a reusable graph-based agent runtime, shared backend-safe tools, local and cloud LLM providers, sandbox-aware file/process access, and an HTTP backend for web/API integrations.
+Souz is a Kotlin Multiplatform AI assistant focused on **safe, observable, user-approved automation**. It combines a Compose Desktop app, a reusable graph-based agent runtime, host-specific tool catalogs, local and cloud LLM providers, sandbox-aware desktop file/process access, and an HTTP backend for web/API integrations.
 
 The project is designed around one core idea: an AI agent should be useful enough to operate your desktop and data, but transparent and constrained enough that users can trust what it is doing.
 
@@ -10,7 +10,7 @@ The project is designed around one core idea: an AI agent should be useful enoug
 
 - **Kotlin Multiplatform app surfaces** built with Compose for Desktop.
 - **Selectable graph agents**: the default `GraphBasedAgent` uses memory recall, direct-tool classification, compact Skill inventory, and MCP injection, while `SkillsGraphBasedAgent` exposes only Skill/Knowledge core tools.
-- **Shared runtime layer** used by desktop and backend for LLM clients, settings/config, sandbox-aware filesystem access, and backend-safe tools.
+- **Shared runtime layer** used by desktop and backend for agent behavior, LLM clients, portable tools, and host integration contracts.
 - **Sandbox abstraction** for filesystem and command execution, with local mode by default and opt-in Docker-backed execution.
 - **HTTP backend** with trusted-proxy auth, OpenAPI/Swagger docs, onboarding, per-user settings/provider keys, chat lifecycle, message execution, Telegram bot chat bindings, cancellation, option continuation, event replay, WebSocket streaming, and PostgreSQL persistence.
 - **Rich desktop tool catalog** for files, browser, web search/research, config, notes, applications, data analytics, calendar, mail, text replacement, Telegram, desktop capture, and calculator.
@@ -39,7 +39,7 @@ Run the backend and PostgreSQL locally with Docker Compose:
 docker compose up --build
 ```
 
-The backend listens on `http://127.0.0.1:8080` and PostgreSQL listens on `127.0.0.1:5432`. Override host ports with `SOUZ_BACKEND_HOST_PORT` and `SOUZ_POSTGRES_HOST_PORT` when needed. Local defaults use `SOUZ_MASTER_KEY=local-dev-master-key` and `SOUZ_BACKEND_PROXY_TOKEN=local-dev-proxy-token`.
+The backend listens on `http://127.0.0.1:8080` and PostgreSQL listens on `127.0.0.1:5432`. Override host ports with `SOUZ_BACKEND_HOST_PORT` and `SOUZ_POSTGRES_HOST_PORT`. To expose either service beyond the local machine intentionally, set `SOUZ_BACKEND_BIND_ADDRESS` or `SOUZ_POSTGRES_BIND_ADDRESS`; keep PostgreSQL private unless the network supplies equivalent access controls. Local defaults use `SOUZ_MASTER_KEY=local-dev-master-key` and `SOUZ_BACKEND_PROXY_TOKEN=local-dev-proxy-token`.
 
 Docker Compose uses `SOUZ_DOCKER_SUBNET`, defaulting to `10.254.250.0/24`, for the local service network. Set it to another private subnet before `docker compose up` if that range overlaps with VPN or corporate routes.
 
@@ -81,7 +81,7 @@ curl -X PATCH http://127.0.0.1:8080/v1/me/settings \
   -d '{"defaultModel":"gpt-5.2"}'
 ```
 
-Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` on the backend, then select a Codex alias such as `gpt-5.5` through the settings API. Docker Compose keeps rotated OAuth credentials in the `backend-preferences` volume. Preserve that volume and use the same `SOUZ_MASTER_KEY` when recreating the backend container. The per-user provider-key endpoint does not accept `codex`.
+Codex models use one server-managed OAuth session because the refresh token, account ID, and expiry must stay together. Configure `CODEX_ACCESS_TOKEN`, `CODEX_REFRESH_TOKEN`, `CODEX_ACCOUNT_ID`, and `CODEX_EXPIRES_AT` to seed an empty backend database, then select a Codex alias such as `gpt-5.5` through the settings API. PostgreSQL stores rotated OAuth credentials encrypted with `SOUZ_MASTER_KEY`; every pod and replacement deployment must use the same externally managed key or existing provider and OAuth credentials become unreadable. Backend containers need no preferences volume. The per-user provider-key endpoint does not accept `codex`.
 
 ## Project structure
 
@@ -168,7 +168,7 @@ Souz keeps platform-specific logic at the edges:
 - `:agent` implements agent behavior on top of the graph engine.
 - `:ambientAgent` contains shared semantic-block and local task-analysis contracts plus the JVM transcription service.
 - `:sharedLogic` contains shared JVM runtime services, portable tools, sandbox/skills infrastructure, provider clients, and platform-specific runtime implementations. See [`sharedLogic/README.md`](sharedLogic/README.md).
-- `:native` contains local model support used by desktop and backend-capable runtime wiring.
+- `:native` contains local model support used by desktop and local runtime wiring.
 - `:sharedUI` contains shared Compose and desktop UI, view models, UI adapters, and desktop test coverage.
 - `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
@@ -239,9 +239,9 @@ The skills-oriented graph exposes exactly `GetSkillByName`, `GetSkillsByCategory
 
 Additional input can be submitted only to an open Skills run. It cancels an active LLM request without cancelling the graph, waits for an already-started tool batch, and is appended after all tool results. Finalization begins only after an empty queue atomically seals the run.
 
-Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution. Hosts may add `SkillApprovalGate`; the backend currently invokes its classpath and sandbox-backed providers without a gate.
+Both graph agents append compact Skill inventory to the effective system message while preserving the configured `AgentContext.systemPrompt`. The inventory lists enabled tool-backed Skill IDs grouped by category plus user-scoped file-backed Skill IDs as opaque escaped identifiers only. File-backed instructions, manifest text, supporting files, bundle hashes, storage paths, and active-skill internals are not embedded in the prompt. Full file-backed bundles are loaded only through exact `GetSkillByName` lookup or `RunSkillCommand` execution. Hosts may add `SkillApprovalGate`; the backend reads user bundles from PostgreSQL and returns `sandbox_unavailable` for command-backed execution.
 
-When conversation-scoped Knowledge storage is available and persistence succeeds, tool-result text larger than 8,192 UTF-8 bytes is retained as temporary Knowledge and replaced in history by a compact reference. Without conversation scope or usable storage, the result remains inline. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup. Restoring history after clear-context can therefore restore references whose Knowledge has expired. Backend archive is reversible and does not clear Knowledge.
+When conversation-scoped Knowledge storage is available and persistence succeeds, tool-result text larger than 8,192 UTF-8 bytes is retained as temporary Knowledge and replaced in history by a compact reference. Without conversation scope or usable storage, the result remains inline. A result of exactly 8 KiB stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results always remain inline. `GetKnowledge` returns all retained content. `SearchKnowledge` searches retained head and tail segments with UTF-16 offsets; truncated values never match across the omitted gap, and a match without surrounding context omits the redundant excerpt. Desktop/local Knowledge lives until local conversation cleanup, including new-conversation, clear-context, and ViewModel close cleanup; restoring history afterward can therefore restore expired references. Backend Knowledge remains in PostgreSQL for the chat lifetime, supports one-operation conversation clearing, and is deleted by the chat foreign-key cascade. Backend archive is reversible and does not clear Knowledge.
 
 ## Graph engine
 
@@ -278,9 +278,9 @@ RuntimeSandbox
 └── commandExecutor: SandboxCommandExecutor
 ```
 
-JVM hosts use `LocalRuntimeSandbox` by default or opt into `DockerRuntimeSandbox` through `SOUZ_SANDBOX_MODE=docker`; Docker mode requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Tools plus skill loading, storage, and validation depend on sandbox abstractions instead of directly assuming host access. See [`sharedLogic/README.md`](sharedLogic/README.md) for setup details.
+Desktop/local runtime hosts use `LocalRuntimeSandbox` by default or opt into `DockerRuntimeSandbox` through `SOUZ_SANDBOX_MODE=docker`; Docker mode requires the `souz-runtime-sandbox:latest` image to exist locally. Build it with `./gradlew :sharedLogic:buildRuntimeSandboxImage`. Their filesystem tools plus Skill loading, storage, validation, and command execution depend on sandbox abstractions instead of directly assuming host access. The backend does not construct a runtime sandbox: user Skills, validations, and Knowledge live in PostgreSQL, and filesystem/command capabilities remain unavailable. See [`sharedLogic/README.md`](sharedLogic/README.md) for local runtime setup details.
 
-The default JVM state layout is under:
+The default desktop/local JVM state layout is under:
 
 ```text
 ~/.local/state/souz/
@@ -307,10 +307,11 @@ Safety mechanisms include:
 
 ## Tool catalog
 
-Souz has two tool catalogs:
+Souz composes tool catalogs per host:
 
-- **Desktop catalog** in `:desktopApp`, composed with shared runtime tools and surfaced through `:sharedUI` approval flows.
-- **Runtime/backend-safe catalog** in `:sharedLogic`, reusable by `:backend` without instantiating desktop-only services.
+- **Shared portable runtime catalog** in `:sharedLogic` provides reusable local-runtime tools, including filesystem and web capabilities.
+- **Desktop catalog** in `:desktopApp` composes the shared runtime tools with desktop integrations and surfaces them through `:sharedUI` approval flows.
+- **Backend-safe catalog** in `:backend` is an independent allowlist. It does not instantiate the shared portable runtime catalog or its filesystem-backed services.
 
 ### Desktop tools
 
@@ -336,12 +337,9 @@ The backend-safe catalog avoids desktop-only APIs and includes:
 
 | Category | Tools |
 |---|---|
-| Files | List/find/create/delete/modify/move files, extract text, find files, read PDF pages, find folders |
-| Web search | Internet search, internet research, optional web image search, web page text |
-| Data analytics | CSV plotting, Excel read, Excel report |
 | Calculator | Calculator |
 
-The backend intentionally excludes desktop automation, browser control, Mail, Calendar, Notes, desktop Telegram tools, and other OS-bound tools. It separately supports Telegram bot chat bindings for text ingress into existing backend chats.
+The backend intentionally excludes file, image, PDF, spreadsheet, CSV, command, desktop automation, browser-control, Mail, Calendar, Notes, and other OS-bound tools. Command-backed Skills return a deterministic `sandbox_unavailable` result until a remote sandbox exists. Telegram bot chat bindings remain available for text ingress into existing backend chats.
 
 ## UI confirmations and approval flows
 
@@ -446,9 +444,9 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 
 ### Backend storage
 
-PostgreSQL is the backend's only structured-data store. JDBC, HikariCP, and Flyway provide durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
+PostgreSQL is the backend's source of truth for mutable durable state. JDBC, HikariCP, and Flyway provide chat state, durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for agent state, tool-call audit rows, user Skill bundles and validations, conversation knowledge, and encrypted rotating server credentials.
 Telegram bot tokens are encrypted at rest via `TELEGRAM_TOKEN_ENCRYPTION_KEY`, pending links use one-time `/start <secret>` commands with only the secret hash stored server-side, and binding setup drops pending Telegram updates before long polling starts.
-Runtime sandbox workspaces remain filesystem-backed and are independent from backend database persistence.
+Built-in Skills remain classpath resources and are not copied into PostgreSQL. Backend containers require no persistent local volume and normal backend runtime does not construct local state directories.
 
 ### Backend configuration
 
@@ -470,6 +468,18 @@ CODEX_ACCESS_TOKEN=...
 CODEX_REFRESH_TOKEN=...
 CODEX_ACCOUNT_ID=...
 CODEX_EXPIRES_AT=... # Unix epoch seconds
+
+# Immutable runtime defaults, optional
+APP_LANGUAGE=en
+GIGA_MODEL=gpt-5.2
+OPENAI_BASE_URL=...
+OPENAI_MODEL=...
+USE_FEW_SHOTS=true
+USE_STREAMING=false
+REQUEST_TIMEOUT_MILLIS=400000
+CONTEXT_SIZE=16000
+TEMPERATURE=0.7
+EMBEDDINGS_MODEL=OpenAITextEmbedding3Small
 
 # Feature flags
 SOUZ_FEATURE_WS_EVENTS=true
@@ -501,9 +511,11 @@ SOUZ_BACKEND_DB_MAX_POOL_SIZE=10
 SOUZ_BACKEND_DB_CONNECTION_TIMEOUT_MS=30000
 ```
 
-The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
+The server host must not be blank, and the port must be between `1` and `65535`; invalid values fail configuration validation during startup. `POSTGRES_DSN` must be a PostgreSQL JDBC URL and, when set, replaces `SOUZ_BACKEND_DB_HOST`, `SOUZ_BACKEND_DB_PORT`, and `SOUZ_BACKEND_DB_NAME`; user and password still come from `SOUZ_BACKEND_DB_USER` and `SOUZ_BACKEND_DB_PASSWORD`. `SOUZ_MASTER_KEY` is required for backend startup and must remain identical across every pod that shares the database. `TELEGRAM_TOKEN_ENCRYPTION_KEY` is required when the Telegram bot feature is enabled and must be Base64 that decodes to exactly 32 bytes; generate one with `openssl rand -base64 32`. Backend runtime defaults are read once into `BackendSettingsConfig`; MCP execution and local model aliases are rejected because the disposable backend has no pod-local MCP or model runtime. Without `SOUZ_BACKEND_PROXY_TOKEN`, public routes remain available but `/v1/**` requests return `backend_misconfigured`.
 
-Backend executions snapshot each user's effective `enabledTools`. The snapshot filters compiled tool-backed Skills once and is retained when an execution resumes from an option. Built-in Client-Souz Skills are merged afterward only for public client executions. The backend model sees only Skill core tools and reaches catalog capabilities through inventory, discovery, and `RunSkillCommand`.
+The environment block documents direct backend process and container configuration. Docker Compose forwards only the local-development subset listed under `backend.environment` in `compose.yaml`; add any other setting there or inject it explicitly when using Compose.
+
+Backend executions snapshot each user's effective `enabledTools`. The snapshot filters the filesystem-free compiled catalog once and is retained when an execution resumes from an option. Built-in Client-Souz Skills are merged afterward only for public client executions. The backend model sees only the fixed Skill core tools and reaches catalog capabilities through inventory, discovery, and `RunSkillCommand`; stored command-backed bundles report `sandbox_unavailable`.
 
 Run the backend:
 
@@ -545,13 +557,13 @@ Skill safety and storage:
 - Tool-backed Skills are direct tools viewed through the Skill APIs; enabled tool-backed Skills take precedence over stored bundles with the same ID.
 - File-backed bundle content is loaded only on exact lookup or execution.
 - `GetSkillByName` returns the file-backed `SKILL.md` instruction body, parsed name and description, and supporting-file paths; raw YAML frontmatter is not returned. A configured approval gate limits this to approved bundles.
-- `RunSkillCommand` executes file-backed Skill scripts inside the resolved runtime sandbox and binds active Skill identity internally.
-- Bundles are loaded through safe filesystem access.
+- `RunSkillCommand` executes file-backed Skill scripts inside the resolved runtime sandbox in desktop/local hosts. The backend reports `sandbox_unavailable` without writing bundle files to disk or starting a process.
 - Desktop/local skills are persisted under `~/.local/state/souz/skills/{skillId}/`, with immutable bundles in `bundles/{bundleHash}/` and metadata in `stored-skill.json`.
 - Desktop/local validation records are persisted separately under `~/.local/state/souz/skill-validations/{skillId}/policies/{policy}/`.
+- Backend user Skills, immutable bundles, bundle files, hashes, and validation records are stored in PostgreSQL; built-in Skills stay resource-backed.
 - Validation cache keys include user id, skill id, bundle hash, and policy version.
 - Stale validations are invalidated when the active bundle hash changes.
-- When a host configures `SkillApprovalGate`, rejected validations block instruction lookup and command execution for the exact cached identity. The backend intentionally passes no gate for its classpath- and sandbox-backed providers.
+- When a host configures `SkillApprovalGate`, rejected validations block instruction lookup and command execution for the exact cached identity.
 
 ## LLM providers
 
@@ -567,7 +579,7 @@ Souz supports:
 
 Provider/model selection is key-aware: chat, embeddings, and voice-recognition model lists are filtered by configured provider keys or Codex OAuth state, and invalid saved selections are normalized to available providers.
 
-The backend supports API-key providers, server-managed Codex OAuth models, and local models for chat execution. Per-user provider keys do not represent Codex OAuth sessions.
+The backend supports API-key providers and server-managed Codex OAuth models. Local models are unavailable in disposable backend pods. Per-user provider keys do not represent Codex OAuth sessions.
 
 ## Local models
 

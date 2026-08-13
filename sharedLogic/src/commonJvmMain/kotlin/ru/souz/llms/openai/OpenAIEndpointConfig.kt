@@ -1,17 +1,17 @@
 package ru.souz.llms.openai
 
-import ru.souz.db.SettingsProvider
+import ru.souz.llms.ProviderSettings
 
 internal object OpenAIEndpointConfig {
     const val DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
-    fun endpoint(settingsProvider: SettingsProvider, path: String): String =
+    fun endpoint(settingsProvider: ProviderSettings, path: String): String =
         "${baseUrl(settingsProvider)}/${path.trimStart('/')}"
 
-    fun customChatModel(settingsProvider: SettingsProvider): String? =
+    fun customChatModel(settingsProvider: ProviderSettings): String? =
         settingsProvider.openaiModel.nonBlank()
 
-    private fun baseUrl(settingsProvider: SettingsProvider): String =
+    private fun baseUrl(settingsProvider: ProviderSettings): String =
         settingsProvider.openaiBaseUrl.normalizedBaseUrl()
             ?: DEFAULT_BASE_URL
 

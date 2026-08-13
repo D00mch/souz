@@ -13,7 +13,7 @@ import ru.souz.llms.ToolInvocationMeta
 class ToolGetKnowledge internal constructor(
     private val retriever: KnowledgeRetriever,
 ) : LLMToolSetup {
-    internal constructor(
+    constructor(
         knowledgeStore: ConversationKnowledgeStore,
     ) : this(KnowledgeRetriever(knowledgeStore))
 

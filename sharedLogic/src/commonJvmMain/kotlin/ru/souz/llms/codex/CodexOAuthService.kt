@@ -41,7 +41,25 @@ sealed interface CodexOAuthState {
     data class Error(val message: String) : CodexOAuthState
 }
 
-class CodexOAuthService(private val settingsProvider: SettingsProvider) {
+class CodexOAuthService internal constructor(
+    private val credentialStore: CodexOAuthCredentialStore,
+    private val refreshCredentials: (suspend (CodexOAuthCredentials) -> CodexOAuthCredentials?)?,
+    private val nowEpochSeconds: () -> Long,
+    private val allowAccessTokenWithoutRefresh: Boolean = false,
+) {
+    constructor(credentialStore: CodexOAuthCredentialStore) : this(
+        credentialStore = credentialStore,
+        refreshCredentials = null,
+        nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+        allowAccessTokenWithoutRefresh = false,
+    )
+
+    constructor(settingsProvider: SettingsProvider) : this(
+        credentialStore = SettingsProviderCodexOAuthCredentialStore(settingsProvider),
+        refreshCredentials = null,
+        nowEpochSeconds = { System.currentTimeMillis() / 1000 },
+        allowAccessTokenWithoutRefresh = true,
+    )
 
     private val l = LoggerFactory.getLogger(CodexOAuthService::class.java)
 
@@ -134,22 +152,39 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
         flowJob = scope.launch { startDeviceFlow() }
     }
 
-    /** Returns a valid access token, refreshing if needed. Thread-safe. */
-    suspend fun refreshTokenIfNeeded(): String = refreshMutex.withLock {
-        val expiresAt = settingsProvider.codexExpiresAt
-        val accessToken = settingsProvider.codexAccessToken
-        if (accessToken.isNullOrBlank()) error("Codex: not authenticated")
-        val needsRefresh = expiresAt != null &&
-            System.currentTimeMillis() / 1000 >= expiresAt - REFRESH_BUFFER_SECONDS
-        if (needsRefresh) {
-            refreshToken()
+    /**
+     * Refreshes rotating credentials before expiry. Backend stores fail closed when refresh cannot
+     * produce a newer usable value; desktop may use a non-rotating access token.
+     */
+    suspend fun refreshTokenIfNeeded(): CodexOAuthCredentials = refreshMutex.withLock {
+        val current = credentialStore.load() ?: error("Codex: not authenticated")
+        val expiresAt = current.expiresAtEpochSeconds ?: return@withLock current
+        val needsRefresh = nowEpochSeconds() >= expiresAt - REFRESH_BUFFER_SECONDS
+        if (!needsRefresh) return@withLock current
+        if (current.refreshToken == null) {
+            if (allowAccessTokenWithoutRefresh) return@withLock current
+            error("Codex: expired credentials have no refresh token")
         }
-        settingsProvider.codexAccessToken ?: error("Codex: token missing after refresh")
+
+        val refreshed = if (refreshCredentials != null) {
+            refreshCredentials.invoke(current)
+        } else {
+            requestRefreshedCredentials(current)
+        }
+        if (refreshed != null && credentialStore.compareAndSet(current.version, refreshed)) {
+            return@withLock refreshed
+        }
+
+        val winner = awaitNewerValidCredentials(current)
+        if (winner != null) return@withLock winner
+        if (allowAccessTokenWithoutRefresh) return@withLock current
+        error("Codex: token refresh failed without a newer valid credential")
     }
 
-    private suspend fun refreshToken() {
-        val refreshToken = settingsProvider.codexRefreshToken
-            ?: run { l.warn("Codex: no refresh token, skipping refresh"); return }
+    private suspend fun requestRefreshedCredentials(
+        current: CodexOAuthCredentials,
+    ): CodexOAuthCredentials? {
+        val refreshToken = current.refreshToken ?: return null
         try {
             val body = buildString {
                 append("grant_type=refresh_token")
@@ -162,13 +197,39 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
                 setBody(body)
             }
             if (response.status.isSuccess()) {
-                parseAndStoreTokens(response.bodyAsText())
+                val refreshed = parseCredentials(
+                    responseBody = response.bodyAsText(),
+                    previous = current,
+                ) ?: return null
+                return refreshed
             } else {
                 l.warn("Codex: token refresh failed: ${response.status} ${response.bodyAsText()}")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             l.warn("Codex: token refresh error", e)
         }
+        return null
+    }
+
+    private suspend fun awaitNewerValidCredentials(
+        stale: CodexOAuthCredentials,
+    ): CodexOAuthCredentials? {
+        repeat(REFRESH_WINNER_LOAD_ATTEMPTS) { attempt ->
+            val candidate = credentialStore.load()
+            if (
+                candidate != null &&
+                candidate.version > stale.version &&
+                candidate.isUsableAt(nowEpochSeconds())
+            ) {
+                return candidate
+            }
+            if (attempt + 1 < REFRESH_WINNER_LOAD_ATTEMPTS) {
+                delay(REFRESH_WINNER_LOAD_DELAY_MILLIS)
+            }
+        }
+        return null
     }
 
     private suspend fun exchangeCodeForTokens(authorizationCode: String, codeVerifier: String) {
@@ -188,27 +249,44 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
             _oauthState.value = CodexOAuthState.Error("Token exchange failed: ${response.status} $text")
             return
         }
-        val accountId = parseAndStoreTokens(response.bodyAsText())
-        _oauthState.value = CodexOAuthState.Success(accountId = accountId ?: "")
+        val current = credentialStore.load()
+        val credentials = parseCredentials(response.bodyAsText(), current)
+        if (credentials == null) {
+            _oauthState.value = CodexOAuthState.Error("Token exchange returned incomplete credentials")
+            return
+        }
+        val stored = credentialStore.compareAndSet(current?.version, credentials)
+        if (!stored) {
+            _oauthState.value = CodexOAuthState.Error("Codex credentials changed during token exchange")
+            return
+        }
+        _oauthState.value = CodexOAuthState.Success(accountId = credentials.accountId.orEmpty())
     }
 
-    /** Parses token response, persists to SettingsProvider, returns accountId. */
-    private fun parseAndStoreTokens(responseBody: String): String? {
+    private fun parseCredentials(
+        responseBody: String,
+        previous: CodexOAuthCredentials?,
+    ): CodexOAuthCredentials? {
         val data = runCatching { restJsonMapper.readValue<Map<String, Any>>(responseBody) }.getOrNull()
             ?: return null
         val accessToken = data["access_token"] as? String ?: return null
-        val refreshToken = data["refresh_token"] as? String
+        val refreshToken = (data["refresh_token"] as? String)
+            ?.takeIf(String::isNotBlank)
+            ?: previous?.refreshToken
         val expiresIn = when (val v = data["expires_in"]) {
             is Number -> v.toLong()
             is String -> v.toLongOrNull() ?: 3600L
             else -> 3600L
         }
         val accountId = extractAccountId(accessToken)
-        settingsProvider.codexAccessToken = accessToken
-        settingsProvider.codexRefreshToken = refreshToken
-        settingsProvider.codexAccountId = accountId
-        settingsProvider.codexExpiresAt = System.currentTimeMillis() / 1000 + expiresIn
-        return accountId
+            ?: previous?.accountId
+        return CodexOAuthCredentials(
+            accessToken = accessToken,
+            refreshToken = refreshToken,
+            accountId = accountId,
+            expiresAtEpochSeconds = nowEpochSeconds() + expiresIn,
+            version = (previous?.version ?: -1L) + 1L,
+        )
     }
 
     private fun extractAccountId(jwt: String): String? {
@@ -229,6 +307,11 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
     private fun String.urlEncode(): String =
         java.net.URLEncoder.encode(this, "UTF-8")
 
+    private fun CodexOAuthCredentials.isUsableAt(epochSeconds: Long): Boolean {
+        val expiresAt = expiresAtEpochSeconds ?: return true
+        return epochSeconds < expiresAt - REFRESH_BUFFER_SECONDS
+    }
+
     companion object {
         const val CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
         private const val ISSUER = "https://auth.openai.com"
@@ -239,5 +322,7 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
         private const val VERIFY_URL = "https://auth.openai.com/codex/device"
         private const val MAX_POLL_ATTEMPTS = 60
         private const val REFRESH_BUFFER_SECONDS = 300L
+        private const val REFRESH_WINNER_LOAD_ATTEMPTS = 5
+        private const val REFRESH_WINNER_LOAD_DELAY_MILLIS = 50L
     }
 }

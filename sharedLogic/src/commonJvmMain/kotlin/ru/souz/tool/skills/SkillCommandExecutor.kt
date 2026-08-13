@@ -13,10 +13,19 @@ import ru.souz.tool.BadInputException
 import ru.souz.tool.InputParamDescription
 
 
+fun interface SkillCommandRunner {
+    suspend fun execute(
+        bundle: SkillBundle,
+        bundleHash: String,
+        arguments: SkillCommandExecutor.Args,
+        meta: ToolInvocationMeta,
+    ): SandboxCommandResult
+}
+
 class SkillCommandExecutor(
     private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
-) {
-    internal data class Args(
+) : SkillCommandRunner {
+    data class Args(
         @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands.")
         val runtime: SandboxCommandRuntime = SandboxCommandRuntime.BASH,
         @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. Leave empty for BASH/PYTHON/NODE.")
@@ -44,7 +53,7 @@ class SkillCommandExecutor(
         const val SKILL_MARKDOWN_PATH = "SKILL.md"
     }
 
-    internal suspend fun execute(
+    override suspend fun execute(
         bundle: SkillBundle,
         bundleHash: String,
         arguments: Args,

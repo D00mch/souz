@@ -28,6 +28,7 @@ class RuntimeProviderChatApiBuilderTest {
         ).build(
             provider = LlmProvider.CODEX,
             settingsProvider = settingsProvider,
+            apiKey = "server-codex-token",
             sharedTransport = SharedProviderTransport("codex"),
             executionContext = BackendLlmExecutionContext("user-a", "exec-a", settingsProvider),
         )

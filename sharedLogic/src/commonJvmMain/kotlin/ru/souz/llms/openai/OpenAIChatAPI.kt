@@ -33,6 +33,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
@@ -40,14 +41,27 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.collections.get
 
-class OpenAIChatAPI(
-    private val settingsProvider: SettingsProvider,
+class OpenAIChatAPI private constructor(
+    private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
+    private val configuredApiKey: () -> String?,
 ) : LLMChatAPI {
+    constructor(settingsProvider: SettingsProvider, tokenLogging: TokenLogging) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { settingsProvider.openaiKey },
+    )
+
+    constructor(settingsProvider: ProviderSettings, tokenLogging: TokenLogging, apiKey: String) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { apiKey },
+    )
+
     private val l = LoggerFactory.getLogger(OpenAIChatAPI::class.java)
 
     private val apiKey: String
-        get() = settingsProvider.openaiKey
+        get() = configuredApiKey()
             ?: System.getenv("OPENAI_API_KEY")
             ?: System.getProperty("OPENAI_API_KEY")
             ?: throw IllegalStateException("OPENAI_API_KEY is not set")

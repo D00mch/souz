@@ -32,6 +32,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.ProviderSettings
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
@@ -56,14 +57,27 @@ private data class ParsedToolCall(
     val arguments: Map<String, Any>,
 )
 
-class AnthropicChatAPI(
-    private val settingsProvider: SettingsProvider,
+class AnthropicChatAPI private constructor(
+    private val settingsProvider: ProviderSettings,
     private val tokenLogging: TokenLogging,
+    private val configuredApiKey: () -> String?,
 ) : LLMChatAPI {
+    constructor(settingsProvider: SettingsProvider, tokenLogging: TokenLogging) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { settingsProvider.anthropicKey },
+    )
+
+    constructor(settingsProvider: ProviderSettings, tokenLogging: TokenLogging, apiKey: String) : this(
+        settingsProvider = settingsProvider,
+        tokenLogging = tokenLogging,
+        configuredApiKey = { apiKey },
+    )
+
     private val l = LoggerFactory.getLogger(AnthropicChatAPI::class.java)
 
     private val apiKey: String?
-        get() = settingsProvider.anthropicKey
+        get() = configuredApiKey()
             ?: System.getenv("ANTHROPIC_API_KEY")
             ?: System.getProperty("ANTHROPIC_API_KEY")
 

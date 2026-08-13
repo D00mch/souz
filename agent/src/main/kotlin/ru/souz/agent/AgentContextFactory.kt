@@ -1,6 +1,6 @@
 package ru.souz.agent
 
-import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentRuntimeSettings
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -11,7 +11,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
 
 class AgentContextFactory(
-    private val settingsProvider: AgentSettingsProvider,
+    private val settingsProvider: AgentRuntimeSettings,
     private val systemPromptResolver: SystemPromptResolver,
     private val toolCatalog: AgentToolCatalog,
     // This list is also exposed by AgentFacade so callers can offer only agents with valid contexts.

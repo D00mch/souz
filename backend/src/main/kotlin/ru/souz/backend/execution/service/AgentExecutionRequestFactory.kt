@@ -86,6 +86,7 @@ internal class AgentExecutionRequestFactory(
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools,
+                clientToolsEnabled = clientToolsEnabled,
             ),
             revision = revision,
             latestDeviceContextJson = latestDeviceContextJson,
@@ -152,6 +153,8 @@ internal class AgentExecutionRequestFactory(
             requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
+            clientToolsEnabled = executionMetadataBoolean(execution, METADATA_CLIENT_TOOLS_ENABLED)
+                ?: (execution.runtimeOwner != null),
         )
 
     suspend fun createEventSink(
@@ -203,6 +206,7 @@ internal class AgentExecutionRequestFactory(
         requestTimeoutMillis: Long,
         useFewShotExamples: Boolean,
         enabledTools: Set<String>,
+        clientToolsEnabled: Boolean,
     ): Map<String, String> = buildMap {
         put(METADATA_CONTEXT_SIZE, contextSize.toString())
         put(METADATA_TEMPERATURE, temperature.toString())
@@ -213,6 +217,7 @@ internal class AgentExecutionRequestFactory(
         put(METADATA_REQUEST_TIMEOUT_MILLIS, requestTimeoutMillis.toString())
         put(METADATA_USE_FEW_SHOT_EXAMPLES, useFewShotExamples.toString())
         put(METADATA_ENABLED_TOOLS, restJsonMapper.writeValueAsString(enabledTools.sorted()))
+        put(METADATA_CLIENT_TOOLS_ENABLED, clientToolsEnabled.toString())
         systemPrompt?.let { put(METADATA_SYSTEM_PROMPT, it) }
     }
 
@@ -289,4 +294,5 @@ private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
 private const val METADATA_REQUEST_TIMEOUT_MILLIS = "requestTimeoutMillis"
 private const val METADATA_USE_FEW_SHOT_EXAMPLES = "useFewShotExamples"
 private const val METADATA_ENABLED_TOOLS = "enabledTools"
+private const val METADATA_CLIENT_TOOLS_ENABLED = "clientToolsEnabled"
 private const val OPTION_CONTINUATION_PREFIX = "__option_answer__"

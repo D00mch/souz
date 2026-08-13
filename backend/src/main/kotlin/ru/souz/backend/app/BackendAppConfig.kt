@@ -3,6 +3,7 @@ package ru.souz.backend.app
 import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.config.BackendSettingsConfig
 import ru.souz.backend.config.SystemBackendConfigSource
 
 data class BackendLlmLimits(
@@ -117,6 +118,23 @@ data class BackendPostgresConfig(
     }
 }
 
+data class BackendCodexOAuthSeed(
+    val accessToken: String,
+    val refreshToken: String,
+    val accountId: String,
+    val expiresAtEpochSeconds: Long,
+) {
+    fun validate(): BackendCodexOAuthSeed {
+        if (accessToken.isBlank()) throw BackendConfigurationException("CODEX_ACCESS_TOKEN must not be blank.")
+        if (refreshToken.isBlank()) throw BackendConfigurationException("CODEX_REFRESH_TOKEN must not be blank.")
+        if (accountId.isBlank()) throw BackendConfigurationException("CODEX_ACCOUNT_ID must not be blank.")
+        if (expiresAtEpochSeconds <= 0L) {
+            throw BackendConfigurationException("CODEX_EXPIRES_AT must be a positive epoch-second value.")
+        }
+        return this
+    }
+}
+
 data class BackendAppConfig(
     val featureFlags: BackendFeatureFlags,
     val server: BackendServerConfig,
@@ -126,6 +144,8 @@ data class BackendAppConfig(
     val telegramPollingMaxConcurrency: Int = 4,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
+    val codexOAuthSeed: BackendCodexOAuthSeed? = null,
+    val settings: BackendSettingsConfig = BackendSettingsConfig(),
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -143,6 +163,7 @@ data class BackendAppConfig(
         }
         llmLimits.validate()
         providerRetryPolicy.validate()
+        codexOAuthSeed?.validate()
         return this
     }
 
@@ -218,9 +239,37 @@ data class BackendAppConfig(
                         default = 5_000L,
                     ),
                 ),
+                codexOAuthSeed = source.codexOAuthSeed(),
+                settings = BackendSettingsConfig.load(source),
             )
     }
 }
+
+private fun BackendConfigSource.codexOAuthSeed(): BackendCodexOAuthSeed? {
+    val accessToken = optionalText("CODEX_ACCESS_TOKEN", "souz.backend.codex.accessToken")
+    val refreshToken = optionalText("CODEX_REFRESH_TOKEN", "souz.backend.codex.refreshToken")
+    val accountId = optionalText("CODEX_ACCOUNT_ID", "souz.backend.codex.accountId")
+    val expiresAt = optionalText("CODEX_EXPIRES_AT", "souz.backend.codex.expiresAt")
+    val configuredValues = listOf(accessToken, refreshToken, accountId, expiresAt)
+    if (configuredValues.all { it == null }) return null
+    if (configuredValues.any { it == null }) {
+        throw BackendConfigurationException(
+            "CODEX_ACCESS_TOKEN, CODEX_REFRESH_TOKEN, CODEX_ACCOUNT_ID, and CODEX_EXPIRES_AT " +
+                "must be configured together."
+        )
+    }
+    val expiresAtEpochSeconds = expiresAt!!.toLongOrNull()
+        ?: throw BackendConfigurationException("CODEX_EXPIRES_AT must be an epoch-second integer.")
+    return BackendCodexOAuthSeed(
+        accessToken = accessToken!!,
+        refreshToken = refreshToken!!,
+        accountId = accountId!!,
+        expiresAtEpochSeconds = expiresAtEpochSeconds,
+    ).validate()
+}
+
+private fun BackendConfigSource.optionalText(envKey: String, propertyKey: String): String? =
+    value(envKey, propertyKey)?.trim()?.takeIf(String::isNotEmpty)
 
 private fun BackendConfigSource.postgresConfig(): BackendPostgresConfig {
     val dsn = value(

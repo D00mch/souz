@@ -190,7 +190,7 @@ class BackendOnboardingRouteTest {
                   "timeZone": "Europe/Moscow",
                   "streamingMessages": true,
                   "showToolEvents": true,
-                  "enabledTools": ["ListFiles"]
+                  "enabledTools": ["Calculator"]
                 }
                 """.trimIndent()
             )
@@ -210,7 +210,7 @@ class BackendOnboardingRouteTest {
         assertEquals("done", statePayload["currentStep"].asText())
         assertEquals(true, statePayload["hasUsableModelAccess"].asBoolean())
         assertEquals(context.settingsProvider.gigaModel.alias, statePayload["currentSettings"]["defaultModel"].asText())
-        assertEquals(listOf("ListFiles"), statePayload["currentSettings"]["enabledTools"].map { it.asText() })
+        assertEquals(listOf("Calculator"), statePayload["currentSettings"]["enabledTools"].map { it.asText() })
     }
 
     @Test
@@ -299,7 +299,7 @@ class BackendOnboardingRouteTest {
                 {
                   "locale": "ru-RU",
                   "timeZone": "Europe/Moscow",
-                  "enabledTools": ["ListFiles"]
+                  "enabledTools": ["Calculator"]
                 }
                 """.trimIndent()
             )
@@ -344,7 +344,7 @@ class BackendOnboardingRouteTest {
                 """
                 {
                   "defaultModel": "${LLMModel.QwenMax.alias}",
-                  "enabledTools": ["ListFiles"]
+                  "enabledTools": ["Calculator"]
                 }
                 """.trimIndent()
             )
@@ -385,7 +385,7 @@ class BackendOnboardingRouteTest {
             setBody(
                 """
                 {
-                  "enabledTools": ["ListFiles", "OpenBrowser"]
+                  "enabledTools": ["Calculator", "OpenBrowser"]
                 }
                 """.trimIndent()
             )
@@ -396,7 +396,7 @@ class BackendOnboardingRouteTest {
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertEquals("invalid_request", payload["error"]["code"].asText())
         assertTrue(payload["error"]["message"].asText().contains("enabledTools"))
-        assertEquals(listOf("ListFiles"), storedSettings?.enabledTools?.toList())
+        assertEquals(listOf("Calculator"), storedSettings?.enabledTools?.toList())
         assertNull(storedSettings?.onboardingCompletedAt)
     }
 
@@ -428,7 +428,7 @@ class BackendOnboardingRouteTest {
                 {
                   "locale": "not-a-locale",
                   "timeZone": "Europe/Moscow",
-                  "enabledTools": ["ListFiles"]
+                  "enabledTools": ["Calculator"]
                 }
                 """.trimIndent()
             )
@@ -470,7 +470,7 @@ class BackendOnboardingRouteTest {
                 {
                   "locale": "ru-RU",
                   "timeZone": "Mars/Phobos",
-                  "enabledTools": ["ListFiles"]
+                  "enabledTools": ["Calculator"]
                 }
                 """.trimIndent()
             )

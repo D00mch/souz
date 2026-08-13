@@ -33,6 +33,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
@@ -87,9 +88,9 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.VoiceRecognitionModel
+import ru.souz.llms.codex.SettingsProviderCodexOAuthCredentialStore
 import ru.souz.tool.FewShotExample
 import ru.souz.tool.InputParamDescription
 import ru.souz.tool.ReturnParameters
@@ -137,7 +138,7 @@ class BackendStage3RouteTest {
                     locale = Locale.forLanguageTag("en-US"),
                     timeZone = ZoneId.of("Europe/Amsterdam"),
                     systemPrompt = "be brief",
-                    enabledTools = setOf("ListFiles"),
+                    enabledTools = setOf("Calculator"),
                     showToolEvents = false,
                     streamingMessages = false,
                     interfaceLanguage = "en",
@@ -172,7 +173,7 @@ class BackendStage3RouteTest {
         assertEquals("en-US", settings["locale"].asText())
         assertEquals("Europe/Amsterdam", settings["timeZone"].asText())
         assertEquals("be brief", settings["systemPrompt"].asText())
-        assertEquals(listOf("ListFiles"), settings["enabledTools"].map { it.asText() })
+        assertEquals(listOf("Calculator"), settings["enabledTools"].map { it.asText() })
         assertEquals(false, settings["showToolEvents"].asBoolean())
         assertEquals(false, settings["streamingMessages"].asBoolean())
         assertEquals("en", settings["interfaceLanguage"].asText())
@@ -182,8 +183,13 @@ class BackendStage3RouteTest {
 
     @Test
     fun `patch me settings rejects unavailable default model without storing partial settings`() = testApplication {
-        val context = routeTestContext()
-        context.settingsProvider.qwenChatKey = null
+        val context = routeTestContext(
+            settingsProvider = TestSettingsProvider().apply {
+                gigaChatKey = "giga-key"
+                contextSize = 24_000
+                temperature = 0.6f
+            }
+        )
         application {
             backendApplication(
                 BackendHttpDependencies(
@@ -204,7 +210,7 @@ class BackendStage3RouteTest {
                     userId = "user-a",
                     defaultModel = LLMModel.Max,
                     contextSize = 24_000,
-                    enabledTools = setOf("ListFiles"),
+                    enabledTools = setOf("Calculator"),
                 )
             )
         }
@@ -220,7 +226,7 @@ class BackendStage3RouteTest {
                   "locale": "en-US",
                   "timeZone": "Europe/Amsterdam",
                   "systemPrompt": "be brief",
-                  "enabledTools": ["ListFiles", "OpenBrowser"],
+                  "enabledTools": ["Calculator", "OpenBrowser"],
                   "showToolEvents": false,
                   "streamingMessages": false,
                   "interfaceLanguage": "en",
@@ -238,7 +244,7 @@ class BackendStage3RouteTest {
         assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
         assertEquals(LLMModel.Max, storedIntent?.defaultModel)
         assertEquals(24_000, storedIntent?.contextSize)
-        assertEquals(setOf("ListFiles"), storedIntent?.enabledTools)
+        assertEquals(setOf("Calculator"), storedIntent?.enabledTools)
         assertNull(storedIntent?.interfaceLanguage)
         assertNull(storedIntent?.requestTimeoutMillis)
         assertNull(storedIntent?.useFewShotExamples)
@@ -1253,7 +1259,7 @@ internal fun routeTestContext(
     toolCallRepository: ToolCallRepository = MemoryToolCallRepository(),
     stateRepository: MemoryAgentStateRepository = MemoryAgentStateRepository(),
     toolCatalog: AgentToolCatalog = toolCatalog(
-        ToolCategory.FILES to fakeTool("ListFiles"),
+        ToolCategory.CALCULATOR to fakeTool("Calculator"),
         ToolCategory.BROWSER to fakeTool("OpenBrowser"),
     ),
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(
@@ -1276,12 +1282,12 @@ internal fun routeTestContext(
         eventService = eventService,
     )
     val effectiveSettingsResolver = EffectiveSettingsResolver(
-        baseSettingsProvider = settingsProvider,
+        baseSettings = settingsProvider.toBackendSettingsConfig(),
         userSettingsRepository = userSettingsRepository,
         userProviderKeyRepository = userProviderKeyRepository,
         featureFlags = featureFlags,
         toolCatalog = toolCatalog,
-        localModelAvailability = unavailableLocalModels(),
+        codexOAuthCredentialStore = SettingsProviderCodexOAuthCredentialStore(settingsProvider),
     )
     val runtimeFactory = testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
@@ -1329,12 +1335,12 @@ internal fun routeTestContext(
         featureFlags = featureFlags,
     )
     val bootstrapService = BackendBootstrapService(
-        settingsProvider = settingsProvider,
+        settingsConfig = settingsProvider.toBackendSettingsConfig(),
         effectiveSettingsResolver = effectiveSettingsResolver,
         toolCatalog = toolCatalog,
         featureFlags = featureFlags,
-        localModelAvailability = unavailableLocalModels(),
         userProviderKeyRepository = userProviderKeyRepository,
+        codexOAuthCredentialStore = SettingsProviderCodexOAuthCredentialStore(settingsProvider),
     )
     val userSettingsService = UserSettingsService(
         userSettingsRepository = userSettingsRepository,
@@ -1453,15 +1459,6 @@ private fun fakeTool(name: String): LLMToolSetup =
 
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
             LLMRequest.Message(role = LLMMessageRole.function, content = "ok", name = functionCall.name)
-    }
-
-private fun unavailableLocalModels(): LocalModelAvailability =
-    object : LocalModelAvailability {
-        override fun availableGigaModels(): List<LLMModel> = emptyList()
-
-        override fun defaultGigaModel(): LLMModel? = null
-
-        override fun isProviderAvailable(): Boolean = false
     }
 
 internal class CapturingChatApi : LLMChatAPI {

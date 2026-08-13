@@ -2,6 +2,7 @@ package ru.souz.backend
 
 import ru.souz.agent.AgentId
 import ru.souz.db.SettingsProvider
+import ru.souz.backend.config.BackendSettingsConfig
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.VoiceRecognitionModel
@@ -57,3 +58,23 @@ internal class TestSettingsProvider : SettingsProvider {
         }
     }
 }
+
+internal fun SettingsProvider.toBackendSettingsConfig(): BackendSettingsConfig =
+    BackendSettingsConfig(
+        gigaChatKey = gigaChatKey,
+        qwenChatKey = qwenChatKey,
+        aiTunnelKey = aiTunnelKey,
+        anthropicKey = anthropicKey,
+        openaiKey = openaiKey,
+        openaiBaseUrl = openaiBaseUrl,
+        openaiModel = openaiModel,
+        defaultCalendar = defaultCalendar,
+        regionProfile = regionProfile,
+        gigaModel = gigaModel,
+        useFewShotExamples = useFewShotExamples,
+        useStreaming = useStreaming,
+        requestTimeoutMillis = requestTimeoutMillis,
+        contextSize = contextSize,
+        temperature = temperature,
+        embeddingsModel = embeddingsModel,
+    )

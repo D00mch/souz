@@ -13,7 +13,7 @@ import ru.souz.agent.graph.Node
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentRuntimeSettings
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -28,7 +28,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  */
 internal class NodesLLM(
     private val llmApi: LLMChatAPI,
-    private val settingsProvider: AgentSettingsProvider,
+    private val settingsProvider: AgentRuntimeSettings,
 ) {
     private val l = LoggerFactory.getLogger(NodesLLM::class.java)
 

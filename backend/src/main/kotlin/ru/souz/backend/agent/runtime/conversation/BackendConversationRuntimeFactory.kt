@@ -10,20 +10,20 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
-import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.config.BackendExecutionSettings
+import ru.souz.backend.config.BackendSettingsConfig
 import ru.souz.backend.llm.BackendLlmExecutionContext
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.RuntimePassThroughToolsFilter
-import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.skills.SkillCommandRunner
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
@@ -31,7 +31,7 @@ import ru.souz.tool.skills.ToolInvokeSkill
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
 class BackendConversationRuntimeFactory(
-    private val baseSettingsProvider: SettingsProvider,
+    private val baseSettings: BackendSettingsConfig,
     private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
@@ -39,7 +39,8 @@ class BackendConversationRuntimeFactory(
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val clientToolCatalog: AgentToolCatalog,
     private val skillBundleProvider: SkillBundleProvider,
-    private val commandExecutor: SkillCommandExecutor,
+    private val userSkillBundleProvider: SkillBundleProvider = skillBundleProvider,
+    private val commandExecutor: SkillCommandRunner,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
@@ -52,30 +53,35 @@ class BackendConversationRuntimeFactory(
         initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
     ): BackendConversationRuntime {
         val persistedSession = sessionRepository.load(key)
-        val settingsProvider = BackendConversationSettingsProvider(
-            delegate = baseSettingsProvider,
+        val settings = BackendExecutionSettings(
+            deployment = baseSettings,
             defaultSystemPrompt = request.systemPrompt ?: systemPrompt,
             locale = persistedSession?.locale ?: request.locale,
-            useFewShotExamples = request.useFewShotExamples ?: baseSettingsProvider.useFewShotExamples,
-            requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
+            useFewShotExamples = request.useFewShotExamples ?: baseSettings.useFewShotExamples,
+            requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettings.requestTimeoutMillis,
         )
         val activeClientToolCatalog = if (request.clientToolsEnabled) {
             clientToolCatalog
         } else {
             BackendNoopAgentToolCatalog
         }
+        val activeSkillBundleProvider = if (request.clientToolsEnabled) {
+            skillBundleProvider
+        } else {
+            userSkillBundleProvider
+        }
         val executionToolCatalog = BackendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = activeClientToolCatalog,
-            includeFewShotExamples = settingsProvider.useFewShotExamples,
+            includeFewShotExamples = settings.useFewShotExamples,
         )
         val requestToolsFilter = RuntimePassThroughToolsFilter
         val delegateApi = llmApiFactory(
             BackendLlmExecutionContext(
                 userId = key.userId,
                 executionId = request.executionId ?: key.conversationId,
-                settingsProvider = settingsProvider,
+                settingsProvider = settings,
             )
         )
         val usageTrackingApi = CumulativeUsageTrackingChatApi(
@@ -85,8 +91,9 @@ class BackendConversationRuntimeFactory(
         val getSkillByNameTool = ToolGetSkillByName(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
-            skillBundleProvider = skillBundleProvider,
+            skillBundleProvider = activeSkillBundleProvider,
             approvalGate = null,
+            fileSkillsExecutable = false,
         )
         val getSkillsNamesByCategoryTool = ToolGetSkillsNamesByCategory(
             toolCatalog = executionToolCatalog,
@@ -99,17 +106,17 @@ class BackendConversationRuntimeFactory(
         val runtimeCommandTool = ToolInvokeSkill(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
-            skillBundleProvider = skillBundleProvider,
+            skillBundleProvider = activeSkillBundleProvider,
             commandExecutor = commandExecutor,
             approvalGate = null,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
-            settingsProvider = settingsProvider,
+            settingsProvider = settings,
             desktopInfoRepository = BackendNoopAgentDesktopInfoRepository,
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
-            skillBundleProvider = skillBundleProvider,
+            skillBundleProvider = activeSkillBundleProvider,
             defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
                 localeTag = request.locale,
@@ -131,7 +138,7 @@ class BackendConversationRuntimeFactory(
         return BackendConversationRuntime(
             key = key,
             sessionRepository = sessionRepository,
-            settingsProvider = settingsProvider,
+            settings = settings,
             contextFactory = kernel.contextFactory,
             executor = kernel.executor,
             usageTrackingApi = usageTrackingApi,

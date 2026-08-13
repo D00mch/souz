@@ -6,7 +6,7 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
+import ru.souz.backend.config.BackendExecutionSettings
 import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
@@ -17,17 +17,17 @@ import ru.souz.llms.ToolInvocationMeta
 internal class BackendConversationRuntime(
     private val key: AgentConversationKey,
     private val sessionRepository: AgentSessionRepository,
-    private val settingsProvider: BackendConversationSettingsProvider,
+    private val settings: BackendExecutionSettings,
     private val contextFactory: AgentContextFactory,
     private val executor: AgentExecutor,
     private val usageTrackingApi: CumulativeUsageTrackingChatApi,
     private val persistedSession: AgentConversationSession?,
 ) {
-    private val currentTemperature = persistedSession?.temperature ?: settingsProvider.temperature
+    private val currentTemperature = persistedSession?.temperature ?: settings.temperature
 
     init {
         persistedSession?.let { session ->
-            settingsProvider.restore(
+            settings.restore(
                 temperature = currentTemperature,
                 locale = session.locale,
             )
@@ -40,7 +40,7 @@ internal class BackendConversationRuntime(
         eventSink: AgentRuntimeEventSink? = null,
         onActiveRunReady: suspend () -> Unit = {},
     ): BackendConversationExecution {
-        settingsProvider.applyRequest(
+        settings.applyRequest(
             request = request,
             temperature = currentTemperature,
         )
@@ -48,9 +48,9 @@ internal class BackendConversationRuntime(
         val seedContext = contextFactory.create(
             agentId = AgentId.SKILLS_GRAPH,
             history = persistedSession?.history.orEmpty(),
-            model = settingsProvider.gigaModel,
+            model = settings.gigaModel,
             contextSize = request.contextSize,
-            temperature = settingsProvider.temperature,
+            temperature = settings.temperature,
             toolInvocationMeta = ToolInvocationMeta(
                 userId = key.userId,
                 conversationId = key.conversationId,

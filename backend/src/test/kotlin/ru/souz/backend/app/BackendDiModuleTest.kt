@@ -1,7 +1,9 @@
 package ru.souz.backend.app
 
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -11,15 +13,20 @@ import com.zaxxer.hikari.HikariDataSource
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.client.BackendClientSkills
+import ru.souz.backend.skills.BackendSkillBundleProvider
+import ru.souz.backend.agent.runtime.BackendSandboxUnavailableSkillCommandRunner
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.config.BackendSettingsConfig
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -33,7 +40,9 @@ import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresChatRepository
+import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
+import ru.souz.backend.storage.postgres.PostgresSkillRegistryRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
@@ -42,11 +51,13 @@ import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
-import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMToolSetup
-import ru.souz.skills.registry.FileSystemSkillRegistryRepository
+import ru.souz.backend.common.BackendSafeToolCatalog
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.skills.SkillCommandRunner
 
 class BackendDiModuleTest {
     @Test
@@ -66,6 +77,7 @@ class BackendDiModuleTest {
             assertIs<PostgresAgentEventRepository>(di.direct.instance<AgentEventRepository>())
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
+            assertIs<PostgresSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
             assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
@@ -76,7 +88,7 @@ class BackendDiModuleTest {
             assertSame(di.direct.instance<BackendFeatureFlags>(), httpDependencies.featureFlags)
             assertEquals("test-proxy-token", httpDependencies.trustedProxyToken())
             assertEquals(
-                di.direct.instance<SettingsProvider>().gigaModel.alias,
+                di.direct.instance<BackendSettingsConfig>().gigaModel.alias,
                 httpDependencies.selectedModel(),
             )
             assertNotNull(httpDependencies.onboardingService)
@@ -131,15 +143,22 @@ class BackendDiModuleTest {
     }
 
     @Test
-    fun `backend binds filesystem and bundled Skill runtime dependencies`() {
+    fun `backend binds PostgreSQL and resource Skill runtime dependencies`() {
         val dataSource = HikariDataSource()
-        val di = testDi(testAppConfig(), dataSource)
+        val appConfig = testAppConfig()
+        val di = testDi(appConfig, dataSource)
 
         try {
-            assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
+            assertIs<PostgresSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
+            assertIs<BackendSkillBundleProvider>(di.direct.instance<SkillBundleProvider>())
             assertIs<BackendClientSkills>(di.direct.instance<BackendClientSkills>())
-            assertIs<SkillCommandExecutor>(di.direct.instance<SkillCommandExecutor>())
-            assertNotNull(di.direct.instance<ConversationKnowledgeStore>())
+            assertSame(
+                BackendSandboxUnavailableSkillCommandRunner,
+                di.direct.instance<SkillCommandRunner>(),
+            )
+            assertIs<PostgresConversationKnowledgeStore>(di.direct.instance<ConversationKnowledgeStore>())
+            assertSame(appConfig.settings, di.direct.instance<BackendSettingsConfig>())
+            assertIs<BackendSafeToolCatalog>(di.direct.instance<AgentToolCatalog>())
             assertNotNull(
                 di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
             )
@@ -151,6 +170,47 @@ class BackendDiModuleTest {
             )
         } finally {
             dataSource.close()
+        }
+    }
+
+    @Test
+    fun `backend construction and normal resolution create no preferences or persistent local state`() {
+        val trapRoot = Files.createTempDirectory("backend-local-state-trap-")
+        val trapHome = trapRoot.resolve("home-must-not-exist")
+        val trapPreferencesRoot = trapRoot.resolve("preferences-must-not-exist")
+        val previousUserHome = System.getProperty(USER_HOME_PROPERTY)
+        val previousPreferencesRoot = System.getProperty(USER_PREFERENCES_ROOT_PROPERTY)
+        var dataSource: HikariDataSource? = null
+
+        try {
+            System.setProperty(USER_HOME_PROPERTY, trapHome.toString())
+            System.setProperty(USER_PREFERENCES_ROOT_PROPERTY, trapPreferencesRoot.toString())
+            val createdDataSource = HikariDataSource()
+            dataSource = createdDataSource
+            val directDi = testDi(testAppConfig(), createdDataSource).direct
+
+            assertNotNull(directDi.instance<BackendHttpDependencies>())
+            assertNotNull(directDi.instance<LlmClientFactory>())
+            assertNotNull(directDi.instance<SkillBundleProvider>())
+            assertNotNull(directDi.instance<ConversationKnowledgeStore>())
+            assertSame(
+                BackendSandboxUnavailableSkillCommandRunner,
+                directDi.instance<SkillCommandRunner>(),
+            )
+
+            assertNull(directDi.instanceOrNull<RuntimeSandboxFactory>())
+            assertNull(directDi.instanceOrNull<ToolInvocationRuntimeSandboxResolver>())
+            assertNull(directDi.instanceOrNull<SkillCommandExecutor>())
+            assertFalse(Files.exists(trapHome), "Backend resolution created state under user.home.")
+            assertFalse(
+                Files.exists(trapPreferencesRoot),
+                "Backend resolution created a Java Preferences user root.",
+            )
+        } finally {
+            dataSource?.close()
+            restoreSystemProperty(USER_HOME_PROPERTY, previousUserHome)
+            restoreSystemProperty(USER_PREFERENCES_ROOT_PROPERTY, previousPreferencesRoot)
+            trapRoot.toFile().deleteRecursively()
         }
     }
 
@@ -194,5 +254,15 @@ class BackendDiModuleTest {
     private companion object {
         const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY =
             "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+        const val USER_HOME_PROPERTY = "user.home"
+        const val USER_PREFERENCES_ROOT_PROPERTY = "java.util.prefs.userRoot"
+    }
+}
+
+private fun restoreSystemProperty(name: String, previousValue: String?) {
+    if (previousValue == null) {
+        System.clearProperty(name)
+    } else {
+        System.setProperty(name, previousValue)
     }
 }

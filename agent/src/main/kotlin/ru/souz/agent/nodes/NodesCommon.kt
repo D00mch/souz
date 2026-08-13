@@ -8,7 +8,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentRuntimeSettings
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
@@ -34,7 +34,7 @@ internal fun LLMRequest.Message.isInjectedContextMessage(): Boolean =
  */
 internal class NodesCommon(
     private val desktopInfoRepository: AgentDesktopInfoRepository,
-    private val settingsProvider: AgentSettingsProvider,
+    private val settingsProvider: AgentRuntimeSettings,
     private val agentToolExecutor: AgentToolExecutor,
     private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,

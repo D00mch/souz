@@ -1,5 +1,7 @@
 package ru.souz.runtime.sandbox
 
+import com.fasterxml.jackson.annotation.JsonInclude
+
 enum class SandboxCommandRuntime {
     PROCESS,
 
@@ -29,6 +31,13 @@ data class SandboxCommandResult(
     val stdout: String,
     val stderr: String,
     val timedOut: Boolean = false,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    val error: SandboxCommandError? = null,
+)
+
+data class SandboxCommandError(
+    val code: String,
+    val message: String,
 )
 
 interface SandboxCommandExecutor {

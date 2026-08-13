@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
@@ -40,7 +41,6 @@ import ru.souz.backend.testutil.repository.MemoryOptionRepository
 import ru.souz.backend.testutil.repository.MemoryToolCallRepository
 import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
 import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
-import ru.souz.llms.LocalModelAvailability
 
 class AgentExecutionServiceCancellationTest {
     @Test
@@ -142,12 +142,11 @@ private suspend fun cancellationTestContext(
     )
     val executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val effectiveSettingsResolver = EffectiveSettingsResolver(
-        baseSettingsProvider = settingsProvider,
+        baseSettings = settingsProvider.toBackendSettingsConfig(),
         userSettingsRepository = userSettingsRepository,
         userProviderKeyRepository = userProviderKeyRepository,
         featureFlags = featureFlags,
         toolCatalog = BackendNoopAgentToolCatalog,
-        localModelAvailability = unavailableLocalModelsForCancellationTest(),
     )
     val toolCallRepository = MemoryToolCallRepository()
     val finalizer = AgentExecutionFinalizer(
@@ -241,12 +240,3 @@ private class CancellingTurnRunner : BackendConversationTurnRunner {
         throw CancellationException("runner cancelled")
     }
 }
-
-private fun unavailableLocalModelsForCancellationTest(): LocalModelAvailability =
-    object : LocalModelAvailability {
-        override fun isProviderAvailable(): Boolean = false
-
-        override fun availableGigaModels() = emptyList<ru.souz.llms.LLMModel>()
-
-        override fun defaultGigaModel() = null
-    }

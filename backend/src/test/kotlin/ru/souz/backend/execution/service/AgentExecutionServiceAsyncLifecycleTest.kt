@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSettingsProvider
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
@@ -46,7 +47,6 @@ import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LocalModelAvailability
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AgentExecutionServiceAsyncLifecycleTest {
@@ -221,12 +221,11 @@ private suspend fun TestScope.asyncLifecycleContext(
     )
     val executionScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
     val effectiveSettingsResolver = EffectiveSettingsResolver(
-        baseSettingsProvider = settingsProvider,
+        baseSettings = settingsProvider.toBackendSettingsConfig(),
         userSettingsRepository = userSettingsRepository,
         userProviderKeyRepository = userProviderKeyRepository,
         featureFlags = featureFlags,
         toolCatalog = BackendNoopAgentToolCatalog,
-        localModelAvailability = unavailableLocalModels(),
     )
     val toolCallRepository = MemoryToolCallRepository()
     val finalizer = AgentExecutionFinalizer(
@@ -341,12 +340,3 @@ private fun completedSession(): AgentConversationSession =
         basedOnMessageSeq = 1L,
         rowVersion = 0L,
     )
-
-private fun unavailableLocalModels(): LocalModelAvailability =
-    object : LocalModelAvailability {
-        override fun isProviderAvailable(): Boolean = false
-
-        override fun availableGigaModels() = emptyList<ru.souz.llms.LLMModel>()
-
-        override fun defaultGigaModel() = null
-    }

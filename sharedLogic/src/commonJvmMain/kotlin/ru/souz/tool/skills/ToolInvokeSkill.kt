@@ -27,7 +27,7 @@ class ToolInvokeSkill(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
     private val skillBundleProvider: SkillBundleProvider,
-    private val commandExecutor: SkillCommandExecutor,
+    private val commandExecutor: SkillCommandRunner,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
     data class Input(

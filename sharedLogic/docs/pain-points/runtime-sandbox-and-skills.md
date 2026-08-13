@@ -1,5 +1,9 @@
 # Runtime sandbox and skills
 
+This guide applies to desktop/local and Docker sandbox hosts. The backend does not construct a
+`RuntimeSandbox`: it uses PostgreSQL for user Skills, validations, and Knowledge and reports
+command-backed Skill execution as unavailable.
+
 ## Invariants
 
 - Tools resolve a `RuntimeSandbox` from the current `ToolInvocationMeta`. The resolver maps invocation metadata to `SandboxScope` and may cache sandboxes by scope; tools must not cache a resolved path or sandbox for later users or conversations.
@@ -23,7 +27,7 @@ Skill discovery applies `AgentToolsFilter` on every discovery and invocation. En
 
 Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
 
-Local sandboxes can share physical state roots across logical scopes, and Backend scope resolution can omit conversation identity. Knowledge isolation therefore comes from its internal hashed user/conversation path rather than `RuntimeSandbox.scope`. Local process execution is not a cross-tenant filesystem security boundary.
+Local sandboxes can share physical state roots across logical scopes. Sandbox Knowledge isolation therefore comes from its internal hashed user/conversation path rather than `RuntimeSandbox.scope`. Local process execution is not a cross-tenant filesystem security boundary.
 
 JVM local mode supports `SandboxConversationKnowledgeStore` only when `stateRootPath` is located beneath `homePath`. `LocalSandboxFileSystem` permits filesystem access only beneath the home root, so a local state root outside it cannot be read, written, or cleared through the Knowledge store. This unsupported configuration remains a limitation to revisit if external local state roots are needed.
 

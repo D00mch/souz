@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import ru.souz.agent.AgentId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.toBackendSettingsConfig
 import ru.souz.backend.bootstrap.BackendBootstrapService
 import ru.souz.backend.keys.model.UserProviderKey
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
@@ -27,7 +28,6 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.VoiceRecognitionModel
@@ -389,23 +389,20 @@ private fun bootstrapService(
         ToolCategory.CALCULATOR to fakeTool("Calculator"),
     ),
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
-    localModelAvailability: LocalModelAvailability = unavailableLocalModels(),
     userSettingsRepository: MemoryUserSettingsRepository = MemoryUserSettingsRepository(),
     userProviderKeyRepository: MemoryUserProviderKeyRepository = MemoryUserProviderKeyRepository(),
 ): BackendBootstrapService =
     BackendBootstrapService(
-        settingsProvider = settingsProvider,
+        settingsConfig = settingsProvider.toBackendSettingsConfig(),
         effectiveSettingsResolver = EffectiveSettingsResolver(
-            baseSettingsProvider = settingsProvider,
+            baseSettings = settingsProvider.toBackendSettingsConfig(),
             userSettingsRepository = userSettingsRepository,
             userProviderKeyRepository = userProviderKeyRepository,
             featureFlags = featureFlags,
             toolCatalog = toolCatalog,
-            localModelAvailability = localModelAvailability,
         ),
         toolCatalog = toolCatalog,
         featureFlags = featureFlags,
-        localModelAvailability = localModelAvailability,
         userProviderKeyRepository = userProviderKeyRepository,
     )
 
@@ -426,15 +423,6 @@ private fun fakeTool(name: String): LLMToolSetup =
 
         override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
             LLMRequest.Message(role = LLMMessageRole.function, content = "ok", name = functionCall.name)
-    }
-
-private fun unavailableLocalModels(): LocalModelAvailability =
-    object : LocalModelAvailability {
-        override fun availableGigaModels(): List<LLMModel> = emptyList()
-
-        override fun defaultGigaModel(): LLMModel? = null
-
-        override fun isProviderAvailable(): Boolean = false
     }
 
 private class FakeSettingsProvider : SettingsProvider {
