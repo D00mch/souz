@@ -6,7 +6,7 @@ import kotlin.test.assertIs
 
 class ModelResolutionTest {
     @Test
-    fun `chat resolution normalizes names and distinguishes every outcome`() {
+    fun `chat resolution normalizes names and distinguishes unavailable models`() {
         assertEquals(
             ModelResolution.Resolved(LLMModel.Max),
             resolveChatModel("  gigachat-2-max  "),
@@ -19,17 +19,9 @@ class ModelResolutionTest {
             ModelResolution.UnsupportedProvider(LLMModel.Max, LlmProvider.GIGA),
             resolveChatModel("Max", supportedProviders = setOf(LlmProvider.OPENAI)),
         )
-
-        val ambiguous = assertIs<ModelResolution.Ambiguous<LLMModel>>(
-            resolveChatModel(" GPT-5-NANO ")
-        )
         assertEquals(
-            listOf(LLMModel.AiTunnelGpt5Nano, LLMModel.OpenAIGpt5Nano),
-            ambiguous.candidates,
-        )
-        assertEquals(
-            ModelResolution.Resolved(LLMModel.OpenAIGpt5Nano),
-            resolveChatModel("gpt-5-nano", preferredModel = LLMModel.OpenAIGpt5Nano),
+            ModelResolution.Unknown("GPT-5-NANO"),
+            resolveChatModel(" GPT-5-NANO "),
         )
     }
 

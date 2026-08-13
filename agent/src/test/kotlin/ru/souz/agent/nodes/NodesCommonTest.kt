@@ -57,7 +57,7 @@ class NodesCommonTest {
             StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
         )
         val nodesCommon = nodesCommon(desktopInfoRepository)
-        val context = stringContext(input = "Найди локальные данные", model = "gpt-5-nano")
+        val context = stringContext(input = "Найди локальные данные", model = "gpt-5-mini")
 
         val result = nodesCommon.nodeAppendAdditionalData().execute(context, graphRuntime())
         val injectedContext = assertNotNull(result.history.firstOrNull { it.isInjectedContextMessage() })
@@ -128,7 +128,7 @@ class NodesCommonTest {
                 functionsStateId = "call-1",
                 finishReason = LLMResponse.FinishReason.function_call,
             ),
-            settings = settings("gpt-5-nano"),
+            settings = settings("gpt-5-mini"),
             history = listOf(
                 "system".toSystemPromptMessage(),
                 LLMRequest.Message(LLMMessageRole.user, "read file"),

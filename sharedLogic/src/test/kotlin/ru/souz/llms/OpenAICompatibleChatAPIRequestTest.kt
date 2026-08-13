@@ -159,7 +159,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(
@@ -188,7 +188,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(
@@ -227,7 +227,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(
@@ -268,7 +268,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(
@@ -319,7 +319,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(
@@ -353,7 +353,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 messages = listOf(
                     LLMRequest.Message(
                         role = LLMMessageRole.user,
@@ -382,7 +382,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(
@@ -416,7 +416,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(
@@ -463,7 +463,7 @@ class OpenAICompatibleChatAPIRequestTest {
             text = """
                 {
                   "created": 1739900000,
-                  "model": "gpt-5-nano",
+                  "model": "gpt-5-mini",
                   "choices": [
                     {
                       "index": 0,
@@ -491,7 +491,7 @@ class OpenAICompatibleChatAPIRequestTest {
                   }
                 }
             """.trimIndent(),
-            requestModel = LLMModel.OpenAIGpt5Nano.alias,
+            requestModel = LLMModel.OpenAIGpt5Mini.alias,
         )
 
         val chat = response as LLMResponse.Chat.Ok
@@ -550,7 +550,7 @@ class OpenAICompatibleChatAPIRequestTest {
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(role = LLMMessageRole.user, content = "run tool"),
@@ -653,7 +653,7 @@ class OpenAICompatibleChatAPIRequestTest {
         every { settingsProvider.openaiBaseUrl } returns openaiBaseUrl
         every { settingsProvider.openaiModel } returns openaiModel
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
-        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
+        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
 
         return OpenAICompatibleChatAPI(provider, settingsProvider, mockk<HttpClient>())
     }
@@ -707,8 +707,8 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     private fun modelFor(provider: LlmProvider): String = when (provider) {
-        LlmProvider.OPENAI -> LLMModel.OpenAIGpt5Nano.alias
-        LlmProvider.AI_TUNNEL -> LLMModel.AiTunnelGpt5Nano.alias
+        LlmProvider.OPENAI -> LLMModel.OpenAIGpt5Mini.alias
+        LlmProvider.AI_TUNNEL -> LLMModel.AiTunnelGpt54Mini.alias
         LlmProvider.QWEN -> LLMModel.QwenFlash.alias
         else -> error("Unsupported provider: $provider")
     }

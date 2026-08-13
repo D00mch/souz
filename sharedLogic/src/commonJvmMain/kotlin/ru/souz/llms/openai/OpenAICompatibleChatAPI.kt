@@ -70,7 +70,7 @@ class OpenAICompatibleChatAPI(
         get() = when (provider) {
             LlmProvider.OPENAI -> System.getenv("OPENAI_MODEL")
                 ?: System.getProperty("OPENAI_MODEL")
-                ?: "gpt-5-nano"
+                ?: "gpt-5-mini"
             LlmProvider.AI_TUNNEL -> System.getenv("AITUNNEL_MODEL")
                 ?: System.getProperty("AITUNNEL_MODEL")
                 ?: "gpt-4o-mini"
@@ -748,7 +748,7 @@ class OpenAICompatibleChatAPI(
             return defaultChatModel
         }
 
-        return "gpt-5-nano"
+        return "gpt-5-mini"
     }
 
     private fun resolveEmbeddingsModel(model: String): String {

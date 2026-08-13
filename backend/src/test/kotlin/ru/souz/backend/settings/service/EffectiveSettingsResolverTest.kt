@@ -202,14 +202,14 @@ class EffectiveSettingsResolverTest {
 
         val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
 
-        assertEquals(LLMModel.OpenAIGpt5Nano, effective.defaultModel)
+        assertEquals(LLMModel.OpenAIGpt5Mini, effective.defaultModel)
     }
 
     @Test
     fun `resolver uses configured OpenAI-compatible model as backend default`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "en"
-            gigaModel = LLMModel.OpenAIGpt5Nano
+            gigaModel = LLMModel.OpenAIGpt5Mini
             openaiKey = "server-openai-key"
             openaiModel = "provider-chat-model"
             codexAccessToken = null
@@ -257,7 +257,7 @@ class EffectiveSettingsResolverTest {
 
         val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
 
-        assertEquals(LLMModel.OpenAIGpt5Nano, effective.defaultModel)
+        assertEquals(LLMModel.OpenAIGpt5Mini, effective.defaultModel)
     }
 
     @Test

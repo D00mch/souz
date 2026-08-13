@@ -54,17 +54,17 @@ class SettingsRoutingLlmChatApiTest {
     @Test
     fun `message routes to selected chat provider`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
+        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
 
         val openAiApi = mockk<OpenAICompatibleChatAPI>()
         val request = LLMRequest.Chat(
-            model = LLMModel.OpenAIGpt5Nano.alias,
+            model = LLMModel.OpenAIGpt5Mini.alias,
             messages = emptyList(),
         )
         coEvery { openAiApi.message(request) } returns LLMResponse.Chat.Ok(
             choices = emptyList(),
             created = 1L,
-            model = LLMModel.OpenAIGpt5Nano.alias,
+            model = LLMModel.OpenAIGpt5Mini.alias,
             usage = LLMResponse.Usage(0, 0, 0, 0),
         )
 
@@ -76,7 +76,7 @@ class SettingsRoutingLlmChatApiTest {
         val response = router.message(request)
 
         assertIs<LLMResponse.Chat.Ok>(response)
-        assertEquals(LLMModel.OpenAIGpt5Nano.alias, response.model)
+        assertEquals(LLMModel.OpenAIGpt5Mini.alias, response.model)
     }
 
     @Test

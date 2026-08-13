@@ -30,8 +30,8 @@ class ProviderStreamingFlowTest {
     @Test
     fun `compatible providers share text tool and terminal usage streaming`() = runTest {
         val cases = listOf(
-            Triple(LlmProvider.OPENAI, LLMModel.OpenAIGpt5Nano.alias, "openai-key"),
-            Triple(LlmProvider.AI_TUNNEL, LLMModel.AiTunnelGpt5Nano.alias, "tunnel-key"),
+            Triple(LlmProvider.OPENAI, LLMModel.OpenAIGpt5Mini.alias, "openai-key"),
+            Triple(LlmProvider.AI_TUNNEL, LLMModel.AiTunnelGpt54Mini.alias, "tunnel-key"),
             Triple(LlmProvider.QWEN, LLMModel.QwenFlash.alias, "qwen-key"),
         )
 

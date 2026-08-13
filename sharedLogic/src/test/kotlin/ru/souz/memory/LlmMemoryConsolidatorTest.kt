@@ -140,7 +140,7 @@ class LlmMemoryConsolidatorTest {
     }
 
     private fun settingsProvider(): SettingsProvider = mockk {
-        every { gigaModel } returns LLMModel.AiTunnelGpt5Nano
+        every { gigaModel } returns LLMModel.AiTunnelGpt54Mini
     }
 
     private fun okResponse(

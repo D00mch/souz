@@ -15,16 +15,16 @@ class RequestParsingTest {
     }
 
     @Test
-    fun `parseModel distinguishes unknown and ambiguous aliases`() {
+    fun `parseModel distinguishes unknown aliases`() {
         val unknown = assertFailsWith<BackendV1Exception> {
             parseModel(" unknown ", fieldName = "defaultModel")
         }
-        val ambiguous = assertFailsWith<BackendV1Exception> {
+        val removed = assertFailsWith<BackendV1Exception> {
             parseModel(" GPT-5-NANO ", fieldName = "defaultModel")
         }
 
         assertTrue(unknown.message.contains("known model alias"))
-        assertTrue(ambiguous.message.contains("ambiguous"))
+        assertTrue(removed.message.contains("known model alias"))
     }
 
     @Test

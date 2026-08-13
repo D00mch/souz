@@ -136,12 +136,12 @@ class ProviderRequestLifecycleTest {
     }
 
     private fun chatRequest() = LLMRequest.Chat(
-        model = LLMModel.OpenAIGpt5Nano.alias,
+        model = LLMModel.OpenAIGpt5Mini.alias,
         messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
     )
 
     private companion object {
         const val OPEN_AI_RESPONSE =
-            """{"choices":[],"created":1,"model":"gpt-5-nano","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"precached_prompt_tokens":0}}"""
+            """{"choices":[],"created":1,"model":"gpt-5-mini","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3,"precached_prompt_tokens":0}}"""
     }
 }
