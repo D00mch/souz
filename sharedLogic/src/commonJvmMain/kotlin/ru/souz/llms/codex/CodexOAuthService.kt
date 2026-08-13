@@ -125,18 +125,13 @@ class CodexOAuthService(
         if (accessToken.isNullOrBlank()) error("Codex: not authenticated")
         val needsRefresh = expiresAt != null &&
             System.currentTimeMillis() / 1000 >= expiresAt - REFRESH_BUFFER_SECONDS
-        if (needsRefresh) {
-            refreshToken()
-        }
-        settingsProvider.codexAccessToken
-            ?.takeIf { !needsRefresh || it != accessToken }
-            ?: error("Codex: token refresh failed")
+        if (needsRefresh) refreshToken() else accessToken
     }
 
-    private suspend fun refreshToken() {
+    private suspend fun refreshToken(): String {
         val refreshToken = settingsProvider.codexRefreshToken
             ?: error("Codex: refresh token is missing")
-        try {
+        return try {
             val body = buildString {
                 append("grant_type=refresh_token")
                 append("&refresh_token=${refreshToken.urlEncode()}")
@@ -150,6 +145,7 @@ class CodexOAuthService(
             }
             if (response.status.isSuccess()) {
                 parseAndStoreTokens(response.bodyAsText())
+                    ?: error("Codex: token refresh failed")
             } else {
                 error("Codex: token refresh failed: ${response.status} ${response.bodyAsText()}")
             }
@@ -178,11 +174,11 @@ class CodexOAuthService(
             _oauthState.value = CodexOAuthState.Error("Token exchange failed: ${response.status} $text")
             return
         }
-        val accountId = parseAndStoreTokens(response.bodyAsText())
-        _oauthState.value = CodexOAuthState.Success(accountId = accountId ?: "")
+        parseAndStoreTokens(response.bodyAsText())
+        _oauthState.value = CodexOAuthState.Success(accountId = settingsProvider.codexAccountId ?: "")
     }
 
-    /** Parses token response, persists to SettingsProvider, returns accountId. */
+    /** Parses token response, persists to SettingsProvider, returns access token. */
     private fun parseAndStoreTokens(responseBody: String): String? {
         val data = runCatching { restJsonMapper.readValue<Map<String, Any>>(responseBody) }.getOrNull()
             ?: return null
@@ -198,7 +194,7 @@ class CodexOAuthService(
         settingsProvider.codexRefreshToken = refreshToken
         settingsProvider.codexAccountId = accountId
         settingsProvider.codexExpiresAt = System.currentTimeMillis() / 1000 + expiresIn
-        return accountId
+        return accessToken
     }
 
     private fun extractAccountId(jwt: String): String? {
