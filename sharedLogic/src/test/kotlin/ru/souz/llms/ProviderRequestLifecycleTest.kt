@@ -18,7 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.http.providerHttpClientDefaults
-import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -42,11 +42,13 @@ class ProviderRequestLifecycleTest {
         ) {
             providerHttpClientDefaults()
         }
-        val first = OpenAIChatAPI(
+        val first = OpenAICompatibleChatAPI(
+            LlmProvider.OPENAI,
             openAiSettings(apiKey = { "key-a" }, timeoutMillis = { 1_000L }),
             client,
         )
-        val second = OpenAIChatAPI(
+        val second = OpenAICompatibleChatAPI(
+            LlmProvider.OPENAI,
             openAiSettings(apiKey = { "key-b" }, timeoutMillis = { 2_000L }),
             client,
         )
@@ -85,7 +87,7 @@ class ProviderRequestLifecycleTest {
         ) {
             providerHttpClientDefaults()
         }
-        val api = OpenAIChatAPI(settings, client)
+        val api = OpenAICompatibleChatAPI(LlmProvider.OPENAI, settings, client)
 
         api.message(chatRequest())
         apiKey = "key-b"
@@ -101,7 +103,7 @@ class ProviderRequestLifecycleTest {
     fun `provider message propagates cancellation`() = runTest {
         val cancellation = CancellationException("cancelled")
         val client = cancellingClient(cancellation)
-        val api = OpenAIChatAPI(openAiSettings(), client)
+        val api = OpenAICompatibleChatAPI(LlmProvider.OPENAI, openAiSettings(), client)
 
         assertFailsWith<CancellationException> { api.message(chatRequest()) }
         client.close()
@@ -111,7 +113,7 @@ class ProviderRequestLifecycleTest {
     fun `provider stream propagates cancellation`() = runTest {
         val cancellation = CancellationException("cancelled")
         val client = cancellingClient(cancellation)
-        val api = OpenAIChatAPI(openAiSettings(), client)
+        val api = OpenAICompatibleChatAPI(LlmProvider.OPENAI, openAiSettings(), client)
 
         assertFailsWith<CancellationException> {
             api.messageStream(chatRequest()).toList()

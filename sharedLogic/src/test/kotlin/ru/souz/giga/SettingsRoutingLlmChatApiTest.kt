@@ -12,8 +12,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,7 +25,7 @@ class SettingsRoutingLlmChatApiTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
 
-        val aiTunnelApi = mockk<AiTunnelChatAPI>()
+        val aiTunnelApi = mockk<OpenAICompatibleChatAPI>()
         val requestSlot = slot<LLMRequest.Embeddings>()
         coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
             data = emptyList(),
@@ -57,7 +56,7 @@ class SettingsRoutingLlmChatApiTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
 
-        val openAiApi = mockk<OpenAIChatAPI>()
+        val openAiApi = mockk<OpenAICompatibleChatAPI>()
         val request = LLMRequest.Chat(
             model = LLMModel.OpenAIGpt5Nano.alias,
             messages = emptyList(),

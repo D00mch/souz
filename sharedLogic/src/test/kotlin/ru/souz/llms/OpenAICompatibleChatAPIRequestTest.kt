@@ -4,28 +4,60 @@ import io.mockk.every
 import io.mockk.mockk
 import io.ktor.client.HttpClient
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.openai.OpenAIEndpoint
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
-class OpenAIChatAPIRequestTest {
+data class CompatibleProviderCase(
+    val provider: LlmProvider,
+    val expectedBaseUrl: String,
+    val expectedMaxTokensField: String,
+    val sendsTemperature: Boolean,
+    val sendsStreamUsage: Boolean,
+    val embeddingEncodingFormat: String?,
+)
+
+class OpenAICompatibleChatAPIRequestTest {
 
     @Test
-    fun `stream request asks OpenAI to include usage`() {
-        val request = invokeBuildChatRequest(
-            api = createApi(),
-            body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Nano.alias,
-                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
-            ),
-            stream = true,
-        )
+    fun `provider matrix applies compatible protocol differences`() {
+        compatibleProviderCases.forEach { case ->
+            val api = createApi(provider = case.provider)
+            val chatRequest = invokeBuildChatRequest(
+                api = api,
+                body = LLMRequest.Chat(
+                    model = modelFor(case.provider),
+                    messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                    functions = listOf(function("get_horoscope")),
+                    temperature = 0.4f,
+                    maxTokens = 256,
+                ),
+                stream = true,
+            )
+            val embeddingsRequest = invokeBuildEmbeddingsRequest(
+                api = api,
+                body = LLMRequest.Embeddings(model = "Embeddings", input = listOf("hello")),
+            )
 
-        assertEquals(mapOf("include_usage" to true), request["stream_options"])
+            assertEquals("${case.expectedBaseUrl}/chat/completions", invokeChatCompletionsUrl(api))
+            assertEquals(256, chatRequest[case.expectedMaxTokensField])
+            assertEquals(case.sendsTemperature, "temperature" in chatRequest)
+            assertEquals(case.sendsStreamUsage, "stream_options" in chatRequest)
+            assertEquals(case.embeddingEncodingFormat, embeddingsRequest["encoding_format"])
+            assertEquals(case.provider == LlmProvider.QWEN, chatRequest["parallel_tool_calls"] == true)
+        }
+    }
+
+    @Test
+    fun `constructor rejects providers outside the compatible set`() {
+        assertFailsWith<IllegalArgumentException> {
+            createApi(provider = LlmProvider.ANTHROPIC)
+        }
     }
 
     @Test
@@ -469,6 +501,35 @@ class OpenAIChatAPIRequestTest {
     }
 
     @Test
+    fun `parseCompletionsResponse accepts compatible usage names and finish reasons`() {
+        val response = invokeParseCompletionsResponse(
+            api = createApi(provider = LlmProvider.QWEN),
+            text = """
+                {
+                  "created": 1739900000,
+                  "model": "qwen-flash",
+                  "choices": [
+                    {
+                      "index": 0,
+                      "finish_reason": "max_tokens",
+                      "message": {"role": "assistant", "content": "partial"}
+                    }
+                  ],
+                  "usage": {
+                    "input_tokens": 9,
+                    "output_tokens": 4,
+                    "prompt_tokens_details": {"cached_tokens": 3}
+                  }
+                }
+            """.trimIndent(),
+            requestModel = LLMModel.QwenFlash.alias,
+        ) as LLMResponse.Chat.Ok
+
+        assertEquals(LLMResponse.FinishReason.length, response.choices.single().finishReason)
+        assertEquals(LLMResponse.Usage(9, 4, 13, 3), response.usage)
+    }
+
+    @Test
     fun `buildEmbeddingsRequest includes float encoding format`() {
         val api = createApi()
         val request = invokeBuildEmbeddingsRequest(
@@ -530,7 +591,7 @@ class OpenAIChatAPIRequestTest {
 
     @Test
     fun `stream accumulator emits distinct indexes for multiple tool calls in one choice`() {
-        val classLoader = OpenAIChatAPI::class.java.classLoader
+        val classLoader = OpenAICompatibleChatAPI::class.java.classLoader
         val clazz = Class.forName("ru.souz.llms.openai.OpenAiStreamAccumulator", true, classLoader)
         val ctor = clazz.getDeclaredConstructor()
         ctor.isAccessible = true
@@ -581,26 +642,29 @@ class OpenAIChatAPIRequestTest {
     }
 
     private fun createApi(
+        provider: LlmProvider = LlmProvider.OPENAI,
         openaiModel: String? = null,
         openaiBaseUrl: String? = null,
-    ): OpenAIChatAPI {
+    ): OpenAICompatibleChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.openaiKey } returns "test-key"
+        every { settingsProvider.aiTunnelKey } returns "test-key"
+        every { settingsProvider.qwenChatKey } returns "test-key"
         every { settingsProvider.openaiBaseUrl } returns openaiBaseUrl
         every { settingsProvider.openaiModel } returns openaiModel
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
 
-        return OpenAIChatAPI(settingsProvider, mockk<HttpClient>())
+        return OpenAICompatibleChatAPI(provider, settingsProvider, mockk<HttpClient>())
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildChatRequest(
-        api: OpenAIChatAPI,
+        api: OpenAICompatibleChatAPI,
         body: LLMRequest.Chat,
         stream: Boolean,
     ): Map<String, Any> {
-        val method = OpenAIChatAPI::class.java.getDeclaredMethod(
+        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod(
             "buildChatRequest",
             LLMRequest.Chat::class.java,
             Boolean::class.javaPrimitiveType,
@@ -611,10 +675,10 @@ class OpenAIChatAPIRequestTest {
 
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildEmbeddingsRequest(
-        api: OpenAIChatAPI,
+        api: OpenAICompatibleChatAPI,
         body: LLMRequest.Embeddings,
     ): Map<String, Any> {
-        val method = OpenAIChatAPI::class.java.getDeclaredMethod(
+        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod(
             "buildEmbeddingsRequest",
             LLMRequest.Embeddings::class.java,
         )
@@ -623,17 +687,30 @@ class OpenAIChatAPIRequestTest {
     }
 
     private fun invokeParseCompletionsResponse(
-        api: OpenAIChatAPI,
+        api: OpenAICompatibleChatAPI,
         text: String,
         requestModel: String,
     ): LLMResponse.Chat {
-        val method = OpenAIChatAPI::class.java.getDeclaredMethod(
+        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod(
             "parseCompletionsResponse",
             String::class.java,
             String::class.java,
         )
         method.isAccessible = true
         return method.invoke(api, text, requestModel) as LLMResponse.Chat
+    }
+
+    private fun invokeChatCompletionsUrl(api: OpenAICompatibleChatAPI): String {
+        val method = OpenAICompatibleChatAPI::class.java.getDeclaredMethod("getChatCompletionsUrl")
+        method.isAccessible = true
+        return method.invoke(api) as String
+    }
+
+    private fun modelFor(provider: LlmProvider): String = when (provider) {
+        LlmProvider.OPENAI -> LLMModel.OpenAIGpt5Nano.alias
+        LlmProvider.AI_TUNNEL -> LLMModel.AiTunnelGpt5Nano.alias
+        LlmProvider.QWEN -> LLMModel.QwenFlash.alias
+        else -> error("Unsupported provider: $provider")
     }
 
     private fun function(name: String): LLMRequest.Function = LLMRequest.Function(
@@ -647,4 +724,33 @@ class OpenAIChatAPIRequestTest {
             required = listOf("sign"),
         ),
     )
+
+    private companion object {
+        val compatibleProviderCases = listOf(
+            CompatibleProviderCase(
+                provider = LlmProvider.OPENAI,
+                expectedBaseUrl = OpenAIEndpoint.DEFAULT_BASE_URL,
+                expectedMaxTokensField = "max_completion_tokens",
+                sendsTemperature = false,
+                sendsStreamUsage = true,
+                embeddingEncodingFormat = "float",
+            ),
+            CompatibleProviderCase(
+                provider = LlmProvider.AI_TUNNEL,
+                expectedBaseUrl = "https://api.aitunnel.ru/v1",
+                expectedMaxTokensField = "max_tokens",
+                sendsTemperature = true,
+                sendsStreamUsage = true,
+                embeddingEncodingFormat = null,
+            ),
+            CompatibleProviderCase(
+                provider = LlmProvider.QWEN,
+                expectedBaseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+                expectedMaxTokensField = "max_tokens",
+                sendsTemperature = true,
+                sendsStreamUsage = true,
+                embeddingEncodingFormat = null,
+            ),
+        )
+    }
 }

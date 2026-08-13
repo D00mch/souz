@@ -22,30 +22,31 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.http.providerHttpClientDefaults
-import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.qwen.QwenChatAPI
-import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class ProviderStreamingFlowTest {
     @Test
-    fun `OpenAI-shaped flows emit their terminal usage-only chunk`() = runTest {
-        val cases: List<Pair<String, (HttpClient) -> LLMChatAPI>> = listOf(
-            LLMModel.OpenAIGpt5Nano.alias to { client ->
-                OpenAIChatAPI(settings(), client, apiKey = "openai-key")
-            },
-            LLMModel.AiTunnelGpt5Nano.alias to { client ->
-                AiTunnelChatAPI(settings(), client, apiKey = "tunnel-key")
-            },
+    fun `compatible providers share text tool and terminal usage streaming`() = runTest {
+        val cases = listOf(
+            Triple(LlmProvider.OPENAI, LLMModel.OpenAIGpt5Nano.alias, "openai-key"),
+            Triple(LlmProvider.AI_TUNNEL, LLMModel.AiTunnelGpt5Nano.alias, "tunnel-key"),
+            Triple(LlmProvider.QWEN, LLMModel.QwenFlash.alias, "qwen-key"),
         )
 
-        cases.forEach { (model, apiFactory) ->
-            val client = streamClient(OPEN_AI_STREAM)
-            val chunks = apiFactory(client).messageStream(chatRequest(model))
+        cases.forEach { (provider, model, apiKey) ->
+            val client = streamClient(COMPATIBLE_STREAM)
+            val api = OpenAICompatibleChatAPI(provider, settings(), client, apiKey)
+            val chunks = api.messageStream(chatRequest(model))
                 .filterIsInstance<LLMResponse.Chat.Ok>()
                 .toList()
 
+            assertEquals("Hi", chunks.flatMap { it.choices }.first().message.content)
+            val toolChoice = chunks.flatMap { it.choices }.single { it.message.functionCall != null }
+            assertEquals("lookup", toolChoice.message.functionCall?.name)
+            assertEquals(mapOf("city" to "Paris"), toolChoice.message.functionCall?.arguments)
+            assertEquals(LLMResponse.FinishReason.function_call, toolChoice.finishReason)
             assertEquals(LLMResponse.Usage(7, 3, 10, 0), chunks.last().usage)
             assertEquals(emptyList(), chunks.last().choices)
             client.close()
@@ -63,20 +64,6 @@ class ProviderStreamingFlowTest {
 
         assertEquals(LLMResponse.Usage(9, 5, 14, 4), chunks.last().usage)
         assertEquals(LLMResponse.FinishReason.stop, chunks.last().choices.single().finishReason)
-        client.close()
-    }
-
-    @Test
-    fun `Qwen flow emits its terminal usage-only event`() = runTest {
-        val client = streamClient(QWEN_STREAM)
-        val api = QwenChatAPI(settings(), client, apiKey = "qwen-key")
-
-        val chunks = api.messageStream(chatRequest("qwen-test"))
-            .filterIsInstance<LLMResponse.Chat.Ok>()
-            .toList()
-
-        assertEquals(LLMResponse.Usage(7, 3, 10, 0), chunks.last().usage)
-        assertEquals(emptyList(), chunks.last().choices)
         client.close()
     }
 
@@ -125,8 +112,12 @@ class ProviderStreamingFlowTest {
     )
 
     private companion object {
-        val OPEN_AI_STREAM = """
+        val COMPATIBLE_STREAM = """
             data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}],"created":1,"model":"gpt-test","usage":null}
+
+            data:{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"lookup","arguments":"{\"city\":"}}]},"finish_reason":null}],"created":1,"model":"gpt-test","usage":null}
+
+            data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"Paris\"}"}}]},"finish_reason":"tool_calls"}],"created":1,"model":"gpt-test","usage":null}
 
             data: {"choices":[],"created":1,"model":"gpt-test","usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}
 
@@ -140,13 +131,6 @@ class ProviderStreamingFlowTest {
             data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}
 
             data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}
-
-        """.trimIndent() + "\n\n"
-
-        val QWEN_STREAM = """
-            data: {"output":{"choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"finish_reason":null}]},"usage":{"input_tokens":7,"output_tokens":1,"total_tokens":8}}
-
-            data: {"output":{"choices":[]},"usage":{"input_tokens":7,"output_tokens":3,"total_tokens":10}}
 
         """.trimIndent() + "\n\n"
     }

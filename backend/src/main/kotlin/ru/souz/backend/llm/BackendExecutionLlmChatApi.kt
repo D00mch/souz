@@ -29,9 +29,7 @@ import ru.souz.llms.resolveChatModel
 import ru.souz.llms.resolveEmbeddingsModel
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
-import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.qwen.QwenChatAPI
-import ru.souz.llms.tunnel.AiTunnelChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 
 /** Execution-scoped LLM routing, credentials, retries, and usage over process-owned transports. */
 internal class BackendExecutionLlmChatApi(
@@ -127,24 +125,21 @@ internal class BackendExecutionLlmChatApi(
         return providerStateMutex.withLock {
             providerApis[provider]?.let { return@withLock it }
             val api = providerApiOverride?.invoke(provider) ?: when (provider) {
-                LlmProvider.QWEN -> QwenChatAPI(
-                    settingsProvider,
-                    httpClients.standard,
-                    apiKey = resolveCredentialLocked(provider),
-                )
-                LlmProvider.AI_TUNNEL -> AiTunnelChatAPI(
-                    settingsProvider,
-                    httpClients.standard,
+                LlmProvider.OPENAI,
+                LlmProvider.AI_TUNNEL,
+                LlmProvider.QWEN,
+                -> OpenAICompatibleChatAPI(
+                    provider = provider,
+                    settingsProvider = settingsProvider,
+                    client = when (provider) {
+                        LlmProvider.OPENAI -> httpClients.openAi
+                        else -> httpClients.standard
+                    },
                     apiKey = resolveCredentialLocked(provider),
                 )
                 LlmProvider.ANTHROPIC -> AnthropicChatAPI(
                     settingsProvider,
                     httpClients.standard,
-                    apiKey = resolveCredentialLocked(provider),
-                )
-                LlmProvider.OPENAI -> OpenAIChatAPI(
-                    settingsProvider,
-                    httpClients.openAi,
                     apiKey = resolveCredentialLocked(provider),
                 )
                 LlmProvider.CODEX -> CodexChatAPI(

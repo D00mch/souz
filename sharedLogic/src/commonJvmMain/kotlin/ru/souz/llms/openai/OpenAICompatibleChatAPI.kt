@@ -29,33 +29,70 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.collections.get
 
-class OpenAIChatAPI(
+class OpenAICompatibleChatAPI(
+    private val provider: LlmProvider,
     private val settingsProvider: SettingsProvider,
     private val client: HttpClient,
     apiKey: String? = null,
 ) : LLMChatAPI {
-    private val l = LoggerFactory.getLogger(OpenAIChatAPI::class.java)
+    init {
+        require(
+            provider == LlmProvider.OPENAI ||
+                provider == LlmProvider.AI_TUNNEL ||
+                provider == LlmProvider.QWEN
+        ) {
+            "$provider is not an OpenAI-compatible provider"
+        }
+    }
+
+    private val l = LoggerFactory.getLogger(OpenAICompatibleChatAPI::class.java)
     private val immutableApiKey = apiKey
 
     private val apiKey: String
-        get() = immutableApiKey
-            ?: settingsProvider.openaiKey
-            ?: System.getenv("OPENAI_API_KEY")
-            ?: System.getProperty("OPENAI_API_KEY")
-            ?: throw IllegalStateException("OPENAI_API_KEY is not set")
+        get() = immutableApiKey ?: when (provider) {
+            LlmProvider.OPENAI -> settingsProvider.openaiKey
+                ?: System.getenv("OPENAI_API_KEY")
+                ?: System.getProperty("OPENAI_API_KEY")
+                ?: throw IllegalStateException("OPENAI_API_KEY is not set")
+            LlmProvider.AI_TUNNEL -> settingsProvider.aiTunnelKey
+                ?: System.getenv("AITUNNEL_KEY")
+                ?: System.getProperty("AITUNNEL_KEY")
+                ?: throw IllegalStateException("AITUNNEL_KEY is not set")
+            LlmProvider.QWEN -> settingsProvider.qwenChatKey
+                ?: System.getenv("QWEN_KEY")
+                ?: System.getProperty("QWEN_KEY")
+                ?: throw IllegalStateException("QWEN_KEY is not set")
+            else -> error("Unsupported provider: $provider")
+        }
 
     private val defaultChatModel: String
-        get() = System.getenv("OPENAI_MODEL")
-            ?: System.getProperty("OPENAI_MODEL")
-            ?: "gpt-5-nano"
+        get() = when (provider) {
+            LlmProvider.OPENAI -> System.getenv("OPENAI_MODEL")
+                ?: System.getProperty("OPENAI_MODEL")
+                ?: "gpt-5-nano"
+            LlmProvider.AI_TUNNEL -> System.getenv("AITUNNEL_MODEL")
+                ?: System.getProperty("AITUNNEL_MODEL")
+                ?: "gpt-4o-mini"
+            LlmProvider.QWEN -> System.getenv("QWEN_MODEL")
+                ?: System.getProperty("QWEN_MODEL")
+                ?: "qwen-flash"
+            else -> error("Unsupported provider: $provider")
+        }
 
     private val defaultEmbeddingsModel: String
-        get() = System.getenv("OPENAI_EMBEDDINGS_MODEL")
-            ?: System.getProperty("OPENAI_EMBEDDINGS_MODEL")
-            ?: "text-embedding-3-small"
+        get() = when (provider) {
+            LlmProvider.OPENAI -> System.getenv("OPENAI_EMBEDDINGS_MODEL")
+                ?: System.getProperty("OPENAI_EMBEDDINGS_MODEL")
+                ?: "text-embedding-3-small"
+            LlmProvider.AI_TUNNEL -> System.getenv("AITUNNEL_EMBEDDINGS_MODEL")
+                ?: System.getProperty("AITUNNEL_EMBEDDINGS_MODEL")
+                ?: "text-embedding-3-small"
+            LlmProvider.QWEN -> System.getenv("QWEN_EMBEDDINGS_MODEL")
+                ?: System.getProperty("QWEN_EMBEDDINGS_MODEL")
+                ?: "text-embedding-v3"
+            else -> error("Unsupported provider: $provider")
+        }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(chatCompletionsUrl) {
@@ -64,7 +101,8 @@ class OpenAIChatAPI(
         }
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
-            parseCompletionsResponse(text, body.model).also {
+            val responseModel = if (provider == LlmProvider.QWEN) resolveChatModel(body.model) else body.model
+            parseCompletionsResponse(text, responseModel).also {
                 l.info("Model: ${body.model}. Response received")
             }
         } else {
@@ -97,8 +135,8 @@ class OpenAIChatAPI(
                 val channel = response.bodyAsChannel()
                 while (!channel.isClosedForRead) {
                     val line = channel.readUTF8Line() ?: break
-                    if (line.startsWith("data: ")) {
-                        val data = line.removePrefix("data: ")
+                    if (line.startsWith("data:")) {
+                        val data = line.removePrefix("data:").trimStart()
                         if (data == "[DONE]") break
 
                         try {
@@ -128,7 +166,7 @@ class OpenAIChatAPI(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (t: Throwable) {
-            l.error("Model: ${body.model}. Error in OpenAI stream chat", t)
+            l.error("Provider: $provider. Model: ${body.model}. Error in stream chat", t)
             send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
         }
     }
@@ -150,12 +188,18 @@ class OpenAIChatAPI(
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (t: Throwable) {
-        l.error("Model: ${body.model}. Error in OpenAI embeddings", t)
+        l.error("Provider: $provider. Model: ${body.model}. Error in embeddings", t)
         LLMResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
     }
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
-        throw UnsupportedOperationException("OpenAI file upload is not supported in this implementation")
+        val message = when (provider) {
+            LlmProvider.OPENAI -> "OpenAI file upload is not supported in this implementation"
+            LlmProvider.AI_TUNNEL -> "AiTunnel file upload is not supported in this implementation"
+            LlmProvider.QWEN -> "Qwen file upload is not supported"
+            else -> error("Unsupported provider: $provider")
+        }
+        throw UnsupportedOperationException(message)
     }
 
     override suspend fun downloadFile(fileId: String): String? {
@@ -163,7 +207,13 @@ class OpenAIChatAPI(
     }
 
     override suspend fun balance(): LLMResponse.Balance {
-        return LLMResponse.Balance.Error(-1, "Balance check not implemented for OpenAI")
+        val message = when (provider) {
+            LlmProvider.OPENAI -> "Balance check not implemented for OpenAI"
+            LlmProvider.AI_TUNNEL -> "Balance check not implemented for AiTunnel"
+            LlmProvider.QWEN -> "Qwen doesn't have billing API"
+            else -> error("Unsupported provider: $provider")
+        }
+        return LLMResponse.Balance.Error(-1, message)
     }
 
     private fun io.ktor.client.request.HttpRequestBuilder.applyRequestDefaults() {
@@ -180,14 +230,25 @@ class OpenAIChatAPI(
             put("model", model)
             put("messages", buildMessages(body.messages))
             put("stream", stream)
-            if (stream && settingsProvider.openAIEndpoint().isOfficial) {
+            if (stream && shouldIncludeStreamUsage()) {
                 put("stream_options", mapOf("include_usage" to true))
             }
 
-            // thinking models doesn't support temperature
-            // body.temperature?.let { put("temperature", it) }
+            if (provider != LlmProvider.OPENAI) {
+                body.temperature?.let { put("temperature", it) }
+            }
             if (body.maxTokens > 0) {
-                put("max_completion_tokens", body.maxTokens)
+                val field = when (provider) {
+                    LlmProvider.OPENAI -> "max_completion_tokens"
+                    LlmProvider.AI_TUNNEL,
+                    LlmProvider.QWEN,
+                    -> "max_tokens"
+                    else -> error("Unsupported provider: $provider")
+                }
+                put(field, body.maxTokens)
+            }
+            if (provider == LlmProvider.QWEN) {
+                put("parallel_tool_calls", true)
             }
             if (tools.isNotEmpty()) {
                 put("tools", tools)
@@ -203,7 +264,9 @@ class OpenAIChatAPI(
         } else {
             put("input", body.input)
         }
-        put("encoding_format", "float")
+        if (provider == LlmProvider.OPENAI) {
+            put("encoding_format", "float")
+        }
     }
 
     private fun buildMessages(messages: List<LLMRequest.Message>): List<Map<String, Any?>> {
@@ -281,7 +344,7 @@ class OpenAIChatAPI(
                 }
             } catch (e: Exception) {
                 l.warn(
-                    "Failed to parse tool call content for OpenAI: ${msg.content}. " +
+                    "Failed to parse tool call content for $provider: ${msg.content}. " +
                             "Falling back to standard content.",
                     e,
                 )
@@ -365,7 +428,7 @@ class OpenAIChatAPI(
 
         if (pendingToolCallIds.isNotEmpty()) {
             l.warn(
-                "OpenAI payload has unresolved tool calls {}. Delaying {} messages until resolved.",
+                "$provider payload has unresolved tool calls {}. Delaying {} messages until resolved.",
                 pendingToolCallIds,
                 delayed.size,
             )
@@ -445,7 +508,7 @@ class OpenAIChatAPI(
     private fun requireOpenAiImageUrl(attachment: String): String =
         attachment.takeIf(::isSupportedOpenAiImageUrl)
             ?: throw IllegalArgumentException(
-                "OpenAI chat attachments must be image URLs (http(s)://...) or image data URLs (data:image/...). Unsupported value: $attachment",
+                "$provider chat attachments must be image URLs (http(s)://...) or image data URLs (data:image/...). Unsupported value: $attachment",
             )
 
     private fun isSupportedOpenAiImageUrl(attachment: String): Boolean =
@@ -487,7 +550,7 @@ class OpenAIChatAPI(
 
             val messageContent = messageNode?.get("content").toOpenAiMessageContent()
             val role = messageNode?.get("role")?.asText().toOpenAiRole()
-            val finishReason = choiceNode["finish_reason"]?.asText().toOpenAiFinishReasonValue()
+            val finishReason = choiceNode["finish_reason"]?.asText().toCompatibleFinishReason()
             val choiceIndex = choiceNode["index"]?.asInt() ?: idx
             val toolCallsNode = messageNode?.get("tool_calls")
 
@@ -544,10 +607,19 @@ class OpenAIChatAPI(
     }
 
     private fun parseUsage(node: JsonNode?): LLMResponse.Usage {
-        val prompt = node?.get("prompt_tokens")?.asInt() ?: 0
-        val completion = node?.get("completion_tokens")?.asInt() ?: 0
+        val prompt = node?.get("prompt_tokens")?.asInt()
+            ?: node?.get("input_tokens")?.asInt()
+            ?: 0
+        val completion = node?.get("completion_tokens")?.asInt()
+            ?: node?.get("output_tokens")?.asInt()
+            ?: 0
         val total = node?.get("total_tokens")?.asInt() ?: (prompt + completion)
-        return LLMResponse.Usage(prompt, completion, total, 0)
+        val cached = node
+            ?.get("prompt_tokens_details")
+            ?.get("cached_tokens")
+            ?.asInt()
+            ?: 0
+        return LLMResponse.Usage(prompt, completion, total, cached)
     }
 
     private fun parseEmbeddingsResponse(text: String): LLMResponse.Embeddings {
@@ -571,7 +643,7 @@ class OpenAIChatAPI(
         if (argsText.isBlank()) return emptyMap()
         return runCatching { restJsonMapper.readValue<Map<String, Any>>(argsText) }
             .getOrElse {
-                l.warn("Failed to parse OpenAI tool arguments: $argsText")
+                l.warn("Failed to parse $provider tool arguments: $argsText")
                 emptyMap()
             }
     }
@@ -649,7 +721,18 @@ class OpenAIChatAPI(
     }
 
 
-    private fun resolveChatModel(model: String): String {
+    private fun resolveChatModel(model: String): String = when (provider) {
+        LlmProvider.OPENAI -> resolveOpenAiChatModel(model)
+        LlmProvider.AI_TUNNEL -> when {
+            model.equals("ai-tunnel", ignoreCase = true) -> defaultChatModel
+            model.startsWith("GigaChat", ignoreCase = true) -> defaultChatModel
+            else -> model
+        }
+        LlmProvider.QWEN -> if (model.startsWith("GigaChat", ignoreCase = true)) defaultChatModel else model
+        else -> error("Unsupported provider: $provider")
+    }
+
+    private fun resolveOpenAiChatModel(model: String): String {
         if (model.isOpenAiCompatibleCustomModel()) {
             settingsProvider.openaiModel?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
         }
@@ -694,13 +777,30 @@ class OpenAIChatAPI(
     companion object {
         private const val CHAT_COMPLETIONS_PATH = "chat/completions"
         private const val EMBEDDINGS_PATH = "embeddings"
+        private const val AI_TUNNEL_BASE_URL = "https://api.aitunnel.ru/v1"
+        private const val QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     }
 
     private val chatCompletionsUrl: String
-        get() = settingsProvider.openAIEndpoint().endpoint(CHAT_COMPLETIONS_PATH)
+        get() = endpoint(CHAT_COMPLETIONS_PATH)
 
     private val embeddingsUrl: String
-        get() = settingsProvider.openAIEndpoint().endpoint(EMBEDDINGS_PATH)
+        get() = endpoint(EMBEDDINGS_PATH)
+
+    private fun endpoint(path: String): String = when (provider) {
+        LlmProvider.OPENAI -> settingsProvider.openAIEndpoint().endpoint(path)
+        LlmProvider.AI_TUNNEL -> "$AI_TUNNEL_BASE_URL/$path"
+        LlmProvider.QWEN -> "$QWEN_BASE_URL/$path"
+        else -> error("Unsupported provider: $provider")
+    }
+
+    private fun shouldIncludeStreamUsage(): Boolean = when (provider) {
+        LlmProvider.OPENAI -> settingsProvider.openAIEndpoint().isOfficial
+        LlmProvider.AI_TUNNEL,
+        LlmProvider.QWEN,
+        -> true
+        else -> error("Unsupported provider: $provider")
+    }
 }
 
 private fun String.isOpenAiCompatibleCustomModel(): Boolean =
@@ -722,17 +822,14 @@ private fun JsonNode?.toOpenAiMessageContent(): String {
 }
 
 
-private fun String?.toOpenAiFinishReasonValue(): LLMResponse.FinishReason? {
-    if (this == null || this.equals("null", ignoreCase = true) || this.isBlank()) {
-        return null
+private fun String?.toCompatibleFinishReason(): LLMResponse.FinishReason? =
+    when {
+        isNullOrBlank() || equals("null", ignoreCase = true) -> null
+        this == "tool_calls" -> LLMResponse.FinishReason.function_call
+        this == "length" || this == "max_tokens" -> LLMResponse.FinishReason.length
+        this == "stop" -> LLMResponse.FinishReason.stop
+        else -> toFinishReason()
     }
-    return when (this) {
-        "tool_calls" -> LLMResponse.FinishReason.function_call
-        "stop" -> LLMResponse.FinishReason.stop
-        "length" -> LLMResponse.FinishReason.length
-        else -> this.toFinishReason()
-    }
-}
 
 private fun String?.toOpenAiRole(): LLMMessageRole {
     return runCatching { LLMMessageRole.valueOf(this ?: "") }
@@ -741,7 +838,7 @@ private fun String?.toOpenAiRole(): LLMMessageRole {
 
 // Helper class to buffer tool call arguments in streaming
 private class OpenAiStreamAccumulator {
-    private val choicesState = ConcurrentHashMap<Int, ChoiceState>()
+    private val choicesState = mutableMapOf<Int, ChoiceState>()
     private val toolChoiceIndexByPair = mutableMapOf<Pair<Int, Int>, Int>()
     private var nextToolChoiceIndex = -1
 
@@ -770,7 +867,7 @@ private class OpenAiStreamAccumulator {
 
             val delta = choiceNode["delta"]
             val finishReasonText = choiceNode["finish_reason"]?.asText()
-            val finishReason = finishReasonText.toOpenAiFinishReasonValue()
+            val finishReason = finishReasonText.toCompatibleFinishReason()
 
             // Update Role
             delta?.get("role")?.asText()?.let {

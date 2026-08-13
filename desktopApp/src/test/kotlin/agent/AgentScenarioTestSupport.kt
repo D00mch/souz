@@ -38,10 +38,8 @@ import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
-import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.keys.Keys
@@ -134,10 +132,17 @@ class AgentScenarioTestSupport(
                 val logger = instance<TokenLogging>().also { tokenLogging = it }
                 val selectedApi = when (selectedModel.provider) {
                     LlmProvider.GIGA -> instance<GigaRestChatAPI>()
-                    LlmProvider.QWEN -> instance<QwenChatAPI>()
-                    LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
+                    LlmProvider.QWEN,
+                    LlmProvider.AI_TUNNEL,
+                    LlmProvider.OPENAI,
+                    -> OpenAICompatibleChatAPI(
+                        provider = selectedModel.provider,
+                        settingsProvider = instance(),
+                        client = instance<ProviderHttpClients>().let { clients ->
+                            if (selectedModel.provider == LlmProvider.OPENAI) clients.openAi else clients.standard
+                        },
+                    )
                     LlmProvider.ANTHROPIC -> instance<AnthropicChatAPI>()
-                    LlmProvider.OPENAI -> instance<OpenAIChatAPI>()
                     LlmProvider.LOCAL -> instance<LocalChatAPI>()
                     LlmProvider.CODEX -> error("Codex OAuth provider is not supported in integration tests.")
                 }

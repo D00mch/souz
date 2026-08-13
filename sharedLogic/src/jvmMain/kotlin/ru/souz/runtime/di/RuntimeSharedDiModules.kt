@@ -30,16 +30,14 @@ import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalStrictJsonParser
 import ru.souz.llms.local.LocalVisionGateway
 import ru.souz.llms.anthropic.AnthropicVisionGateway
-import ru.souz.llms.openai.OpenAIChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
-import ru.souz.llms.qwen.QwenChatAPI
 import ru.souz.llms.runtime.CapabilityBasedImageGenerationGateway
 import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.llms.runtime.VisionGateway
-import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
 
@@ -69,10 +67,7 @@ fun runtimeLlmDiModule(
     bindSingleton<GigaRestChatAPI> {
         GigaRestChatAPI(instance(), instance(), instance<GigaHttpClientResource>().client)
     }
-    bindSingleton<QwenChatAPI> { QwenChatAPI(instance(), instance<ProviderHttpClients>().standard) }
-    bindSingleton<AiTunnelChatAPI> { AiTunnelChatAPI(instance(), instance<ProviderHttpClients>().standard) }
     bindSingleton<AnthropicChatAPI> { AnthropicChatAPI(instance(), instance<ProviderHttpClients>().standard) }
-    bindSingleton<OpenAIChatAPI> { OpenAIChatAPI(instance(), instance<ProviderHttpClients>().openAi) }
     bindSingleton { OpenAIImageGenerationGateway(instance(), instance<ProviderHttpClients>().openAi) }
     bindSingleton<CodexChatAPI> {
         CodexChatAPI(instance(), instance(), instance<ProviderHttpClients>().standard)
@@ -80,14 +75,28 @@ fun runtimeLlmDiModule(
     bindSingleton { OpenAIVisionGateway(instance(), instance()) }
     bindSingleton { AnthropicVisionGateway(instance(), instance()) }
     bindSingleton {
+        val settings = instance<SettingsProvider>()
+        val clients = instance<ProviderHttpClients>()
         SettingsRoutingLlmChatApi(
-            settingsProvider = instance(),
+            settingsProvider = settings,
             apisByProvider = mapOf(
                 LlmProvider.GIGA to instance<GigaRestChatAPI>(),
-                LlmProvider.QWEN to instance<QwenChatAPI>(),
-                LlmProvider.AI_TUNNEL to instance<AiTunnelChatAPI>(),
+                LlmProvider.QWEN to OpenAICompatibleChatAPI(
+                    provider = LlmProvider.QWEN,
+                    settingsProvider = settings,
+                    client = clients.standard,
+                ),
+                LlmProvider.AI_TUNNEL to OpenAICompatibleChatAPI(
+                    provider = LlmProvider.AI_TUNNEL,
+                    settingsProvider = settings,
+                    client = clients.standard,
+                ),
                 LlmProvider.ANTHROPIC to instance<AnthropicChatAPI>(),
-                LlmProvider.OPENAI to instance<OpenAIChatAPI>(),
+                LlmProvider.OPENAI to OpenAICompatibleChatAPI(
+                    provider = LlmProvider.OPENAI,
+                    settingsProvider = settings,
+                    client = clients.openAi,
+                ),
                 LlmProvider.LOCAL to instance<LocalChatAPI>(),
                 LlmProvider.CODEX to instance<CodexChatAPI>(),
             ),
