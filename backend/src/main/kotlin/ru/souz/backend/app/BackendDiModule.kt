@@ -49,12 +49,15 @@ import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.onboarding.BackendOnboardingService
+import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.backend.settings.service.BackendSettingsProvider
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsService
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
+import ru.souz.backend.storage.postgres.PostgresBackendServerPreferenceStore
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresClientInputRepository
 import ru.souz.backend.storage.postgres.PostgresClientRequestRepository
@@ -105,7 +108,7 @@ fun backendDiModule(
             .enable(SerializationFeature.INDENT_OUTPUT)
     }
 
-    import(runtimeCoreDiModule())
+    import(runtimeCoreDiModule(bindSettingsProvider = false))
     import(
         runtimeToolsDiModule(
             includeWebImageSearch = false,
@@ -122,6 +125,18 @@ fun backendDiModule(
     bindSingleton<BackendFeatureFlags> { appConfig.featureFlags }
     bindSingleton<HikariDataSource> {
         dataSourceFactory(appConfig.postgres)
+    }
+    bindSingleton<BackendServerPreferenceStore> {
+        PostgresBackendServerPreferenceStore(
+            dataSource = instance(),
+            masterKey = appConfig.masterKey ?: error("Master key is required."),
+        )
+    }
+    bindSingleton<SettingsProvider> {
+        BackendSettingsProvider(
+            preferenceStore = instance(),
+            localProviderAvailability = instance<LocalProviderAvailability>(),
+        )
     }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }

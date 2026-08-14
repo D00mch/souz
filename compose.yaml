@@ -55,14 +55,12 @@ services:
       - "${SOUZ_BACKEND_HOST_PORT:-8080}:8080"
     volumes:
       - backend-state:/root/.local/state/souz
-      - backend-preferences:/root/.java/.userPrefs
     networks:
       - souz-local
 
 volumes:
   postgres-data:
   backend-state:
-  backend-preferences:
 
 networks:
   souz-local:

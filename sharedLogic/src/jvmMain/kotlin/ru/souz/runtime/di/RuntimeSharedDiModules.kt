@@ -41,7 +41,9 @@ import ru.souz.llms.runtime.VisionGateway
 import ru.souz.paths.DefaultSouzPaths
 import ru.souz.paths.SouzPaths
 
-fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
+fun runtimeCoreDiModule(
+    bindSettingsProvider: Boolean = true,
+): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { ConfigStore }
     bindSingleton<SouzPaths> { DefaultSouzPaths() }
     bindSingleton { LocalHostInfoProvider() }
@@ -51,7 +53,9 @@ fun runtimeCoreDiModule(): DI.Module = DI.Module("runtimeCore") {
     bindSingleton { LocalPromptRenderer() }
     bindSingleton { LocalStrictJsonParser() }
     bindSingleton { LocalProviderAvailability(instance(), instance(), instance()) }
-    bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
+    if (bindSettingsProvider) {
+        bindSingleton<SettingsProvider> { SettingsProviderImpl(instance(), instance()) }
+    }
 }
 
 fun runtimeLlmDiModule(
