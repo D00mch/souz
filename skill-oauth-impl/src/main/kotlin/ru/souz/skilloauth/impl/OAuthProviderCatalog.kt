@@ -9,6 +9,8 @@ data class OAuthProviderCatalogEntry(
     val tokenEndpoint: String,
     val allowedApiHosts: Set<String>,
     val extraAuthorizeParams: Map<String, String> = emptyMap(),
+    /** See [OAuthProviderClient.authorizationScheme]; defaults to the RFC 6750-standard `Bearer`. */
+    val authorizationScheme: String = "Bearer",
 )
 
 /**

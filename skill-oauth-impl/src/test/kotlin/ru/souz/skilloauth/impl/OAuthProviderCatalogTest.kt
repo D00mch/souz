@@ -21,6 +21,16 @@ class OAuthProviderCatalogTest {
     }
 
     @Test
+    fun `yandex uses the OAuth authorization scheme, not the RFC 6750 default`() {
+        // Yandex's own APIs (login.yandex.ru, cloud-api.yandex.net) expect
+        // `Authorization: OAuth <token>` and respond 401 to a `Bearer`-prefixed token even though
+        // the token itself is valid.
+        val yandex = OAuthProviderCatalog.entries.single { it.name == "yandex" }
+
+        assertEquals("OAuth", yandex.authorizationScheme)
+    }
+
+    @Test
     fun `google requests offline access and forces the consent prompt`() {
         // Google only returns a refresh_token on the first-ever consent unless the authorize URL
         // carries access_type=offline and prompt=consent — without both, a reconnect (forceReconnect)
@@ -31,5 +41,6 @@ class OAuthProviderCatalogTest {
         assertEquals("offline", google.extraAuthorizeParams["access_type"])
         assertEquals("consent", google.extraAuthorizeParams["prompt"])
         assertEquals(setOf("www.googleapis.com"), google.allowedApiHosts)
+        assertEquals("Bearer", google.authorizationScheme)
     }
 }

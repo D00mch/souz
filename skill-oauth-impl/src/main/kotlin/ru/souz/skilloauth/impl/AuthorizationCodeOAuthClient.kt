@@ -33,7 +33,8 @@ class AuthorizationCodeOAuthConfig(
      * knob for this; it's provider-specific behavior on top of the standard flow, not a reason to
      * need a whole separate [OAuthProviderClient] implementation).
      */
-    val extraAuthorizeParams: Map<String, String> = emptyMap(),
+    val extraAuthorizeParams: Map<String, String>,
+    val authorizationScheme: String,
 )
 
 /**
@@ -54,6 +55,7 @@ class AuthorizationCodeOAuthClient(
 
     override val name: String = config.name
     override val allowedApiHosts: Set<String> = config.allowedApiHosts
+    override val authorizationScheme: String = config.authorizationScheme
 
     override fun close() {
         runCatching { httpClient.close() }

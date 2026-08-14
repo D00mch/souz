@@ -25,6 +25,16 @@ interface OAuthProviderClient {
      */
     val allowedApiHosts: Set<String>
 
+    /**
+     * Scheme [SkillOAuthGatewayImpl.call] sends the access token with, e.g.
+     * `Authorization: <scheme> <accessToken>`. Most providers follow RFC 6750 and expect `Bearer`,
+     * but some — Yandex among them — expect their own non-standard `OAuth` scheme instead and
+     * reject a `Bearer`-prefixed token with 401 even though the token itself is valid. No default
+     * here, deliberately: same reasoning as [allowedApiHosts] having none — a provider silently
+     * inheriting the wrong scheme is exactly the bug this property exists to prevent.
+     */
+    val authorizationScheme: String
+
     fun buildAuthorizeUrl(state: String, scopes: List<String>): String
 
     suspend fun exchangeCode(code: String): OAuthTokenResult

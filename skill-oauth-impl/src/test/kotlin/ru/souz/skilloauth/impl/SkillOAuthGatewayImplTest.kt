@@ -46,6 +46,8 @@ class SkillOAuthGatewayImplTest {
                     clientSecret = "secret-1",
                     redirectUri = "https://backend.example/oauth/callback",
                     allowedApiHosts = setOf("login.yandex.ru"),
+                    extraAuthorizeParams = emptyMap(),
+                    authorizationScheme = "Bearer",
                 ),
             )
         ),
@@ -63,6 +65,7 @@ class SkillOAuthGatewayImplTest {
     private class FakeOAuthProviderClient(
         override val name: String = "yandex",
         override val allowedApiHosts: Set<String> = setOf("login.yandex.ru"),
+        override val authorizationScheme: String = "Bearer",
         private val exchangeResults: Map<String, OAuthTokenResult> = emptyMap(),
         private val refreshException: Throwable? = null,
     ) : OAuthProviderClient {
@@ -694,6 +697,44 @@ class SkillOAuthGatewayImplTest {
         )
 
         assertEquals("Bearer real-access-token", capturedAuthorization)
+    }
+
+    @Test
+    fun `call sends the provider's own authorization scheme instead of hardcoding Bearer`() = runTest {
+        // Regression test: Yandex's APIs expect `Authorization: OAuth <token>` and reject a
+        // `Bearer`-prefixed token with 401 even when the token itself is valid.
+        var capturedAuthorization: String? = null
+        val mockEngine = MockEngine { request ->
+            capturedAuthorization = request.headers[HttpHeaders.Authorization]
+            respond(content = "{}", status = HttpStatusCode.OK)
+        }
+        val provider = AuthorizationCodeOAuthClient(
+            config = AuthorizationCodeOAuthConfig(
+                name = "yandex",
+                authorizeEndpoint = "https://oauth.yandex.ru/authorize",
+                tokenEndpoint = "https://oauth.yandex.ru/token",
+                clientId = "client-1",
+                clientSecret = "secret-1",
+                redirectUri = "https://backend.example/oauth/callback",
+                allowedApiHosts = setOf("login.yandex.ru"),
+                extraAuthorizeParams = emptyMap(),
+                authorizationScheme = "OAuth",
+            ),
+        )
+        val api = newApi(
+            credentialRepository = connectedCredentialRepository(listOf("login:info")),
+            httpClient = HttpClient(mockEngine),
+            providers = mapOf("yandex" to provider),
+        )
+
+        api.call(
+            userId = "user-1",
+            provider = "yandex",
+            requiredScopes = setOf("login:info"),
+            request = ApiCallRequest(method = "GET", url = "https://login.yandex.ru/info"),
+        )
+
+        assertEquals("OAuth real-access-token", capturedAuthorization)
     }
 
     @Test

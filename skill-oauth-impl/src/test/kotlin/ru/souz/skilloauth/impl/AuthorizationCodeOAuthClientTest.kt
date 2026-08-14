@@ -15,6 +15,7 @@ class AuthorizationCodeOAuthClientTest {
             redirectUri = "https://backend.example/oauth/callback",
             allowedApiHosts = setOf("api.provider.example"),
             extraAuthorizeParams = extraAuthorizeParams,
+            authorizationScheme = "Bearer",
         ),
     )
 

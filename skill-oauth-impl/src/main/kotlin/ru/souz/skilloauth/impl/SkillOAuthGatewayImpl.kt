@@ -141,7 +141,7 @@ class SkillOAuthGatewayImpl(
                     header(name, value)
                 }
             }
-            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            header(HttpHeaders.Authorization, "${providerClient.authorizationScheme} $accessToken")
             apiRequest.body?.let {
                 // Only default to JSON if the caller didn't already choose a Content-Type (e.g. a
                 // provider requiring form-urlencoded or XML) — defaulting unconditionally would
