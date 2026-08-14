@@ -120,6 +120,83 @@ class SkillBundleParserTest {
     }
 
     @Test
+    fun `oauthScopes strips a trailing comment from a block list item`() {
+        // Regression test: without stripping, the stored scope became the literal string
+        // "login:info # basic profile access", which buildAuthorizeUrl then joins into the
+        // provider's scope parameter as extra bogus tokens (#, basic, profile, access).
+        val manifest = SkillBundleParser.parseManifest(
+            """
+            ---
+            name: yandex-disk
+            description: reads files from Yandex Disk
+            oauthProvider: yandex
+            oauthScopes:
+              - login:info # basic profile access
+              - cloud_api:disk.read
+            ---
+            body
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("login:info", "cloud_api:disk.read"), manifest.oauthScopes)
+    }
+
+    @Test
+    fun `oauthScopes strips a trailing comment from an inline list`() {
+        val manifest = SkillBundleParser.parseManifest(
+            """
+            ---
+            name: yandex-disk
+            description: reads files from Yandex Disk
+            oauthProvider: yandex
+            oauthScopes: [login:info] # basic profile access
+            ---
+            body
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("login:info"), manifest.oauthScopes)
+    }
+
+    @Test
+    fun `oauthScopes does not treat a quoted hash as a comment`() {
+        val manifest = SkillBundleParser.parseManifest(
+            """
+            ---
+            name: yandex-disk
+            description: reads files from Yandex Disk
+            oauthProvider: yandex
+            oauthScopes:
+              - "weird#scope"
+            ---
+            body
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("weird#scope"), manifest.oauthScopes)
+    }
+
+    @Test
+    fun `oauthScopes does not treat a hash glued to a token as a comment`() {
+        // Per YAML, '#' only starts a comment when preceded by whitespace (or at line start) —
+        // not mid-token.
+        val manifest = SkillBundleParser.parseManifest(
+            """
+            ---
+            name: yandex-disk
+            description: reads files from Yandex Disk
+            oauthProvider: yandex
+            oauthScopes:
+              - login:info#not-a-comment
+            ---
+            body
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("login:info#not-a-comment"), manifest.oauthScopes)
+    }
+
+    @Test
     fun `oauthScopes treats an explicit null or bare value as no scopes`() {
         val explicitNull = SkillBundleParser.parseManifest(
             """

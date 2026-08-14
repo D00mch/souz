@@ -161,16 +161,16 @@ class SkillOAuthGatewayImpl(
      * `ensureAuthorized` is documented as idempotent, so a retry or an overlapping call for the
      * same `(userId, provider)` must not invalidate a link already handed to the user just because
      * it asks for scopes that link already covers. Unless [force] (an explicit user-requested fresh
-     * link, e.g. `forceReconnect`), reuse the still-live [SkillOAuthPendingStateRepository.findActive]
-     * pending state's own URL verbatim whenever [scopes] is already a subset of what it requested —
-     * this is a pure read, so it never touches (and never extends) that state's `expiresAt`. Only
-     * when there's no active state, it's expired/consumed, or [scopes] genuinely widens beyond it
-     * does this fall through to [SkillOAuthPendingStateRepository.beginAuthorization], which
-     * atomically widens the request to the full cumulative union ever requested for this
-     * `(userId, provider)` — not just this call's own [scopes] — and supersedes any existing
-     * pending state, all under one row lock. See that method's doc comment for why both need to
-     * happen in the same transaction. A request untouched for longer than the same TTL a pending
-     * link itself lives for is treated as abandoned, not widened on.
+     * link, e.g. `forceReconnect`), [SkillOAuthPendingStateRepository.beginAuthorization] reuses a
+     * still-live pending state's own URL verbatim whenever [scopes] is already a subset of what it
+     * requested, entirely under its own row lock — see that method's doc comment for why the
+     * reuse-or-create decision has to be atomic with the write, not a separate check beforehand
+     * (two truly concurrent callers could otherwise both see "nothing to reuse" and race to create
+     * their own state, with the loser's link silently invalidating the winner's). Otherwise it
+     * widens the request to the full cumulative union ever requested for this `(userId, provider)`
+     * — not just this call's own [scopes] — and supersedes any existing pending state. A request
+     * untouched for longer than the same TTL a pending link itself lives for is treated as
+     * abandoned, not widened on.
      */
     private suspend fun startAuthorization(
         userId: String,
@@ -180,15 +180,8 @@ class SkillOAuthGatewayImpl(
     ): String {
         val providerClient = requireProviderClient(provider)
         val now = clock.instant()
-        if (!force) {
-            val active = pendingStateRepository.findActive(userId, provider, now)
-            if (active != null && scopes.all { it in active.requestedScopes }) {
-                return providerClient.buildAuthorizeUrl(state = active.state, scopes = active.requestedScopes)
-            }
-        }
-        val state = generateState()
         val pending = pendingStateRepository.beginAuthorization(
-            state = state,
+            state = generateState(),
             userId = userId,
             // The public SkillOAuthGateway contract no longer threads a real skillId through (see
             // its kdoc on why per-Skill isolation was never actually enforced) — this repository
@@ -200,8 +193,11 @@ class SkillOAuthGatewayImpl(
             now = now,
             activeSince = now.minusSeconds(PENDING_STATE_TTL_SECONDS),
             expiresAt = now.plusSeconds(PENDING_STATE_TTL_SECONDS),
+            reuseExisting = !force,
         )
-        return providerClient.buildAuthorizeUrl(state = state, scopes = pending.requestedScopes)
+        // pending.state is not necessarily the state generated above — beginAuthorization may have
+        // handed back an existing, reused pending state instead, with its own (older) state value.
+        return providerClient.buildAuthorizeUrl(state = pending.state, scopes = pending.requestedScopes)
     }
 
     /**

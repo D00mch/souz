@@ -4,6 +4,10 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 
 class PostgresSkillOAuthPendingStateRepositoryTest {
@@ -191,12 +195,12 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
     }
 
     @Test
-    fun `findActive returns the live pending state without consuming it`() = runTest {
-        val schema = newSkillOAuthTestSchema("skill_oauth_pending_find_active")
+    fun `beginAuthorization reuses a still-live pending state that already covers the requested scopes`() = runTest {
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_reuse")
         skillOAuthTestDataSource(schema).use { dataSource ->
             val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
-            repository.beginAuthorization(
-                state = "state-1",
+            val first = repository.beginAuthorization(
+                state = "state-first",
                 userId = "user-1",
                 skillId = "skill-1",
                 provider = "yandex",
@@ -206,22 +210,32 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
                 expiresAt = now.plusSeconds(600),
             )
 
-            val active = repository.findActive("user-1", "yandex", now)
+            val second = repository.beginAuthorization(
+                state = "state-second",
+                userId = "user-1",
+                skillId = "skill-2",
+                provider = "yandex",
+                scopes = listOf("login:info"),
+                now = now,
+                activeSince = activeSince,
+                expiresAt = now.plusSeconds(600),
+            )
 
-            assertEquals("state-1", active?.state)
-            assertEquals(listOf("login:info"), active?.requestedScopes)
-            // a read must not consume — the state is still there afterwards.
-            assertEquals("state-1", repository.consume("state-1", now)?.state)
+            // Handed back completely unchanged — same state and generation, not "state-second".
+            assertEquals(first.state, second.state)
+            assertEquals(first.generation, second.generation)
+            // still consumable under its original state — reuse must not have superseded it.
+            assertEquals(first.state, repository.consume(first.state, now)?.state)
         }
     }
 
     @Test
-    fun `findActive returns null once expired, without deleting the row`() = runTest {
-        val schema = newSkillOAuthTestSchema("skill_oauth_pending_find_active_expired")
+    fun `beginAuthorization does not reuse an expired pending state`() = runTest {
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_reuse_expired")
         skillOAuthTestDataSource(schema).use { dataSource ->
             val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
             repository.beginAuthorization(
-                state = "state-1",
+                state = "state-first",
                 userId = "user-1",
                 skillId = "skill-1",
                 provider = "yandex",
@@ -232,19 +246,138 @@ class PostgresSkillOAuthPendingStateRepositoryTest {
             )
             val afterExpiry = now.plusSeconds(120)
 
-            assertNull(repository.findActive("user-1", "yandex", afterExpiry))
-            // unlike consume, a read must never delete — beginAuthorization can still supersede it.
-            assertEquals("state-1", repository.consume("state-1", now)?.state)
+            val second = repository.beginAuthorization(
+                state = "state-second",
+                userId = "user-1",
+                skillId = "skill-2",
+                provider = "yandex",
+                scopes = listOf("login:info"),
+                now = afterExpiry,
+                activeSince = afterExpiry.minusSeconds(600),
+                expiresAt = afterExpiry.plusSeconds(600),
+            )
+
+            assertEquals("state-second", second.state)
         }
     }
 
     @Test
-    fun `findActive returns null when nothing is pending for that user and provider`() = runTest {
-        val schema = newSkillOAuthTestSchema("skill_oauth_pending_find_active_absent")
+    fun `beginAuthorization with reuseExisting=false always mints a fresh state`() = runTest {
+        // Mirrors the gateway's forceReconnect path: force must bypass reuse even when a live,
+        // fully-covering pending state exists.
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_reuse_force")
         skillOAuthTestDataSource(schema).use { dataSource ->
             val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+            val first = repository.beginAuthorization(
+                state = "state-first",
+                userId = "user-1",
+                skillId = "skill-1",
+                provider = "yandex",
+                scopes = listOf("login:info"),
+                now = now,
+                activeSince = activeSince,
+                expiresAt = now.plusSeconds(600),
+            )
 
-            assertNull(repository.findActive("user-1", "yandex", now))
+            val second = repository.beginAuthorization(
+                state = "state-second",
+                userId = "user-1",
+                skillId = "skill-1",
+                provider = "yandex",
+                scopes = listOf("login:info"),
+                now = now,
+                activeSince = activeSince,
+                expiresAt = now.plusSeconds(600),
+                reuseExisting = false,
+            )
+
+            assertEquals("state-second", second.state)
+            // the old one must be superseded, not left dangling alongside the new one.
+            assertNull(repository.consume(first.state, now))
+        }
+    }
+
+    @Test
+    fun `concurrent beginAuthorization calls for the same user and provider converge on one pending state`() = runTest {
+        // Proves reuse is actually atomic with creation, not just correct when called sequentially
+        // (D00mch's own critique of the sequential version of this test): without the reuse check
+        // living inside the same row lock as the write, N truly concurrent callers could each see
+        // "nothing to reuse" and race to create their own state, each invalidating the last.
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_reuse_concurrent")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+            val concurrency = 16
+
+            val results = coroutineScope {
+                (0 until concurrency).map { i ->
+                    async(Dispatchers.IO) {
+                        repository.beginAuthorization(
+                            state = "state-$i",
+                            userId = "user-1",
+                            skillId = "skill-1",
+                            provider = "yandex",
+                            scopes = listOf("login:info"),
+                            now = now,
+                            activeSince = activeSince,
+                            expiresAt = now.plusSeconds(600),
+                        )
+                    }
+                }.map { it.await() }
+            }
+
+            val distinctStates = results.map { it.state }.toSet()
+            assertEquals(1, distinctStates.size, "expected every concurrent call to converge on one state, got: $distinctStates")
+            // that one surviving state must still be consumable — none of the concurrent writers
+            // left it half-superseded.
+            assertEquals(distinctStates.single(), repository.consume(distinctStates.single(), now)?.state)
+        }
+    }
+
+    @Test
+    fun `concurrent beginAuthorization and consume for the same user and provider do not deadlock`() = runTest {
+        // Stress-reproduces D00mch's lock-order finding: beginAuthorization used to lock
+        // requested_scopes then pending_states, while consume locked pending_states then
+        // requested_scopes — a concurrent pair racing for the same (userId, provider) could hit
+        // Postgres deadlock detection (SQLSTATE 40P01), which DataSource.write does not retry. A
+        // single consistent lock order makes that cycle structurally impossible; this test would
+        // reliably surface a PSQLException here if the order regressed.
+        val schema = newSkillOAuthTestSchema("skill_oauth_pending_lock_order")
+        skillOAuthTestDataSource(schema).use { dataSource ->
+            val repository = PostgresSkillOAuthPendingStateRepository(dataSource)
+            val rounds = 25
+
+            coroutineScope {
+                for (round in 0 until rounds) {
+                    val begun = repository.beginAuthorization(
+                        state = "state-$round",
+                        userId = "user-1",
+                        skillId = "skill-1",
+                        provider = "yandex",
+                        scopes = listOf("scope-$round"),
+                        now = now,
+                        activeSince = activeSince,
+                        expiresAt = now.plusSeconds(600),
+                        reuseExisting = false,
+                    )
+                    val beginJob = async(Dispatchers.IO) {
+                        repository.beginAuthorization(
+                            state = "state-widen-$round",
+                            userId = "user-1",
+                            skillId = "skill-1",
+                            provider = "yandex",
+                            scopes = listOf("other-scope-$round"),
+                            now = now,
+                            activeSince = activeSince,
+                            expiresAt = now.plusSeconds(600),
+                            reuseExisting = false,
+                        )
+                    }
+                    val consumeJob = async(Dispatchers.IO) {
+                        repository.consume(begun.state, now)
+                    }
+                    awaitAll(beginJob, consumeJob)
+                }
+            }
         }
     }
 

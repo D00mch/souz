@@ -68,7 +68,7 @@ object SkillBundleParser {
         }
         if (keyLineIndex < 0) return emptyList()
 
-        val inlineValue = lines[keyLineIndex].trim().removePrefix("$key:").trim()
+        val inlineValue = stripTrailingComment(lines[keyLineIndex]).trim().removePrefix("$key:").trim()
         if (inlineValue.isNotEmpty()) {
             return parseInlineScopeList(key, inlineValue)
         }
@@ -77,9 +77,11 @@ object SkillBundleParser {
         var lineIndex = keyLineIndex + 1
         while (lineIndex < lines.size) {
             val line = lines[lineIndex]
-            val trimmed = line.trim()
+            val trimmed = stripTrailingComment(line).trim()
             when {
-                trimmed.isEmpty() || trimmed.startsWith("#") -> lineIndex++
+                // A line whose only content (once any trailing comment is stripped) is blank —
+                // including a comment-only line — carries nothing to nest under the key.
+                trimmed.isEmpty() -> lineIndex++
                 // Any positive indentation nests under the key — YAML doesn't mandate a specific
                 // width, and hardcoding one here (as this used to) meant a validly-indented single-
                 // space list like 'oauthScopes:\n - a' silently parsed as zero items instead of
@@ -110,6 +112,29 @@ object SkillBundleParser {
         val inner = inlineValue.removeSurrounding("[", "]").trim()
         if (inner.isEmpty()) return emptyList()
         return inner.split(",").map { it.trim().trim('"', '\'') }
+    }
+
+    /**
+     * Cuts a line at its first unquoted `#` that starts a YAML comment (preceded by whitespace, or
+     * at the very start of the line) — mirroring the YAML rule that `#` only begins a comment
+     * outside of quotes and after whitespace, not mid-token (e.g. `a#b` stays a single value). Without
+     * this, a trailing `# ...` comment on an `oauthScopes` line or list item silently became part of
+     * the scope string itself, which the OAuth provider client then joins into its `scope`
+     * parameter, commonly producing an `invalid_scope` error.
+     */
+    private fun stripTrailingComment(line: String): String {
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        for (index in line.indices) {
+            val c = line[index]
+            when {
+                c == '\'' && !inDoubleQuote -> inSingleQuote = !inSingleQuote
+                c == '"' && !inSingleQuote -> inDoubleQuote = !inDoubleQuote
+                c == '#' && !inSingleQuote && !inDoubleQuote &&
+                    (index == 0 || line[index - 1].isWhitespace()) -> return line.substring(0, index)
+            }
+        }
+        return line
     }
 
     private fun parseYamlLikeMap(frontmatter: String): Map<String, String> {

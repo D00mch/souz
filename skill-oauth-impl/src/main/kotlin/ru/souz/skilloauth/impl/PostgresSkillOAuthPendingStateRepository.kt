@@ -15,6 +15,7 @@ class PostgresSkillOAuthPendingStateRepository(
         now: Instant,
         activeSince: Instant,
         expiresAt: Instant,
+        reuseExisting: Boolean,
     ): SkillOAuthPendingState =
         dataSource.write { connection ->
             connection.prepareStatement(
@@ -31,11 +32,12 @@ class PostgresSkillOAuthPendingStateRepository(
             }
 
             // Held until this transaction commits below — a concurrent call for the same
-            // (userId, provider) blocks here until this whole method (merge, bump, AND the
-            // pending-state write further down) has fully committed, not just the merge/bump
-            // part. That's what actually closes the race: splitting these into two separate
-            // transactions would leave a window where an older, paused call could still
-            // unconditionally overwrite a newer call's already-written pending state.
+            // (userId, provider) blocks here until this whole method (reuse-or-widen decision,
+            // merge, bump, AND the pending-state write further down) has fully committed, not just
+            // part of it. That's what actually closes the race: splitting these into separate
+            // transactions would leave a window where two concurrent callers could each decide
+            // independently to create their own pending state, or an older, paused call could
+            // unconditionally overwrite a newer call's already-written one.
             val (existingScopes, existingGeneration, updatedAt) = connection.prepareStatement(
                 """
                 select requested_scopes, generation, updated_at from skill_oauth_requested_scopes
@@ -52,6 +54,28 @@ class PostgresSkillOAuthPendingStateRepository(
                         resultSet.getLong("generation"),
                         resultSet.instant("updated_at"),
                     )
+                }
+            }
+
+            // Still holding the row lock above: a still-live pending state that already covers
+            // [scopes] is handed back completely unchanged (same state/expiresAt/generation) rather
+            // than superseded — see the interface doc comment on why this decision has to happen
+            // inside the same lock as any write, not as a separate read beforehand.
+            if (reuseExisting) {
+                val existingPending = connection.prepareStatement(
+                    "select * from skill_oauth_pending_states where user_id = ? and provider = ?"
+                ).use { statement ->
+                    statement.setString(1, userId)
+                    statement.setString(2, provider)
+                    statement.executeQuery().use { resultSet ->
+                        if (resultSet.next()) resultSet.toPendingState() else null
+                    }
+                }
+                if (existingPending != null &&
+                    !existingPending.expiresAt.isBefore(now) &&
+                    scopes.all { it in existingPending.requestedScopes }
+                ) {
+                    return@write existingPending
                 }
             }
 
@@ -108,6 +132,30 @@ class PostgresSkillOAuthPendingStateRepository(
 
     override suspend fun consume(state: String, now: Instant): SkillOAuthPendingState? =
         dataSource.write { connection ->
+            // Locks the requested-scopes row for this pending state's (userId, provider) FIRST —
+            // the same order beginAuthorization uses (that row, then the pending-states row) —
+            // before this transaction touches skill_oauth_pending_states at all. Locking in the
+            // reverse order, as this used to (delete the pending row, only then touch
+            // requested-scopes), let a concurrent beginAuthorization/consume pair for the same
+            // pair deadlock: one holding the requested-scopes lock while waiting on the pending-row
+            // lock, the other holding the pending-row lock while waiting on requested-scopes —
+            // Postgres detects the cycle and aborts one side with SQLSTATE 40P01, which
+            // DataSource.write does not retry. A single consistent lock order makes that cycle
+            // structurally impossible.
+            connection.prepareStatement(
+                """
+                select rs.user_id
+                from skill_oauth_pending_states ps
+                join skill_oauth_requested_scopes rs
+                    on rs.user_id = ps.user_id and rs.provider = ps.provider
+                where ps.state = ?
+                for update of rs
+                """.trimIndent()
+            ).use { statement ->
+                statement.setString(1, state)
+                statement.executeQuery().use { it.next() }
+            }
+
             val pending = connection.prepareStatement(
                 "delete from skill_oauth_pending_states where state = ? returning *"
             ).use { statement ->
@@ -136,21 +184,6 @@ class PostgresSkillOAuthPendingStateRepository(
             }
 
             pending
-        }
-
-    override suspend fun findActive(userId: String, provider: String, now: Instant): SkillOAuthPendingState? =
-        dataSource.read { connection ->
-            connection.prepareStatement(
-                "select * from skill_oauth_pending_states where user_id = ? and provider = ?"
-            ).use { statement ->
-                statement.setString(1, userId)
-                statement.setString(2, provider)
-                statement.executeQuery().use { resultSet ->
-                    if (!resultSet.next()) return@read null
-                    val found = resultSet.toPendingState()
-                    if (found.expiresAt.isBefore(now)) null else found
-                }
-            }
         }
 
     private fun java.sql.ResultSet.toPendingState(): SkillOAuthPendingState =

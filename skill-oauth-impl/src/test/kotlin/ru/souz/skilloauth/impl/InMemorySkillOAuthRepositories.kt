@@ -51,8 +51,20 @@ internal class InMemorySkillOAuthPendingStateRepository : SkillOAuthPendingState
         now: Instant,
         activeSince: Instant,
         expiresAt: Instant,
+        reuseExisting: Boolean,
     ): SkillOAuthPendingState = mutex.withLock {
         val key = userId to provider
+
+        if (reuseExisting) {
+            val existingPending = pending.values.firstOrNull { it.userId == userId && it.provider == provider }
+            if (existingPending != null &&
+                !existingPending.expiresAt.isBefore(now) &&
+                scopes.all { it in existingPending.requestedScopes }
+            ) {
+                return@withLock existingPending
+            }
+        }
+
         val existing = requestedScopes[key]
         val baseScopes = if (existing == null || existing.updatedAt.isBefore(activeSince)) {
             emptyList()
@@ -84,11 +96,5 @@ internal class InMemorySkillOAuthPendingStateRepository : SkillOAuthPendingState
         val key = found.userId to found.provider
         requestedScopes[key]?.let { requestedScopes[key] = it.copy(updatedAt = now) }
         found
-    }
-
-    override suspend fun findActive(userId: String, provider: String, now: Instant): SkillOAuthPendingState? = mutex.withLock {
-        val found = pending.values.firstOrNull { it.userId == userId && it.provider == provider }
-            ?: return@withLock null
-        if (found.expiresAt.isBefore(now)) null else found
     }
 }
