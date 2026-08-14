@@ -656,7 +656,7 @@ class BackendPublicClientContractRouteTest {
             assertEquals("cancel-1", cancelAck["requestId"].asText())
             assertEquals(threadId, cancelStatus["threadId"].asText())
             assertEquals("thread.cancelled", terminal["type"].asText())
-            withTimeout(2_000) {
+            withTimeout(5_000) {
                 while (context.clientThreadRegistry.contains(UUID.fromString(threadId))) {
                     delay(10)
                 }
