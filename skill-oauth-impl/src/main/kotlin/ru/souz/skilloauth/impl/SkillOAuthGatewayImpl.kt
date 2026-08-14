@@ -345,7 +345,18 @@ class SkillOAuthGatewayImpl(
             if (e.errorCode == "invalid_grant") {
                 // Generation-guarded, so this can't clobber a fresher credential that's since
                 // replaced this one — see credentialRepository.upsert's doc comment.
-                credentialRepository.upsert(credential.copy(refreshTokenEncrypted = null))
+                val stored = credentialRepository.upsert(credential.copy(refreshTokenEncrypted = null))
+                if (stored == null) {
+                    // We lost a refresh race: a concurrent refresh for this same (userId, provider)
+                    // already committed first — see credentialRepository.upsert's doc comment on
+                    // revision. That winner may have left a perfectly valid credential on file (e.g.
+                    // a rotated refresh token this loser's own invalid_grant response is a symptom
+                    // of), so re-read and retry against whatever's actually stored now instead of
+                    // discarding it and forcing a needless reconnect.
+                    credentialRepository.find(credential.userId, credential.provider)?.let {
+                        return ensureFreshAccessToken(it, providerClient)
+                    }
+                }
                 throw ReconnectRequiredException(
                     "OAuth refresh for '${credential.provider}' failed (${e.errorCode}): ${e.message}."
                 )
