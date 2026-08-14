@@ -49,7 +49,7 @@ class PostgresSkillOAuthCredentialRepository(
                 statement.setString(2, credential.provider)
                 statement.setString(3, credential.accessTokenEncrypted)
                 statement.setString(4, credential.refreshTokenEncrypted)
-                statement.setString(5, credential.grantedScopes.toScopesColumn())
+                statement.setScopes(5, credential.grantedScopes)
                 statement.setInstant(6, credential.expiresAt)
                 statement.setLong(7, credential.generation)
                 statement.setLong(8, credential.revision)
@@ -82,7 +82,7 @@ class PostgresSkillOAuthCredentialRepository(
             provider = getString("provider"),
             accessTokenEncrypted = getString("access_token_encrypted"),
             refreshTokenEncrypted = getString("refresh_token_encrypted"),
-            grantedScopes = getString("granted_scopes").fromScopesColumn(),
+            grantedScopes = scopes("granted_scopes"),
             expiresAt = instantOrNull("expires_at"),
             generation = getLong("generation"),
             revision = getLong("revision"),

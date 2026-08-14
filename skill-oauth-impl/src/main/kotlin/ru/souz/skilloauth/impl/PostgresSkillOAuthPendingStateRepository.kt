@@ -21,7 +21,7 @@ class PostgresSkillOAuthPendingStateRepository(
             connection.prepareStatement(
                 """
                 insert into skill_oauth_requested_scopes(user_id, provider, requested_scopes, generation, updated_at)
-                values (?, ?, '', 0, ?)
+                values (?, ?, '{}', 0, ?)
                 on conflict (user_id, provider) do nothing
                 """.trimIndent()
             ).use { statement ->
@@ -50,7 +50,7 @@ class PostgresSkillOAuthPendingStateRepository(
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     Triple(
-                        resultSet.getString("requested_scopes").fromScopesColumn(),
+                        resultSet.scopes("requested_scopes"),
                         resultSet.getLong("generation"),
                         resultSet.instant("updated_at"),
                     )
@@ -90,7 +90,7 @@ class PostgresSkillOAuthPendingStateRepository(
                 where user_id = ? and provider = ?
                 """.trimIndent()
             ).use { statement ->
-                statement.setString(1, mergedScopes.toScopesColumn())
+                statement.setScopes(1, mergedScopes)
                 statement.setLong(2, nextGeneration)
                 statement.setInstant(3, now)
                 statement.setString(4, userId)
@@ -120,7 +120,7 @@ class PostgresSkillOAuthPendingStateRepository(
                 statement.setString(2, userId)
                 statement.setString(3, skillId)
                 statement.setString(4, provider)
-                statement.setString(5, mergedScopes.toScopesColumn())
+                statement.setScopes(5, mergedScopes)
                 statement.setLong(6, nextGeneration)
                 statement.setInstant(7, expiresAt)
                 statement.executeQuery().use { resultSet ->
@@ -192,7 +192,7 @@ class PostgresSkillOAuthPendingStateRepository(
             userId = getString("user_id"),
             skillId = getString("skill_id"),
             provider = getString("provider"),
-            requestedScopes = getString("requested_scopes").fromScopesColumn(),
+            requestedScopes = scopes("requested_scopes"),
             generation = getLong("generation"),
             expiresAt = instant("expires_at"),
         )

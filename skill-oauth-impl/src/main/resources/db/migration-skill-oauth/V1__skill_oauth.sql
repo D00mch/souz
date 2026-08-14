@@ -3,7 +3,7 @@ create table skill_oauth_credentials (
     provider text not null,
     access_token_encrypted text not null,
     refresh_token_encrypted text,
-    granted_scopes text not null default '',
+    granted_scopes text[] not null default '{}',
     expires_at timestamptz,
     generation bigint not null default 0,
     -- Optimistic-concurrency counter bumped on every successful write, independent of
@@ -23,7 +23,7 @@ create table skill_oauth_pending_states (
     user_id text not null,
     skill_id text not null,
     provider text not null,
-    requested_scopes text not null default '',
+    requested_scopes text[] not null default '{}',
     generation bigint not null default 0,
     expires_at timestamptz not null
 );
@@ -45,7 +45,7 @@ create unique index skill_oauth_pending_states_user_provider_idx on skill_oauth_
 create table skill_oauth_requested_scopes (
     user_id text not null,
     provider text not null,
-    requested_scopes text not null default '',
+    requested_scopes text[] not null default '{}',
     generation bigint not null default 0,
     updated_at timestamptz not null,
     primary key (user_id, provider)

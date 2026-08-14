@@ -48,7 +48,10 @@ internal fun ResultSet.instant(column: String): Instant =
 internal fun ResultSet.instantOrNull(column: String): Instant? =
     getObject(column, OffsetDateTime::class.java)?.toInstant()
 
-internal fun List<String>.toScopesColumn(): String = joinToString(",")
+internal fun PreparedStatement.setScopes(index: Int, scopes: List<String>) {
+    setArray(index, connection.createArrayOf("text", scopes.toTypedArray()))
+}
 
-internal fun String?.fromScopesColumn(): List<String> =
-    this?.split(",")?.map(String::trim)?.filter(String::isNotEmpty) ?: emptyList()
+internal fun ResultSet.scopes(column: String): List<String> =
+    @Suppress("UNCHECKED_CAST")
+    (getArray(column).array as Array<String>).toList()
