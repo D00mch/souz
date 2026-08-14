@@ -71,10 +71,12 @@ class BackendStage5EventRouteTest {
         }
         val payload = json.readTree(response.bodyAsText())
         val executionId = UUID.fromString(payload["execution"]["id"].asText())
-        val assistantMessageId = payload["assistantMessage"]["id"].asText()
-        val events = runBlocking { context.eventRepository.listByChat("user-a", chat.id) }
+        val events = awaitEvents(context, "user-a", chat.id, expectedSize = 5)
+        val assistantMessageId = runBlocking { context.messageRepository.list("user-a", chat.id).last().id.toString() }
 
         assertEquals(HttpStatusCode.OK, response.status)
+        assertTrue(payload["assistantMessage"].isNull)
+        assertEquals("running", payload["execution"]["status"].asText())
         assertEquals(
             listOf(
                 AgentEventType.MESSAGE_CREATED,
@@ -147,8 +149,8 @@ class BackendStage5EventRouteTest {
             val secondPayload = json.readTree(secondResponse.await().bodyAsText())
             val firstExecutionId = UUID.fromString(firstPayload["execution"]["id"].asText())
             val secondExecutionId = UUID.fromString(secondPayload["execution"]["id"].asText())
-            val firstEvents = context.eventRepository.listByChat("user-a", userAChat.id)
-            val secondEvents = context.eventRepository.listByChat("user-b", userBChat.id)
+            val firstEvents = awaitEvents(context, "user-a", userAChat.id, expectedSize = 5)
+            val secondEvents = awaitEvents(context, "user-b", userBChat.id, expectedSize = 5)
 
             assertTrue(firstEvents.isNotEmpty())
             assertTrue(secondEvents.isNotEmpty())
@@ -185,13 +187,11 @@ class BackendStage5EventRouteTest {
             contentType(ContentType.Application.Json)
             setBody("""{"content":"trigger failure"}""")
         }
-        val payload = json.readTree(response.bodyAsText())
-        val events = runBlocking { context.eventRepository.listByChat("user-a", chat.id) }
+        val events = awaitEvents(context, "user-a", chat.id, expectedSize = 3)
         val storedMessages = runBlocking { context.messageRepository.list("user-a", chat.id) }
-        val execution = runBlocking { context.executionRepository.listByChat("user-a", chat.id).single() }
+        val execution = awaitExecutionStatus(context, "user-a", chat.id, AgentExecutionStatus.FAILED)
 
-        assertEquals(HttpStatusCode.InternalServerError, response.status)
-        assertEquals("agent_execution_failed", payload["error"]["code"].asText())
+        assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(
             listOf(
                 AgentEventType.MESSAGE_CREATED,
@@ -243,15 +243,19 @@ class BackendStage5EventRouteTest {
             }
             val cancelPayload = json.readTree(cancelResponse.bodyAsText())
             val cancelledResponse = sendResponse.await()
-            val cancelledPayload = json.readTree(cancelledResponse.bodyAsText())
-            val events = context.eventRepository.listByChat("user-a", chat.id)
+            val events = awaitEvents(context, "user-a", chat.id, expectedSize = 3)
             val storedMessages = context.messageRepository.list("user-a", chat.id)
-            val storedExecution = assertNotNull(context.executionRepository.getByChat("user-a", chat.id, activeExecution.id))
+            val storedExecution = awaitExecutionStatus(
+                context,
+                "user-a",
+                chat.id,
+                activeExecution.id,
+                AgentExecutionStatus.CANCELLED,
+            )
 
             assertEquals(HttpStatusCode.OK, cancelResponse.status)
             assertEquals(activeExecution.id.toString(), cancelPayload["execution"]["id"].asText())
-            assertEquals(HttpStatusCode.Conflict, cancelledResponse.status)
-            assertEquals("agent_execution_cancelled", cancelledPayload["error"]["code"].asText())
+            assertEquals(HttpStatusCode.OK, cancelledResponse.status)
             assertEquals(
                 listOf(
                     AgentEventType.MESSAGE_CREATED,

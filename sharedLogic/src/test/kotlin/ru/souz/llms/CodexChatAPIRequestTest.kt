@@ -1,17 +1,56 @@
 package ru.souz.llms
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runTest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.codex.CodexChatAPI
 import ru.souz.llms.codex.CodexOAuthService
+import ru.souz.llms.http.providerHttpClientDefaults
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class CodexChatAPIRequestTest {
+    @Test
+    fun `terminal stream failure is not followed by fallback success`() = runTest {
+        val fixture = streamingFixture(CODEX_FAILED_STREAM)
+
+        try {
+            val responses = fixture.api.messageStream(chatRequest()).toList()
+
+            val error = assertIs<LLMResponse.Chat.Error>(responses.single())
+            assertEquals("terminal failure", error.message)
+        } finally {
+            fixture.client.close()
+        }
+    }
+
+    @Test
+    fun `message does not mask terminal stream failure with partial output`() = runTest {
+        val fixture = streamingFixture(CODEX_FAILED_STREAM)
+
+        try {
+            val response = fixture.api.message(chatRequest())
+
+            val error = assertIs<LLMResponse.Chat.Error>(response)
+            assertEquals("terminal failure", error.message)
+        } finally {
+            fixture.client.close()
+        }
+    }
+
     @Test
     fun `tool array properties include an item schema`() {
         val request = invokeBuildResponsesRequest(
@@ -107,10 +146,37 @@ class CodexChatAPIRequestTest {
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         return CodexChatAPI(
             settingsProvider = settingsProvider,
-            tokenLogging = mockk(relaxed = true),
             oauthService = mockk<CodexOAuthService>(relaxed = true),
+            client = mockk<HttpClient>(),
         )
     }
+
+    private fun streamingFixture(streamBody: String): StreamingFixture {
+        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
+        every { settingsProvider.requestTimeoutMillis } returns 1_000L
+        every { settingsProvider.codexAccountId } returns "account-id"
+        val oauthService = mockk<CodexOAuthService>()
+        coEvery { oauthService.refreshTokenIfNeeded() } returns "access-token"
+        val client = HttpClient(
+            MockEngine {
+                respond(
+                    content = streamBody,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Text.EventStream.toString()),
+                )
+            }
+        ) {
+            providerHttpClientDefaults()
+        }
+        return StreamingFixture(
+            api = CodexChatAPI(settingsProvider, oauthService, client),
+            client = client,
+        )
+    }
+
+    private fun chatRequest() = LLMRequest.Chat(
+        model = LLMModel.CodexGpt54.alias,
+        messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+    )
 
     @Suppress("UNCHECKED_CAST")
     private fun invokeBuildResponsesRequest(
@@ -153,5 +219,24 @@ class CodexChatAPIRequestTest {
         )
         method.isAccessible = true
         return method.invoke(api, message) as Map<String, Any?>
+    }
+
+    private data class StreamingFixture(
+        val api: CodexChatAPI,
+        val client: HttpClient,
+    )
+
+    private companion object {
+        val CODEX_FAILED_STREAM =
+            """
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial"}]}}
+
+            event: response.failed
+            data: {"type":"response.failed","response":{"error":"terminal failure"}}
+
+            data: [DONE]
+
+            """.trimIndent()
     }
 }

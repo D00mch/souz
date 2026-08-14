@@ -28,7 +28,7 @@ class ToolGenerateImage(
         val outputPath: String? = null,
     )
 
-    override val name: String = "GenerateImage"
+    override val name: String = NAME
     override val description: String =
         "Generate a new image with the current provider, save it to a safe file path, and return the saved path."
 
@@ -107,7 +107,8 @@ class ToolGenerateImage(
         return rawOutputPath
     }
 
-    private companion object {
-        val mapper = jacksonObjectMapper()
+    companion object {
+        const val NAME = "GenerateImage"
+        private val mapper = jacksonObjectMapper()
     }
 }

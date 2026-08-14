@@ -213,7 +213,7 @@ class SetupViewModelTest {
         advanceUntilIdle()
 
         val expectedModel = if (supportsProvider(LlmProvider.OPENAI)) {
-            LLMModel.OpenAIGpt5Nano
+            LLMModel.OpenAIGpt5Mini
         } else {
             LLMModel.Max
         }

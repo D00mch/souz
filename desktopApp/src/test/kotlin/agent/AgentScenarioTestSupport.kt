@@ -1,7 +1,5 @@
 package agent
 
-import giga.getHttpClient
-import giga.getSessionTokenUsage
 import io.ktor.client.plugins.*
 import io.mockk.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,16 +28,18 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.TokenLogging
+import ru.souz.llms.TokenLoggingChatApi
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.findLLMModel
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.llms.http.GigaHttpClientResource
+import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.tunnel.AiTunnelChatAPI
 import ru.souz.llms.anthropic.AnthropicChatAPI
-import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.qwen.QwenChatAPI
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.keys.Keys
@@ -78,11 +78,9 @@ class AgentScenarioTestSupport(
         }
     }
 
-    private var gigaRestChatAPI: GigaRestChatAPI? = null
-    private var qwenChatAPI: QwenChatAPI? = null
-    private var aiTunnelChatAPI: AiTunnelChatAPI? = null
-    private var anthropicChatAPI: AnthropicChatAPI? = null
-    private var openAiChatAPI: OpenAIChatAPI? = null
+    private var tokenLogging: TokenLogging? = null
+    private var providerHttpClients: ProviderHttpClients? = null
+    private var gigaHttpClientResource: GigaHttpClientResource? = null
     private var localLlamaRuntime: LocalLlamaRuntime? = null
     private var localChatAPI: LocalChatAPI? = null
     private val httpRequestCount = AtomicLong(0)
@@ -105,86 +103,18 @@ class AgentScenarioTestSupport(
             bindSingleton<McpToolProvider>(overrides = true) { EmptyMcpToolProvider }
             bindSingleton<ConversationMemoryRuntime>(overrides = true) { NoopConversationMemoryRuntime }
             bindSingleton<DefaultBrowserProvider>(overrides = true) { DefaultBrowserProvider { null } }
-
-            bindSingleton<GigaRestChatAPI>(overrides = true) {
-                if (gigaRestChatAPI == null) {
-                    gigaRestChatAPI = GigaRestChatAPI(instance(), instance(), instance()).apply {
-                        getHttpClient().plugin(HttpSend).intercept { request ->
-                            val startNanos = System.nanoTime()
-                            try {
-                                execute(request)
-                            } finally {
-                                httpRequestCount.incrementAndGet()
-                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                            }
-                        }
-                    }
+            bindSingleton<ProviderHttpClients>(overrides = true) {
+                ProviderHttpClients().also { clients ->
+                    instrument(clients.standard)
+                    instrument(clients.openAi)
+                    providerHttpClients = clients
                 }
-                gigaRestChatAPI!!
             }
-            bindSingleton<QwenChatAPI>(overrides = true) {
-                if (qwenChatAPI == null) {
-                    qwenChatAPI = QwenChatAPI(instance(), instance()).apply {
-                        getHttpClient().plugin(HttpSend).intercept { request ->
-                            val startNanos = System.nanoTime()
-                            try {
-                                execute(request)
-                            } finally {
-                                httpRequestCount.incrementAndGet()
-                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                            }
-                        }
-                    }
+            bindSingleton<GigaHttpClientResource>(overrides = true) {
+                GigaHttpClientResource().also { resource ->
+                    instrument(resource.client)
+                    gigaHttpClientResource = resource
                 }
-                qwenChatAPI!!
-            }
-            bindSingleton<AiTunnelChatAPI>(overrides = true) {
-                if (aiTunnelChatAPI == null) {
-                    aiTunnelChatAPI = AiTunnelChatAPI(instance(), instance()).apply {
-                        getHttpClient().plugin(HttpSend).intercept { request ->
-                            val startNanos = System.nanoTime()
-                            try {
-                                execute(request)
-                            } finally {
-                                httpRequestCount.incrementAndGet()
-                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                            }
-                        }
-                    }
-                }
-                aiTunnelChatAPI!!
-            }
-            bindSingleton<AnthropicChatAPI>(overrides = true) {
-                if (anthropicChatAPI == null) {
-                    anthropicChatAPI = AnthropicChatAPI(instance(), instance()).apply {
-                        getHttpClient().plugin(HttpSend).intercept { request ->
-                            val startNanos = System.nanoTime()
-                            try {
-                                execute(request)
-                            } finally {
-                                httpRequestCount.incrementAndGet()
-                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                            }
-                        }
-                    }
-                }
-                anthropicChatAPI!!
-            }
-            bindSingleton<OpenAIChatAPI>(overrides = true) {
-                if (openAiChatAPI == null) {
-                    openAiChatAPI = OpenAIChatAPI(instance(), instance()).apply {
-                        getHttpClient().plugin(HttpSend).intercept { request ->
-                            val startNanos = System.nanoTime()
-                            try {
-                                execute(request)
-                            } finally {
-                                httpRequestCount.incrementAndGet()
-                                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
-                            }
-                        }
-                    }
-                }
-                openAiChatAPI!!
             }
             bindSingleton<LocalLlamaRuntime>(overrides = true) {
                 localLlamaRuntime
@@ -199,14 +129,27 @@ class AgentScenarioTestSupport(
                     }
             }
             bindSingleton<LLMChatAPI>(overrides = true) {
-                when (selectedModel.provider) {
+                val logger = instance<TokenLogging>().also { tokenLogging = it }
+                val selectedApi = when (selectedModel.provider) {
                     LlmProvider.GIGA -> instance<GigaRestChatAPI>()
-                    LlmProvider.QWEN -> instance<QwenChatAPI>()
-                    LlmProvider.AI_TUNNEL -> instance<AiTunnelChatAPI>()
+                    LlmProvider.QWEN,
+                    LlmProvider.AI_TUNNEL,
+                    LlmProvider.OPENAI,
+                    -> OpenAICompatibleChatAPI(
+                        provider = selectedModel.provider,
+                        settingsProvider = instance(),
+                        client = instance<ProviderHttpClients>().let { clients ->
+                            if (selectedModel.provider == LlmProvider.OPENAI) clients.openAi else clients.standard
+                        },
+                    )
                     LlmProvider.ANTHROPIC -> instance<AnthropicChatAPI>()
-                    LlmProvider.OPENAI -> instance<OpenAIChatAPI>()
                     LlmProvider.LOCAL -> instance<LocalChatAPI>()
                     LlmProvider.CODEX -> error("Codex OAuth provider is not supported in integration tests.")
+                }
+                if (selectedModel.provider == LlmProvider.LOCAL) {
+                    selectedApi
+                } else {
+                    TokenLoggingChatApi(selectedApi, logger)
                 }
             }
             bindSingleton<DesktopInfoRepository>(overrides = true) {
@@ -272,11 +215,12 @@ class AgentScenarioTestSupport(
     fun finish() {
         val prefix = "[agent=${agentType.storageValue}]"
         when (selectedModel.provider) {
-            LlmProvider.GIGA -> println("$prefix Spent: ${gigaRestChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.QWEN -> println("$prefix Spent: ${qwenChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.AI_TUNNEL -> println("$prefix Spent: ${aiTunnelChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.ANTHROPIC -> println("$prefix Spent: ${anthropicChatAPI?.getSessionTokenUsage() ?: "n/a"}")
-            LlmProvider.OPENAI -> println("$prefix Spent: ${openAiChatAPI?.getSessionTokenUsage() ?: "n/a"}")
+            LlmProvider.GIGA,
+            LlmProvider.QWEN,
+            LlmProvider.AI_TUNNEL,
+            LlmProvider.ANTHROPIC,
+            LlmProvider.OPENAI,
+            -> println("$prefix Spent: ${tokenLogging?.sessionTokenUsage() ?: "n/a"}")
             LlmProvider.LOCAL -> {
                 println("$prefix Spent: local provider")
                 runCatching { localLlamaRuntime?.close() }
@@ -286,12 +230,26 @@ class AgentScenarioTestSupport(
             LlmProvider.CODEX -> println("$prefix Spent: codex provider (no session tracking)")
         }
         val requestCount = httpRequestCount.get()
+        providerHttpClients?.close()
+        gigaHttpClientResource?.close()
         if (requestCount == 0L) {
             println("$prefix HTTP requests: 0")
             return
         }
         val avgMs = httpRequestTotalNanos.get().toDouble() / requestCount / 1_000_000.0
         println("$prefix HTTP requests: $requestCount, avg/request: ${"%.2f".format(avgMs)} ms")
+    }
+
+    private fun instrument(client: io.ktor.client.HttpClient) {
+        client.plugin(HttpSend).intercept { request ->
+            val startNanos = System.nanoTime()
+            try {
+                execute(request)
+            } finally {
+                httpRequestCount.incrementAndGet()
+                httpRequestTotalNanos.addAndGet(System.nanoTime() - startNanos)
+            }
+        }
     }
 
     private suspend fun runAgent(di: DI, userPrompt: String) {

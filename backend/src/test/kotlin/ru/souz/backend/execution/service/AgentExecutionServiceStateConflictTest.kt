@@ -6,12 +6,11 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -23,15 +22,14 @@ import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateConflictException
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.model.Chat
-import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
+import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.toDto
-import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
@@ -142,22 +140,18 @@ class AgentExecutionServiceStateConflictTest {
             finalizer = finalizer,
             launcher = AgentExecutionLauncher(
                 executionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-                finalizer = finalizer,
             ),
         )
 
-        val error = assertFailsWith<BackendV1Exception> {
-            service.executeChatTurn(
-                userId = chat.userId,
-                chatId = chat.id,
-                content = "generate reply",
-            )
-        }
+        service.executeChatTurn(
+            userId = chat.userId,
+            chatId = chat.id,
+            content = "generate reply",
+        )
 
-        val execution = executionRepository.listByChat(chat.userId, chat.id).single()
-        val failureEvent = eventRepository.listByChat(chat.userId, chat.id).last()
+        val execution = awaitExecutionStatus(executionRepository, chat, AgentExecutionStatus.FAILED)
+        val failureEvent = awaitLastEventType(eventRepository, chat, AgentEventType.EXECUTION_FAILED)
 
-        assertEquals("agent_execution_failed", error.code)
         assertEquals(AgentExecutionStatus.FAILED, execution.status)
         assertEquals("state_conflict", execution.errorCode)
         assertEquals(AgentEventType.EXECUTION_FAILED, failureEvent.type)
@@ -213,4 +207,32 @@ private class ConflictOnSaveAgentStateRepository(
             expectedRowVersion = state.rowVersion,
         )
     }
+}
+
+private suspend fun awaitExecutionStatus(
+    executionRepository: MemoryAgentExecutionRepository,
+    chat: Chat,
+    status: AgentExecutionStatus,
+): AgentExecution {
+    repeat(500) {
+        executionRepository.listByChat(chat.userId, chat.id).singleOrNull()
+            ?.takeIf { it.status == status }
+            ?.let { return it }
+        delay(10)
+    }
+    error("Timed out waiting for execution status $status.")
+}
+
+private suspend fun awaitLastEventType(
+    eventRepository: MemoryAgentEventRepository,
+    chat: Chat,
+    type: AgentEventType,
+): AgentEvent {
+    repeat(500) {
+        eventRepository.listByChat(chat.userId, chat.id).lastOrNull()
+            ?.takeIf { it.type == type }
+            ?.let { return it }
+        delay(10)
+    }
+    error("Timed out waiting for event $type.")
 }

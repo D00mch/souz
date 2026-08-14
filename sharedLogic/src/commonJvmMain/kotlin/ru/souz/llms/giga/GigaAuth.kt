@@ -1,52 +1,67 @@
 package ru.souz.llms.giga
 
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
-import io.ktor.http.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
+import io.ktor.http.Parameters
+import io.ktor.http.isSuccess
+import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMResponse
 
+/** App-scoped Giga token cache shared by chat and speech clients. */
 class GigaAuth(
     private val settingsProvider: SettingsProvider,
+    private val client: HttpClient,
 ) {
-    private val l = LoggerFactory.getLogger(GigaAuth::class.java)
+    private val logger = LoggerFactory.getLogger(GigaAuth::class.java)
+    private val mutex = Mutex()
+    private val tokensByScope = mutableMapOf<String, CachedToken>()
 
-    suspend fun requestToken(apiKey: String, scope: String): String {
-        val client = HttpClient(CIO) {
-            gigaDefaults(settingsProvider)
-        }
-        val response = client.submitForm(
-            url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
-            formParameters = Parameters.build {
-                append("scope", scope)
+    suspend fun requestToken(apiKey: String, scope: String): String = mutex.withLock {
+        tokensByScope[scope]
+            ?.takeIf { cached ->
+                cached.apiKey == apiKey &&
+                    cached.token.expiresAt.time > System.currentTimeMillis() + EXPIRY_MARGIN_MILLIS
             }
-        ) {
-            header("Content-Type", "application/x-www-form-urlencoded")
-            header("Authorization", "Basic $apiKey")
-        }
+            ?.token
+            ?.accessToken
+            ?: requestNewToken(apiKey, scope).also { token ->
+                tokensByScope[scope] = CachedToken(apiKey = apiKey, token = token)
+            }.accessToken
+    }
 
+    private suspend fun requestNewToken(apiKey: String, scope: String): LLMResponse.Token {
+        val response = client.submitForm(
+            url = TOKEN_URL,
+            formParameters = Parameters.build { append("scope", scope) },
+        ) {
+            header(HttpHeaders.Accept, "application/json")
+            header(HttpHeaders.UserAgent, "Souz")
+            header("RqUID", UUID.randomUUID().toString())
+            header(HttpHeaders.Authorization, "Basic $apiKey")
+            timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
+        }
         if (!response.status.isSuccess()) {
-            l.error("Error in requestToken: ${response.status}")
-            throw IllegalStateException("Error in requestToken: ${response.status}")
+            logger.error("Error in requestToken: {}", response.status)
+            error("Error in requestToken: ${response.status}")
         }
-        val token = try {
-            response.body<LLMResponse.Token>()
-        } catch (e: Exception) {
-            l.error("Error in requestToken: ${e.message}")
-            throw e
-        }
-        client.close()
-        return token.accessToken
+        return response.body()
+    }
+
+    private data class CachedToken(
+        val apiKey: String,
+        val token: LLMResponse.Token,
+    )
+
+    private companion object {
+        const val TOKEN_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+        const val EXPIRY_MARGIN_MILLIS = 30_000L
     }
 }
-/*
-curl --location 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth' \
---header 'RqUID: 6f0b1291-c7f3-43c6-bb2e-9f3efb2dc98e' \
---header 'Content-Type: application/x-www-form-urlencoded' \
---header 'Authorization: Basic NzkyMDJiYWMtMmQ1ZC00OGVhLWFhZGQtZTNlNGU4ZDE5YjMyOjEwOGNlMjhkLTM0MzAtNDE1MC1iZTU1LTZkMDNlMTNlZmU5Mg==' \
---data-urlencode 'scope=SALUTE_SPEECH_PERS'
- */

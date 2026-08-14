@@ -3,6 +3,7 @@ package ru.souz.llms.openai
 import java.nio.file.Files
 import java.util.Base64
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.runtime.DEFAULT_MAX_VISION_IMAGE_BYTES
 import ru.souz.llms.runtime.VisionGateway
 import ru.souz.llms.runtime.VisionInput
@@ -10,7 +11,7 @@ import ru.souz.llms.runtime.requestVisionText
 
 class OpenAIVisionGateway(
     private val settingsProvider: SettingsProvider,
-    private val openAiApi: OpenAIChatAPI,
+    private val chatApi: LLMChatAPI,
     private val maxImageBytes: Long = DEFAULT_MAX_VISION_IMAGE_BYTES,
 ) : VisionGateway {
 
@@ -24,7 +25,7 @@ class OpenAIVisionGateway(
             input = input,
             attachment = dataUrl,
             failurePrefix = "OpenAI image understanding failed",
-            chatRequest = openAiApi::message,
+            chatRequest = chatApi::message,
         )
     }
 

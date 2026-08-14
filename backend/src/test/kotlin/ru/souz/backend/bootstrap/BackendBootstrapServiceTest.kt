@@ -38,7 +38,13 @@ class BackendBootstrapServiceTest {
                     provider = LlmProvider.OPENAI,
                     encryptedApiKey = "enc-openai-user-a",
                     keyHint = "...1234",
-                )
+                ),
+                UserProviderKey(
+                    userId = "user-a",
+                    provider = LlmProvider.GIGA,
+                    encryptedApiKey = "enc-stale-giga-user-a",
+                    keyHint = "...giga",
+                ),
             )
         )
         val bootstrapService = BackendBootstrapService(
@@ -65,6 +71,7 @@ class BackendBootstrapServiceTest {
         assertEquals(0, providerKeyRepository.getCalls)
         assertTrue(openAiCapabilities.isNotEmpty())
         assertTrue(openAiCapabilities.all { it.userManagedKey })
+        assertFalse(response.capabilities.models.any { it.provider == "giga" })
     }
 
     @Test
@@ -139,14 +146,14 @@ class BackendBootstrapServiceTest {
 
         assertFalse(response.capabilities.models.any { it.provider == "codex" })
         assertFalse(response.capabilities.models.any { it.model == LLMModel.OpenAICompatibleCustom.alias })
-        assertEquals(LLMModel.OpenAIGpt5Nano.alias, response.settings.defaultModel)
+        assertEquals(LLMModel.OpenAIGpt5Mini.alias, response.settings.defaultModel)
     }
 
     @Test
     fun `bootstrap exposes configured OpenAI-compatible custom model`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "en"
-            gigaModel = LLMModel.OpenAIGpt5Nano
+            gigaModel = LLMModel.OpenAIGpt5Mini
             openaiKey = "server-openai-key"
             openaiModel = "provider-chat-model"
         }

@@ -6,6 +6,7 @@ import io.ktor.server.response.respond
 import kotlinx.coroutines.CancellationException
 import org.slf4j.Logger
 import ru.souz.backend.common.BackendRequestException
+import ru.souz.backend.common.BackendLlmSupport
 
 internal data class ErrorResponse(
     val error: String,
@@ -45,6 +46,13 @@ fun featureDisabledV1(message: String): BackendV1Exception =
         status = HttpStatusCode.NotFound,
         code = "feature_disabled",
         message = message,
+    )
+
+fun unsupportedBackendModel(): BackendV1Exception =
+    BackendV1Exception(
+        status = HttpStatusCode.Conflict,
+        code = "unsupported_backend_model",
+        message = BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE,
     )
 
 internal suspend fun ApplicationCall.respondBackend(

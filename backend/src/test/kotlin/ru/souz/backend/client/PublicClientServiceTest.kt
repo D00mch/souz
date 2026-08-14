@@ -10,6 +10,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -31,6 +32,32 @@ import ru.souz.backend.testutil.repository.MemoryClientRequestRepository
 
 class PublicClientServiceTest {
     private val json = jacksonObjectMapper()
+
+    @Test
+    fun `initial Giga model selection is rejected before registering thread state`() = runBlocking {
+        val context = routeTestContext()
+        val userId = UUID.randomUUID().toString()
+        val chat = context.chatService.createClient(userId, "create-1", "backend", null).chat
+        val frame = json.treeToValue(
+            json.readTree(
+                messageFrame(chat.id.toString(), userId, "message-1", null, "Привет", "device-1")
+                    .replace(
+                        "\"timeZone\":\"Europe/Moscow\"",
+                        "\"timeZone\":\"Europe/Moscow\",\"model\":\"GigaChat-Max\"",
+                    )
+            ),
+            MessageSubmitFrame::class.java,
+        )
+
+        val error = assertFailsWith<ClientContractException> {
+            context.publicClientService.handleMessage(chat, frame)
+        }
+
+        assertEquals("invalid_request", error.code)
+        assertEquals("Giga is not supported by the backend.", error.message)
+        assertTrue(context.clientThreadRegistry.isEmpty())
+        assertTrue(context.executionRepository.listByChat(userId, chat.id).isEmpty())
+    }
 
     @Test
     fun `initial receipt failure rejects without leaving an execution or acknowledgement`() = runBlocking {

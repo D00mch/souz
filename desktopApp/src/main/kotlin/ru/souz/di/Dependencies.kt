@@ -37,6 +37,8 @@ import ru.souz.db.DesktopInfoRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.db.VectorDB
 import ru.souz.llms.giga.GigaVoiceAPI
+import ru.souz.llms.http.GigaHttpClientResource
+import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.giga.toGiga
 import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
@@ -99,8 +101,6 @@ import ru.souz.tool.telegram.ToolTelegramSavedMessages
 import ru.souz.tool.telegram.ToolTelegramSearch
 import ru.souz.tool.telegram.ToolTelegramSend
 import ru.souz.tool.telegram.ToolTelegramSetState
-import ru.souz.tool.web.ToolInternetSearch
-import ru.souz.tool.web.ToolInternetResearch
 import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebImageDownloader
@@ -143,6 +143,7 @@ private object DiTags {
     const val TAG_LOG = "log"
     const val TAG_API = "api"
     const val TAG_LOCAL = "local"
+    const val TAG_DESKTOP_TOOL_CATALOG = "desktopToolCatalog"
 }
 
 val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
@@ -270,8 +271,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ToolExtractText(instance()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolReadPdfPages(instance()) }
-    bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }
-    bindSingleton { ToolGenerateImage(filesToolUtil = instance(), imageGenerationGateway = instance()) }
     bindSingleton { ToolOpen(instance(), instance()) }
     bindSingleton { ToolCreateNewBrowserTab(instance()) }
     bindSingleton { ToolSafariInfo(instance()) }
@@ -325,8 +324,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { ExcelReport(instance()) }
     bindSingleton { WebResearchClient() }
     bindSingleton { WebImageDownloader(instance()) }
-    bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
-    bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
     bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
     bindSingleton { ToolTelegramReadInbox(instance()) }
@@ -342,7 +339,9 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton<AgentTelemetry> { StructuredLoggingAgentTelemetry() }
 
     // API
-    bindSingleton { GigaVoiceAPI(instance(), instance()) }
+    bindSingleton {
+        GigaVoiceAPI(instance(), instance(), instance<GigaHttpClientResource>().client)
+    }
     bindSingleton<SpeechRecognitionLanguageProvider> {
         val settingsHostPreferences = instance<SettingsHostPreferences>()
         SpeechRecognitionLanguageProvider {
@@ -353,8 +352,12 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             }
         }
     }
-    bindSingleton { OpenAIVoiceAPI(instance(), instance()) }
-    bindSingleton { AiTunnelVoiceAPI(instance(), instance()) }
+    bindSingleton {
+        OpenAIVoiceAPI(instance(), instance<ProviderHttpClients>().openAi, instance())
+    }
+    bindSingleton {
+        AiTunnelVoiceAPI(instance(), instance<ProviderHttpClients>().standard, instance())
+    }
     bindSingleton { MacOsSpeechBridge() }
     bindSingleton<LiveSpeechTranscriptionProvider> { MacOsSpeechAnalyzerLiveTranscriptionProvider(instance()) }
     bindSingleton<AmbientTranscriptionService>(overrides = true) {
@@ -394,7 +397,115 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
-    bindSingleton { ToolsFactory(di) }
+    bindSingleton {
+        PortableRuntimeToolsFactory(
+            toolListFiles = instance(),
+            toolFindInFiles = instance(),
+            toolNewFile = instance(),
+            toolDeleteFile = instance(),
+            toolModifyFile = instance(),
+            toolMoveFile = instance(),
+            toolFindFilesByName = instance(),
+            toolFindFolders = instance(),
+            toolCalculator = instance(),
+            toolWebPageText = instance(),
+        )
+    }
+    bindSingleton {
+        RuntimeToolsFactory(
+            portableToolsFactory = instance(),
+            toolExtractText = instance(),
+            toolReadPdfPages = instance(),
+            toolCreatePlotFromCsv = instance(),
+            excelRead = instance(),
+            excelReport = instance(),
+            toolWebImageSearch = instance(),
+        )
+    }
+    bindSingleton {
+        LlmBackedToolCatalog(
+            llmApi = instance(),
+            settingsProvider = instance(),
+            filesToolUtil = instance(),
+            webResearchClient = instance(),
+            visionGateway = instance(),
+            imageGenerationGateway = instance(),
+        )
+    }
+    bindSingleton<AgentToolCatalog>(tag = DiTags.TAG_DESKTOP_TOOL_CATALOG) {
+        immutableToolCatalogFromLists(
+            mapOf(
+                ToolCategory.BROWSER to listOf(
+                    instance<ToolCreateNewBrowserTab>().toGiga(),
+                    instance<ToolSafariInfo>().toGiga(),
+                    instance<ToolBrowserHotkeys>().toGiga(),
+                    instance<ToolFocusOnTab>().toGiga(),
+                    instance<ToolChromeInfo>().toGiga(),
+                    instance<ToolOpenDefaultBrowser>().toGiga(),
+                ),
+                ToolCategory.CONFIG to listOf(
+                    instance<ToolSoundConfig>().toGiga(),
+                    instance<ToolSoundConfigDiff>().toGiga(),
+                    instance<ToolInstructionStore>().toGiga(),
+                ),
+                ToolCategory.NOTES to listOf(
+                    instance<ToolOpenNote>().toGiga(),
+                    instance<ToolCreateNote>().toGiga(),
+                    instance<ToolDeleteNote>().toGiga(),
+                    instance<ToolListNotes>().toGiga(),
+                    instance<ToolSearchNotes>().toGiga(),
+                ),
+                ToolCategory.APPLICATIONS to listOf(
+                    instance<ToolShowApps>().toGiga(),
+                    instance<ToolOpen>().toGiga(),
+                ),
+                ToolCategory.DATA_ANALYTICS to listOf(
+                    instance<ToolUploadFile>().toGiga(),
+                    instance<ToolDownloadFile>().toGiga(),
+                ),
+                ToolCategory.CALENDAR to listOf(
+                    instance<ToolCalendarCreateEvent>().toGiga(),
+                    instance<ToolCalendarDeleteEvent>().toGiga(),
+                    instance<ToolCalendarListCalendars>().toGiga(),
+                    instance<ToolCalendarListEvents>().toGiga(),
+                ),
+                ToolCategory.MAIL to listOf(
+                    instance<ToolMailUnreadMessagesCount>().toGiga(),
+                    instance<ToolMailListMessages>().toGiga(),
+                    instance<ToolMailReadMessage>().toGiga(),
+                    instance<ToolMailReplyMessage>().toGiga(),
+                    instance<ToolMailSendNewMessage>().toGiga(),
+                    instance<ToolMailSearch>().toGiga(),
+                ),
+                ToolCategory.TEXT_REPLACE to listOf(
+                    instance<ToolGetClipboard>().toGiga(),
+                    instance<ToolTextReplace>().toGiga(),
+                    instance<ToolTextUnderSelection>().toGiga(),
+                ),
+                ToolCategory.TELEGRAM to listOf(
+                    instance<ToolTelegramReadInbox>().toGiga(),
+                    instance<ToolTelegramGetHistory>().toGiga(),
+                    instance<ToolTelegramSetState>().toGiga(),
+                    instance<ToolTelegramSend>().toGiga(),
+                    instance<ToolTelegramForward>().toGiga(),
+                    instance<ToolTelegramSearch>().toGiga(),
+                    instance<ToolTelegramSavedMessages>().toGiga(),
+                ),
+                ToolCategory.DESKTOP to listOf(
+                    instance<ToolTakeScreenshot>().toGiga(),
+                    instance<ToolStartScreenRecording>().toGiga(),
+                ),
+            )
+        )
+    }
+    bindSingleton {
+        ToolsFactory(
+            runtimeToolCatalog = instance<RuntimeToolsFactory>(),
+            llmBackedToolCatalog = instance(),
+            desktopToolCatalog = instance(tag = DiTags.TAG_DESKTOP_TOOL_CATALOG),
+            settingsProvider = instance(),
+        )
+    }
     bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
     import(fileSystemSkillRegistryDiModule())
     import(portableSkillToolsDiModule())

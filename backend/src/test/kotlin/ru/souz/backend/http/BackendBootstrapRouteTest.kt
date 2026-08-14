@@ -177,7 +177,7 @@ class BackendBootstrapRouteTest {
         assertEquals(true, payload["features"]["streamingMessages"].asBoolean())
         assertEquals(true, payload["settings"]["showToolEvents"].asBoolean())
         assertEquals(true, payload["settings"]["streamingMessages"].asBoolean())
-        assertEquals(LLMModel.Max.alias, payload["settings"]["defaultModel"].asText())
+        assertEquals(LLMModel.QwenMax.alias, payload["settings"]["defaultModel"].asText())
         assertEquals(48_000, payload["settings"]["contextSize"].asInt())
         assertEquals(0.25, payload["settings"]["temperature"].asDouble())
         assertEquals("ru-RU", payload["settings"]["locale"].asText())
@@ -186,8 +186,64 @@ class BackendBootstrapRouteTest {
         assertEquals(46_000L, payload["settings"]["requestTimeoutMillis"].asLong())
         assertEquals(true, payload["settings"]["useFewShotExamples"].asBoolean())
         assertTrue(payload["capabilities"]["models"].isArray)
+        assertFalse(payload["capabilities"]["models"].any { it["provider"].asText() == "giga" })
         assertTrue(payload["capabilities"]["tools"].isArray)
         assertNotNull(payload["capabilities"]["models"].firstOrNull())
+    }
+
+    @Test
+    fun `bootstrap capabilities hide desktop only tools and reflect current settings provider`() = testApplication {
+        val settingsProvider = FakeSettingsProvider().apply {
+            gigaModel = LLMModel.Max
+            contextSize = 24_000
+            temperature = 0.4f
+            regionProfile = "ru"
+            useStreaming = false
+            gigaChatKey = "giga-key"
+        }
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    selectedModel = { settingsProvider.gigaModel.alias },
+                    bootstrapService = bootstrapService(
+                        settingsProvider = settingsProvider,
+                        toolCatalog = toolCatalog(
+                            ToolCategory.FILES to fakeTool("ListFiles"),
+                            ToolCategory.BROWSER to fakeTool("OpenBrowser"),
+                            ToolCategory.TELEGRAM to fakeTool("SendTelegramMessage"),
+                        ),
+                        featureFlags = BackendFeatureFlags(
+                            wsEvents = false,
+                            streamingMessages = false,
+                            toolEvents = false,
+                            options = false,
+                        ),
+                    ),
+                    trustedProxyToken = { "proxy-secret" },
+                )
+            )
+        }
+
+        val response = client.get(BackendHttpRoutes.BOOTSTRAP) {
+            header("X-User-Id", "user-123")
+            header("X-Souz-Proxy-Auth", "proxy-secret")
+        }
+        val payload = json.readTree(response.bodyAsText())
+        val tools = payload["capabilities"]["tools"].map { it["name"].asText() }
+        val models = payload["capabilities"]["models"]
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(
+            listOf("GenerateImage", "InternetResearch", "InternetSearch", "ListFiles", "ViewImage"),
+            tools,
+        )
+        assertFalse(tools.contains("OpenBrowser"))
+        assertFalse(tools.contains("SendTelegramMessage"))
+        assertFalse(models.any { it["provider"].asText() == "giga" })
+        assertTrue(models.any { it["model"].asText() == LLMModel.QwenMax.alias && !it["serverManagedKey"].asBoolean() })
+        assertFalse(models.any { it["model"].asText() == LLMModel.OpenAIGpt52.alias })
+        assertEquals(false, payload["settings"]["streamingMessages"].asBoolean())
+        assertEquals(false, payload["settings"]["showToolEvents"].asBoolean())
     }
 
     @Test
@@ -235,7 +291,7 @@ class BackendBootstrapRouteTest {
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(false, openAiModel["serverManagedKey"].asBoolean())
         assertEquals(true, openAiModel["userManagedKey"].asBoolean())
-        assertEquals(LLMModel.Max.alias, payload["settings"]["defaultModel"].asText())
+        assertEquals(LLMModel.QwenMax.alias, payload["settings"]["defaultModel"].asText())
         assertFalse(rawBody.contains("enc-openai-user-a"))
         assertFalse(rawBody.contains("...4321"))
     }
@@ -314,7 +370,7 @@ class BackendBootstrapRouteTest {
         assertEquals(false, persistedPayload["settings"]["useFewShotExamples"].asBoolean())
 
         assertEquals(HttpStatusCode.OK, defaults.status)
-        assertEquals(LLMModel.Max.alias, defaultPayload["settings"]["defaultModel"].asText())
+        assertEquals(LLMModel.QwenMax.alias, defaultPayload["settings"]["defaultModel"].asText())
         assertEquals(48_000, defaultPayload["settings"]["contextSize"].asInt())
         assertEquals(0.4, defaultPayload["settings"]["temperature"].asDouble())
         assertEquals("ru-RU", defaultPayload["settings"]["locale"].asText())
@@ -325,7 +381,39 @@ class BackendBootstrapRouteTest {
         assertTrue(defaultPayload["settings"].has("defaultModel"))
         assertTrue(defaultPayload["settings"].has("contextSize"))
         assertTrue(defaultPayload["settings"].has("temperature"))
-        assertEquals(LLMModel.Max, userSettingsRepository.get("user-b")?.defaultModel)
+        assertEquals(LLMModel.QwenMax, userSettingsRepository.get("user-b")?.defaultModel)
+    }
+
+    @Test
+    fun `bootstrap keeps persisted Giga setting visible but omits Giga capabilities`() = testApplication {
+        val settingsProvider = FakeSettingsProvider().apply { qwenChatKey = "qwen-key" }
+        val userSettingsRepository = MemoryUserSettingsRepository().also { repository ->
+            runBlocking {
+                repository.save(UserSettings(userId = "legacy-giga-user", defaultModel = LLMModel.Max))
+            }
+        }
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    selectedModel = { settingsProvider.gigaModel.alias },
+                    bootstrapService = bootstrapService(
+                        settingsProvider = settingsProvider,
+                        userSettingsRepository = userSettingsRepository,
+                    ),
+                    trustedProxyToken = { "proxy-secret" },
+                )
+            )
+        }
+
+        val response = client.get(BackendHttpRoutes.BOOTSTRAP) {
+            header("X-User-Id", "legacy-giga-user")
+            header("X-Souz-Proxy-Auth", "proxy-secret")
+        }
+        val payload = json.readTree(response.bodyAsText())
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(LLMModel.Max.alias, payload["settings"]["defaultModel"].asText())
+        assertFalse(payload["capabilities"]["models"].any { it["provider"].asText() == "giga" })
     }
 
     @Test

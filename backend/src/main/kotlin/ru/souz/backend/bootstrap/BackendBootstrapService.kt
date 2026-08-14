@@ -1,7 +1,8 @@
 package ru.souz.backend.bootstrap
 
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.backend.common.backendSafeToolNames
+import ru.souz.backend.common.BackendAvailableToolNames
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
@@ -16,24 +17,44 @@ import ru.souz.llms.LocalModelAvailability
 class BackendBootstrapService(
     private val settingsProvider: SettingsProvider,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
-    private val toolCatalog: AgentToolCatalog,
+    private val availableToolNames: BackendAvailableToolNames,
     private val featureFlags: BackendFeatureFlags,
     private val localModelAvailability: LocalModelAvailability,
     private val userProviderKeyRepository: UserProviderKeyRepository,
 ) {
+    constructor(
+        settingsProvider: SettingsProvider,
+        effectiveSettingsResolver: EffectiveSettingsResolver,
+        toolCatalog: AgentToolCatalog,
+        featureFlags: BackendFeatureFlags,
+        localModelAvailability: LocalModelAvailability,
+        userProviderKeyRepository: UserProviderKeyRepository,
+    ) : this(
+        settingsProvider = settingsProvider,
+        effectiveSettingsResolver = effectiveSettingsResolver,
+        availableToolNames = BackendAvailableToolNames.fromProcessCatalog(toolCatalog),
+        featureFlags = featureFlags,
+        localModelAvailability = localModelAvailability,
+        userProviderKeyRepository = userProviderKeyRepository,
+    )
+
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
         val buildProfile = LlmBuildProfile(settingsProvider, localModelAvailability)
         val userManagedProviders = userProviderKeyRepository.list(identity.userId)
-            .mapNotNullTo(linkedSetOf()) { key -> key.provider.takeUnless { it == LlmProvider.CODEX } }
+            .mapNotNullTo(linkedSetOf()) { key ->
+                key.provider.takeIf { it in BackendLlmSupport.userManagedKeyProviders }
+            }
         val effectiveSettings = effectiveSettingsResolver.resolve(
             userId = identity.userId,
             userManagedProviders = userManagedProviders,
         )
         val capabilityProviders = buildSet {
-            addAll(buildProfile.availableProviders)
+            addAll(buildProfile.availableProviders.filter { it in BackendLlmSupport.chatProviders })
             addAll(userManagedProviders)
             addAll(LlmProvider.entries.filter { provider ->
-                provider != LlmProvider.LOCAL && settingsProvider.hasKey(provider)
+                provider in BackendLlmSupport.chatProviders &&
+                    provider != LlmProvider.LOCAL &&
+                    settingsProvider.hasKey(provider)
             })
             if (!settingsProvider.hasCompleteCodexOAuthCredentials()) {
                 remove(LlmProvider.CODEX)
@@ -43,7 +64,7 @@ class BackendBootstrapService(
             user = BootstrapUser(id = identity.userId),
             features = featureFlags,
             capabilities = BootstrapCapabilities(
-                models = LLMModel.entries
+                models = BackendLlmSupport.chatModels
                     .filter { model ->
                         if (model == LLMModel.OpenAICompatibleCustom) {
                             return@filter hasConfiguredOpenAiCompatibleChatModel() &&
@@ -55,7 +76,7 @@ class BackendBootstrapService(
                         }
                     }
                     .map { modelCapability(it, userManagedProviders) },
-                tools = backendSafeToolNames(toolCatalog).map { toolName ->
+                tools = availableToolNames.values.sorted().map { toolName ->
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },
             ),

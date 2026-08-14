@@ -26,12 +26,10 @@ import ru.souz.tool.files.ToolDeleteFile
 import ru.souz.tool.files.ToolFindFilesByName
 import ru.souz.tool.files.ToolFindFolders
 import ru.souz.tool.files.ToolFindInFiles
-import ru.souz.tool.files.ToolGenerateImage
 import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
-import ru.souz.tool.files.ToolViewImage
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.knowledge.KnowledgeRetriever
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -42,8 +40,6 @@ import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.SkillCommandExecutor
-import ru.souz.tool.web.ToolInternetResearch
-import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebResearchClient
 
@@ -68,13 +64,9 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { ToolMoveFile(instance(), instanceOrNull<ToolPermissionBroker>()) }
     bindSingleton { ToolFindFilesByName(instance()) }
     bindSingleton { ToolFindFolders(instance()) }
-    bindSingleton { ToolViewImage(filesToolUtil = instance(), visionGateway = instance()) }
-    bindSingleton { ToolGenerateImage(filesToolUtil = instance(), imageGenerationGateway = instance()) }
     bindSingleton { ToolCalculator() }
 
     bindSingleton { WebResearchClient() }
-    bindSingleton { ToolInternetSearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
-    bindSingleton { ToolInternetResearch(api = instance(), settingsProvider = instance(), filesToolUtil = instance(), webResearchClient = instance()) }
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
 
     bindSingleton {
@@ -87,11 +79,7 @@ fun portableRuntimeToolsDiModule(
             toolMoveFile = instance(),
             toolFindFilesByName = instance(),
             toolFindFolders = instance(),
-            toolViewImage = instance(),
-            toolGenerateImage = instance(),
             toolCalculator = instance(),
-            toolInternetSearch = instance(),
-            toolInternetResearch = instance(),
             toolWebPageText = instance(),
         )
     }
@@ -193,18 +181,13 @@ class PortableRuntimeToolsFactory(
     private val toolMoveFile: ToolMoveFile,
     private val toolFindFilesByName: ToolFindFilesByName,
     private val toolFindFolders: ToolFindFolders,
-    private val toolViewImage: ToolViewImage,
-    private val toolGenerateImage: ToolGenerateImage,
     private val toolCalculator: ToolCalculator,
-    private val toolInternetSearch: ToolInternetSearch,
-    private val toolInternetResearch: ToolInternetResearch,
     private val toolWebPageText: ToolWebPageText,
 ) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
-        ToolCategory.entries.associateWith { category ->
-            category.tools().associateBy { it.fn.name }
-        }
-    }
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
+        immutableToolCatalogFromLists(
+            ToolCategory.entries.associateWith { category -> category.tools() }
+        ).toolsByCategory
 
     private fun ToolCategory.tools(): List<LLMToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(
@@ -218,18 +201,14 @@ class PortableRuntimeToolsFactory(
             toolFindFolders.toGiga(),
         )
 
-        ToolCategory.IMAGE -> listOf(toolViewImage.toGiga())
-        ToolCategory.IMAGE_GENERATION -> listOf(toolGenerateImage.toGiga())
-        ToolCategory.WEB_SEARCH -> listOf(
-            toolInternetSearch.toGiga(),
-            toolInternetResearch.toGiga(),
-            toolWebPageText.toGiga(),
-        )
+        ToolCategory.WEB_SEARCH -> listOf(toolWebPageText.toGiga())
         ToolCategory.CALCULATOR -> listOf(toolCalculator.toGiga())
 
         ToolCategory.CONFIG,
         ToolCategory.DATA_ANALYTICS,
         ToolCategory.BROWSER,
+        ToolCategory.IMAGE,
+        ToolCategory.IMAGE_GENERATION,
         ToolCategory.NOTES,
         ToolCategory.APPLICATIONS,
         ToolCategory.CALENDAR,

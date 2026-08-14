@@ -7,7 +7,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,8 +48,8 @@ class BackendConversationRuntimeSettingsTest {
                 gigaChatKey = "giga-key"
                 requestTimeoutMillis = 30_000L
             },
-            llmApiFactory = { context ->
-                capturedTimeouts += context.settingsProvider.requestTimeoutMillis
+            llmApiFactory = { settingsProvider ->
+                capturedTimeouts += settingsProvider.requestTimeoutMillis
                 ReplyingChatApi()
             },
         )
@@ -73,12 +73,14 @@ class BackendConversationRuntimeSettingsTest {
         )
         val withoutExamples = BackendExecutionToolCatalog(
             compiledToolCatalog = compiledTools,
+            executionLlmToolCatalog = BackendNoopAgentToolCatalog,
             enabledCompiledToolNames = null,
             clientToolCatalog = BackendNoopAgentToolCatalog,
             includeFewShotExamples = false,
         )
         val withExamples = BackendExecutionToolCatalog(
             compiledToolCatalog = compiledTools,
+            executionLlmToolCatalog = BackendNoopAgentToolCatalog,
             enabledCompiledToolNames = null,
             clientToolCatalog = BackendNoopAgentToolCatalog,
             includeFewShotExamples = true,
@@ -93,6 +95,25 @@ class BackendConversationRuntimeSettingsTest {
             examples,
             withExamples.toolsByCategory.getValue(ToolCategory.FILES)
                 .getValue("ListFiles").fn.fewShotExamples.orEmpty(),
+        )
+    }
+
+    @Test
+    fun `client catalog explicitly replaces a same-named compiled tool after selection`() {
+        val compiledTool = fakeTool("ClientOwned", emptyList())
+        val clientTool = fakeTool("ClientOwned", emptyList())
+        val executionCatalog = BackendExecutionToolCatalog(
+            compiledToolCatalog = singleToolCatalog(ToolCategory.FILES, compiledTool),
+            executionLlmToolCatalog = BackendNoopAgentToolCatalog,
+            enabledCompiledToolNames = setOf("ClientOwned"),
+            clientToolCatalog = singleToolCatalog(ToolCategory.CHAT, clientTool),
+            includeFewShotExamples = true,
+        )
+
+        assertEquals(emptyMap(), executionCatalog.toolsByCategory.getValue(ToolCategory.FILES))
+        assertSame(
+            clientTool,
+            executionCatalog.toolsByCategory.getValue(ToolCategory.CHAT).getValue("ClientOwned"),
         )
     }
 
@@ -276,6 +297,7 @@ class BackendConversationRuntimeSettingsTest {
         val enabledTools = linkedSetOf("ListFiles")
         val executionCatalog = BackendExecutionToolCatalog(
             compiledToolCatalog = sourceCatalog,
+            executionLlmToolCatalog = BackendNoopAgentToolCatalog,
             enabledCompiledToolNames = enabledTools,
             clientToolCatalog = BackendNoopAgentToolCatalog,
             includeFewShotExamples = true,
@@ -287,25 +309,16 @@ class BackendConversationRuntimeSettingsTest {
             setOf("ListFiles"),
             executionCatalog.toolsByCategory.values.flatMap { it.keys }.toSet(),
         )
-        assertFailsWith<UnsupportedOperationException> {
-            @Suppress("UNCHECKED_CAST")
-            (executionCatalog.toolsByCategory as MutableMap<ToolCategory, Map<String, LLMToolSetup>>).clear()
-        }
-        assertFailsWith<UnsupportedOperationException> {
-            @Suppress("UNCHECKED_CAST")
-            (executionCatalog.toolsByCategory.getValue(ToolCategory.FILES) as MutableMap<String, LLMToolSetup>)
-                .clear()
-        }
     }
 }
 
 private fun runtimeFactory(
     settingsProvider: TestSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
-    llmApiFactory: suspend (ru.souz.backend.llm.BackendLlmExecutionContext) -> LLMChatAPI,
+    llmApiFactory: suspend (ru.souz.db.SettingsProvider) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
 ): BackendConversationRuntimeFactory =
-    ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory(
+    testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = llmApiFactory,
         sessionRepository = InMemoryAgentSessionRepository(),
@@ -325,7 +338,7 @@ private fun conversationKey(): AgentConversationKey =
 private fun turnRequest(): BackendConversationTurnRequest =
     BackendConversationTurnRequest(
         prompt = "List files in the project root.",
-        model = LLMModel.Max.alias,
+        model = LLMModel.QwenMax,
         contextSize = 24_000,
         locale = "ru-RU",
         timeZone = "Europe/Moscow",

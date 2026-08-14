@@ -12,22 +12,20 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.openai.OpenAIChatAPI
-import ru.souz.llms.tunnel.AiTunnelChatAPI
-import ru.souz.llms.runtime.LLMFactory
+import ru.souz.llms.openai.OpenAICompatibleChatAPI
+import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-class LLMFactoryEmbeddingsTest {
+class SettingsRoutingLlmChatApiTest {
 
     @Test
-    fun `embeddings injects selected alias when request uses default marker`() = runTest {
+    fun `embeddings normalizes default marker and explicit request model`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
 
-        val aiTunnelApi = mockk<AiTunnelChatAPI>()
-
+        val aiTunnelApi = mockk<OpenAICompatibleChatAPI>()
         val requestSlot = slot<LLMRequest.Embeddings>()
         coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
             data = emptyList(),
@@ -35,40 +33,15 @@ class LLMFactoryEmbeddingsTest {
             objectType = "list",
         )
 
-        val factory = LLMFactory(
+        val router = SettingsRoutingLlmChatApi(
             settingsProvider = settingsProvider,
             apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
         )
 
-        factory.embeddings(
-            LLMRequest.Embeddings(
-                input = listOf("hello"),
-            )
-        )
-
+        router.embeddings(LLMRequest.Embeddings(input = listOf("hello")))
         assertEquals(EmbeddingsModel.AiTunnelEmbeddingAda.alias, requestSlot.captured.model)
-    }
 
-    @Test
-    fun `embeddings keeps explicit request model`() = runTest {
-        val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.embeddingsModel } returns EmbeddingsModel.AiTunnelEmbeddingAda
-
-        val aiTunnelApi = mockk<AiTunnelChatAPI>()
-
-        val requestSlot = slot<LLMRequest.Embeddings>()
-        coEvery { aiTunnelApi.embeddings(capture(requestSlot)) } returns LLMResponse.Embeddings.Ok(
-            data = emptyList(),
-            model = EmbeddingsModel.AiTunnelEmbeddingAda.alias,
-            objectType = "list",
-        )
-
-        val factory = LLMFactory(
-            settingsProvider = settingsProvider,
-            apisByProvider = mapOf(LlmProvider.AI_TUNNEL to aiTunnelApi),
-        )
-
-        factory.embeddings(
+        router.embeddings(
             LLMRequest.Embeddings(
                 model = EmbeddingsModel.QwenEmbeddings.alias,
                 input = listOf("hello"),
@@ -81,29 +54,29 @@ class LLMFactoryEmbeddingsTest {
     @Test
     fun `message routes to selected chat provider`() = runTest {
         val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Nano
+        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
 
-        val openAiApi = mockk<OpenAIChatAPI>()
+        val openAiApi = mockk<OpenAICompatibleChatAPI>()
         val request = LLMRequest.Chat(
-            model = LLMModel.OpenAIGpt5Nano.alias,
+            model = LLMModel.OpenAIGpt5Mini.alias,
             messages = emptyList(),
         )
         coEvery { openAiApi.message(request) } returns LLMResponse.Chat.Ok(
             choices = emptyList(),
             created = 1L,
-            model = LLMModel.OpenAIGpt5Nano.alias,
+            model = LLMModel.OpenAIGpt5Mini.alias,
             usage = LLMResponse.Usage(0, 0, 0, 0),
         )
 
-        val factory = LLMFactory(
+        val router = SettingsRoutingLlmChatApi(
             settingsProvider = settingsProvider,
             apisByProvider = mapOf(LlmProvider.OPENAI to openAiApi),
         )
 
-        val response = factory.message(request)
+        val response = router.message(request)
 
         assertIs<LLMResponse.Chat.Ok>(response)
-        assertEquals(LLMModel.OpenAIGpt5Nano.alias, response.model)
+        assertEquals(LLMModel.OpenAIGpt5Mini.alias, response.model)
     }
 
     @Test
@@ -111,12 +84,12 @@ class LLMFactoryEmbeddingsTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.gigaModel } returns LLMModel.QwenFlash
 
-        val factory = LLMFactory(
+        val router = SettingsRoutingLlmChatApi(
             settingsProvider = settingsProvider,
             apisByProvider = emptyMap<LlmProvider, LLMChatAPI>(),
         )
 
-        val response = factory.message(
+        val response = router.message(
             LLMRequest.Chat(
                 model = LLMModel.QwenFlash.alias,
                 messages = emptyList(),

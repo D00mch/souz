@@ -15,6 +15,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.llms.LLMModel
 
@@ -130,7 +131,7 @@ class BackendOpenApiTest {
 
             val provider = parameter(document, "/v1/me/provider-keys/{provider}", "put", "provider")
             assertEquals(
-                setOf("giga", "qwen", "ai_tunnel", "anthropic", "openai", "local", "codex"),
+                setOf("qwen", "ai_tunnel", "anthropic", "openai"),
                 provider["schema"]["enum"].map { it.asText() }.toSet(),
             )
 
@@ -157,7 +158,7 @@ class BackendOpenApiTest {
             assertEquals("\\S", settingsBody["properties"]["timeZone"]["pattern"].asText())
             assertEquals("\\S", settingsBody["properties"]["enabledTools"]["items"]["pattern"].asText())
             assertEquals(
-                LLMModel.entries.map { it.alias }.distinct(),
+                BackendLlmSupport.chatModels.map { it.alias }.distinct(),
                 settingsBody["properties"]["defaultModel"]["enum"]
                     .filterNot(JsonNode::isNull)
                     .map(JsonNode::asText),

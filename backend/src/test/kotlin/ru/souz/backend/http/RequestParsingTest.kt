@@ -9,9 +9,32 @@ import ru.souz.llms.LLMModel
 
 class RequestParsingTest {
     @Test
-    fun `parseModel accepts legacy GigaChat aliases`() {
-        assertEquals(LLMModel.Max, parseModel("GigaChat-Max", fieldName = "defaultModel"))
-        assertEquals(LLMModel.Pro, parseModel("GigaChat-Pro", fieldName = "defaultModel"))
+    fun `parseModel trims and normalizes model names once at the request boundary`() {
+        assertEquals(LLMModel.QwenMax, parseModel("  QWENMAX  ", fieldName = "defaultModel"))
+        assertEquals(LLMModel.QwenMax, parseModel("  QWEN-MAX  ", fieldName = "defaultModel"))
+    }
+
+    @Test
+    fun `parseModel distinguishes unknown aliases`() {
+        val unknown = assertFailsWith<BackendV1Exception> {
+            parseModel(" unknown ", fieldName = "defaultModel")
+        }
+        val removed = assertFailsWith<BackendV1Exception> {
+            parseModel(" GPT-5-NANO ", fieldName = "defaultModel")
+        }
+
+        assertTrue(unknown.message.contains("known model alias"))
+        assertTrue(removed.message.contains("known model alias"))
+    }
+
+    @Test
+    fun `parseModel rejects canonical and legacy Giga aliases`() {
+        val error = assertFailsWith<BackendV1Exception> {
+            parseModel(LLMModel.Max.alias, fieldName = "defaultModel")
+        }
+
+        assertEquals("invalid_request", error.code)
+        assertEquals("Giga is not supported by the backend.", error.message)
     }
 
     @Test

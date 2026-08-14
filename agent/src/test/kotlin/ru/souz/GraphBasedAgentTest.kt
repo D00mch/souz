@@ -181,7 +181,7 @@ class GraphBasedAgentTest {
     private fun baseContext(): AgentContext<String> = AgentContext(
         input = "Hello",
         settings = AgentSettings(
-            model = "gpt-5-nano",
+            model = "gpt-5-mini",
             temperature = 0.1f,
             toolsByCategory = emptyMap(),
         ),

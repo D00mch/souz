@@ -6,18 +6,16 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.*
 import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.auth.*
-import io.ktor.client.plugins.auth.providers.*
-import io.ktor.client.plugins.logging.*
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.forms.submitFormWithBinaryData
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
@@ -28,7 +26,6 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
 import java.io.File
@@ -40,48 +37,20 @@ import kotlin.time.Duration.Companion.seconds
 class GigaRestChatAPI(
     private val auth: GigaAuth,
     private val keysProvider: SettingsProvider,
-    private val tokenLogging: TokenLogging,
+    private val client: HttpClient,
 ) : LLMChatAPI {
     private val l = LoggerFactory.getLogger(GigaRestChatAPI::class.java)
 
     private val apiKey: String
         get() = keysProvider.gigaChatKey ?: throw IllegalStateException("GIGA_KEY is not set")
 
-    private val client = HttpClient(CIO) {
-        gigaDefaults(keysProvider)
-        install(Logging) {
-            val envLevel = System.getenv("GIGA_LOG_LEVEL")
-                ?.let { LogLevel.valueOf(it) } ?: LogLevel.INFO
-            this@GigaRestChatAPI.l.info("GIGA_LOG_LEVEL: $envLevel")
-            logger = object : Logger {
-                override fun log(message: String) {
-                    this@GigaRestChatAPI.l.debug(message)
-                }
-            }
-            level = envLevel
-            sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
-        }
-        install(Auth) {
-            bearer {
-                loadTokens {
-                    BearerTokens(loadAccessToken(), "")
-                }
-                refreshTokens {
-                    BearerTokens(refreshAccessToken(), "")
-                }
-            }
-        }
-        install(SSE) {
-            maxReconnectionAttempts = 0
-            reconnectionTime = 3.seconds
-        }
-    }
-
     private val uuid = UUID.randomUUID().toString() // for cache to work
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val requestBody = body.toGigaChatRequest()
+        val accessToken = accessToken()
         val response = client.post(URL) {
+            applyAuthenticatedDefaults(accessToken)
             header("X-Session-ID", uuid)
             setBody(requestBody)
         }
@@ -89,16 +58,12 @@ class GigaRestChatAPI(
             response.status.isSuccess() -> {
                 val result = response.body<LLMResponse.Chat.Ok>()
                 l.info("Chat response: ")
-                tokenLogging.logTokenUsage(result, body)
                 result
             }
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
                 LLMResponse.Chat.Error(response.status.value, "Authentication error: ${response.status.description}")
 
-            else -> runCatching { LLMResponse.Chat.Error(response.status.value, response.bodyAsText()) }
-                .getOrElse {
-                    LLMResponse.Chat.Error(response.status.value, response.status.description)
-                }
+            else -> chatError(response)
         }
     } catch (e: ClientRequestException) {
         val status = e.response.status
@@ -108,6 +73,8 @@ class GigaRestChatAPI(
             "HTTP error: ${e.response.bodyAsText()}"
         }
         LLMResponse.Chat.Error(status.value, msg)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Error in REST chat", t)
         LLMResponse.Chat.Error(-1, "Connection error: ${t.message}")
@@ -116,9 +83,11 @@ class GigaRestChatAPI(
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
         try {
             val requestBody = body.toGigaChatRequest()
+            val accessToken = accessToken()
             client.sse(
                 urlString = URL,
                 request = {
+                    applyAuthenticatedDefaults(accessToken)
                     method = HttpMethod.Post
                     setBody(requestBody.copy(stream = true))
                     header("X-Session-ID", uuid)
@@ -140,6 +109,8 @@ class GigaRestChatAPI(
                 "HTTP error: ${e.response.bodyAsText()}"
             }
             send(LLMResponse.Chat.Error(status.value, msg))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (t: Throwable) {
             l.error("Error in REST chat stream", t)
             send(LLMResponse.Chat.Error(-1, "Connection error: ${t.message}"))
@@ -147,7 +118,9 @@ class GigaRestChatAPI(
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
+        val accessToken = accessToken()
         val response = client.post(EMBEDDINGS_URL) {
+            applyAuthenticatedDefaults(accessToken)
             setBody(body)
         }
         l.info("embeddings status: ${response.status}")
@@ -159,11 +132,10 @@ class GigaRestChatAPI(
                     "Authentication error: ${response.status.description}"
                 )
 
-            else -> runCatching { response.body<LLMResponse.Embeddings.Error>() }
-                .getOrElse {
-                    LLMResponse.Embeddings.Error(response.status.value, response.status.description)
-                }
+            else -> embeddingsError(response)
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Error in REST embeddings", t)
         LLMResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
@@ -178,7 +150,10 @@ class GigaRestChatAPI(
     }
 
     override suspend fun balance(): LLMResponse.Balance = try {
-        val response = client.get(BALANCE_URL)
+        val accessToken = accessToken()
+        val response = client.get(BALANCE_URL) {
+            applyAuthenticatedDefaults(accessToken)
+        }
         when {
             response.status.isSuccess() -> response.body<LLMResponse.Balance.Ok>()
             response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden ->
@@ -187,11 +162,10 @@ class GigaRestChatAPI(
                     "Authentication error: ${response.status.description}"
                 )
 
-            else -> runCatching { response.body<LLMResponse.Balance.Error>() }
-                .getOrElse {
-                    LLMResponse.Balance.Error(response.status.value, response.status.description)
-                }
+            else -> balanceError(response)
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Error in REST balance", t)
         LLMResponse.Balance.Error(-1, "Connection error: ${t.message}")
@@ -203,6 +177,7 @@ class GigaRestChatAPI(
         } ?: "image/jpeg"
 
         val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+        val accessToken = accessToken()
         val response = client.submitFormWithBinaryData(
             url = FILES_URL,
             formData = formData {
@@ -216,7 +191,9 @@ class GigaRestChatAPI(
                 )
                 append("purpose", "general")
             },
-        )
+        ) {
+            applyAuthenticatedDefaults(accessToken)
+        }
         val text = response.bodyAsText()
         if (!response.status.isSuccess()) {
             throw IllegalStateException("GigaChat file upload failed: ${response.status.value}. $text")
@@ -225,7 +202,9 @@ class GigaRestChatAPI(
     }
 
     private suspend fun downloadFileContent(fileId: String): String? {
+        val accessToken = accessToken()
         val response = client.get("$FILES_URL/$fileId/content") {
+            applyAuthenticatedDefaults(accessToken)
             header(HttpHeaders.Accept, ContentType.Application.OctetStream.toString())
         }
         if (!response.status.isSuccess()) {
@@ -247,18 +226,41 @@ class GigaRestChatAPI(
         return target.toAbsolutePath().toString()
     }
 
-    private suspend fun loadAccessToken(): String {
-        return System.getProperty("GIGA_ACCESS_TOKEN") ?: refreshAccessToken()
+    private suspend fun accessToken(): String =
+        auth.requestToken(apiKey, GIGA_SCOPE)
+
+    private suspend fun chatError(response: HttpResponse): LLMResponse.Chat.Error = try {
+        LLMResponse.Chat.Error(response.status.value, response.bodyAsText())
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        LLMResponse.Chat.Error(response.status.value, response.status.description)
     }
 
-    private suspend fun refreshAccessToken(): String {
-        val newToken = auth.requestToken(apiKey, "GIGACHAT_API_PERS")
-        System.setProperty("GIGA_ACCESS_TOKEN", newToken)
-        return newToken
+    private suspend fun embeddingsError(response: HttpResponse): LLMResponse.Embeddings.Error = try {
+        response.body()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        LLMResponse.Embeddings.Error(response.status.value, response.status.description)
+    }
+
+    private suspend fun balanceError(response: HttpResponse): LLMResponse.Balance.Error = try {
+        response.body()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        LLMResponse.Balance.Error(response.status.value, response.status.description)
+    }
+
+    private fun HttpRequestBuilder.applyAuthenticatedDefaults(accessToken: String) {
+        gigaRequestDefaults(keysProvider)
+        header(HttpHeaders.Authorization, "Bearer $accessToken")
     }
 
     companion object {
         private const val BASE_URL = "https://api.giga.chat/v1"
+        private const val GIGA_SCOPE = "GIGACHAT_API_PERS"
         private const val URL = "$BASE_URL/chat/completions"
         private const val EMBEDDINGS_URL = "$BASE_URL/embeddings"
         private const val BALANCE_URL = "$BASE_URL/balance"

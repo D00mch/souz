@@ -62,6 +62,7 @@ class BackendOnboardingRouteTest {
         assertTrue(payload["availableUserManagedProviders"].isArray)
         assertTrue(payload["availableUserManagedProviders"].size() > 0)
         assertFalse(payload["availableUserManagedProviders"].any { it["provider"].asText() == "codex" })
+        assertFalse(payload["availableUserManagedProviders"].any { it["provider"].asText() == "giga" })
         assertEquals(32_000, payload["currentSettings"]["contextSize"].asInt())
         assertTrue(payload["currentSettings"].has("defaultModel"))
         assertTrue(payload["currentSettings"].has("systemPrompt"))
@@ -79,7 +80,7 @@ class BackendOnboardingRouteTest {
         val context = routeTestContext(
             settingsProvider = TestSettingsProvider().apply {
                 gigaChatKey = "giga-key"
-                qwenChatKey = null
+                qwenChatKey = "qwen-key"
                 aiTunnelKey = null
                 anthropicKey = null
                 openaiKey = null
@@ -111,10 +112,11 @@ class BackendOnboardingRouteTest {
         assertTrue(payload["reasons"].any { it.asText() == "preferences_incomplete" })
         assertTrue(
             payload["availableServerManagedProviders"].any { provider ->
-                provider["provider"].asText() == "giga" &&
-                    provider["models"].any { it.asText() == context.settingsProvider.gigaModel.alias }
+                provider["provider"].asText() == "qwen" &&
+                    provider["models"].any { it.asText() == LLMModel.QwenMax.alias }
             }
         )
+        assertFalse(payload["availableServerManagedProviders"].any { it["provider"].asText() == "giga" })
     }
 
     @Test
@@ -158,7 +160,7 @@ class BackendOnboardingRouteTest {
         val context = routeTestContext(
             settingsProvider = TestSettingsProvider().apply {
                 gigaChatKey = "giga-key"
-                qwenChatKey = null
+                qwenChatKey = "qwen-key"
                 aiTunnelKey = null
                 anthropicKey = null
                 openaiKey = null
@@ -185,7 +187,7 @@ class BackendOnboardingRouteTest {
             setBody(
                 """
                 {
-                  "defaultModel": "${context.settingsProvider.gigaModel.alias}",
+                  "defaultModel": "${LLMModel.QwenMax.alias}",
                   "locale": "ru-RU",
                   "timeZone": "Europe/Moscow",
                   "streamingMessages": true,
@@ -209,7 +211,7 @@ class BackendOnboardingRouteTest {
         assertEquals(true, statePayload["completed"].asBoolean())
         assertEquals("done", statePayload["currentStep"].asText())
         assertEquals(true, statePayload["hasUsableModelAccess"].asBoolean())
-        assertEquals(context.settingsProvider.gigaModel.alias, statePayload["currentSettings"]["defaultModel"].asText())
+        assertEquals(LLMModel.QwenMax.alias, statePayload["currentSettings"]["defaultModel"].asText())
         assertEquals(listOf("ListFiles"), statePayload["currentSettings"]["enabledTools"].map { it.asText() })
     }
 
@@ -218,7 +220,7 @@ class BackendOnboardingRouteTest {
         val context = routeTestContext(
             settingsProvider = TestSettingsProvider().apply {
                 gigaChatKey = "giga-key"
-                qwenChatKey = null
+                qwenChatKey = "qwen-key"
                 aiTunnelKey = null
                 anthropicKey = null
                 openaiKey = null
@@ -243,7 +245,7 @@ class BackendOnboardingRouteTest {
             setBody(
                 """
                 {
-                  "defaultModel": "${context.settingsProvider.gigaModel.alias}",
+                  "defaultModel": "${LLMModel.QwenMax.alias}",
                   "interfaceLanguage": "en",
                   "requestTimeoutMillis": 45000,
                   "useFewShotExamples": false
@@ -265,6 +267,34 @@ class BackendOnboardingRouteTest {
         assertEquals("en", storedSettings?.interfaceLanguage)
         assertEquals(45_000L, storedSettings?.requestTimeoutMillis)
         assertEquals(false, storedSettings?.useFewShotExamples)
+    }
+
+    @Test
+    fun `completing onboarding rejects an explicit Giga model`() = testApplication {
+        val context = routeTestContext()
+        application {
+            backendApplication(
+                BackendHttpDependencies(
+                    bootstrapService = context.bootstrapService,
+                    selectedModel = { context.settingsProvider.gigaModel.alias },
+                    trustedProxyToken = { "proxy-secret" },
+                    userSettingsService = context.userSettingsService,
+                    providerKeyService = context.userProviderKeyService,
+                    onboardingService = context.onboardingService,
+                )
+            )
+        }
+
+        val response = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+            trustedHeaders("giga-model-user")
+            contentType(ContentType.Application.Json)
+            setBody("""{"defaultModel":"GigaChat-Max"}""")
+        }
+        val payload = json.readTree(response.bodyAsText())
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("invalid_request", payload["error"]["code"].asText())
+        assertEquals("Giga is not supported by the backend.", payload["error"]["message"].asText())
     }
 
     @Test
@@ -355,7 +385,7 @@ class BackendOnboardingRouteTest {
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertEquals("invalid_request", payload["error"]["code"].asText())
         assertTrue(payload["error"]["message"].asText().contains("defaultModel"))
-        assertEquals(context.settingsProvider.gigaModel, storedSettings?.defaultModel)
+        assertEquals(LLMModel.QwenMax, storedSettings?.defaultModel)
         assertNull(storedSettings?.onboardingCompletedAt)
     }
 
@@ -396,7 +426,10 @@ class BackendOnboardingRouteTest {
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertEquals("invalid_request", payload["error"]["code"].asText())
         assertTrue(payload["error"]["message"].asText().contains("enabledTools"))
-        assertEquals(listOf("ListFiles"), storedSettings?.enabledTools?.toList())
+        assertEquals(
+            setOf("ListFiles", "InternetSearch", "InternetResearch", "ViewImage", "GenerateImage"),
+            storedSettings?.enabledTools,
+        )
         assertNull(storedSettings?.onboardingCompletedAt)
     }
 

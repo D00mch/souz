@@ -23,14 +23,10 @@ class GigaVoiceApiTest {
             return@runBlocking
         }
 
-        try {
-            val audio = api.synthesize("<speak>Hello</speak>")
-            assertTrue(audio.isNotEmpty())
-            val vaw = File("Generated.wav")
-            vaw.writeBytes(audio)
-        } finally {
-            api.clear()
-        }
+        val audio = api.synthesize("<speak>Hello</speak>")
+        assertTrue(audio.isNotEmpty())
+        val vaw = File("Generated.wav")
+        vaw.writeBytes(audio)
     }
 
     fun recognizeTest() = runBlocking {
@@ -40,12 +36,8 @@ class GigaVoiceApiTest {
             return@runBlocking
         }
 
-        try {
-            val pcmBytes = File("capture2.pcm").readBytes()
-            val text = api.recognize(pcmBytes).result.joinToString("\n")
-            assertTrue(text.contains("hello", ignoreCase = true))
-        } finally {
-            api.clear()
-        }
+        val pcmBytes = File("capture2.pcm").readBytes()
+        val text = api.recognize(pcmBytes).result.joinToString("\n")
+        assertTrue(text.contains("hello", ignoreCase = true))
     }
 }

@@ -2,6 +2,7 @@ package ru.souz.llms.openai
 
 import io.mockk.every
 import io.mockk.mockk
+import io.ktor.client.HttpClient
 import org.junit.jupiter.api.AfterEach
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.runtime.ImageGenerationInput
@@ -29,6 +30,6 @@ class OpenAIImageGenerationGatewayTest {
         val settingsProvider = mockk<SettingsProvider>()
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.openaiKey } returns "test-key"
-        return OpenAIImageGenerationGateway(settingsProvider)
+        return OpenAIImageGenerationGateway(settingsProvider, mockk<HttpClient>())
     }
 }
