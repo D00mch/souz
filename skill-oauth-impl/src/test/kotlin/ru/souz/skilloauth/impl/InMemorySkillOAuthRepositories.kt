@@ -1,16 +1,16 @@
 package ru.souz.skilloauth.impl
 
 import java.time.Instant
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 internal class InMemorySkillOAuthCredentialRepository : SkillOAuthCredentialRepository {
-    private val credentials = ConcurrentHashMap<Pair<String, String>, SkillOAuthCredential>()
+    private val credentials = mutableMapOf<Pair<String, String>, SkillOAuthCredential>()
     private val mutex = Mutex()
 
-    override suspend fun find(userId: String, provider: String): SkillOAuthCredential? =
+    override suspend fun find(userId: String, provider: String): SkillOAuthCredential? = mutex.withLock {
         credentials[userId to provider]
+    }
 
     override suspend fun upsert(credential: SkillOAuthCredential): SkillOAuthCredential? = mutex.withLock {
         val key = credential.userId to credential.provider
@@ -26,7 +26,7 @@ internal class InMemorySkillOAuthCredentialRepository : SkillOAuthCredentialRepo
         stored
     }
 
-    override suspend fun delete(userId: String, provider: String) {
+    override suspend fun delete(userId: String, provider: String): Unit = mutex.withLock {
         credentials.remove(userId to provider)
     }
 }
@@ -38,8 +38,8 @@ internal class InMemorySkillOAuthPendingStateRepository : SkillOAuthPendingState
         val updatedAt: Instant,
     )
 
-    private val pending = ConcurrentHashMap<String, SkillOAuthPendingState>()
-    private val requestedScopes = ConcurrentHashMap<Pair<String, String>, RequestedScopesEntry>()
+    private val pending = mutableMapOf<String, SkillOAuthPendingState>()
+    private val requestedScopes = mutableMapOf<Pair<String, String>, RequestedScopesEntry>()
     private val mutex = Mutex()
 
     override suspend fun beginAuthorization(
