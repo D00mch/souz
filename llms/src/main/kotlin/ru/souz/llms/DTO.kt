@@ -156,7 +156,6 @@ enum class LLMModel(
     QwenMax("Qwen Max", "qwen-max", LlmProvider.QWEN),
     AiTunnelGpt4oMini("AiT.gpt-4o-mini", "gpt-4o-mini", LlmProvider.AI_TUNNEL),
     AiTunnelGpt54Mini("AiT.gpt-5.4-mini", "gpt-5.4-mini", LlmProvider.AI_TUNNEL),
-    AiTunnelGpt5Nano("AiT.gpt-5-nano", "gpt-5-nano", LlmProvider.AI_TUNNEL),
     AiTunnelGemini36Flash("AiT.gemini-3.6-flash", "gemini-3.6-flash", LlmProvider.AI_TUNNEL),
     AiTunnelGemini35FlashLite("AiT.gemini-3.5-flash-lite", "gemini-3.5-flash-lite", LlmProvider.AI_TUNNEL),
     AiTunnelClaudeOpus48("AiT.claude-opus-4.8", "claude-opus-4.8", LlmProvider.AI_TUNNEL),
@@ -165,7 +164,6 @@ enum class LLMModel(
     AiTunnelKimiK3("AiT.kimi-k3", "kimi-k3", LlmProvider.AI_TUNNEL),
     OpenAIGpt52("OpenAI GPT-5.2", "gpt-5.2", LlmProvider.OPENAI),
     OpenAIGpt5Mini("OpenAI GPT-5 mini", "gpt-5-mini", LlmProvider.OPENAI),
-    OpenAIGpt5Nano("OpenAI GPT-5 nano", "gpt-5-nano", LlmProvider.OPENAI),
     OpenAICompatibleCustom("OpenAI-compatible custom", "openai-compatible-custom", LlmProvider.OPENAI),
     AnthropicOpus45("Claude Opus 4.5", "claude-opus-4-5", LlmProvider.ANTHROPIC),
     AnthropicOpus46("Claude Opus 4.6", "claude-opus-4-6", LlmProvider.ANTHROPIC),
@@ -308,7 +306,7 @@ object LLMRequest {
     )
 
     data class Embeddings(
-        val model: String = "Embeddings",
+        val model: String = DEFAULT_EMBEDDINGS_MODEL,
         val input: List<String>,
         @get:JsonIgnore
         @field:JsonIgnore

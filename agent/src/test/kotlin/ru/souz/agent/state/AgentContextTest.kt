@@ -20,7 +20,7 @@ class AgentContextTest {
         val context = AgentContext(
             input = "input",
             settings = AgentSettings(
-                model = "gpt-5-nano",
+                model = "gpt-5-mini",
                 temperature = 0.2f,
                 toolsByCategory = emptyMap(),
             ),

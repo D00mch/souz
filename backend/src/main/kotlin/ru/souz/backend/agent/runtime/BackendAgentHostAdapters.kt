@@ -10,12 +10,10 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.findLLMModel
 import ru.souz.tool.ToolCategory
 
 /** Request-scoped backend settings wrapper used by the shared agent/runtime code. */
@@ -54,7 +52,7 @@ class BackendConversationSettingsProvider(
         request: BackendConversationTurnRequest,
         temperature: Float,
     ) {
-        this.gigaModel = parseModel(request.model) ?: delegate.gigaModel
+        this.gigaModel = request.model
         this.contextSize = request.contextSize
         this.temperature = request.temperature ?: temperature
         this.regionProfile = localeToRegionProfile(request.locale)
@@ -63,9 +61,6 @@ class BackendConversationSettingsProvider(
         this.useFewShotExamples = request.useFewShotExamples ?: this.useFewShotExamples
         this.requestTimeoutMillis = request.requestTimeoutMillis ?: this.requestTimeoutMillis
     }
-
-    private fun parseModel(rawModel: String): LLMModel? =
-        findLLMModel(rawModel)
 
     private fun localeToRegionProfile(locale: String): String {
         val language = runCatching { Locale.forLanguageTag(locale).language.lowercase() }
@@ -116,50 +111,3 @@ object BackendAgentErrorMessages : AgentErrorMessages {
     override suspend fun timeout(): String = "The model request timed out."
     override suspend fun noMoney(): String = "The configured provider has no available balance."
 }
-
-/** LLM API wrapper that keeps cumulative usage for one backend execution. */
-class CumulativeUsageTrackingChatApi(
-    private val delegate: LLMChatAPI,
-    initialUsage: LLMResponse.Usage = LLMResponse.Usage(0, 0, 0, 0),
-) : LLMChatAPI by delegate {
-    private var cumulativeUsage: LLMResponse.Usage = initialUsage
-
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        val response = delegate.message(body)
-        if (response is LLMResponse.Chat.Ok) {
-            cumulativeUsage = cumulativeUsage.plus(response.usage)
-        }
-        return response
-    }
-
-    override suspend fun messageStream(body: LLMRequest.Chat): kotlinx.coroutines.flow.Flow<LLMResponse.Chat> =
-        kotlinx.coroutines.flow.flow {
-            var previousUsage = LLMResponse.Usage(0, 0, 0, 0)
-            delegate.messageStream(body).collect { response ->
-                if (response is LLMResponse.Chat.Ok) {
-                    val delta = response.usage.deltaFrom(previousUsage)
-                    cumulativeUsage = cumulativeUsage.plus(delta)
-                    previousUsage = response.usage
-                }
-                emit(response)
-            }
-        }
-
-    fun cumulativeUsage(): LLMResponse.Usage = cumulativeUsage
-}
-
-private fun LLMResponse.Usage.plus(other: LLMResponse.Usage): LLMResponse.Usage =
-    LLMResponse.Usage(
-        promptTokens = promptTokens + other.promptTokens,
-        completionTokens = completionTokens + other.completionTokens,
-        totalTokens = totalTokens + other.totalTokens,
-        precachedTokens = precachedTokens + other.precachedTokens,
-    )
-
-private fun LLMResponse.Usage.deltaFrom(previous: LLMResponse.Usage): LLMResponse.Usage =
-    LLMResponse.Usage(
-        promptTokens = (promptTokens - previous.promptTokens).coerceAtLeast(0),
-        completionTokens = (completionTokens - previous.completionTokens).coerceAtLeast(0),
-        totalTokens = (totalTokens - previous.totalTokens).coerceAtLeast(0),
-        precachedTokens = (precachedTokens - previous.precachedTokens).coerceAtLeast(0),
-    )

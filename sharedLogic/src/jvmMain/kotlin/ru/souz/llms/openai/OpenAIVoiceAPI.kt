@@ -1,9 +1,7 @@
 package ru.souz.llms.openai
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.header
@@ -28,6 +26,7 @@ class MissingOpenAiVoiceKeyException : IllegalStateException("OPENAI_API_KEY is 
 
 class OpenAIVoiceAPI(
     private val settingsProvider: SettingsProvider,
+    private val client: HttpClient,
     private val languageProvider: SpeechRecognitionLanguageProvider = SpeechRecognitionLanguageProvider {
         SpeechRecognitionLanguage.fromLanguageCode(settingsProvider.regionProfile)
     },
@@ -48,17 +47,6 @@ class OpenAIVoiceAPI(
             ?: System.getProperty("OPENAI_TRANSCRIPTION_MODEL")
             ?: DEFAULT_TRANSCRIPTION_MODEL
 
-    private val client = HttpClient(CIO) {
-        defaultRequest {
-            header(HttpHeaders.Authorization, "Bearer $apiKey")
-            header(HttpHeaders.Accept, ContentType.Application.Json)
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
-        }
-        openAiTlsDefaults()
-    }
-
     suspend fun recognize(audio: ByteArray): String {
         val wavAudio = pcm16MonoToWav(
             rawPcm = audio,
@@ -76,6 +64,9 @@ class OpenAIVoiceAPI(
             AUDIO_CHANNELS,
         )
         val response = client.post(transcriptionsUrl) {
+            header(HttpHeaders.Authorization, "Bearer $apiKey")
+            header(HttpHeaders.Accept, ContentType.Application.Json)
+            timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
             setBody(
                 MultiPartFormDataContent(
                     buildOpenAiTranscriptionFormData(
@@ -95,8 +86,6 @@ class OpenAIVoiceAPI(
         return restJsonMapper.readTree(responseBody)["text"]?.asText()?.trim().orEmpty()
     }
 
-    fun clear() = client.close()
-
     private companion object {
         const val TRANSCRIPTIONS_PATH = "audio/transcriptions"
         const val DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
@@ -106,7 +95,7 @@ class OpenAIVoiceAPI(
     }
 
     private val transcriptionsUrl: String
-        get() = OpenAIEndpointConfig.endpoint(settingsProvider, TRANSCRIPTIONS_PATH)
+        get() = settingsProvider.openAIEndpoint().endpoint(TRANSCRIPTIONS_PATH)
 }
 
 internal fun buildOpenAiTranscriptionFormData(

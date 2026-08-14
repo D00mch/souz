@@ -15,6 +15,7 @@ import io.ktor.openapi.jsonSchema
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.openapi.describe
 import io.ktor.utils.io.ExperimentalKtorApi
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 
@@ -164,7 +165,7 @@ internal fun Parameters.Builder.providerPathParameter() {
             "LLM provider identifier. Values are case-insensitive; hyphens are accepted in place of underscores."
         schema = JsonSchema(
             type = JsonType.STRING,
-            enum = LlmProvider.entries.map { GenericElement(it.name.lowercase()) },
+            enum = BackendLlmSupport.userManagedKeyProviders.map { GenericElement(it.name.lowercase()) },
         )
     }
 }
@@ -338,7 +339,7 @@ private fun JsonSchema.withModelAliases(propertyName: String): JsonSchema =
     withProperty(propertyName) { property ->
         property.copy(
             description = "Known Souz model alias.",
-            enum = property.enumValuesPreservingNull(LLMModel.entries.map { it.alias }.distinct()),
+            enum = property.enumValuesPreservingNull(BackendLlmSupport.chatModels.map { it.alias }.distinct()),
         )
     }
 

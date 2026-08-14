@@ -29,7 +29,7 @@ class ToolViewImage(
         val question: String,
     )
 
-    override val name: String = "ViewImage"
+    override val name: String = NAME
     override val description: String =
         "Read a local image from a safe absolute path and ask the current multimodal model to describe or analyze it."
 
@@ -87,5 +87,9 @@ class ToolViewImage(
         if (sizeBytes > maxImageBytes) {
             throw BadInputException("image file is too large: $sizeBytes bytes exceeds limit of $maxImageBytes bytes")
         }
+    }
+
+    companion object {
+        const val NAME = "ViewImage"
     }
 }

@@ -572,6 +572,32 @@ class TelegramBotPollingServiceTest {
     }
 
     @Test
+    fun `terminal execution without assistant response sends generic reply`() = runTest {
+        val repository = MemoryTelegramBotBindingRepository()
+        val botApi = FakePollingTelegramBotApi()
+        val executor = RecordingTelegramTurnExecutor(
+            assistantResponse = null,
+            responseExecutionStatus = AgentExecutionStatus.FAILED,
+        )
+        val service = pollingService(repository, botApi, executor)
+        linkedBinding(repository)
+        botApi.enqueueSingleTextUpdate(
+            token = "123456:linked-token",
+            updateId = 30L,
+            chatId = 777L,
+            userId = 555L,
+            text = "do work",
+        )
+
+        service.pollEnabledOnce()
+
+        assertEquals(
+            listOf(SentTelegramMessage(777L, "Не удалось выполнить команду.")),
+            botApi.sentMessages,
+        )
+    }
+
+    @Test
     fun `in flight dedupe does not send fallback done reply`() = runTest {
         val repository = MemoryTelegramBotBindingRepository()
         val botApi = FakePollingTelegramBotApi()

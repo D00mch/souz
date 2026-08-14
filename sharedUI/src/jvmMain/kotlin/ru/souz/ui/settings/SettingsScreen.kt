@@ -30,6 +30,8 @@ import ru.souz.ui.graphlog.GraphSessionsScreen
 import ru.souz.ui.graphlog.GraphVisualizationScreen
 import ru.souz.ui.common.RealLiquidGlassCard
 import ru.souz.ui.common.DraggableWindowArea
+import ru.souz.ui.common.MAIN_WINDOW_MIN_HEIGHT_PX
+import ru.souz.ui.common.MAIN_WINDOW_MIN_WIDTH_PX
 import ru.souz.ui.common.applyMinWindowSize
 import souz.sharedui.generated.resources.Res
 import souz.sharedui.generated.resources.*
@@ -70,7 +72,13 @@ fun SettingsScreen(
     val windowScope = ru.souz.LocalWindowScope.current
     DisposableEffect(windowScope) {
         val window = windowScope?.window
-        val originalMinSize = window?.let { applyMinWindowSize(it, minWidth = 680, minHeight = 700) }
+        val originalMinSize = window?.let {
+            applyMinWindowSize(
+                it,
+                minWidth = MAIN_WINDOW_MIN_WIDTH_PX,
+                minHeight = MAIN_WINDOW_MIN_HEIGHT_PX,
+            )
+        }
         onDispose { window?.minimumSize = originalMinSize }
     }
     

@@ -2,8 +2,11 @@ package ru.souz.backend.app
 
 import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import ru.souz.backend.http.BackendHttpServer
+import ru.souz.runtime.OrderedShutdown
+import ru.souz.runtime.shutdownStep
 
 private val log = LoggerFactory.getLogger("SouzBackend")
 
@@ -20,10 +23,16 @@ fun main() {
         bindAddress = InetSocketAddress(appConfig.server.host, appConfig.server.port),
     )
     val shutdown = Runnable {
-        runCatching { server.close() }
-            .onFailure { log.warn("Failed to stop backend server: {}", it.message) }
-        runCatching { runtime.close() }
-            .onFailure { log.warn("Failed to close backend runtime: {}", it.message) }
+        runCatching {
+            runBlocking {
+                shutdownBackendProcess(
+                    stopHttpIntake = server::close,
+                    shutdownRuntime = runtime::shutdown,
+                )
+            }
+        }.onFailure { failure ->
+            log.warn("Failed to shut down backend process: {}", failure.message)
+        }
     }
     Runtime.getRuntime().addShutdownHook(Thread(shutdown, "souz-backend-shutdown"))
 
@@ -35,4 +44,16 @@ fun main() {
         appConfig.server.port,
     )
     CountDownLatch(1).await()
+}
+
+internal suspend fun shutdownBackendProcess(
+    stopHttpIntake: () -> Unit,
+    shutdownRuntime: suspend () -> Unit,
+) {
+    OrderedShutdown(
+        steps = listOf(
+            shutdownStep("HTTP intake") { stopHttpIntake() },
+            shutdownStep("backend runtime", shutdownRuntime),
+        )
+    ).shutdown()
 }

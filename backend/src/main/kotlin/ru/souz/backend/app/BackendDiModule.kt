@@ -31,6 +31,8 @@ import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.common.BackendAvailableToolNames
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.events.repository.AgentEventRepository
@@ -44,11 +46,7 @@ import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
-import ru.souz.backend.llm.BackendLlmClientFactory
-import ru.souz.backend.llm.LlmClientFactory
-import ru.souz.backend.llm.ProviderChatApiBuilder
 import ru.souz.backend.llm.ProviderCredentialResolver
-import ru.souz.backend.llm.RuntimeProviderChatApiBuilder
 import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.onboarding.BackendOnboardingService
@@ -73,9 +71,13 @@ import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.codex.CodexOAuthService
+import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.runtime.di.runtimeCoreDiModule
-import ru.souz.runtime.di.runtimeLlmDiModule
+import ru.souz.runtime.di.runtimeLocalLlmDiModule
+import ru.souz.runtime.di.runtimeProviderHttpDiModule
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.skills.registry.fileSystemSkillRegistryDiModule
 import ru.souz.backend.telegram.HttpTelegramBotApi
 import ru.souz.backend.telegram.TelegramBotApi
@@ -87,6 +89,7 @@ import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.web.internal.WebResearchClient
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
@@ -111,7 +114,8 @@ fun backendDiModule(
             scopeResolver = BackendSandboxScopeResolver,
         )
     )
-    import(runtimeLlmDiModule(logObjectMapperTag = BackendDiTags.LOG_OBJECT_MAPPER))
+    import(runtimeProviderHttpDiModule())
+    import(runtimeLocalLlmDiModule())
     import(fileSystemSkillRegistryDiModule())
     import(portableSkillRuntimeToolsDiModule())
     val skillOAuthConfig = SkillOAuthBackendConfig.from(appConfig)
@@ -141,11 +145,14 @@ fun backendDiModule(
         // HttpClient (a selector-manager thread pool each); without closing them here they leak
         // past backend shutdown.
         BackendRuntimeResources(
-            closeables = listOf(
-                instance<BackendApplicationScope>(),
-                instance<HikariDataSource>(),
-            ) + skillOAuthConfig?.providers?.values.orEmpty().filterIsInstance<AutoCloseable>() +
-                listOfNotNull(instanceOrNull<SkillOAuthGatewayImpl>())
+            cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
+            closeProviderClients = { instance<ProviderHttpClients>().close() },
+            closeLocalRuntime = { instance<ru.souz.llms.local.LocalLlamaRuntime>().close() },
+            closeSkillOAuthClients = {
+                skillOAuthConfig?.providers?.values.orEmpty().filterIsInstance<AutoCloseable>().forEach { it.close() }
+                instanceOrNull<SkillOAuthGatewayImpl>()?.close()
+            },
+            closeDataSource = { instance<HikariDataSource>().close() },
         )
     }
     bindSingleton { AgentEventBus() }
@@ -164,24 +171,13 @@ fun backendDiModule(
         )
     }
     bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
+    bindSingleton {
+        BackendAvailableToolNames.fromProcessCatalog(instance())
+    }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
             baseSettingsProvider = instance(),
             userProviderKeyService = instance(),
-        )
-    }
-    bindSingleton<ProviderChatApiBuilder> {
-        RuntimeProviderChatApiBuilder(
-            tokenLogging = instance(),
-            retryPolicy = appConfig.providerRetryPolicy,
-            codexOAuthService = instance<CodexOAuthService>(),
-        )
-    }
-    bindSingleton<LlmClientFactory> {
-        BackendLlmClientFactory(
-            credentialResolver = instance(),
-            providerClientFactory = instance(),
-            localChatApi = instance(),
         )
     }
     bindSingleton {
@@ -190,7 +186,7 @@ fun backendDiModule(
             userSettingsRepository = instance(),
             userProviderKeyRepository = instance(),
             featureFlags = instance(),
-            toolCatalog = instance(),
+            availableToolNames = instance(),
             localModelAvailability = instance<LocalProviderAvailability>(),
         )
     }
@@ -226,7 +222,11 @@ fun backendDiModule(
     bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
-            llmApiFactory = { executionContext -> instance<LlmClientFactory>().create(executionContext) },
+            credentialResolver = instance(),
+            retryPolicy = appConfig.providerRetryPolicy,
+            providerHttpClients = instance(),
+            localChatApi = instance<LocalChatAPI>(),
+            codexOAuthService = instance<CodexOAuthService>(),
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
@@ -234,6 +234,8 @@ fun backendDiModule(
             clientToolCatalog = instance<BackendClientSkills>(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandExecutor>(),
+            filesToolUtil = instance<FilesToolUtil>(),
+            webResearchClient = instance<WebResearchClient>(),
             getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
             searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
             searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
@@ -260,7 +262,6 @@ fun backendDiModule(
     bindSingleton {
         AgentExecutionLauncher(
             executionScope = instance<BackendApplicationScope>(),
-            finalizer = instance(),
             executionRepository = instance(),
             clientThreadRegistry = instance(),
         )
@@ -343,7 +344,7 @@ fun backendDiModule(
         BackendBootstrapService(
             settingsProvider = instance(),
             effectiveSettingsResolver = instance(),
-            toolCatalog = instance(),
+            availableToolNames = instance(),
             featureFlags = instance(),
             localModelAvailability = instance<LocalProviderAvailability>(),
             userProviderKeyRepository = instance(),
@@ -367,7 +368,12 @@ fun backendDiModule(
             publicClientService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             featureFlags = featureFlags,
-            selectedModel = { settingsProvider.gigaModel.alias },
+            selectedModel = {
+                settingsProvider.gigaModel
+                    .takeIf { it in BackendLlmSupport.chatModels }
+                    ?.alias
+                    ?: BackendLlmSupport.fallbackChatModel.alias
+            },
             trustedProxyToken = { appConfig.server.proxyToken },
             ensureTrustedUser = userRepository::ensureUser,
         )

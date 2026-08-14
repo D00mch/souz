@@ -1,15 +1,9 @@
 package ru.souz.llms.codex
 
-import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
@@ -20,41 +14,26 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.serialization.jackson.jackson
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.TokenLogging
 import ru.souz.llms.restJsonMapper
 import java.io.File
 
 class CodexChatAPI(
     private val settingsProvider: SettingsProvider,
-    private val tokenLogging: TokenLogging,
     private val oauthService: CodexOAuthService,
+    private val client: HttpClient,
 ) : LLMChatAPI {
 
     private val l = LoggerFactory.getLogger(CodexChatAPI::class.java)
-
-    private val client = HttpClient(CIO) {
-        install(HttpTimeout) { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
-        install(ContentNegotiation) {
-            jackson { disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
-        }
-        install(Logging) {
-            logger = object : Logger {
-                override fun log(message: String) = l.debug(message)
-            }
-            level = LogLevel.INFO
-            sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
-        }
-    }
 
     // Codex API requires stream=true; accumulate all chunks into one response.
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
@@ -63,11 +42,10 @@ class CodexChatAPI(
             flow.collect { chunk -> last = chunk }
             last
         }.also { result ->
-            if (result is LLMResponse.Chat.Ok) {
-                l.info("Codex model: ${body.model}. Response received")
-                tokenLogging.logTokenUsage(result, body)
-            }
+            if (result is LLMResponse.Chat.Ok) l.info("Codex model: ${body.model}. Response received")
         }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         l.error("Codex model: ${body.model}. Error in chat", t)
         LLMResponse.Chat.Error(-1, "Codex error: ${t.message}")
@@ -80,6 +58,7 @@ class CodexChatAPI(
             val requestBody = buildResponsesRequest(body, stream = true)
 
             client.preparePost(CODEX_BASE_URL) {
+                timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.Authorization, "Bearer $token")
                 header("Chatgpt-Account-Id", accountId)
@@ -96,6 +75,7 @@ class CodexChatAPI(
                 var pendingEvent: String? = null
                 val collectedItems = mutableListOf<JsonNode>()
                 var usageNode: JsonNode? = null
+                var terminalEventReceived = false
                 val created = System.currentTimeMillis() / 1000
 
                 while (!channel.isClosedForRead) {
@@ -116,18 +96,22 @@ class CodexChatAPI(
                                         collectedItems.add(item)
                                     }
                                     "response.completed" -> {
+                                        terminalEventReceived = true
                                         val resp = node["response"] ?: node
                                         usageNode = resp["usage"]
                                         val result = buildChatOkFromItems(collectedItems, usageNode, body.model, created)
                                         send(result)
                                     }
                                     "response.failed", "response.incomplete" -> {
+                                        terminalEventReceived = true
                                         val err = node["response"]?.get("error")?.asText()
                                             ?: node["error"]?.asText()
                                             ?: "Stream error: $eventType"
                                         send(LLMResponse.Chat.Error(-1, err))
                                     }
                                 }
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
                             } catch (e: Exception) {
                                 l.debug("Codex SSE parse error: ${e.message}")
                             }
@@ -137,10 +121,12 @@ class CodexChatAPI(
                 }
 
                 // fallback: if response.completed never fired but items were collected
-                if (collectedItems.isNotEmpty() && usageNode == null) {
+                if (!terminalEventReceived && collectedItems.isNotEmpty() && usageNode == null) {
                     send(buildChatOkFromItems(collectedItems, null, body.model, created))
                 }
             }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (t: Throwable) {
             l.error("Codex stream error", t)
             send(LLMResponse.Chat.Error(-1, "Codex stream error: ${t.message}"))

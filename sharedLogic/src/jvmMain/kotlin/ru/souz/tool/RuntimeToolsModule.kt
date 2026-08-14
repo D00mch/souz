@@ -64,12 +64,15 @@ class RuntimeToolsFactory(
     private val excelReport: ExcelReport,
     private val toolWebImageSearch: ToolWebImageSearch?,
 ) : AgentToolCatalog {
-    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
-        ToolCategory.entries.associateWith { category ->
-            portableToolsFactory.toolsByCategory.getValue(category) +
-                category.jvmTools().associateBy { it.fn.name }
-        }
-    }
+    override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
+        composeToolCatalogs(
+            listOf(
+                portableToolsFactory,
+                immutableToolCatalogFromLists(
+                    ToolCategory.entries.associateWith { category -> category.jvmTools() }
+                ),
+            )
+        ).toolsByCategory
 
     private fun ToolCategory.jvmTools(): List<LLMToolSetup> = when (this) {
         ToolCategory.FILES -> listOf(

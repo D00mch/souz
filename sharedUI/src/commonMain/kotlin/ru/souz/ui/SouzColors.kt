@@ -9,9 +9,7 @@ import androidx.compose.ui.graphics.Color
 @Immutable
 data class GlassColors(
     val heroBackground: List<Color>,
-    val heroOverlay: Color,
-    val heroBorder: List<Color>,
-    val innerBorder: Color,
+    val heroBorder: Color,
     val textPrimary: Color,
 )
 

@@ -5,7 +5,6 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,7 +64,6 @@ class AgentExecutionLauncherLeaseTest {
         )
         val launcher = AgentExecutionLauncher(
             executionScope = this,
-            finalizer = finalizer,
             executionRepository = executionRepository,
             clientThreadRegistry = registry,
             leaseRefreshInterval = Duration.ofMillis(1),
@@ -125,11 +123,19 @@ class AgentExecutionLauncherLeaseTest {
         )
         val started = CompletableDeferred<Unit>()
 
-        val running = async {
-            launcher.runTrackedExecution(execution, eventSink) {
-                started.complete(Unit)
-                awaitCancellation()
-            }
+        val running = launcher.launchRegistered(
+            execution = execution,
+            onCancelled = {
+                finalizer.finalizeCancelledExecutionIfNeeded(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    eventSink = eventSink,
+                )
+            },
+        ) {
+            started.complete(Unit)
+            awaitCancellation()
         }
         started.await()
         executionRepository.loseLease = true
@@ -137,7 +143,7 @@ class AgentExecutionLauncherLeaseTest {
         advanceTimeBy(1)
         runCurrent()
 
-        assertFailsWith<ExecutionCancelledException> { running.await() }
+        running.join()
         assertEquals(
             AgentExecutionStatus.CANCELLED,
             executionRepository.getByChat(chat.userId, chat.id, execution.id)?.status,
@@ -167,7 +173,6 @@ class AgentExecutionLauncherLeaseTest {
         )
         val launcher = AgentExecutionLauncher(
             executionScope = this,
-            finalizer = finalizer,
             executionRepository = executionRepository,
             clientThreadRegistry = registry,
             leaseRefreshInterval = Duration.ofMillis(1),
@@ -227,11 +232,19 @@ class AgentExecutionLauncherLeaseTest {
         )
         val started = CompletableDeferred<Unit>()
 
-        val running = async {
-            launcher.runTrackedExecution(execution, eventSink) {
-                started.complete(Unit)
-                awaitCancellation()
-            }
+        val running = launcher.launchRegistered(
+            execution = execution,
+            onCancelled = {
+                finalizer.finalizeCancelledExecutionIfNeeded(
+                    executionId = execution.id,
+                    userId = execution.userId,
+                    chatId = execution.chatId,
+                    eventSink = eventSink,
+                )
+            },
+        ) {
+            started.complete(Unit)
+            awaitCancellation()
         }
         started.await()
         executionRepository.update(

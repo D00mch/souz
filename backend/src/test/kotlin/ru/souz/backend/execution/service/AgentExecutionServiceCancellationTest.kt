@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -47,24 +48,15 @@ class AgentExecutionServiceCancellationTest {
     fun `runner cancellation marks execution cancelled`() = runTest {
         val context = cancellationTestContext()
         try {
-            val error = assertFailsWith<BackendV1Exception> {
-                context.service.executeChatTurn(
-                    userId = context.chat.userId,
-                    chatId = context.chat.id,
-                    content = "cancel turn",
-                )
-            }
-
-            val execution = assertNotNull(
-                context.executionRepository.getByChat(
-                    context.chat.userId,
-                    context.chat.id,
-                    context.executionRepository.listByChat(context.chat.userId, context.chat.id).single().id,
-                )
+            context.service.executeChatTurn(
+                userId = context.chat.userId,
+                chatId = context.chat.id,
+                content = "cancel turn",
             )
-            val eventTypes = context.eventRepository.listByChat(context.chat.userId, context.chat.id).map { it.type }
 
-            assertEquals("agent_execution_cancelled", error.code)
+            val execution = awaitExecutionStatus(context, AgentExecutionStatus.CANCELLED)
+            val eventTypes = awaitEventType(context, AgentEventType.EXECUTION_CANCELLED)
+
             assertEquals(AgentExecutionStatus.CANCELLED, execution.status)
             assertEquals(AgentEventType.EXECUTION_CANCELLED, eventTypes.last())
             assertFalse(eventTypes.contains(AgentEventType.EXECUTION_FAILED))
@@ -112,6 +104,31 @@ class AgentExecutionServiceCancellationTest {
             context.close()
         }
     }
+}
+
+private suspend fun awaitExecutionStatus(
+    context: CancellationTestContext,
+    status: AgentExecutionStatus,
+): AgentExecution {
+    repeat(500) {
+        context.executionRepository.listByChat(context.chat.userId, context.chat.id).singleOrNull()
+            ?.takeIf { it.status == status }
+            ?.let { return it }
+        delay(10)
+    }
+    error("Timed out waiting for execution status $status.")
+}
+
+private suspend fun awaitEventType(
+    context: CancellationTestContext,
+    type: AgentEventType,
+): List<AgentEventType> {
+    repeat(500) {
+        val eventTypes = context.eventRepository.listByChat(context.chat.userId, context.chat.id).map { it.type }
+        if (eventTypes.lastOrNull() == type) return eventTypes
+        delay(10)
+    }
+    error("Timed out waiting for event $type.")
 }
 
 private suspend fun cancellationTestContext(
@@ -171,7 +188,6 @@ private suspend fun cancellationTestContext(
         finalizer = finalizer,
         launcher = AgentExecutionLauncher(
             executionScope = executionScope,
-            finalizer = finalizer,
         ),
     )
     val chat = Chat(

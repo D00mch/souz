@@ -26,7 +26,8 @@ object PostgresDataSourceFactory {
             addDataSourceProperty("currentSchema", schema)
             addDataSourceProperty("ApplicationName", "souz-backend")
         }
-        return HikariDataSource(hikariConfig).also { dataSource ->
+        val dataSource = HikariDataSource(hikariConfig)
+        return initializeDataSource(dataSource) {
             Flyway.configure()
                 .dataSource(dataSource)
                 .locations("classpath:db/migration")
@@ -64,4 +65,19 @@ object PostgresDataSourceFactory {
     private fun String.sqlIdentifier(): String = "\"${replace("\"", "\"\"")}\""
 
     private const val MAX_POSTGRES_IDENTIFIER_LENGTH = 63
+}
+
+internal fun initializeDataSource(
+    dataSource: HikariDataSource,
+    initialize: (HikariDataSource) -> Unit,
+): HikariDataSource = try {
+    initialize(dataSource)
+    dataSource
+} catch (failure: Throwable) {
+    try {
+        dataSource.close()
+    } catch (closeFailure: Throwable) {
+        failure.addSuppressed(closeFailure)
+    }
+    throw failure
 }

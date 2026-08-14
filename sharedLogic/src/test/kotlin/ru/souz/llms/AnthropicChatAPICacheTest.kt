@@ -2,6 +2,7 @@ package ru.souz.llms
 
 import io.mockk.every
 import io.mockk.mockk
+import io.ktor.client.HttpClient
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import kotlin.test.Test
@@ -65,8 +66,7 @@ class AnthropicChatAPICacheTest {
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.AnthropicHaiku45
 
-        val tokenLogging = mockk<TokenLogging>(relaxed = true)
-        return AnthropicChatAPI(settingsProvider, tokenLogging)
+        return AnthropicChatAPI(settingsProvider, mockk<HttpClient>())
     }
 
     @Suppress("UNCHECKED_CAST")

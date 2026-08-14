@@ -15,24 +15,41 @@ import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
-import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
 import ru.souz.backend.agent.session.AgentSessionRepository
-import ru.souz.backend.llm.BackendLlmExecutionContext
+import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.llm.BackendExecutionLlmChatApi
+import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.anthropic.AnthropicVisionGateway
+import ru.souz.llms.codex.CodexOAuthService
+import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.local.LocalVisionGateway
+import ru.souz.llms.openai.OpenAIImageGenerationGateway
+import ru.souz.llms.openai.OpenAIVisionGateway
+import ru.souz.llms.runtime.LLMCapabilityResolver
+import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
+import ru.souz.tool.LlmBackedToolCatalog
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.web.internal.WebResearchClient
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
-class BackendConversationRuntimeFactory(
+internal class BackendConversationRuntimeFactory(
     private val baseSettingsProvider: SettingsProvider,
-    private val llmApiFactory: suspend (BackendLlmExecutionContext) -> LLMChatAPI,
+    private val credentialResolver: ProviderCredentialResolver,
+    private val retryPolicy: BackendProviderRetryPolicy,
+    private val providerHttpClients: ProviderHttpClients,
+    private val localChatApi: LocalChatAPI,
+    private val codexOAuthService: CodexOAuthService,
     private val sessionRepository: AgentSessionRepository,
     private val logObjectMapper: ObjectMapper,
     private val systemPrompt: String,
@@ -40,11 +57,14 @@ class BackendConversationRuntimeFactory(
     private val clientToolCatalog: AgentToolCatalog,
     private val skillBundleProvider: SkillBundleProvider,
     private val commandExecutor: SkillCommandExecutor,
+    private val filesToolUtil: FilesToolUtil,
+    private val webResearchClient: WebResearchClient,
     private val getKnowledgeTool: LLMToolSetup,
     private val searchKnowledgeTool: LLMToolSetup,
     private val searchMemoryTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: CoroutineScope,
+    private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
         key: AgentConversationKey,
@@ -59,29 +79,59 @@ class BackendConversationRuntimeFactory(
             useFewShotExamples = request.useFewShotExamples ?: baseSettingsProvider.useFewShotExamples,
             requestTimeoutMillis = request.requestTimeoutMillis ?: baseSettingsProvider.requestTimeoutMillis,
         )
+        val temperature = persistedSession?.temperature ?: settingsProvider.temperature
+        settingsProvider.restore(
+            temperature = temperature,
+            locale = persistedSession?.locale ?: request.locale,
+        )
+        settingsProvider.applyRequest(request = request, temperature = temperature)
+
+        val testApi = testLlmApiFactory?.invoke(settingsProvider)
+        val executionApi = BackendExecutionLlmChatApi(
+            userId = key.userId,
+            settingsProvider = settingsProvider,
+            credentialResolver = credentialResolver,
+            retryPolicy = retryPolicy,
+            httpClients = providerHttpClients,
+            localChatApi = localChatApi,
+            codexOAuthService = codexOAuthService,
+            initialUsage = initialUsage,
+            providerApiOverride = testApi?.let { api -> { api } },
+        )
         val activeClientToolCatalog = if (request.clientToolsEnabled) {
             clientToolCatalog
         } else {
             BackendNoopAgentToolCatalog
         }
+        val visionGateway = LLMCapabilityResolver(
+            settingsProvider = settingsProvider,
+            openAiGateway = OpenAIVisionGateway(settingsProvider, executionApi),
+            anthropicGateway = AnthropicVisionGateway(settingsProvider, executionApi),
+            additionalGateways = mapOf(
+                LlmProvider.LOCAL to LocalVisionGateway(settingsProvider, executionApi),
+            ),
+        )
+        val imageGenerationGateway = OpenAIImageGenerationGateway(
+            settingsProvider = settingsProvider,
+            client = providerHttpClients.openAi,
+            apiKeyProvider = { executionApi.credentialFor(LlmProvider.OPENAI) },
+        )
+        val executionLlmToolCatalog = LlmBackedToolCatalog(
+            llmApi = executionApi,
+            settingsProvider = settingsProvider,
+            filesToolUtil = filesToolUtil,
+            webResearchClient = webResearchClient,
+            visionGateway = visionGateway,
+            imageGenerationGateway = imageGenerationGateway,
+        )
         val executionToolCatalog = BackendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
+            executionLlmToolCatalog = executionLlmToolCatalog,
             enabledCompiledToolNames = request.enabledTools,
             clientToolCatalog = activeClientToolCatalog,
             includeFewShotExamples = settingsProvider.useFewShotExamples,
         )
         val requestToolsFilter = RuntimePassThroughToolsFilter
-        val delegateApi = llmApiFactory(
-            BackendLlmExecutionContext(
-                userId = key.userId,
-                executionId = request.executionId ?: key.conversationId,
-                settingsProvider = settingsProvider,
-            )
-        )
-        val usageTrackingApi = CumulativeUsageTrackingChatApi(
-            delegate = delegateApi,
-            initialUsage = initialUsage,
-        )
         val getSkillByNameTool = ToolGetSkillByName(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
@@ -125,7 +175,7 @@ class BackendConversationRuntimeFactory(
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
-            llmApi = usageTrackingApi,
+            llmApi = executionApi,
             captureScope = agentBackgroundScope,
         ).create()
         return BackendConversationRuntime(
@@ -134,7 +184,7 @@ class BackendConversationRuntimeFactory(
             settingsProvider = settingsProvider,
             contextFactory = kernel.contextFactory,
             executor = kernel.executor,
-            usageTrackingApi = usageTrackingApi,
+            executionApi = executionApi,
             persistedSession = persistedSession,
         )
     }

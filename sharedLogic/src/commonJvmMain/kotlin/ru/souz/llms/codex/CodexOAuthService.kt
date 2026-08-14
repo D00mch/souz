@@ -1,22 +1,14 @@
 package ru.souz.llms.codex
 
-import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.readValue
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.ktor.serialization.jackson.jackson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -41,7 +33,10 @@ sealed interface CodexOAuthState {
     data class Error(val message: String) : CodexOAuthState
 }
 
-class CodexOAuthService(private val settingsProvider: SettingsProvider) {
+class CodexOAuthService(
+    private val settingsProvider: SettingsProvider,
+    private val client: HttpClient,
+) {
 
     private val l = LoggerFactory.getLogger(CodexOAuthService::class.java)
 
@@ -51,24 +46,12 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
     private val refreshMutex = Mutex()
     private var flowJob: Job? = null
 
-    private val client = HttpClient(CIO) {
-        install(HttpTimeout) { requestTimeoutMillis = 30_000 }
-        install(ContentNegotiation) {
-            jackson { disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
-        }
-        install(Logging) {
-            logger = object : Logger {
-                override fun log(message: String) = l.debug(message)
-            }
-            level = LogLevel.INFO
-        }
-    }
-
     suspend fun startDeviceFlow() {
         _oauthState.value = CodexOAuthState.Idle
         try {
             // Step 1: request user code
             val userCodeResponse = client.post(USERCODE_URL) {
+                timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
                 contentType(ContentType.Application.Json)
                 setBody(mapOf("client_id" to CLIENT_ID))
             }
@@ -97,6 +80,7 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
             while (attempts < MAX_POLL_ATTEMPTS) {
                 attempts++
                 val pollResponse = client.post(TOKEN_POLL_URL) {
+                    timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
                     contentType(ContentType.Application.Json)
                     setBody(mapOf("device_auth_id" to deviceAuthId, "user_code" to userCode))
                 }
@@ -141,16 +125,13 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
         if (accessToken.isNullOrBlank()) error("Codex: not authenticated")
         val needsRefresh = expiresAt != null &&
             System.currentTimeMillis() / 1000 >= expiresAt - REFRESH_BUFFER_SECONDS
-        if (needsRefresh) {
-            refreshToken()
-        }
-        settingsProvider.codexAccessToken ?: error("Codex: token missing after refresh")
+        if (needsRefresh) refreshToken() else accessToken
     }
 
-    private suspend fun refreshToken() {
+    private suspend fun refreshToken(): String {
         val refreshToken = settingsProvider.codexRefreshToken
-            ?: run { l.warn("Codex: no refresh token, skipping refresh"); return }
-        try {
+            ?: error("Codex: refresh token is missing")
+        return try {
             val body = buildString {
                 append("grant_type=refresh_token")
                 append("&refresh_token=${refreshToken.urlEncode()}")
@@ -158,16 +139,20 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
                 append("&scope=openid%20profile%20email")
             }
             val response = client.post(OAUTH_TOKEN_URL) {
+                timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
                 contentType(ContentType.Application.FormUrlEncoded)
                 setBody(body)
             }
             if (response.status.isSuccess()) {
                 parseAndStoreTokens(response.bodyAsText())
+                    ?: error("Codex: token refresh failed")
             } else {
-                l.warn("Codex: token refresh failed: ${response.status} ${response.bodyAsText()}")
+                error("Codex: token refresh failed: ${response.status} ${response.bodyAsText()}")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            l.warn("Codex: token refresh error", e)
+            throw IllegalStateException("Codex: token refresh failed", e)
         }
     }
 
@@ -180,6 +165,7 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
             append("&code_verifier=${codeVerifier.urlEncode()}")
         }
         val response = client.post(OAUTH_TOKEN_URL) {
+            timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
             contentType(ContentType.Application.FormUrlEncoded)
             setBody(body)
         }
@@ -188,11 +174,11 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
             _oauthState.value = CodexOAuthState.Error("Token exchange failed: ${response.status} $text")
             return
         }
-        val accountId = parseAndStoreTokens(response.bodyAsText())
-        _oauthState.value = CodexOAuthState.Success(accountId = accountId ?: "")
+        parseAndStoreTokens(response.bodyAsText())
+        _oauthState.value = CodexOAuthState.Success(accountId = settingsProvider.codexAccountId ?: "")
     }
 
-    /** Parses token response, persists to SettingsProvider, returns accountId. */
+    /** Parses token response, persists to SettingsProvider, returns access token. */
     private fun parseAndStoreTokens(responseBody: String): String? {
         val data = runCatching { restJsonMapper.readValue<Map<String, Any>>(responseBody) }.getOrNull()
             ?: return null
@@ -208,7 +194,7 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
         settingsProvider.codexRefreshToken = refreshToken
         settingsProvider.codexAccountId = accountId
         settingsProvider.codexExpiresAt = System.currentTimeMillis() / 1000 + expiresIn
-        return accountId
+        return accessToken
     }
 
     private fun extractAccountId(jwt: String): String? {
@@ -239,5 +225,6 @@ class CodexOAuthService(private val settingsProvider: SettingsProvider) {
         private const val VERIFY_URL = "https://auth.openai.com/codex/device"
         private const val MAX_POLL_ATTEMPTS = 60
         private const val REFRESH_BUFFER_SECONDS = 300L
+        private const val OAUTH_REQUEST_TIMEOUT_MILLIS = 30_000L
     }
 }

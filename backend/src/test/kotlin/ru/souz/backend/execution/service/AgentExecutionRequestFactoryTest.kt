@@ -4,8 +4,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
+import io.ktor.http.HttpStatusCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -16,11 +18,13 @@ import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionAnswer
 import ru.souz.backend.options.model.OptionItem
 import ru.souz.backend.options.model.OptionKind
 import ru.souz.backend.options.model.OptionStatus
+import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
 import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
@@ -32,10 +36,41 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LocalModelAvailability
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
 class AgentExecutionRequestFactoryTest {
+    @Test
+    fun `prepare chat turn rejects a persisted Giga model`() = runTest {
+        val repository = MemoryUserSettingsRepository()
+        repository.save(UserSettings(userId = "user-a", defaultModel = LLMModel.Max))
+        val featureFlags = BackendFeatureFlags()
+        val factory = AgentExecutionRequestFactory(
+            effectiveSettingsResolver = EffectiveSettingsResolver(
+                baseSettingsProvider = TestSettingsProvider().apply { qwenChatKey = "qwen-key" },
+                userSettingsRepository = repository,
+                userProviderKeyRepository = MemoryUserProviderKeyRepository(),
+                featureFlags = featureFlags,
+                toolCatalog = BackendNoopAgentToolCatalog,
+                localModelAvailability = unavailableLocalModels(),
+            ),
+            featureFlags = featureFlags,
+        )
+
+        val error = assertFailsWith<BackendV1Exception> {
+            factory.prepareChatTurn(
+                userId = "user-a",
+                chatId = UUID.randomUUID(),
+                content = "Hello",
+            )
+        }
+
+        assertEquals(HttpStatusCode.Conflict, error.status)
+        assertEquals("unsupported_backend_model", error.code)
+        assertEquals("Giga is not supported by the backend.", error.message)
+    }
+
     @Test
     fun `prepare chat turn resolves settings builds execution metadata and runtime request`() = runTest {
         val featureFlags = BackendFeatureFlags(
@@ -44,8 +79,8 @@ class AgentExecutionRequestFactoryTest {
             toolEvents = true,
         )
         val settingsProvider = TestSettingsProvider().apply {
-            gigaChatKey = "giga-key"
-            gigaModel = LLMModel.Pro
+            qwenChatKey = "qwen-key"
+            gigaModel = LLMModel.QwenMax
             contextSize = 24_000
             temperature = 0.7f
             useStreaming = false
@@ -89,10 +124,9 @@ class AgentExecutionRequestFactoryTest {
             prepared.conversationKey,
         )
         assertEquals(mapOf("clientMessageId" to "client-42"), prepared.userMessageMetadata)
-        assertTrue(prepared.shouldReturnRunning)
 
         val effectiveSettings = prepared.effectiveSettings
-        assertEquals(LLMModel.Pro, effectiveSettings.defaultModel)
+        assertEquals(LLMModel.QwenMax, effectiveSettings.defaultModel)
         assertEquals(32_000, effectiveSettings.contextSize)
         assertEquals(0.2f, effectiveSettings.temperature)
         assertEquals(Locale.forLanguageTag("en-US"), effectiveSettings.locale)
@@ -108,8 +142,8 @@ class AgentExecutionRequestFactoryTest {
         val execution = prepared.execution
         assertEquals(AgentExecutionStatus.QUEUED, execution.status)
         assertEquals("client-42", execution.clientMessageId)
-        assertEquals(LLMModel.Pro, execution.model)
-        assertEquals(LLMModel.Pro.provider, execution.provider)
+        assertEquals(LLMModel.QwenMax, execution.model)
+        assertEquals(LLMModel.QwenMax.provider, execution.provider)
         assertEquals("32000", execution.metadata.getValue("contextSize"))
         assertEquals("0.2", execution.metadata.getValue("temperature"))
         assertEquals("en-US", execution.metadata.getValue("locale"))
@@ -123,7 +157,7 @@ class AgentExecutionRequestFactoryTest {
 
         val runtimeRequest = prepared.runtimeRequest
         assertEquals("Summarize this chat.", runtimeRequest.prompt)
-        assertEquals(LLMModel.Pro.alias, runtimeRequest.model)
+        assertEquals(LLMModel.QwenMax, runtimeRequest.model)
         assertEquals(32_000, runtimeRequest.contextSize)
         assertEquals("en-US", runtimeRequest.locale)
         assertEquals("UTC", runtimeRequest.timeZone)
@@ -153,8 +187,8 @@ class AgentExecutionRequestFactoryTest {
             status = AgentExecutionStatus.WAITING_OPTION,
             requestId = null,
             clientMessageId = null,
-            model = LLMModel.Max,
-            provider = LLMModel.Max.provider,
+            model = LLMModel.QwenMax,
+            provider = LLMModel.QwenMax.provider,
             startedAt = Instant.parse("2026-05-02T09:00:00Z"),
             finishedAt = null,
             cancelRequested = false,
@@ -200,7 +234,7 @@ class AgentExecutionRequestFactoryTest {
 
         val request = factory.createContinuationTurnRequest(execution, option)
 
-        assertEquals(LLMModel.Max.alias, request.model)
+        assertEquals(LLMModel.QwenMax, request.model)
         assertEquals(24_000, request.contextSize)
         assertEquals("ru-RU", request.locale)
         assertEquals("Europe/Moscow", request.timeZone)
@@ -226,11 +260,21 @@ class AgentExecutionRequestFactoryTest {
         assertEquals("Alpha content", selectedOptions[0]["content"].asText())
         assertEquals("because alpha", payload["freeText"].asText())
         assertEquals("web-ui", payload["metadata"]["source"].asText())
+
+        val error = assertFailsWith<BackendV1Exception> {
+            factory.createContinuationTurnRequest(
+                execution.copy(model = LLMModel.Max, provider = LlmProvider.GIGA),
+                option,
+            )
+        }
+        assertEquals(HttpStatusCode.Conflict, error.status)
+        assertEquals("unsupported_backend_model", error.code)
+        assertEquals("Giga is not supported by the backend.", error.message)
     }
 
     private fun stubResolver(): EffectiveSettingsResolver =
         EffectiveSettingsResolver(
-            baseSettingsProvider = TestSettingsProvider().apply { gigaChatKey = "giga-key" },
+            baseSettingsProvider = TestSettingsProvider().apply { qwenChatKey = "qwen-key" },
             userSettingsRepository = MemoryUserSettingsRepository(),
             userProviderKeyRepository = MemoryUserProviderKeyRepository(),
             featureFlags = BackendFeatureFlags(),

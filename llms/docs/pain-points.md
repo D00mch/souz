@@ -4,6 +4,6 @@ Read the topic files relevant to the code you plan to change in :llms. These not
 
 ## Topics
 
-No module-specific pain-point topics are currently recorded.
+- [Model resolution](pain-points/model-resolution.md) — provider-neutral embedding defaults, normalized aliases, ambiguity, and unsupported providers.
 
 When a new problem does not fit an existing topic, add a focused file under [`llms/docs/pain-points/`](pain-points/) and link it here.

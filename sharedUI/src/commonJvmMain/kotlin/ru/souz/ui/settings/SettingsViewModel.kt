@@ -906,7 +906,7 @@ class SettingsViewModel(
                 keysProvider.openaiModel = value.trim().takeUnless(String::isBlank)
                 if (wasCustomOpenAiCompatibleModelSelected && keysProvider.openaiModel.isNullOrBlank()) {
                     keysProvider.gigaModel = keysProvider.defaultLlmModel(llmBuildProfile)
-                        ?: LLMModel.OpenAIGpt5Nano
+                        ?: LLMModel.OpenAIGpt5Mini
                 }
             }
             DeferredTextSetting.SUPPORT_EMAIL -> withContext(Dispatchers.IO) {

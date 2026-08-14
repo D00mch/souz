@@ -7,7 +7,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
-import ru.souz.backend.agent.runtime.CumulativeUsageTrackingChatApi
+import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.llms.LLMResponse
@@ -20,31 +20,15 @@ internal class BackendConversationRuntime(
     private val settingsProvider: BackendConversationSettingsProvider,
     private val contextFactory: AgentContextFactory,
     private val executor: AgentExecutor,
-    private val usageTrackingApi: CumulativeUsageTrackingChatApi,
+    private val executionApi: BackendExecutionLlmChatApi,
     private val persistedSession: AgentConversationSession?,
 ) {
-    private val currentTemperature = persistedSession?.temperature ?: settingsProvider.temperature
-
-    init {
-        persistedSession?.let { session ->
-            settingsProvider.restore(
-                temperature = currentTemperature,
-                locale = session.locale,
-            )
-        }
-    }
-
     internal suspend fun execute(
         request: BackendConversationTurnRequest,
         persistSession: Boolean = true,
         eventSink: AgentRuntimeEventSink? = null,
         onActiveRunReady: suspend () -> Unit = {},
     ): BackendConversationExecution {
-        settingsProvider.applyRequest(
-            request = request,
-            temperature = currentTemperature,
-        )
-
         val seedContext = contextFactory.create(
             agentId = AgentId.SKILLS_GRAPH,
             history = persistedSession?.history.orEmpty(),
@@ -82,12 +66,12 @@ internal class BackendConversationRuntime(
 
         return BackendConversationExecution(
             output = result.output,
-            usage = usageTrackingApi.cumulativeUsage(),
+            usage = executionApi.cumulativeUsage(),
             session = nextSession,
         )
     }
 
-    internal fun currentUsage(): LLMResponse.Usage = usageTrackingApi.cumulativeUsage()
+    internal suspend fun currentUsage(): LLMResponse.Usage = executionApi.cumulativeUsage()
 
     internal suspend fun submitToActiveRun(input: String): Boolean =
         executor.submitToActiveRun(AgentId.SKILLS_GRAPH, input)

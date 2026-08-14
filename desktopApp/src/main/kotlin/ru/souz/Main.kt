@@ -16,7 +16,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.cancel
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 import org.slf4j.LoggerFactory
@@ -29,15 +28,18 @@ import ru.souz.db.SettingsProvider
 import ru.souz.di.DesktopAgentRuntimeEnvironment
 import ru.souz.di.mainDiModule
 import ru.souz.llms.local.LocalLlamaRuntime
+import ru.souz.llms.http.GigaHttpClientResource
+import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.service.mcp.McpClientManager
 import ru.souz.service.observability.DesktopStructuredLogger
 import ru.souz.ui.host.DesktopSettingsHostPreferences
 import ru.souz.ui.host.SettingsHostPreferences
 import ru.souz.ui.rememberDockWindowController
 import ru.souz.ui.macos.MacWindowVibrancy
+import ru.souz.ui.common.MAIN_WINDOW_MIN_HEIGHT_PX
+import ru.souz.ui.common.MAIN_WINDOW_MIN_WIDTH_PX
 import java.awt.Dimension
 import java.awt.SystemColor.window
-import java.util.concurrent.atomic.AtomicBoolean
 
 import androidx.compose.ui.res.painterResource as jvmPainterResource
 
@@ -60,34 +62,31 @@ fun main() {
             val mcpClientManager: McpClientManager by di.instance()
             val telegramBotController: ru.souz.service.telegram.TelegramBotController by di.instance()
             val localLlamaRuntime: LocalLlamaRuntime by di.instance()
+            val providerHttpClients: ProviderHttpClients by di.instance()
+            val gigaHttpClientResource: GigaHttpClientResource by di.instance()
             val memoryMaintenanceBackgroundRunner: ru.souz.memory.DesktopMemoryMaintenanceBackgroundRunner by di.instance()
             val log: DesktopStructuredLogger by di.instance()
             val appScope: kotlinx.coroutines.CoroutineScope by di.instance()
-            val closeServices: () -> Unit = remember(
+            val processResources = remember(
                 localLlamaRuntime,
                 mcpClientManager,
                 telegramBotController,
                 log,
                 appScope,
+                providerHttpClients,
+                gigaHttpClientResource,
             ) {
-                val closed = AtomicBoolean(false)
-                ({
-                    if (!closed.compareAndSet(false, true)) {
-                        Unit
-                    } else {
-                        startupLog.info("Shutting down services")
-                        runCatching { appScope.cancel() }
-                            .onFailure { startupLog.warn("Failed to cancel app scope: {}", it.message) }
-                        runCatching { localLlamaRuntime.close() }
-                            .onFailure { startupLog.warn("Failed to close local runtime: {}", it.message) }
-                        runCatching { mcpClientManager.close() }
-                            .onFailure { startupLog.warn("Failed to close MCP manager: {}", it.message) }
-                        runCatching { telegramBotController.close() }
-                            .onFailure { startupLog.warn("Failed to close Telegram bot controller: {}", it.message) }
-                        log.appClosed()
-                    }
-                })
+                DesktopProcessResources(
+                    applicationScope = appScope,
+                    localLlamaRuntime = localLlamaRuntime,
+                    mcpClientManager = mcpClientManager,
+                    telegramBotController = telegramBotController,
+                    providerHttpClients = providerHttpClients,
+                    gigaHttpClientResource = gigaHttpClientResource,
+                    afterClose = log::appClosed,
+                )
             }
+            val closeServices: () -> Unit = remember(processResources) { processResources::close }
 
             DisposableEffect(Unit) {
                 telegramBotController.start()
@@ -119,15 +118,13 @@ fun main() {
                 println("Failed to set dock icon: ${e.message}")
             }
 
-            val minWindowWidthPx = 860
-            val minWindowHeightPx = 680
             val maxWindowWidthPx = 896
             val maxWindowHeightPx = 700
             val initialWidth = settingsProvider.initialWindowWidthDp
-                .coerceIn(minWindowWidthPx, maxWindowWidthPx)
+                .coerceIn(MAIN_WINDOW_MIN_WIDTH_PX, maxWindowWidthPx)
                 .dp
             val initialHeight = settingsProvider.initialWindowHeightDp
-                .coerceIn(minWindowHeightPx, maxWindowHeightPx)
+                .coerceIn(MAIN_WINDOW_MIN_HEIGHT_PX, maxWindowHeightPx)
                 .dp
 
             val windowState = rememberWindowState(
@@ -153,14 +150,14 @@ fun main() {
                 alwaysOnTop = false
             ) {
                 LaunchedEffect(window) {
-                    window.minimumSize = Dimension(minWindowWidthPx, minWindowHeightPx)
+                    window.minimumSize = Dimension(MAIN_WINDOW_MIN_WIDTH_PX, MAIN_WINDOW_MIN_HEIGHT_PX)
                     window.maximumSize = Dimension(maxWindowWidthPx, maxWindowHeightPx)
-                    if (window.width !in minWindowWidthPx..maxWindowWidthPx ||
-                        window.height !in minWindowHeightPx..maxWindowHeightPx
+                    if (window.width !in MAIN_WINDOW_MIN_WIDTH_PX..maxWindowWidthPx ||
+                        window.height !in MAIN_WINDOW_MIN_HEIGHT_PX..maxWindowHeightPx
                     ) {
                         window.setSize(
-                            window.width.coerceIn(minWindowWidthPx, maxWindowWidthPx),
-                            window.height.coerceIn(minWindowHeightPx, maxWindowHeightPx)
+                            window.width.coerceIn(MAIN_WINDOW_MIN_WIDTH_PX, maxWindowWidthPx),
+                            window.height.coerceIn(MAIN_WINDOW_MIN_HEIGHT_PX, maxWindowHeightPx)
                         )
                     }
 

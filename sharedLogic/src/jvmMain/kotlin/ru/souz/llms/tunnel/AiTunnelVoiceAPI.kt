@@ -1,9 +1,7 @@
 package ru.souz.llms.tunnel
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -25,6 +23,7 @@ class MissingAiTunnelVoiceKeyException : IllegalStateException("AITUNNEL_KEY is 
 
 class AiTunnelVoiceAPI(
     private val settingsProvider: SettingsProvider,
+    private val client: HttpClient,
     private val languageProvider: SpeechRecognitionLanguageProvider = SpeechRecognitionLanguageProvider {
         SpeechRecognitionLanguage.fromLanguageCode(settingsProvider.regionProfile)
     },
@@ -50,16 +49,6 @@ class AiTunnelVoiceAPI(
             ?: System.getProperty("AITUNNEL_TRANSCRIPTION_LANGUAGE")
             ?: languageProvider.current().apiCode
 
-    private val client = HttpClient(CIO) {
-        defaultRequest {
-            header(HttpHeaders.Authorization, "Bearer $apiKey")
-            header(HttpHeaders.Accept, ContentType.Application.Json)
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = settingsProvider.requestTimeoutMillis
-        }
-    }
-
     suspend fun recognize(audio: ByteArray): String {
         val wavAudio = pcm16MonoToWav(
             rawPcm = audio,
@@ -83,7 +72,10 @@ class AiTunnelVoiceAPI(
             language = transcriptionLanguage,
         )
         val response = client.post(TRANSCRIPTIONS_URL) {
+            header(HttpHeaders.Authorization, "Bearer $apiKey")
+            header(HttpHeaders.Accept, ContentType.Application.Json)
             header(HttpHeaders.ContentType, "multipart/form-data; boundary=$boundary")
+            timeout { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
             setBody(multipartBody)
         }
 
@@ -95,8 +87,6 @@ class AiTunnelVoiceAPI(
 
         return restJsonMapper.readTree(responseBody)["text"]?.asText()?.trim().orEmpty()
     }
-
-    fun clear() = client.close()
 
     private companion object {
         const val TRANSCRIPTIONS_URL = "https://api.aitunnel.ru/v1/audio/transcriptions"

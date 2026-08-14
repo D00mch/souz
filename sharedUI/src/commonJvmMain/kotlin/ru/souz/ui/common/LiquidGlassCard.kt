@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.souz.ui.glassColors
@@ -29,6 +30,11 @@ fun RealLiquidGlassCard(
     val cardShape = RoundedCornerShape(cornerRadius)
     val borderThickness = 1.dp
     val glassColors = MaterialTheme.glassColors
+    val borderColor = if (LocalWindowInfo.current.isWindowFocused) {
+        glassColors.heroBorder
+    } else {
+        glassColors.heroBorder.copy(alpha = glassColors.heroBorder.alpha * 0.55f)
+    }
 
     Box(
         modifier = modifier.graphicsLayer {
@@ -39,29 +45,20 @@ fun RealLiquidGlassCard(
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
             drawRect(brush = Brush.verticalGradient(glassColors.heroBackground))
-            drawRect(color = glassColors.heroOverlay)
 
             val strokeWidth = borderThickness.toPx()
+            val strokeInset = strokeWidth / 2f
             drawRoundRect(
-                brush = Brush.linearGradient(
-                    colors = glassColors.heroBorder,
-                    start = Offset.Zero,
-                    end = Offset(size.width, size.height),
-                ),
-                cornerRadius = CornerRadius(cornerRadius.toPx()),
-                style = Stroke(width = strokeWidth),
-            )
-
-            val inset = strokeWidth * 1.4f
-            drawRoundRect(
-                color = glassColors.innerBorder,
-                topLeft = Offset(inset, inset),
+                color = borderColor,
+                topLeft = Offset(strokeInset, strokeInset),
                 size = Size(
-                    width = (size.width - inset * 2f).coerceAtLeast(0f),
-                    height = (size.height - inset * 2f).coerceAtLeast(0f),
+                    width = (size.width - strokeWidth).coerceAtLeast(0f),
+                    height = (size.height - strokeWidth).coerceAtLeast(0f),
                 ),
-                cornerRadius = CornerRadius((cornerRadius.toPx() - inset).coerceAtLeast(0f)),
-                style = Stroke(width = strokeWidth * 0.7f),
+                cornerRadius = CornerRadius(
+                    (cornerRadius.toPx() - strokeInset).coerceAtLeast(0f),
+                ),
+                style = Stroke(width = strokeWidth),
             )
         }
 

@@ -97,6 +97,35 @@ class EffectiveSettingsResolverTest {
     }
 
     @Test
+    fun `resolver preserves a persisted Giga model so the user can correct it`() = runTest {
+        val repository = MemoryUserSettingsRepository()
+        repository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.Max,
+            )
+        )
+
+        val effective = resolver(repository = repository).resolve("user-a")
+
+        assertEquals(LLMModel.Max, effective.defaultModel)
+    }
+
+    @Test
+    fun `resolver never selects configured Giga as the fallback for new settings`() = runTest {
+        val settingsProvider = TestSettingsProvider().apply {
+            regionProfile = "ru"
+            gigaModel = LLMModel.Max
+            gigaChatKey = "server-giga-key"
+            qwenChatKey = "server-qwen-key"
+        }
+
+        val effective = resolver(settingsProvider = settingsProvider).resolve("user-a")
+
+        assertEquals(LLMModel.QwenMax, effective.defaultModel)
+    }
+
+    @Test
     fun `resolver treats user managed key as valid provider access during normalization`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "ru"
@@ -173,14 +202,14 @@ class EffectiveSettingsResolverTest {
 
         val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
 
-        assertEquals(LLMModel.OpenAIGpt5Nano, effective.defaultModel)
+        assertEquals(LLMModel.OpenAIGpt5Mini, effective.defaultModel)
     }
 
     @Test
     fun `resolver uses configured OpenAI-compatible model as backend default`() = runTest {
         val settingsProvider = TestSettingsProvider().apply {
             regionProfile = "en"
-            gigaModel = LLMModel.OpenAIGpt5Nano
+            gigaModel = LLMModel.OpenAIGpt5Mini
             openaiKey = "server-openai-key"
             openaiModel = "provider-chat-model"
             codexAccessToken = null
@@ -228,7 +257,7 @@ class EffectiveSettingsResolverTest {
 
         val effective = resolver(settingsProvider = settingsProvider, repository = repository).resolve("user-a")
 
-        assertEquals(LLMModel.OpenAIGpt5Nano, effective.defaultModel)
+        assertEquals(LLMModel.OpenAIGpt5Mini, effective.defaultModel)
     }
 
     @Test
