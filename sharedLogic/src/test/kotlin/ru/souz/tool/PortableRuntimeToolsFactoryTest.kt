@@ -1,6 +1,7 @@
 package ru.souz.tool
 
 import io.mockk.mockk
+import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.dataAnalytics.ToolCreatePlotFromCsv
 import ru.souz.tool.dataAnalytics.excel.ExcelRead
@@ -15,7 +16,10 @@ import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
 import ru.souz.tool.files.ToolReadPdfPages
+import ru.souz.skilloauth.SkillOAuthGateway
 import ru.souz.tool.math.ToolCalculator
+import ru.souz.tool.skills.ToolConnectOAuthProvider
+import ru.souz.tool.skills.ToolSafeApiCall
 import ru.souz.tool.web.ToolWebImageSearch
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebResearchClient
@@ -27,7 +31,7 @@ class PortableRuntimeToolsFactoryTest {
     @Test
     fun `portable catalog exposes runtime safe tool categories`() {
         val filesToolUtil = mockk<FilesToolUtil>()
-        val factory = portableFactory(filesToolUtil)
+        val factory = portableFactory(filesToolUtil, gateway = mockk<SkillOAuthGateway>())
 
         val tools = factory.toolsByCategory
 
@@ -36,15 +40,26 @@ class PortableRuntimeToolsFactoryTest {
         assertEquals(emptyMap(), tools.getValue(ToolCategory.IMAGE_GENERATION))
         assertEquals(setOf("WebPageText"), tools.getValue(ToolCategory.WEB_SEARCH).keys)
         assertTrue("Calculator" in tools.getValue(ToolCategory.CALCULATOR))
+        assertTrue("ConnectOAuthProvider" in tools.getValue(ToolCategory.OAUTH))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.DATA_ANALYTICS))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.DESKTOP))
+    }
+
+    @Test
+    fun `portable catalog omits OAuth tools when no OAuth service is bound`() {
+        val filesToolUtil = mockk<FilesToolUtil>()
+        val factory = portableFactory(filesToolUtil, gateway = null)
+
+        val tools = factory.toolsByCategory
+
+        assertEquals(emptyMap(), tools.getValue(ToolCategory.OAUTH))
     }
 
     @Test
     fun `JVM catalog extends the portable catalog`() {
         val filesToolUtil = mockk<FilesToolUtil>()
         val factory = RuntimeToolsFactory(
-            portableToolsFactory = portableFactory(filesToolUtil),
+            portableToolsFactory = portableFactory(filesToolUtil, gateway = mockk<SkillOAuthGateway>()),
             toolExtractText = ToolExtractText(filesToolUtil),
             toolReadPdfPages = ToolReadPdfPages(filesToolUtil),
             toolCreatePlotFromCsv = ToolCreatePlotFromCsv(filesToolUtil),
@@ -65,8 +80,10 @@ class PortableRuntimeToolsFactoryTest {
         )
     }
 
-    private fun portableFactory(filesToolUtil: FilesToolUtil): PortableRuntimeToolsFactory {
+    private fun portableFactory(filesToolUtil: FilesToolUtil, gateway: SkillOAuthGateway?): PortableRuntimeToolsFactory {
         val webResearchClient = WebResearchClient()
+        val skillRegistryRepository = mockk<SkillRegistryRepository>()
+
         return PortableRuntimeToolsFactory(
             toolListFiles = ToolListFiles(filesToolUtil),
             toolFindInFiles = ToolFindInFiles(filesToolUtil),
@@ -78,6 +95,8 @@ class PortableRuntimeToolsFactoryTest {
             toolFindFolders = ToolFindFolders(filesToolUtil),
             toolCalculator = ToolCalculator(),
             toolWebPageText = ToolWebPageText(webResearchClient),
+            toolConnectOAuthProvider = gateway?.let { ToolConnectOAuthProvider(skillRegistryRepository, gateway = it) },
+            toolSafeApiCall = gateway?.let { ToolSafeApiCall(skillRegistryRepository, gateway = it) },
         )
     }
 }

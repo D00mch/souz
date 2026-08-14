@@ -14,6 +14,11 @@ internal object BackendHttpRoutes {
     const val CHATS = "$V1/chats"
     const val OPTIONS = "$V1/options"
 
+    // Outside /v1/ on purpose — the OAuth provider's redirect never carries our trusted-proxy
+    // headers, and RequestIdentityPlugin only guards paths under /v1/ (see security/RequestIdentity.kt),
+    // so this cannot land under /v1/.
+    const val OAUTH_CALLBACK = "/oauth/callback"
+
     private const val PROVIDER_PARAMETER = "{provider}"
     private const val CHAT_ID_PARAMETER = "{chatId}"
     private const val EXECUTION_ID_PARAMETER = "{executionId}"

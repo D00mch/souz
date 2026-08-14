@@ -409,6 +409,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
             toolFindFolders = instance(),
             toolCalculator = instance(),
             toolWebPageText = instance(),
+            // Skill OAuth needs a public HTTP callback endpoint, which only :backend exposes —
+            // desktop never binds a SkillOAuthGateway, so these tools stay absent here.
+            toolConnectOAuthProvider = null,
+            toolSafeApiCall = null,
         )
     }
     bindSingleton {

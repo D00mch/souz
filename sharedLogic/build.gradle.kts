@@ -35,6 +35,7 @@ kotlin {
             dependencies {
                 implementation(projects.agent)
                 implementation(projects.llms)
+                implementation(projects.skillOauthApi)
                 implementation(kotlin("stdlib"))
                 implementation(kotlin("reflect"))
                 implementation(libs.kotlinx.coroutines)

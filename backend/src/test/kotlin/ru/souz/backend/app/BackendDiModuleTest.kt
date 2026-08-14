@@ -103,6 +103,42 @@ class BackendDiModuleTest {
     }
 
     @Test
+    fun `backend DI resolves without the skill OAuth token key configured`() {
+        // Regression test: a real deployment crash-looped because BackendHttpDependencies is
+        // resolved eagerly at startup and used to throw via `?: error(...)` when Yandex OAuth
+        // config was absent, taking down the whole backend over an unrelated, unconfigured,
+        // non-flag-gated feature. Skill OAuth must degrade to "disabled" instead.
+        val appConfig = testAppConfig(includeSkillOAuthConfig = false)
+        val dataSource = HikariDataSource()
+        val di = testDi(appConfig, dataSource)
+
+        try {
+            val httpDependencies = di.direct.instance<BackendHttpDependencies>()
+
+            assertNull(httpDependencies.skillOAuthGatewayImpl)
+        } finally {
+            dataSource.close()
+        }
+    }
+
+    @Test
+    fun `backend DI resolves with the skill OAuth token key but no fully configured provider`() {
+        // A key with zero usable providers is just as inert as no key at all — SkillOAuthGateway
+        // must not come up promising a connection that can never succeed.
+        val appConfig = testAppConfig().copy(skillOAuthProviderCredentials = emptyMap())
+        val dataSource = HikariDataSource()
+        val di = testDi(appConfig, dataSource)
+
+        try {
+            val httpDependencies = di.direct.instance<BackendHttpDependencies>()
+
+            assertNull(httpDependencies.skillOAuthGatewayImpl)
+        } finally {
+            dataSource.close()
+        }
+    }
+
+    @Test
     fun `http dependencies include telegram binding when feature is enabled`() {
         val appConfig = testAppConfig(
             featureFlags = BackendFeatureFlags(telegramBot = true),
@@ -179,6 +215,7 @@ class BackendDiModuleTest {
     private fun testAppConfig(
         featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
         telegramTokenEncryptionKey: String? = null,
+        includeSkillOAuthConfig: Boolean = true,
     ): BackendAppConfig = BackendAppConfig(
         featureFlags = featureFlags,
         server = BackendServerConfig(
@@ -198,10 +235,24 @@ class BackendDiModuleTest {
         ),
         masterKey = "test-master-key",
         telegramTokenEncryptionKey = telegramTokenEncryptionKey,
+        skillOAuthTokenEncryptionKey = if (includeSkillOAuthConfig) TEST_SKILL_OAUTH_TOKEN_ENCRYPTION_KEY else null,
+        skillOAuthProviderCredentials = if (includeSkillOAuthConfig) {
+            mapOf(
+                "yandex" to SkillOAuthProviderCredentials(
+                    clientId = "test-yandex-client-id",
+                    clientSecret = "test-yandex-client-secret",
+                    redirectUri = "https://backend.test/oauth/callback",
+                )
+            )
+        } else {
+            emptyMap()
+        },
     )
 
     private companion object {
         const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY =
             "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+        const val TEST_SKILL_OAUTH_TOKEN_ENCRYPTION_KEY =
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     }
 }

@@ -11,6 +11,7 @@ val BACKEND_SAFE_TOOL_CATEGORIES: Set<ToolCategory> = setOf(
     ToolCategory.WEB_SEARCH,
     ToolCategory.DATA_ANALYTICS,
     ToolCategory.CALCULATOR,
+    ToolCategory.OAUTH,
 )
 
 fun backendSafeToolNames(toolCatalog: AgentToolCatalog): List<String> =

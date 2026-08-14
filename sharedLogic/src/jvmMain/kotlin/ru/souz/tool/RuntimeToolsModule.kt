@@ -101,6 +101,7 @@ class RuntimeToolsFactory(
         ToolCategory.TELEGRAM,
         ToolCategory.DESKTOP,
         ToolCategory.CALCULATOR,
+        ToolCategory.OAUTH,
         ToolCategory.HELP -> emptyList()
     }
 }

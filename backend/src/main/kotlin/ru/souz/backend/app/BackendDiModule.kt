@@ -9,6 +9,7 @@ import java.time.Clock
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.SkillToolBindingTags
@@ -84,6 +85,7 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
+import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.skills.SkillCommandExecutor
@@ -116,6 +118,8 @@ fun backendDiModule(
     import(runtimeLocalLlmDiModule())
     import(fileSystemSkillRegistryDiModule())
     import(portableSkillRuntimeToolsDiModule())
+    val skillOAuthConfig = SkillOAuthBackendConfig.from(appConfig)
+    import(skillOAuthBackendModule(skillOAuthConfig))
 
     bindSingleton { BackendApplicationScope() }
     bindSingleton<Clock> { Clock.systemUTC() }
@@ -137,10 +141,17 @@ fun backendDiModule(
     bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
     bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
     bindSingleton {
+        // Each AuthorizationCodeOAuthClient and SkillOAuthGatewayImpl owns its own Ktor CIO
+        // HttpClient (a selector-manager thread pool each); without closing them here they leak
+        // past backend shutdown.
         BackendRuntimeResources(
             cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
             closeProviderClients = { instance<ProviderHttpClients>().close() },
             closeLocalRuntime = { instance<ru.souz.llms.local.LocalLlamaRuntime>().close() },
+            closeSkillOAuthClients = {
+                skillOAuthConfig?.providers?.values.orEmpty().filterIsInstance<AutoCloseable>().forEach { it.close() }
+                instanceOrNull<SkillOAuthGatewayImpl>()?.close()
+            },
             closeDataSource = { instance<HikariDataSource>().close() },
         )
     }
@@ -345,6 +356,7 @@ fun backendDiModule(
         val userRepository = instance<UserRepository>()
         BackendHttpDependencies(
             bootstrapService = instance(),
+            skillOAuthGatewayImpl = if (skillOAuthConfig != null) instance() else null,
             onboardingService = instance(),
             userSettingsService = instance(),
             providerKeyService = instance(),
