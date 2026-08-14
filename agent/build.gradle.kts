@@ -8,6 +8,7 @@ dependencies {
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.jackson)
+    implementation(libs.jackson.dataformat.yaml)
     implementation(libs.slf4j.api)
     implementation("org.kodein.di:kodein-di:${libs.versions.kodeinDi.get()}")
 

@@ -60,6 +60,25 @@ class SkillBundleParserTest {
     }
 
     @Test
+    fun `oauthScopes inline list preserves a comma inside a quoted scope`() {
+        // Regression test: a plain split(",") turned this single scope into two
+        // ("resource" and "read") instead of preserving the comma as part of the token.
+        val manifest = SkillBundleParser.parseManifest(
+            """
+            ---
+            name: yandex-disk
+            description: reads files from Yandex Disk
+            oauthProvider: yandex
+            oauthScopes: ["resource,read", login:info]
+            ---
+            body
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("resource,read", "login:info"), manifest.oauthScopes)
+    }
+
+    @Test
     fun `oauthScopes inline empty list parses to no scopes`() {
         val manifest = SkillBundleParser.parseManifest(
             """
