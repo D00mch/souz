@@ -8,6 +8,7 @@ data class OAuthProviderCatalogEntry(
     val authorizeEndpoint: String,
     val tokenEndpoint: String,
     val allowedApiHosts: Set<String>,
+    val extraAuthorizeParams: Map<String, String> = emptyMap(),
 )
 
 /**

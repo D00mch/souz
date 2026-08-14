@@ -4,5 +4,15 @@
     "authorizeEndpoint": "https://oauth.yandex.ru/authorize",
     "tokenEndpoint": "https://oauth.yandex.ru/token",
     "allowedApiHosts": ["api.iot.yandex.net", "login.yandex.ru", "cloud-api.yandex.net"]
+  },
+  {
+    "name": "google",
+    "authorizeEndpoint": "https://accounts.google.com/o/oauth2/v2/auth",
+    "tokenEndpoint": "https://oauth2.googleapis.com/token",
+    "allowedApiHosts": ["www.googleapis.com"],
+    "extraAuthorizeParams": {
+      "access_type": "offline",
+      "prompt": "consent"
+    }
   }
 ]

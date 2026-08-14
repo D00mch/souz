@@ -47,6 +47,7 @@ class SkillOAuthBackendConfig private constructor(
                             clientSecret = credentials.clientSecret,
                             redirectUri = credentials.redirectUri,
                             allowedApiHosts = entry.allowedApiHosts,
+                            extraAuthorizeParams = entry.extraAuthorizeParams,
                         ),
                     )
                 }

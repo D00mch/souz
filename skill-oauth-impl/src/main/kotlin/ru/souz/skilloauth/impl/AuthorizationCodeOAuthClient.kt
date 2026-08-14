@@ -26,6 +26,14 @@ class AuthorizationCodeOAuthConfig(
      *  allowlist, not a pattern (e.g. "any subdomain of X") an attacker-registered host could
      *  match. */
     val allowedApiHosts: Set<String>,
+    /**
+     * Extra fixed query parameters appended to every authorize URL, verbatim — e.g. Google only
+     * reliably returns a `refresh_token` when `access_type=offline` is present, and only reissues
+     * one on a repeat consent when `prompt=consent` is also present (RFC 6749 has no standard
+     * knob for this; it's provider-specific behavior on top of the standard flow, not a reason to
+     * need a whole separate [OAuthProviderClient] implementation).
+     */
+    val extraAuthorizeParams: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -59,6 +67,9 @@ class AuthorizationCodeOAuthClient(
             append("&state=${state.encodeURLParameter()}")
             if (scopes.isNotEmpty()) {
                 append("&scope=${scopes.joinToString(" ").encodeURLParameter()}")
+            }
+            config.extraAuthorizeParams.forEach { (key, value) ->
+                append("&${key.encodeURLParameter()}=${value.encodeURLParameter()}")
             }
         }
         return "${config.authorizeEndpoint}?$query"
