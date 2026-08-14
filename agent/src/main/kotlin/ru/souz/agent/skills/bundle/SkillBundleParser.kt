@@ -143,10 +143,11 @@ object SkillBundleParser {
             val trimmed = line.trim()
             if (trimmed.isEmpty() || trimmed.startsWith("#")) return@forEach
             if (line.startsWith(" ") || line.startsWith("\t")) return@forEach
-            val separatorIndex = trimmed.indexOf(':')
+            val withoutComment = stripTrailingComment(line).trim()
+            val separatorIndex = withoutComment.indexOf(':')
             if (separatorIndex <= 0) return@forEach
-            val key = trimmed.substring(0, separatorIndex).trim()
-            val value = trimmed.substring(separatorIndex + 1).trim().trim('"', '\'')
+            val key = withoutComment.substring(0, separatorIndex).trim()
+            val value = withoutComment.substring(separatorIndex + 1).trim().trim('"', '\'')
             result[key] = value
         }
         return result
@@ -161,7 +162,7 @@ object SkillBundleParser {
         for (lineIndex in startIndex + 1 until lines.size) {
             val line = lines[lineIndex]
             if (!line.startsWith("  ")) break
-            val trimmed = line.trim()
+            val trimmed = stripTrailingComment(line).trim()
             val separatorIndex = trimmed.indexOf(':')
             if (separatorIndex <= 0) continue
             val key = trimmed.substring(0, separatorIndex).trim()

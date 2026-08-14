@@ -243,6 +243,41 @@ class SkillBundleParserTest {
     }
 
     @Test
+    fun `oauthProvider strips a trailing comment`() {
+        // Regression test: without stripping, "oauthProvider: yandex # production" stored the
+        // literal value "yandex # production", so the provider was never found by lookup.
+        val manifest = SkillBundleParser.parseManifest(
+            """
+            ---
+            name: yandex-disk
+            description: reads files from Yandex Disk
+            oauthProvider: yandex # production
+            ---
+            body
+            """.trimIndent()
+        )
+
+        assertEquals("yandex", manifest.oauthProvider)
+    }
+
+    @Test
+    fun `metadata values strip a trailing comment`() {
+        val manifest = SkillBundleParser.parseManifest(
+            """
+            ---
+            name: yandex-disk
+            description: reads files from Yandex Disk
+            metadata:
+              tier: premium # billed separately
+            ---
+            body
+            """.trimIndent()
+        )
+
+        assertEquals("premium", manifest.metadata["tier"])
+    }
+
+    @Test
     fun `oauthScopes rejects a malformed block list item`() {
         assertFailsWith<SkillBundleException> {
             SkillBundleParser.parseManifest(
