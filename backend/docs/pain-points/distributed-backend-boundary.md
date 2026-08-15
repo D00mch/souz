@@ -6,11 +6,15 @@ Backend storage is PostgreSQL-backed, but active runtime ownership is distribute
 
 Ordinary trusted-proxy HTTP executions and Telegram-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
 
+Server-managed Codex OAuth is safe for a single backend process through the process-local refresh mutex. Multi-replica deployments must keep Codex disabled unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
+
 ## Why it is fragile
 
 PostgreSQL enforces one active execution per chat. If a process-local ordinary execution is stranded in `queued`, `running`, or `cancelling`, later chat turns can be rejected as active-execution conflicts even though no runtime job exists. Treating all active statuses as crashed work is also unsafe because `waiting_option` intentionally outlives the runtime job while waiting for user input.
 
 The public WebSocket contract solves a narrower problem: live frames must reach the process that owns the active runtime registry. Its lease and recovery rules should not be read as proof that every backend entry point is horizontally distributable.
+
+Codex refresh tokens can rotate. Without database coordination, two replicas can refresh the same expired credential concurrently or interleave separate credential-field writes, leaving a mismatched token set.
 
 ## Safe-change guidance
 
@@ -19,7 +23,8 @@ The public WebSocket contract solves a narrower problem: live frames must reach 
 - Prefer a shared execution-ownership model over endpoint-specific recovery logic: `queued`, `running`, and `cancelling` should have an owner and renewable lease when a process is executing them.
 - Keep live Client-Souz frames owner-sticky while the live registry remains process-local.
 - Do not fail active ordinary executions on backend startup in a multi-replica deployment unless ownership proves the starting process is recovering only abandoned work.
+- Do not enable server-managed Codex OAuth on multiple replicas without a database-backed lock or compare-and-set path that re-reads credentials before refresh and stores the refreshed credential set atomically.
 
 ## Verification
 
-Run `./gradlew :backend:test` for changes to execution ownership or recovery. Cover ordinary HTTP execution crash recovery, Telegram-triggered execution crash recovery, Client-Souz expired lease recovery, sticky active-thread routing, cancellation races, and option resume from `waiting_option`.
+Run `./gradlew :backend:test` for changes to execution ownership or recovery. Cover ordinary HTTP execution crash recovery, Telegram-triggered execution crash recovery, Client-Souz expired lease recovery, sticky active-thread routing, cancellation races, option resume from `waiting_option`, and concurrent Codex OAuth refresh when Codex is enabled on multiple replicas.
