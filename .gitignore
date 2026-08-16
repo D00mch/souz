@@ -8,6 +8,7 @@ build/
 !**/src/test/**/build/
 sharedUI/kls_database.db
 local.properties
+.repowise/
 
 ### IntelliJ IDEA ###
 .idea/
