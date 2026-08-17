@@ -22,11 +22,8 @@ interface ChannelProvider {
 }
 
 /**
- * Aggregates all registered [ChannelProvider]s; adding a new channel type means binding one more
- * provider here. [excludeChannelId] — normally the calling tool's own conversation id — keeps the
- * "never forward a message back into its own conversation" rule in exactly one place instead of
- * each caller re-deriving and re-checking it, so a future caller can't silently reintroduce the bug
- * by forgetting the check.
+ * Aggregates registered [ChannelProvider]s. Providers list destinations; the registry may exclude
+ * the current source channel when a structured source identity is available.
  */
 class ChannelProviderRegistry(providers: List<ChannelProvider>) {
     private val providersByType: Map<String, ChannelProvider> =
