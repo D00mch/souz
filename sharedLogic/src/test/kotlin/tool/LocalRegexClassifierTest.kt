@@ -161,4 +161,18 @@ class LocalRegexClassifierTest {
         val categories = classifier.classify(body("Нужно найти подходящую библиотеку для создания презентаций")).categories
         assertEquals(ToolCategory.WEB_SEARCH, categories.first())
     }
+
+    @Test
+    fun `classifies forwarding a message to another channel`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("Перешли это в другой канал")).categories
+        assertEquals(ToolCategory.CHANNEL_MESSAGING, categories.first())
+    }
+
+    @Test
+    fun `classifies asking for available channels`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("Какие у меня есть каналы для пересылки сообщений")).categories
+        assertEquals(ToolCategory.CHANNEL_MESSAGING, categories.first())
+    }
 }

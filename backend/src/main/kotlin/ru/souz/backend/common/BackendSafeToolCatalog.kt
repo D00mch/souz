@@ -11,6 +11,7 @@ val BACKEND_SAFE_TOOL_CATEGORIES: Set<ToolCategory> = setOf(
     ToolCategory.WEB_SEARCH,
     ToolCategory.DATA_ANALYTICS,
     ToolCategory.CALCULATOR,
+    ToolCategory.CHANNEL_MESSAGING,
     ToolCategory.OAUTH,
 )
 

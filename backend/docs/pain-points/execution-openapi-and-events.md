@@ -10,7 +10,7 @@ Background execution is launched through a registered lifecycle job whose execut
 
 Each initial execution snapshots its effective compiled-tool names into execution metadata, and option continuations reuse that snapshot. One immutable request-scoped catalog applies the snapshot to compiled and execution-bound LLM tools, then merges built-in client operations only for Client-Souz executions. The skills graph uses that final catalog for inventory, lookup, and generic invocation while exposing only its fixed core tools to the model.
 
-The proxy-facing event API retains its internal durable events and live-only `message.delta`. The Client-Souz socket filters that stream to `tool.call.started` and exactly one terminal thread event. Public sequence values come from the shared chat-local `agent_events` sequence and can contain gaps caused by internal events.
+The proxy-facing event API retains its internal durable events and live-only `message.delta`. The Client-Souz socket filters that stream to `tool.call.started`, exactly one terminal thread event, and out-of-band `message.created` pushes (`executionId == null`) delivered into a chat from another of the user's channels — ordinary in-thread `message.created` stays filtered out. Public sequence values come from the shared chat-local `agent_events` sequence and can contain gaps caused by internal events.
 
 ## Why it is fragile
 
