@@ -21,10 +21,7 @@ interface ChannelProvider {
     suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult
 }
 
-/**
- * Aggregates registered [ChannelProvider]s. Providers list destinations; the registry may exclude
- * the current source channel when a structured source identity is available.
- */
+/** Aggregates registered [ChannelProvider]s. Providers list and address their own destinations. */
 class ChannelProviderRegistry(providers: List<ChannelProvider>) {
     private val providersByType: Map<String, ChannelProvider> =
         providers.associateBy { it.channelType }.also { indexed ->
@@ -33,20 +30,15 @@ class ChannelProviderRegistry(providers: List<ChannelProvider>) {
             }
         }
 
-    suspend fun listAll(userId: String, excludeChannelId: String? = null): List<ChannelDescriptor> =
-        providersByType.values.flatMap { it.listChannels(userId) }.filterNot { it.channelId == excludeChannelId }
+    suspend fun listAll(userId: String): List<ChannelDescriptor> =
+        providersByType.values.flatMap { it.listChannels(userId) }
 
     suspend fun send(
         userId: String,
         channelType: String,
         channelId: String,
         text: String,
-        excludeChannelId: String? = null,
-    ): ChannelSendResult {
-        if (excludeChannelId != null && channelId == excludeChannelId) {
-            return ChannelSendResult.Failed("Cannot forward a message to the current channel.")
-        }
-        return providersByType[channelType]?.sendMessage(userId, channelId, text)
+    ): ChannelSendResult =
+        providersByType[channelType]?.sendMessage(userId, channelId, text)
             ?: ChannelSendResult.Failed("Unknown or unsupported channel type: '$channelType'.")
-    }
 }

@@ -68,36 +68,4 @@ class ChannelProviderRegistryTest {
         assertIs<ChannelSendResult.Failed>(result)
     }
 
-    @Test
-    fun `listAll excludes the given channel id`() = runTest {
-        val telegram = FakeProvider("telegram", listOf(ChannelDescriptor("telegram", "chat-1", "Telegram")))
-        val mobile = FakeProvider("mobile_app", listOf(ChannelDescriptor("mobile_app", "chat-2", "Mobile")))
-        val registry = ChannelProviderRegistry(listOf(telegram, mobile))
-
-        val channels = registry.listAll("user-1", excludeChannelId = "chat-1")
-
-        assertEquals(setOf(ChannelDescriptor("mobile_app", "chat-2", "Mobile")), channels.toSet())
-    }
-
-    @Test
-    fun `send rejects the given channel id without calling any provider`() = runTest {
-        val telegram = FakeProvider("telegram")
-        val registry = ChannelProviderRegistry(listOf(telegram))
-
-        val result = registry.send("user-1", "telegram", "chat-1", "hi", excludeChannelId = "chat-1")
-
-        assertIs<ChannelSendResult.Failed>(result)
-        assertEquals(0, telegram.sendCalls)
-    }
-
-    @Test
-    fun `send ignores excludeChannelId when it does not match the target`() = runTest {
-        val telegram = FakeProvider("telegram")
-        val registry = ChannelProviderRegistry(listOf(telegram))
-
-        val result = registry.send("user-1", "telegram", "chat-1", "hi", excludeChannelId = "chat-2")
-
-        assertIs<ChannelSendResult.Delivered>(result)
-        assertEquals(1, telegram.sendCalls)
-    }
 }
