@@ -148,7 +148,10 @@ object LocalRegexClassifier : UserMessageClassifier {
         )
 
         ToolCategory.CHANNEL_MESSAGING -> listOf(
-            WeightedRegex(Regex("перешли (это |сообщение |резюме |сводку )?(в|на) (телеграм|другой канал|мобильн)"), 2.0),
+            // Weighted high enough to outscore TELEGRAM's own combined patterns (up to 3.5) when the
+            // destination channel happens to be Telegram — "перешли ... в телеграм" is forwarding out
+            // of the current conversation, not an in-Telegram action.
+            WeightedRegex(Regex("перешли (это |сообщение |резюме |сводку )?(в|на) (телеграм|другой канал|мобильн)"), 4.0),
             WeightedRegex(Regex("отправь .* (в|на) (другой канал|телеграм)"), 2.0),
             WeightedRegex(Regex("как(ие|ой) у меня (есть |настроен)?.*канал"), 1.5),
             WeightedRegex(Regex("список .*каналов|доступные каналы"), 1.2),

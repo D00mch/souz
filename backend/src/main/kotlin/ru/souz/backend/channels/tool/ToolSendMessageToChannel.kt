@@ -24,8 +24,7 @@ class ToolSendMessageToChannel(
         val text: String,
     )
 
-    data class SuccessOutput(val success: Boolean, val detail: String)
-    data class FailureOutput(val success: Boolean, val reason: String)
+    data class Output(val success: Boolean, val detail: String? = null, val reason: String? = null)
 
     override val name: String = "SendMessageToChannel"
     override val description: String =
@@ -59,15 +58,16 @@ class ToolSendMessageToChannel(
         if (channelType.isEmpty() || channelId.isEmpty()) {
             throw BadInputException("channelType and channelId must not be empty.")
         }
-        val currentConversationId = meta.conversationId?.takeIf { it.isNotBlank() }
-        if (channelId == currentConversationId) {
-            return restJsonMapper.writeValueAsString(
-                FailureOutput(false, "Cannot forward a message to the current channel.")
-            )
-        }
-        return when (val result = registry.send(meta.userId, channelType, channelId, text)) {
-            is ChannelSendResult.Delivered -> restJsonMapper.writeValueAsString(SuccessOutput(true, result.detail))
-            is ChannelSendResult.Failed -> restJsonMapper.writeValueAsString(FailureOutput(false, result.reason))
+        val result = registry.send(
+            userId = meta.userId,
+            channelType = channelType,
+            channelId = channelId,
+            text = text,
+            excludeChannelId = meta.conversationId?.takeIf { it.isNotBlank() },
+        )
+        return when (result) {
+            is ChannelSendResult.Delivered -> restJsonMapper.writeValueAsString(Output(success = true, detail = result.detail))
+            is ChannelSendResult.Failed -> restJsonMapper.writeValueAsString(Output(success = false, reason = result.reason))
         }
     }
 }

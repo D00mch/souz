@@ -21,12 +21,28 @@ interface ChannelProvider {
     suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult
 }
 
-/** Aggregates all registered [ChannelProvider]s; adding a new channel type means binding one more provider here. */
+/**
+ * Aggregates all registered [ChannelProvider]s; adding a new channel type means binding one more
+ * provider here. [excludeChannelId] — normally the calling tool's own conversation id — keeps the
+ * "never forward a message back into its own conversation" rule in exactly one place instead of
+ * each caller re-deriving and re-checking it, so a future caller can't silently reintroduce the bug
+ * by forgetting the check.
+ */
 class ChannelProviderRegistry(private val providers: List<ChannelProvider>) {
-    suspend fun listAll(userId: String): List<ChannelDescriptor> =
-        providers.flatMap { it.listChannels(userId) }
+    suspend fun listAll(userId: String, excludeChannelId: String? = null): List<ChannelDescriptor> =
+        providers.flatMap { it.listChannels(userId) }.filterNot { it.channelId == excludeChannelId }
 
-    suspend fun send(userId: String, channelType: String, channelId: String, text: String): ChannelSendResult =
-        providers.firstOrNull { it.supports(channelType) }?.sendMessage(userId, channelId, text)
+    suspend fun send(
+        userId: String,
+        channelType: String,
+        channelId: String,
+        text: String,
+        excludeChannelId: String? = null,
+    ): ChannelSendResult {
+        if (excludeChannelId != null && channelId == excludeChannelId) {
+            return ChannelSendResult.Failed("Cannot forward a message to the current channel.")
+        }
+        return providers.firstOrNull { it.supports(channelType) }?.sendMessage(userId, channelId, text)
             ?: ChannelSendResult.Failed("Unknown or unsupported channel type: '$channelType'.")
+    }
 }

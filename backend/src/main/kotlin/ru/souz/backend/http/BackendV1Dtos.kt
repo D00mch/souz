@@ -381,9 +381,11 @@ internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
         seq = requireNotNull(seq),
         type = type.value,
         chatId = chatId.toString(),
-        // Non-null for every thread-scoped event (tool.call.started, thread.*). Null only for the
-        // out-of-band message.created case admitted by isPublicClientEvent() below.
-        threadId = executionId?.toString(),
+        // Null only for the out-of-band message.created case admitted by isPublicClientEvent() below.
+        // Every other public event type keeps the loud requireNotNull guarantee: a producer bug that
+        // emits e.g. THREAD_COMPLETED with no executionId must fail fast, not silently ship threadId:
+        // null onto the wire for a schema that still declares it required and non-nullable.
+        threadId = if (type == AgentEventType.MESSAGE_CREATED) executionId?.toString() else requireNotNull(executionId).toString(),
         payload = payload.toTransportPayload(type),
         createdAt = createdAt.toString(),
     )

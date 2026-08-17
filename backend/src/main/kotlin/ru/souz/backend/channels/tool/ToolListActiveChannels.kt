@@ -39,9 +39,7 @@ class ToolListActiveChannels(
     override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
-        val currentConversationId = meta.conversationId?.takeIf { it.isNotBlank() }
-        val channels = registry.listAll(meta.userId)
-            .filterNot { it.channelId == currentConversationId }
+        val channels = registry.listAll(meta.userId, excludeChannelId = meta.conversationId?.takeIf { it.isNotBlank() })
             .map { ChannelJson(it.channelType, it.channelId, it.label) }
         return restJsonMapper.writeValueAsString(Output(channels))
     }

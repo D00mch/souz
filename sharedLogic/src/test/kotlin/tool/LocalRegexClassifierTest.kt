@@ -175,4 +175,11 @@ class LocalRegexClassifierTest {
         val categories = classifier.classify(body("Какие у меня есть каналы для пересылки сообщений")).categories
         assertEquals(ToolCategory.CHANNEL_MESSAGING, categories.first())
     }
+
+    @Test
+    fun `classifies forwarding to telegram as channel messaging, not telegram`() = runBlocking {
+        val classifier = LocalRegexClassifier
+        val categories = classifier.classify(body("Перешли это в телеграм")).categories
+        assertEquals(ToolCategory.CHANNEL_MESSAGING, categories.first())
+    }
 }

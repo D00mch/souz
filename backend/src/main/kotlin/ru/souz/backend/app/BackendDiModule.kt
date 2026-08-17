@@ -12,11 +12,11 @@ import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
-import ru.souz.backend.agent.runtime.conversation.BackendMergedToolCatalog
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
@@ -36,7 +36,6 @@ import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.common.BackendAvailableToolNames
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.options.service.OptionService
@@ -95,6 +94,7 @@ import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.tool.RuntimeToolsFactory
+import ru.souz.tool.composeToolCatalogs
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.skills.SkillCommandExecutor
@@ -102,6 +102,7 @@ import ru.souz.tool.web.internal.WebResearchClient
 
 private object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
+    const val MERGED_TOOL_CATALOG = "backendMergedToolCatalog"
 }
 
 /** Backend Kodein module that wires HTTP services to the shared JVM runtime. */
@@ -192,9 +193,6 @@ fun backendDiModule(
         )
     }
     bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
-    bindSingleton {
-        BackendAvailableToolNames.fromProcessCatalog(instance())
-    }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
             baseSettingsProvider = instance(),
@@ -207,7 +205,7 @@ fun backendDiModule(
             userSettingsRepository = instance(),
             userProviderKeyRepository = instance(),
             featureFlags = instance(),
-            toolCatalog = instance<BackendMergedToolCatalog>(),
+            toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             localModelAvailability = instance<LocalProviderAvailability>(),
         )
     }
@@ -251,7 +249,7 @@ fun backendDiModule(
             sessionRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
-            toolCatalog = instance<BackendMergedToolCatalog>(),
+            toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             clientToolCatalog = instance<BackendClientSkills>(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance<SkillCommandExecutor>(),
@@ -338,8 +336,8 @@ fun backendDiModule(
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
-    bindSingleton {
-        BackendMergedToolCatalog(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
+    bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
+        composeToolCatalogs(listOf(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>()))
     }
     bindSingleton {
         OptionService(
@@ -377,7 +375,7 @@ fun backendDiModule(
         BackendBootstrapService(
             settingsProvider = instance(),
             effectiveSettingsResolver = instance(),
-            toolCatalog = instance<BackendMergedToolCatalog>(),
+            toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
             featureFlags = instance(),
             localModelAvailability = instance<LocalProviderAvailability>(),
             userProviderKeyRepository = instance(),
