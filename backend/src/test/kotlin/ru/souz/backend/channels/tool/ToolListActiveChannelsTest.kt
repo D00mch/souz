@@ -11,7 +11,7 @@ import ru.souz.llms.ToolInvocationMeta
 
 class ToolListActiveChannelsTest {
     private class FakeProvider(private val channels: List<ChannelDescriptor>) : ChannelProvider {
-        override fun supports(channelType: String): Boolean = true
+        override val channelType: String = "fake"
         override suspend fun listChannels(userId: String): List<ChannelDescriptor> = channels
         override suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult =
             error("not used")

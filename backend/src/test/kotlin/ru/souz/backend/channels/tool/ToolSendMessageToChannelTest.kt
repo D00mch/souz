@@ -13,13 +13,12 @@ import ru.souz.tool.BadInputException
 
 class ToolSendMessageToChannelTest {
     private class FakeProvider(
-        private val channelType: String,
+        override val channelType: String,
         private val result: ChannelSendResult,
     ) : ChannelProvider {
         var lastCall: Triple<String, String, String>? = null
             private set
 
-        override fun supports(channelType: String): Boolean = channelType == this.channelType
         override suspend fun listChannels(userId: String): List<ChannelDescriptor> = emptyList()
         override suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult {
             lastCall = Triple(userId, channelId, text)

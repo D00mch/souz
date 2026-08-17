@@ -2,19 +2,18 @@ package ru.souz.backend.channels
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.coroutines.test.runTest
 
 class ChannelProviderRegistryTest {
     private class FakeProvider(
-        private val channelType: String,
+        override val channelType: String,
         private val channels: List<ChannelDescriptor> = emptyList(),
         private val result: ChannelSendResult = ChannelSendResult.Delivered("ok"),
     ) : ChannelProvider {
         var sendCalls: Int = 0
             private set
-
-        override fun supports(channelType: String): Boolean = channelType == this.channelType
 
         override suspend fun listChannels(userId: String): List<ChannelDescriptor> = channels
 
@@ -51,6 +50,13 @@ class ChannelProviderRegistryTest {
 
         assertEquals(0, telegram.sendCalls)
         assertEquals(1, mobile.sendCalls)
+    }
+
+    @Test
+    fun `constructor rejects duplicate channel types`() {
+        assertFailsWith<IllegalArgumentException> {
+            ChannelProviderRegistry(listOf(FakeProvider("telegram"), FakeProvider("telegram")))
+        }
     }
 
     @Test

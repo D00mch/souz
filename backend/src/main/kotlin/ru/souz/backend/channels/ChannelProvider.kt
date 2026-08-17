@@ -14,7 +14,7 @@ sealed interface ChannelSendResult {
 
 /** One implementation per channel type — see `backend/src/main/kotlin/ru/souz/backend/channels/` siblings. */
 interface ChannelProvider {
-    fun supports(channelType: String): Boolean
+    val channelType: String
 
     suspend fun listChannels(userId: String): List<ChannelDescriptor>
 
@@ -28,9 +28,16 @@ interface ChannelProvider {
  * each caller re-deriving and re-checking it, so a future caller can't silently reintroduce the bug
  * by forgetting the check.
  */
-class ChannelProviderRegistry(private val providers: List<ChannelProvider>) {
+class ChannelProviderRegistry(providers: List<ChannelProvider>) {
+    private val providersByType: Map<String, ChannelProvider> =
+        providers.associateBy { it.channelType }.also { indexed ->
+            require(indexed.size == providers.size) {
+                "Duplicate channel provider type."
+            }
+        }
+
     suspend fun listAll(userId: String, excludeChannelId: String? = null): List<ChannelDescriptor> =
-        providers.flatMap { it.listChannels(userId) }.filterNot { it.channelId == excludeChannelId }
+        providersByType.values.flatMap { it.listChannels(userId) }.filterNot { it.channelId == excludeChannelId }
 
     suspend fun send(
         userId: String,
@@ -42,7 +49,7 @@ class ChannelProviderRegistry(private val providers: List<ChannelProvider>) {
         if (excludeChannelId != null && channelId == excludeChannelId) {
             return ChannelSendResult.Failed("Cannot forward a message to the current channel.")
         }
-        return providers.firstOrNull { it.supports(channelType) }?.sendMessage(userId, channelId, text)
+        return providersByType[channelType]?.sendMessage(userId, channelId, text)
             ?: ChannelSendResult.Failed("Unknown or unsupported channel type: '$channelType'.")
     }
 }
