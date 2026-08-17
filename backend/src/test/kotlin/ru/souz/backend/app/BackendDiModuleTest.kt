@@ -33,10 +33,13 @@ import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
+import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
+import ru.souz.backend.settings.service.BackendSettingsProvider
 import ru.souz.backend.storage.postgres.PostgresAgentEventRepository
 import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
+import ru.souz.backend.storage.postgres.PostgresBackendServerPreferenceStore
 import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
@@ -71,6 +74,8 @@ class BackendDiModuleTest {
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
             assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
+            assertIs<PostgresBackendServerPreferenceStore>(di.direct.instance<BackendServerPreferenceStore>())
+            assertIs<BackendSettingsProvider>(di.direct.instance<ru.souz.db.SettingsProvider>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
             assertIs<ExecutionQuotaManager>(di.direct.instance<ExecutionQuotaManager>())
             assertIs<ProviderHttpClients>(di.direct.instance<ProviderHttpClients>())
