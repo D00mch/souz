@@ -1,6 +1,7 @@
 package ru.souz.backend.channels.tool
 
 import kotlinx.coroutines.runBlocking
+import ru.souz.backend.channels.ChannelDescriptor
 import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
@@ -14,8 +15,7 @@ class ToolListActiveChannels(
 ) : ToolSetup<ToolListActiveChannels.Input> {
     class Input
 
-    data class ChannelJson(val channelType: String, val channelId: String, val label: String)
-    data class Output(val channels: List<ChannelJson>)
+    data class Output(val channels: List<ChannelDescriptor>)
 
     override val name: String = "ListActiveChannels"
     override val description: String =
@@ -39,8 +39,6 @@ class ToolListActiveChannels(
     override fun invoke(input: Input, meta: ToolInvocationMeta): String = runBlocking { suspendInvoke(input, meta) }
 
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
-        val channels = registry.listAll(meta.userId)
-            .map { ChannelJson(it.channelType, it.channelId, it.label) }
-        return restJsonMapper.writeValueAsString(Output(channels))
+        return restJsonMapper.writeValueAsString(Output(registry.listAll(meta.userId)))
     }
 }
