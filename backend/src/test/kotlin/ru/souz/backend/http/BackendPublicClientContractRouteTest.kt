@@ -335,9 +335,7 @@ class BackendPublicClientContractRouteTest {
             val terminal = json.readTree((firstSession.incoming.receive() as Frame.Text).readText())
             assertEquals("thread.completed", terminal["type"].asText())
             withTimeout(2_000) {
-                while (context.clientThreadRegistry.contains(UUID.fromString(terminal["threadId"].asText()))) {
-                    delay(10)
-                }
+                context.clientThreadRegistry.awaitRemoved(UUID.fromString(terminal["threadId"].asText()))
             }
             firstSession.close()
             secondSession.close()
@@ -657,9 +655,7 @@ class BackendPublicClientContractRouteTest {
             assertEquals(threadId, cancelStatus["threadId"].asText())
             assertEquals("thread.cancelled", terminal["type"].asText())
             withTimeout(5_000) {
-                while (context.clientThreadRegistry.contains(UUID.fromString(threadId))) {
-                    delay(10)
-                }
+                context.clientThreadRegistry.awaitRemoved(UUID.fromString(threadId))
             }
             session.close()
         }

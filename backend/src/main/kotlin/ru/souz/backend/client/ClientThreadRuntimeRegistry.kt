@@ -37,6 +37,7 @@ internal class ClientThreadRuntimeRegistry(
         var pendingTool: PendingClientTool? = null,
         val pendingAcks: MutableMap<String, CompletableDeferred<Unit>> = linkedMapOf(),
         var terminal: Boolean = false,
+        val removed: CompletableDeferred<Unit> = CompletableDeferred(),
     )
 
     private val mutex = Mutex()
@@ -50,6 +51,12 @@ internal class ClientThreadRuntimeRegistry(
         states.isEmpty()
     }
 
+    /** Suspends until [threadId] is no longer tracked, or returns immediately if it already isn't. */
+    suspend fun awaitRemoved(threadId: UUID) {
+        val removed = mutex.withLock { states[threadId]?.removed } ?: return
+        removed.await()
+    }
+
     suspend fun register(threadId: UUID, device: ClientDevice) {
         mutex.withLock {
             states.putIfAbsent(threadId, State(latestDevice = device))
@@ -61,6 +68,7 @@ internal class ClientThreadRuntimeRegistry(
         discarded.runtimeReady.complete(Unit)
         discarded.pendingAcks.values.forEach { it.complete(Unit) }
         discarded.pendingTool?.result?.cancel()
+        discarded.removed.complete(Unit)
     }
 
     suspend fun attach(threadId: UUID, runtime: BackendConversationRuntime) {
@@ -215,6 +223,7 @@ internal class ClientThreadRuntimeRegistry(
     private fun removeIfTerminalAndIdle(threadId: UUID, state: State) {
         if (state.terminal && state.runtime == null && state.pendingTool == null && state.pendingAcks.isEmpty()) {
             states.remove(threadId)
+            state.removed.complete(Unit)
         }
     }
 
