@@ -63,7 +63,6 @@ class ToolSendMessageToChannel(
             channelType = channelType,
             channelId = channelId,
             text = text,
-            excludeChannelId = meta.conversationId?.takeIf { it.isNotBlank() },
         )
         return when (result) {
             is ChannelSendResult.Delivered -> restJsonMapper.writeValueAsString(Output(success = true, detail = result.detail))

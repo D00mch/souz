@@ -14,35 +14,31 @@ sealed interface ChannelSendResult {
 
 /** One implementation per channel type — see `backend/src/main/kotlin/ru/souz/backend/channels/` siblings. */
 interface ChannelProvider {
-    fun supports(channelType: String): Boolean
+    val channelType: String
 
     suspend fun listChannels(userId: String): List<ChannelDescriptor>
 
     suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult
 }
 
-/**
- * Aggregates all registered [ChannelProvider]s; adding a new channel type means binding one more
- * provider here. [excludeChannelId] — normally the calling tool's own conversation id — keeps the
- * "never forward a message back into its own conversation" rule in exactly one place instead of
- * each caller re-deriving and re-checking it, so a future caller can't silently reintroduce the bug
- * by forgetting the check.
- */
-class ChannelProviderRegistry(private val providers: List<ChannelProvider>) {
-    suspend fun listAll(userId: String, excludeChannelId: String? = null): List<ChannelDescriptor> =
-        providers.flatMap { it.listChannels(userId) }.filterNot { it.channelId == excludeChannelId }
+/** Aggregates registered [ChannelProvider]s. Providers list and address their own destinations. */
+class ChannelProviderRegistry(providers: List<ChannelProvider>) {
+    private val providersByType: Map<String, ChannelProvider> =
+        providers.associateBy { it.channelType }.also { indexed ->
+            require(indexed.size == providers.size) {
+                "Duplicate channel provider type."
+            }
+        }
+
+    suspend fun listAll(userId: String): List<ChannelDescriptor> =
+        providersByType.values.flatMap { it.listChannels(userId) }
 
     suspend fun send(
         userId: String,
         channelType: String,
         channelId: String,
         text: String,
-        excludeChannelId: String? = null,
-    ): ChannelSendResult {
-        if (excludeChannelId != null && channelId == excludeChannelId) {
-            return ChannelSendResult.Failed("Cannot forward a message to the current channel.")
-        }
-        return providers.firstOrNull { it.supports(channelType) }?.sendMessage(userId, channelId, text)
+    ): ChannelSendResult =
+        providersByType[channelType]?.sendMessage(userId, channelId, text)
             ?: ChannelSendResult.Failed("Unknown or unsupported channel type: '$channelType'.")
-    }
 }

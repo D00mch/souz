@@ -13,13 +13,12 @@ import ru.souz.tool.BadInputException
 
 class ToolSendMessageToChannelTest {
     private class FakeProvider(
-        private val channelType: String,
+        override val channelType: String,
         private val result: ChannelSendResult,
     ) : ChannelProvider {
         var lastCall: Triple<String, String, String>? = null
             private set
 
-        override fun supports(channelType: String): Boolean = channelType == this.channelType
         override suspend fun listChannels(userId: String): List<ChannelDescriptor> = emptyList()
         override suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult {
             lastCall = Triple(userId, channelId, text)
@@ -80,32 +79,4 @@ class ToolSendMessageToChannelTest {
         }
     }
 
-    @Test
-    fun `rejects sending to the current conversation without calling the registry`() = runTest {
-        val provider = FakeProvider("telegram", ChannelSendResult.Delivered("Sent via Telegram."))
-        val tool = ToolSendMessageToChannel(ChannelProviderRegistry(listOf(provider)))
-
-        val result = tool.suspendInvoke(
-            ToolSendMessageToChannel.Input("telegram", "chat-1", "hello"),
-            ToolInvocationMeta(userId = "user-1", conversationId = "chat-1"),
-        )
-
-        assertTrue(result.contains("\"success\":false"))
-        assertTrue(result.contains("current channel"))
-        assert(provider.lastCall == null)
-    }
-
-    @Test
-    fun `blank conversationId does not block sending`() = runTest {
-        val provider = FakeProvider("telegram", ChannelSendResult.Delivered("Sent via Telegram."))
-        val tool = ToolSendMessageToChannel(ChannelProviderRegistry(listOf(provider)))
-
-        val result = tool.suspendInvoke(
-            ToolSendMessageToChannel.Input("telegram", "chat-1", "hello"),
-            ToolInvocationMeta(userId = "user-1", conversationId = ""),
-        )
-
-        assertTrue(result.contains("\"success\":true"))
-        assert(provider.lastCall == Triple("user-1", "chat-1", "hello"))
-    }
 }
