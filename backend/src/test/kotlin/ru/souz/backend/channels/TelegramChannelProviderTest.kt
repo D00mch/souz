@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
@@ -92,6 +93,54 @@ class TelegramChannelProviderTest {
     }
 
     @Test
+    fun `listChannels excludes an archived chat, matching PublicClientChannelProvider`() = runTest {
+        val bindingRepository = MemoryTelegramBotBindingRepository()
+        val chatId = UUID.randomUUID()
+        val stored = bindingRepository.upsertForChat(userId, chatId, "tok", "hash", "secret", now = Instant.now())
+        bindingRepository.claimTelegramUser(stored.id, "secret", 1L, 999L, null, null, null, Instant.now())
+        val chatRepository = MemoryChatRepository()
+        chatRepository.create(
+            Chat(
+                id = chatId,
+                userId = userId,
+                title = "Telegram",
+                archived = true,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+                clientType = "backend",
+            )
+        )
+        val (provider, _, _) = provider(bindingRepository, chatRepository = chatRepository)
+
+        assertEquals(emptyList(), provider.listChannels(userId))
+    }
+
+    @Test
+    fun `sendMessage fails for an archived chat, matching listChannels`() = runTest {
+        val bindingRepository = MemoryTelegramBotBindingRepository()
+        val chatId = UUID.randomUUID()
+        val stored = bindingRepository.upsertForChat(userId, chatId, "tok", "hash", "secret", now = Instant.now())
+        bindingRepository.claimTelegramUser(stored.id, "secret", 1L, 999L, null, null, null, Instant.now())
+        val chatRepository = MemoryChatRepository()
+        chatRepository.create(
+            Chat(
+                id = chatId,
+                userId = userId,
+                title = "Telegram",
+                archived = true,
+                createdAt = Instant.now(),
+                updatedAt = Instant.now(),
+                clientType = "backend",
+            )
+        )
+        val (provider, _, _) = provider(bindingRepository, chatRepository = chatRepository)
+
+        val result = provider.sendMessage(userId, chatId.toString(), "hello")
+
+        assertIs<ChannelSendResult.Failed>(result)
+    }
+
+    @Test
     fun `sendMessage success sends via Telegram and persists a durable event`() = runTest {
         val bindingRepository = MemoryTelegramBotBindingRepository()
         val chatId = UUID.randomUUID()
@@ -108,6 +157,33 @@ class TelegramChannelProviderTest {
         val messages = messageRepository.list(userId, chatId, afterSeq = null, beforeSeq = null, limit = 10)
         assertEquals(ChatRole.ASSISTANT, messages.single().role)
         assertEquals(1, eventRepository.listByChat(userId, chatId).size)
+    }
+
+    @Test
+    fun `sendMessage bumps the chat's updatedAt so it resurfaces in a recency-ordered chat list`() = runTest {
+        val bindingRepository = MemoryTelegramBotBindingRepository()
+        val chatId = UUID.randomUUID()
+        val stored = bindingRepository.upsertForChat(userId, chatId, "raw-token", "hash", "secret", now = Instant.now())
+        bindingRepository.claimTelegramUser(stored.id, "secret", 1L, 999L, null, null, null, Instant.now())
+        val chatRepository = MemoryChatRepository()
+        val staleUpdatedAt = Instant.now().minusSeconds(3600)
+        chatRepository.create(
+            Chat(
+                id = chatId,
+                userId = userId,
+                title = "Telegram",
+                archived = false,
+                createdAt = staleUpdatedAt,
+                updatedAt = staleUpdatedAt,
+                clientType = "backend",
+            )
+        )
+        val (provider, _, _) = provider(bindingRepository, chatRepository = chatRepository)
+
+        provider.sendMessage(userId, chatId.toString(), "hello")
+
+        val updated = chatRepository.get(userId, chatId)
+        assertTrue(updated != null && updated.updatedAt.isAfter(staleUpdatedAt))
     }
 
     @Test

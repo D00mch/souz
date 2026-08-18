@@ -5,6 +5,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
@@ -97,6 +98,32 @@ class PublicClientChannelProviderTest {
         val payload = event.payload
         assertIs<MessageCreatedPayload>(payload)
         assertEquals("hello", payload.content)
+    }
+
+    @Test
+    fun `sendMessage bumps the chat's updatedAt so it resurfaces in a recency-ordered chat list`() = runTest {
+        val chatRepository = MemoryChatRepository()
+        val staleUpdatedAt = Instant.now().minusSeconds(3600)
+        val mobile = chat("mobile_app").copy(updatedAt = staleUpdatedAt)
+        chatRepository.create(mobile)
+        val (provider, _, _) = provider(chatRepository = chatRepository)
+
+        provider.sendMessage(userId, mobile.id.toString(), "hello")
+
+        val updated = chatRepository.get(userId, mobile.id)
+        assertTrue(updated != null && updated.updatedAt.isAfter(staleUpdatedAt))
+    }
+
+    @Test
+    fun `sendMessage fails for an archived chat, matching listChannels`() = runTest {
+        val chatRepository = MemoryChatRepository()
+        val archived = chat("mobile_app", archived = true)
+        chatRepository.create(archived)
+        val (provider, _, _) = provider(chatRepository = chatRepository)
+
+        val result = provider.sendMessage(userId, archived.id.toString(), "hello")
+
+        assertIs<ChannelSendResult.Failed>(result)
     }
 
     @Test

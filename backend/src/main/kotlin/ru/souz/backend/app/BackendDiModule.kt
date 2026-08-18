@@ -349,7 +349,11 @@ fun backendDiModule(
                 // Only an active Telegram binding actually claims the chat away from the public-client
                 // provider — a pending (not yet /start-linked) or disabled binding must not hide the
                 // chat from ListActiveChannels, since TelegramChannelProvider itself won't list it either.
-                telegramBindingRepository.getByChat(chatId)?.let { it.enabled && it.linked } == true
+                // Gated on the same flag TelegramChannelProvider's own registration is gated on below —
+                // otherwise a chat with a leftover Telegram binding would vanish from ListActiveChannels
+                // entirely if telegramBot is ever turned off after some users already linked Telegram.
+                appConfig.featureFlags.telegramBot &&
+                    telegramBindingRepository.getByChat(chatId)?.active == true
             },
         )
     }

@@ -29,6 +29,15 @@ data class TelegramBotBinding(
 ) {
     val linked: Boolean
         get() = telegramUserId != null && telegramChatId != null
+
+    /**
+     * Enabled and fully linked — the single "is this a live, usable Telegram channel" check, shared
+     * by [TelegramChannelProvider][ru.souz.backend.channels.TelegramChannelProvider]'s own listing/
+     * sending and the ownership-claim check in `BackendDiModule` so the two can't silently disagree
+     * about which chats belong to Telegram.
+     */
+    val active: Boolean
+        get() = enabled && linked
 }
 
 sealed interface TelegramUserClaimResult {

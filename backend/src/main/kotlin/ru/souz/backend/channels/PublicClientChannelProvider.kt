@@ -36,12 +36,12 @@ class PublicClientChannelProvider(
             .map { chat -> ChannelDescriptor(channelType, chat.id.toString(), chat.title ?: chat.clientType) }
 
     override suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult {
-        val chatId = runCatching { UUID.fromString(channelId) }.getOrNull()
+        val chatId = channelId.toChannelUuidOrNull()
             ?: return ChannelSendResult.Failed("Invalid channel id.")
         val chat = chatRepository.get(userId, chatId)
-            ?.takeIf { it.clientType in FORWARDABLE_CLIENT_TYPES && !isClaimedByAnotherProvider(chatId) }
+            ?.takeIf { !it.archived && it.clientType in FORWARDABLE_CLIENT_TYPES && !isClaimedByAnotherProvider(chatId) }
             ?: return ChannelSendResult.Failed("Channel not found for this user.")
-        persistChannelMessage(messageRepository, eventService, userId, chat.id, text)
+        persistChannelMessage(chatRepository, messageRepository, eventService, userId, chat.id, text)
         return ChannelSendResult.Delivered("Sent to ${chat.title ?: chat.clientType}.")
     }
 
