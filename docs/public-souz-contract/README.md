@@ -71,6 +71,7 @@ Souz frames:
 - `status` with `type = thread.status`: live-only current thread status sent after accepted `message.submit` and `thread.cancel` acknowledgements. This frame is not durable and is not replayed.
 - `event` with `type = tool.call.started`: includes `threadId`, `toolCallId`, `target`, `name`, `arguments`, optional `deviceId`, and optional `deadlineAt`.
 - terminal `event` with `type = thread.completed | thread.failed | thread.cancelled`.
+- `event` with `type = message.created` and `threadId = null`: an out-of-band message pushed into this chat's history that did not originate from a thread this client started (e.g. forwarded here from another of the user's channels). Ordinary in-thread messages are not delivered on this stream.
 
 Tool `target` is only `souz` or `client`. The connected Client side can be `backend` or `mobile_app`, but that does not create a third tool target.
 
@@ -106,6 +107,7 @@ Souz-to-Client events:
 - `ThreadCompletedEvent`: `{kind: "event", seq, type: "thread.completed", chatId, threadId, payload: {response}, createdAt}`.
 - `ThreadFailedEvent`: `{kind: "event", seq, type: "thread.failed", chatId, threadId, payload: {error}, createdAt}`.
 - `ThreadCancelledEvent`: `{kind: "event", seq, type: "thread.cancelled", chatId, threadId, payload: {reason?}, createdAt}`.
+- `MessageCreatedEvent`: `{kind: "event", seq, type: "message.created", chatId, threadId: null, payload: {messageId, seq, role, content, clientMessageId?}, createdAt}`.
 
 ## Threads
 
@@ -138,7 +140,7 @@ Tool-result acknowledgements are outside the event sequence.
 - `messages.metadata` stores accepted input sequence, source, device, request ID, and request metadata.
 - `client_requests` stores the shared message/cancel idempotency scope and original acknowledgement.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
-- `agent_events` stores replayable client tool-start and terminal events with chat-local sequence values.
+- `agent_events` stores replayable client tool-start, terminal, and out-of-band `message.created` (cross-channel push, `threadId = null`) events with chat-local sequence values.
 
 Client operations are backend-owned tool-backed Skills defined by indexed classpath `SKILL.md` resources. Their argument shapes are documented below and forwarded as generic JSON objects. All client adapters share one WebSocket transport, and each live invocation suspends until `tool.result` or its deadline:
 

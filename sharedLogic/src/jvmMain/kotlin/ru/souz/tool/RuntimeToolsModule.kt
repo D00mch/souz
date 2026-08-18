@@ -102,6 +102,7 @@ class RuntimeToolsFactory(
         ToolCategory.DESKTOP,
         ToolCategory.CALCULATOR,
         ToolCategory.OAUTH,
-        ToolCategory.HELP -> emptyList()
+        ToolCategory.HELP,
+        ToolCategory.CHANNEL_MESSAGING -> emptyList()
     }
 }
