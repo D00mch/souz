@@ -5,17 +5,17 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.chat.model.Chat
-import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.events.bus.AgentEventBus
-import ru.souz.backend.events.model.MessageCreatedPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryChatRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
 
+// Delivery mechanics (message/event persistence, chat updatedAt, session history) live in
+// ChannelDeliveryServiceTest; these tests cover only this provider's own routing/validation.
 class PublicClientChannelProviderTest {
     private val userId = "user-1"
 
@@ -34,18 +34,19 @@ class PublicClientChannelProviderTest {
 
     private fun provider(
         chatRepository: MemoryChatRepository = MemoryChatRepository(),
-        messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
-        eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
         claimed: Set<UUID> = emptySet(),
-    ): Triple<PublicClientChannelProvider, MemoryMessageRepository, MemoryAgentEventRepository> {
-        val eventService = AgentEventService(chatRepository, eventRepository, AgentEventBus())
-        val provider = PublicClientChannelProvider(
+    ): PublicClientChannelProvider {
+        val deliveryService = ChannelDeliveryService(
             chatRepository = chatRepository,
-            messageRepository = messageRepository,
-            eventService = eventService,
+            messageRepository = MemoryMessageRepository(),
+            eventService = AgentEventService(chatRepository, MemoryAgentEventRepository(), AgentEventBus()),
+            sessionRepository = InMemoryAgentSessionRepository(),
+        )
+        return PublicClientChannelProvider(
+            chatRepository = chatRepository,
+            deliveryService = deliveryService,
             isClaimedByAnotherProvider = { chatId -> chatId in claimed },
         )
-        return Triple(provider, messageRepository, eventRepository)
     }
 
     @Test
@@ -57,7 +58,7 @@ class PublicClientChannelProviderTest {
         chatRepository.create(mobile)
         chatRepository.create(backend)
         chatRepository.create(archived)
-        val (provider, _, _) = provider(chatRepository = chatRepository)
+        val provider = provider(chatRepository = chatRepository)
 
         val channels = provider.listChannels(userId)
 
@@ -71,47 +72,21 @@ class PublicClientChannelProviderTest {
         val chatRepository = MemoryChatRepository()
         val mobile = chat("mobile_app")
         chatRepository.create(mobile)
-        val (provider, _, _) = provider(chatRepository = chatRepository, claimed = setOf(mobile.id))
+        val provider = provider(chatRepository = chatRepository, claimed = setOf(mobile.id))
 
         assertEquals(emptyList(), provider.listChannels(userId))
     }
 
     @Test
-    fun `sendMessage persists an assistant message and a durable message-created event`() = runTest {
+    fun `sendMessage delivers to an owned unarchived chat`() = runTest {
         val chatRepository = MemoryChatRepository()
         val mobile = chat("mobile_app")
         chatRepository.create(mobile)
-        val (provider, messageRepository, eventRepository) = provider(chatRepository = chatRepository)
+        val provider = provider(chatRepository = chatRepository)
 
         val result = provider.sendMessage(userId, mobile.id.toString(), "hello")
 
         assertIs<ChannelSendResult.Delivered>(result)
-        val messages = messageRepository.list(userId, mobile.id, afterSeq = null, beforeSeq = null, limit = 10)
-        assertEquals(1, messages.size)
-        assertEquals(ChatRole.ASSISTANT, messages.single().role)
-        assertEquals("hello", messages.single().content)
-
-        val events = eventRepository.listByChat(userId, mobile.id)
-        assertEquals(1, events.size)
-        val event = events.single()
-        assertEquals(null, event.executionId)
-        val payload = event.payload
-        assertIs<MessageCreatedPayload>(payload)
-        assertEquals("hello", payload.content)
-    }
-
-    @Test
-    fun `sendMessage bumps the chat's updatedAt so it resurfaces in a recency-ordered chat list`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val staleUpdatedAt = Instant.now().minusSeconds(3600)
-        val mobile = chat("mobile_app").copy(updatedAt = staleUpdatedAt)
-        chatRepository.create(mobile)
-        val (provider, _, _) = provider(chatRepository = chatRepository)
-
-        provider.sendMessage(userId, mobile.id.toString(), "hello")
-
-        val updated = chatRepository.get(userId, mobile.id)
-        assertTrue(updated != null && updated.updatedAt.isAfter(staleUpdatedAt))
     }
 
     @Test
@@ -119,7 +94,7 @@ class PublicClientChannelProviderTest {
         val chatRepository = MemoryChatRepository()
         val archived = chat("mobile_app", archived = true)
         chatRepository.create(archived)
-        val (provider, _, _) = provider(chatRepository = chatRepository)
+        val provider = provider(chatRepository = chatRepository)
 
         val result = provider.sendMessage(userId, archived.id.toString(), "hello")
 
@@ -128,9 +103,7 @@ class PublicClientChannelProviderTest {
 
     @Test
     fun `sendMessage fails for an unknown chat`() = runTest {
-        val (provider, _, _) = provider()
-
-        val result = provider.sendMessage(userId, UUID.randomUUID().toString(), "hello")
+        val result = provider().sendMessage(userId, UUID.randomUUID().toString(), "hello")
 
         assertIs<ChannelSendResult.Failed>(result)
     }
@@ -140,7 +113,7 @@ class PublicClientChannelProviderTest {
         val chatRepository = MemoryChatRepository()
         val mobile = chat("mobile_app")
         chatRepository.create(mobile)
-        val (provider, _, _) = provider(chatRepository = chatRepository, claimed = setOf(mobile.id))
+        val provider = provider(chatRepository = chatRepository, claimed = setOf(mobile.id))
 
         val result = provider.sendMessage(userId, mobile.id.toString(), "hello")
 
@@ -152,7 +125,7 @@ class PublicClientChannelProviderTest {
         val chatRepository = MemoryChatRepository()
         val unknown = chat("some_made_up_type")
         chatRepository.create(unknown)
-        val (provider, _, _) = provider(chatRepository = chatRepository)
+        val provider = provider(chatRepository = chatRepository)
 
         assertEquals(emptyList(), provider.listChannels(userId))
     }
@@ -162,7 +135,7 @@ class PublicClientChannelProviderTest {
         val chatRepository = MemoryChatRepository()
         val unknown = chat("some_made_up_type")
         chatRepository.create(unknown)
-        val (provider, _, _) = provider(chatRepository = chatRepository)
+        val provider = provider(chatRepository = chatRepository)
 
         val result = provider.sendMessage(userId, unknown.id.toString(), "hello")
 

@@ -32,6 +32,11 @@ class MemoryChatRepository(
         chats.values.firstOrNull { it.id == chatId }
     }
 
+    override suspend fun getByIds(chatIds: List<UUID>): List<Chat> = mutex.withLock {
+        val ids = chatIds.toSet()
+        chats.values.filter { it.id in ids }
+    }
+
     override suspend fun findByRequestId(userId: String, requestId: String): Chat? = mutex.withLock {
         chats.values.firstOrNull { it.userId == userId && it.requestId == requestId }
     }

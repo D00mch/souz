@@ -2,29 +2,19 @@ package ru.souz.backend.channels
 
 import java.util.UUID
 import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.client.supportedClientTypes
-import ru.souz.backend.events.service.AgentEventService
 
 /**
- * Channel provider for chats reached through the public Client–Souz WebSocket contract
- * (`mobile_app` and future WS-onboarded `clientType`s, as declared by [supportedClientTypes]).
- * `"backend"` is the type used for the agent's own first-party sessions and is deliberately
- * excluded — it is not a forwardable channel. Deriving the allowlist from [supportedClientTypes]
- * (rather than "anything but backend") means a genuinely unknown/mistyped channelType is rejected
- * instead of being silently routed here and matched against a chat whose real clientType differs.
- *
- * [ChannelProviderRegistry] dispatches by a single [ChannelProvider.channelType] value per
- * provider, and this one provider covers every forwardable public client type — so the
- * [ChannelDescriptor]s it returns always report the provider's own [channelType] ("public_client"),
- * not the chat's raw wire `clientType` (kept only in the label, for the user/LLM to tell chats
- * apart). Reporting the real `clientType` here instead would make `SendMessageToChannel` for that
- * channel fail to route back to this provider through the registry's type-keyed dispatch.
+ * Forwards to chats reached over the public Client–Souz WebSocket contract (`mobile_app` and
+ * future WS-onboarded types, per [supportedClientTypes] minus `"backend"`, the agent's own
+ * first-party session type). Reports its own fixed [channelType] on every descriptor rather than
+ * the chat's raw `clientType` (kept only in the label) — [ChannelProviderRegistry] dispatches
+ * `send()` by a single channelType per provider, so the real clientType would fail to route back
+ * here.
  */
 class PublicClientChannelProvider(
     private val chatRepository: ChatRepository,
-    private val messageRepository: MessageRepository,
-    private val eventService: AgentEventService,
+    private val deliveryService: ChannelDeliveryService,
     /** True if [chatId] is already advertised by a more specific provider (e.g. Telegram). */
     private val isClaimedByAnotherProvider: suspend (chatId: UUID) -> Boolean,
 ) : ChannelProvider {
@@ -38,10 +28,10 @@ class PublicClientChannelProvider(
     override suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult {
         val chatId = channelId.toChannelUuidOrNull()
             ?: return ChannelSendResult.Failed("Invalid channel id.")
-        val chat = chatRepository.get(userId, chatId)
-            ?.takeIf { !it.archived && it.clientType in FORWARDABLE_CLIENT_TYPES && !isClaimedByAnotherProvider(chatId) }
+        val chat = deliveryService.resolveTarget(userId, chatId)
+            ?.takeIf { it.clientType in FORWARDABLE_CLIENT_TYPES && !isClaimedByAnotherProvider(chatId) }
             ?: return ChannelSendResult.Failed("Channel not found for this user.")
-        persistChannelMessage(chatRepository, messageRepository, eventService, userId, chat.id, text)
+        deliveryService.deliver(userId, chat.id, text)
         return ChannelSendResult.Delivered("Sent to ${chat.title ?: chat.clientType}.")
     }
 

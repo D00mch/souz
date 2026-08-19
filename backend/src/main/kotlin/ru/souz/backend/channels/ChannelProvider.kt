@@ -1,9 +1,5 @@
 package ru.souz.backend.channels
 
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-
 /** A user-facing communication channel a message can be forwarded to (Telegram, a public-client chat, ...). */
 data class ChannelDescriptor(
     val channelType: String,
@@ -34,11 +30,8 @@ class ChannelProviderRegistry(providers: List<ChannelProvider>) {
             }
         }
 
-    suspend fun listAll(userId: String): List<ChannelDescriptor> = coroutineScope {
-        // Each provider does its own independent I/O — run them concurrently rather than awaiting
-        // one provider's listChannels before starting the next.
-        providersByType.values.map { provider -> async { provider.listChannels(userId) } }.awaitAll().flatten()
-    }
+    suspend fun listAll(userId: String): List<ChannelDescriptor> =
+        providersByType.values.flatMap { it.listChannels(userId) }
 
     suspend fun send(
         userId: String,

@@ -62,6 +62,22 @@ class PostgresChatRepository(
         }
     }
 
+    override suspend fun getByIds(chatIds: List<UUID>): List<Chat> {
+        if (chatIds.isEmpty()) return emptyList()
+        return dataSource.read { connection ->
+            connection.prepareStatement("select * from chats where id = any(?)").use { statement ->
+                statement.setArray(1, connection.createArrayOf("uuid", chatIds.toTypedArray()))
+                statement.executeQuery().use { resultSet ->
+                    buildList {
+                        while (resultSet.next()) {
+                            add(resultSet.toChat())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override suspend fun findByRequestId(userId: String, requestId: String): Chat? = dataSource.read { connection ->
         connection.prepareStatement(
             "select * from chats where user_id = ? and request_id = ?"
