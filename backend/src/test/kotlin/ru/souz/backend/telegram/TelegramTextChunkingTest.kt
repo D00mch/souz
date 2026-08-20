@@ -6,13 +6,6 @@ import kotlin.test.assertTrue
 
 class TelegramTextChunkingTest {
     @Test
-    fun `text within the limit is not split`() {
-        val text = "a".repeat(100)
-
-        assertEquals(listOf(text), telegramTextChunks(text, maxLength = 4_096))
-    }
-
-    @Test
     fun `text exactly at the limit is not split`() {
         val text = "a".repeat(50)
 

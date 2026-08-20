@@ -1,6 +1,8 @@
 package ru.souz.backend.channels
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
@@ -44,24 +46,27 @@ class TelegramChannelProvider(
             return ChannelSendResult.Failed("Telegram delivery failed: ${e.message}")
         }
         val chunks = telegramTextChunks(text)
-        var sentCount = 0
-        for (chunk in chunks) {
-            try {
+        val sentChunks = mutableListOf<String>()
+        val failure = try {
+            for (chunk in chunks) {
                 telegramBotApi.sendMessage(token, telegramChatId, chunk)
-                sentCount += 1
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Chunks already sent can't be un-sent — persist what actually reached Telegram.
-                if (sentCount > 0) {
-                    deliveryService.deliver(userId, binding.chatId, chunks.take(sentCount).joinToString(""))
-                }
-                return ChannelSendResult.Failed(
-                    "Telegram delivery failed after $sentCount/${chunks.size} part(s): ${e.message}"
-                )
+                sentChunks += chunk
+            }
+            null
+        } catch (e: Exception) {
+            e
+        }
+        if (sentChunks.isNotEmpty()) {
+            withContext(NonCancellable) {
+                deliveryService.deliver(userId, binding.chatId, sentChunks.joinToString(""))
             }
         }
-        deliveryService.deliver(userId, binding.chatId, text)
-        return ChannelSendResult.Delivered("Sent via Telegram.")
+        return when (failure) {
+            null -> ChannelSendResult.Delivered("Sent via Telegram.")
+            is CancellationException -> throw failure
+            else -> ChannelSendResult.Failed(
+                "Telegram delivery failed after ${sentChunks.size}/${chunks.size} part(s): ${failure.message}"
+            )
+        }
     }
 }

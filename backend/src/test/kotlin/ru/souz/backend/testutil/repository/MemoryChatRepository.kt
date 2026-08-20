@@ -55,9 +55,10 @@ class MemoryChatRepository(
             .toList()
     }
 
-    override suspend fun update(chat: Chat): Chat = mutex.withLock {
-        chats[ChatKey(chat.userId, chat.id)] = chat
-        chat
+    override suspend fun touchUpdatedAt(userId: String, chatId: UUID, updatedAt: Instant) = mutex.withLock {
+        val key = ChatKey(userId, chatId)
+        val current = chats[key] ?: return@withLock
+        chats[key] = current.copy(updatedAt = maxOf(current.updatedAt, updatedAt))
     }
 
     override suspend fun updateTitle(

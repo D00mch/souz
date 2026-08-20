@@ -10,7 +10,6 @@ plugins {
     alias(libs.plugins.ktor) apply false
     alias(libs.plugins.composeMultiplatform) apply false
     alias(libs.plugins.composeCompiler) apply false
-    alias(libs.plugins.testRetry) apply false
 }
 
 val souzJvmToolchainVersion = 21

@@ -88,12 +88,17 @@ internal class BackendConversationRuntimeFactory(
             locale = persistedSession?.locale ?: request.locale,
         )
         settingsProvider.applyRequest(request = request, temperature = temperature)
-        val pendingMessages = messageRepository.list(
-            userId = key.userId,
-            chatId = UUID.fromString(key.conversationId),
-            afterSeq = persistedSession?.basedOnMessageSeq?.takeIf { it > 0L },
-            limit = MessageRepository.MAX_LIMIT,
-        )
+        val basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L
+        val pendingMessages = if (request.inputMessageSeq == basedOnMessageSeq + 1L) {
+            emptyList()
+        } else {
+            messageRepository.list(
+                userId = key.userId,
+                chatId = UUID.fromString(key.conversationId),
+                afterSeq = basedOnMessageSeq.takeIf { it > 0L },
+                limit = MessageRepository.MAX_LIMIT,
+            )
+        }
 
         val testApi = testLlmApiFactory?.invoke(settingsProvider)
         val executionApi = BackendExecutionLlmChatApi(

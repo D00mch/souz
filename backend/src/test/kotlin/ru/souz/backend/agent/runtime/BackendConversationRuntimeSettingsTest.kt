@@ -1,6 +1,8 @@
 package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.mockk.coVerify
+import io.mockk.mockk
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
@@ -24,7 +26,9 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.conversation.BackendExecutionToolCatalog
 import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
+import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
+import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -40,6 +44,26 @@ import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendConversationRuntimeSettingsTest {
+    @Test
+    fun `contiguous input skips the pending message query`() = runTest {
+        val messageRepository = mockk<MessageRepository>(relaxed = true)
+        val api = ReplyingChatApi()
+        val request = turnRequest().copy(inputMessageSeq = 1L)
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            messageRepository = messageRepository,
+        )
+
+        val execution = runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        coVerify(exactly = 0) { messageRepository.list(any(), any(), any(), any(), any()) }
+        assertEquals(1L, execution.session.basedOnMessageSeq)
+    }
+
     @Test
     fun `runtime factory applies request timeout to request scoped llm settings provider`() = runTest {
         val capturedTimeouts = mutableListOf<Long>()
@@ -317,12 +341,13 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.db.SettingsProvider) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
-    messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
+    sessionRepository: AgentSessionRepository = InMemoryAgentSessionRepository(),
+    messageRepository: MessageRepository = MemoryMessageRepository(),
 ): BackendConversationRuntimeFactory =
     testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = llmApiFactory,
-        sessionRepository = InMemoryAgentSessionRepository(),
+        sessionRepository = sessionRepository,
         messageRepository = messageRepository,
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "backend test prompt",

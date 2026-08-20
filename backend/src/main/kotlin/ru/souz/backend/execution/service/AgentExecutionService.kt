@@ -58,7 +58,7 @@ class AgentExecutionService internal constructor(
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
     ): SendMessageResult = supervisorScope {
-        val chat = requireOwnedChat(userId, chatId)
+        requireOwnedChat(userId, chatId)
         val prepared = requestFactory.prepareChatTurn(
             userId = userId,
             chatId = chatId,
@@ -108,7 +108,7 @@ class AgentExecutionService internal constructor(
                 content = content,
                 metadata = prepared.userMessageMetadata,
             )
-            chatRepository.update(chat.copy(updatedAt = userMessage.createdAt))
+            chatRepository.touchUpdatedAt(userId, chatId, userMessage.createdAt)
 
             val runningExecution = executionRepository.update(
                 queuedExecution.copy(
@@ -133,10 +133,9 @@ class AgentExecutionService internal constructor(
             eventSink.emitExecutionStarted(runningExecution)
 
             launchExecution(
-                chat = chat,
                 execution = runningExecution,
                 conversationKey = prepared.conversationKey,
-                turnRequest = prepared.runtimeRequest,
+                turnRequest = prepared.runtimeRequest.copy(inputMessageSeq = userMessage.seq),
                 eventSink = eventSink,
             )
 
@@ -192,7 +191,6 @@ class AgentExecutionService internal constructor(
     }
 
     private suspend fun launchExecution(
-        chat: Chat,
         execution: AgentExecution,
         conversationKey: AgentConversationKey,
         turnRequest: BackendConversationTurnRequest,
@@ -211,7 +209,6 @@ class AgentExecutionService internal constructor(
         ) {
             try {
                 finalizer.runExecution(
-                    chat = chat,
                     execution = execution,
                     conversationKey = conversationKey,
                     turnRequest = turnRequest,
@@ -228,7 +225,7 @@ class AgentExecutionService internal constructor(
         if (currentExecution.status != AgentExecutionStatus.WAITING_OPTION) {
             throw invalidV1Request("Execution is not waiting for an option.")
         }
-        val chat = requireOwnedChat(option.userId, option.chatId)
+        requireOwnedChat(option.userId, option.chatId)
         val runningExecution = executionRepository.update(
             currentExecution.copy(
                 status = AgentExecutionStatus.RUNNING,
@@ -266,7 +263,6 @@ class AgentExecutionService internal constructor(
             toolEventsEnabled = prepared.toolEventsEnabled,
         )
         launchExecution(
-            chat = chat,
             execution = runningExecution,
             conversationKey = prepared.conversationKey,
             turnRequest = prepared.runtimeRequest,

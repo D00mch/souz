@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -44,31 +45,7 @@ class ChannelDeliveryServiceTest {
     )
 
     @Test
-    fun `resolveTarget returns null for a missing chat`() = runTest {
-        val result = service().resolveTarget(userId, UUID.randomUUID())
-        assertNull(result)
-    }
-
-    @Test
-    fun `resolveTarget returns null for an archived chat`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val archived = chat(archived = true)
-        chatRepository.create(archived)
-
-        assertNull(service(chatRepository).resolveTarget(userId, archived.id))
-    }
-
-    @Test
-    fun `resolveTarget returns the chat when owned and unarchived`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val owned = chat()
-        chatRepository.create(owned)
-
-        assertEquals(owned, service(chatRepository).resolveTarget(userId, owned.id))
-    }
-
-    @Test
-    fun `resolveTargets excludes missing, archived, and unowned chats`() = runTest {
+    fun `resolve targets require an owned unarchived chat`() = runTest {
         val chatRepository = MemoryChatRepository()
         val owned = chat()
         val archived = chat(archived = true)
@@ -77,21 +54,27 @@ class ChannelDeliveryServiceTest {
         chatRepository.create(archived)
         chatRepository.create(otherUsers)
         val missingId = UUID.randomUUID()
+        val deliveryService = service(chatRepository)
 
-        val result = service(chatRepository).resolveTargets(
-            userId,
-            listOf(owned.id, archived.id, otherUsers.id, missingId),
+        assertEquals(owned, deliveryService.resolveTarget(userId, owned.id))
+        assertNull(deliveryService.resolveTarget(userId, archived.id))
+        assertNull(deliveryService.resolveTarget(userId, otherUsers.id))
+        assertNull(deliveryService.resolveTarget(userId, missingId))
+        assertEquals(
+            mapOf(owned.id to owned),
+            deliveryService.resolveTargets(userId, listOf(owned.id, archived.id, otherUsers.id, missingId)),
         )
-
-        assertEquals(mapOf(owned.id to owned), result)
     }
 
     @Test
-    fun `deliver appends an assistant message, a durable event, and bumps chat updatedAt`() = runTest {
+    fun `deliver persists the message without overwriting concurrent chat changes`() = runTest {
         val chatRepository = MemoryChatRepository()
         val staleUpdatedAt = Instant.now().minusSeconds(3600)
+        val concurrentUpdatedAt = Instant.now().minusSeconds(60)
         val target = chat().copy(updatedAt = staleUpdatedAt)
         chatRepository.create(target)
+        chatRepository.updateTitle(userId, target.id, "Renamed", concurrentUpdatedAt)
+        chatRepository.updateArchived(userId, target.id, archived = true, updatedAt = concurrentUpdatedAt)
         val messageRepository = MemoryMessageRepository()
         val eventRepository = MemoryAgentEventRepository()
 
@@ -108,7 +91,9 @@ class ChannelDeliveryServiceTest {
         assertEquals(null, events.single().executionId)
         assertEquals("hello", (events.single().payload as MessageCreatedPayload).content)
 
-        val updated = chatRepository.get(userId, target.id)
-        assertTrue(updated != null && updated.updatedAt.isAfter(staleUpdatedAt))
+        val updated = assertNotNull(chatRepository.get(userId, target.id))
+        assertTrue(updated.updatedAt.isAfter(staleUpdatedAt))
+        assertEquals("Renamed", updated.title)
+        assertEquals(true, updated.archived)
     }
 }

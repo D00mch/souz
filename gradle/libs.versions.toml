@@ -34,7 +34,6 @@ hikari = "5.1.0"
 postgresql = "42.7.4"
 re2j = "1.8"
 testcontainers = "1.20.4"
-testRetry = "1.6.4"
 
 
 [libraries]
@@ -116,4 +115,3 @@ composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "k
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
-testRetry = { id = "org.gradle.test-retry", version.ref = "testRetry" }
