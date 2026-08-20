@@ -5,12 +5,13 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.client.supportedClientTypes
 
 /**
- * Forwards to chats reached over the public Client–Souz WebSocket contract (`mobile_app` and
- * future WS-onboarded types, per [supportedClientTypes] minus `"backend"`, the agent's own
- * first-party session type). Reports its own fixed [channelType] on every descriptor rather than
- * the chat's raw `clientType` (kept only in the label) — [ChannelProviderRegistry] dispatches
- * `send()` by a single channelType per provider, so the real clientType would fail to route back
- * here.
+ * Forwards to chats reached over the public Client–Souz WebSocket contract, covering every
+ * `clientType` in [supportedClientTypes] (`backend`, `mobile_app`, and future WS-onboarded types
+ * alike) not already claimed by a more specific provider — registered last in
+ * [ChannelProviderRegistry] as the catch-all fallback. Reports its own fixed [channelType] on
+ * every descriptor rather than the chat's raw `clientType` (kept only in the label) —
+ * [ChannelProviderRegistry] dispatches `send()` by a single channelType per provider, so the real
+ * clientType would fail to route back here.
  */
 class PublicClientChannelProvider(
     private val chatRepository: ChatRepository,
@@ -22,14 +23,14 @@ class PublicClientChannelProvider(
 
     override suspend fun listChannels(userId: String): List<ChannelDescriptor> =
         chatRepository.list(userId, includeArchived = false)
-            .filter { it.clientType in FORWARDABLE_CLIENT_TYPES && !isClaimedByAnotherProvider(it.id) }
+            .filter { it.clientType in supportedClientTypes && !isClaimedByAnotherProvider(it.id) }
             .map { chat -> ChannelDescriptor(channelType, chat.id.toString(), chat.title ?: chat.clientType) }
 
     override suspend fun sendMessage(userId: String, channelId: String, text: String): ChannelSendResult {
         val chatId = channelId.toChannelUuidOrNull()
             ?: return ChannelSendResult.Failed("Invalid channel id.")
         val chat = deliveryService.resolveTarget(userId, chatId)
-            ?.takeIf { it.clientType in FORWARDABLE_CLIENT_TYPES && !isClaimedByAnotherProvider(chatId) }
+            ?.takeIf { it.clientType in supportedClientTypes && !isClaimedByAnotherProvider(chatId) }
             ?: return ChannelSendResult.Failed("Channel not found for this user.")
         deliveryService.deliver(userId, chat.id, text)
         return ChannelSendResult.Delivered("Sent to ${chat.title ?: chat.clientType}.")
@@ -37,7 +38,5 @@ class PublicClientChannelProvider(
 
     private companion object {
         const val CHANNEL_TYPE = "public_client"
-        const val BACKEND_CLIENT_TYPE = "backend"
-        val FORWARDABLE_CLIENT_TYPES: Set<String> = supportedClientTypes - BACKEND_CLIENT_TYPE
     }
 }

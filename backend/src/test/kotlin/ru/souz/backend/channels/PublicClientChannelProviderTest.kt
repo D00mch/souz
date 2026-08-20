@@ -48,7 +48,7 @@ class PublicClientChannelProviderTest {
     }
 
     @Test
-    fun `listChannels excludes backend and archived chats`() = runTest {
+    fun `listChannels includes backend chats but excludes archived chats`() = runTest {
         val chatRepository = MemoryChatRepository()
         val mobile = chat("mobile_app")
         val backend = chat("backend")
@@ -62,7 +62,13 @@ class PublicClientChannelProviderTest {
 
         // Reports the provider's own channelType, not the chat's raw clientType — SendMessageToChannel
         // must be able to route back to this provider through ChannelProviderRegistry's type-keyed dispatch.
-        assertEquals(listOf(ChannelDescriptor(provider.channelType, mobile.id.toString(), "Mobile")), channels)
+        assertEquals(
+            setOf(
+                ChannelDescriptor(provider.channelType, mobile.id.toString(), "Mobile"),
+                ChannelDescriptor(provider.channelType, backend.id.toString(), "Mobile"),
+            ),
+            channels.toSet(),
+        )
     }
 
     @Test

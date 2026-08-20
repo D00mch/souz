@@ -55,3 +55,4 @@ bin/
 /third_party/llama.cpp/
 /native/llama-bridge/build-*/
 hs_err_pid*.log
+.claude/
