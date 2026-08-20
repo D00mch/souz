@@ -21,7 +21,10 @@ import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.channels.ChannelProviderRegistry
+import ru.souz.backend.channels.PublicClientChannelProvider
+import ru.souz.backend.channels.TelegramChannelProvider
 import ru.souz.backend.channels.tool.BackendChannelToolCatalog
 import ru.souz.backend.channels.tool.ToolListActiveChannels
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
@@ -247,6 +250,7 @@ fun backendDiModule(
             localChatApi = instance<LocalChatAPI>(),
             codexOAuthService = instance<CodexOAuthService>(),
             sessionRepository = instance(),
+            messageRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
@@ -326,12 +330,43 @@ fun backendDiModule(
                 maxConcurrency = appConfig.telegramPollingMaxConcurrency,
             )
         }
+        bindSingleton {
+            TelegramChannelProvider(
+                bindingRepository = instance(),
+                deliveryService = instance(),
+                telegramBotApi = instance(),
+                tokenCrypto = instance(),
+            )
+        }
     }
     bindSingleton {
-        // No providers yet — real channels (Telegram, public-client, ...) land in a follow-up PR.
-        // The tools are safe to expose as-is: ListActiveChannels returns [], SendMessageToChannel
-        // always reports an unsupported-channel failure.
-        ChannelProviderRegistry(providers = emptyList())
+        ChannelDeliveryService(
+            chatRepository = instance(),
+            messageRepository = instance(),
+            eventService = instance(),
+        )
+    }
+    bindSingleton {
+        val telegramBindingRepository = instance<TelegramBotBindingRepository>()
+        PublicClientChannelProvider(
+            chatRepository = instance(),
+            deliveryService = instance(),
+            isClaimedByAnotherProvider = { chatId ->
+                // Gated on the same flag TelegramChannelProvider's registration is gated on below —
+                // otherwise a leftover Telegram binding would hide a chat from ListActiveChannels
+                // entirely once telegramBot is turned off.
+                appConfig.featureFlags.telegramBot &&
+                    telegramBindingRepository.getByChat(chatId)?.active == true
+            },
+        )
+    }
+    bindSingleton {
+        ChannelProviderRegistry(
+            providers = listOfNotNull(
+                if (appConfig.featureFlags.telegramBot) instance<TelegramChannelProvider>() else null,
+                instance<PublicClientChannelProvider>(),
+            )
+        )
     }
     bindSingleton { ToolListActiveChannels(registry = instance()) }
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }

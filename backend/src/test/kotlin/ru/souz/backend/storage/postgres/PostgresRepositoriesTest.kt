@@ -480,6 +480,9 @@ class PostgresRepositoriesTest {
             title = "Original",
             archived = false,
         )
+        val renamedAt = Instant.parse("2026-05-01T09:05:00Z")
+        val archivedAt = Instant.parse("2026-05-01T09:10:00Z")
+        val touchedAt = Instant.parse("2026-05-01T09:20:00Z")
 
         postgresRepositories(schema).use { repositories ->
             repositories.userRepository.ensureUser(userId)
@@ -489,20 +492,49 @@ class PostgresRepositoriesTest {
                 userId = userId,
                 chatId = chat.id,
                 title = "Renamed",
+                updatedAt = renamedAt,
             )
             assertEquals("Renamed", renamed?.title)
-            assertTrue(renamed!!.updatedAt.isAfter(chat.updatedAt))
+            assertEquals(renamedAt, renamed?.updatedAt)
 
             val archived = repositories.chatRepository.updateArchived(
                 userId = userId,
                 chatId = chat.id,
                 archived = true,
+                updatedAt = archivedAt,
             )
             assertEquals(true, archived?.archived)
-            assertTrue(archived!!.updatedAt.isAfter(renamed.updatedAt))
+            assertEquals(archivedAt, archived?.updatedAt)
             assertEquals(archived, repositories.chatRepository.get(userId, chat.id))
             assertNull(repositories.chatRepository.updateTitle("user-b", chat.id, "Foreign"))
             assertNull(repositories.chatRepository.updateArchived("user-b", chat.id, archived = false))
+
+            repositories.chatRepository.touchUpdatedAt(userId, chat.id, touchedAt)
+            repositories.chatRepository.touchUpdatedAt(userId, chat.id, archivedAt)
+            val touched = repositories.chatRepository.get(userId, chat.id)
+            assertEquals("Renamed", touched?.title)
+            assertEquals(true, touched?.archived)
+            assertEquals(touchedAt, touched?.updatedAt)
+        }
+    }
+
+    @Test
+    fun `chat repository getByIds returns only the requested existing chats`() = runTest {
+        val schema = newPostgresSchema("postgres_chat_get_by_ids")
+        val userId = "opaque/user:getByIds@example.com"
+        val first = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:00:00Z"))
+        val second = chat(userId = userId, updatedAt = Instant.parse("2026-05-01T09:01:00Z"))
+
+        postgresRepositories(schema).use { repositories ->
+            repositories.userRepository.ensureUser(userId)
+            repositories.chatRepository.create(first)
+            repositories.chatRepository.create(second)
+
+            assertEquals(emptyList(), repositories.chatRepository.getByIds(emptyList()))
+
+            val result = repositories.chatRepository.getByIds(listOf(first.id, second.id, UUID.randomUUID()))
+
+            assertEquals(setOf(first, second), result.toSet())
         }
     }
 

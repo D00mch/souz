@@ -38,6 +38,21 @@ class PostgresTelegramBotBindingRepository(
         }
     }
 
+    override suspend fun listForUser(userId: String): List<TelegramBotBinding> = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select * from telegram_bot_bindings where user_id = ? order by updated_at desc"
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(resultSet.toTelegramBotBinding())
+                    }
+                }
+            }
+        }
+    }
+
     override suspend fun findByTokenHash(botTokenHash: String): TelegramBotBinding? = dataSource.read { connection ->
         connection.prepareStatement(
             "select * from telegram_bot_bindings where bot_token_hash = ?"

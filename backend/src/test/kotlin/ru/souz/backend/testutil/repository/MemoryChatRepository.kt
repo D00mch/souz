@@ -32,6 +32,11 @@ class MemoryChatRepository(
         chats.values.firstOrNull { it.id == chatId }
     }
 
+    override suspend fun getByIds(chatIds: List<UUID>): List<Chat> = mutex.withLock {
+        val ids = chatIds.toSet()
+        chats.values.filter { it.id in ids }
+    }
+
     override suspend fun findByRequestId(userId: String, requestId: String): Chat? = mutex.withLock {
         chats.values.firstOrNull { it.userId == userId && it.requestId == requestId }
     }
@@ -50,9 +55,10 @@ class MemoryChatRepository(
             .toList()
     }
 
-    override suspend fun update(chat: Chat): Chat = mutex.withLock {
-        chats[ChatKey(chat.userId, chat.id)] = chat
-        chat
+    override suspend fun touchUpdatedAt(userId: String, chatId: UUID, updatedAt: Instant) = mutex.withLock {
+        val key = ChatKey(userId, chatId)
+        val current = chats[key] ?: return@withLock
+        chats[key] = current.copy(updatedAt = maxOf(current.updatedAt, updatedAt))
     }
 
     override suspend fun updateTitle(

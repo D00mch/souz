@@ -1,58 +1,32 @@
 package ru.souz.backend.http
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.patch
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
-import io.ktor.server.testing.testApplication
-import java.io.File
-import java.time.Instant
-import java.time.ZoneId
-import java.util.Locale
-import java.util.UUID
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitCancellation
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import io.ktor.server.testing.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.TestSettingsProvider
-import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
+import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
+import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
-import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
-import ru.souz.backend.chat.repository.ChatRepository
-import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.ChatService
 import ru.souz.backend.chat.service.MessageService
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.PublicClientService
-import ru.souz.backend.options.repository.OptionRepository
-import ru.souz.backend.options.service.OptionService
-import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
-import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.client.repository.ClientRequestRepository
+import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -63,39 +37,19 @@ import ru.souz.backend.execution.service.AgentExecutionRequestFactory
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.onboarding.BackendOnboardingService
+import ru.souz.backend.options.service.OptionService
 import ru.souz.backend.settings.model.UserSettings
-import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsService
-import ru.souz.backend.testutil.repository.MemoryAgentExecutionRepository
-import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
-import ru.souz.backend.testutil.repository.MemoryAgentStateRepository
-import ru.souz.backend.testutil.repository.MemoryChatRepository
-import ru.souz.backend.testutil.repository.MemoryClientInputRepository
-import ru.souz.backend.testutil.repository.MemoryClientRequestRepository
-import ru.souz.backend.testutil.repository.MemoryOptionRepository
-import ru.souz.backend.testutil.repository.MemoryMessageRepository
-import ru.souz.backend.testutil.repository.MemoryToolCallRepository
-import ru.souz.backend.testutil.repository.MemoryUserRepository
-import ru.souz.backend.testutil.repository.MemoryUserProviderKeyRepository
-import ru.souz.backend.testutil.repository.MemoryUserSettingsRepository
+import ru.souz.backend.testutil.repository.*
 import ru.souz.backend.toolcall.repository.ToolCallRepository
-import ru.souz.llms.EmbeddingsModel
-import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMModel
-import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.LocalModelAvailability
-import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.VoiceRecognitionModel
-import ru.souz.tool.FewShotExample
-import ru.souz.tool.InputParamDescription
-import ru.souz.tool.ReturnParameters
-import ru.souz.tool.ReturnProperty
-import ru.souz.tool.ToolCategory
-import ru.souz.tool.ToolSetup
+import ru.souz.llms.*
+import ru.souz.tool.*
+import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.util.*
+import kotlin.test.*
 
 class BackendStage3RouteTest {
     private val json = jacksonObjectMapper()
@@ -127,25 +81,23 @@ class BackendStage3RouteTest {
     @Test
     fun `get me settings resolves effective settings for opaque user identity`() = testApplication {
         val context = routeTestContext()
-        runBlocking {
-            context.userSettingsRepository.save(
-                UserSettings(
-                    userId = "user-opaque-42",
-                    defaultModel = LLMModel.QwenMax,
-                    contextSize = 12_000,
-                    temperature = 0.15f,
-                    locale = Locale.forLanguageTag("en-US"),
-                    timeZone = ZoneId.of("Europe/Amsterdam"),
-                    systemPrompt = "be brief",
-                    enabledTools = setOf("ListFiles"),
-                    showToolEvents = false,
-                    streamingMessages = false,
-                    interfaceLanguage = "en",
-                    requestTimeoutMillis = 45_000L,
-                    useFewShotExamples = false,
-                )
+        context.userSettingsRepository.save(
+            UserSettings(
+                userId = "user-opaque-42",
+                defaultModel = LLMModel.QwenMax,
+                contextSize = 12_000,
+                temperature = 0.15f,
+                locale = Locale.forLanguageTag("en-US"),
+                timeZone = ZoneId.of("Europe/Amsterdam"),
+                systemPrompt = "be brief",
+                enabledTools = setOf("ListFiles"),
+                showToolEvents = false,
+                streamingMessages = false,
+                interfaceLanguage = "en",
+                requestTimeoutMillis = 45_000L,
+                useFewShotExamples = false,
             )
-        }
+        )
         application {
             backendApplication(
                 BackendHttpDependencies(
@@ -198,16 +150,14 @@ class BackendStage3RouteTest {
             )
         }
 
-        runBlocking {
-            context.userSettingsRepository.save(
-                UserSettings(
-                    userId = "user-a",
-                    defaultModel = LLMModel.Max,
-                    contextSize = 24_000,
-                    enabledTools = setOf("ListFiles"),
-                )
+        context.userSettingsRepository.save(
+            UserSettings(
+                userId = "user-a",
+                defaultModel = LLMModel.Max,
+                contextSize = 24_000,
+                enabledTools = setOf("ListFiles"),
             )
-        }
+        )
         val response = client.patch(BackendHttpRoutes.SETTINGS) {
             trustedHeaders("user-a")
             contentType(ContentType.Application.Json)
@@ -231,7 +181,7 @@ class BackendStage3RouteTest {
             )
         }
         val payload = json.readTree(response.bodyAsText())
-        val storedIntent = runBlocking { context.userSettingsRepository.get("user-a") }
+        val storedIntent = context.userSettingsRepository.get("user-a")
 
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertEquals("invalid_request", payload["error"]["code"].asText())
@@ -865,7 +815,7 @@ class BackendStage3RouteTest {
         assertEquals(context.settingsProvider.gigaModel.provider.name, payload["execution"]["provider"].asText())
         assertTrue(payload["execution"]["usage"].isNull)
         assertEquals(listOf("Напиши ответ", "assistant reply to Напиши ответ"), storedMessages.map { it.content })
-        assertEquals(2L, storedState?.basedOnMessageSeq)
+        assertEquals(assistantMessage.seq, storedState?.basedOnMessageSeq)
         assertTrue(storedState?.history.orEmpty().any { it.content.contains("assistant reply to Напиши ответ") })
         assertTrue(updatedChat!!.updatedAt > chat.updatedAt)
         assertEquals(AgentExecutionStatus.COMPLETED, storedExecution.status)
@@ -1036,6 +986,34 @@ class BackendStage3RouteTest {
             api.release()
             assertEquals(HttpStatusCode.OK, firstResponse.await().status)
         }
+    }
+
+    @Test
+    fun `cross channel delivery during an active turn reaches later requests exactly once`() = runBlocking {
+        val api = GateControlledChatApi()
+        val context = routeTestContext(llmApi = api)
+        val chat = chat(userId = "user-a", title = "Forward target")
+        context.chatRepository.create(chat)
+        val deliveryService = ChannelDeliveryService(
+            chatRepository = context.chatRepository,
+            messageRepository = context.messageRepository,
+            eventService = context.eventService,
+        )
+
+        val firstTurn = async {
+            context.executionService.executeChatTurnAndAwaitCompletion("user-a", chat.id, "first")
+        }
+        api.awaitStarted("first")
+        deliveryService.deliver("user-a", chat.id, "forwarded")
+        api.release()
+        firstTurn.await()
+
+        context.executionService.executeChatTurnAndAwaitCompletion("user-a", chat.id, "second")
+        context.executionService.executeChatTurnAndAwaitCompletion("user-a", chat.id, "third")
+
+        assertEquals(0, api.capturedRequest("first").messages.count { it.content == "forwarded" })
+        assertEquals(1, api.capturedRequest("second").messages.count { it.content == "forwarded" })
+        assertEquals(1, api.capturedRequest("third").messages.count { it.content == "forwarded" })
     }
 
     @Test
@@ -1298,6 +1276,7 @@ internal fun routeTestContext(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = { llmApi },
         sessionRepository = AgentStateBackedSessionRepository(stateRepository),
+        messageRepository = messageRepository,
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "global backend prompt",
         toolCatalog = toolCatalog,
@@ -1539,6 +1518,7 @@ internal class FailingChatApi : LLMChatAPI {
 
 internal class GateControlledChatApi : LLMChatAPI {
     private val startedByPrompt = LinkedHashMap<String, CompletableDeferred<Unit>>()
+    private val requestsByPrompt = LinkedHashMap<String, LLMRequest.Chat>()
     private val startedByPromptMutex = Mutex()
     private val release = CompletableDeferred<Unit>()
 
@@ -1550,10 +1530,18 @@ internal class GateControlledChatApi : LLMChatAPI {
         release.complete(Unit)
     }
 
+    suspend fun capturedRequest(prompt: String): LLMRequest.Chat = startedByPromptMutex.withLock {
+        requireNotNull(requestsByPrompt[prompt])
+    }
+
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        startedSignal(body.conversationPrompt()).complete(Unit)
+        val prompt = body.conversationPrompt()
+        startedByPromptMutex.withLock {
+            requestsByPrompt[prompt] = body
+            startedByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(Unit)
+        }
         release.await()
-        return reply(body, "assistant reply to ${body.conversationPrompt()}")
+        return reply(body, "assistant reply to $prompt")
     }
 
     private suspend fun startedSignal(prompt: String): CompletableDeferred<Unit> =

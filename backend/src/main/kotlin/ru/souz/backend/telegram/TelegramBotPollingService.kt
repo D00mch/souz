@@ -445,7 +445,6 @@ class TelegramBotPollingService(
         const val TYPING_MAX_DURATION_MS: Long = 5 * 60 * 1_000L
         const val DEFAULT_MAX_CONCURRENCY: Int = 4
         const val MAX_INCOMING_TEXT_LENGTH: Int = 8_000
-        const val TELEGRAM_TEXT_LIMIT: Int = 4_096
         const val PRIVATE_CHAT_TYPE: String = "private"
 
         const val LINKED_REPLY: String = "Готово, этот Telegram-аккаунт привязан к чату Souz."
@@ -484,37 +483,6 @@ class TelegramBotPollingService(
                 return null
             }
             return parts.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
-        }
-
-        fun telegramTextChunks(
-            text: String,
-            maxLength: Int,
-        ): List<String> {
-            if (text.isBlank()) {
-                return listOf(FALLBACK_ASSISTANT_REPLY)
-            }
-            if (text.length <= maxLength) {
-                return listOf(text)
-            }
-            val chunks = mutableListOf<String>()
-            var start = 0
-            while (start < text.length) {
-                val remaining = text.length - start
-                if (remaining <= maxLength) {
-                    chunks += text.substring(start)
-                    break
-                }
-                val hardEnd = start + maxLength
-                val splitAt = text.lastIndexOf('\n', hardEnd - 1, ignoreCase = false)
-                    .takeIf { it >= start + maxLength / 2 }
-                    ?: text.lastIndexOf(' ', hardEnd - 1, ignoreCase = false)
-                        .takeIf { it >= start + maxLength / 2 }
-                    ?: hardEnd
-                val endExclusive = if (splitAt == hardEnd) hardEnd else splitAt + 1
-                chunks += text.substring(start, endExclusive)
-                start = endExclusive
-            }
-            return chunks
         }
 
         fun defaultInstanceId(): String {

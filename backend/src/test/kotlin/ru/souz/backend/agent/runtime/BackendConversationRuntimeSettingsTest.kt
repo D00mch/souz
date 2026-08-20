@@ -1,6 +1,8 @@
 package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.mockk.coVerify
+import io.mockk.mockk
 import java.io.File
 import java.nio.file.Files
 import java.util.UUID
@@ -24,7 +26,10 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.runtime.conversation.BackendExecutionToolCatalog
 import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
+import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
+import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
@@ -33,13 +38,32 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.SandboxScope
-import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendConversationRuntimeSettingsTest {
+    @Test
+    fun `contiguous input skips the pending message query`() = runTest {
+        val messageRepository = mockk<MessageRepository>(relaxed = true)
+        val api = ReplyingChatApi()
+        val request = turnRequest().copy(inputMessageSeq = 1L)
+        val runtimeFactory = runtimeFactory(
+            llmApiFactory = { api },
+            messageRepository = messageRepository,
+        )
+
+        val execution = runtimeFactory.create(conversationKey(), request).execute(
+            request = request,
+            persistSession = false,
+            eventSink = AgentRuntimeEventSink.NONE,
+        )
+
+        coVerify(exactly = 0) { messageRepository.list(any(), any(), any(), any(), any()) }
+        assertEquals(1L, execution.session.basedOnMessageSeq)
+    }
+
     @Test
     fun `runtime factory applies request timeout to request scoped llm settings provider`() = runTest {
         val capturedTimeouts = mutableListOf<Long>()
@@ -233,7 +257,7 @@ class BackendConversationRuntimeSettingsTest {
             )
             val commandInvocationMeta = mutableListOf<ToolInvocationMeta>()
             val commandExecutor = SkillCommandExecutor(
-                sandboxResolver = ToolInvocationRuntimeSandboxResolver { meta ->
+                sandboxResolver = { meta ->
                     commandInvocationMeta += meta
                     sandbox
                 }
@@ -317,11 +341,14 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.db.SettingsProvider) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
+    sessionRepository: AgentSessionRepository = InMemoryAgentSessionRepository(),
+    messageRepository: MessageRepository = MemoryMessageRepository(),
 ): BackendConversationRuntimeFactory =
     testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = llmApiFactory,
-        sessionRepository = InMemoryAgentSessionRepository(),
+        sessionRepository = sessionRepository,
+        messageRepository = messageRepository,
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,
@@ -360,7 +387,7 @@ private fun singleToolCatalog(
     }
 
 private class TestClientToolCatalog(
-    private val toolOverrides: Map<String, LLMToolSetup> = emptyMap(),
+    toolOverrides: Map<String, LLMToolSetup> = emptyMap(),
 ) : ru.souz.agent.spi.AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
         mapOf(
@@ -408,7 +435,7 @@ private class ReplyingChatApi : LLMChatAPI {
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
         error("File upload is not used in this test.")
 
-    override suspend fun downloadFile(fileId: String): String? =
+    override suspend fun downloadFile(fileId: String): String =
         error("File download is not used in this test.")
 
     override suspend fun balance(): LLMResponse.Balance =
@@ -443,7 +470,7 @@ private class SkillLoopChatApi(
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
         error("File upload is not used in this test.")
 
-    override suspend fun downloadFile(fileId: String): String? =
+    override suspend fun downloadFile(fileId: String): String =
         error("File download is not used in this test.")
 
     override suspend fun balance(): LLMResponse.Balance =
@@ -466,8 +493,8 @@ private fun sandboxEchoSkillBundle(skillId: SkillId): SkillBundle = SkillBundle.
         ),
         SkillFile(
             normalizedPath = "scripts/echo.sh",
-            content = """
-                printf '%s:%s:%s' "${'$'}SOUZ_SKILL_ID" "${'$'}1" "${'$'}(cat)"
+            content = $$"""
+                printf '%s:%s:%s' "$SOUZ_SKILL_ID" "$1" "$(cat)"
             """.trimIndent().toByteArray(),
         ),
     ),
@@ -504,7 +531,7 @@ private class CapturingTool(name: String) : LLMToolSetup {
     }
 }
 
-private fun LLMRequest.Chat.systemMessage(): String = messages.first { it.role == ru.souz.llms.LLMMessageRole.system }.content
+private fun LLMRequest.Chat.systemMessage(): String = messages.first { it.role == LLMMessageRole.system }.content
 
 private fun reply(body: LLMRequest.Chat, content: String): LLMResponse.Chat.Ok =
     LLMResponse.Chat.Ok(
