@@ -25,7 +25,6 @@ import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFact
 import ru.souz.backend.agent.runtime.conversation.BackendExecutionToolCatalog
 import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
-import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
@@ -317,13 +316,11 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.db.SettingsProvider) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
-    messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
 ): BackendConversationRuntimeFactory =
     testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = llmApiFactory,
         sessionRepository = InMemoryAgentSessionRepository(),
-        messageRepository = messageRepository,
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,

@@ -20,7 +20,7 @@ import ru.souz.backend.testutil.repository.MemoryChatRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.backend.testutil.repository.MemoryTelegramBotBindingRepository
 
-// Delivery mechanics (message/event persistence, chat updatedAt, session history) live in
+// Delivery mechanics (message/event persistence and chat updatedAt) live in
 // ChannelDeliveryServiceTest; these tests cover only this provider's own binding/chat resolution.
 class TelegramChannelProviderTest {
     private val userId = "user-1"
@@ -97,12 +97,16 @@ class TelegramChannelProviderTest {
         val linkedChatId = UUID.randomUUID()
         val disabledChatId = UUID.randomUUID()
         val unlinkedChatId = UUID.randomUUID()
+        val orphanedChatId = UUID.randomUUID()
+        val archivedChatId = UUID.randomUUID()
         bindAndLink(bindingRepository, chatRepository, linkedChatId)
         bindAndLink(bindingRepository, chatRepository, disabledChatId)
         bindingRepository.getByUserAndChat(userId, disabledChatId)!!.let {
             bindingRepository.markError(it.id, "err", Instant.now(), disable = true)
         }
         bindingRepository.upsertForChat(userId, unlinkedChatId, "tok3", "hash3", "secret3", now = Instant.now())
+        bindAndLink(bindingRepository, chatRepository, orphanedChatId, createChat = false)
+        bindAndLink(bindingRepository, chatRepository, archivedChatId, archived = true)
         val (provider, _) = provider(bindingRepository, chatRepository)
 
         val channels = provider.listChannels(userId)
@@ -111,49 +115,18 @@ class TelegramChannelProviderTest {
     }
 
     @Test
-    fun `listChannels excludes an orphaned binding with no chat row`() = runTest {
+    fun `sendMessage rejects unavailable destinations`() = runTest {
         val bindingRepository = MemoryTelegramBotBindingRepository()
         val chatRepository = MemoryChatRepository()
-        bindAndLink(bindingRepository, chatRepository, createChat = false)
+        val orphanedChatId = UUID.randomUUID()
+        val archivedChatId = UUID.randomUUID()
+        bindAndLink(bindingRepository, chatRepository, orphanedChatId, createChat = false)
+        bindAndLink(bindingRepository, chatRepository, archivedChatId, archived = true)
         val (provider, _) = provider(bindingRepository, chatRepository)
 
-        assertEquals(emptyList(), provider.listChannels(userId))
-    }
-
-    @Test
-    fun `listChannels excludes an archived chat, matching PublicClientChannelProvider`() = runTest {
-        val bindingRepository = MemoryTelegramBotBindingRepository()
-        val chatRepository = MemoryChatRepository()
-        bindAndLink(bindingRepository, chatRepository, archived = true)
-        val (provider, _) = provider(bindingRepository, chatRepository)
-
-        assertEquals(emptyList(), provider.listChannels(userId))
-    }
-
-    @Test
-    fun `sendMessage fails for an orphaned binding with no chat row`() = runTest {
-        val bindingRepository = MemoryTelegramBotBindingRepository()
-        val chatRepository = MemoryChatRepository()
-        val chatId = UUID.randomUUID()
-        bindAndLink(bindingRepository, chatRepository, chatId, createChat = false)
-        val (provider, _) = provider(bindingRepository, chatRepository)
-
-        val result = provider.sendMessage(userId, chatId.toString(), "hello")
-
-        assertIs<ChannelSendResult.Failed>(result)
-    }
-
-    @Test
-    fun `sendMessage fails for an archived chat, matching listChannels`() = runTest {
-        val bindingRepository = MemoryTelegramBotBindingRepository()
-        val chatRepository = MemoryChatRepository()
-        val chatId = UUID.randomUUID()
-        bindAndLink(bindingRepository, chatRepository, chatId, archived = true)
-        val (provider, _) = provider(bindingRepository, chatRepository)
-
-        val result = provider.sendMessage(userId, chatId.toString(), "hello")
-
-        assertIs<ChannelSendResult.Failed>(result)
+        assertIs<ChannelSendResult.Failed>(provider.sendMessage(userId, orphanedChatId.toString(), "hello"))
+        assertIs<ChannelSendResult.Failed>(provider.sendMessage(userId, archivedChatId.toString(), "hello"))
+        assertIs<ChannelSendResult.Failed>(provider.sendMessage(userId, UUID.randomUUID().toString(), "hello"))
     }
 
     @Test
@@ -228,14 +201,6 @@ class TelegramChannelProviderTest {
         assertTrue(messages.single().content.length < longText.length)
     }
 
-    @Test
-    fun `sendMessage fails for unknown chat`() = runTest {
-        val (provider, _) = provider(MemoryTelegramBotBindingRepository())
-
-        val result = provider.sendMessage(userId, UUID.randomUUID().toString(), "hello")
-
-        assertIs<ChannelSendResult.Failed>(result)
-    }
 }
 
 private const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="

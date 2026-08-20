@@ -48,14 +48,16 @@ class PublicClientChannelProviderTest {
     }
 
     @Test
-    fun `listChannels includes backend chats but excludes archived chats`() = runTest {
+    fun `listChannels includes supported active chats only`() = runTest {
         val chatRepository = MemoryChatRepository()
         val mobile = chat("mobile_app")
         val backend = chat("backend")
         val archived = chat("mobile_app", archived = true)
+        val unsupported = chat("some_made_up_type")
         chatRepository.create(mobile)
         chatRepository.create(backend)
         chatRepository.create(archived)
+        chatRepository.create(unsupported)
         val provider = provider(chatRepository = chatRepository)
 
         val channels = provider.listChannels(userId)
@@ -72,13 +74,14 @@ class PublicClientChannelProviderTest {
     }
 
     @Test
-    fun `listChannels excludes chats claimed by another provider`() = runTest {
+    fun `claimed chats are neither listed nor sendable`() = runTest {
         val chatRepository = MemoryChatRepository()
         val mobile = chat("mobile_app")
         chatRepository.create(mobile)
         val provider = provider(chatRepository = chatRepository, claimed = setOf(mobile.id))
 
         assertEquals(emptyList(), provider.listChannels(userId))
+        assertIs<ChannelSendResult.Failed>(provider.sendMessage(userId, mobile.id.toString(), "hello"))
     }
 
     @Test
@@ -94,55 +97,16 @@ class PublicClientChannelProviderTest {
     }
 
     @Test
-    fun `sendMessage fails for an archived chat, matching listChannels`() = runTest {
+    fun `sendMessage rejects unavailable destinations`() = runTest {
         val chatRepository = MemoryChatRepository()
         val archived = chat("mobile_app", archived = true)
+        val unsupported = chat("some_made_up_type")
         chatRepository.create(archived)
+        chatRepository.create(unsupported)
         val provider = provider(chatRepository = chatRepository)
 
-        val result = provider.sendMessage(userId, archived.id.toString(), "hello")
-
-        assertIs<ChannelSendResult.Failed>(result)
-    }
-
-    @Test
-    fun `sendMessage fails for an unknown chat`() = runTest {
-        val result = provider().sendMessage(userId, UUID.randomUUID().toString(), "hello")
-
-        assertIs<ChannelSendResult.Failed>(result)
-    }
-
-    @Test
-    fun `sendMessage fails for a chat claimed by another provider`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val mobile = chat("mobile_app")
-        chatRepository.create(mobile)
-        val provider = provider(chatRepository = chatRepository, claimed = setOf(mobile.id))
-
-        val result = provider.sendMessage(userId, mobile.id.toString(), "hello")
-
-        assertIs<ChannelSendResult.Failed>(result)
-    }
-
-    @Test
-    fun `listChannels excludes chats with an unrecognized clientType`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val unknown = chat("some_made_up_type")
-        chatRepository.create(unknown)
-        val provider = provider(chatRepository = chatRepository)
-
-        assertEquals(emptyList(), provider.listChannels(userId))
-    }
-
-    @Test
-    fun `sendMessage rejects a chat with an unrecognized clientType even if the id is otherwise valid`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val unknown = chat("some_made_up_type")
-        chatRepository.create(unknown)
-        val provider = provider(chatRepository = chatRepository)
-
-        val result = provider.sendMessage(userId, unknown.id.toString(), "hello")
-
-        assertIs<ChannelSendResult.Failed>(result)
+        assertIs<ChannelSendResult.Failed>(provider.sendMessage(userId, archived.id.toString(), "hello"))
+        assertIs<ChannelSendResult.Failed>(provider.sendMessage(userId, unsupported.id.toString(), "hello"))
+        assertIs<ChannelSendResult.Failed>(provider.sendMessage(userId, UUID.randomUUID().toString(), "hello"))
     }
 }

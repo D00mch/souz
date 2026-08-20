@@ -44,31 +44,7 @@ class ChannelDeliveryServiceTest {
     )
 
     @Test
-    fun `resolveTarget returns null for a missing chat`() = runTest {
-        val result = service().resolveTarget(userId, UUID.randomUUID())
-        assertNull(result)
-    }
-
-    @Test
-    fun `resolveTarget returns null for an archived chat`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val archived = chat(archived = true)
-        chatRepository.create(archived)
-
-        assertNull(service(chatRepository).resolveTarget(userId, archived.id))
-    }
-
-    @Test
-    fun `resolveTarget returns the chat when owned and unarchived`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val owned = chat()
-        chatRepository.create(owned)
-
-        assertEquals(owned, service(chatRepository).resolveTarget(userId, owned.id))
-    }
-
-    @Test
-    fun `resolveTargets excludes missing, archived, and unowned chats`() = runTest {
+    fun `resolve targets require an owned unarchived chat`() = runTest {
         val chatRepository = MemoryChatRepository()
         val owned = chat()
         val archived = chat(archived = true)
@@ -77,13 +53,16 @@ class ChannelDeliveryServiceTest {
         chatRepository.create(archived)
         chatRepository.create(otherUsers)
         val missingId = UUID.randomUUID()
+        val deliveryService = service(chatRepository)
 
-        val result = service(chatRepository).resolveTargets(
-            userId,
-            listOf(owned.id, archived.id, otherUsers.id, missingId),
+        assertEquals(owned, deliveryService.resolveTarget(userId, owned.id))
+        assertNull(deliveryService.resolveTarget(userId, archived.id))
+        assertNull(deliveryService.resolveTarget(userId, otherUsers.id))
+        assertNull(deliveryService.resolveTarget(userId, missingId))
+        assertEquals(
+            mapOf(owned.id to owned),
+            deliveryService.resolveTargets(userId, listOf(owned.id, archived.id, otherUsers.id, missingId)),
         )
-
-        assertEquals(mapOf(owned.id to owned), result)
     }
 
     @Test

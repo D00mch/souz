@@ -17,7 +17,6 @@ import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntime
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
-import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.service.ChatService
@@ -1491,7 +1490,6 @@ internal class FailingChatApi : LLMChatAPI {
 internal class GateControlledChatApi : LLMChatAPI {
     private val startedByPrompt = LinkedHashMap<String, CompletableDeferred<Unit>>()
     private val startedByPromptMutex = Mutex()
-    private val capturedRequests = mutableListOf<LLMRequest.Chat>()
     private val release = CompletableDeferred<Unit>()
 
     suspend fun awaitStarted(prompt: String) {
@@ -1502,10 +1500,7 @@ internal class GateControlledChatApi : LLMChatAPI {
         release.complete(Unit)
     }
 
-    suspend fun requests(): List<LLMRequest.Chat> = startedByPromptMutex.withLock { capturedRequests.toList() }
-
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        startedByPromptMutex.withLock { capturedRequests += body }
         startedSignal(body.conversationPrompt()).complete(Unit)
         release.await()
         return reply(body, "assistant reply to ${body.conversationPrompt()}")
