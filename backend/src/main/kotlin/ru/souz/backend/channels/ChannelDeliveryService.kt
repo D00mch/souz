@@ -3,6 +3,7 @@ package ru.souz.backend.channels
 import java.util.UUID
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
+import ru.souz.backend.chat.model.CROSS_CHANNEL_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.events.model.AgentEventType
@@ -30,7 +31,13 @@ class ChannelDeliveryService(
             .associateBy { it.id }
 
     suspend fun deliver(userId: String, chatId: UUID, text: String) {
-        val message = messageRepository.append(userId, chatId, ChatRole.ASSISTANT, text)
+        val message = messageRepository.append(
+            userId,
+            chatId,
+            ChatRole.ASSISTANT,
+            text,
+            metadata = mapOf(CROSS_CHANNEL_MESSAGE_METADATA_KEY to "true"),
+        )
         chatRepository.get(userId, chatId)?.let { chat -> chatRepository.update(chat.copy(updatedAt = message.createdAt)) }
         eventService.append(
             userId = userId,

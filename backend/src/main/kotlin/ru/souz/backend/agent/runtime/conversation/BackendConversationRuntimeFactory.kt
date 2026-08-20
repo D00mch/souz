@@ -18,7 +18,6 @@ import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
-import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
@@ -89,12 +88,12 @@ internal class BackendConversationRuntimeFactory(
             locale = persistedSession?.locale ?: request.locale,
         )
         settingsProvider.applyRequest(request = request, temperature = temperature)
-        val pendingAssistantMessages = messageRepository.list(
+        val pendingMessages = messageRepository.list(
             userId = key.userId,
             chatId = UUID.fromString(key.conversationId),
             afterSeq = persistedSession?.basedOnMessageSeq?.takeIf { it > 0L },
             limit = MessageRepository.MAX_LIMIT,
-        ).filter { it.role == ChatRole.ASSISTANT }
+        )
 
         val testApi = testLlmApiFactory?.invoke(settingsProvider)
         val executionApi = BackendExecutionLlmChatApi(
@@ -196,7 +195,7 @@ internal class BackendConversationRuntimeFactory(
             executor = kernel.executor,
             executionApi = executionApi,
             persistedSession = persistedSession,
-            pendingAssistantMessages = pendingAssistantMessages,
+            pendingMessages = pendingMessages,
         )
     }
 }

@@ -9,6 +9,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
+import ru.souz.backend.chat.model.CROSS_CHANNEL_MESSAGE_METADATA_KEY
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.model.MessageCreatedPayload
 import ru.souz.backend.events.service.AgentEventService
@@ -100,6 +101,7 @@ class ChannelDeliveryServiceTest {
         assertEquals(1, messages.size)
         assertEquals(ChatRole.ASSISTANT, messages.single().role)
         assertEquals("hello", messages.single().content)
+        assertEquals("true", messages.single().metadata[CROSS_CHANNEL_MESSAGE_METADATA_KEY])
 
         val events = eventRepository.listByChat(userId, target.id)
         assertEquals(1, events.size)

@@ -193,12 +193,7 @@ internal class AgentExecutionFinalizer(
     ): AgentExecution {
         val persisted = withTerminalTransition(execution.id) {
             val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
-            sessionRepository.save(
-                conversationKey,
-                executionOutcome.session.copy(
-                    basedOnMessageSeq = assistantMessage.seq,
-                )
-            )
+            sessionRepository.save(conversationKey, executionOutcome.session)
             chatRepository.update(chat.copy(updatedAt = assistantMessage.createdAt))
 
             executionRepository.update(
