@@ -64,6 +64,7 @@ internal class BackendConversationRuntime(
             locale = request.locale,
             timeZone = request.timeZone,
             basedOnMessageSeq = pendingMessages.lastOrNull()?.seq
+                ?: request.inputMessageSeq
                 ?: persistedSession?.basedOnMessageSeq
                 ?: 0L,
             rowVersion = persistedSession?.rowVersion ?: 0L,

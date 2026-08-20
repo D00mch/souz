@@ -17,6 +17,7 @@ import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntime
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.bootstrap.BackendBootstrapService
+import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.service.ChatService
@@ -814,7 +815,7 @@ class BackendStage3RouteTest {
         assertEquals(context.settingsProvider.gigaModel.provider.name, payload["execution"]["provider"].asText())
         assertTrue(payload["execution"]["usage"].isNull)
         assertEquals(listOf("Напиши ответ", "assistant reply to Напиши ответ"), storedMessages.map { it.content })
-        assertEquals(1L, storedState?.basedOnMessageSeq)
+        assertEquals(assistantMessage.seq, storedState?.basedOnMessageSeq)
         assertTrue(storedState?.history.orEmpty().any { it.content.contains("assistant reply to Напиши ответ") })
         assertTrue(updatedChat!!.updatedAt > chat.updatedAt)
         assertEquals(AgentExecutionStatus.COMPLETED, storedExecution.status)
@@ -985,6 +986,34 @@ class BackendStage3RouteTest {
             api.release()
             assertEquals(HttpStatusCode.OK, firstResponse.await().status)
         }
+    }
+
+    @Test
+    fun `cross channel delivery during an active turn reaches later requests exactly once`() = runBlocking {
+        val api = GateControlledChatApi()
+        val context = routeTestContext(llmApi = api)
+        val chat = chat(userId = "user-a", title = "Forward target")
+        context.chatRepository.create(chat)
+        val deliveryService = ChannelDeliveryService(
+            chatRepository = context.chatRepository,
+            messageRepository = context.messageRepository,
+            eventService = context.eventService,
+        )
+
+        val firstTurn = async {
+            context.executionService.executeChatTurnAndAwaitCompletion("user-a", chat.id, "first")
+        }
+        api.awaitStarted("first")
+        deliveryService.deliver("user-a", chat.id, "forwarded")
+        api.release()
+        firstTurn.await()
+
+        context.executionService.executeChatTurnAndAwaitCompletion("user-a", chat.id, "second")
+        context.executionService.executeChatTurnAndAwaitCompletion("user-a", chat.id, "third")
+
+        assertEquals(0, api.capturedRequest("first").messages.count { it.content == "forwarded" })
+        assertEquals(1, api.capturedRequest("second").messages.count { it.content == "forwarded" })
+        assertEquals(1, api.capturedRequest("third").messages.count { it.content == "forwarded" })
     }
 
     @Test
@@ -1489,6 +1518,7 @@ internal class FailingChatApi : LLMChatAPI {
 
 internal class GateControlledChatApi : LLMChatAPI {
     private val startedByPrompt = LinkedHashMap<String, CompletableDeferred<Unit>>()
+    private val requestsByPrompt = LinkedHashMap<String, LLMRequest.Chat>()
     private val startedByPromptMutex = Mutex()
     private val release = CompletableDeferred<Unit>()
 
@@ -1500,10 +1530,18 @@ internal class GateControlledChatApi : LLMChatAPI {
         release.complete(Unit)
     }
 
+    suspend fun capturedRequest(prompt: String): LLMRequest.Chat = startedByPromptMutex.withLock {
+        requireNotNull(requestsByPrompt[prompt])
+    }
+
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        startedSignal(body.conversationPrompt()).complete(Unit)
+        val prompt = body.conversationPrompt()
+        startedByPromptMutex.withLock {
+            requestsByPrompt[prompt] = body
+            startedByPrompt.getOrPut(prompt) { CompletableDeferred() }.complete(Unit)
+        }
         release.await()
-        return reply(body, "assistant reply to ${body.conversationPrompt()}")
+        return reply(body, "assistant reply to $prompt")
     }
 
     private suspend fun startedSignal(prompt: String): CompletableDeferred<Unit> =

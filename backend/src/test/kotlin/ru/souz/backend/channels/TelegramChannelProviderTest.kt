@@ -4,8 +4,10 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.events.bus.AgentEventBus
@@ -29,6 +31,7 @@ class TelegramChannelProviderTest {
     private class FakeTelegramBotApi(
         private val shouldFail: Boolean = false,
         private val failAfterSuccessCount: Int = Int.MAX_VALUE,
+        private val failure: Exception = IllegalStateException("boom"),
     ) : TelegramBotApi {
         data class SentMessage(val token: String, val chatId: Long, val text: String)
 
@@ -43,7 +46,7 @@ class TelegramChannelProviderTest {
         ): TelegramUpdatesResponse = error("Not used in this test")
 
         override suspend fun sendMessage(token: String, chatId: Long, text: String) {
-            if (shouldFail || sent.size >= failAfterSuccessCount) error("boom")
+            if (shouldFail || sent.size >= failAfterSuccessCount) throw failure
             sent += SentMessage(token, chatId, text)
         }
 
@@ -199,6 +202,33 @@ class TelegramChannelProviderTest {
         assertEquals(1, messages.size)
         assertEquals(api.sent.single().text, messages.single().content)
         assertTrue(messages.single().content.length < longText.length)
+    }
+
+    @Test
+    fun `sendMessage persists acknowledged chunks before rethrowing cancellation`() = runTest {
+        val bindingRepository = MemoryTelegramBotBindingRepository()
+        val chatRepository = MemoryChatRepository()
+        val chatId = UUID.randomUUID()
+        bindAndLink(bindingRepository, chatRepository, chatId)
+        val api = FakeTelegramBotApi(
+            failAfterSuccessCount = 1,
+            failure = CancellationException("cancelled"),
+        )
+        val (provider, messageRepository) = provider(bindingRepository, chatRepository, api = api)
+        val longText = "a".repeat(TELEGRAM_TEXT_LIMIT * 2 + 10)
+
+        assertFailsWith<CancellationException> {
+            provider.sendMessage(userId, chatId.toString(), longText)
+        }
+
+        val message = messageRepository.list(
+            userId,
+            chatId,
+            afterSeq = null,
+            beforeSeq = null,
+            limit = 10,
+        ).single()
+        assertEquals(api.sent.single().text, message.content)
     }
 
 }

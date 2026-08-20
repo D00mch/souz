@@ -20,7 +20,7 @@ interface ChatRepository {
         limit: Int = DEFAULT_LIMIT,
         includeArchived: Boolean = false,
     ): List<Chat>
-    suspend fun update(chat: Chat): Chat
+    suspend fun touchUpdatedAt(userId: String, chatId: UUID, updatedAt: Instant)
     suspend fun updateTitle(
         userId: String,
         chatId: UUID,

@@ -15,7 +15,6 @@ import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.agent.session.AgentStateConflictException
 import ru.souz.backend.agent.session.AgentStateRepository
-import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
@@ -35,7 +34,6 @@ internal class AgentExecutionFinalizer(
     private val sessionRepository = AgentStateBackedSessionRepository(agentStateRepository)
 
     suspend fun runExecution(
-        chat: Chat,
         execution: AgentExecution,
         conversationKey: AgentConversationKey,
         turnRequest: BackendConversationTurnRequest,
@@ -57,7 +55,6 @@ internal class AgentExecutionFinalizer(
             }
             return when (executionOutcome) {
                 is BackendConversationTurnOutcome.Completed -> persistSuccessfulExecution(
-                    chat = chat,
                     execution = execution,
                     executionOutcome = executionOutcome,
                     conversationKey = conversationKey,
@@ -185,7 +182,6 @@ internal class AgentExecutionFinalizer(
             )
 
     private suspend fun persistSuccessfulExecution(
-        chat: Chat,
         execution: AgentExecution,
         executionOutcome: BackendConversationTurnOutcome.Completed,
         conversationKey: AgentConversationKey,
@@ -193,8 +189,15 @@ internal class AgentExecutionFinalizer(
     ): AgentExecution {
         val persisted = withTerminalTransition(execution.id) {
             val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
-            sessionRepository.save(conversationKey, executionOutcome.session)
-            chatRepository.update(chat.copy(updatedAt = assistantMessage.createdAt))
+            val session = executionOutcome.session.let { current ->
+                if (assistantMessage.seq == current.basedOnMessageSeq + 1L) {
+                    current.copy(basedOnMessageSeq = assistantMessage.seq)
+                } else {
+                    current
+                }
+            }
+            sessionRepository.save(conversationKey, session)
+            chatRepository.touchUpdatedAt(execution.userId, execution.chatId, assistantMessage.createdAt)
 
             executionRepository.update(
                 currentExecution(execution.id, execution.userId, execution.chatId).copy(

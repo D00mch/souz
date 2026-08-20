@@ -16,6 +16,7 @@ internal data class BackendConversationTurnRequest(
     val locale: String,
     val timeZone: String,
     val executionId: String? = null,
+    val inputMessageSeq: Long? = null,
     val temperature: Float? = null,
     val systemPrompt: String? = null,
     val streamingMessages: Boolean? = null,

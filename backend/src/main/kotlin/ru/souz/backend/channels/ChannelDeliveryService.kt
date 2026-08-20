@@ -38,7 +38,7 @@ class ChannelDeliveryService(
             text,
             metadata = mapOf(CROSS_CHANNEL_MESSAGE_METADATA_KEY to "true"),
         )
-        chatRepository.get(userId, chatId)?.let { chat -> chatRepository.update(chat.copy(updatedAt = message.createdAt)) }
+        chatRepository.touchUpdatedAt(userId, chatId, message.createdAt)
         eventService.append(
             userId = userId,
             chatId = chatId,

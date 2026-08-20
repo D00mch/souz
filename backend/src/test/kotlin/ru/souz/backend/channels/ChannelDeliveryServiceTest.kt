@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -66,11 +67,14 @@ class ChannelDeliveryServiceTest {
     }
 
     @Test
-    fun `deliver appends an assistant message, a durable event, and bumps chat updatedAt`() = runTest {
+    fun `deliver persists the message without overwriting concurrent chat changes`() = runTest {
         val chatRepository = MemoryChatRepository()
         val staleUpdatedAt = Instant.now().minusSeconds(3600)
+        val concurrentUpdatedAt = Instant.now().minusSeconds(60)
         val target = chat().copy(updatedAt = staleUpdatedAt)
         chatRepository.create(target)
+        chatRepository.updateTitle(userId, target.id, "Renamed", concurrentUpdatedAt)
+        chatRepository.updateArchived(userId, target.id, archived = true, updatedAt = concurrentUpdatedAt)
         val messageRepository = MemoryMessageRepository()
         val eventRepository = MemoryAgentEventRepository()
 
@@ -87,7 +91,9 @@ class ChannelDeliveryServiceTest {
         assertEquals(null, events.single().executionId)
         assertEquals("hello", (events.single().payload as MessageCreatedPayload).content)
 
-        val updated = chatRepository.get(userId, target.id)
-        assertTrue(updated != null && updated.updatedAt.isAfter(staleUpdatedAt))
+        val updated = assertNotNull(chatRepository.get(userId, target.id))
+        assertTrue(updated.updatedAt.isAfter(staleUpdatedAt))
+        assertEquals("Renamed", updated.title)
+        assertEquals(true, updated.archived)
     }
 }

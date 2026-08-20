@@ -117,23 +117,21 @@ class PostgresChatRepository(
         }
     }
 
-    override suspend fun update(chat: Chat): Chat = dataSource.write { connection ->
-        connection.prepareStatement(
-            """
-            update chats
-            set title = ?, archived = ?, created_at = ?, updated_at = ?
-            where user_id = ? and id = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, chat.title)
-            statement.setBoolean(2, chat.archived)
-            statement.setInstant(3, chat.createdAt)
-            statement.setInstant(4, chat.updatedAt)
-            statement.setString(5, chat.userId)
-            statement.setObject(6, chat.id)
-            statement.executeUpdate()
+    override suspend fun touchUpdatedAt(userId: String, chatId: UUID, updatedAt: Instant) {
+        dataSource.write { connection ->
+            connection.prepareStatement(
+                """
+                update chats
+                set updated_at = greatest(updated_at, ?)
+                where user_id = ? and id = ?
+                """.trimIndent()
+            ).use { statement ->
+                statement.setInstant(1, updatedAt)
+                statement.setString(2, userId)
+                statement.setObject(3, chatId)
+                statement.executeUpdate()
+            }
         }
-        chat
     }
 
     override suspend fun updateTitle(
