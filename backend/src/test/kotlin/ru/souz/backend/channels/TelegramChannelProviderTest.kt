@@ -7,7 +7,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
@@ -81,7 +80,6 @@ class TelegramChannelProviderTest {
             chatRepository = chatRepository,
             messageRepository = messageRepository,
             eventService = AgentEventService(chatRepository, MemoryAgentEventRepository(), AgentEventBus()),
-            sessionRepository = InMemoryAgentSessionRepository(),
         )
         val provider = TelegramChannelProvider(
             bindingRepository = bindingRepository,

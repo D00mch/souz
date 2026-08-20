@@ -6,7 +6,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.service.AgentEventService
@@ -14,8 +13,8 @@ import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryChatRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
 
-// Delivery mechanics (message/event persistence, chat updatedAt, session history) live in
-// ChannelDeliveryServiceTest; these tests cover only this provider's own routing/validation.
+// Delivery mechanics (message/event persistence, chat updatedAt) live in ChannelDeliveryServiceTest;
+// these tests cover only this provider's own routing/validation.
 class PublicClientChannelProviderTest {
     private val userId = "user-1"
 
@@ -40,7 +39,6 @@ class PublicClientChannelProviderTest {
             chatRepository = chatRepository,
             messageRepository = MemoryMessageRepository(),
             eventService = AgentEventService(chatRepository, MemoryAgentEventRepository(), AgentEventBus()),
-            sessionRepository = InMemoryAgentSessionRepository(),
         )
         return PublicClientChannelProvider(
             chatRepository = chatRepository,

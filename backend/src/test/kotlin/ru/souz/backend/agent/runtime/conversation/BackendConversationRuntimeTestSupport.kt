@@ -15,9 +15,11 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.llm.CredentialSource
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.ResolvedProviderCredential
+import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -38,6 +40,7 @@ internal fun testBackendConversationRuntimeFactory(
     baseSettingsProvider: SettingsProvider,
     llmApiFactory: suspend (SettingsProvider) -> LLMChatAPI,
     sessionRepository: AgentSessionRepository,
+    messageRepository: MessageRepository = MemoryMessageRepository(),
     logObjectMapper: ObjectMapper,
     systemPrompt: String,
     toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
@@ -57,6 +60,7 @@ internal fun testBackendConversationRuntimeFactory(
     localChatApi = TestLocalChatApi,
     codexOAuthService = CodexOAuthService(baseSettingsProvider, TestProviderHttpClients.standard),
     sessionRepository = sessionRepository,
+    messageRepository = messageRepository,
     logObjectMapper = logObjectMapper,
     systemPrompt = systemPrompt,
     toolCatalog = toolCatalog,

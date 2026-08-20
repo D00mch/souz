@@ -250,6 +250,7 @@ fun backendDiModule(
             localChatApi = instance<LocalChatAPI>(),
             codexOAuthService = instance<CodexOAuthService>(),
             sessionRepository = instance(),
+            messageRepository = instance(),
             logObjectMapper = instance(BackendDiTags.LOG_OBJECT_MAPPER),
             systemPrompt = systemPrompt,
             toolCatalog = instance<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG),
@@ -343,7 +344,6 @@ fun backendDiModule(
             chatRepository = instance(),
             messageRepository = instance(),
             eventService = instance(),
-            sessionRepository = instance(),
         )
     }
     bindSingleton {

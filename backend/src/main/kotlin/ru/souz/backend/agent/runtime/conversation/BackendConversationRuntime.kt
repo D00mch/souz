@@ -10,6 +10,9 @@ import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
+import ru.souz.backend.chat.model.ChatMessage
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 
@@ -22,6 +25,7 @@ internal class BackendConversationRuntime(
     private val executor: AgentExecutor,
     private val executionApi: BackendExecutionLlmChatApi,
     private val persistedSession: AgentConversationSession?,
+    private val pendingAssistantMessages: List<ChatMessage>,
 ) {
     internal suspend fun execute(
         request: BackendConversationTurnRequest,
@@ -31,7 +35,9 @@ internal class BackendConversationRuntime(
     ): BackendConversationExecution {
         val seedContext = contextFactory.create(
             agentId = AgentId.SKILLS_GRAPH,
-            history = persistedSession?.history.orEmpty(),
+            history = persistedSession?.history.orEmpty() + pendingAssistantMessages.map {
+                LLMRequest.Message(role = LLMMessageRole.assistant, content = it.content)
+            },
             model = settingsProvider.gigaModel,
             contextSize = request.contextSize,
             temperature = settingsProvider.temperature,
@@ -56,7 +62,9 @@ internal class BackendConversationRuntime(
             temperature = result.context.settings.temperature,
             locale = request.locale,
             timeZone = request.timeZone,
-            basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L,
+            basedOnMessageSeq = pendingAssistantMessages.lastOrNull()?.seq
+                ?: persistedSession?.basedOnMessageSeq
+                ?: 0L,
             rowVersion = persistedSession?.rowVersion ?: 0L,
         )
 

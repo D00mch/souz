@@ -25,6 +25,7 @@ import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFact
 import ru.souz.backend.agent.runtime.conversation.BackendExecutionToolCatalog
 import ru.souz.backend.agent.runtime.conversation.testBackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
+import ru.souz.backend.testutil.repository.MemoryMessageRepository
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
@@ -33,7 +34,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.SandboxScope
-import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
@@ -233,7 +233,7 @@ class BackendConversationRuntimeSettingsTest {
             )
             val commandInvocationMeta = mutableListOf<ToolInvocationMeta>()
             val commandExecutor = SkillCommandExecutor(
-                sandboxResolver = ToolInvocationRuntimeSandboxResolver { meta ->
+                sandboxResolver = { meta ->
                     commandInvocationMeta += meta
                     sandbox
                 }
@@ -317,11 +317,13 @@ private fun runtimeFactory(
     llmApiFactory: suspend (ru.souz.db.SettingsProvider) -> LLMChatAPI,
     toolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
     clientToolCatalog: ru.souz.agent.spi.AgentToolCatalog = BackendNoopAgentToolCatalog,
+    messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
 ): BackendConversationRuntimeFactory =
     testBackendConversationRuntimeFactory(
         baseSettingsProvider = settingsProvider,
         llmApiFactory = llmApiFactory,
         sessionRepository = InMemoryAgentSessionRepository(),
+        messageRepository = messageRepository,
         logObjectMapper = jacksonObjectMapper(),
         systemPrompt = "backend test prompt",
         toolCatalog = toolCatalog,
@@ -360,7 +362,7 @@ private fun singleToolCatalog(
     }
 
 private class TestClientToolCatalog(
-    private val toolOverrides: Map<String, LLMToolSetup> = emptyMap(),
+    toolOverrides: Map<String, LLMToolSetup> = emptyMap(),
 ) : ru.souz.agent.spi.AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
         mapOf(
@@ -408,7 +410,7 @@ private class ReplyingChatApi : LLMChatAPI {
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
         error("File upload is not used in this test.")
 
-    override suspend fun downloadFile(fileId: String): String? =
+    override suspend fun downloadFile(fileId: String): String =
         error("File download is not used in this test.")
 
     override suspend fun balance(): LLMResponse.Balance =
@@ -443,7 +445,7 @@ private class SkillLoopChatApi(
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
         error("File upload is not used in this test.")
 
-    override suspend fun downloadFile(fileId: String): String? =
+    override suspend fun downloadFile(fileId: String): String =
         error("File download is not used in this test.")
 
     override suspend fun balance(): LLMResponse.Balance =
@@ -466,8 +468,8 @@ private fun sandboxEchoSkillBundle(skillId: SkillId): SkillBundle = SkillBundle.
         ),
         SkillFile(
             normalizedPath = "scripts/echo.sh",
-            content = """
-                printf '%s:%s:%s' "${'$'}SOUZ_SKILL_ID" "${'$'}1" "${'$'}(cat)"
+            content = $$"""
+                printf '%s:%s:%s' "$SOUZ_SKILL_ID" "$1" "$(cat)"
             """.trimIndent().toByteArray(),
         ),
     ),
@@ -504,7 +506,7 @@ private class CapturingTool(name: String) : LLMToolSetup {
     }
 }
 
-private fun LLMRequest.Chat.systemMessage(): String = messages.first { it.role == ru.souz.llms.LLMMessageRole.system }.content
+private fun LLMRequest.Chat.systemMessage(): String = messages.first { it.role == LLMMessageRole.system }.content
 
 private fun reply(body: LLMRequest.Chat, content: String): LLMResponse.Chat.Ok =
     LLMResponse.Chat.Ok(

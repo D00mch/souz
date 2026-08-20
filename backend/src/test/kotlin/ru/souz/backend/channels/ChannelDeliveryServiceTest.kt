@@ -7,11 +7,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.agent.session.AgentConversationSession
-import ru.souz.backend.agent.session.AgentSessionRepository
-import ru.souz.backend.agent.session.AgentStateConflictException
-import ru.souz.backend.agent.session.InMemoryAgentSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.events.bus.AgentEventBus
@@ -20,8 +15,6 @@ import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.testutil.repository.MemoryAgentEventRepository
 import ru.souz.backend.testutil.repository.MemoryChatRepository
 import ru.souz.backend.testutil.repository.MemoryMessageRepository
-import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMRequest
 
 class ChannelDeliveryServiceTest {
     private val userId = "user-1"
@@ -43,12 +36,10 @@ class ChannelDeliveryServiceTest {
         chatRepository: MemoryChatRepository = MemoryChatRepository(),
         messageRepository: MemoryMessageRepository = MemoryMessageRepository(),
         eventRepository: MemoryAgentEventRepository = MemoryAgentEventRepository(),
-        sessionRepository: AgentSessionRepository = InMemoryAgentSessionRepository(),
     ): ChannelDeliveryService = ChannelDeliveryService(
         chatRepository = chatRepository,
         messageRepository = messageRepository,
         eventService = AgentEventService(chatRepository, eventRepository, AgentEventBus()),
-        sessionRepository = sessionRepository,
     )
 
     @Test
@@ -117,58 +108,5 @@ class ChannelDeliveryServiceTest {
 
         val updated = chatRepository.get(userId, target.id)
         assertTrue(updated != null && updated.updatedAt.isAfter(staleUpdatedAt))
-    }
-
-    @Test
-    fun `deliver appends the forwarded text to an existing session's history`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val target = chat()
-        chatRepository.create(target)
-        val sessionRepository = InMemoryAgentSessionRepository()
-        val key = AgentConversationKey(userId, target.id.toString())
-        sessionRepository.save(
-            key,
-            AgentConversationSession(history = emptyList(), temperature = 0.7f, locale = "ru-RU", timeZone = "UTC"),
-        )
-
-        service(chatRepository, sessionRepository = sessionRepository).deliver(userId, target.id, "hello")
-
-        val history = sessionRepository.load(key)?.history.orEmpty()
-        assertEquals(listOf(LLMRequest.Message(role = LLMMessageRole.assistant, content = "hello")), history)
-    }
-
-    @Test
-    fun `deliver does nothing to session history when no session exists yet`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val target = chat()
-        chatRepository.create(target)
-        val sessionRepository = InMemoryAgentSessionRepository()
-
-        // Must not throw even though there's no prior session for this chat.
-        service(chatRepository, sessionRepository = sessionRepository).deliver(userId, target.id, "hello")
-
-        assertNull(sessionRepository.load(AgentConversationKey(userId, target.id.toString())))
-    }
-
-    @Test
-    fun `deliver swallows a session save conflict instead of failing the whole delivery`() = runTest {
-        val chatRepository = MemoryChatRepository()
-        val target = chat()
-        chatRepository.create(target)
-        val messageRepository = MemoryMessageRepository()
-        val conflictingSessionRepository = object : AgentSessionRepository {
-            override suspend fun load(key: AgentConversationKey): AgentConversationSession =
-                AgentConversationSession(history = emptyList(), temperature = 0.7f, locale = "ru-RU", timeZone = "UTC")
-
-            override suspend fun save(key: AgentConversationKey, session: AgentConversationSession) {
-                throw AgentStateConflictException(key.userId, UUID.fromString(key.conversationId), 0L)
-            }
-        }
-
-        // Must not throw: the message/event persistence above already succeeded and should stand.
-        service(chatRepository, messageRepository, sessionRepository = conflictingSessionRepository)
-            .deliver(userId, target.id, "hello")
-
-        assertEquals(1, messageRepository.list(userId, target.id, afterSeq = null, beforeSeq = null, limit = 10).size)
     }
 }
