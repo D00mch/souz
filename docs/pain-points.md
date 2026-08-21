@@ -7,7 +7,6 @@ Before editing a module, open its index below and read only the topics related t
 ## Module indexes
 
 - [`:agent`](../agent/docs/pain-points.md)
-- [`:graph-engine`](../graph-engine/docs/pain-points.md)
 - [`:llms`](../llms/docs/pain-points.md)
 - [`:native`](../native/docs/pain-points.md)
 - [`:ambientAgent`](../ambientAgent/docs/pain-points.md)
