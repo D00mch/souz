@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Souz quality gate summary v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lane",
+    "status",
+    "authority",
+    "testedCommitSha",
+    "prBaseSha",
+    "prHeadSha",
+    "dirtyWorktree",
+    "normalizedSha256",
+    "checks"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "lane": { "$ref": "#/$defs/lane" },
+    "status": { "$ref": "#/$defs/status" },
+    "authority": { "$ref": "#/$defs/authority" },
+    "testedCommitSha": { "$ref": "#/$defs/nullableSha" },
+    "prBaseSha": { "$ref": "#/$defs/nullableSha" },
+    "prHeadSha": { "$ref": "#/$defs/nullableSha" },
+    "dirtyWorktree": { "type": ["boolean", "null"] },
+    "normalizedSha256": { "$ref": "#/$defs/normalizedSha256" },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/check" }
+    }
+  },
+  "$defs": {
+    "lane": {
+      "enum": ["fast", "full", "expensive"]
+    },
+    "status": {
+      "enum": ["pass", "fail", "warning", "error", "skipped", "not_authoritative"]
+    },
+    "authority": {
+      "enum": ["local-safe", "ci-exact-checkout", "host-specific"]
+    },
+    "nullableSha": {
+      "type": ["string", "null"],
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "normalizedSha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "line", "message"],
+      "properties": {
+        "path": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "message": { "type": "string" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "normalizedSha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "normalizedSha256": { "$ref": "#/$defs/normalizedSha256" }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "implementationVersion",
+        "description",
+        "policy",
+        "lane",
+        "authority",
+        "enforcement",
+        "status",
+        "testedCommitSha",
+        "prBaseSha",
+        "prHeadSha",
+        "dirtyWorktree",
+        "diagnostics",
+        "durationMs",
+        "evidence"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "implementationVersion": { "type": "integer", "minimum": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "policy": { "type": "string", "minLength": 1 },
+        "lane": { "$ref": "#/$defs/lane" },
+        "authority": { "$ref": "#/$defs/authority" },
+        "enforcement": { "enum": ["blocking", "advisory"] },
+        "status": { "$ref": "#/$defs/status" },
+        "testedCommitSha": { "$ref": "#/$defs/nullableSha" },
+        "prBaseSha": { "$ref": "#/$defs/nullableSha" },
+        "prHeadSha": { "$ref": "#/$defs/nullableSha" },
+        "dirtyWorktree": { "type": ["boolean", "null"] },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    }
+  }
+}

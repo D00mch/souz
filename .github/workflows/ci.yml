@@ -3,16 +3,83 @@ name: CI-Tests
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  quality-fast:
+    name: Quality Fast
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+          cache: gradle
+
+      - name: Run fast quality gate
+        shell: bash
+        env:
+          SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gate_log="$RUNNER_TEMP/souz-gate.log"
+          gate_report=build/reports/souz-quality/fast/gate-summary.md
+          gate_json=build/reports/souz-quality/fast/gate-summary-v1.json
+
+          rm -f "$gate_report" "$gate_json"
+
+          set +e
+          ./gradlew souzGateFast --console=plain --stacktrace >"$gate_log" 2>&1
+          gate_status=$?
+          set -e
+
+          if [[ -f "$gate_report" ]]; then
+            tee -a "$GITHUB_STEP_SUMMARY" < "$gate_report"
+          else
+            cat "$gate_log"
+            echo "Souz fast quality report was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit "$gate_status"
+
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-quality-fast-${{ github.run_id }}
+          path: build/reports/souz-quality/fast/**
+          if-no-files-found: warn
+
+      - name: Verify quality evidence
+        if: always()
+        shell: bash
+        run: |
+          missing=0
+          for quality_report in \
+            build/reports/souz-quality/fast/gate-summary-v1.json \
+            build/reports/souz-quality/fast/gate-summary.md; do
+            if [[ ! -f "$quality_report" ]]; then
+              echo "Missing required quality report: $quality_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
   tests:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: zulu
           java-version: 21

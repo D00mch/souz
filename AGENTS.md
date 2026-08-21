@@ -31,9 +31,27 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 - `:desktopApp` — desktop composition root, OS integrations, persistence, and packaging.
 - `:backend` — trusted-proxy HTTP host and PostgreSQL-backed conversation runtime.
 
+## Production dependency boundaries
+
+Only these direct production project dependencies are allowed. Standard test-source-set dependencies are outside this policy. An unclassified configuration with a direct project dependency is rejected until its production or test role is explicit, and unlisted production source sets have no project dependencies.
+
+- `:graph-engine` `main` → none.
+- `:llms` `main` → none.
+- `:agent` `main` → `:graph-engine`, `:llms`.
+- `:native` `main` → `:llms`.
+- `:skill-oauth-api` `main` → none.
+- `:skill-oauth-impl` `main` → `:skill-oauth-api`.
+- `:sharedLogic` `commonJvmMain` → `:agent`, `:llms`, `:skill-oauth-api`; `jvmMain` → `:native`.
+- `:ambientAgent` `jvmMain` → `:sharedLogic`.
+- `:sharedUI` `commonJvmMain` → `:ambientAgent`, `:sharedLogic`, `:agent`, `:llms`; `jvmMain` → `:native`.
+- `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`.
+- `:desktopApp` `main` → `:ambientAgent`, `:sharedLogic`, `:sharedUI`, `:agent`, `:llms`, `:native`.
+
 ## Verification
 
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.
+- Run `./gradlew souzGateFast` for repository policy and production module-boundary checks.
+- When changing quality tooling, run `./gradlew :build-logic:check`.
 - Run the affected module's command from its `AGENTS.md`; use `./gradlew check` for repository-wide verification when the change warrants it.
 - Desktop entry point: `./gradlew :desktopApp:run`.
 - Backend entry point: `./gradlew :backend:run`.
