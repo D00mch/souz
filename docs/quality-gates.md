@@ -38,7 +38,7 @@ are not part of the version 1 repository contract.
 
 Detekt runs type-resolved analysis for every JVM production and test
 compilation. Non-coroutine rule sets are disabled in
-[`config/quality/detekt.yml`](../config/quality/detekt.yml).
+[`quality/detekt.yml`](../quality/detekt.yml).
 
 The enabled built-in rules are:
 
@@ -59,7 +59,7 @@ volatile fields, and monitor coordination at non-suspending JVM or native
 boundaries are not prohibited.
 
 Existing findings live in the reviewed baseline at
-[`config/quality/detekt-baseline.xml`](../config/quality/detekt-baseline.xml).
+[`quality/detekt-baseline.xml`](../quality/detekt-baseline.xml).
 Advisory findings are excluded from the baseline so they remain visible.
 After reviewing a deliberate debt change, regenerate it explicitly:
 
@@ -77,7 +77,7 @@ build/reports/souz-quality/fast/gate-summary.md
 ```
 
 The JSON contract is defined by
-[`config/quality/gate-summary-v1.schema.json`](../config/quality/gate-summary-v1.schema.json).
+[`quality/gate-summary-v1.schema.json`](../quality/gate-summary-v1.schema.json).
 It records check versions, authority, enforcement, status,
 repository-relative diagnostics, tested Git identity, pull-request SHAs when
 supplied, dirty-worktree state, duration, and normalized SHA-256 evidence.

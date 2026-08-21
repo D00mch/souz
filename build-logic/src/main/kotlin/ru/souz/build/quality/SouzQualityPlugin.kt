@@ -68,8 +68,8 @@ class SouzQualityPlugin : Plugin<Project> {
         gate: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
         reportFiles: ConfigurableFileCollection,
     ) {
-        val configFile = project.layout.projectDirectory.file("config/quality/detekt.yml")
-        val baselineFile = project.layout.projectDirectory.file("config/quality/detekt-baseline.xml")
+        val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
+        val baselineFile = project.layout.projectDirectory.file("quality/detekt-baseline.xml")
         val rulesJar = project.layout.projectDirectory.file(
             "build-logic/detekt-rules/build/libs/souz-detekt-rules.jar"
         )
