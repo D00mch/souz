@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunInFinallySection:AgentEventBusTest.kt:AgentEventBusTest$close</ID>
+    <ID>SuspendFunInFinallySection:AgentEventServiceTest.kt:AgentEventServiceTest$close</ID>
+    <ID>SuspendFunInFinallySection:AgentExecutionLauncher.kt:AgentExecutionLauncher$unregister</ID>
+    <ID>SuspendFunInFinallySection:AmbientModeController.kt:AmbientModeController$withLock</ID>
+    <ID>SuspendFunInFinallySection:BackendAgentRuntimeEventSinkTest.kt:BackendAgentRuntimeEventSinkTest$close</ID>
+    <ID>SuspendFunInFinallySection:BackendClientSkills.kt:ClientWebSocketSkill$clearTool</ID>
+    <ID>SuspendFunInFinallySection:BackendConversationTurnRunner.kt:BackendConversationRuntimeTurnRunner$detach</ID>
+    <ID>SuspendFunInFinallySection:ChatUseCase.kt:ChatUseCase$finalizeRequestSession</ID>
+    <ID>SuspendFunInFinallySection:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$cancel</ID>
+    <ID>SuspendFunInFinallySection:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$stop</ID>
+    <ID>SuspendFunInFinallySection:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$withLock</ID>
+    <ID>SuspendFunInFinallySection:EventRoutes.kt:cancelAndJoin</ID>
+    <ID>SuspendFunInFinallySection:EventRoutes.kt:close</ID>
+    <ID>SuspendFunInFinallySection:ExecutionQuotaManager.kt:ExecutionQuotaManager$releaseExecution</ID>
+    <ID>SuspendFunInFinallySection:FilesToolUtil.kt:FilesToolUtil$withContext</ID>
+    <ID>SuspendFunInFinallySection:PostgresRepositoriesTest.kt:PostgresRepositoriesTest$close</ID>
+    <ID>SuspendFunInFinallySection:PublicClientServiceTest.kt:PublicClientServiceTest$cancelAndJoin</ID>
+    <ID>SuspendFunInFinallySection:SkillsGraphBasedAgentMidRunInputTest.kt:SkillsGraphBasedAgentMidRunInputTest$currentCoroutineContext</ID>
+    <ID>SuspendFunInFinallySection:SpeechRecognitionProvider.kt:MacOsSpeechRecognitionProvider$cancel</ID>
+    <ID>SuspendFunInFinallySection:TelegramBotController.kt:TelegramBotController$cancelAndJoin</ID>
+    <ID>SuspendFunInFinallySection:TelegramBotPollingService.kt:TelegramBotPollingService$cancelAndJoin</ID>
+    <ID>SuspendFunInFinallySection:TelegramService.kt:TelegramService$sendChatAction</ID>
+    <ID>SuspendFunInFinallySection:ToolPermissionBroker.kt:ImmediateToolPermissionBroker$withLock</ID>
+    <ID>SuspendFunSwallowedCancellation:ActiveRunInputController.kt:ActiveRunInputController$catch (error: Exception) { if (!released) withContext(NonCancellable) { releaseReservation(input = null) } throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:AgentEventService.kt:AgentEventService$catch (e: Throwable) { subscription.close() throw e }</ID>
+    <ID>SuspendFunSwallowedCancellation:AgentExecutionFinalizer.kt:AgentExecutionFinalizer$catch (e: CancellationException) { cancelExecution(execution, eventSink) }</ID>
+    <ID>SuspendFunSwallowedCancellation:AgentExecutionLauncher.kt:AgentExecutionLauncher$catch (cancelled: CancellationException) { withContext(NonCancellable) { onCancelled() } throw cancelled }</ID>
+    <ID>SuspendFunSwallowedCancellation:AgentToolExecutor.kt:AgentToolExecutor$catch (e: Exception) { eventSink.emit( AgentRuntimeEvent.ToolCallFailed( toolCallId = runtimeToolCallId, name = functionCall.name, error = e, durationMs = durationMsSince(startedAtNanos), ) ) recordToolExecution( functionCall = functionCall, toolCategoryName = toolCategoryName, startedAtNanos = startedAtNanos, logContext = logContext, success = false, errorType = e::class.simpleName ?: e::class.qualifiedName?.substringAfterLast(&apos;.&apos;), ) throw e }</ID>
+    <ID>SuspendFunSwallowedCancellation:AmbientModeController.kt:AmbientModeController$catch (error: Throwable) { if (error is CancellationException) throw error false }</ID>
+    <ID>SuspendFunSwallowedCancellation:AmbientModeController.kt:AmbientModeController$catch (error: Throwable) { if (error is CancellationException) throw error logger.warn( &quot;Ambient block analysis failed: blockId={} error={}&quot;, block.id, error.message ?: error::class.simpleName, ) null }</ID>
+    <ID>SuspendFunSwallowedCancellation:AmbientModeController.kt:AmbientModeController$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:BackendClientSkills.kt:ClientWebSocketSkill$catch (cancelled: CancellationException) { withContext(NonCancellable) { cancel(context) } throw cancelled }</ID>
+    <ID>SuspendFunSwallowedCancellation:BackendExecutionLlmChatApiTest.kt:BackendExecutionLlmChatApiTest$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:BackendRuntimeResourcesTest.kt:BackendRuntimeResourcesTest$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ChatUseCase.kt:ChatUseCase$catch (e: CancellationException) { session.requestStatus = ChatRequestStatus.CANCELLED session.requestErrorType = requestErrorType(e) handleRequestCancellation(session, e, onResult) }</ID>
+    <ID>SuspendFunSwallowedCancellation:ChatUseCaseTest.kt:ChatUseCaseTest$catch (error: CancellationException) { firstCancellationObserved.complete(Unit) allowFirstCleanup.await() throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:ClientThreadRuntimeRegistry.kt:ClientThreadRuntimeRegistry$catch (error: Exception) { ackSent(threadId, requestId) throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:CodexOAuthService.kt:CodexOAuthService$catch (e: CancellationException) { _oauthState.value = CodexOAuthState.Idle throw e }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: CancellationException) { // Normal stop path. Cleanup happens in finally. }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) throw error batchSpeechRecognitionProvider?.let { it.enabled &amp;&amp; it.hasRequiredKey } == true }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) throw error false }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) throw error if (error.isNoSpeechDetected()) { logger.debug(&quot;Ambient batch speech fallback skipped no-speech window: locale={}&quot;, locale) return endedAtMs } throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) { markStoppedFromStarting(generation) throw error } logger.warn( &quot;Ambient live transcription start failed: locale={} error={}&quot;, locale, error.message ?: error::class.simpleName, ) when (error) { is LocalMacOsLiveSpeechPermissionDeniedException -&gt; { markStoppedFromStarting(generation) return AmbientSpeechAvailability.SpeechRecognitionPermissionDenied } is LocalMacOsLiveSpeechUnsupportedException, is LocalMacOsLiveSpeechModelUnavailableException, is LocalMacOsLiveSpeechUnavailableException -&gt; return startBatchFallback(locale, generation) else -&gt; return startBatchFallback(locale, generation) } }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:DesktopAttachmentHostPorts.kt:DesktopPathPicker$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:DesktopMemoryMaintenanceBackgroundRunner.kt:DesktopMemoryMaintenanceBackgroundRunner$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:EventRoutes.kt:runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ExecutionQuotaManagerTest.kt:catch (error: Throwable) { error as? T ?: throw AssertionError(&quot;Expected exception ${T::class.simpleName}, got ${error::class.simpleName}.&quot;, error) }</ID>
+    <ID>SuspendFunSwallowedCancellation:FileSystemSkillRegistryRepository.kt:FileSystemSkillRegistryRepository$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:FinderService.kt:FinderService$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:GraphRunner.kt:GraphRunner$catch (cancel: CancellationException) { throw GraphCancellation(lastCtx, cancel) }</ID>
+    <ID>SuspendFunSwallowedCancellation:GraphRunner.kt:GraphRunner$catch (t: Throwable) { if (t is CancellationException) throw t lastError = t val shouldRetry = policy.shouldRetry(t, inCtx, node, attempt) val attemptsLeft = policy.maxAttempts - attempt if (!shouldRetry || attemptsLeft &lt;= 0) break logger.warn( &quot;Node &apos;{}&apos; failed on attempt {} (depth {}), retrying ({} attempts left): {}&quot;, node.name, attempt, runtime.counter.get(), attemptsLeft, t.message, t ) }</ID>
+    <ID>SuspendFunSwallowedCancellation:LiveSpeechTranscriptionProvider.kt:MacOsSpeechAnalyzerLiveTranscriptionProvider$catch (error: Throwable) { if (error is CancellationException) throw error when (val mappedError = mapLiveBridgeError(error)) { is LocalMacOsLiveSpeechPermissionDeniedException -&gt; throw mappedError else -&gt; false } }</ID>
+    <ID>SuspendFunSwallowedCancellation:LiveSpeechTranscriptionProvider.kt:MacOsSpeechAnalyzerLiveTranscriptionProvider$catch (error: Throwable) { throw mapLiveBridgeError(error) }</ID>
+    <ID>SuspendFunSwallowedCancellation:LiveSpeechTranscriptionProvider.kt:MacOsSpeechAnalyzerLiveTranscriptionProvider.BridgeLiveSpeechTranscriptionSession$catch (error: Throwable) { throw mapLiveBridgeError(error) }</ID>
+    <ID>SuspendFunSwallowedCancellation:LocalChatAPI.kt:LocalChatAPI$catch (error: Exception) { LLMResponse.Embeddings.Error(-1, &quot;Local provider error: ${error.message}&quot;) }</ID>
+    <ID>SuspendFunSwallowedCancellation:LocalLlamaRuntime.kt:LocalLlamaRuntime$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:LocalLlmAmbientBlockAnalyzer.kt:LocalLlmAmbientBlockAnalyzer$catch (error: Throwable) { if (error is CancellationException) throw error logger.warn( &quot;Ambient local analysis failed: blockId={} error={}&quot;, block.id, error.message ?: error::class.simpleName, ) return null }</ID>
+    <ID>SuspendFunSwallowedCancellation:LocalModelStore.kt:LocalModelStore$catch (error: Throwable) { if (error is CancellationException) { l.info(&quot;Download of local model {} was cancelled, keeping partial file {}&quot;, profile.id, tempFile) } else { l.warn(&quot;Download of local model {} failed, keeping partial file {}: {}&quot;, profile.id, tempFile, error.message) } throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:LocalModelUiCoordinator.kt:LocalModelUiCoordinator$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:MainViewModel.kt:MainViewModel$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:McpClientManager.kt:McpClientManager$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:McpClientManager.kt:McpGigaToolSetup$catch (e: Exception) { e.toGigaToolMessage(functionCall.name) }</ID>
+    <ID>SuspendFunSwallowedCancellation:McpOAuthManager.kt:McpOAuthManager$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryCaptureService.kt:MemoryCaptureService$catch (_: Exception) { // Best-effort cleanup; keep the original capture result or failure visible. }</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryCoreTest.kt:MemoryCoreTest$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryService.kt:MemoryService$catch (_: Exception) { // Best-effort cleanup; keep the original write failure visible. }</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryService.kt:MemoryService$catch (error: CancellationException) { cleanupSourceEvent(sourceEventId) throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryViewModel.kt:MemoryViewModel$catch (error: CancellationException) { onCancellation() throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:NodesClassification.kt:NodesClassification$catch (e: Exception) { l.error(&quot;Error in apiClassifier: {}&quot;, e.message) return classify(userText, history, categoryStates, retriesCount.dec()) }</ID>
+    <ID>SuspendFunSwallowedCancellation:NodesMCP.kt:NodesMCP$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:OrderedShutdown.kt:OrderedShutdown$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:OrderedShutdownTest.kt:OrderedShutdownTest$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:PublicClientService.kt:PublicClientService$catch (error: CancellationException) { withContext(NonCancellable) { runCatching { reconcileFailedStart(chat, requestId, threadId) } } throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:PublicClientService.kt:PublicClientService$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:RecordUtils.kt:catch (e: Exception) { l.error(&quot;\nERROR: ${e.message}&quot;) exitProcess(1) }</ID>
+    <ID>SuspendFunSwallowedCancellation:SettingsViewModel.kt:SettingsViewModel$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:SpeechRecognitionProvider.kt:MacOsSpeechRecognitionProvider$catch (error: Throwable) { throw if (error is CancellationException) error else mapBridgeError(error, locale) }</ID>
+    <ID>SuspendFunSwallowedCancellation:SpeechRecognitionProvider.kt:MacOsSpeechRecognitionProvider$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:TelegramBotController.kt:TelegramBotController$catch (e: Exception) { if (e is CancellationException) throw e logger.error(&quot;Error during control bot polling ({})&quot;, e::class.simpleName) delay(5_000) }</ID>
+    <ID>SuspendFunSwallowedCancellation:TelegramBotController.kt:TelegramBotController$catch (e: Exception) { logger.error(&quot;Error processing control command ({})&quot;, e::class.simpleName) botApi.sendMessage(token, chatId, &quot;Error processing command&quot;) }</ID>
+    <ID>SuspendFunSwallowedCancellation:TelegramBotController.kt:TelegramBotController$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:TelegramBotWorkflow.kt:TelegramBotWorkflow$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:TelegramChannelProvider.kt:TelegramChannelProvider$catch (e: Exception) { e }</ID>
+    <ID>SuspendFunSwallowedCancellation:TelegramService.kt:TelegramService$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolDesktopScreenShot.kt:ToolDesktopScreenShot$catch (e: Exception) { l.error(&quot;DesktopScreenShot failed&quot;, e) throw RuntimeException(&quot;DesktopScreenShot failed: ${e.message}&quot;, e) }</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolTelegramForward.kt:ToolTelegramForward$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolTelegramGetHistory.kt:ToolTelegramGetHistory$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolTelegramReadInbox.kt:ToolTelegramReadInbox$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolTelegramSavedMessages.kt:ToolTelegramSavedMessages$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolTelegramSearch.kt:ToolTelegramSearch$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolTelegramSend.kt:ToolTelegramSend$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ToolTelegramSetState.kt:ToolTelegramSetState$runCatching</ID>
+    <ID>SuspendFunWithCoroutineScopeReceiver:AgentExecutionServiceAsyncLifecycleTest.kt:suspend</ID>
+    <ID>SuspendFunWithCoroutineScopeReceiver:AmbientModeControllerTest.kt:AmbientModeControllerTest$suspend</ID>
+    <ID>SuspendFunWithCoroutineScopeReceiver:MainViewModelTest.kt:MainViewModelTest$suspend</ID>
+    <ID>SuspendFunWithCoroutineScopeReceiver:RequestParsing.kt:suspend</ID>
+    <ID>SuspendFunWithCoroutineScopeReceiver:RouteErrors.kt:suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:AnthropicChatAPI.kt:AnthropicChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendConversationRuntimeSettingsTest.kt:ReplyingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendConversationRuntimeSettingsTest.kt:SkillLoopChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendConversationRuntimeTurnRunnerTest.kt:ThrowingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendExecutionLlmChatApi.kt:BackendExecutionLlmChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendExecutionLlmChatApiTest.kt:StubChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendExecutionLlmToolCatalogTest.kt:UnusedLlmApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendStage3RouteTest.kt:CancellableChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendStage3RouteTest.kt:CapturingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendStage3RouteTest.kt:FailingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendStage3RouteTest.kt:GateControlledChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendStage5EventRouteTest.kt:CancellableStreamingEventChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendStage5EventRouteTest.kt:GateControlledStreamingEventChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:BackendStage5EventRouteTest.kt:StreamingEventChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:CodexChatAPI.kt:CodexChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:GigaRestChatAPI.kt:GigaRestChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LLMChatAPI.kt:LLMChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmEmbeddingClientTest.kt:LlmEmbeddingClientTest.RecordingEmbeddingApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmMemoryConsolidatorTest.kt:LlmMemoryConsolidatorTest.RecordingApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmMemoryWriterTest.kt:LlmMemoryWriterTest.RecordingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmSkillValidatorTest.kt:LlmSkillValidatorTest.FixedResponseChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LocalChatAPI.kt:LocalChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LocalChatAmbientLocalLlmTest.kt:LocalChatAmbientLocalLlmTest.CapturingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:NodesLLMTest.kt:StreamingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:OpenAICompatibleChatAPI.kt:OpenAICompatibleChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:SettingsRoutingLlmChatApi.kt:SettingsRoutingLlmChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:SettingsRoutingLlmChatApi.kt:UnsupportedProviderApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:SkillApprovalGateTest.kt:SkillApprovalGateTest.CapturingApprovalChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:TokenLoggingChatApiTest.kt:StubChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:ToolsFactoryTest.kt:DesktopUnusedLlmApi$suspend</ID>
+  </CurrentIssues>
+</SmellBaseline>

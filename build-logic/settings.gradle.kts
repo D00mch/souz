@@ -1,5 +1,7 @@
 rootProject.name = "build-logic"
 
+include(":detekt-rules")
+
 pluginManagement {
     repositories {
         gradlePluginPortal()

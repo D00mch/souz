@@ -1,0 +1,48 @@
+config:
+  validation: true
+  warningsAsErrors: true
+
+comments:
+  active: false
+complexity:
+  active: false
+empty-blocks:
+  active: false
+exceptions:
+  active: false
+naming:
+  active: false
+performance:
+  active: false
+potential-bugs:
+  active: false
+style:
+  active: false
+
+coroutines:
+  active: true
+  CoroutineLaunchedInTestWithoutRunTest:
+    active: true
+  GlobalCoroutineUsage:
+    active: true
+  InjectDispatcher:
+    active: false
+  RedundantSuspendModifier:
+    active: false
+  SleepInsteadOfDelay:
+    active: true
+  SuspendFunInFinallySection:
+    active: true
+  SuspendFunSwallowedCancellation:
+    active: true
+  SuspendFunWithCoroutineScopeReceiver:
+    active: true
+  SuspendFunWithFlowReturnType:
+    active: true
+
+souz-coroutines:
+  active: true
+  MonitorInsideSuspendContext:
+    active: true
+  ThreadLocalInCoroutineCode:
+    active: true

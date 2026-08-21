@@ -76,7 +76,43 @@ internal object SouzQualityChecks {
         policy = "AGENTS.md",
     )
 
-    val fast = listOf(repositoryContracts, moduleBoundaries)
+    val cancellationPropagation = QualityCheckDefinition(
+        id = "cancellation-propagation",
+        implementationVersion = 1,
+        description = "Suspend paths propagate CancellationException immediately.",
+        policy = "AGENTS.md",
+    )
+
+    val coroutineThreadLocal = QualityCheckDefinition(
+        id = "coroutine-thread-local",
+        implementationVersion = 1,
+        description = "Thread-local state used by coroutine code is propagated explicitly.",
+        policy = "AGENTS.md",
+    )
+
+    val coroutineMonitorUse = QualityCheckDefinition(
+        id = "coroutine-monitor-use",
+        implementationVersion = 1,
+        description = "JVM monitor coordination directly inside coroutine execution is reviewed.",
+        policy = "AGENTS.md",
+        enforcement = QualityEnforcement.ADVISORY,
+    )
+
+    val coroutineSafety = QualityCheckDefinition(
+        id = "coroutine-safety",
+        implementationVersion = 1,
+        description = "Coroutine code follows structured execution, cleanup, flow, sleep, and test-lifecycle rules.",
+        policy = "AGENTS.md",
+    )
+
+    val fast = listOf(
+        repositoryContracts,
+        moduleBoundaries,
+        cancellationPropagation,
+        coroutineThreadLocal,
+        coroutineMonitorUse,
+        coroutineSafety,
+    )
 }
 
 internal object QualityCheckRunner {
@@ -94,7 +130,10 @@ internal object QualityCheckRunner {
         try {
             diagnostics += check()
             if (diagnostics.isNotEmpty()) {
-                status = QualityStatus.FAIL
+                status = when (definition.enforcement) {
+                    QualityEnforcement.BLOCKING -> QualityStatus.FAIL
+                    QualityEnforcement.ADVISORY -> QualityStatus.WARNING
+                }
             }
         } catch (exception: Exception) {
             status = QualityStatus.ERROR
