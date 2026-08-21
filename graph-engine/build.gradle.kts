@@ -3,7 +3,6 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":llms"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
     implementation(libs.slf4j.api)
