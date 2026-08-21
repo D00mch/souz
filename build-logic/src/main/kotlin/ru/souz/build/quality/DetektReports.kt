@@ -1,6 +1,7 @@
 package ru.souz.build.quality
 
 import org.w3c.dom.Element
+import org.w3c.dom.Document
 import java.io.File
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
@@ -14,20 +15,13 @@ internal object DetektReports {
     fun read(repositoryDirectory: File, reportFiles: Set<File>): List<DetektFinding> =
         reportFiles.sortedBy { it.relativeInvariantPath(repositoryDirectory) }.flatMap { report ->
             readReport(repositoryDirectory, report)
-        }
+        }.distinct()
 
     private fun readReport(repositoryDirectory: File, reportFile: File): List<DetektFinding> {
-        if (!reportFile.isFile) return emptyList()
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
-            setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
-            isXIncludeAware = false
-            isExpandEntityReferences = false
+        check(reportFile.isFile) {
+            "Expected Detekt report was not produced: ${reportFile.relativeInvariantPath(repositoryDirectory)}"
         }
-        val document = factory.newDocumentBuilder().parse(reportFile)
+        val document = parseSecureXml(reportFile)
         val findings = mutableListOf<DetektFinding>()
         val files = document.getElementsByTagName("file")
         for (fileIndex in 0 until files.length) {
@@ -57,6 +51,19 @@ internal object DetektReports {
             path.replace(File.separatorChar, '/')
         }
     }
+}
+
+internal fun parseSecureXml(file: File): Document {
+    val factory = DocumentBuilderFactory.newInstance().apply {
+        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        setFeature("http://xml.org/sax/features/external-general-entities", false)
+        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
+        setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
+        isXIncludeAware = false
+        isExpandEntityReferences = false
+    }
+    return factory.newDocumentBuilder().parse(file)
 }
 
 // link to classes

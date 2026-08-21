@@ -48,75 +48,58 @@ abstract class SouzGateFastTask : DefaultTask() {
             metadataError = exception
             GitIdentity(null, null, null, null)
         }
+        val projects = projectDescriptors.get().map(ProjectDescriptor::decode)
+        val edges = dependencyEdges.get().map(DependencyEdge::decode)
+        var detektError: Exception? = null
+        val detektFindings = try {
+            DetektReports.read(repository, detektReports.files)
+        } catch (exception: Exception) {
+            detektError = exception
+            emptyList()
+        }
+
+        fun runCheck(
+            definition: QualityCheckDefinition,
+            check: () -> List<QualityDiagnostic>,
+        ): QualityCheckResult = QualityCheckRunner.run(definition, repository, identity, check)
+
+        fun detektDiagnostics(predicate: (String) -> Boolean): List<QualityDiagnostic> {
+            detektError?.let { throw it }
+            return detektFindings.filter { predicate(it.ruleId) }.map(DetektFinding::diagnostic)
+        }
 
         val results = listOf(
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.repositoryContracts,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
+            runCheck(SouzQualityChecks.gitMetadata) {
+                metadataError?.let { throw it }
+                emptyList()
+            },
+            runCheck(SouzQualityChecks.repositoryContracts) {
                 RepositoryContracts.check(
                     repositoryDirectory = repository,
-                    projects = projectDescriptors.get().map(ProjectDescriptor::decode),
+                    projects = projects,
                     policyFiles = policyFiles.files,
                     registeredChecks = SouzQualityChecks.fast,
                 )
             },
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.moduleBoundaries,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
+            runCheck(SouzQualityChecks.moduleBoundaries) {
                 ModuleBoundaries.check(
-                    projects = projectDescriptors.get().map(ProjectDescriptor::decode),
-                    edges = dependencyEdges.get().map(DependencyEdge::decode),
+                    projects = projects,
+                    edges = edges,
                 )
             },
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.cancellationPropagation,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
-                DetektReports.read(repository, detektReports.files)
-                    .filter { it.ruleId in CANCELLATION_RULES }
-                    .map(DetektFinding::diagnostic)
+            runCheck(SouzQualityChecks.cancellationPropagation) {
+                detektDiagnostics { it in CANCELLATION_RULES }
             },
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.coroutineThreadLocal,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
-                DetektReports.read(repository, detektReports.files)
-                    .filter { it.ruleId in THREAD_LOCAL_RULES }
-                    .map(DetektFinding::diagnostic)
+            runCheck(SouzQualityChecks.coroutineThreadLocal) {
+                detektDiagnostics { it in THREAD_LOCAL_RULES }
             },
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.coroutineMonitorUse,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
-                DetektReports.read(repository, detektReports.files)
-                    .filter { it.ruleId in MONITOR_RULES }
-                    .map(DetektFinding::diagnostic)
+            runCheck(SouzQualityChecks.coroutineMonitorUse) {
+                detektDiagnostics { it in MONITOR_RULES }
             },
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.coroutineSafety,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
-                DetektReports.read(repository, detektReports.files)
-                    .filterNot {
-                        it.ruleId in CANCELLATION_RULES ||
-                            it.ruleId in THREAD_LOCAL_RULES ||
-                            it.ruleId in MONITOR_RULES
-                    }
-                    .map(DetektFinding::diagnostic)
+            runCheck(SouzQualityChecks.coroutineSafety) {
+                detektDiagnostics {
+                    it !in CANCELLATION_RULES && it !in THREAD_LOCAL_RULES && it !in MONITOR_RULES
+                }
             },
         )
 

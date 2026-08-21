@@ -11,8 +11,6 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 import org.w3c.dom.Element
 import java.io.File
-import javax.xml.XMLConstants
-import javax.xml.parsers.DocumentBuilderFactory
 
 @DisableCachingByDefault(because = "This explicit maintenance task rewrites the tracked Detekt baseline.")
 abstract class UpdateSouzCoroutineBaselineTask : DefaultTask() {
@@ -60,16 +58,7 @@ internal object DetektBaselines {
 
     private fun currentIssueIds(baseline: File): Sequence<String> {
         if (!baseline.isFile) return emptySequence()
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
-            setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
-            isXIncludeAware = false
-            isExpandEntityReferences = false
-        }
-        val document = factory.newDocumentBuilder().parse(baseline)
+        val document = parseSecureXml(baseline)
         val currentIssues = document.getElementsByTagName("CurrentIssues")
         require(currentIssues.length == 1) { "Invalid Detekt baseline: $baseline" }
         val ids = (currentIssues.item(0) as Element).getElementsByTagName("ID")

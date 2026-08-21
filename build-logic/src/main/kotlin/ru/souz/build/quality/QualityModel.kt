@@ -4,18 +4,6 @@ import java.io.File
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.time.TimeSource
 
-internal enum class QualityLane(val wireName: String) {
-    FAST("fast"),
-    FULL("full"),
-    EXPENSIVE("expensive"),
-}
-
-internal enum class QualityAuthority(val wireName: String) {
-    LOCAL_SAFE("local-safe"),
-    CI_EXACT_CHECKOUT("ci-exact-checkout"),
-    HOST_SPECIFIC("host-specific"),
-}
-
 internal enum class QualityEnforcement(val wireName: String) {
     BLOCKING("blocking"),
     ADVISORY("advisory"),
@@ -35,8 +23,6 @@ internal data class QualityCheckDefinition(
     val implementationVersion: Int,
     val description: String,
     val policy: String,
-    val lane: QualityLane = QualityLane.FAST,
-    val authority: QualityAuthority = QualityAuthority.LOCAL_SAFE,
     val enforcement: QualityEnforcement = QualityEnforcement.BLOCKING,
 )
 
@@ -62,6 +48,13 @@ internal data class QualityCheckResult(
 )
 
 internal object SouzQualityChecks {
+    val gitMetadata = QualityCheckDefinition(
+        id = "git-metadata",
+        implementationVersion = 1,
+        description = "The gate can identify the tested Git checkout and worktree state.",
+        policy = "AGENTS.md",
+    )
+
     val repositoryContracts = QualityCheckDefinition(
         id = "repository-contracts",
         implementationVersion = 1,
@@ -106,6 +99,7 @@ internal object SouzQualityChecks {
     )
 
     val fast = listOf(
+        gitMetadata,
         repositoryContracts,
         moduleBoundaries,
         cancellationPropagation,
@@ -120,7 +114,6 @@ internal object QualityCheckRunner {
         definition: QualityCheckDefinition,
         repositoryDirectory: File,
         gitIdentity: GitIdentity,
-        metadataError: Exception?,
         check: () -> List<QualityDiagnostic>,
     ): QualityCheckResult {
         val started = TimeSource.Monotonic.markNow()
@@ -138,11 +131,6 @@ internal object QualityCheckRunner {
         } catch (exception: Exception) {
             status = QualityStatus.ERROR
             diagnostics += internalErrorDiagnostic(definition.id, exception, repositoryDirectory)
-        }
-
-        if (metadataError != null) {
-            status = QualityStatus.ERROR
-            diagnostics += internalErrorDiagnostic("git-metadata", metadataError, repositoryDirectory)
         }
 
         return QualityCheckResult(

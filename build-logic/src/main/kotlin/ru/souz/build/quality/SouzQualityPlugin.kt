@@ -54,7 +54,7 @@ class SouzQualityPlugin : Plugin<Project> {
             projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
             dependencyEdges.set(edgeInputs)
             this.policyFiles.from(policyFiles)
-            detektReports.from(detektReportFiles)
+            detektReports.from(detektReportFiles.filter(java.io.File::isFile))
             jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary-v1.json"))
             markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary.md"))
             doNotTrackState("The report records current Git identity and worktree state.")
@@ -87,6 +87,7 @@ class SouzQualityPlugin : Plugin<Project> {
             val configure = {
                 if (!configured) {
                     configured = true
+                    val rulesJarTask = project.gradle.includedBuild("build-logic").task(":detekt-rules:jar")
                     subproject.pluginManager.apply("dev.detekt")
                     subproject.dependencies.add("detektPlugins", subproject.files(rulesJar))
                     subproject.extensions.configure(DetektExtension::class.java) {
@@ -100,55 +101,42 @@ class SouzQualityPlugin : Plugin<Project> {
                         ignoreFailures.set(true)
                         parallel.set(true)
                     }
+
+                    val analysisTasks = subproject.tasks.withType(Detekt::class.java)
+                        .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
+                    analysisTasks.configureEach {
+                        dependsOn(rulesJarTask)
+                        exclude("**/generated/resources/**")
+                        baseline.set(baselineFile)
+                        reports.checkstyle.required.set(true)
+                        reports.html.required.set(false)
+                        reports.markdown.required.set(false)
+                        reports.sarif.required.set(false)
+                        reportFiles.from(reports.checkstyle.outputLocation)
+                    }
+                    gate.configure { dependsOn(analysisTasks) }
+
+                    val baselineTasks = subproject.tasks.withType(DetektCreateBaselineTask::class.java)
+                        .matching { task -> task.name != "detektBaseline" && !task.name.endsWith("SourceSet") }
+                    baselineTasks.configureEach {
+                        dependsOn(rulesJarTask)
+                        baseline.set(
+                            subproject.layout.buildDirectory.file("reports/detekt/baselines/$name.xml")
+                        )
+                        exclude("**/generated/resources/**")
+                        val partialBaseline = baseline
+                        doFirst {
+                            partialBaseline.get().asFile.delete()
+                        }
+                        updateBaseline.configure {
+                            partialBaselines.from(partialBaseline)
+                        }
+                    }
+                    updateBaseline.configure { dependsOn(baselineTasks) }
                 }
             }
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") { configure() }
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") { configure() }
-        }
-
-        project.gradle.projectsEvaluated {
-            val analysisTasks = project.subprojects.flatMap { subproject ->
-                subproject.tasks.withType(Detekt::class.java)
-                    .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
-                    .toList()
-            }
-            val baselineTasks = project.subprojects.flatMap { subproject ->
-                subproject.tasks.withType(DetektCreateBaselineTask::class.java)
-                    .matching { task -> task.name != "detektBaseline" && !task.name.endsWith("SourceSet") }
-                    .toList()
-                    .onEach { task ->
-                        task.baseline.set(
-                            subproject.layout.buildDirectory.file("reports/detekt/baselines/${task.name}.xml")
-                        )
-                        task.exclude("**/generated/resources/**")
-                        task.doFirst {
-                            task.baseline.get().asFile.delete()
-                        }
-                    }
-            }
-            val rulesJarTask = if (analysisTasks.isEmpty() && baselineTasks.isEmpty()) {
-                null
-            } else {
-                project.gradle.includedBuild("build-logic").task(":detekt-rules:jar")
-            }
-            analysisTasks.forEach { task ->
-                if (rulesJarTask != null) task.dependsOn(rulesJarTask)
-                task.exclude("**/generated/resources/**")
-                task.baseline.set(baselineFile)
-                task.reports.checkstyle.required.set(true)
-                task.reports.html.required.set(false)
-                task.reports.markdown.required.set(false)
-                task.reports.sarif.required.set(false)
-                reportFiles.from(task.reports.checkstyle.outputLocation)
-            }
-            baselineTasks.forEach { task ->
-                if (rulesJarTask != null) task.dependsOn(rulesJarTask)
-            }
-            updateBaseline.configure {
-                partialBaselines.from(baselineTasks.map { it.baseline })
-                dependsOn(baselineTasks)
-            }
-            gate.configure { dependsOn(analysisTasks) }
         }
     }
 

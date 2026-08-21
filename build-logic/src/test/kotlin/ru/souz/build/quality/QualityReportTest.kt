@@ -37,7 +37,6 @@ class QualityReportTest {
             definition = SouzQualityChecks.coroutineMonitorUse,
             repositoryDirectory = repository.toFile(),
             gitIdentity = GitIdentity(null, null, null, true),
-            metadataError = null,
         ) {
             listOf(QualityDiagnostic("Example.kt", 4, "Review synchronized use."))
         }
