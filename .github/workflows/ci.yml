@@ -23,21 +23,30 @@ jobs:
           cache: gradle
 
       - name: Run fast quality gate
+        shell: bash
         env:
           SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: ./gradlew souzGateFast --console=plain --stacktrace
-
-      - name: Publish quality summary
-        if: always()
-        shell: bash
         run: |
-          quality_report=build/reports/souz-quality/fast/gate-summary.md
-          if [[ -f "$quality_report" ]]; then
-            cat "$quality_report" >> "$GITHUB_STEP_SUMMARY"
+          gate_log="$RUNNER_TEMP/souz-gate.log"
+          gate_report=build/reports/souz-quality/fast/gate-summary.md
+          gate_json=build/reports/souz-quality/fast/gate-summary-v1.json
+
+          rm -f "$gate_report" "$gate_json"
+
+          set +e
+          ./gradlew souzGateFast --console=plain --stacktrace >"$gate_log" 2>&1
+          gate_status=$?
+          set -e
+
+          if [[ -f "$gate_report" ]]; then
+            tee -a "$GITHUB_STEP_SUMMARY" < "$gate_report"
           else
+            cat "$gate_log"
             echo "Souz fast quality report was not produced." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+          exit "$gate_status"
 
       - name: Upload quality reports
         if: always()
