@@ -3,16 +3,75 @@ name: CI-Tests
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  quality-fast:
+    name: Quality Fast (report only)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+          cache: gradle
+
+      - name: Run fast quality gate
+        continue-on-error: true
+        env:
+          SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./gradlew souzGateFast --console=plain --stacktrace
+
+      - name: Publish quality summary
+        if: always()
+        shell: bash
+        run: |
+          quality_report=build/reports/souz-quality/fast/gate-summary.md
+          if [[ -f "$quality_report" ]]; then
+            cat "$quality_report" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Souz fast quality report was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-quality-fast-${{ github.run_id }}
+          path: build/reports/souz-quality/fast/**
+          if-no-files-found: warn
+
+      - name: Verify quality evidence
+        if: always()
+        shell: bash
+        run: |
+          missing=0
+          for quality_report in \
+            build/reports/souz-quality/fast/gate-summary-v1.json \
+            build/reports/souz-quality/fast/gate-summary.md; do
+            if [[ ! -f "$quality_report" ]]; then
+              echo "Missing required quality report: $quality_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
   tests:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: zulu
           java-version: 21

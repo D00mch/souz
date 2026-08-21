@@ -94,6 +94,8 @@ Codex models use one server-managed OAuth session because the refresh token, acc
 ├── ambientAgent/           # Ambient transcription semantics and local task analysis
 ├── sharedLogic/            # Shared JVM runtime logic, providers, tools, and sandboxes
 ├── sharedUI/               # Shared Compose and desktop UI, view models, host ports, UI adapters, UI resources
+├── skill-oauth-api/        # Provider-neutral Skill OAuth contracts
+├── skill-oauth-impl/       # Backend OAuth providers, routes, and PostgreSQL persistence
 ├── desktopApp/             # Runnable desktop host, DI composition root, OS integrations, packaging
 ├── backend/                # Ktor HTTP backend over the shared agent runtime
 ├── scripts/                # Build, release, and packaging helper scripts
@@ -111,6 +113,8 @@ Gradle modules included by the build:
 :ambientAgent
 :sharedLogic
 :sharedUI
+:skill-oauth-api
+:skill-oauth-impl
 :desktopApp
 :backend
 ```
@@ -118,6 +122,7 @@ Gradle modules included by the build:
 Module docs:
 
 - [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
+- [`docs/quality-gates.md`](docs/quality-gates.md) covers repository checks, evidence, and remediation.
 
 ## Architecture (module structure)
 
@@ -130,10 +135,13 @@ flowchart LR
     backendApi[":backend\nHTTP API"] --> agentNode
 
     agentNode --> graphEngine[":graph-engine\nTyped graph runtime"]
-    agentNode --> runtimeNode[":sharedLogic\nShared runtime logic"]
     agentNode --> llmsNode[":llms\nLLM contracts"]
+    runtimeNode[":sharedLogic\nShared runtime logic"] --> agentNode
     runtimeNode --> llmsNode
     runtimeNode --> nativeRuntime[":native\nLocal llama.cpp runtime"]
+    runtimeNode --> oauthApi[":skill-oauth-api\nOAuth contracts"]
+    oauthImpl[":skill-oauth-impl\nOAuth backend implementation"] --> oauthApi
+    backendApi --> oauthImpl
     ambientNode --> runtimeNode
     backendApi --> runtimeNode
     desktopApp --> runtimeNode
@@ -170,6 +178,8 @@ Souz keeps platform-specific logic at the edges:
 - `:sharedLogic` contains shared JVM runtime services, portable tools, sandbox/skills infrastructure, provider clients, and platform-specific runtime implementations. See [`sharedLogic/README.md`](sharedLogic/README.md).
 - `:native` contains local model support used by desktop and backend-capable runtime wiring.
 - `:sharedUI` contains shared Compose and desktop UI, view models, UI adapters, and desktop test coverage.
+- `:skill-oauth-api` contains provider-neutral Skill OAuth contracts.
+- `:skill-oauth-impl` contains the backend OAuth implementation, routes, and PostgreSQL persistence.
 - `:desktopApp` contains the runnable desktop entry points, DI composition root, OS integrations, desktop-only tools/services, and packaging resources.
 - `:backend` exposes the same runtime over HTTP without starting the desktop app.
 
