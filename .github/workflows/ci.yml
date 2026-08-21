@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   quality-fast:
-    name: Quality Fast (report only)
+    name: Quality Fast
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +23,6 @@ jobs:
           cache: gradle
 
       - name: Run fast quality gate
-        continue-on-error: true
         env:
           SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}

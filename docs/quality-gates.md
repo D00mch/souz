@@ -8,10 +8,8 @@ the fast gate from the repository root:
 ```
 
 The fast lane is local-safe: its results remain meaningful in a dirty
-checkout. Its checks are blocking locally and report-only in pull-request CI.
-CI still fails the quality job when the gate cannot produce both required
-reports, so checkout, build, or reporting failures do not look like policy
-results.
+checkout. Its checks are blocking locally and in pull-request CI. CI publishes
+the quality summary and report artifacts even when the gate fails.
 
 ## Checks
 
