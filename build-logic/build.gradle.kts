@@ -14,6 +14,7 @@ java {
 dependencies {
     implementation("org.commonmark:commonmark:0.30.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.21.3")
+    implementation("dev.detekt:detekt-gradle-plugin:2.0.0-alpha.6")
 
     testImplementation(gradleTestKit())
     testImplementation("org.junit.jupiter:junit-jupiter:6.0.2")
@@ -31,4 +32,8 @@ gradlePlugin {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.named("check") {
+    dependsOn(":detekt-rules:check")
 }

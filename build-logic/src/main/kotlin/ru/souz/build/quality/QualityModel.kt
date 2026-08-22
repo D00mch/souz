@@ -4,18 +4,6 @@ import java.io.File
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.time.TimeSource
 
-internal enum class QualityLane(val wireName: String) {
-    FAST("fast"),
-    FULL("full"),
-    EXPENSIVE("expensive"),
-}
-
-internal enum class QualityAuthority(val wireName: String) {
-    LOCAL_SAFE("local-safe"),
-    CI_EXACT_CHECKOUT("ci-exact-checkout"),
-    HOST_SPECIFIC("host-specific"),
-}
-
 internal enum class QualityEnforcement(val wireName: String) {
     BLOCKING("blocking"),
     ADVISORY("advisory"),
@@ -35,8 +23,6 @@ internal data class QualityCheckDefinition(
     val implementationVersion: Int,
     val description: String,
     val policy: String,
-    val lane: QualityLane = QualityLane.FAST,
-    val authority: QualityAuthority = QualityAuthority.LOCAL_SAFE,
     val enforcement: QualityEnforcement = QualityEnforcement.BLOCKING,
 )
 
@@ -62,6 +48,13 @@ internal data class QualityCheckResult(
 )
 
 internal object SouzQualityChecks {
+    val gitMetadata = QualityCheckDefinition(
+        id = "git-metadata",
+        implementationVersion = 1,
+        description = "The gate can identify the tested Git checkout and worktree state.",
+        policy = "AGENTS.md",
+    )
+
     val repositoryContracts = QualityCheckDefinition(
         id = "repository-contracts",
         implementationVersion = 1,
@@ -76,7 +69,52 @@ internal object SouzQualityChecks {
         policy = "AGENTS.md",
     )
 
-    val fast = listOf(repositoryContracts, moduleBoundaries)
+    val cancellationPropagation = QualityCheckDefinition(
+        id = "cancellation-propagation",
+        implementationVersion = 1,
+        description = "Suspend paths propagate CancellationException immediately.",
+        policy = "AGENTS.md",
+    )
+
+    val coroutineThreadLocal = QualityCheckDefinition(
+        id = "coroutine-thread-local",
+        implementationVersion = 1,
+        description = "Thread-local state used by coroutine code is propagated explicitly.",
+        policy = "AGENTS.md",
+    )
+
+    val coroutineMonitorUse = QualityCheckDefinition(
+        id = "coroutine-monitor-use",
+        implementationVersion = 1,
+        description = "JVM monitor coordination directly inside coroutine execution is reviewed.",
+        policy = "AGENTS.md",
+        enforcement = QualityEnforcement.ADVISORY,
+    )
+
+    val coroutineSafety = QualityCheckDefinition(
+        id = "coroutine-safety",
+        implementationVersion = 1,
+        description = "Coroutine code follows structured execution, cleanup, flow, sleep, and test-lifecycle rules.",
+        policy = "AGENTS.md",
+    )
+
+    val baselineHygiene = QualityCheckDefinition(
+        id = "baseline-hygiene",
+        implementationVersion = 1,
+        description = "Tracked coroutine baselines contain only current findings in their analysis scope.",
+        policy = "docs/quality-gates.md",
+    )
+
+    val fast = listOf(
+        gitMetadata,
+        repositoryContracts,
+        moduleBoundaries,
+        cancellationPropagation,
+        coroutineThreadLocal,
+        coroutineMonitorUse,
+        coroutineSafety,
+        baselineHygiene,
+    )
 }
 
 internal object QualityCheckRunner {
@@ -84,7 +122,6 @@ internal object QualityCheckRunner {
         definition: QualityCheckDefinition,
         repositoryDirectory: File,
         gitIdentity: GitIdentity,
-        metadataError: Exception?,
         check: () -> List<QualityDiagnostic>,
     ): QualityCheckResult {
         val started = TimeSource.Monotonic.markNow()
@@ -94,16 +131,14 @@ internal object QualityCheckRunner {
         try {
             diagnostics += check()
             if (diagnostics.isNotEmpty()) {
-                status = QualityStatus.FAIL
+                status = when (definition.enforcement) {
+                    QualityEnforcement.BLOCKING -> QualityStatus.FAIL
+                    QualityEnforcement.ADVISORY -> QualityStatus.WARNING
+                }
             }
         } catch (exception: Exception) {
             status = QualityStatus.ERROR
             diagnostics += internalErrorDiagnostic(definition.id, exception, repositoryDirectory)
-        }
-
-        if (metadataError != null) {
-            status = QualityStatus.ERROR
-            diagnostics += internalErrorDiagnostic("git-metadata", metadataError, repositoryDirectory)
         }
 
         return QualityCheckResult(

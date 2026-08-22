@@ -28,6 +28,18 @@ abstract class SouzGateFastTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val policyFiles: ConfigurableFileCollection
 
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val detektReports: ConfigurableFileCollection
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val trackedDetektBaselines: ConfigurableFileCollection
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val currentDetektBaselines: ConfigurableFileCollection
+
     @get:OutputFile
     abstract val jsonReport: RegularFileProperty
 
@@ -44,30 +56,65 @@ abstract class SouzGateFastTask : DefaultTask() {
             metadataError = exception
             GitIdentity(null, null, null, null)
         }
+        val projects = projectDescriptors.get().map(ProjectDescriptor::decode)
+        val edges = dependencyEdges.get().map(DependencyEdge::decode)
+        var detektError: Exception? = null
+        val detektFindings = try {
+            DetektReports.read(repository, detektReports.files)
+        } catch (exception: Exception) {
+            detektError = exception
+            emptyList()
+        }
+
+        fun runCheck(
+            definition: QualityCheckDefinition,
+            check: () -> List<QualityDiagnostic>,
+        ): QualityCheckResult = QualityCheckRunner.run(definition, repository, identity, check)
+
+        fun detektDiagnostics(predicate: (String) -> Boolean): List<QualityDiagnostic> {
+            detektError?.let { throw it }
+            return detektFindings.filter { predicate(it.ruleId) }.map(DetektFinding::diagnostic)
+        }
 
         val results = listOf(
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.repositoryContracts,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
+            runCheck(SouzQualityChecks.gitMetadata) {
+                metadataError?.let { throw it }
+                emptyList()
+            },
+            runCheck(SouzQualityChecks.repositoryContracts) {
                 RepositoryContracts.check(
                     repositoryDirectory = repository,
-                    projects = projectDescriptors.get().map(ProjectDescriptor::decode),
+                    projects = projects,
                     policyFiles = policyFiles.files,
                     registeredChecks = SouzQualityChecks.fast,
                 )
             },
-            QualityCheckRunner.run(
-                definition = SouzQualityChecks.moduleBoundaries,
-                repositoryDirectory = repository,
-                gitIdentity = identity,
-                metadataError = metadataError,
-            ) {
+            runCheck(SouzQualityChecks.moduleBoundaries) {
                 ModuleBoundaries.check(
-                    projects = projectDescriptors.get().map(ProjectDescriptor::decode),
-                    edges = dependencyEdges.get().map(DependencyEdge::decode),
+                    projects = projects,
+                    edges = edges,
+                )
+            },
+            runCheck(SouzQualityChecks.cancellationPropagation) {
+                detektDiagnostics { it in CANCELLATION_RULES }
+            },
+            runCheck(SouzQualityChecks.coroutineThreadLocal) {
+                detektDiagnostics { it in THREAD_LOCAL_RULES }
+            },
+            runCheck(SouzQualityChecks.coroutineMonitorUse) {
+                detektDiagnostics { it in MONITOR_RULES }
+            },
+            runCheck(SouzQualityChecks.coroutineSafety) {
+                detektDiagnostics {
+                    it !in CANCELLATION_RULES && it !in THREAD_LOCAL_RULES && it !in MONITOR_RULES
+                }
+            },
+            runCheck(SouzQualityChecks.baselineHygiene) {
+                DetektBaselines.staleDiagnostics(
+                    repository = repository,
+                    trackedBaselines = trackedDetektBaselines.files,
+                    currentBaselines = currentDetektBaselines.files,
+                    excludedRuleIds = ADVISORY_DETEKT_RULES,
                 )
             },
         )
