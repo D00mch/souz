@@ -8,7 +8,6 @@ import dev.detekt.api.Rule
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
-import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
@@ -36,11 +35,11 @@ class ThreadLocalInCoroutineCode(config: Config) : Rule(
         scope.accept(facts)
         if (!facts.usesCoroutines) return
 
-        facts.unpropagatedUses().forEach { use ->
+        facts.uses.forEach { use ->
             report(
                 Finding(
                     Entity.from(use.element),
-                    "${use.name} state in coroutine code must use asContextElement or coroutine context.",
+                    "${use.name} state in coroutine code requires reviewed asContextElement propagation.",
                 )
             )
         }
@@ -52,17 +51,13 @@ private class ThreadLocalFacts(
     private val classBoundary: KtClassOrObject?,
 ) : KtTreeVisitorVoid() {
     private val coroutineSyntax = CoroutineSyntax(file)
-    private val uses = linkedMapOf<Int, ThreadLocalUse>()
-    private val propagatedNames = mutableSetOf<String>()
-    private val propagatedRanges = mutableListOf<IntRange>()
+    private val foundUses = linkedMapOf<Int, ThreadLocalUse>()
+
+    val uses: Collection<ThreadLocalUse>
+        get() = foundUses.values
 
     var usesCoroutines = false
         private set
-
-    fun unpropagatedUses(): List<ThreadLocalUse> = uses.values.filterNot { use ->
-        use.declarationName in propagatedNames ||
-            propagatedRanges.any { range -> use.element.textRange.startOffset in range }
-    }
 
     override fun visitClassOrObject(classOrObject: KtClassOrObject) {
         if (classOrObject !== classBoundary) return
@@ -91,23 +86,12 @@ private class ThreadLocalFacts(
         super.visitUserType(type)
     }
 
-    override fun visitDotQualifiedExpression(expression: KtDotQualifiedExpression) {
-        val call = expression.selectorExpression as? KtCallExpression
-        if (call?.calleeExpression?.text == "asContextElement") {
-            val receiver = expression.receiverExpression
-            propagatedNames += receiver.text
-            propagatedRanges += receiver.textRange.startOffset until receiver.textRange.endOffset
-            usesCoroutines = true
-        }
-        super.visitDotQualifiedExpression(expression)
-    }
-
     private fun forbid(element: PsiElement, name: String) {
         val declaration = element.enclosingStateDeclaration()
         val anchor = declaration?.nameIdentifier ?: declaration ?: element
-        uses.putIfAbsent(
+        foundUses.putIfAbsent(
             anchor.textRange.startOffset,
-            ThreadLocalUse(anchor, name, declaration?.name),
+            ThreadLocalUse(anchor, name),
         )
     }
 
@@ -124,7 +108,6 @@ private class ThreadLocalFacts(
 private data class ThreadLocalUse(
     val element: PsiElement,
     val name: String,
-    val declarationName: String?,
 )
 
 private val THREAD_LOCAL_TYPES = setOf("ThreadLocal", "InheritableThreadLocal")

@@ -22,6 +22,7 @@ class SouzQualityPlugin : Plugin<Project> {
         }.sortedBy(ProjectDescriptor::path)
         val edgeInputs = project.objects.listProperty(String::class.java).convention(emptyList())
         val detektReportFiles = project.objects.fileCollection()
+        val detektBaselineSnapshots = project.objects.fileCollection()
 
         project.gradle.projectsEvaluated {
             edgeInputs.set(
@@ -55,21 +56,24 @@ class SouzQualityPlugin : Plugin<Project> {
             dependencyEdges.set(edgeInputs)
             this.policyFiles.from(policyFiles)
             detektReports.from(detektReportFiles.filter(java.io.File::isFile))
+            trackedDetektBaselines.from(project.fileTree("quality/detekt-baselines") { include("**/*.xml") })
+            currentDetektBaselines.from(detektBaselineSnapshots)
             jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary-v1.json"))
             markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary.md"))
             doNotTrackState("The report records current Git identity and worktree state.")
         }
 
-        configureDetekt(project, gate, detektReportFiles)
+        configureDetekt(project, gate, detektReportFiles, detektBaselineSnapshots)
     }
 
     private fun configureDetekt(
         project: Project,
         gate: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
         reportFiles: ConfigurableFileCollection,
+        currentBaselines: ConfigurableFileCollection,
     ) {
         val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
-        val baselineFile = project.layout.projectDirectory.file("quality/detekt-baseline.xml")
+        val baselineDirectory = project.layout.projectDirectory.dir("quality/detekt-baselines")
         val rulesJar = project.layout.projectDirectory.file(
             "build-logic/detekt-rules/build/libs/souz-detekt-rules.jar"
         )
@@ -78,8 +82,9 @@ class SouzQualityPlugin : Plugin<Project> {
             UpdateSouzCoroutineBaselineTask::class.java,
         ) {
             group = "verification"
-            description = "Replaces the reviewed coroutine baseline with findings from the current checkout."
-            baseline.set(baselineFile)
+            description = "Replaces the reviewed task-scoped coroutine baselines with current findings."
+            repositoryDirectory.set(project.layout.projectDirectory)
+            baselines.set(baselineDirectory)
         }
 
         project.subprojects.forEach { subproject ->
@@ -93,7 +98,6 @@ class SouzQualityPlugin : Plugin<Project> {
                     subproject.extensions.configure(DetektExtension::class.java) {
                         toolVersion.set("2.0.0-alpha.6")
                         config.setFrom(configFile)
-                        baseline.set(baselineFile)
                         basePath.set(project.layout.projectDirectory)
                         buildUponDefaultConfig.set(false)
                         allRules.set(false)
@@ -107,7 +111,11 @@ class SouzQualityPlugin : Plugin<Project> {
                     analysisTasks.configureEach {
                         dependsOn(rulesJarTask)
                         exclude("**/generated/resources/**")
-                        baseline.set(baselineFile)
+                        val baselineName = "detektBaseline${name.removePrefix("detekt")}.xml"
+                        val projectPath = subproject.projectDir.relativeInvariantPath(
+                            project.layout.projectDirectory.asFile
+                        )
+                        baseline.set(baselineDirectory.file("$projectPath/$baselineName"))
                         reports.checkstyle.required.set(true)
                         reports.html.required.set(false)
                         reports.markdown.required.set(false)
@@ -131,8 +139,10 @@ class SouzQualityPlugin : Plugin<Project> {
                         updateBaseline.configure {
                             partialBaselines.from(partialBaseline)
                         }
+                        currentBaselines.from(partialBaseline)
                     }
                     updateBaseline.configure { dependsOn(baselineTasks) }
+                    gate.configure { dependsOn(baselineTasks) }
                 }
             }
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") { configure() }

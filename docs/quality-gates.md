@@ -19,9 +19,10 @@ the quality summary and report artifacts even when the gate fails.
 | `repository-contracts` | The Gradle project set, root Module Map, module policies, pain-point indexes, local policy links, and registered check policy paths agree. | Repair the reported repository-relative policy path or update the owning policy with the reviewed module change. |
 | `module-boundaries` | Direct production `ProjectDependency` edges match the explicit module and KMP source-set allowlist. Test dependencies are excluded. | Remove the edge or update the owning module policy and allowlist together when the architecture change is intentional. |
 | `cancellation-propagation` | Suspend paths do not swallow `CancellationException`, including through `runCatching`. | Catch the expected exception type or rethrow cancellation immediately. |
-| `coroutine-thread-local` | Coroutine-owned `ThreadLocal` state is propagated explicitly with `asContextElement`. | Move the state into coroutine context or propagate the thread-local value with `asContextElement`. |
+| `coroutine-thread-local` | Coroutine-owned `ThreadLocal` state requires reviewed `asContextElement` propagation. | Move the state into coroutine context, or propagate every coroutine use and explicitly suppress the reviewed declaration. |
 | `coroutine-monitor-use` | Direct `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend functions and coroutine builders is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
 | `coroutine-safety` | Coroutine code follows structured execution, cleanup, Flow-signature, delay, scope-receiver, and test-lifecycle rules. | Apply the Detekt diagnostic at the reported repository-relative location. |
+| `baseline-hygiene` | Every tracked coroutine baseline entry still matches a finding in the same module and source-set analysis task. | Remove stale entries by running `./gradlew updateSouzCoroutineBaseline` and review the resulting policy diff. |
 
 All checks have `local-safe` authority. `coroutine-monitor-use` is advisory and
 produces warnings; the other checks are blocking. An unexpected checker failure
@@ -52,15 +53,19 @@ The enabled built-in rules are:
 
 `InjectDispatcher` and `RedundantSuspendModifier` remain disabled because they
 enforce testability or style rather than coroutine correctness. The blocking
-custom `ThreadLocalInCoroutineCode` rule requires explicit coroutine-context
-propagation. The advisory `MonitorInsideSuspendContext` rule reports monitor
+custom `ThreadLocalInCoroutineCode` rule requires a reviewed suppression when
+thread-local propagation is deliberately retained. The advisory
+`MonitorInsideSuspendContext` rule reports monitor
 coordination directly inside suspend functions and coroutine builders. Atomics,
 volatile fields, and monitor coordination at non-suspending JVM or native
 boundaries are not prohibited.
 
-Existing findings live in the reviewed baseline at
-[`quality/detekt-baseline.xml`](../quality/detekt-baseline.xml).
+Existing findings live in task-scoped files under
+[`quality/detekt-baselines`](../quality/detekt-baselines/README.md). Separate
+project and source-set scopes prevent one finding from suppressing another.
 Advisory findings are excluded from the baseline so they remain visible.
+The fast gate compares the tracked files with fresh unsuppressed snapshots and
+fails when an entry becomes stale; CI never rewrites them.
 After reviewing a deliberate debt change, regenerate it explicitly:
 
 ```bash
