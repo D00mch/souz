@@ -2,7 +2,6 @@ package ru.souz.build.quality
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.gradle.testkit.runner.TaskOutcome
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -21,10 +20,9 @@ class SouzQualityPluginFunctionalTest {
             commit()
         }
 
-        val result = fixture.build("souzGateFast")
+        fixture.build("souzGateFast")
         val report = report(fixture)
 
-        assertEquals(TaskOutcome.SUCCESS, result.task(":souzGateFast")?.outcome)
         assertEquals("pass", report.path("status").asText())
         assertEquals(setOf("pass"), report.path("checks").map { it.path("status").asText() }.toSet())
     }
@@ -210,6 +208,25 @@ class SouzQualityPluginFunctionalTest {
         assertEquals("pass", check(report, "module-boundaries").path("status").asText())
         assertTrue(check(report, "repository-contracts").toString().contains("Internal repository-contracts error"))
         assertFalse(reportText.contains(root.toAbsolutePath().toString()))
+    }
+
+    @Test
+    fun `failed Detekt analysis writes reports with an internal error`(@TempDir root: Path) {
+        val fixture = FixtureProject(root).apply {
+            create()
+            addFailingDetektAnalysis()
+            commit()
+        }
+
+        val result = fixture.buildAndFail("souzGateFast")
+        assertTrue(Files.isRegularFile(fixture.reportPath()), result.output)
+        val report = report(fixture)
+
+        assertEquals("error", report.path("status").asText())
+        assertEquals("error", check(report, "cancellation-propagation").path("status").asText())
+        assertEquals("error", check(report, "coroutine-thread-local").path("status").asText())
+        assertEquals("error", check(report, "coroutine-monitor-use").path("status").asText())
+        assertTrue(Files.isRegularFile(root.resolve("build/reports/souz-quality/fast/gate-summary.md")))
     }
 
     private fun report(fixture: FixtureProject): JsonNode {

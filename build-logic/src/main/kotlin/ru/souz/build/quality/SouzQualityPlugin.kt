@@ -46,25 +46,29 @@ class SouzQualityPlugin : Plugin<Project> {
             exclude("native/third_party/**")
         }
 
-        val gate = project.tasks.register("souzGateFast", SouzGateFastTask::class.java) {
-            group = "verification"
-            description = "Runs exact, local-safe Souz repository, module, and coroutine checks."
+        val report = project.tasks.register("souzGateFastReport", SouzGateFastTask::class.java) {
             repositoryDirectory.set(project.layout.projectDirectory)
             projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
             dependencyEdges.set(edgeInputs)
             this.policyFiles.from(policyFiles)
-            detektReports.from(detektReportFiles.filter(java.io.File::isFile))
+            detektReports.from(detektReportFiles)
             jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary-v1.json"))
             markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary.md"))
             doNotTrackState("The report records current Git identity and worktree state.")
         }
+        val gate = project.tasks.register("souzGateFast") {
+            group = "verification"
+            description = "Runs exact, local-safe Souz repository, module, and coroutine checks."
+            finalizedBy(report)
+        }
 
-        configureDetekt(project, gate, detektReportFiles)
+        configureDetekt(project, gate, report, detektReportFiles)
     }
 
     private fun configureDetekt(
         project: Project,
-        gate: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
+        gate: org.gradle.api.tasks.TaskProvider<org.gradle.api.Task>,
+        report: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
         reportFiles: ConfigurableFileCollection,
     ) {
         val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
@@ -100,7 +104,13 @@ class SouzQualityPlugin : Plugin<Project> {
                         reports.html.required.set(false)
                         reports.markdown.required.set(false)
                         reports.sarif.required.set(false)
-                        reportFiles.from(reports.checkstyle.outputLocation)
+                        val checkstyleReport = reports.checkstyle.outputLocation
+                        reportFiles.from(
+                            project.provider {
+                                if (source.isEmpty) emptyList() else listOf(checkstyleReport.get().asFile)
+                            }
+                        )
+                        finalizedBy(report)
                     }
                     gate.configure { dependsOn(analysisTasks) }
                 }
