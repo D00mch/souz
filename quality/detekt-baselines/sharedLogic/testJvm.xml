@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunSwallowedCancellation:OrderedShutdownTest.kt:OrderedShutdownTest$runCatching</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmEmbeddingClientTest.kt:LlmEmbeddingClientTest.RecordingEmbeddingApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmMemoryConsolidatorTest.kt:LlmMemoryConsolidatorTest.RecordingApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmMemoryWriterTest.kt:LlmMemoryWriterTest.RecordingChatApi$suspend</ID>
+  </CurrentIssues>
+</SmellBaseline>

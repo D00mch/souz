@@ -2,13 +2,9 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>SuspendFunInFinallySection:SkillsGraphBasedAgentMidRunInputTest.kt:SkillsGraphBasedAgentMidRunInputTest$currentCoroutineContext</ID>
     <ID>SuspendFunSwallowedCancellation:ActiveRunInputController.kt:ActiveRunInputController$catch (error: Exception) { if (!released) withContext(NonCancellable) { releaseReservation(input = null) } throw error }</ID>
     <ID>SuspendFunSwallowedCancellation:AgentToolExecutor.kt:AgentToolExecutor$catch (e: Exception) { eventSink.emit( AgentRuntimeEvent.ToolCallFailed( toolCallId = runtimeToolCallId, name = functionCall.name, error = e, durationMs = durationMsSince(startedAtNanos), ) ) recordToolExecution( functionCall = functionCall, toolCategoryName = toolCategoryName, startedAtNanos = startedAtNanos, logContext = logContext, success = false, errorType = e::class.simpleName ?: e::class.qualifiedName?.substringAfterLast(&apos;.&apos;), ) throw e }</ID>
     <ID>SuspendFunSwallowedCancellation:NodesClassification.kt:NodesClassification$catch (e: Exception) { l.error(&quot;Error in apiClassifier: {}&quot;, e.message) return classify(userText, history, categoryStates, retriesCount.dec()) }</ID>
     <ID>SuspendFunSwallowedCancellation:NodesMCP.kt:NodesMCP$runCatching</ID>
-    <ID>SuspendFunWithFlowReturnType:LlmSkillValidatorTest.kt:LlmSkillValidatorTest.FixedResponseChatApi$suspend</ID>
-    <ID>SuspendFunWithFlowReturnType:NodesLLMTest.kt:StreamingChatApi$suspend</ID>
-    <ID>SuspendFunWithFlowReturnType:SkillApprovalGateTest.kt:SkillApprovalGateTest.CapturingApprovalChatApi$suspend</ID>
   </CurrentIssues>
 </SmellBaseline>

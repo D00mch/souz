@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunSwallowedCancellation:MemoryCoreTest.kt:MemoryCoreTest$runCatching</ID>
+    <ID>SuspendFunWithFlowReturnType:LocalChatAmbientLocalLlmTest.kt:LocalChatAmbientLocalLlmTest.CapturingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:ToolsFactoryTest.kt:DesktopUnusedLlmApi$suspend</ID>
+  </CurrentIssues>
+</SmellBaseline>

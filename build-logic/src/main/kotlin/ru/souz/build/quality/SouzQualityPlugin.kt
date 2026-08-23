@@ -22,6 +22,8 @@ class SouzQualityPlugin : Plugin<Project> {
         }.sortedBy(ProjectDescriptor::path)
         val edgeInputs = project.objects.listProperty(String::class.java).convention(emptyList())
         val detektReportFiles = project.objects.fileCollection()
+        val generatedDetektBaselines = project.objects.fileCollection()
+        val baselineDirectory = project.layout.projectDirectory.dir("quality/detekt-baselines")
 
         project.gradle.projectsEvaluated {
             edgeInputs.set(
@@ -55,18 +57,21 @@ class SouzQualityPlugin : Plugin<Project> {
             dependencyEdges.set(edgeInputs)
             this.policyFiles.from(policyFiles)
             detektReports.from(detektReportFiles.filter(java.io.File::isFile))
+            generatedBaselines.from(generatedDetektBaselines.filter(java.io.File::isFile))
+            reviewedBaselines.from(project.fileTree(baselineDirectory) { include("**/*.xml") })
             jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary-v1.json"))
             markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary.md"))
             doNotTrackState("The report records current Git identity and worktree state.")
         }
 
-        configureDetekt(project, gate, detektReportFiles)
+        configureDetekt(project, gate, detektReportFiles, generatedDetektBaselines)
     }
 
     private fun configureDetekt(
         project: Project,
         gate: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
         reportFiles: ConfigurableFileCollection,
+        generatedBaselines: ConfigurableFileCollection,
     ) {
         val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
         val baselineDirectory = project.layout.projectDirectory.dir("quality/detekt-baselines")
@@ -78,7 +83,7 @@ class SouzQualityPlugin : Plugin<Project> {
             UpdateSouzCoroutineBaselineTask::class.java,
         ) {
             group = "verification"
-            description = "Replaces the reviewed module-scoped coroutine baselines with current findings."
+            description = "Replaces reviewed module- and analysis-scoped coroutine baselines with current findings."
             repositoryDirectory.set(project.layout.projectDirectory)
             baselines.set(baselineDirectory)
         }
@@ -110,7 +115,8 @@ class SouzQualityPlugin : Plugin<Project> {
                         val projectPath = subproject.projectDir.relativeInvariantPath(
                             project.layout.projectDirectory.asFile
                         )
-                        baseline.set(baselineDirectory.file("$projectPath.xml"))
+                        val analysis = name.removePrefix("detekt").replaceFirstChar(Char::lowercase)
+                        baseline.set(baselineDirectory.file("$projectPath/$analysis.xml"))
                         reports.checkstyle.required.set(true)
                         reports.html.required.set(false)
                         reports.markdown.required.set(false)
@@ -134,8 +140,10 @@ class SouzQualityPlugin : Plugin<Project> {
                         updateBaseline.configure {
                             partialBaselines.from(partialBaseline)
                         }
+                        generatedBaselines.from(partialBaseline)
                     }
                     updateBaseline.configure { dependsOn(baselineTasks) }
+                    gate.configure { dependsOn(baselineTasks) }
                 }
             }
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") { configure() }

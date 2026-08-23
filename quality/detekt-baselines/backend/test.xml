@@ -4,35 +4,16 @@
   <CurrentIssues>
     <ID>SuspendFunInFinallySection:AgentEventBusTest.kt:AgentEventBusTest$close</ID>
     <ID>SuspendFunInFinallySection:AgentEventServiceTest.kt:AgentEventServiceTest$close</ID>
-    <ID>SuspendFunInFinallySection:AgentExecutionLauncher.kt:AgentExecutionLauncher$unregister</ID>
     <ID>SuspendFunInFinallySection:BackendAgentRuntimeEventSinkTest.kt:BackendAgentRuntimeEventSinkTest$close</ID>
-    <ID>SuspendFunInFinallySection:BackendClientSkills.kt:ClientWebSocketSkill$clearTool</ID>
-    <ID>SuspendFunInFinallySection:BackendConversationTurnRunner.kt:BackendConversationRuntimeTurnRunner$detach</ID>
-    <ID>SuspendFunInFinallySection:EventRoutes.kt:cancelAndJoin</ID>
-    <ID>SuspendFunInFinallySection:EventRoutes.kt:close</ID>
-    <ID>SuspendFunInFinallySection:ExecutionQuotaManager.kt:ExecutionQuotaManager$releaseExecution</ID>
     <ID>SuspendFunInFinallySection:PostgresRepositoriesTest.kt:PostgresRepositoriesTest$close</ID>
     <ID>SuspendFunInFinallySection:PublicClientServiceTest.kt:PublicClientServiceTest$cancelAndJoin</ID>
-    <ID>SuspendFunInFinallySection:TelegramBotPollingService.kt:TelegramBotPollingService$cancelAndJoin</ID>
-    <ID>SuspendFunSwallowedCancellation:AgentEventService.kt:AgentEventService$catch (e: Throwable) { subscription.close() throw e }</ID>
-    <ID>SuspendFunSwallowedCancellation:AgentExecutionFinalizer.kt:AgentExecutionFinalizer$catch (e: CancellationException) { cancelExecution(execution, eventSink) }</ID>
-    <ID>SuspendFunSwallowedCancellation:AgentExecutionLauncher.kt:AgentExecutionLauncher$catch (cancelled: CancellationException) { withContext(NonCancellable) { onCancelled() } throw cancelled }</ID>
-    <ID>SuspendFunSwallowedCancellation:BackendClientSkills.kt:ClientWebSocketSkill$catch (cancelled: CancellationException) { withContext(NonCancellable) { cancel(context) } throw cancelled }</ID>
     <ID>SuspendFunSwallowedCancellation:BackendExecutionLlmChatApiTest.kt:BackendExecutionLlmChatApiTest$runCatching</ID>
     <ID>SuspendFunSwallowedCancellation:BackendRuntimeResourcesTest.kt:BackendRuntimeResourcesTest$runCatching</ID>
-    <ID>SuspendFunSwallowedCancellation:ClientThreadRuntimeRegistry.kt:ClientThreadRuntimeRegistry$catch (error: Exception) { ackSent(threadId, requestId) throw error }</ID>
-    <ID>SuspendFunSwallowedCancellation:EventRoutes.kt:runCatching</ID>
     <ID>SuspendFunSwallowedCancellation:ExecutionQuotaManagerTest.kt:catch (error: Throwable) { error as? T ?: throw AssertionError(&quot;Expected exception ${T::class.simpleName}, got ${error::class.simpleName}.&quot;, error) }</ID>
-    <ID>SuspendFunSwallowedCancellation:PublicClientService.kt:PublicClientService$catch (error: CancellationException) { withContext(NonCancellable) { runCatching { reconcileFailedStart(chat, requestId, threadId) } } throw error }</ID>
-    <ID>SuspendFunSwallowedCancellation:PublicClientService.kt:PublicClientService$runCatching</ID>
-    <ID>SuspendFunSwallowedCancellation:TelegramChannelProvider.kt:TelegramChannelProvider$catch (e: Exception) { e }</ID>
     <ID>SuspendFunWithCoroutineScopeReceiver:AgentExecutionServiceAsyncLifecycleTest.kt:suspend</ID>
-    <ID>SuspendFunWithCoroutineScopeReceiver:RequestParsing.kt:suspend</ID>
-    <ID>SuspendFunWithCoroutineScopeReceiver:RouteErrors.kt:suspend</ID>
     <ID>SuspendFunWithFlowReturnType:BackendConversationRuntimeSettingsTest.kt:ReplyingChatApi$suspend</ID>
     <ID>SuspendFunWithFlowReturnType:BackendConversationRuntimeSettingsTest.kt:SkillLoopChatApi$suspend</ID>
     <ID>SuspendFunWithFlowReturnType:BackendConversationRuntimeTurnRunnerTest.kt:ThrowingChatApi$suspend</ID>
-    <ID>SuspendFunWithFlowReturnType:BackendExecutionLlmChatApi.kt:BackendExecutionLlmChatApi$suspend</ID>
     <ID>SuspendFunWithFlowReturnType:BackendExecutionLlmChatApiTest.kt:StubChatApi$suspend</ID>
     <ID>SuspendFunWithFlowReturnType:BackendExecutionLlmToolCatalogTest.kt:UnusedLlmApi$suspend</ID>
     <ID>SuspendFunWithFlowReturnType:BackendStage3RouteTest.kt:CancellableChatApi$suspend</ID>

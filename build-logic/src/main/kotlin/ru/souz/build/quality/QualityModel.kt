@@ -76,6 +76,13 @@ internal object SouzQualityChecks {
         policy = "AGENTS.md",
     )
 
+    val coroutineBaselineHygiene = QualityCheckDefinition(
+        id = "coroutine-baseline-hygiene",
+        implementationVersion = 1,
+        description = "Reviewed coroutine baselines contain no stale entries.",
+        policy = "AGENTS.md",
+    )
+
     val coroutineThreadLocal = QualityCheckDefinition(
         id = "coroutine-thread-local",
         implementationVersion = 1,
@@ -102,6 +109,7 @@ internal object SouzQualityChecks {
         gitMetadata,
         repositoryContracts,
         moduleBoundaries,
+        coroutineBaselineHygiene,
         cancellationPropagation,
         coroutineThreadLocal,
         coroutineMonitorUse,

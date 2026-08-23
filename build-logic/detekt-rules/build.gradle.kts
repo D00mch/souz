@@ -13,8 +13,11 @@ java {
 
 dependencies {
     compileOnly("dev.detekt:detekt-api:2.0.0-alpha.6")
+    compileOnly("dev.detekt:detekt-kotlin-analysis-api:2.0.0-alpha.6")
 
     testImplementation("dev.detekt:detekt-test:2.0.0-alpha.6")
+    testImplementation("dev.detekt:detekt-test-junit:2.0.0-alpha.6")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:6.0.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.0.2")
 }

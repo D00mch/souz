@@ -28,7 +28,7 @@ abstract class UpdateSouzCoroutineBaselineTask : DefaultTask() {
     fun update() {
         val repository = repositoryDirectory.get().asFile
         val outputDirectory = baselines.get().asFile
-        val rendered = DetektBaselines.renderByModule(
+        val rendered = DetektBaselines.renderByAnalysis(
             repository = repository,
             baselines = partialBaselines.files,
             excludedRuleIds = ADVISORY_DETEKT_RULES,
@@ -52,27 +52,65 @@ abstract class UpdateSouzCoroutineBaselineTask : DefaultTask() {
 }
 
 internal object DetektBaselines {
-    fun renderByModule(
+    fun renderByAnalysis(
         repository: File,
         baselines: Set<File>,
         excludedRuleIds: Set<String> = emptySet(),
-    ): Map<String, String> = baselines
-        .groupBy { it.moduleBaselinePath(repository) }
+    ): Map<String, String> = issueIdsByAnalysis(repository, baselines, excludedRuleIds)
+        .filterValues(Set<String>::isNotEmpty)
+        .mapValues { (_, issueIds) -> render(issueIds) }
+
+    private fun issueIdsByAnalysis(
+        repository: File,
+        baselines: Set<File>,
+        excludedRuleIds: Set<String>,
+    ): Map<String, Set<String>> = baselines.asSequence()
+        .filter(File::isFile)
+        .groupBy { it.analysisBaselinePath(repository) }
         .toSortedMap()
         .mapValues { (_, files) ->
-            val issueIds = files.asSequence()
+            files.asSequence()
                 .sortedBy(File::getPath)
                 .flatMap(::currentIssueIds)
                 .filterNot { issueId -> excludedRuleIds.any { issueId.startsWith("$it:") } }
                 .toSortedSet()
-            render(issueIds)
         }
 
-    private fun File.moduleBaselinePath(repository: File): String {
+    fun hygieneDiagnostics(
+        repository: File,
+        generatedBaselines: Set<File>,
+        reviewedBaselines: Set<File>,
+        excludedRuleIds: Set<String> = emptySet(),
+    ): List<QualityDiagnostic> {
+        val current = issueIdsByAnalysis(repository, generatedBaselines, excludedRuleIds)
+        val reviewed = reviewedBaselines.associate { baseline ->
+            baseline.reviewedBaselinePath(repository) to currentIssueIds(baseline).toSet()
+        }
+
+        return (current.keys + reviewed.keys).toSortedSet().flatMap { path ->
+            val expectedIds = current[path].orEmpty()
+            val reviewedIds = reviewed[path].orEmpty()
+            val baselinePath = "quality/detekt-baselines/$path"
+            (reviewedIds - expectedIds).map { id ->
+                QualityDiagnostic(baselinePath, null, "Remove stale Detekt baseline entry: $id")
+            }
+        }
+    }
+
+    private fun File.analysisBaselinePath(repository: File): String {
         val path = relativeInvariantPath(repository)
         val marker = "/build/reports/detekt/baselines/"
         require(marker in path) { "Unexpected Detekt partial baseline path: $path" }
-        return "${path.substringBefore(marker)}.xml"
+        val analysis = nameWithoutExtension.removePrefix("detektBaseline")
+        require(analysis.isNotEmpty()) { "Unscoped Detekt baseline is not supported: $path" }
+        return "${path.substringBefore(marker)}/${analysis.replaceFirstChar(Char::lowercase)}.xml"
+    }
+
+    private fun File.reviewedBaselinePath(repository: File): String {
+        val path = relativeInvariantPath(repository)
+        val marker = "quality/detekt-baselines/"
+        require(path.startsWith(marker)) { "Unexpected reviewed Detekt baseline path: $path" }
+        return path.removePrefix(marker)
     }
 
     private fun render(issueIds: Set<String>): String = buildString {

@@ -18,6 +18,7 @@ the quality summary and report artifacts even when the gate fails.
 | `git-metadata` | The gate can identify the tested commit and worktree state. | Run the gate from the repository checkout and remove Git routing overrides that point outside it. |
 | `repository-contracts` | The Gradle project set, root Module Map, module policies, pain-point indexes, local policy links, and registered check policy paths agree. | Repair the reported repository-relative policy path or update the owning policy with the reviewed module change. |
 | `module-boundaries` | Direct production `ProjectDependency` edges match the explicit module and KMP source-set allowlist. Test dependencies are excluded. | Remove the edge or update the owning module policy and allowlist together when the architecture change is intentional. |
+| `coroutine-baseline-hygiene` | Reviewed coroutine baselines contain no stale entries. | Remove the reported obsolete entry by running `./gradlew updateSouzCoroutineBaseline`. |
 | `cancellation-propagation` | Suspend paths do not swallow `CancellationException`, including through `runCatching`. | Catch the expected exception type or rethrow cancellation immediately. |
 | `coroutine-thread-local` | Coroutine-owned `ThreadLocal` state requires reviewed `asContextElement` propagation. | Move the state into coroutine context, or propagate every coroutine use and explicitly suppress the reviewed declaration. |
 | `coroutine-monitor-use` | Direct `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend functions and coroutine builders is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
@@ -59,9 +60,11 @@ coordination directly inside suspend functions and coroutine builders. Atomics,
 volatile fields, and monitor coordination at non-suspending JVM or native
 boundaries are not prohibited.
 
-Existing findings live in module-scoped files under `quality/detekt-baselines/`,
-preventing a finding in one project from suppressing an identical Detekt ID in
-another.
+Existing findings live in module- and analysis-scoped files under
+`quality/detekt-baselines/`, preventing findings in another project or
+production/test compilation from sharing a suppression identity. The fast gate
+fails when a reviewed entry is stale. New findings fail their owning coroutine
+check instead of producing a duplicate baseline-hygiene diagnostic.
 Advisory findings are excluded from the baseline so they remain visible.
 After reviewing a deliberate debt change, regenerate it explicitly:
 

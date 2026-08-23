@@ -32,6 +32,14 @@ abstract class SouzGateFastTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val detektReports: ConfigurableFileCollection
 
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val generatedBaselines: ConfigurableFileCollection
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val reviewedBaselines: ConfigurableFileCollection
+
     @get:OutputFile
     abstract val jsonReport: RegularFileProperty
 
@@ -85,6 +93,14 @@ abstract class SouzGateFastTask : DefaultTask() {
                 ModuleBoundaries.check(
                     projects = projects,
                     edges = edges,
+                )
+            },
+            runCheck(SouzQualityChecks.coroutineBaselineHygiene) {
+                DetektBaselines.hygieneDiagnostics(
+                    repository = repository,
+                    generatedBaselines = generatedBaselines.files,
+                    reviewedBaselines = reviewedBaselines.files,
+                    excludedRuleIds = ADVISORY_DETEKT_RULES,
                 )
             },
             runCheck(SouzQualityChecks.cancellationPropagation) {

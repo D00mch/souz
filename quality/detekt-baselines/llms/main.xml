@@ -3,6 +3,5 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>SuspendFunWithFlowReturnType:LLMChatAPI.kt:LLMChatAPI$suspend</ID>
-    <ID>SuspendFunWithFlowReturnType:TokenLoggingChatApiTest.kt:StubChatApi$suspend</ID>
   </CurrentIssues>
 </SmellBaseline>

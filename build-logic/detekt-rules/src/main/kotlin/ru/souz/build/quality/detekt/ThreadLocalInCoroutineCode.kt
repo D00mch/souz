@@ -4,22 +4,25 @@ import com.intellij.psi.PsiElement
 import dev.detekt.api.Config
 import dev.detekt.api.Entity
 import dev.detekt.api.Finding
+import dev.detekt.api.RequiresAnalysisApi
 import dev.detekt.api.Rule
+import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.name.ClassId
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.psi.KtCallableDeclaration
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtNamedDeclaration
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
-import org.jetbrains.kotlin.psi.KtUserType
 
 class ThreadLocalInCoroutineCode(config: Config) : Rule(
     config,
     "ThreadLocal state in coroutine code must be propagated explicitly through coroutine context.",
-) {
+), RequiresAnalysisApi {
     override fun visitKtFile(file: KtFile) {
         reportScope(file, null)
         file.accept(object : KtTreeVisitorVoid() {
@@ -35,11 +38,11 @@ class ThreadLocalInCoroutineCode(config: Config) : Rule(
         scope.accept(facts)
         if (!facts.usesCoroutines) return
 
-        facts.uses.forEach { use ->
+        facts.uses.forEach { element ->
             report(
                 Finding(
-                    Entity.from(use.element),
-                    "${use.name} state in coroutine code requires reviewed asContextElement propagation.",
+                    Entity.from(element),
+                    "ThreadLocal state in coroutine code requires reviewed asContextElement propagation.",
                 )
             )
         }
@@ -51,9 +54,9 @@ private class ThreadLocalFacts(
     private val classBoundary: KtClassOrObject?,
 ) : KtTreeVisitorVoid() {
     private val coroutineSyntax = CoroutineSyntax(file)
-    private val foundUses = linkedMapOf<Int, ThreadLocalUse>()
+    private val foundUses = linkedMapOf<Int, PsiElement>()
 
-    val uses: Collection<ThreadLocalUse>
+    val uses: Collection<PsiElement>
         get() = foundUses.values
 
     var usesCoroutines = false
@@ -73,41 +76,24 @@ private class ThreadLocalFacts(
         if (coroutineSyntax.isCoroutineCall(expression) || expression.calleeExpression?.text == "asContextElement") {
             usesCoroutines = true
         }
-        expression.calleeExpression?.text
-            ?.takeIf { it in THREAD_LOCAL_TYPES }
-            ?.let { forbid(expression.calleeExpression ?: expression, it) }
         super.visitCallExpression(expression)
     }
 
-    override fun visitUserType(type: KtUserType) {
-        val name = type.referencedName
-        if (coroutineSyntax.isCoroutineType(name)) usesCoroutines = true
-        if (name in THREAD_LOCAL_TYPES) forbid(type.referenceExpression ?: type, name.orEmpty())
-        super.visitUserType(type)
+    override fun visitProperty(property: KtProperty) {
+        forbidIfThreadLocal(property)
+        super.visitProperty(property)
     }
 
-    private fun forbid(element: PsiElement, name: String) {
-        val declaration = element.enclosingStateDeclaration()
-        val anchor = declaration?.nameIdentifier ?: declaration ?: element
-        foundUses.putIfAbsent(
-            anchor.textRange.startOffset,
-            ThreadLocalUse(anchor, name),
-        )
+    override fun visitParameter(parameter: KtParameter) {
+        if (parameter.hasValOrVar()) forbidIfThreadLocal(parameter)
+        super.visitParameter(parameter)
     }
 
-    private fun PsiElement.enclosingStateDeclaration(): KtNamedDeclaration? {
-        var current: PsiElement? = this
-        while (current != null && current !== classBoundary && current !is KtFile) {
-            if (current is KtProperty || current is KtParameter) return current as KtNamedDeclaration
-            current = current.parent
-        }
-        return null
+    private fun forbidIfThreadLocal(declaration: KtCallableDeclaration) {
+        if (!analyze(declaration) { declaration.returnType.isSubtypeOf(THREAD_LOCAL_CLASS_ID) }) return
+        val anchor = declaration.nameIdentifier ?: declaration
+        foundUses.putIfAbsent(anchor.textRange.startOffset, anchor)
     }
 }
 
-private data class ThreadLocalUse(
-    val element: PsiElement,
-    val name: String,
-)
-
-private val THREAD_LOCAL_TYPES = setOf("ThreadLocal", "InheritableThreadLocal")
+private val THREAD_LOCAL_CLASS_ID = ClassId.topLevel(FqName("java.lang.ThreadLocal"))

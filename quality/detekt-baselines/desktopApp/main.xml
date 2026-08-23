@@ -5,7 +5,6 @@
     <ID>SuspendFunInFinallySection:TelegramBotController.kt:TelegramBotController$cancelAndJoin</ID>
     <ID>SuspendFunInFinallySection:TelegramService.kt:TelegramService$sendChatAction</ID>
     <ID>SuspendFunSwallowedCancellation:DesktopMemoryMaintenanceBackgroundRunner.kt:DesktopMemoryMaintenanceBackgroundRunner$runCatching</ID>
-    <ID>SuspendFunSwallowedCancellation:MemoryCoreTest.kt:MemoryCoreTest$runCatching</ID>
     <ID>SuspendFunSwallowedCancellation:RecordUtils.kt:catch (e: Exception) { l.error(&quot;\nERROR: ${e.message}&quot;) exitProcess(1) }</ID>
     <ID>SuspendFunSwallowedCancellation:TelegramBotController.kt:TelegramBotController$catch (e: Exception) { if (e is CancellationException) throw e logger.error(&quot;Error during control bot polling ({})&quot;, e::class.simpleName) delay(5_000) }</ID>
     <ID>SuspendFunSwallowedCancellation:TelegramBotController.kt:TelegramBotController$catch (e: Exception) { logger.error(&quot;Error processing control command ({})&quot;, e::class.simpleName) botApi.sendMessage(token, chatId, &quot;Error processing command&quot;) }</ID>
@@ -20,7 +19,5 @@
     <ID>SuspendFunSwallowedCancellation:ToolTelegramSearch.kt:ToolTelegramSearch$runCatching</ID>
     <ID>SuspendFunSwallowedCancellation:ToolTelegramSend.kt:ToolTelegramSend$runCatching</ID>
     <ID>SuspendFunSwallowedCancellation:ToolTelegramSetState.kt:ToolTelegramSetState$runCatching</ID>
-    <ID>SuspendFunWithFlowReturnType:LocalChatAmbientLocalLlmTest.kt:LocalChatAmbientLocalLlmTest.CapturingChatApi$suspend</ID>
-    <ID>SuspendFunWithFlowReturnType:ToolsFactoryTest.kt:DesktopUnusedLlmApi$suspend</ID>
   </CurrentIssues>
 </SmellBaseline>

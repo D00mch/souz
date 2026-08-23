@@ -9,21 +9,54 @@ import java.nio.file.Path
 
 class DetektBaselinesTest {
     @Test
-    fun `identical finding ids remain scoped to their modules`(@TempDir root: Path) {
+    fun `identical finding ids remain scoped to their analysis targets`(@TempDir root: Path) {
         val sharedId = "SuspendFunSwallowedCancellation:Runtime.kt:Runtime${'$'}runCatching"
         val agentOnlyId = "SuspendFunInFinallySection:Agent.kt:Agent${'$'}close"
         val agentMain = partialBaseline(root, "agent", sharedId, agentOnlyId)
         val agentTest = partialBaseline(root, "agent", sharedId, fileName = "detektBaselineTest.xml")
         val backend = partialBaseline(root, "backend", sharedId)
 
-        val rendered = DetektBaselines.renderByModule(
+        val rendered = DetektBaselines.renderByAnalysis(
             repository = root.toFile(),
             baselines = setOf(agentMain, agentTest, backend),
         )
 
-        assertEquals(setOf("agent.xml", "backend.xml"), rendered.keys)
+        assertEquals(setOf("agent/main.xml", "agent/test.xml", "backend/main.xml"), rendered.keys)
         assertTrue(rendered.values.all { sharedId in it })
-        assertTrue(agentOnlyId in rendered.getValue("agent.xml"))
+        assertTrue(agentOnlyId in rendered.getValue("agent/main.xml"))
+    }
+
+    @Test
+    fun `empty baselines are omitted`(@TempDir root: Path) {
+        val empty = partialBaseline(root, "agent")
+
+        val rendered = DetektBaselines.renderByAnalysis(
+            repository = root.toFile(),
+            baselines = setOf(empty),
+        )
+
+        assertTrue(rendered.isEmpty())
+    }
+
+    @Test
+    fun `baseline hygiene reports stale entries`(@TempDir root: Path) {
+        val currentId =
+            "SuspendFunSwallowedCancellation:Runtime.kt:Runtime${'$'}catch { error(\"boom\") -> Unit }"
+        val staleId = "SuspendFunInFinallySection:Removed.kt:Removed${'$'}close"
+        val generated = partialBaseline(root, "agent", currentId)
+        val reviewed = root.resolve("quality/detekt-baselines/agent/main.xml")
+        writeBaseline(reviewed, listOf(staleId))
+
+        val diagnostics = DetektBaselines.hygieneDiagnostics(
+            repository = root.toFile(),
+            generatedBaselines = setOf(generated),
+            reviewedBaselines = setOf(reviewed.toFile()),
+        )
+
+        assertEquals(
+            listOf("Remove stale Detekt baseline entry: $staleId"),
+            diagnostics.map(QualityDiagnostic::message),
+        )
     }
 
     private fun partialBaseline(
