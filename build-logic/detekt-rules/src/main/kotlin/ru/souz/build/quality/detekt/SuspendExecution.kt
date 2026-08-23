@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtLambdaExpression
 import org.jetbrains.kotlin.psi.KtNamedFunction
 
+/** Returns whether this element is nested in a suspend function or suspend-typed lambda. */
 internal fun KtElement.isInsideSuspendExecution(): Boolean {
     var current: PsiElement? = parent
     while (current != null && current !is KtFile) {

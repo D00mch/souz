@@ -19,6 +19,7 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 
+/** Reports resolved JVM monitor APIs used from suspend functions or suspend-typed lambdas. */
 class MonitorInsideSuspendContext(config: Config) : Rule(
     config,
     "JVM monitor coordination inside suspend execution should be reviewed.",

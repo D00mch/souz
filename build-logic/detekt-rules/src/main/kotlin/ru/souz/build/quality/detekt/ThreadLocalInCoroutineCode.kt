@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtSuperTypeListEntry
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 
+/** Requires every declaration that owns JVM thread-local state to be reviewed explicitly. */
 class ThreadLocalInCoroutineCode(config: Config) : Rule(
     config,
     "JVM ThreadLocal state requires explicit review before use.",

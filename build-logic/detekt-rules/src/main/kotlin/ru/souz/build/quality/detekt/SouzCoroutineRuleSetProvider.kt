@@ -4,6 +4,7 @@ import dev.detekt.api.RuleSet
 import dev.detekt.api.RuleSetId
 import dev.detekt.api.RuleSetProvider
 
+/** Registers Souz's type-resolved coroutine rules with Detekt. */
 class SouzCoroutineRuleSetProvider : RuleSetProvider {
     override val ruleSetId = RuleSetId("souz-coroutines")
 
