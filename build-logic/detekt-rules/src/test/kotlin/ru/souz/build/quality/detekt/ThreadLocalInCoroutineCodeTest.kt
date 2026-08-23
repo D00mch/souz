@@ -14,17 +14,22 @@ class ThreadLocalInCoroutineCodeTest(
     private val rule = ThreadLocalInCoroutineCode(Config.empty)
 
     @Test
-    fun `reports thread-local state in a coroutine-owning class`() {
+    fun `reports resolved JVM thread-local state in a coroutine-owning class`() {
         val findings = lint(
             """
+            import java.lang.ThreadLocal as JvmThreadLocal
+
             class Runtime {
-                private val current = ThreadLocal<String>()
-                suspend fun run() = Unit
+                private val constructed = JvmThreadLocal<String>()
+                private val factory = java.lang.ThreadLocal.withInitial { "request" }
+                private val inherited = InheritableThreadLocal<String>()
+
+                suspend fun run() = constructed.get() + factory.get() + inherited.get()
             }
             """.trimIndent()
         )
 
-        assertEquals(1, findings.size)
+        assertEquals(3, findings.size)
     }
 
     @Test
@@ -46,21 +51,7 @@ class ThreadLocalInCoroutineCodeTest(
     }
 
     @Test
-    fun `reports thread-local state created through withInitial`() {
-        val findings = lint(
-            """
-            class Runtime {
-                private val current = ThreadLocal.withInitial { "request" }
-                suspend fun run() = current.get()
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `reports thread-local constructor state but ignores function parameters`() {
+    fun `reports constructor state but ignores function parameters`() {
         val findings = lint(
             """
             class Runtime(private val current: ThreadLocal<String>) {
@@ -70,24 +61,6 @@ class ThreadLocalInCoroutineCodeTest(
         )
 
         assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `reports aliased fully-qualified and inherited JVM thread-local state`() {
-        val findings = lint(
-            """
-            import java.lang.ThreadLocal as JvmThreadLocal
-
-            class Runtime {
-                private val first = JvmThreadLocal<String>()
-                private val second = java.lang.ThreadLocal.withInitial { "request" }
-                private val third = InheritableThreadLocal<String>()
-                suspend fun run() = first.get() + second.get() + third.get()
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(3, findings.size)
     }
 
     @Test
@@ -107,20 +80,7 @@ class ThreadLocalInCoroutineCodeTest(
     }
 
     @Test
-    fun `allows thread-local state in a non-coroutine bridge`() {
-        val findings = lint(
-            """
-            class NativeBridge {
-                private val current = ThreadLocal<String>()
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(0, findings.size)
-    }
-
-    @Test
-    fun `does not mix state across nested declaration boundaries`() {
+    fun `keeps nested coroutine declarations outside a non-coroutine bridge`() {
         val findings = lint(
             """
             class NativeBridge {

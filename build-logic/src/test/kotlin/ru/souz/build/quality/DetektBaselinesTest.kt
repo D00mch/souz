@@ -15,27 +15,16 @@ class DetektBaselinesTest {
         val agentMain = partialBaseline(root, "agent", sharedId, agentOnlyId)
         val agentTest = partialBaseline(root, "agent", sharedId, fileName = "detektBaselineTest.xml")
         val backend = partialBaseline(root, "backend", sharedId)
+        val empty = partialBaseline(root, "skill-oauth-api")
 
         val rendered = DetektBaselines.renderByAnalysis(
             repository = root.toFile(),
-            baselines = setOf(agentMain, agentTest, backend),
+            baselines = setOf(agentMain, agentTest, backend, empty),
         )
 
         assertEquals(setOf("agent/main.xml", "agent/test.xml", "backend/main.xml"), rendered.keys)
         assertTrue(rendered.values.all { sharedId in it })
         assertTrue(agentOnlyId in rendered.getValue("agent/main.xml"))
-    }
-
-    @Test
-    fun `empty baselines are omitted`(@TempDir root: Path) {
-        val empty = partialBaseline(root, "agent")
-
-        val rendered = DetektBaselines.renderByAnalysis(
-            repository = root.toFile(),
-            baselines = setOf(empty),
-        )
-
-        assertTrue(rendered.isEmpty())
     }
 
     @Test

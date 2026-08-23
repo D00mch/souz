@@ -54,10 +54,7 @@ private class ThreadLocalFacts(
     private val classBoundary: KtClassOrObject?,
 ) : KtTreeVisitorVoid() {
     private val coroutineSyntax = CoroutineSyntax(file)
-    private val foundUses = linkedMapOf<Int, PsiElement>()
-
-    val uses: Collection<PsiElement>
-        get() = foundUses.values
+    val uses = mutableListOf<PsiElement>()
 
     var usesCoroutines = false
         private set
@@ -91,8 +88,7 @@ private class ThreadLocalFacts(
 
     private fun forbidIfThreadLocal(declaration: KtCallableDeclaration) {
         if (!analyze(declaration) { declaration.returnType.isSubtypeOf(THREAD_LOCAL_CLASS_ID) }) return
-        val anchor = declaration.nameIdentifier ?: declaration
-        foundUses.putIfAbsent(anchor.textRange.startOffset, anchor)
+        uses += declaration.nameIdentifier ?: declaration
     }
 }
 

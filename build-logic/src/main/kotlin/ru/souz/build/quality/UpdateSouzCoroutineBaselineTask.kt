@@ -87,11 +87,9 @@ internal object DetektBaselines {
             baseline.reviewedBaselinePath(repository) to currentIssueIds(baseline).toSet()
         }
 
-        return (current.keys + reviewed.keys).toSortedSet().flatMap { path ->
-            val expectedIds = current[path].orEmpty()
-            val reviewedIds = reviewed[path].orEmpty()
+        return reviewed.toSortedMap().flatMap { (path, reviewedIds) ->
             val baselinePath = "quality/detekt-baselines/$path"
-            (reviewedIds - expectedIds).map { id ->
+            (reviewedIds - current[path].orEmpty()).map { id ->
                 QualityDiagnostic(baselinePath, null, "Remove stale Detekt baseline entry: $id")
             }
         }
