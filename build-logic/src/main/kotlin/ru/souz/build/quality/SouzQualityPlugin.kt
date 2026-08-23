@@ -1,8 +1,11 @@
 package ru.souz.build.quality
 
+import dev.detekt.gradle.Detekt
+import dev.detekt.gradle.extensions.DetektExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.file.ConfigurableFileCollection
 
 class SouzQualityPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -17,6 +20,7 @@ class SouzQualityPlugin : Plugin<Project> {
             )
         }.sortedBy(ProjectDescriptor::path)
         val edgeInputs = project.objects.listProperty(String::class.java).convention(emptyList())
+        val detektReportFiles = project.objects.fileCollection()
 
         project.gradle.projectsEvaluated {
             edgeInputs.set(
@@ -42,16 +46,77 @@ class SouzQualityPlugin : Plugin<Project> {
             exclude("native/third_party/**")
         }
 
-        project.tasks.register("souzGateFast", SouzGateFastTask::class.java) {
-            group = "verification"
-            description = "Runs exact, local-safe Souz repository and module-boundary checks."
+        val report = project.tasks.register("souzGateFastReport", SouzGateFastTask::class.java) {
             repositoryDirectory.set(project.layout.projectDirectory)
             projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
             dependencyEdges.set(edgeInputs)
             this.policyFiles.from(policyFiles)
+            detektReports.from(detektReportFiles)
             jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary-v1.json"))
             markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary.md"))
             doNotTrackState("The report records current Git identity and worktree state.")
+        }
+        val gate = project.tasks.register("souzGateFast") {
+            group = "verification"
+            description = "Runs exact, local-safe Souz repository, module, and coroutine checks."
+            finalizedBy(report)
+        }
+
+        configureDetekt(project, gate, report, detektReportFiles)
+    }
+
+    private fun configureDetekt(
+        project: Project,
+        gate: org.gradle.api.tasks.TaskProvider<org.gradle.api.Task>,
+        report: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
+        reportFiles: ConfigurableFileCollection,
+    ) {
+        val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
+        val rulesJar = project.layout.projectDirectory.file(
+            "build-logic/detekt-rules/build/libs/souz-detekt-rules.jar"
+        )
+
+        project.subprojects.forEach { subproject ->
+            var configured = false
+            val configure = {
+                if (!configured) {
+                    configured = true
+                    val rulesJarTask = project.gradle.includedBuild("build-logic").task(":detekt-rules:jar")
+                    subproject.pluginManager.apply("dev.detekt")
+                    subproject.dependencies.add("detektPlugins", subproject.files(rulesJar))
+                    subproject.extensions.configure(DetektExtension::class.java) {
+                        toolVersion.set("2.0.0-alpha.6")
+                        config.setFrom(configFile)
+                        basePath.set(project.layout.projectDirectory)
+                        buildUponDefaultConfig.set(false)
+                        allRules.set(false)
+                        disableDefaultRuleSets.set(false)
+                        ignoreFailures.set(true)
+                        parallel.set(true)
+                    }
+
+                    val analysisTasks = subproject.tasks.withType(Detekt::class.java)
+                        .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
+                    analysisTasks.configureEach {
+                        dependsOn(rulesJarTask)
+                        exclude("**/generated/resources/**")
+                        reports.checkstyle.required.set(true)
+                        reports.html.required.set(false)
+                        reports.markdown.required.set(false)
+                        reports.sarif.required.set(false)
+                        val checkstyleReport = reports.checkstyle.outputLocation
+                        reportFiles.from(
+                            project.provider {
+                                if (source.isEmpty) emptyList() else listOf(checkstyleReport.get().asFile)
+                            }
+                        )
+                        finalizedBy(report)
+                    }
+                    gate.configure { dependsOn(analysisTasks) }
+                }
+            }
+            subproject.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") { configure() }
+            subproject.pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") { configure() }
         }
     }
 

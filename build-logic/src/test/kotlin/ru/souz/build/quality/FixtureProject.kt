@@ -75,6 +75,27 @@ internal class FixtureProject(private val root: Path) {
         Files.writeString(target, content)
     }
 
+    fun addFailingDetektAnalysis() {
+        append("build.gradle.kts", "apply(from = \"failing-detekt-analysis.gradle\")\n")
+        write(
+            "failing-detekt-analysis.gradle",
+            """
+            def gate = tasks.named("souzGateFast")
+            def report = tasks.named("souzGateFastReport")
+            def analysis = tasks.register("failedDetektAnalysis") {
+                finalizedBy(report)
+                doLast { throw new GradleException("Detekt analysis crashed") }
+            }
+            gate.configure {
+                dependsOn(analysis)
+            }
+            report.configure {
+                detektReports.from(layout.buildDirectory.file("reports/detekt/missing.xml"))
+            }
+            """.trimIndent() + "\n",
+        )
+    }
+
     fun commit() {
         git("init", "-q")
         git("add", "--all")

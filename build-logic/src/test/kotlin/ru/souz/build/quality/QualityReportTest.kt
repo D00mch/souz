@@ -30,4 +30,26 @@ class QualityReportTest {
         assertFalse(rendered.contains(repository.toAbsolutePath().toString()))
         assertTrue(Files.isRegularFile(markdown))
     }
+
+    @Test
+    fun `advisory diagnostics produce a warning without failing the lane`(@TempDir repository: Path) {
+        val result = QualityCheckRunner.run(
+            definition = SouzQualityChecks.coroutineMonitorUse,
+            repositoryDirectory = repository.toFile(),
+            gitIdentity = GitIdentity(null, null, null, true),
+        ) {
+            listOf(QualityDiagnostic("Example.kt", 4, "Review synchronized use."))
+        }
+
+        assertEquals(QualityStatus.WARNING, result.status)
+        assertEquals(
+            QualityStatus.WARNING,
+            QualityReport.write(
+                listOf(result),
+                repository.toFile(),
+                repository.resolve("gate.json").toFile(),
+                repository.resolve("gate.md").toFile(),
+            ),
+        )
+    }
 }

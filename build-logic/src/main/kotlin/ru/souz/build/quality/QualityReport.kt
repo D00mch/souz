@@ -10,6 +10,8 @@ import java.nio.file.Files
 import java.security.MessageDigest
 
 internal object QualityReport {
+    private const val FAST_LANE = "fast"
+    private const val LOCAL_SAFE_AUTHORITY = "local-safe"
     private val mapper = ObjectMapper().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
 
     fun write(
@@ -65,9 +67,9 @@ internal object QualityReport {
         identity: GitIdentity,
     ): ObjectNode = mapper.createObjectNode().apply {
         put("schemaVersion", 1)
-        put("lane", QualityLane.FAST.wireName)
+        put("lane", FAST_LANE)
         put("status", status.wireName)
-        put("authority", QualityAuthority.LOCAL_SAFE.wireName)
+        put("authority", LOCAL_SAFE_AUTHORITY)
         putNullable("testedCommitSha", identity.testedCommitSha)
         putNullable("prBaseSha", identity.prBaseSha)
         putNullable("prHeadSha", identity.prHeadSha)
@@ -102,8 +104,8 @@ internal object QualityReport {
         put("implementationVersion", result.definition.implementationVersion)
         put("description", result.definition.description)
         put("policy", result.definition.policy)
-        put("lane", result.definition.lane.wireName)
-        put("authority", result.definition.authority.wireName)
+        put("lane", FAST_LANE)
+        put("authority", LOCAL_SAFE_AUTHORITY)
         put("enforcement", result.definition.enforcement.wireName)
         put("status", result.status.wireName)
         putNullable("testedCommitSha", result.gitIdentity.testedCommitSha)
@@ -131,7 +133,7 @@ internal object QualityReport {
         appendLine()
         appendLine("Status: **${status.wireName.uppercase()}**")
         appendLine()
-        appendLine("- Authority: `${QualityAuthority.LOCAL_SAFE.wireName}`")
+        appendLine("- Authority: `$LOCAL_SAFE_AUTHORITY`")
         appendLine("- Tested commit: `${identity.testedCommitSha ?: "unknown"}`")
         appendLine("- PR base: `${identity.prBaseSha ?: "not provided"}`")
         appendLine("- PR head: `${identity.prHeadSha ?: "not provided"}`")
