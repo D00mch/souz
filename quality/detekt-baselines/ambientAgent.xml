@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunInFinallySection:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$cancel</ID>
+    <ID>SuspendFunInFinallySection:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$stop</ID>
+    <ID>SuspendFunInFinallySection:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$withLock</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: CancellationException) { // Normal stop path. Cleanup happens in finally. }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) throw error batchSpeechRecognitionProvider?.let { it.enabled &amp;&amp; it.hasRequiredKey } == true }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) throw error false }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) throw error if (error.isNoSpeechDetected()) { logger.debug(&quot;Ambient batch speech fallback skipped no-speech window: locale={}&quot;, locale) return endedAtMs } throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$catch (error: Throwable) { if (error is CancellationException) { markStoppedFromStarting(generation) throw error } logger.warn( &quot;Ambient live transcription start failed: locale={} error={}&quot;, locale, error.message ?: error::class.simpleName, ) when (error) { is LocalMacOsLiveSpeechPermissionDeniedException -&gt; { markStoppedFromStarting(generation) return AmbientSpeechAvailability.SpeechRecognitionPermissionDenied } is LocalMacOsLiveSpeechUnsupportedException, is LocalMacOsLiveSpeechModelUnavailableException, is LocalMacOsLiveSpeechUnavailableException -&gt; return startBatchFallback(locale, generation) else -&gt; return startBatchFallback(locale, generation) } }</ID>
+    <ID>SuspendFunSwallowedCancellation:DefaultAmbientTranscriptionService.kt:DefaultAmbientTranscriptionService$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:LocalLlmAmbientBlockAnalyzer.kt:LocalLlmAmbientBlockAnalyzer$catch (error: Throwable) { if (error is CancellationException) throw error logger.warn( &quot;Ambient local analysis failed: blockId={} error={}&quot;, block.id, error.message ?: error::class.simpleName, ) return null }</ID>
+  </CurrentIssues>
+</SmellBaseline>

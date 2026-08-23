@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunInFinallySection:FilesToolUtil.kt:FilesToolUtil$withContext</ID>
+    <ID>SuspendFunInFinallySection:SpeechRecognitionProvider.kt:MacOsSpeechRecognitionProvider$cancel</ID>
+    <ID>SuspendFunInFinallySection:ToolPermissionBroker.kt:ImmediateToolPermissionBroker$withLock</ID>
+    <ID>SuspendFunSwallowedCancellation:CodexOAuthService.kt:CodexOAuthService$catch (e: CancellationException) { _oauthState.value = CodexOAuthState.Idle throw e }</ID>
+    <ID>SuspendFunSwallowedCancellation:FileSystemSkillRegistryRepository.kt:FileSystemSkillRegistryRepository$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:LiveSpeechTranscriptionProvider.kt:MacOsSpeechAnalyzerLiveTranscriptionProvider$catch (error: Throwable) { if (error is CancellationException) throw error when (val mappedError = mapLiveBridgeError(error)) { is LocalMacOsLiveSpeechPermissionDeniedException -&gt; throw mappedError else -&gt; false } }</ID>
+    <ID>SuspendFunSwallowedCancellation:LiveSpeechTranscriptionProvider.kt:MacOsSpeechAnalyzerLiveTranscriptionProvider$catch (error: Throwable) { throw mapLiveBridgeError(error) }</ID>
+    <ID>SuspendFunSwallowedCancellation:LiveSpeechTranscriptionProvider.kt:MacOsSpeechAnalyzerLiveTranscriptionProvider.BridgeLiveSpeechTranscriptionSession$catch (error: Throwable) { throw mapLiveBridgeError(error) }</ID>
+    <ID>SuspendFunSwallowedCancellation:McpClientManager.kt:McpClientManager$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:McpClientManager.kt:McpGigaToolSetup$catch (e: Exception) { e.toGigaToolMessage(functionCall.name) }</ID>
+    <ID>SuspendFunSwallowedCancellation:McpOAuthManager.kt:McpOAuthManager$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryCaptureService.kt:MemoryCaptureService$catch (_: Exception) { // Best-effort cleanup; keep the original capture result or failure visible. }</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryService.kt:MemoryService$catch (_: Exception) { // Best-effort cleanup; keep the original write failure visible. }</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryService.kt:MemoryService$catch (error: CancellationException) { cleanupSourceEvent(sourceEventId) throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:OrderedShutdown.kt:OrderedShutdown$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:OrderedShutdownTest.kt:OrderedShutdownTest$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:SpeechRecognitionProvider.kt:MacOsSpeechRecognitionProvider$catch (error: Throwable) { throw if (error is CancellationException) error else mapBridgeError(error, locale) }</ID>
+    <ID>SuspendFunSwallowedCancellation:SpeechRecognitionProvider.kt:MacOsSpeechRecognitionProvider$runCatching</ID>
+    <ID>SuspendFunWithFlowReturnType:AnthropicChatAPI.kt:AnthropicChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:CodexChatAPI.kt:CodexChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:GigaRestChatAPI.kt:GigaRestChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmEmbeddingClientTest.kt:LlmEmbeddingClientTest.RecordingEmbeddingApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmMemoryConsolidatorTest.kt:LlmMemoryConsolidatorTest.RecordingApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:LlmMemoryWriterTest.kt:LlmMemoryWriterTest.RecordingChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:OpenAICompatibleChatAPI.kt:OpenAICompatibleChatAPI$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:SettingsRoutingLlmChatApi.kt:SettingsRoutingLlmChatApi$suspend</ID>
+    <ID>SuspendFunWithFlowReturnType:SettingsRoutingLlmChatApi.kt:UnsupportedProviderApi$suspend</ID>
+  </CurrentIssues>
+</SmellBaseline>

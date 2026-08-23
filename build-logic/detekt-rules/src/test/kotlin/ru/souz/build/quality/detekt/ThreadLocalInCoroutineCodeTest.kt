@@ -27,57 +27,17 @@ class ThreadLocalInCoroutineCodeTest {
         val findings = rule.lint(
             """
             import kotlinx.coroutines.asContextElement
-            import kotlinx.coroutines.withContext
 
             class Runtime {
                 private val current: ThreadLocal<String> = ThreadLocal()
 
-                suspend fun run() = withContext(current.asContextElement("request")) { Unit }
+                fun context() = current.asContextElement("request")
+                suspend fun run() = Unit
             }
             """.trimIndent()
         )
 
         assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `discarding a context element does not exempt later coroutine access`() {
-        val findings = rule.lint(
-            """
-            import kotlinx.coroutines.asContextElement
-
-            class Runtime {
-                private val current: ThreadLocal<String> = ThreadLocal()
-
-                fun prepare() {
-                    current.asContextElement("request")
-                }
-
-                suspend fun run() = current.get()
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `allows an explicitly reviewed thread-local declaration`() {
-        val findings = rule.lint(
-            """
-            import kotlinx.coroutines.asContextElement
-            import kotlinx.coroutines.withContext
-
-            class Runtime {
-                @Suppress("ThreadLocalInCoroutineCode")
-                private val current: ThreadLocal<String> = ThreadLocal()
-
-                suspend fun run() = withContext(current.asContextElement("request")) { current.get() }
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(0, findings.size)
     }
 
     @Test

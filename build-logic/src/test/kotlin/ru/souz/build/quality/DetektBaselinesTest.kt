@@ -9,47 +9,21 @@ import java.nio.file.Path
 
 class DetektBaselinesTest {
     @Test
-    fun `identical finding ids remain scoped to their analysis tasks`(@TempDir root: Path) {
-        val issueId = "SuspendFunSwallowedCancellation:Runtime.kt:Runtime${'$'}runCatching"
-        val agent = partialBaseline(root, "agent", issueId)
-        val agentTest = partialBaseline(root, "agent", issueId, fileName = "detektBaselineTest.xml")
-        val backend = partialBaseline(root, "backend", issueId)
+    fun `identical finding ids remain scoped to their modules`(@TempDir root: Path) {
+        val sharedId = "SuspendFunSwallowedCancellation:Runtime.kt:Runtime${'$'}runCatching"
+        val agentOnlyId = "SuspendFunInFinallySection:Agent.kt:Agent${'$'}close"
+        val agentMain = partialBaseline(root, "agent", sharedId, agentOnlyId)
+        val agentTest = partialBaseline(root, "agent", sharedId, fileName = "detektBaselineTest.xml")
+        val backend = partialBaseline(root, "backend", sharedId)
 
-        val rendered = DetektBaselines.renderScoped(
+        val rendered = DetektBaselines.renderByModule(
             repository = root.toFile(),
-            baselines = setOf(agent, agentTest, backend),
+            baselines = setOf(agentMain, agentTest, backend),
         )
 
-        assertEquals(
-            setOf(
-                "agent/detektBaselineMain.xml",
-                "agent/detektBaselineTest.xml",
-                "backend/detektBaselineMain.xml",
-            ),
-            rendered.keys,
-        )
-        assertTrue(rendered.values.all { issueId in it })
-    }
-
-    @Test
-    fun `reports stale findings only in their original scope`(@TempDir root: Path) {
-        val currentId = "SuspendFunSwallowedCancellation:Runtime.kt:Runtime${'$'}runCatching"
-        val staleId = "SuspendFunInFinallySection:Runtime.kt:Runtime${'$'}close"
-        val agentCurrent = partialBaseline(root, "agent", currentId)
-        val backendCurrent = partialBaseline(root, "backend", currentId)
-        val agentTracked = trackedBaseline(root, "agent", currentId, staleId)
-        val backendTracked = trackedBaseline(root, "backend", currentId)
-
-        val diagnostics = DetektBaselines.staleDiagnostics(
-            repository = root.toFile(),
-            trackedBaselines = setOf(agentTracked, backendTracked),
-            currentBaselines = setOf(agentCurrent, backendCurrent),
-        )
-
-        assertEquals(1, diagnostics.size)
-        assertEquals("quality/detekt-baselines/agent/detektBaselineMain.xml", diagnostics.single().path)
-        assertTrue(diagnostics.single().message.contains("SuspendFunInFinallySection"))
-        assertTrue(diagnostics.single().message.contains("Runtime.kt"))
+        assertEquals(setOf("agent.xml", "backend.xml"), rendered.keys)
+        assertTrue(rendered.values.all { sharedId in it })
+        assertTrue(agentOnlyId in rendered.getValue("agent.xml"))
     }
 
     private fun partialBaseline(
@@ -59,12 +33,6 @@ class DetektBaselinesTest {
         fileName: String = "detektBaselineMain.xml",
     ): java.io.File {
         val path = root.resolve("$module/build/reports/detekt/baselines/$fileName")
-        writeBaseline(path, issueIds.toList())
-        return path.toFile()
-    }
-
-    private fun trackedBaseline(root: Path, module: String, vararg issueIds: String): java.io.File {
-        val path = root.resolve("quality/detekt-baselines/$module/detektBaselineMain.xml")
         writeBaseline(path, issueIds.toList())
         return path.toFile()
     }

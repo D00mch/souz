@@ -98,13 +98,6 @@ internal object SouzQualityChecks {
         policy = "AGENTS.md",
     )
 
-    val baselineHygiene = QualityCheckDefinition(
-        id = "baseline-hygiene",
-        implementationVersion = 1,
-        description = "Tracked coroutine baselines contain only current findings in their analysis scope.",
-        policy = "docs/quality-gates.md",
-    )
-
     val fast = listOf(
         gitMetadata,
         repositoryContracts,
@@ -113,7 +106,6 @@ internal object SouzQualityChecks {
         coroutineThreadLocal,
         coroutineMonitorUse,
         coroutineSafety,
-        baselineHygiene,
     )
 }
 

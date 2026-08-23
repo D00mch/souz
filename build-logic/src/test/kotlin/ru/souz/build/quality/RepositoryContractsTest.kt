@@ -28,7 +28,6 @@ class RepositoryContractsTest {
             - [Agent](../agent/docs/pain-points.md)
             """.trimIndent() + "\n",
         )
-        writeQualityGatesPolicy(repository)
         write(
             repository.resolve("agent/AGENTS.md"),
             """
@@ -74,7 +73,6 @@ class RepositoryContractsTest {
             """.trimIndent() + "\n",
         )
         write(repository.resolve("docs/pain-points.md"), "# Pain points\n")
-        writeQualityGatesPolicy(repository)
 
         val diagnostics = RepositoryContracts.check(
             repositoryDirectory = repository.toFile(),
@@ -108,7 +106,6 @@ class RepositoryContractsTest {
             repository.resolve("docs/pain-points.md"),
             "# Pain points\n\n[Agent](../agent/docs/pain-points.md)\n",
         )
-        writeQualityGatesPolicy(repository)
         write(repository.resolve("agent/AGENTS.md"), "# Agent\n\n![Pain points](docs/pain-points.md)\n")
         write(repository.resolve("agent/docs/pain-points.md"), "# Pain points\n")
 
@@ -131,9 +128,5 @@ class RepositoryContractsTest {
     private fun write(path: Path, content: String) {
         Files.createDirectories(path.parent)
         Files.writeString(path, content)
-    }
-
-    private fun writeQualityGatesPolicy(repository: Path) {
-        write(repository.resolve("docs/quality-gates.md"), "# Quality gates\n")
     }
 }

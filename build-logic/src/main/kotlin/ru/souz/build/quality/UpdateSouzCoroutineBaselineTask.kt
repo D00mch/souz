@@ -28,7 +28,7 @@ abstract class UpdateSouzCoroutineBaselineTask : DefaultTask() {
     fun update() {
         val repository = repositoryDirectory.get().asFile
         val outputDirectory = baselines.get().asFile
-        val rendered = DetektBaselines.renderScoped(
+        val rendered = DetektBaselines.renderByModule(
             repository = repository,
             baselines = partialBaselines.files,
             excludedRuleIds = ADVISORY_DETEKT_RULES,
@@ -52,85 +52,28 @@ abstract class UpdateSouzCoroutineBaselineTask : DefaultTask() {
 }
 
 internal object DetektBaselines {
-    fun renderScoped(
+    fun renderByModule(
         repository: File,
         baselines: Set<File>,
         excludedRuleIds: Set<String> = emptySet(),
-    ): Map<String, String> = buildMap {
-        currentIssuesByScope(repository, baselines, excludedRuleIds).forEach { (path, issueIds) ->
-            put(path, render(issueIds))
+    ): Map<String, String> = baselines
+        .groupBy { it.moduleBaselinePath(repository) }
+        .toSortedMap()
+        .mapValues { (_, files) ->
+            val issueIds = files.asSequence()
+                .sortedBy(File::getPath)
+                .flatMap(::currentIssueIds)
+                .filterNot { issueId -> excludedRuleIds.any { issueId.startsWith("$it:") } }
+                .toSortedSet()
+            render(issueIds)
         }
-    }
 
-    fun staleDiagnostics(
-        repository: File,
-        trackedBaselines: Set<File>,
-        currentBaselines: Set<File>,
-        excludedRuleIds: Set<String> = emptySet(),
-    ): List<QualityDiagnostic> {
-        val current = currentIssuesByScope(repository, currentBaselines, excludedRuleIds)
-        return trackedBaselines.sortedBy { it.relativeInvariantPath(repository) }.flatMap { baseline ->
-            val scope = trackedScope(repository, baseline)
-            val trackedIssues = filteredIssueIds(baseline, excludedRuleIds)
-            val currentIssues = current[scope]
-                ?: return@flatMap listOf(
-                    QualityDiagnostic(
-                        path = baseline.relativeInvariantPath(repository),
-                        line = null,
-                        message = "Remove the baseline for an unavailable Detekt analysis task.",
-                    )
-                )
-
-            (trackedIssues - currentIssues).map { issueId ->
-                QualityDiagnostic(
-                    path = baseline.relativeInvariantPath(repository),
-                    line = baselineLine(baseline, issueId),
-                    message = "Remove stale ${issueId.ruleId()} baseline entry for ${issueId.fileName()}.",
-                )
-            }
-        }
-    }
-
-    private fun currentIssuesByScope(
-        repository: File,
-        baselines: Set<File>,
-        excludedRuleIds: Set<String>,
-    ): Map<String, Set<String>> = buildMap {
-        baselines.sortedBy { it.relativeInvariantPath(repository) }.forEach { baseline ->
-            val path = scopedPath(repository, baseline)
-            check(path !in this) { "Duplicate Detekt baseline scope: $path" }
-            put(path, filteredIssueIds(baseline, excludedRuleIds))
-        }
-    }
-
-    private fun scopedPath(repository: File, baseline: File): String {
-        val path = baseline.relativeInvariantPath(repository)
+    private fun File.moduleBaselinePath(repository: File): String {
+        val path = relativeInvariantPath(repository)
         val marker = "/build/reports/detekt/baselines/"
         require(marker in path) { "Unexpected Detekt partial baseline path: $path" }
-        return path.substringBefore(marker) + "/" + path.substringAfter(marker)
+        return "${path.substringBefore(marker)}.xml"
     }
-
-    private fun trackedScope(repository: File, baseline: File): String {
-        val path = baseline.relativeInvariantPath(repository)
-        val marker = "quality/detekt-baselines/"
-        require(path.startsWith(marker)) { "Unexpected tracked Detekt baseline path: $path" }
-        return path.removePrefix(marker)
-    }
-
-    private fun filteredIssueIds(baseline: File, excludedRuleIds: Set<String>): Set<String> =
-        currentIssueIds(baseline)
-            .filterNot { issueId -> excludedRuleIds.any { ruleId -> issueId.startsWith("$ruleId:") } }
-            .toSortedSet()
-
-    private fun baselineLine(baseline: File, issueId: String): Int? {
-        val entry = "<ID>${issueId.escapeXml()}</ID>"
-        val index = baseline.readLines().indexOfFirst { entry in it }
-        return index.takeIf { it >= 0 }?.plus(1)
-    }
-
-    private fun String.ruleId(): String = substringBefore(':')
-
-    private fun String.fileName(): String = substringAfter(':').substringBefore(':')
 
     private fun render(issueIds: Set<String>): String = buildString {
         appendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")

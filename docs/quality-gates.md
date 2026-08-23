@@ -22,7 +22,6 @@ the quality summary and report artifacts even when the gate fails.
 | `coroutine-thread-local` | Coroutine-owned `ThreadLocal` state requires reviewed `asContextElement` propagation. | Move the state into coroutine context, or propagate every coroutine use and explicitly suppress the reviewed declaration. |
 | `coroutine-monitor-use` | Direct `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend functions and coroutine builders is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
 | `coroutine-safety` | Coroutine code follows structured execution, cleanup, Flow-signature, delay, scope-receiver, and test-lifecycle rules. | Apply the Detekt diagnostic at the reported repository-relative location. |
-| `baseline-hygiene` | Every tracked coroutine baseline entry still matches a finding in the same module and source-set analysis task. | Remove stale entries by running `./gradlew updateSouzCoroutineBaseline` and review the resulting policy diff. |
 
 All checks have `local-safe` authority. `coroutine-monitor-use` is advisory and
 produces warnings; the other checks are blocking. An unexpected checker failure
@@ -60,12 +59,10 @@ coordination directly inside suspend functions and coroutine builders. Atomics,
 volatile fields, and monitor coordination at non-suspending JVM or native
 boundaries are not prohibited.
 
-Existing findings live in task-scoped files under
-[`quality/detekt-baselines`](../quality/detekt-baselines/README.md). Separate
-project and source-set scopes prevent one finding from suppressing another.
+Existing findings live in module-scoped files under `quality/detekt-baselines/`,
+preventing a finding in one project from suppressing an identical Detekt ID in
+another.
 Advisory findings are excluded from the baseline so they remain visible.
-The fast gate compares the tracked files with fresh unsuppressed snapshots and
-fails when an entry becomes stale; CI never rewrites them.
 After reviewing a deliberate debt change, regenerate it explicitly:
 
 ```bash

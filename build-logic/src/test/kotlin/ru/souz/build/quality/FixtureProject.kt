@@ -42,7 +42,6 @@ internal class FixtureProject(private val root: Path) {
             - [Shared UI](../sharedUI/docs/pain-points.md)
             """.trimIndent() + "\n",
         )
-        write("docs/quality-gates.md", "# Quality gates\n")
 
         modules.forEach { module ->
             val directory = module.removePrefix(":")
