@@ -70,4 +70,3 @@ internal fun parseSecureXml(file: File): Document {
 internal val CANCELLATION_RULES = setOf("SuspendFunSwallowedCancellation")
 internal val THREAD_LOCAL_RULES = setOf("ThreadLocalInCoroutineCode")
 internal val MONITOR_RULES = setOf("MonitorInsideSuspendContext")
-internal val ADVISORY_DETEKT_RULES = MONITOR_RULES

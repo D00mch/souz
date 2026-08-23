@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<SmellBaseline>
-  <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>SuspendFunSwallowedCancellation:ChatUseCaseTest.kt:ChatUseCaseTest$catch (error: CancellationException) { firstCancellationObserved.complete(Unit) allowFirstCleanup.await() throw error }</ID>
-    <ID>SuspendFunWithCoroutineScopeReceiver:AmbientModeControllerTest.kt:AmbientModeControllerTest$suspend</ID>
-    <ID>SuspendFunWithCoroutineScopeReceiver:MainViewModelTest.kt:MainViewModelTest$suspend</ID>
-  </CurrentIssues>
-</SmellBaseline>

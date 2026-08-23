@@ -15,7 +15,9 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 - Prefer composition to inheritance.
 - When you see that something can be done simpler, in less lines of code, removing the unnecessary abstractions, note the developer and ask questions on that.
 - Abstractions only pay off, if we need the flexibility in the future. You don't know the future, developer does. Aks developer when choosing abstractions. 
-- Do not use JVM `ThreadLocal` as coroutine state unless it is propagated explicitly with `asContextElement`.
+- Treat JVM `ThreadLocal` state as review-only. Every declaration requires an explicit
+  `@Suppress("ThreadLocalInCoroutineCode")`; coroutine access must also propagate it with
+  `asContextElement`.
 - Prefer coroutine coordination inside suspend execution. Keep JVM monitors and atomics at explicit non-suspending JVM or native boundaries when they are required.
 
 ## Module Map

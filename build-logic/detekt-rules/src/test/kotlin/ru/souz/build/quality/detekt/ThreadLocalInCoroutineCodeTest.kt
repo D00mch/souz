@@ -14,7 +14,7 @@ class ThreadLocalInCoroutineCodeTest(
     private val rule = ThreadLocalInCoroutineCode(Config.empty)
 
     @Test
-    fun `reports resolved JVM thread-local state in a coroutine-owning class`() {
+    fun `reports resolved JVM thread-local state regardless of construction syntax`() {
         val findings = lint(
             """
             import java.lang.ThreadLocal as JvmThreadLocal
@@ -23,8 +23,6 @@ class ThreadLocalInCoroutineCodeTest(
                 private val constructed = JvmThreadLocal<String>()
                 private val factory = java.lang.ThreadLocal.withInitial { "request" }
                 private val inherited = InheritableThreadLocal<String>()
-
-                suspend fun run() = constructed.get() + factory.get() + inherited.get()
             }
             """.trimIndent()
         )
@@ -33,47 +31,30 @@ class ThreadLocalInCoroutineCodeTest(
     }
 
     @Test
-    fun `calling asContextElement does not exempt coroutine-owned thread-local state`() {
-        val findings = lint(
-            """
-            import kotlinx.coroutines.asContextElement
-
-            class Runtime {
-                private val current: ThreadLocal<String> = ThreadLocal()
-
-                fun context() = current.asContextElement("request")
-                suspend fun run() = current.get()
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `reports thread-local parameters accessed by suspend functions`() {
+    fun `reports thread-local parameters locals and subclasses`() {
         val findings = lint(
             """
             class Runtime(private val current: ThreadLocal<String>) {
-                suspend fun run(temporary: ThreadLocal<String>) = current.get() + temporary.get()
+                fun run(temporary: ThreadLocal<String>) {
+                    val local = ThreadLocal<String>()
+                }
             }
+
+            class RuntimeThreadLocal : ThreadLocal<String>()
             """.trimIndent()
         )
 
-        assertEquals(2, findings.size)
+        assertEquals(4, findings.size)
     }
 
     @Test
     fun `ignores an unrelated class named ThreadLocal`() {
         val findings = lint(
             """
-            class ThreadLocal<T>(private val value: T) {
-                fun get(): T = value
-            }
+            class ThreadLocal<T>(private val value: T)
 
             class Runtime {
                 private val current = ThreadLocal("request")
-                suspend fun run() = current.get()
             }
             """.trimIndent()
         )
@@ -82,65 +63,12 @@ class ThreadLocalInCoroutineCodeTest(
     }
 
     @Test
-    fun `reports outer thread-local state accessed from nested suspend code`() {
+    fun `allows an explicitly reviewed thread-local declaration`() {
         val findings = lint(
             """
-            class Runtime {
+            class NativeBoundary {
+                @Suppress("ThreadLocalInCoroutineCode")
                 private val current = ThreadLocal<String>()
-
-                inner class Worker {
-                    suspend fun run() = current.get()
-                }
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `reports thread-local access from a suspend-function-typed lambda`() {
-        val findings = lint(
-            """
-            class Runtime {
-                private val current = ThreadLocal<String>()
-                val action: suspend () -> Unit = { current.get() }
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `reports thread-local access through an aliased coroutine builder`() {
-        val findings = lint(
-            """
-            import kotlinx.coroutines.CoroutineScope
-            import kotlinx.coroutines.launch as start
-
-            class Runtime(private val scope: CoroutineScope) {
-                private val current = ThreadLocal<String>()
-
-                fun run() {
-                    scope.start { current.get() }
-                }
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(1, findings.size)
-    }
-
-    @Test
-    fun `ignores thread-local access outside suspend execution`() {
-        val findings = lint(
-            """
-            class Runtime {
-                private val current = ThreadLocal<String>()
-
-                fun current() = current.get()
-                suspend fun unrelated() = Unit
             }
             """.trimIndent()
         )

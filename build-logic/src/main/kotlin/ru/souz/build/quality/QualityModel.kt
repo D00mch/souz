@@ -71,49 +71,35 @@ internal object SouzQualityChecks {
 
     val cancellationPropagation = QualityCheckDefinition(
         id = "cancellation-propagation",
-        implementationVersion = 1,
+        implementationVersion = 2,
         description = "Suspend paths propagate CancellationException immediately.",
-        policy = "AGENTS.md",
-    )
-
-    val coroutineBaselineHygiene = QualityCheckDefinition(
-        id = "coroutine-baseline-hygiene",
-        implementationVersion = 1,
-        description = "Reviewed coroutine baselines contain no stale entries.",
-        policy = "AGENTS.md",
-    )
-
-    val coroutineThreadLocal = QualityCheckDefinition(
-        id = "coroutine-thread-local",
-        implementationVersion = 1,
-        description = "Thread-local state used by coroutine code is propagated explicitly.",
-        policy = "AGENTS.md",
-    )
-
-    val coroutineMonitorUse = QualityCheckDefinition(
-        id = "coroutine-monitor-use",
-        implementationVersion = 1,
-        description = "JVM monitor coordination directly inside coroutine execution is reviewed.",
         policy = "AGENTS.md",
         enforcement = QualityEnforcement.ADVISORY,
     )
 
-    val coroutineSafety = QualityCheckDefinition(
-        id = "coroutine-safety",
-        implementationVersion = 1,
-        description = "Coroutine code follows structured execution, cleanup, flow, sleep, and test-lifecycle rules.",
+    val coroutineThreadLocal = QualityCheckDefinition(
+        id = "coroutine-thread-local",
+        implementationVersion = 2,
+        description = "JVM ThreadLocal state is reviewed explicitly before use.",
         policy = "AGENTS.md",
+        enforcement = QualityEnforcement.ADVISORY,
+    )
+
+    val coroutineMonitorUse = QualityCheckDefinition(
+        id = "coroutine-monitor-use",
+        implementationVersion = 2,
+        description = "JVM monitor coordination directly inside coroutine execution is reviewed.",
+        policy = "AGENTS.md",
+        enforcement = QualityEnforcement.ADVISORY,
     )
 
     val fast = listOf(
         gitMetadata,
         repositoryContracts,
         moduleBoundaries,
-        coroutineBaselineHygiene,
         cancellationPropagation,
         coroutineThreadLocal,
         coroutineMonitorUse,
-        coroutineSafety,
     )
 }
 

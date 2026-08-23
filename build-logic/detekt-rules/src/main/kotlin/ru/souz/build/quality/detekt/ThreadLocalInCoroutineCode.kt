@@ -7,75 +7,59 @@ import dev.detekt.api.Finding
 import dev.detekt.api.RequiresAnalysisApi
 import dev.detekt.api.Rule
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.types.KaFunctionType
-import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.psi.KtCallExpression
-import org.jetbrains.kotlin.psi.KtElement
-import org.jetbrains.kotlin.psi.KtExpression
+import org.jetbrains.kotlin.psi.KtDeclarationWithReturnType
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtLambdaExpression
-import org.jetbrains.kotlin.psi.KtNamedFunction
-import org.jetbrains.kotlin.psi.KtQualifiedExpression
+import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtSuperTypeListEntry
 import org.jetbrains.kotlin.psi.KtTreeVisitorVoid
 
 class ThreadLocalInCoroutineCode(config: Config) : Rule(
     config,
-    "ThreadLocal state in coroutine code must be propagated explicitly through coroutine context.",
+    "JVM ThreadLocal state requires explicit review before use.",
 ), RequiresAnalysisApi {
     override fun visitKtFile(file: KtFile) {
-        file.accept(ThreadLocalAccessVisitor(::reportAccess))
+        file.accept(ThreadLocalStateVisitor(::reportState))
     }
 
-    private fun reportAccess(access: KtCallExpression) {
-        val operation = access.calleeExpression?.text.orEmpty()
+    private fun reportState(state: PsiElement) {
         report(
             Finding(
-                Entity.from(access.calleeExpression ?: access),
-                "ThreadLocal.$operation in coroutine code requires reviewed asContextElement propagation.",
+                Entity.from(state),
+                "JVM ThreadLocal state requires reviewed @Suppress(\"ThreadLocalInCoroutineCode\"); " +
+                    "coroutine access must also use asContextElement.",
             )
         )
     }
 }
 
-private class ThreadLocalAccessVisitor(
-    private val report: (KtCallExpression) -> Unit,
+private class ThreadLocalStateVisitor(
+    private val report: (PsiElement) -> Unit,
 ) : KtTreeVisitorVoid() {
-    override fun visitQualifiedExpression(expression: KtQualifiedExpression) {
-        val access = expression.selectorExpression as? KtCallExpression
-        if (access == null) {
-            super.visitQualifiedExpression(expression)
-            return
-        }
-        if (
-            access.calleeExpression?.text in THREAD_LOCAL_STATE_OPERATIONS &&
-            expression.receiverExpression.isJvmThreadLocal() &&
-            access.isInsideSuspendExecution()
-        ) {
-            report(access)
-        }
-        super.visitQualifiedExpression(expression)
+    override fun visitProperty(property: KtProperty) {
+        if (property.isJvmThreadLocal()) report(property.nameIdentifier ?: property)
+        super.visitProperty(property)
+    }
+
+    override fun visitParameter(parameter: KtParameter) {
+        if (parameter.isJvmThreadLocal()) report(parameter.nameIdentifier ?: parameter)
+        super.visitParameter(parameter)
+    }
+
+    override fun visitSuperTypeListEntry(specifier: KtSuperTypeListEntry) {
+        if (specifier.isJvmThreadLocal()) report(specifier)
+        super.visitSuperTypeListEntry(specifier)
     }
 }
 
-private fun KtExpression.isJvmThreadLocal(): Boolean =
-    analyze(this) { expressionType?.isSubtypeOf(THREAD_LOCAL_CLASS_ID) == true }
+private fun KtDeclarationWithReturnType.isJvmThreadLocal(): Boolean =
+    analyze(this) { returnType.isSubtypeOf(THREAD_LOCAL_CLASS_ID) }
 
-private fun KtElement.isInsideSuspendExecution(): Boolean {
-    var current: PsiElement? = parent
-    while (current != null && current !is KtFile) {
-        when (current) {
-            is KtNamedFunction -> if (current.hasModifier(KtTokens.SUSPEND_KEYWORD)) return true
-            is KtLambdaExpression -> if (current.isSuspendLambda()) return true
-        }
-        current = current.parent
-    }
-    return false
-}
-
-private fun KtLambdaExpression.isSuspendLambda(): Boolean =
-    analyze(this) { (expectedType as? KaFunctionType)?.isSuspend == true }
+private fun KtSuperTypeListEntry.isJvmThreadLocal(): Boolean =
+    typeReference?.let { reference ->
+        analyze(reference) { reference.type.isSubtypeOf(THREAD_LOCAL_CLASS_ID) }
+    } == true
 
 private val THREAD_LOCAL_CLASS_ID = ClassId.topLevel(FqName("java.lang.ThreadLocal"))
-private val THREAD_LOCAL_STATE_OPERATIONS = setOf("get", "set", "remove")

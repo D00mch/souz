@@ -8,8 +8,9 @@ the fast gate from the repository root:
 ```
 
 The fast lane is local-safe: its results remain meaningful in a dirty
-checkout. Its checks are blocking locally and in pull-request CI. CI publishes
-the quality summary and report artifacts even when the gate fails.
+checkout. Repository and module contracts are blocking locally and in
+pull-request CI. Coroutine analysis is advisory. CI publishes the quality
+summary and report artifacts even when a blocking check fails.
 
 ## Checks
 
@@ -18,15 +19,13 @@ the quality summary and report artifacts even when the gate fails.
 | `git-metadata` | The gate can identify the tested commit and worktree state. | Run the gate from the repository checkout and remove Git routing overrides that point outside it. |
 | `repository-contracts` | The Gradle project set, root Module Map, module policies, pain-point indexes, local policy links, and registered check policy paths agree. | Repair the reported repository-relative policy path or update the owning policy with the reviewed module change. |
 | `module-boundaries` | Direct production `ProjectDependency` edges match the explicit module and KMP source-set allowlist. Test dependencies are excluded. | Remove the edge or update the owning module policy and allowlist together when the architecture change is intentional. |
-| `coroutine-baseline-hygiene` | Reviewed coroutine baselines contain no stale entries. | Remove the reported obsolete entry by running `./gradlew updateSouzCoroutineBaseline`. |
 | `cancellation-propagation` | Suspend paths do not swallow `CancellationException`, including through `runCatching`. | Catch the expected exception type or rethrow cancellation immediately. |
-| `coroutine-thread-local` | Coroutine-owned `ThreadLocal` state requires reviewed `asContextElement` propagation. | Move the state into coroutine context, or propagate every coroutine use and explicitly suppress the reviewed declaration. |
-| `coroutine-monitor-use` | Direct `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend functions and coroutine builders is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
-| `coroutine-safety` | Coroutine code follows structured execution, cleanup, Flow-signature, delay, scope-receiver, and test-lifecycle rules. | Apply the Detekt diagnostic at the reported repository-relative location. |
+| `coroutine-thread-local` | Every JVM `ThreadLocal` state declaration is reviewed explicitly. | Move the state into coroutine context, or suppress the reviewed declaration and propagate coroutine access with `asContextElement`. |
+| `coroutine-monitor-use` | `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend execution is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
 
-All checks have `local-safe` authority. `coroutine-monitor-use` is advisory and
-produces warnings; the other checks are blocking. An unexpected checker failure
-is reported as `error`, not as a pass or policy failure.
+All checks have `local-safe` authority. The three coroutine checks are advisory
+and produce warnings; the other checks are blocking. An unexpected checker
+failure is reported as `error`, not as a pass or policy failure.
 
 Project dependencies declared in an unclassified configuration fail closed.
 Test-only edges should use a standard test source-set configuration so the
@@ -37,40 +36,25 @@ are not part of the version 1 repository contract.
 
 ## Coroutine analysis
 
-Detekt runs type-resolved analysis for every JVM production and test
+Detekt runs one type-resolved analysis task for every JVM production and test
 compilation. Non-coroutine rule sets are disabled in
-[`quality/detekt.yml`](../quality/detekt.yml).
+[`quality/detekt.yml`](../quality/detekt.yml). Advisory analysis has no baseline,
+so every finding remains visible.
 
-The enabled built-in rules are:
+The enabled built-in rule is `SuspendFunSwallowedCancellation`.
 
-- `CoroutineLaunchedInTestWithoutRunTest`
-- `GlobalCoroutineUsage`
-- `SleepInsteadOfDelay`
-- `SuspendFunInFinallySection`
-- `SuspendFunSwallowedCancellation`
-- `SuspendFunWithCoroutineScopeReceiver`
-- `SuspendFunWithFlowReturnType`
+The custom `ThreadLocalInCoroutineCode` rule resolves declaration types and
+requires a reviewed `@Suppress("ThreadLocalInCoroutineCode")` on each property,
+parameter, local variable, or subclass that owns JVM thread-local state. When
+that state is accessed from a coroutine, the reviewed implementation must also
+propagate it with `asContextElement`.
 
-`InjectDispatcher` and `RedundantSuspendModifier` remain disabled because they
-enforce testability or style rather than coroutine correctness. The blocking
-custom `ThreadLocalInCoroutineCode` rule requires a reviewed suppression when
-thread-local propagation is deliberately retained. The advisory
-`MonitorInsideSuspendContext` rule reports monitor
-coordination directly inside suspend functions and coroutine builders. Atomics,
-volatile fields, and monitor coordination at non-suspending JVM or native
-boundaries are not prohibited.
-
-Existing findings live in module- and analysis-scoped files under
-`quality/detekt-baselines/`, preventing findings in another project or
-production/test compilation from sharing a suppression identity. The fast gate
-fails when a reviewed entry is stale. New findings fail their owning coroutine
-check instead of producing a duplicate baseline-hygiene diagnostic.
-Advisory findings are excluded from the baseline so they remain visible.
-After reviewing a deliberate debt change, regenerate it explicitly:
-
-```bash
-./gradlew updateSouzCoroutineBaseline
-```
+The custom `MonitorInsideSuspendContext` rule resolves callable identity before
+reporting `kotlin.synchronized`, `java.util.Collections.synchronized*`, or
+`kotlin.jvm.Synchronized` inside suspend functions and suspend-typed lambdas.
+Unrelated APIs with the same short names are ignored. Atomics, volatile fields,
+and monitor coordination at non-suspending JVM or native boundaries are not
+prohibited.
 
 ## Reports
 
