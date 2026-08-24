@@ -14,7 +14,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.local.LocalChatAPI
@@ -37,10 +36,6 @@ internal class E2eLlmApi : LLMChatAPI {
     private val promptReleaseGates = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
     private val promptSkills = ConcurrentHashMap<String, SkillScript>()
 
-    fun failWith(message: String) {
-        failMessage = message
-    }
-
     fun hangUntilCancelled() {
         hang = true
     }
@@ -51,10 +46,6 @@ internal class E2eLlmApi : LLMChatAPI {
 
     fun release() {
         releaseGate?.complete(Unit)
-    }
-
-    fun streamChunks(chunks: List<String>) {
-        streamingChunks = chunks
     }
 
     fun streamThenFail(chunks: List<String>, message: String) {
