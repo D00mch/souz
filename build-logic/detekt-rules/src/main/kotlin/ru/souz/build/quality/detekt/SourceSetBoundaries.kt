@@ -94,7 +94,8 @@ private fun String.isDesktopWindowImport(isAllUnder: Boolean): Boolean =
         DESKTOP_WINDOW_TYPES.any { type -> this == type || startsWith("$type.") }
 
 private fun String.isUnreviewedAndroidXImport(): Boolean =
-    startsWith("androidx.") && !matchesAny(COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES)
+    matchesAny(COMMON_MAIN_FORBIDDEN_ANDROIDX_PREFIXES) ||
+        startsWith("androidx.") && !matchesAny(COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES)
 
 private fun String.matchesAny(prefixes: List<String>): Boolean =
     prefixes.any { prefix -> this == prefix.removeSuffix(".") || startsWith(prefix) }
@@ -106,6 +107,8 @@ private val CORE_MODULES = setOf("graph-engine", "llms", "agent", "skill-oauth-a
 private const val COMPOSE_WINDOW_PACKAGE = "androidx.compose.ui.window"
 
 private val COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES = listOf("androidx.compose.")
+
+private val COMMON_MAIN_FORBIDDEN_ANDROIDX_PREFIXES = listOf("androidx.compose.desktop.")
 
 private val DESKTOP_WINDOW_TYPES = setOf(
     "$COMPOSE_WINDOW_PACKAGE.ApplicationScope",

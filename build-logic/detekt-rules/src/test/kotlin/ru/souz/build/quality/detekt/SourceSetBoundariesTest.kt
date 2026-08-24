@@ -63,12 +63,14 @@ class SourceSetBoundariesTest {
             "sharedUI/src/commonMain/kotlin/PortableUi.kt",
             """
             import androidx.appcompat.app.AppCompatActivity
+            import androidx.compose.desktop.ui.tooling.preview.Preview
             import androidx.compose.material3.Text
             """,
         )
 
-        assertEquals(1, findings.size)
-        assertTrue(findings.single().message.contains("androidx.appcompat.app.AppCompatActivity"))
+        assertEquals(2, findings.size)
+        assertTrue(findings.any { it.message.contains("androidx.appcompat.app.AppCompatActivity") })
+        assertTrue(findings.any { it.message.contains("androidx.compose.desktop.ui.tooling.preview.Preview") })
     }
 
     @Test
