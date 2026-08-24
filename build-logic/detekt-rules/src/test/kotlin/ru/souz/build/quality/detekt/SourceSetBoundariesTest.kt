@@ -48,7 +48,7 @@ class SourceSetBoundariesTest {
             """
             import java.time.Clock
             import platform.AppKit.NSWindow
-            import ru.souz.service.speech.MacOsSpeechBridge
+            import ru.souz.service.audio.AudioRecorder
             import androidx.compose.ui.window.*
             """,
         )
@@ -74,19 +74,33 @@ class SourceSetBoundariesTest {
     }
 
     @Test
-    fun `reports UI and desktop tool imports from backend production sources`() {
+    fun `reports UI and desktop-only imports from backend production sources`() {
         val findings = lint(
             "backend/src/main/kotlin/BackendRuntime.kt",
             """
             import ru.souz.ui.main.MainViewModel
-            import ru.souz.tool.calendar.ToolGetCalendarEvents
+            import ru.souz.service.audio.AudioRecorder
+            import ru.souz.tool.telegram.ToolTelegramSend
             import ru.souz.llms.local.LocalChatAPI
             import ru.souz.tool.skills.ToolInvokeSkill
             """,
         )
 
-        assertEquals(2, findings.size)
+        assertEquals(3, findings.size)
         assertTrue(findings.all { it.message.contains(":backend main") })
+    }
+
+    @Test
+    fun `allows shared speech and telegram contracts in backend production sources`() {
+        val findings = lint(
+            "backend/src/main/kotlin/BackendRuntime.kt",
+            """
+            import ru.souz.service.speech.SpeechRecognitionProvider
+            import ru.souz.service.telegram.TelegramAuthStep
+            """,
+        )
+
+        assertEquals(0, findings.size)
     }
 
     @Test

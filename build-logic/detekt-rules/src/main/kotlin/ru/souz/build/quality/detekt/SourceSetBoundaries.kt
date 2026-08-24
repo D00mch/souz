@@ -136,13 +136,11 @@ private val PORTABLE_HOST_PREFIXES = listOf(
     "platform.",
 )
 
-private val DESKTOP_SERVICE_PREFIXES = listOf(
+private val DESKTOP_ONLY_SERVICE_PREFIXES = listOf(
     "ru.souz.service.audio.",
     "ru.souz.service.image.",
     "ru.souz.service.keys.",
     "ru.souz.service.permissions.",
-    "ru.souz.service.speech.",
-    "ru.souz.service.telegram.",
 )
 
 private val DESKTOP_TOOL_PREFIXES = listOf(
@@ -161,7 +159,7 @@ private val HOST_IMPLEMENTATION_PREFIXES = listOf(
     "ru.souz.backend.",
     "ru.souz.llms.local.",
     "ru.souz.ui.macos.",
-) + DESKTOP_SERVICE_PREFIXES + DESKTOP_TOOL_PREFIXES
+) + DESKTOP_ONLY_SERVICE_PREFIXES + DESKTOP_TOOL_PREFIXES
 
 private val HOST_IMPLEMENTATION_TYPES = setOf(
     "ru.souz.App",
@@ -199,4 +197,4 @@ private val BACKEND_FORBIDDEN_PREFIXES = listOf(
     "org.jetbrains.skiko.",
     "ru.souz.di.",
     "ru.souz.ui.",
-) + DESKTOP_SERVICE_PREFIXES + DESKTOP_TOOL_PREFIXES
+) + DESKTOP_ONLY_SERVICE_PREFIXES + DESKTOP_TOOL_PREFIXES
