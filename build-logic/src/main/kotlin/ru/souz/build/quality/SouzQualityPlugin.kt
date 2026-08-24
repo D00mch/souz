@@ -63,6 +63,31 @@ class SouzQualityPlugin : Plugin<Project> {
         }
 
         configureDetekt(project, gate, report, detektReportFiles)
+
+        project.tasks.register("souzDuplicationCheck", SouzDuplicationTask::class.java) {
+            group = "verification"
+            description = "Checks production and test Kotlin duplication against the jscpd baseline."
+            repositoryDirectory.set(project.layout.projectDirectory)
+            projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
+            configFile.set(project.layout.projectDirectory.file("quality/jscpd.json"))
+            packageFile.set(project.layout.projectDirectory.file("quality/package.json"))
+            baselineFile.set(project.layout.projectDirectory.file("quality/duplication-baseline.json"))
+            jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/expensive/gate-summary-v1.json"))
+            markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/expensive/gate-summary.md"))
+            updateBaseline.set(false)
+            doNotTrackState("The check records current Git identity and invokes the pinned jscpd binary.")
+        }
+        project.tasks.register("updateSouzDuplicationBaseline", SouzDuplicationTask::class.java) {
+            group = "verification"
+            description = "Updates the reviewed production and test jscpd duplication baseline."
+            repositoryDirectory.set(project.layout.projectDirectory)
+            projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
+            configFile.set(project.layout.projectDirectory.file("quality/jscpd.json"))
+            packageFile.set(project.layout.projectDirectory.file("quality/package.json"))
+            baselineFile.set(project.layout.projectDirectory.file("quality/duplication-baseline.json"))
+            updateBaseline.set(true)
+            doNotTrackState("Baseline updates are explicit reviewed mutations.")
+        }
     }
 
     private fun configureDetekt(

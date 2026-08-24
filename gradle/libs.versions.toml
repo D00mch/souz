@@ -13,6 +13,7 @@ javaDiffUtils = "4.15"
 kdroidfilter-platformtools = "0.6.1"
 kodeinDi = "7.26.1"
 kotlin = "2.4.10"
+kover = "0.9.9"
 kotlinx-coroutines = "1.11.0"
 ktor = "3.5.1"
 letsPlot-core = "4.0.0"
@@ -115,3 +116,4 @@ composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "k
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }

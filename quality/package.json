@@ -1,0 +1,7 @@
+{
+  "name": "souz-quality-tools",
+  "private": true,
+  "devDependencies": {
+    "jscpd": "5.0.16"
+  }
+}

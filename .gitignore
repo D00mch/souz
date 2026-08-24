@@ -9,6 +9,7 @@ build/
 sharedUI/kls_database.db
 local.properties
 .repowise/
+node_modules/
 
 ### IntelliJ IDEA ###
 .idea/

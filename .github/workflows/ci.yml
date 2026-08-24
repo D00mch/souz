@@ -71,6 +71,80 @@ jobs:
           done
           exit "$missing"
 
+  quality-expensive:
+    name: Quality Expensive
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+          cache: gradle
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: quality/package-lock.json
+
+      - name: Install pinned quality tools
+        run: npm ci --prefix quality
+
+      - name: Run duplication ratchet
+        shell: bash
+        env:
+          SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gate_log="$RUNNER_TEMP/souz-duplication.log"
+          gate_report=build/reports/souz-quality/expensive/gate-summary.md
+          gate_json=build/reports/souz-quality/expensive/gate-summary-v1.json
+
+          rm -f "$gate_report" "$gate_json"
+
+          set +e
+          ./gradlew souzDuplicationCheck --console=plain --stacktrace >"$gate_log" 2>&1
+          gate_status=$?
+          set -e
+
+          if [[ -f "$gate_report" ]]; then
+            tee -a "$GITHUB_STEP_SUMMARY" < "$gate_report"
+          else
+            cat "$gate_log"
+            echo "Souz expensive quality report was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit "$gate_status"
+
+      - name: Upload duplication reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-quality-expensive-${{ github.run_id }}
+          path: build/reports/souz-quality/expensive/**
+          if-no-files-found: warn
+
+      - name: Verify duplication evidence
+        if: always()
+        shell: bash
+        run: |
+          missing=0
+          for quality_report in \
+            build/reports/souz-quality/expensive/gate-summary-v1.json \
+            build/reports/souz-quality/expensive/gate-summary.md; do
+            if [[ ! -f "$quality_report" ]]; then
+              echo "Missing required quality report: $quality_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
   tests:
     runs-on: ubuntu-latest
 
@@ -88,5 +162,57 @@ jobs:
       - name: Assemble
         run: ./gradlew assemble --console=plain --stacktrace --no-parallel
 
-      - name: Run test suite
-        run: ./gradlew test :sharedLogic:allTests :sharedUI:allTests --console=plain --stacktrace
+      - name: Run test suite and publish coverage summary
+        shell: bash
+        run: |
+          coverage_log="$RUNNER_TEMP/kover.log"
+          ./gradlew test :sharedLogic:allTests :sharedUI:allTests \
+            :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage \
+            --console=plain --stacktrace --no-parallel | tee "$coverage_log"
+
+          coverage_marker_pattern='^SOUZ_KOVER_LINE_COVERAGE=[0-9]+([.][0-9]+)?%$'
+          if [[ "$(grep -Ec "$coverage_marker_pattern" "$coverage_log")" -ne 1 ]]; then
+            echo "Expected exactly one aggregate Kover coverage marker"
+            exit 1
+          fi
+          coverage_marker="$(grep -E "$coverage_marker_pattern" "$coverage_log")"
+          module_marker_pattern='^SOUZ_KOVER_MODULE_LINE_COVERAGE=(:[[:alnum:]_-]+)+=[0-9]+([.][0-9]+)?%$'
+          module_markers="$(grep -E "$module_marker_pattern" "$coverage_log" || true)"
+          if [[ -z "$module_markers" ]]; then
+            echo "Expected Kover coverage markers for project modules"
+            exit 1
+          fi
+
+          {
+            printf '## JVM coverage\n\n%s\n\n' "$coverage_marker"
+            printf '| Module | Line coverage |\n| --- | ---: |\n'
+            while IFS= read -r module_marker; do
+              module_and_coverage="${module_marker#SOUZ_KOVER_MODULE_LINE_COVERAGE=}"
+              module="${module_and_coverage%=*}"
+              coverage="${module_and_coverage##*=}"
+              printf '| `%s` | %s |\n' "$module" "$coverage"
+            done < <(printf '%s\n' "$module_markers" | sort)
+          } >> "$GITHUB_STEP_SUMMARY"
+          grep -Fqx "$coverage_marker" "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify coverage reports
+        shell: bash
+        run: |
+          missing=0
+          for coverage_report in \
+            build/reports/kover/report.xml \
+            build/reports/kover/html/index.html; do
+            if [[ ! -f "$coverage_report" ]]; then
+              echo "Missing required coverage report: $coverage_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-coverage-${{ github.run_id }}
+          path: build/reports/kover/**
+          if-no-files-found: warn

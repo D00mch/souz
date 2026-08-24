@@ -78,7 +78,7 @@ abstract class SouzGateFastTask : DefaultTask() {
                     repositoryDirectory = repository,
                     projects = projects,
                     policyFiles = policyFiles.files,
-                    registeredChecks = SouzQualityChecks.fast,
+                    registeredChecks = SouzQualityChecks.all,
                 )
             },
             runCheck(SouzQualityChecks.moduleBoundaries) {
