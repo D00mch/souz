@@ -4,6 +4,7 @@ package ru.souz.memory
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.Connection
 import java.sql.DriverManager
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
@@ -860,21 +861,7 @@ class MemoryCoreTest {
 
     @Test
     fun `dreamer consolidates pending scope into provenance linked replacement`() = runTest {
-        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
-        val scope = projectScope()
-        val first = fixture.createManual(
-            scope = scope,
-            title = "Memory storage target",
-            body = "Memory is desktop-only for now.",
-        )
-        val second = fixture.createManual(
-            scope = scope,
-            title = "Memory backend boundary",
-            body = "Backend must not get memory yet.",
-        )
-        val sourceEventIds = listOf(first, second)
-            .map { fact -> fixture.repository.getFactDetails(fact.id) }
-            .mapNotNull { details -> details?.evidence?.singleOrNull()?.sourceEvent?.id }
+        val (fixture, scope, first, second, sourceEventIds) = createDreamerFixture()
         val controller = DesktopMemoryMaintenanceController(
             dbPath = fixture.dbPath,
             settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
@@ -1040,21 +1027,7 @@ class MemoryCoreTest {
 
     @Test
     fun `dreamer quality gate rejects non compact replacements`() = runTest {
-        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
-        val scope = projectScope()
-        val first = fixture.createManual(
-            scope = scope,
-            title = "Memory storage target",
-            body = "Memory is desktop-only for now.",
-        )
-        val second = fixture.createManual(
-            scope = scope,
-            title = "Memory backend boundary",
-            body = "Backend must not get memory yet.",
-        )
-        val sourceEventIds = listOf(first, second)
-            .map { fact -> fixture.repository.getFactDetails(fact.id) }
-            .mapNotNull { details -> details?.evidence?.singleOrNull()?.sourceEvent?.id }
+        val (fixture, scope, first, second, sourceEventIds) = createDreamerFixture()
         val controller = DesktopMemoryMaintenanceController(
             dbPath = fixture.dbPath,
             settingsStore = InMemoryMemoryMaintenanceSettingsStore(),
@@ -1421,6 +1394,33 @@ class MemoryCoreTest {
         val captureService: MemoryCaptureService,
     )
 
+    private data class DreamerFixture(
+        val fixture: Fixture,
+        val scope: MemoryScope,
+        val first: MemoryFact,
+        val second: MemoryFact,
+        val sourceEventIds: List<String>,
+    )
+
+    private suspend fun createDreamerFixture(): DreamerFixture {
+        val fixture = createFixture(owner = MemoryOwnerId("desktop-owner"))
+        val scope = projectScope()
+        val first = fixture.createManual(
+            scope = scope,
+            title = "Memory storage target",
+            body = "Memory is desktop-only for now.",
+        )
+        val second = fixture.createManual(
+            scope = scope,
+            title = "Memory backend boundary",
+            body = "Backend must not get memory yet.",
+        )
+        val sourceEventIds = listOf(first, second)
+            .map { fact -> fixture.repository.getFactDetails(fact.id) }
+            .mapNotNull { details -> details?.evidence?.singleOrNull()?.sourceEvent?.id }
+        return DreamerFixture(fixture, scope, first, second, sourceEventIds)
+    }
+
     private class RecordingMemoryRepository(
         private val delegate: MemoryRepository,
     ) : MemoryRepository by delegate {
@@ -1570,54 +1570,8 @@ class MemoryCoreTest {
     private fun seedLegacyV1MemoryDb(dbPath: Path) {
         Class.forName("org.sqlite.JDBC")
         DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
+            createLegacyMemoryTables(connection)
             listOf(
-                """
-                create table memory_source_events (
-                    id text primary key,
-                    scope_type text not null,
-                    scope_id text not null,
-                    source_type text not null,
-                    source_ref text,
-                    text text not null,
-                    metadata_json text not null default '{}',
-                    created_at text not null
-                )
-                """.trimIndent(),
-                """
-                create table memory_facts (
-                    id text primary key,
-                    scope_type text not null,
-                    scope_id text not null,
-                    kind text not null,
-                    title text not null,
-                    body text not null,
-                    slot_key text,
-                    status text not null,
-                    confidence real not null,
-                    pinned integer not null,
-                    created_by text not null,
-                    created_at text not null,
-                    updated_at text not null,
-                    supersedes_fact_id text
-                )
-                """.trimIndent(),
-                """
-                create table memory_fact_evidence (
-                    fact_id text not null,
-                    source_event_id text not null,
-                    evidence_text text,
-                    primary key (fact_id, source_event_id)
-                )
-                """.trimIndent(),
-                """
-                create table memory_fact_embeddings (
-                    fact_id text primary key,
-                    embedding_model text not null,
-                    embedding_blob blob not null,
-                    dimension integer not null,
-                    updated_at text not null
-                )
-                """.trimIndent(),
                 """
                 insert into memory_source_events(
                     id, scope_type, scope_id, source_type, source_ref, text, metadata_json, created_at
@@ -1671,57 +1625,7 @@ class MemoryCoreTest {
     ) {
         Class.forName("org.sqlite.JDBC")
         DriverManager.getConnection("jdbc:sqlite:${dbPath.toAbsolutePath()}").use { connection ->
-            listOf(
-                """
-                create table memory_source_events (
-                    id text primary key,
-                    scope_type text not null,
-                    scope_id text not null,
-                    source_type text not null,
-                    source_ref text,
-                    text text not null,
-                    metadata_json text not null default '{}',
-                    created_at text not null
-                )
-                """.trimIndent(),
-                """
-                create table memory_facts (
-                    id text primary key,
-                    scope_type text not null,
-                    scope_id text not null,
-                    kind text not null,
-                    title text not null,
-                    body text not null,
-                    slot_key text,
-                    status text not null,
-                    confidence real not null,
-                    pinned integer not null,
-                    created_by text not null,
-                    created_at text not null,
-                    updated_at text not null,
-                    supersedes_fact_id text
-                )
-                """.trimIndent(),
-                """
-                create table memory_fact_evidence (
-                    fact_id text not null,
-                    source_event_id text not null,
-                    evidence_text text,
-                    primary key (fact_id, source_event_id)
-                )
-                """.trimIndent(),
-                """
-                create table memory_fact_embeddings (
-                    fact_id text primary key,
-                    embedding_model text not null,
-                    embedding_blob blob not null,
-                    dimension integer not null,
-                    updated_at text not null
-                )
-                """.trimIndent(),
-            ).forEach { sql ->
-                connection.createStatement().use { statement -> statement.execute(sql) }
-            }
+            createLegacyMemoryTables(connection)
             connection.prepareStatement(
                 """
                 insert into memory_source_events(
@@ -1756,6 +1660,60 @@ class MemoryCoreTest {
                 statement.setString(2, "source-$factId")
                 statement.executeUpdate()
             }
+        }
+    }
+
+    private fun createLegacyMemoryTables(connection: Connection) {
+        listOf(
+            """
+            create table memory_source_events (
+                id text primary key,
+                scope_type text not null,
+                scope_id text not null,
+                source_type text not null,
+                source_ref text,
+                text text not null,
+                metadata_json text not null default '{}',
+                created_at text not null
+            )
+            """.trimIndent(),
+            """
+            create table memory_facts (
+                id text primary key,
+                scope_type text not null,
+                scope_id text not null,
+                kind text not null,
+                title text not null,
+                body text not null,
+                slot_key text,
+                status text not null,
+                confidence real not null,
+                pinned integer not null,
+                created_by text not null,
+                created_at text not null,
+                updated_at text not null,
+                supersedes_fact_id text
+            )
+            """.trimIndent(),
+            """
+            create table memory_fact_evidence (
+                fact_id text not null,
+                source_event_id text not null,
+                evidence_text text,
+                primary key (fact_id, source_event_id)
+            )
+            """.trimIndent(),
+            """
+            create table memory_fact_embeddings (
+                fact_id text primary key,
+                embedding_model text not null,
+                embedding_blob blob not null,
+                dimension integer not null,
+                updated_at text not null
+            )
+            """.trimIndent(),
+        ).forEach { sql ->
+            connection.createStatement().use { statement -> statement.execute(sql) }
         }
     }
 

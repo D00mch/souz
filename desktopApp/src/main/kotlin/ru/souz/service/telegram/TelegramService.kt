@@ -1148,27 +1148,6 @@ class TelegramService(
         else -> null
     }
 
-    private fun userDisplayName(user: TdApi.User?): String {
-        user ?: return "Unknown"
-        val first = user.firstName.orEmpty().trim()
-        val last = user.lastName.orEmpty().trim()
-        val full = listOf(first, last).filter { it.isNotBlank() }.joinToString(" ")
-        if (full.isNotBlank()) {
-            return full
-        }
-
-        val username = user.usernames?.activeUsernames?.firstOrNull()?.trim()
-        if (!username.isNullOrEmpty()) {
-            return "@$username"
-        }
-
-        if (user.phoneNumber.orEmpty().isNotBlank()) {
-            return "+${user.phoneNumber}"
-        }
-
-        return user.id.toString()
-    }
-
     private fun userAliases(user: TdApi.User): Set<String> {
         val aliases = linkedSetOf<String>()
         val first = user.firstName.orEmpty().trim()

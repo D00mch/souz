@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -23,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -34,8 +32,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,6 +45,7 @@ import org.kodein.di.compose.localDI
 import ru.souz.ui.AppTheme
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
+import ru.souz.ui.common.CodexOAuthUserCode
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.LanguageToggle
@@ -548,7 +545,6 @@ private fun SetupCodexCard(
                 style = MaterialTheme.typography.titleSmall,
                 color = strongText
             )
-            val clipboardManager = LocalClipboardManager.current
             when {
                 connected && oauthState !is CodexOAuthUiState.AwaitingUserCode -> {
                     Text(
@@ -558,52 +554,13 @@ private fun SetupCodexCard(
                     )
                 }
                 oauthState is CodexOAuthUiState.AwaitingUserCode -> {
-                    Text(
-                        text = stringResource(Res.string.label_codex_user_code),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = hintText
+                    CodexOAuthUserCode(
+                        userCode = oauthState.userCode,
+                        textColor = strongText,
+                        secondaryTextColor = hintText,
+                        borderColor = fieldBorder,
+                        onOpenProviderLink = { onOpenProviderLink(ApiKeyProvider.CODEX) },
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = oauthState.userCode,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = strongText,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedButton(
-                            onClick = { clipboardManager.setText(AnnotatedString(oauthState.userCode)) },
-                            border = BorderStroke(1.dp, fieldBorder),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = stringResource(Res.string.label_copy),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = strongText
-                            )
-                        }
-                    }
-                    Text(
-                        text = ApiKeyProvider.CODEX.url,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { onOpenProviderLink(ApiKeyProvider.CODEX) }
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Text(
-                            text = stringResource(Res.string.label_codex_polling),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = hintText
-                        )
-                    }
                     OutlinedButton(
                         onClick = onCancel,
                         modifier = Modifier.fillMaxWidth(),

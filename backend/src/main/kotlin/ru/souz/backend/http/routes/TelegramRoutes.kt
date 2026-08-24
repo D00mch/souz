@@ -20,14 +20,17 @@ import ru.souz.backend.http.receiveOrBadRequest
 import ru.souz.backend.http.requireChatId
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toDto
 import ru.souz.backend.http.uuidPathParameter
 import ru.souz.backend.http.v1ErrorResponses
 
-internal fun Route.telegramRoutes(deps: BackendHttpDependencies) {
+import ru.souz.backend.telegram.TelegramBotBindingService
+
+internal fun Route.telegramRoutes(
+    deps: BackendHttpDependencies,
+    service: TelegramBotBindingService,
+) {
     get(BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN) {
-        val service = requireV1Service(deps.telegramBotBindingService, "Telegram bot binding")
         call.respond(
             BackendV1TelegramBotBindingResponse(
                 telegramBot = service.get(
@@ -50,7 +53,6 @@ internal fun Route.telegramRoutes(deps: BackendHttpDependencies) {
     }
 
     put(BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN) {
-        val service = requireV1Service(deps.telegramBotBindingService, "Telegram bot binding")
         call.requireJsonContentV1()
         val request = call.receiveOrBadRequest<BackendV1UpsertTelegramBotBindingRequest>()
         val result = service.upsert(
@@ -84,7 +86,6 @@ internal fun Route.telegramRoutes(deps: BackendHttpDependencies) {
     }
 
     delete(BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN) {
-        val service = requireV1Service(deps.telegramBotBindingService, "Telegram bot binding")
         service.delete(
             userId = call.requireUserIdFromTrustedProxy(),
             chatId = call.requireChatId(),

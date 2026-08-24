@@ -256,48 +256,38 @@ private fun barycenterOrdering(
     
     // Forward pass: order by barycenter of predecessors
     sortedLayers.forEach { layer ->
-        val nodesInLayer = layoutNodes.values.filter { it.layer == layer }
-        if (nodesInLayer.size <= 1) return@forEach
-        
-        val barycenters = nodesInLayer.associateWith { node ->
-            val preds = predecessors[node.id] ?: emptyList()
-            if (preds.isEmpty()) node.x
-            else preds.mapNotNull { layoutNodes[it]?.x }.average().toFloat()
-        }
-        
-        val sorted = nodesInLayer.sortedBy { barycenters[it] }
-        val baseY = sorted.first().y - if (sorted.first().indexInLayer % 2 == 0) 0f else zigzagOffset
-        
-        sorted.forEachIndexed { index, node ->
-            node.indexInLayer = index
-            node.x = if (sorted.size == 1) 0.5f 
-                     else 0.10f + (index.toFloat() / (sorted.size - 1)) * 0.80f
-            // Maintain zigzag pattern
-            node.y = baseY + if (index % 2 == 0) 0f else zigzagOffset
-        }
+        orderLayerByBarycenter(layoutNodes, layer, predecessors, zigzagOffset)
     }
     
     // Backward pass: order by barycenter of successors
     sortedLayers.reversed().forEach { layer ->
-        val nodesInLayer = layoutNodes.values.filter { it.layer == layer }
-        if (nodesInLayer.size <= 1) return@forEach
-        
-        val barycenters = nodesInLayer.associateWith { node ->
-            val succs = successors[node.id] ?: emptyList()
-            if (succs.isEmpty()) node.x
-            else succs.mapNotNull { layoutNodes[it]?.x }.average().toFloat()
-        }
-        
-        val sorted = nodesInLayer.sortedBy { barycenters[it] }
-        val baseY = sorted.first().y - if (sorted.first().indexInLayer % 2 == 0) 0f else zigzagOffset
-        
-        sorted.forEachIndexed { index, node ->
-            node.indexInLayer = index
-            node.x = if (sorted.size == 1) 0.5f 
-                     else 0.10f + (index.toFloat() / (sorted.size - 1)) * 0.80f
-            // Maintain zigzag pattern
-            node.y = baseY + if (index % 2 == 0) 0f else zigzagOffset
-        }
+        orderLayerByBarycenter(layoutNodes, layer, successors, zigzagOffset)
+    }
+}
+
+private fun orderLayerByBarycenter(
+    layoutNodes: MutableMap<String, LayoutNode>,
+    layer: Int,
+    adjacentNodes: Map<String, List<String>>,
+    zigzagOffset: Float,
+) {
+    val nodesInLayer = layoutNodes.values.filter { it.layer == layer }
+    if (nodesInLayer.size <= 1) return
+
+    val barycenters = nodesInLayer.associateWith { node ->
+        val adjacent = adjacentNodes[node.id].orEmpty()
+        if (adjacent.isEmpty()) node.x
+        else adjacent.mapNotNull { layoutNodes[it]?.x }.average().toFloat()
+    }
+
+    val sorted = nodesInLayer.sortedBy { barycenters[it] }
+    val baseY = sorted.first().y - if (sorted.first().indexInLayer % 2 == 0) 0f else zigzagOffset
+    sorted.forEachIndexed { index, node ->
+        node.indexInLayer = index
+        node.x = if (sorted.size == 1) 0.5f
+        else 0.10f + (index.toFloat() / (sorted.size - 1)) * 0.80f
+        // Maintain zigzag pattern
+        node.y = baseY + if (index % 2 == 0) 0f else zigzagOffset
     }
 }
 

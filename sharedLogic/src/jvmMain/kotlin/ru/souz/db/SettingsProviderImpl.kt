@@ -21,6 +21,7 @@ class SettingsProviderImpl(
     private val configStore: ConfigStore,
     private val localProviderAvailability: LocalProviderAvailability = defaultLocalProviderAvailability(),
 ) : SettingsProvider {
+    private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)
     private var _appLanguageDelegate: String?
@@ -163,19 +164,19 @@ class SettingsProviderImpl(
     override var gigaModel: LLMModel
         get() = _gigaModelDelegate?.let { value ->
             findLLMModel(value)
-        }?.let(::normalizeGigaModel)
+        }?.let { model -> llmBuildProfile.normalizeConfiguredModel(model, openaiModel) { defaultLlmModel() } }
             ?: defaultLlmModel()
         set(value) {
-            _gigaModelDelegate = normalizeGigaModel(value).alias
+            _gigaModelDelegate = llmBuildProfile.normalizeConfiguredModel(value, openaiModel) { defaultLlmModel() }.alias
         }
 
     override var ambientAnalysisModel: LLMModel
         get() = _ambientAnalysisModelDelegate?.let { value ->
             findLLMModel(value)
-        }?.let(::normalizeAmbientAnalysisModel)
-            ?: defaultAmbientAnalysisModel()
+        }?.let(llmBuildProfile::normalizeAmbientAnalysisModel)
+            ?: llmBuildProfile.defaultAmbientAnalysisModel()
         set(value) {
-            _ambientAnalysisModelDelegate = normalizeAmbientAnalysisModel(value).alias
+            _ambientAnalysisModelDelegate = llmBuildProfile.normalizeAmbientAnalysisModel(value).alias
         }
 
     override var useFewShotExamples: Boolean
@@ -307,39 +308,7 @@ class SettingsProviderImpl(
         envKey = MCP_SERVERS_FILE
     )
 
-    private fun defaultLlmModel(): LLMModel {
-        val defaults = LlmBuildProfile.defaultsForLanguage(regionProfile)
-        val availableLocalDefault = localProviderAvailability.defaultGigaModel()
-        return LlmBuildProfile.providerPrioritiesForLanguage(regionProfile)
-            .firstNotNullOfOrNull { provider ->
-                when (provider) {
-                    LlmProvider.LOCAL -> availableLocalDefault
-                    else -> defaults[provider]?.takeIf { hasKey(it.provider) }
-                }
-            }
-            ?: availableLocalDefault
-            ?: defaults.values.first()
-    }
-
-    private fun normalizeGigaModel(model: LLMModel): LLMModel {
-        val availableProviders = LlmBuildProfile.defaultsForLanguage(regionProfile).keys
-        return when {
-            model == LLMModel.OpenAICompatibleCustom && openaiModel.isNullOrBlank() -> defaultLlmModel()
-            model.provider == LlmProvider.LOCAL && model !in localProviderAvailability.availableGigaModels() -> defaultLlmModel()
-            model.provider !in availableProviders -> defaultLlmModel()
-            else -> model
-        }
-    }
-
-    private fun defaultAmbientAnalysisModel(): LLMModel =
-        localProviderAvailability.defaultGigaModel()
-            ?: LLMModel.LocalQwen3_4B_Instruct_2507
-
-    private fun normalizeAmbientAnalysisModel(model: LLMModel): LLMModel = when {
-        model.provider != LlmProvider.LOCAL -> defaultAmbientAnalysisModel()
-        model !in localProviderAvailability.availableGigaModels() -> defaultAmbientAnalysisModel()
-        else -> model
-    }
+    private fun defaultLlmModel(): LLMModel = llmBuildProfile.defaultConfiguredModel(::hasKey)
 
     private fun enforcedEmbeddingsModel(): EmbeddingsModel? = when {
         gigaModel.provider == LlmProvider.LOCAL && localProviderAvailability.isProviderAvailable() ->

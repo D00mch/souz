@@ -3,6 +3,8 @@ package ru.souz.runtime.sandbox
 import java.io.InputStream
 import java.nio.file.Path
 import org.slf4j.Logger
+import ru.souz.runtime.files.ForbiddenFolder
+import ru.souz.tool.BadInputException
 
 data class SandboxPathInfo(
     val rawPath: String,
@@ -23,8 +25,8 @@ interface SandboxFileSystem {
     val runtimePaths: SandboxRuntimePaths
 
     fun resolvePath(rawPath: String): SandboxPathInfo
-    fun resolveExistingFile(rawPath: String): SandboxPathInfo
-    fun resolveExistingDirectory(rawPath: String): SandboxPathInfo
+    fun resolveExistingFile(rawPath: String): SandboxPathInfo = resolveExistingPath(rawPath, expectDirectory = false)
+    fun resolveExistingDirectory(rawPath: String): SandboxPathInfo = resolveExistingPath(rawPath, expectDirectory = true)
     fun isPathSafe(path: SandboxPathInfo): Boolean
     fun forbiddenPaths(): List<String>
     fun readBytes(path: SandboxPathInfo): ByteArray
@@ -51,4 +53,15 @@ interface SandboxFileSystem {
     )
 
     fun moveToTrash(path: SandboxPathInfo, logger: Logger? = null): SandboxPathInfo
+
+    private fun resolveExistingPath(rawPath: String, expectDirectory: Boolean): SandboxPathInfo {
+        val resolved = resolvePath(rawPath)
+        if (!isPathSafe(resolved)) throw ForbiddenFolder(resolved.rawPath)
+        val hasExpectedType = if (expectDirectory) resolved.isDirectory else resolved.isRegularFile
+        if (!resolved.exists || !hasExpectedType) {
+            val expected = if (expectDirectory) "directory" else "file"
+            throw BadInputException("Invalid $expected path: $rawPath")
+        }
+        return resolved
+    }
 }

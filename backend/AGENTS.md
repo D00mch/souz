@@ -16,5 +16,5 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 
 ## Verification
 
-- Run backend tests: `./gradlew :backend:test`
+- Run backend tests with Docker running: `./gradlew :backend:test`
 - Run the server: `./gradlew :backend:run`

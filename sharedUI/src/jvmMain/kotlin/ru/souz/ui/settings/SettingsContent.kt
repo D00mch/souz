@@ -53,6 +53,7 @@ import ru.souz.ui.AppTheme
 import ru.souz.ui.ThemeMode
 import ru.souz.ui.common.ApiKeyField
 import ru.souz.ui.common.ApiKeyProvider
+import ru.souz.ui.common.CodexOAuthUserCode
 import ru.souz.ui.common.ConfirmDialog
 import ru.souz.ui.common.DialogVariant
 import ru.souz.ui.common.LanguageToggle
@@ -746,7 +747,6 @@ private fun CodexOAuthButton(
     onDisconnect: () -> Unit,
     onOpenProviderLink: (ApiKeyProvider) -> Unit,
 ) {
-    val clipboardManager = LocalClipboardManager.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.souzColors.settings.inputBackground,
@@ -783,52 +783,13 @@ private fun CodexOAuthButton(
                     }
                 }
                 oauthState is CodexOAuthUiState.AwaitingUserCode -> {
-                    Text(
-                        text = stringResource(Res.string.label_codex_user_code),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.souzColors.settings.secondaryContent
+                    CodexOAuthUserCode(
+                        userCode = oauthState.userCode,
+                        textColor = MaterialTheme.souzColors.settings.content,
+                        secondaryTextColor = MaterialTheme.souzColors.settings.secondaryContent,
+                        borderColor = MaterialTheme.souzColors.settings.inputBorder,
+                        onOpenProviderLink = { onOpenProviderLink(ApiKeyProvider.CODEX) },
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = oauthState.userCode,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.souzColors.settings.content,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedButton(
-                            onClick = { clipboardManager.setText(AnnotatedString(oauthState.userCode)) },
-                            border = BorderStroke(1.dp, MaterialTheme.souzColors.settings.inputBorder),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = stringResource(Res.string.label_copy),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.souzColors.settings.content
-                            )
-                        }
-                    }
-                    Text(
-                        text = ApiKeyProvider.CODEX.url,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { onOpenProviderLink(ApiKeyProvider.CODEX) }
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                        Text(
-                            text = stringResource(Res.string.label_codex_polling),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.souzColors.settings.secondaryContent
-                        )
-                    }
                 }
                 oauthState is CodexOAuthUiState.Error -> {
                     Text(
@@ -1866,6 +1827,51 @@ fun ModelDropdown(
     selectedModel: LLMModel,
     availableModels: List<LLMModel>,
     onModelSelected: (LLMModel) -> Unit,
+) = ModelSelectionDropdown(
+    label = label,
+    selectedModel = selectedModel,
+    availableModels = availableModels,
+    modelLabel = { model -> "${model.displayName} (${model.alias})" },
+    contentDescription = "Выбрать модель",
+    onModelSelected = onModelSelected,
+)
+
+@Composable
+fun EmbeddingsModelDropdown(
+    selectedModel: EmbeddingsModel,
+    availableModels: List<EmbeddingsModel>,
+    onModelSelected: (EmbeddingsModel) -> Unit,
+) = ModelSelectionDropdown(
+    label = Res.string.label_embeddings_model,
+    selectedModel = selectedModel,
+    availableModels = availableModels,
+    modelLabel = EmbeddingsModel::displayName,
+    contentDescription = "Выбрать модель эмбеддингов",
+    onModelSelected = onModelSelected,
+)
+
+@Composable
+fun VoiceRecognitionModelDropdown(
+    selectedModel: VoiceRecognitionModel,
+    availableModels: List<VoiceRecognitionModel>,
+    onModelSelected: (VoiceRecognitionModel) -> Unit,
+) = ModelSelectionDropdown(
+    label = Res.string.label_voice_recognition_model,
+    selectedModel = selectedModel,
+    availableModels = availableModels,
+    modelLabel = VoiceRecognitionModel::displayName,
+    contentDescription = "Select voice recognition model",
+    onModelSelected = onModelSelected,
+)
+
+@Composable
+private fun <T> ModelSelectionDropdown(
+    label: StringResource,
+    selectedModel: T,
+    availableModels: List<T>,
+    modelLabel: (T) -> String,
+    contentDescription: String,
+    onModelSelected: (T) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -1897,7 +1903,7 @@ fun ModelDropdown(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${selectedModel.displayName} (${selectedModel.alias})",
+                        text = modelLabel(selectedModel),
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 14.sp,
                             lineHeight = 20.sp
@@ -1906,7 +1912,7 @@ fun ModelDropdown(
                     )
                     Icon(
                         imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Выбрать модель",
+                        contentDescription = contentDescription,
                         tint = MaterialTheme.souzColors.settings.content
                     )
                 }
@@ -1923,169 +1929,7 @@ fun ModelDropdown(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = "${model.displayName} (${model.alias})",
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp
-                                ),
-                                color = MaterialTheme.souzColors.settings.content
-                            )
-                        },
-                        onClick = {
-                            onModelSelected(model)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EmbeddingsModelDropdown(
-    selectedModel: EmbeddingsModel,
-    availableModels: List<EmbeddingsModel>,
-    onModelSelected: (EmbeddingsModel) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(Res.string.label_embeddings_model),
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.Medium
-            ),
-            color = MaterialTheme.souzColors.settings.content,
-        )
-        Box {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                enabled = availableModels.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = MaterialTheme.souzColors.settings.inputBackground,
-                    contentColor = MaterialTheme.souzColors.settings.content
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.souzColors.settings.inputBorder),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = selectedModel.displayName,
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp
-                        ),
-                        color = MaterialTheme.souzColors.settings.content
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Выбрать модель эмбеддингов",
-                        tint = MaterialTheme.souzColors.settings.content
-                    )
-                }
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier
-                    .fillMaxWidth(0.6f)
-                    .background(MaterialTheme.souzColors.settings.inputBackground, RoundedCornerShape(12.dp))
-                    .border(1.dp, MaterialTheme.souzColors.settings.inputBorder, RoundedCornerShape(12.dp))
-            ) {
-                availableModels.forEach { model ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = model.displayName,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp
-                                ),
-                                color = MaterialTheme.souzColors.settings.content
-                            )
-                        },
-                        onClick = {
-                            onModelSelected(model)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun VoiceRecognitionModelDropdown(
-    selectedModel: VoiceRecognitionModel,
-    availableModels: List<VoiceRecognitionModel>,
-    onModelSelected: (VoiceRecognitionModel) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(Res.string.label_voice_recognition_model),
-            style = MaterialTheme.typography.labelMedium.copy(
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.Medium
-            ),
-            color = MaterialTheme.souzColors.settings.content,
-        )
-        Box {
-            OutlinedButton(
-                onClick = { expanded = !expanded },
-                enabled = availableModels.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(SettingsControlHeight),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = MaterialTheme.souzColors.settings.inputBackground,
-                    contentColor = MaterialTheme.souzColors.settings.content
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.souzColors.settings.inputBorder),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = selectedModel.displayName,
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp
-                        ),
-                        color = MaterialTheme.souzColors.settings.content
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Select voice recognition model",
-                        tint = MaterialTheme.souzColors.settings.content
-                    )
-                }
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier
-                    .fillMaxWidth(0.6f)
-                    .background(MaterialTheme.souzColors.settings.inputBackground, RoundedCornerShape(12.dp))
-                    .border(1.dp, MaterialTheme.souzColors.settings.inputBorder, RoundedCornerShape(12.dp))
-            ) {
-                availableModels.forEach { model ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = model.displayName,
+                                text = modelLabel(model),
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     fontSize = 14.sp,
                                     lineHeight = 20.sp

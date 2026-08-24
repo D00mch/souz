@@ -31,7 +31,6 @@ import ru.souz.backend.http.requireExecutionId
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireThreadId
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toDto
 import ru.souz.backend.http.toResponse
 import ru.souz.backend.http.strictBooleanQueryParameter
@@ -51,11 +50,10 @@ import java.util.UUID
 
 internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.CHATS) {
-        val service = requireV1Service(deps.chatService, "Chat")
         val limit = call.queryPositiveInt("limit", DEFAULT_CHAT_LIMIT, MAX_CHAT_LIMIT)
         val includeArchived = call.queryBoolean("includeArchived", defaultValue = false)
         call.respond(
-            service.list(
+            deps.chatService.list(
                 userId = call.requireUserIdFromTrustedProxy(),
                 limit = limit,
                 includeArchived = includeArchived,
@@ -91,7 +89,6 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     }
 
     post(BackendHttpRoutes.CHATS) {
-        val service = requireV1Service(deps.chatService, "Chat")
         call.requireJsonContentV1()
         val request = try {
             publicChatMapper.readValue(call.receiveText(), CreateClientChatRequest::class.java)
@@ -105,7 +102,7 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
             throw ru.souz.backend.http.invalidV1Request("clientType must be backend or mobile_app.")
         }
         deps.ensureTrustedUser(userId)
-        val result = service.createClient(
+        val result = deps.chatService.createClient(
             userId = userId,
             requestId = requestId,
             clientType = request.clientType,
@@ -141,7 +138,6 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     }
 
     get(BackendHttpRoutes.CHAT_THREAD_PATTERN) {
-        val service = requireV1Service(deps.publicClientService, "Public client")
         val chatId = call.requireChatId()
         val threadId = call.requireThreadId()
         val clientType = call.request.queryParameters["clientType"]?.trim()?.takeIf { it.isNotEmpty() }
@@ -150,8 +146,8 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
             throw ru.souz.backend.http.invalidV1Request("clientType must be backend or mobile_app.")
         }
         val response = try {
-            val chat = service.requireChat(chatId, clientType)
-            service.threadStatus(chat, threadId)
+            val chat = deps.publicClientService.requireChat(chatId, clientType)
+            deps.publicClientService.threadStatus(chat, threadId)
         } catch (error: ClientContractException) {
             throw error.toPublicV1Exception()
         }
@@ -176,11 +172,10 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     }
 
     patch(BackendHttpRoutes.CHAT_TITLE_PATTERN) {
-        val service = requireV1Service(deps.chatService, "Chat")
         call.requireJsonContentV1()
         val request = call.receiveOrV1BadRequest<BackendV1UpdateChatTitleRequest>()
         call.respond(
-            service.updateTitle(
+            deps.chatService.updateTitle(
                 userId = call.requireUserIdFromTrustedProxy(),
                 chatId = call.requireChatId(),
                 title = request.title,
@@ -206,9 +201,8 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     }
 
     post(BackendHttpRoutes.CHAT_ARCHIVE_PATTERN) {
-        val service = requireV1Service(deps.chatService, "Chat")
         call.respond(
-            service.setArchived(
+            deps.chatService.setArchived(
                 userId = call.requireUserIdFromTrustedProxy(),
                 chatId = call.requireChatId(),
                 archived = true,
@@ -228,9 +222,8 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     }
 
     post(BackendHttpRoutes.CHAT_UNARCHIVE_PATTERN) {
-        val service = requireV1Service(deps.chatService, "Chat")
         call.respond(
-            service.setArchived(
+            deps.chatService.setArchived(
                 userId = call.requireUserIdFromTrustedProxy(),
                 chatId = call.requireChatId(),
                 archived = false,
@@ -250,9 +243,8 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     }
 
     post(BackendHttpRoutes.CHAT_CANCEL_ACTIVE_PATTERN) {
-        val service = requireV1Service(deps.executionService, "Execution")
         call.respond(
-            service.cancelActive(
+            deps.executionService.cancelActive(
                 userId = call.requireUserIdFromTrustedProxy(),
                 chatId = call.requireChatId(),
             ).toResponse()
@@ -274,9 +266,8 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     }
 
     post(BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN) {
-        val service = requireV1Service(deps.executionService, "Execution")
         call.respond(
-            service.cancelExecution(
+            deps.executionService.cancelExecution(
                 userId = call.requireUserIdFromTrustedProxy(),
                 chatId = call.requireChatId(),
                 executionId = call.requireExecutionId(),

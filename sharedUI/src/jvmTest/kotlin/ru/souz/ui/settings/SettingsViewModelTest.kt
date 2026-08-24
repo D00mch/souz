@@ -426,21 +426,28 @@ class SettingsViewModelTest {
         settingsDispatcher = dispatcher,
     )
 
-    @Test
-    fun `selecting ambient analysis model updates separate local setting without changing agent model`() = runTest(dispatcher) {
+    private data class LocalModelSettingsFixture(
+        val agentFacade: AgentFacade,
+        val viewModel: SettingsViewModel,
+    )
+
+    private fun createLocalModelSettingsFixture(
+        gigaModel: LLMModel = LLMModel.QwenMax,
+        embeddingsModel: EmbeddingsModel = EmbeddingsModel.GigaEmbeddings,
+        availableGigaModels: List<LLMModel> = listOf(LLMModel.LocalQwen3_4B_Instruct_2507),
+        configureSettingsProvider: (SettingsProvider) -> Unit = {},
+        configureLocalModelStore: (LocalModelStore) -> Unit = {},
+        configureAgentFacade: (AgentFacade) -> Unit = {},
+    ): LocalModelSettingsFixture {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.regionProfile } returns REGION_RU
         every { settingsProvider.regionProfile = any() } just runs
         every { settingsProvider.qwenChatKey } returns "qwen-key"
         every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
         every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
-        every { settingsProvider.gigaModel } returns LLMModel.QwenMax
-        var ambientAnalysisModelValue = LLMModel.LocalQwen3_4B_Instruct_2507
-        every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
-        every { settingsProvider.ambientAnalysisModel = any() } answers {
-            ambientAnalysisModelValue = firstArg()
-        }
-        every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
+        every { settingsProvider.gigaModel } returns gigaModel
+        every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
+        every { settingsProvider.embeddingsModel } returns embeddingsModel
         every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
         every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
         every { settingsProvider.supportEmail } returns null
@@ -453,19 +460,17 @@ class SettingsViewModelTest {
         every { settingsProvider.requestTimeoutMillis } returns 40_000L
         every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
         every { settingsProvider.temperature } returns 0.7f
+        configureSettingsProvider(settingsProvider)
 
         val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
         every { localProviderAvailability.isProviderAvailable() } returns true
-        every { localProviderAvailability.availableGigaModels() } returns listOf(
-            LLMModel.LocalQwen3_4B_Instruct_2507,
-            LLMModel.LocalGemma4_E2B_It,
-        )
+        every { localProviderAvailability.availableGigaModels() } returns availableGigaModels
         every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
         val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
         val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
 
         val localModelStore = mockk<LocalModelStore>(relaxed = true)
-        every { localModelStore.isPresent(any()) } returns true
+        configureLocalModelStore(localModelStore)
         val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
         val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
         coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
@@ -474,97 +479,12 @@ class SettingsViewModelTest {
         every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
         every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
         every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
+        configureAgentFacade(agentFacade)
 
-        val telegramService = mockk<TelegramUiService>(relaxed = true)
-        every { telegramService.isSupported() } returns true
-        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
-        val telegramBotController = mockk<TelegramControlBot>(relaxed = true)
-
-        val di = DI {
-            bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
-            bindSingleton { localModelStore }
-            bindSingleton { localLlamaRuntime }
-            bindSingleton<LocalModelUiHost> {
-                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
-            }
-            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
-            bindSingleton<LLMChatAPI> { mockk(relaxed = true) }
-            bindSingleton<AgentFacade> { agentFacade }
-            bindSingleton<TelegramUiService> { telegramService }
-            bindSingleton<TelegramControlBot> { telegramBotController }
-            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramBotController) }
-            bindSingleton<SupportLogService> { NoopSupportLogService }
-            bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
-            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
-            bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
-            bindSingleton<CalendarListProvider> { { emptyList() } }
-            bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
-        }
-
-        val viewModel = SettingsViewModel(di)
-        advanceUntilIdle()
-        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
-        advanceUntilIdle()
-        viewModel.handleEvent(SettingsEvent.SelectAmbientAnalysisModel(LLMModel.LocalGemma4_E2B_It))
-        advanceUntilIdle()
-
-        assertEquals(LLMModel.LocalGemma4_E2B_It, ambientAnalysisModelValue)
-        assertEquals(LLMModel.LocalGemma4_E2B_It, viewModel.uiState.value.ambientAnalysisModel)
-        verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
-    }
-
-    @Test
-    fun `selecting missing local model opens download prompt instead of switching immediately`() = runTest(dispatcher) {
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.regionProfile } returns REGION_RU
-        every { settingsProvider.regionProfile = any() } just runs
-        every { settingsProvider.qwenChatKey } returns "qwen-key"
-        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
-        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
-        every { settingsProvider.gigaModel } returns LLMModel.QwenMax
-        every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        every { settingsProvider.embeddingsModel } returns EmbeddingsModel.GigaEmbeddings
-        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
-        every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
-        every { settingsProvider.supportEmail } returns null
-        every { settingsProvider.mcpServersJson } returns null
-        every { settingsProvider.defaultCalendar } returns null
-        every { settingsProvider.useFewShotExamples } returns false
-        every { settingsProvider.useStreaming } returns false
-        every { settingsProvider.notificationSoundEnabled } returns true
-        every { settingsProvider.safeModeEnabled } returns true
-        every { settingsProvider.requestTimeoutMillis } returns 40_000L
-        every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
-        every { settingsProvider.temperature } returns 0.7f
-
-        val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
-        every { localProviderAvailability.isProviderAvailable() } returns true
-        every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
-        every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
-
-        val localModelStore = mockk<LocalModelStore>(relaxed = true)
-        val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
-        val localProfile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
-        every { localModelStore.isPresent(localProfile) } returns false
-        every { localModelStore.modelPath(localProfile) } returns File(System.getProperty("java.io.tmpdir"), localProfile.ggufFilename).toPath()
-
-        val agentFacade = mockk<AgentFacade>(relaxed = true)
-        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
-
-        val chatApi = mockk<LLMChatAPI>(relaxed = true)
         val telegramService = mockk<TelegramUiService>(relaxed = true)
         every { telegramService.isSupported() } returns true
         every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
         val telegramControlBot = mockk<TelegramControlBot>(relaxed = true)
-        val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
-        coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
-
         val di = DI {
             bindSingleton<SettingsProvider> { settingsProvider }
             bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
@@ -572,7 +492,7 @@ class SettingsViewModelTest {
             bindSingleton { localModelStore }
             bindSingleton { localLlamaRuntime }
             bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
-            bindSingleton<LLMChatAPI> { chatApi }
+            bindSingleton<LLMChatAPI> { mockk(relaxed = true) }
             bindSingleton<AgentFacade> { agentFacade }
             bindSingleton<TelegramUiService> { telegramService }
             bindSingleton<TelegramControlBot> { telegramControlBot }
@@ -587,8 +507,50 @@ class SettingsViewModelTest {
             bindSingleton<CalendarListProvider> { { emptyList() } }
             bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
         }
+        return LocalModelSettingsFixture(agentFacade, SettingsViewModel(di))
+    }
 
-        val viewModel = SettingsViewModel(di)
+    @Test
+    fun `selecting ambient analysis model updates separate local setting without changing agent model`() = runTest(dispatcher) {
+        var ambientAnalysisModelValue = LLMModel.LocalQwen3_4B_Instruct_2507
+        val fixture = createLocalModelSettingsFixture(
+            availableGigaModels = listOf(
+            LLMModel.LocalQwen3_4B_Instruct_2507,
+            LLMModel.LocalGemma4_E2B_It,
+            ),
+            configureSettingsProvider = { settingsProvider ->
+                every { settingsProvider.ambientAnalysisModel } answers { ambientAnalysisModelValue }
+                every { settingsProvider.ambientAnalysisModel = any() } answers {
+                    ambientAnalysisModelValue = firstArg()
+                }
+            },
+            configureLocalModelStore = { localModelStore ->
+                every { localModelStore.isPresent(any()) } returns true
+            },
+        )
+        val viewModel = fixture.viewModel
+        advanceUntilIdle()
+        viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
+        advanceUntilIdle()
+        viewModel.handleEvent(SettingsEvent.SelectAmbientAnalysisModel(LLMModel.LocalGemma4_E2B_It))
+        advanceUntilIdle()
+
+        assertEquals(LLMModel.LocalGemma4_E2B_It, ambientAnalysisModelValue)
+        assertEquals(LLMModel.LocalGemma4_E2B_It, viewModel.uiState.value.ambientAnalysisModel)
+        verify(exactly = 1) { fixture.agentFacade.setModel(LLMModel.QwenMax) }
+    }
+
+    @Test
+    fun `selecting missing local model opens download prompt instead of switching immediately`() = runTest(dispatcher) {
+        val localProfile = LocalModelProfiles.QWEN3_4B_INSTRUCT_2507
+        val fixture = createLocalModelSettingsFixture(
+            configureLocalModelStore = { localModelStore ->
+                every { localModelStore.isPresent(localProfile) } returns false
+                every { localModelStore.modelPath(localProfile) } returns
+                    File(System.getProperty("java.io.tmpdir"), localProfile.ggufFilename).toPath()
+            },
+        )
+        val viewModel = fixture.viewModel
         advanceUntilIdle()
         viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
         advanceUntilIdle()
@@ -602,103 +564,43 @@ class SettingsViewModelTest {
             state.localModelDownloadPrompt?.downloads?.map { it.id },
         )
         assertNull(state.localModelDownloadState)
-        verify(exactly = 1) { agentFacade.setModel(LLMModel.QwenMax) }
+        verify(exactly = 1) { fixture.agentFacade.setModel(LLMModel.QwenMax) }
     }
 
     @Test
     fun `route refresh opens download prompt when persisted local model misses linked embeddings`() = runTest(dispatcher) {
-        val settingsProvider = mockk<SettingsProvider>(relaxed = true)
-        every { settingsProvider.regionProfile } returns REGION_RU
-        every { settingsProvider.regionProfile = any() } just runs
-        every { settingsProvider.qwenChatKey } returns "qwen-key"
-        every { settingsProvider.hasKey(LlmProvider.QWEN) } returns true
-        every { settingsProvider.hasKey(LlmProvider.LOCAL) } returns true
-        every { settingsProvider.gigaModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        every { settingsProvider.ambientAnalysisModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        every { settingsProvider.embeddingsModel } returns LocalEmbeddingProfiles.default().embeddingsModel
-        every { settingsProvider.voiceRecognitionModel } returns VoiceRecognitionModel.SaluteSpeech
-        every { settingsProvider.getSystemPromptForAgentModel(any(), any()) } returns null
-        every { settingsProvider.supportEmail } returns null
-        every { settingsProvider.mcpServersJson } returns null
-        every { settingsProvider.defaultCalendar } returns null
-        every { settingsProvider.useFewShotExamples } returns false
-        every { settingsProvider.useStreaming } returns false
-        every { settingsProvider.notificationSoundEnabled } returns true
-        every { settingsProvider.safeModeEnabled } returns true
-        every { settingsProvider.requestTimeoutMillis } returns 40_000L
-        every { settingsProvider.contextSize } returns DEFAULT_MAX_TOKENS
-        every { settingsProvider.temperature } returns 0.7f
-
-        val localProviderAvailability = mockk<LocalProviderAvailability>(relaxed = true)
-        every { localProviderAvailability.isProviderAvailable() } returns true
-        every { localProviderAvailability.availableGigaModels() } returns listOf(LLMModel.LocalQwen3_4B_Instruct_2507)
-        every { localProviderAvailability.defaultGigaModel() } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        val llmBuildProfile = LlmBuildProfile(settingsProvider, localProviderAvailability)
-        val apiKeyAvailabilityUseCase = ApiKeyAvailabilityUseCase(llmBuildProfile)
-
-        val localModelStore = mockk<LocalModelStore>(relaxed = true)
-        val localLlamaRuntime = mockk<LocalLlamaRuntime>(relaxed = true)
-        every { localModelStore.isPresent(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507) } returns true
-        every { localModelStore.isPresent(LocalEmbeddingProfiles.default()) } returns false
-        every { localModelStore.modelPath(LocalEmbeddingProfiles.default()) } returns
-            File(System.getProperty("java.io.tmpdir"), LocalEmbeddingProfiles.default().ggufFilename).toPath()
-
-        val agentFacade = mockk<AgentFacade>(relaxed = true)
-        every { agentFacade.setModel(any()) } answers { "prompt-for-${firstArg<LLMModel>().alias}" }
-        every { agentFacade.currentContext } returns MutableStateFlow(
-            AgentContext(
-                input = "",
-                settings = AgentSettings(
-                    model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
-                    temperature = 0f,
-                    toolsByCategory = emptyMap(),
-                ),
-                history = emptyList(),
-                activeTools = emptyList(),
-                systemPrompt = "current-prompt",
-            )
+        val fixture = createLocalModelSettingsFixture(
+            gigaModel = LLMModel.LocalQwen3_4B_Instruct_2507,
+            embeddingsModel = LocalEmbeddingProfiles.default().embeddingsModel,
+            configureLocalModelStore = { localModelStore ->
+                every { localModelStore.isPresent(LocalModelProfiles.QWEN3_4B_INSTRUCT_2507) } returns true
+                every { localModelStore.isPresent(LocalEmbeddingProfiles.default()) } returns false
+                every { localModelStore.modelPath(LocalEmbeddingProfiles.default()) } returns
+                    File(System.getProperty("java.io.tmpdir"), LocalEmbeddingProfiles.default().ggufFilename).toPath()
+            },
+            configureAgentFacade = { agentFacade ->
+                every { agentFacade.currentContext } returns MutableStateFlow(
+                    AgentContext(
+                        input = "",
+                        settings = AgentSettings(
+                            model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
+                            temperature = 0f,
+                            toolsByCategory = emptyMap(),
+                        ),
+                        history = emptyList(),
+                        activeTools = emptyList(),
+                        systemPrompt = "current-prompt",
+                    )
+                )
+            },
         )
-        every { agentFacade.activeAgentId } returns MutableStateFlow(ru.souz.agent.AgentId.GRAPH)
-        every { agentFacade.availableAgents } returns listOf(ru.souz.agent.AgentId.GRAPH)
-
-        val chatApi = mockk<LLMChatAPI>(relaxed = true)
-        val telegramService = mockk<TelegramUiService>(relaxed = true)
-        every { telegramService.isSupported() } returns true
-        every { telegramService.authState } returns MutableStateFlow(TelegramAuthState(step = TelegramAuthStep.WAIT_PHONE))
-        val telegramControlBot = mockk<TelegramControlBot>(relaxed = true)
-        val desktopInfoRepository = mockk<BackgroundIndexRefresher>(relaxed = true)
-        coEvery { desktopInfoRepository.rebuildIndexNow() } returns Unit
-
-        val di = DI {
-            bindSingleton<SettingsProvider> { settingsProvider }
-            bindSingleton<BackgroundIndexRefresher> { desktopInfoRepository }
-            bindSingleton<LlmBuildProfile> { llmBuildProfile }
-            bindSingleton { localModelStore }
-            bindSingleton { localLlamaRuntime }
-            bindSingleton<ApiKeyAvailabilityUseCase> { apiKeyAvailabilityUseCase }
-            bindSingleton<LLMChatAPI> { chatApi }
-            bindSingleton<AgentFacade> { agentFacade }
-            bindSingleton<TelegramUiService> { telegramService }
-            bindSingleton<TelegramControlBot> { telegramControlBot }
-            bindSingleton<LocalModelUiHost> {
-                DesktopLocalModelUiHost(localModelStore, localLlamaRuntime, desktopInfoRepository)
-            }
-            bindSingleton<TelegramSettingsHost> { DesktopTelegramSettingsHost(telegramService, telegramControlBot) }
-            bindSingleton<SupportLogService> { NoopSupportLogService }
-            bindSingleton<PrivacyPolicyOpener> { NoopPrivacyPolicyOpener }
-            bindSingleton<SettingsHostPreferences> { InMemorySettingsHostPreferences() }
-            bindSingleton<ExternalLinkOpener> { ExternalLinkOpener { Result.success(Unit) } }
-            bindSingleton<CalendarListProvider> { { emptyList() } }
-            bindSingleton<UiSpeechPlayer> { mockk(relaxed = true) }
-        }
-
-        val viewModel = SettingsViewModel(di)
+        val viewModel = fixture.viewModel
         advanceUntilIdle()
         viewModel.handleEvent(SettingsEvent.RefreshFromProvider)
         advanceUntilIdle()
         val state = viewModel.uiState.value
         assertEquals(LLMModel.LocalQwen3_4B_Instruct_2507, state.localModelDownloadPrompt?.model)
         assertEquals(listOf(LocalEmbeddingProfiles.default().id), state.localModelDownloadPrompt?.downloads?.map { it.id })
-        verify(exactly = 0) { agentFacade.setModel(any()) }
+        verify(exactly = 0) { fixture.agentFacade.setModel(any()) }
     }
 }

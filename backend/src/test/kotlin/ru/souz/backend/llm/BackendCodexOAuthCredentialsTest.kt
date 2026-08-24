@@ -3,7 +3,6 @@ package ru.souz.backend.llm
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import ru.souz.backend.TestSettingsProvider
 
 class BackendCodexOAuthCredentialsTest {
     @Test
@@ -16,7 +15,7 @@ class BackendCodexOAuthCredentialsTest {
         assertFalse(completeCredentials().apply { codexExpiresAt = null }.hasCompleteCodexOAuthCredentials())
     }
 
-    private fun completeCredentials(): TestSettingsProvider = TestSettingsProvider().apply {
+    private fun completeCredentials(): LlmSettingsStub = LlmSettingsStub().apply {
         codexAccessToken = "server-codex-access-token"
         codexRefreshToken = "server-codex-refresh-token"
         codexAccountId = "server-codex-account-id"

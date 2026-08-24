@@ -4,16 +4,15 @@ import org.slf4j.Logger
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.SandboxPathInfo
 import ru.souz.runtime.sandbox.SandboxRuntimePaths
+import ru.souz.runtime.sandbox.movePath
+import ru.souz.runtime.sandbox.uniqueTrashTarget
 import ru.souz.tool.BadInputException
 import ru.souz.runtime.files.ForbiddenFolder
-import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.name
 
@@ -49,24 +48,6 @@ internal class DockerSandboxFileSystem(
             isSymbolicLink = hostPath?.let(Files::isSymbolicLink) == true,
             sizeBytes = attributes?.size(),
         )
-    }
-
-    override fun resolveExistingFile(rawPath: String): SandboxPathInfo {
-        val resolved = resolvePath(rawPath)
-        requireSafePath(resolved)
-        if (!resolved.exists || !resolved.isRegularFile) {
-            throw BadInputException("Invalid file path: $rawPath")
-        }
-        return resolved
-    }
-
-    override fun resolveExistingDirectory(rawPath: String): SandboxPathInfo {
-        val resolved = resolvePath(rawPath)
-        requireSafePath(resolved)
-        if (!resolved.exists || !resolved.isDirectory) {
-            throw BadInputException("Invalid directory path: $rawPath")
-        }
-        return resolved
     }
 
     override fun isPathSafe(path: SandboxPathInfo): Boolean {
@@ -343,40 +324,4 @@ internal class DockerSandboxFileSystem(
         return Files.exists(root, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(root)
     }
 
-    private fun movePath(
-        sourcePath: Path,
-        destinationPath: Path,
-        replaceExisting: Boolean,
-        logger: Logger?,
-    ) {
-        val atomicOptions = buildList {
-            add(StandardCopyOption.ATOMIC_MOVE)
-            if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
-        }.toTypedArray()
-        val fallbackOptions = buildList {
-            if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
-        }.toTypedArray()
-        try {
-            Files.move(sourcePath, destinationPath, *atomicOptions)
-        } catch (exception: AtomicMoveNotSupportedException) {
-            logger?.warn("Failed to make an atomic move", exception)
-            Files.move(sourcePath, destinationPath, *fallbackOptions)
-        }
-    }
-
-    private fun uniqueTrashTarget(trashDirectory: Path, originalFileName: String): Path {
-        var target = trashDirectory.resolve(originalFileName)
-        if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-            return target
-        }
-
-        val file = File(originalFileName)
-        val withSuffix = "${file.nameWithoutExtension}-${System.currentTimeMillis()}"
-        val extensionSuffix = if (file.extension.isBlank()) "" else ".${file.extension}"
-        target = trashDirectory.resolve(withSuffix + extensionSuffix)
-        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-            throw BadInputException("Unable to move file to Trash. Target exists: $target")
-        }
-        return target
-    }
 }

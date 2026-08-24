@@ -34,7 +34,7 @@ flyway = "10.20.1"
 hikari = "5.1.0"
 postgresql = "42.7.4"
 re2j = "1.8"
-testcontainers = "1.20.4"
+testcontainers = "1.21.4"
 
 
 [libraries]

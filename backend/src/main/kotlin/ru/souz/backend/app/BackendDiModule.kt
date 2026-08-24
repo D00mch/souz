@@ -15,6 +15,7 @@ import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
+import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntimeFactory
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
@@ -273,12 +274,15 @@ fun backendDiModule(
             clientThreadRegistry = instance(),
         )
     }
+    bindSingleton<BackendConversationTurnRunner> {
+        BackendConversationRuntimeTurnRunner(instance(), instance())
+    }
     bindSingleton {
         AgentExecutionFinalizer(
             agentStateRepository = instance(),
             chatRepository = instance(),
             executionRepository = instance(),
-            turnRunner = BackendConversationRuntimeTurnRunner(instance(), instance()),
+            turnRunner = instance(),
             clientThreadRegistry = instance(),
         )
     }
