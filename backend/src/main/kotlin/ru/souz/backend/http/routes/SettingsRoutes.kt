@@ -18,17 +18,15 @@ import ru.souz.backend.http.jsonResponse
 import ru.souz.backend.http.receiveOrV1BadRequest
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toDto
 import ru.souz.backend.http.toUserSettingsOverrides
 import ru.souz.backend.http.v1ErrorResponses
 
 internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.SETTINGS) {
-        val service = requireV1Service(deps.userSettingsService, "User settings")
         call.respond(
             BackendV1SettingsResponse(
-                settings = service.get(call.requireUserIdFromTrustedProxy()).toDto(),
+                settings = deps.userSettingsService.get(call.requireUserIdFromTrustedProxy()).toDto(),
             )
         )
     }.describeV1(
@@ -44,12 +42,11 @@ internal fun Route.settingsRoutes(deps: BackendHttpDependencies) {
     }
 
     patch(BackendHttpRoutes.SETTINGS) {
-        val service = requireV1Service(deps.userSettingsService, "User settings")
         call.requireJsonContentV1()
         val request = call.receiveOrV1BadRequest<BackendV1SettingsPatchRequest>()
         call.respond(
             BackendV1SettingsResponse(
-                settings = service.patch(
+                settings = deps.userSettingsService.patch(
                     userId = call.requireUserIdFromTrustedProxy(),
                     overrides = request.toUserSettingsOverrides(),
                 ).toDto(),

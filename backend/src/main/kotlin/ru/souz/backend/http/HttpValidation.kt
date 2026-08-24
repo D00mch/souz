@@ -1,7 +1,6 @@
 package ru.souz.backend.http
 
 import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.contentType
 import java.util.UUID
@@ -81,13 +80,6 @@ internal fun ApplicationCall.queryBoolean(name: String, defaultValue: Boolean): 
     return rawValue.toBooleanStrictOrNull()
         ?: throw invalidV1Request("$name must be true or false.")
 }
-
-internal fun <T> requireV1Service(service: T?, name: String): T =
-    service ?: throw BackendV1Exception(
-        status = HttpStatusCode.InternalServerError,
-        code = "internal_error",
-        message = "$name service is unavailable.",
-    )
 
 internal fun requireWsEventsEnabled(featureFlags: BackendFeatureFlags) {
     if (!featureFlags.wsEvents) {

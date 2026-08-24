@@ -1,7 +1,8 @@
 package ru.souz.backend.storage.postgres
 
 import java.util.UUID
-import org.junit.jupiter.api.Assumptions.assumeTrue
+import java.nio.file.Files
+import java.nio.file.Path
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.PostgreSQLContainer
 import ru.souz.backend.app.BackendAppConfig
@@ -12,6 +13,7 @@ import ru.souz.backend.config.BackendFeatureFlags
 
 internal object SharedPostgresContainer {
     val instance: PostgreSQLContainer<Nothing> by lazy {
+        requireDocker()
         PostgreSQLContainer<Nothing>("postgres:16-alpine").apply {
             withDatabaseName("souz")
             withUsername("souz")
@@ -37,28 +39,30 @@ internal fun newPostgresSchema(prefix: String): String {
 
 internal fun postgresAppConfig(
     schema: String,
+    featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
+    proxyToken: String? = null,
+    telegramTokenEncryptionKey: String? = null,
+    includeSkillOAuthConfig: Boolean = true,
 ): BackendAppConfig {
-    assumeTrue(
-        runCatching { DockerClientFactory.instance().isDockerAvailable() }.getOrDefault(false),
-        "Docker is required for Postgres Testcontainers tests.",
-    )
     val container = SharedPostgresContainer.instance
     return BackendAppConfig(
-        featureFlags = BackendFeatureFlags(),
+        featureFlags = featureFlags,
         server = BackendServerConfig(
             host = "127.0.0.1",
             port = 8080,
-            proxyToken = null,
+            proxyToken = proxyToken,
         ),
         masterKey = "test-master-key",
-        skillOAuthTokenEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-        skillOAuthProviderCredentials = mapOf(
+        telegramTokenEncryptionKey = telegramTokenEncryptionKey,
+        skillOAuthTokenEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+            .takeIf { includeSkillOAuthConfig },
+        skillOAuthProviderCredentials = if (includeSkillOAuthConfig) mapOf(
             "yandex" to SkillOAuthProviderCredentials(
                 clientId = "test-yandex-client-id",
                 clientSecret = "test-yandex-client-secret",
                 redirectUri = "https://backend.test/oauth/callback",
             )
-        ),
+        ) else emptyMap(),
         postgres = BackendPostgresConfig(
             host = container.host,
             port = container.firstMappedPort,
@@ -70,4 +74,22 @@ internal fun postgresAppConfig(
             connectionTimeoutMs = 30_000L,
         ),
     ).validate()
+}
+
+private fun requireDocker() {
+    configureDockerHostForDesktop()
+    if (runCatching { DockerClientFactory.instance().isDockerAvailable() }.getOrDefault(false)) {
+        return
+    }
+    error("Docker is required for backend Postgres Testcontainers tests. Start Docker and rerun :backend:test.")
+}
+
+private fun configureDockerHostForDesktop() {
+    if (!System.getenv("DOCKER_HOST").isNullOrBlank() || !System.getProperty("docker.host").isNullOrBlank()) {
+        return
+    }
+    val desktopSocket = Path.of(System.getProperty("user.home"), ".docker", "run", "docker.sock")
+    if (Files.exists(desktopSocket)) {
+        System.setProperty("docker.host", "unix://$desktopSocket")
+    }
 }

@@ -18,18 +18,16 @@ import ru.souz.backend.http.receiveOrV1BadRequest
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireOptionId
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toResponse
 import ru.souz.backend.http.uuidPathParameter
 import ru.souz.backend.http.v1ErrorResponses
 
 internal fun Route.choiceRoutes(deps: BackendHttpDependencies) {
     post(BackendHttpRoutes.OPTION_ANSWER_PATTERN) {
-        val service = requireV1Service(deps.optionService, "Option")
         call.requireJsonContentV1()
         val request = call.receiveOrV1BadRequest<BackendV1AnswerOptionRequest>()
         call.respond(
-            service.answer(
+            deps.optionService.answer(
                 userId = call.requireUserIdFromTrustedProxy(),
                 optionId = call.requireOptionId(),
                 selectedOptionIds = request.selectedOptionIds,

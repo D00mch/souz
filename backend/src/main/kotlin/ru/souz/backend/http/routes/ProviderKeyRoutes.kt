@@ -24,17 +24,15 @@ import ru.souz.backend.http.providerPathParameter
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireProvider
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toDto
 import ru.souz.backend.http.v1ErrorResponses
 import ru.souz.llms.LlmProvider
 
 internal fun Route.providerKeyRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.PROVIDER_KEYS) {
-        val service = requireV1Service(deps.providerKeyService, "Provider keys")
         call.respond(
             BackendV1ProviderKeysResponse(
-                items = service.list(call.requireUserIdFromTrustedProxy()).map { it.toDto() },
+                items = deps.providerKeyService.list(call.requireUserIdFromTrustedProxy()).map { it.toDto() },
             )
         )
     }.describeV1(
@@ -50,7 +48,6 @@ internal fun Route.providerKeyRoutes(deps: BackendHttpDependencies) {
     }
 
     put(BackendHttpRoutes.PROVIDER_KEY_PATTERN) {
-        val service = requireV1Service(deps.providerKeyService, "Provider keys")
         call.requireJsonContentV1()
         val request = call.receiveOrV1BadRequest<BackendV1PutProviderKeyRequest>()
         val apiKey = request.apiKey.trim().takeIf { it.isNotEmpty() }
@@ -61,7 +58,7 @@ internal fun Route.providerKeyRoutes(deps: BackendHttpDependencies) {
         }
         call.respond(
             BackendV1PutProviderKeyResponse(
-                providerKey = service.put(
+                providerKey = deps.providerKeyService.put(
                     userId = call.requireUserIdFromTrustedProxy(),
                     provider = provider,
                     apiKey = apiKey,
@@ -88,8 +85,7 @@ internal fun Route.providerKeyRoutes(deps: BackendHttpDependencies) {
     }
 
     delete(BackendHttpRoutes.PROVIDER_KEY_PATTERN) {
-        val service = requireV1Service(deps.providerKeyService, "Provider keys")
-        service.delete(
+        deps.providerKeyService.delete(
             userId = call.requireUserIdFromTrustedProxy(),
             provider = call.requireProvider(),
         )

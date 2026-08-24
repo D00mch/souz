@@ -57,7 +57,6 @@ import ru.souz.backend.http.queryNonNegativeLong
 import ru.souz.backend.http.queryPositiveInt
 import ru.souz.backend.http.requireChatId
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.requireWsEventsEnabled
 import ru.souz.backend.http.toDto
 import ru.souz.backend.http.toPublicDto
@@ -68,11 +67,10 @@ import ru.souz.backend.http.v1ErrorResponses
 internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.CHAT_EVENTS_PATTERN) {
         requireWsEventsEnabled(deps.featureFlags)
-        val service = requireV1Service(deps.eventService, "Event")
         val limit = call.queryPositiveInt("limit", DEFAULT_EVENT_LIMIT, MAX_EVENT_LIMIT)
         call.respond(
             BackendV1EventsResponse(
-                items = service.listByChat(
+                items = deps.eventService.listByChat(
                     userId = call.requireUserIdFromTrustedProxy(),
                     chatId = call.requireChatId(),
                     afterSeq = call.queryNonNegativeLong("afterSeq"),
@@ -114,8 +112,8 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
             close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "WebSocket feature is disabled."))
             return@webSocket
         }
-        val clientService = requireV1Service(deps.publicClientService, "Public client")
-        val eventService = requireV1Service(deps.eventService, "Event")
+        val clientService = deps.publicClientService
+        val eventService = deps.eventService
         val chatId = call.requireChatId()
         val clientType = call.request.queryParameters["clientType"]
         if (clientType !in supportedClientTypes) {

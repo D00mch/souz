@@ -27,7 +27,6 @@ import ru.souz.backend.http.receiveOrV1BadRequest
 import ru.souz.backend.http.requireChatId
 import ru.souz.backend.http.requireJsonContentV1
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toDto
 import ru.souz.backend.http.toResponse
 import ru.souz.backend.http.toUserSettingsOverrides
@@ -36,11 +35,10 @@ import ru.souz.backend.http.v1ErrorResponses
 
 internal fun Route.messageRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.CHAT_MESSAGES_PATTERN) {
-        val service = requireV1Service(deps.messageService, "Message")
         val chatId = call.requireChatId()
         val limit = call.queryPositiveInt("limit", DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT)
         call.respond(
-            service.list(
+            deps.messageService.list(
                 userId = call.requireUserIdFromTrustedProxy(),
                 chatId = chatId,
                 beforeSeq = call.queryPositiveLong("beforeSeq"),
@@ -80,14 +78,13 @@ internal fun Route.messageRoutes(deps: BackendHttpDependencies) {
     }
 
     post(BackendHttpRoutes.CHAT_MESSAGES_PATTERN) {
-        val service = requireV1Service(deps.messageService, "Message")
         val chatId = call.requireChatId()
         call.requireJsonContentV1()
         val request = call.receiveOrV1BadRequest<BackendV1CreateMessageRequest>()
         val content = request.content.trim().takeIf { it.isNotEmpty() }
             ?: throw invalidV1Request("content must not be empty.")
         call.respond(
-            service.send(
+            deps.messageService.send(
                 userId = call.requireUserIdFromTrustedProxy(),
                 chatId = chatId,
                 content = content,

@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
-import ru.souz.backend.TestSettingsProvider
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
@@ -142,7 +141,7 @@ class BackendExecutionLlmChatApiTest {
                 }
             )
         }
-        val settings = TestSettingsProvider().apply {
+        val settings = LlmSettingsStub().apply {
             embeddingsModel = EmbeddingsModel.OpenAITextEmbedding3Small
         }
         facadeFixture(
@@ -281,7 +280,7 @@ private class FacadeFixture(
 }
 
 private fun facadeFixture(
-    settingsProvider: TestSettingsProvider = TestSettingsProvider(),
+    settingsProvider: LlmSettingsStub = LlmSettingsStub(),
     credentialResolver: CountingCredentialResolver = CountingCredentialResolver("test-key"),
     retryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(max429Retries = 0),
     initialUsage: LLMResponse.Usage = usage(0, 0, 0, 0),

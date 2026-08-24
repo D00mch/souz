@@ -62,6 +62,12 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+    if (System.getenv("DOCKER_HOST").isNullOrBlank()) {
+        val dockerDesktopSocket = file("${System.getProperty("user.home")}/.docker/run/docker.sock")
+        if (dockerDesktopSocket.exists()) {
+            environment("DOCKER_HOST", "unix://${dockerDesktopSocket.absolutePath}")
+        }
+    }
 }
 
 tasks.withType<Sync>().configureEach {

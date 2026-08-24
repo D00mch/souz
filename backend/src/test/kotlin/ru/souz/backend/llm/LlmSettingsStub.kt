@@ -1,4 +1,4 @@
-package ru.souz.backend
+package ru.souz.backend.llm
 
 import ru.souz.agent.AgentId
 import ru.souz.db.SettingsProvider
@@ -6,7 +6,7 @@ import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
 import ru.souz.llms.VoiceRecognitionModel
 
-internal class TestSettingsProvider : SettingsProvider {
+internal class LlmSettingsStub : SettingsProvider {
     private val promptOverrides = HashMap<Pair<AgentId, LLMModel>, String>()
 
     override var gigaChatKey: String? = null

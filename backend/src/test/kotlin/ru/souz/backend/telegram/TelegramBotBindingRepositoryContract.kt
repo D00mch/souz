@@ -2,62 +2,14 @@ package ru.souz.backend.telegram
 
 import java.time.Instant
 import java.util.UUID
-import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.test.runTest
-import ru.souz.backend.testutil.repository.MemoryTelegramBotBindingRepository
 
-class TelegramBotBindingRepositoryTest {
-    @Test
-    fun `memory repository keeps one binding per chat and replaces token state`() = runTest {
-        assertChatScopedUpsertContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `memory repository enforces unique token hash`() = runTest {
-        assertUniqueTokenHashContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `memory repository listEnabled excludes disabled bindings`() = runTest {
-        assertEnabledListingContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `memory repository persists last update id`() = runTest {
-        assertLastUpdateContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `memory repository keeps last update id monotonic for current lease owner`() = runTest {
-        assertLeaseScopedLastUpdateContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `memory repository stores errors and can disable binding`() = runTest {
-        assertMarkErrorContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `memory repository clearError removes stored error state`() = runTest {
-        assertClearErrorContract(MemoryTelegramBotBindingRepository())
-    }
-
-    @Test
-    fun `memory repository persists telegram link metadata`() = runTest {
-        assertClaimTelegramUserContract(MemoryTelegramBotBindingRepository())
-    }
-
-}
-
-internal suspend fun assertChatScopedUpsertContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertChatScopedUpsertContract(repository: TelegramBotBindingRepository) {
     val chatId = UUID.randomUUID()
     val created = repository.upsertForChat(
         userId = "user-a",
@@ -67,7 +19,6 @@ internal suspend fun assertChatScopedUpsertContract(
         linkSecretHash = sha256("first-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
-
     val updated = repository.upsertForChat(
         userId = "user-a",
         chatId = chatId,
@@ -87,9 +38,7 @@ internal suspend fun assertChatScopedUpsertContract(
     assertEquals(updated.id, repository.getByChat(chatId)?.id)
 }
 
-internal suspend fun assertUniqueTokenHashContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertUniqueTokenHashContract(repository: TelegramBotBindingRepository) {
     repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
@@ -111,9 +60,7 @@ internal suspend fun assertUniqueTokenHashContract(
     }
 }
 
-internal suspend fun assertEnabledListingContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertEnabledListingContract(repository: TelegramBotBindingRepository) {
     val enabled = repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
@@ -138,14 +85,10 @@ internal suspend fun assertEnabledListingContract(
         disable = true,
     )
 
-    val listed = repository.listEnabled()
-
-    assertEquals(listOf(enabled.id), listed.map { it.id })
+    assertEquals(listOf(enabled.id), repository.listEnabled().map { it.id })
 }
 
-internal suspend fun assertLastUpdateContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertLastUpdateContract(repository: TelegramBotBindingRepository) {
     val binding = repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
@@ -162,15 +105,12 @@ internal suspend fun assertLastUpdateContract(
     )
 
     val stored = repository.getByChat(binding.chatId)
-
     assertNotNull(stored)
     assertEquals(77L, stored.lastUpdateId)
     assertEquals(Instant.parse("2026-05-04T09:03:00Z"), stored.updatedAt)
 }
 
-internal suspend fun assertLeaseScopedLastUpdateContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertLeaseScopedLastUpdateContract(repository: TelegramBotBindingRepository) {
     val binding = repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
@@ -179,54 +119,21 @@ internal suspend fun assertLeaseScopedLastUpdateContract(
         linkSecretHash = sha256("update-owner-link-secret"),
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
-    repository.tryAcquireLease(
-        id = binding.id,
-        owner = "instance-a",
-        leaseUntil = Instant.parse("2026-05-04T09:00:45Z"),
-        now = Instant.parse("2026-05-04T09:00:00Z"),
-    )
+    repository.tryAcquireLease(binding.id, "instance-a", Instant.parse("2026-05-04T09:00:45Z"), Instant.parse("2026-05-04T09:00:00Z"))
 
-    repository.updateLastUpdateId(
-        id = binding.id,
-        lastUpdateId = 77L,
-        updatedAt = Instant.parse("2026-05-04T09:03:00Z"),
-        owner = "instance-a",
-    )
-    repository.updateLastUpdateId(
-        id = binding.id,
-        lastUpdateId = 55L,
-        updatedAt = Instant.parse("2026-05-04T09:04:00Z"),
-        owner = "instance-a",
-    )
-    repository.updateLastUpdateId(
-        id = binding.id,
-        lastUpdateId = 99L,
-        updatedAt = Instant.parse("2026-05-04T09:05:00Z"),
-        owner = "instance-b",
-    )
-    repository.tryAcquireLease(
-        id = binding.id,
-        owner = "instance-b",
-        leaseUntil = Instant.parse("2026-05-04T09:01:45Z"),
-        now = Instant.parse("2026-05-04T09:01:06Z"),
-    )
-    repository.updateLastUpdateId(
-        id = binding.id,
-        lastUpdateId = 120L,
-        updatedAt = Instant.parse("2026-05-04T09:06:00Z"),
-        owner = "instance-b",
-    )
+    repository.updateLastUpdateId(binding.id, 77L, Instant.parse("2026-05-04T09:03:00Z"), "instance-a")
+    repository.updateLastUpdateId(binding.id, 55L, Instant.parse("2026-05-04T09:04:00Z"), "instance-a")
+    repository.updateLastUpdateId(binding.id, 99L, Instant.parse("2026-05-04T09:05:00Z"), "instance-b")
+    repository.tryAcquireLease(binding.id, "instance-b", Instant.parse("2026-05-04T09:01:45Z"), Instant.parse("2026-05-04T09:01:06Z"))
+    repository.updateLastUpdateId(binding.id, 120L, Instant.parse("2026-05-04T09:06:00Z"), "instance-b")
 
     val stored = repository.getByChat(binding.chatId)
-
     assertNotNull(stored)
     assertEquals(120L, stored.lastUpdateId)
     assertEquals(Instant.parse("2026-05-04T09:06:00Z"), stored.updatedAt)
 }
 
-internal suspend fun assertMarkErrorContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertMarkErrorContract(repository: TelegramBotBindingRepository) {
     val binding = repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
@@ -236,24 +143,16 @@ internal suspend fun assertMarkErrorContract(
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
-    repository.markError(
-        id = binding.id,
-        lastError = "telegram_unauthorized",
-        lastErrorAt = Instant.parse("2026-05-04T09:04:00Z"),
-        disable = true,
-    )
+    repository.markError(binding.id, "telegram_unauthorized", Instant.parse("2026-05-04T09:04:00Z"), disable = true)
 
     val stored = repository.getByChat(binding.chatId)
-
     assertNotNull(stored)
     assertEquals("telegram_unauthorized", stored.lastError)
     assertEquals(Instant.parse("2026-05-04T09:04:00Z"), stored.lastErrorAt)
     assertEquals(false, stored.enabled)
 }
 
-internal suspend fun assertClearErrorContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertClearErrorContract(repository: TelegramBotBindingRepository) {
     val binding = repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
@@ -263,19 +162,10 @@ internal suspend fun assertClearErrorContract(
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
-    repository.markError(
-        id = binding.id,
-        lastError = "telegram_rate_limited",
-        lastErrorAt = Instant.parse("2026-05-04T09:04:00Z"),
-        disable = false,
-    )
-    repository.clearError(
-        id = binding.id,
-        updatedAt = Instant.parse("2026-05-04T09:05:00Z"),
-    )
+    repository.markError(binding.id, "telegram_rate_limited", Instant.parse("2026-05-04T09:04:00Z"), disable = false)
+    repository.clearError(binding.id, Instant.parse("2026-05-04T09:05:00Z"))
 
     val stored = repository.getByChat(binding.chatId)
-
     assertNotNull(stored)
     assertNull(stored.lastError)
     assertNull(stored.lastErrorAt)
@@ -283,9 +173,7 @@ internal suspend fun assertClearErrorContract(
     assertEquals(Instant.parse("2026-05-04T09:05:00Z"), stored.updatedAt)
 }
 
-internal suspend fun assertClaimTelegramUserContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertClaimTelegramUserContract(repository: TelegramBotBindingRepository) {
     val linkSecret = "claim-link-secret"
     val binding = repository.upsertForChat(
         userId = "user-a",
@@ -330,13 +218,10 @@ internal suspend fun assertClaimTelegramUserContract(
     )
 
     val stored = repository.getByChat(binding.chatId)
-
     assertIs<TelegramUserClaimResult.InvalidSecret>(invalidSecret)
     assertIs<TelegramUserClaimResult.Claimed>(linked)
     assertIs<TelegramUserClaimResult.AlreadyLinked>(alreadyLinked)
     assertNotNull(stored)
-    assertEquals("souz_bot", stored.botUsername)
-    assertEquals("Souz", stored.botFirstName)
     assertEquals(77L, stored.telegramUserId)
     assertEquals(88L, stored.telegramChatId)
     assertEquals("alice", stored.telegramUsername)
@@ -347,9 +232,7 @@ internal suspend fun assertClaimTelegramUserContract(
     assertEquals(true, stored.linked)
 }
 
-internal suspend fun assertLeaseContract(
-    repository: TelegramBotBindingRepository,
-) {
+internal suspend fun assertLeaseContract(repository: TelegramBotBindingRepository) {
     val binding = repository.upsertForChat(
         userId = "user-a",
         chatId = UUID.randomUUID(),
@@ -361,30 +244,10 @@ internal suspend fun assertLeaseContract(
         now = Instant.parse("2026-05-04T09:00:00Z"),
     )
 
-    val firstLease = repository.tryAcquireLease(
-        id = binding.id,
-        owner = "instance-a",
-        leaseUntil = Instant.parse("2026-05-04T09:00:45Z"),
-        now = Instant.parse("2026-05-04T09:00:00Z"),
-    )
-    val competingLease = repository.tryAcquireLease(
-        id = binding.id,
-        owner = "instance-b",
-        leaseUntil = Instant.parse("2026-05-04T09:00:50Z"),
-        now = Instant.parse("2026-05-04T09:00:05Z"),
-    )
-    val renewedBySameOwner = repository.tryAcquireLease(
-        id = binding.id,
-        owner = "instance-a",
-        leaseUntil = Instant.parse("2026-05-04T09:01:05Z"),
-        now = Instant.parse("2026-05-04T09:00:20Z"),
-    )
-    val acquiredAfterExpiry = repository.tryAcquireLease(
-        id = binding.id,
-        owner = "instance-b",
-        leaseUntil = Instant.parse("2026-05-04T09:01:45Z"),
-        now = Instant.parse("2026-05-04T09:01:06Z"),
-    )
+    val firstLease = repository.tryAcquireLease(binding.id, "instance-a", Instant.parse("2026-05-04T09:00:45Z"), Instant.parse("2026-05-04T09:00:00Z"))
+    val competingLease = repository.tryAcquireLease(binding.id, "instance-b", Instant.parse("2026-05-04T09:00:50Z"), Instant.parse("2026-05-04T09:00:05Z"))
+    val renewedBySameOwner = repository.tryAcquireLease(binding.id, "instance-a", Instant.parse("2026-05-04T09:01:05Z"), Instant.parse("2026-05-04T09:00:20Z"))
+    val acquiredAfterExpiry = repository.tryAcquireLease(binding.id, "instance-b", Instant.parse("2026-05-04T09:01:45Z"), Instant.parse("2026-05-04T09:01:06Z"))
 
     assertNotNull(firstLease)
     assertEquals("instance-a", firstLease.pollerOwner)

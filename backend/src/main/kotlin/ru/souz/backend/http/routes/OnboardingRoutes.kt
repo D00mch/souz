@@ -16,7 +16,6 @@ import ru.souz.backend.http.jsonBody
 import ru.souz.backend.http.jsonResponse
 import ru.souz.backend.http.receiveOrV1BadRequest
 import ru.souz.backend.http.requireJsonContentV1
-import ru.souz.backend.http.requireV1Service
 import ru.souz.backend.http.toUserSettingsOverrides
 import ru.souz.backend.http.v1ErrorResponses
 import ru.souz.backend.onboarding.OnboardingCompleteResponse
@@ -25,8 +24,7 @@ import ru.souz.backend.security.requestIdentity
 
 internal fun Route.onboardingRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.ONBOARDING_STATE) {
-        val service = requireV1Service(deps.onboardingService, "Onboarding")
-        call.respond(service.state(call.requestIdentity()))
+        call.respond(deps.onboardingService.state(call.requestIdentity()))
     }.describeV1(
         operationId = "getOnboardingState",
         tag = BackendOpenApiTags.ONBOARDING,
@@ -40,11 +38,10 @@ internal fun Route.onboardingRoutes(deps: BackendHttpDependencies) {
     }
 
     post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
-        val service = requireV1Service(deps.onboardingService, "Onboarding")
         call.requireJsonContentV1()
         val request = call.receiveOrV1BadRequest<BackendV1OnboardingCompleteRequest>()
         call.respond(
-            service.complete(
+            deps.onboardingService.complete(
                 identity = call.requestIdentity(),
                 overrides = request.toUserSettingsOverrides(),
             )
