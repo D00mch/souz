@@ -4,6 +4,7 @@ from quality.repowise_quality_gate import (
     QUALITY_KPIS,
     compare_health,
     render_markdown,
+    render_risk_markdown,
 )
 
 
@@ -38,6 +39,27 @@ class RepoWiseQualityGateTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "performance_average"):
             compare_health(report(8.0), head)
+
+    def test_pr_risk_is_rendered_from_the_diff_metrics(self) -> None:
+        risk = {
+            "classification": "Typical",
+            "review_priority": "moderate",
+            "score": 7.2,
+            "risk_percentile": 61.5,
+            "baseline_sample_size": 200,
+            "features": {"la": 30, "ld": 12, "nf": 4, "nd": 2, "ns": 1, "entropy": 1.25},
+            "drivers": [
+                {"label": "more lines added", "value": 30, "contribution": 0.5},
+                {"label": "experienced author", "value": 10, "contribution": -0.1},
+            ],
+        }
+
+        markdown = render_risk_markdown(risk)
+
+        self.assertIn("## PR change risk", markdown)
+        self.assertIn("| 30 | 12 | 4 | 2 | 1 | 1.25 |", markdown)
+        self.assertIn("more lines added", markdown)
+        self.assertIn("-0.100", markdown)
 
 
 if __name__ == "__main__":

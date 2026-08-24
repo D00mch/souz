@@ -146,7 +146,7 @@ jobs:
           exit "$missing"
 
   repowise-quality:
-    name: RepoWise Quality
+    name: RepoWise PR Quality
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -191,17 +191,17 @@ jobs:
           repowise init "$REPOWISE_BASE_CHECKOUT" --yes --no-prose --no-workspace
           repowise init . --yes --no-prose --no-workspace
 
-      - name: Generate RepoWise reports
+      - name: Generate PR-focused RepoWise reports
         shell: bash
         run: |
           mkdir -p build/reports/repowise
+          repowise risk "$SOUZ_PR_BASE_SHA..$SOUZ_PR_HEAD_SHA" \
+            --path . --baseline 200 --format json \
+            > build/reports/repowise/pr-risk.json
           repowise health "$REPOWISE_BASE_CHECKOUT" --no-workspace --format json \
             > build/reports/repowise/base-health.json
           repowise health . --no-workspace --format json \
             > build/reports/repowise/pr-health.json
-          repowise health . --no-workspace --refactoring-targets --format md \
-            | tee build/reports/repowise/refactoring-targets.md \
-            | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce RepoWise code quality
         shell: bash
@@ -211,6 +211,7 @@ jobs:
           python quality/repowise_quality_gate.py \
             --base build/reports/repowise/base-health.json \
             --head build/reports/repowise/pr-health.json \
+            --risk build/reports/repowise/pr-risk.json \
             --markdown "$quality_report" \
             --base-sha "$SOUZ_PR_BASE_SHA" \
             --head-sha "$SOUZ_PR_HEAD_SHA"
@@ -223,7 +224,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: souz-repowise-quality-${{ github.run_id }}
+          name: souz-repowise-pr-quality-${{ github.run_id }}
           path: build/reports/repowise/**
           if-no-files-found: warn
 
@@ -235,8 +236,8 @@ jobs:
           for repowise_report in \
             build/reports/repowise/base-health.json \
             build/reports/repowise/pr-health.json \
-            build/reports/repowise/quality-ratchet.md \
-            build/reports/repowise/refactoring-targets.md; do
+            build/reports/repowise/pr-risk.json \
+            build/reports/repowise/quality-ratchet.md; do
             if [[ ! -s "$repowise_report" ]]; then
               echo "Missing required RepoWise report: $repowise_report"
               missing=1

@@ -29,6 +29,8 @@ Fast checks have `local-safe` authority. The three coroutine checks are
 advisory and produce warnings; the other fast checks are blocking. Duplicate
 code is blocking with `ci-exact-checkout` authority. An unexpected checker
 failure is reported as `error`, not as a pass or policy failure.
+The RepoWise ratchet is blocking only in pull-request CI and compares the base
+and head directly.
 
 Project dependencies declared in an unclassified configuration fail closed.
 Test-only edges should use a standard test source-set configuration so the
@@ -122,7 +124,7 @@ sets; non-JVM targets are outside this report. Each module row covers that
 module's classes using its own JVM test tasks, while the root aggregate also
 includes coverage produced across module boundaries.
 
-## RepoWise quality and refactoring
+## RepoWise pull-request quality
 
 Pull-request CI installs the version of RepoWise pinned in
 [`quality/repowise-requirements.txt`](../quality/repowise-requirements.txt),
@@ -136,13 +138,32 @@ performance. Equal and improved values pass; any decrease, analysis failure, or
 missing report fails. The comparison uses the PR base directly, so each merged
 improvement becomes the baseline for following pull requests.
 
-Ranked refactoring targets remain advisory. CI publishes the quality comparison
-and top refactoring plans in the job summary and uploads the Markdown and JSON
-reports as an artifact. The refactoring report can be generated from an indexed
-local checkout with:
+The same job runs `repowise risk` over the exact base-to-head revision range and
+publishes the PR's change-risk classification, percentile, size, spread, and
+main risk drivers. Change risk is advisory; only a code-health regression is
+blocking. Global refactoring targets are intentionally excluded from PR runs.
+
+## RepoWise maintenance guidance
+
+The [`RepoWise Maintenance`](../.github/workflows/repowise-maintenance.yml)
+workflow runs weekly on the default branch and can also be started manually.
+Its advisory `RepoWise Refactoring and Performance` job builds one full-history
+index and publishes a downloadable maintenance artifact rather than adding
+repository-wide advice to every pull request.
+
+The artifact contains a detailed Markdown report with ranked targets, concrete
+plans, evidence, blast radius, inferred validation commands and tests, and
+causal production/tooling performance opportunities. The full structured JSON
+includes every refactoring plan and performance opportunity, including
+test-only findings. RepoWise optimization strategies and safety rationales are
+reported when the analyzer can infer them; opportunities without a safe plan
+remain explicit investigation targets.
+
+An indexed local checkout can produce the source JSON with:
 
 ```bash
-repowise health . --no-workspace --refactoring-targets --format md
+repowise health . --no-workspace --format json
+repowise health . --no-workspace --refactoring-targets --format json
 ```
 
 ## Reports
@@ -156,9 +177,9 @@ build/reports/souz-quality/fast/gate-summary.md
 
 The duplication lane writes the same v1 contract under
 `build/reports/souz-quality/expensive/`. Kover writes XML and HTML under
-`build/reports/kover/`. RepoWise writes base and PR health JSON, the blocking
-quality ratchet, and advisory refactoring targets under
-`build/reports/repowise/`.
+`build/reports/kover/`. Pull-request RepoWise reports are under
+`build/reports/repowise/`. Scheduled/manual maintenance reports are under
+`build/reports/repowise-maintenance/`.
 
 The JSON contract is defined by
 [`quality/gate-summary-v1.schema.json`](../quality/gate-summary-v1.schema.json).
