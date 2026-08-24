@@ -55,7 +55,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.
 - Run `./gradlew souzGateFast` for repository policy, production module-boundary, and coroutine checks.
 - Run `npm ci --prefix quality && ./gradlew souzDuplicationCheck` for the exact-checkout duplicate-code ratchet.
-- Run `./gradlew test :sharedLogic:allTests :sharedUI:allTests :koverXmlReport :koverHtmlReport -Psouz.coverage --no-parallel` for the CI JVM test-and-coverage graph.
+- Run `./gradlew test :sharedLogic:allTests :sharedUI:allTests :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage --no-parallel` for the CI JVM test-and-coverage graph.
 - When changing quality tooling, run `./gradlew :build-logic:check`.
 - Run the affected module's command from its `AGENTS.md`; use `./gradlew check` for repository-wide verification when the change warrants it.
 - Desktop entry point: `./gradlew :desktopApp:run`.

@@ -1,3 +1,7 @@
+import kotlinx.kover.gradle.plugin.dsl.AggregationType
+import kotlinx.kover.gradle.plugin.dsl.CoverageUnit
+import kotlinx.kover.gradle.plugin.dsl.GroupingEntityType
+import kotlinx.kover.gradle.plugin.dsl.KoverProjectExtension
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
@@ -19,6 +23,24 @@ if (providers.gradleProperty("souz.coverage").isPresent) {
     subprojects.forEach { subproject ->
         subproject.pluginManager.apply("org.jetbrains.kotlinx.kover")
         dependencies.add("kover", project(subproject.path))
+    }
+
+    extensions.configure<KoverProjectExtension> {
+        reports {
+            total {
+                filters {
+                    excludes {
+                        classes("*.generated.resources.*")
+                    }
+                }
+                log {
+                    format = "SOUZ_KOVER_LINE_COVERAGE=<value>%"
+                    groupBy = GroupingEntityType.APPLICATION
+                    coverageUnits = CoverageUnit.LINE
+                    aggregationForGroup = AggregationType.COVERED_PERCENTAGE
+                }
+            }
+        }
     }
 }
 

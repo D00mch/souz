@@ -162,11 +162,23 @@ jobs:
       - name: Assemble
         run: ./gradlew assemble --console=plain --stacktrace --no-parallel
 
-      - name: Run test suite
-        run: >-
-          ./gradlew test :sharedLogic:allTests :sharedUI:allTests
-          :koverXmlReport :koverHtmlReport -Psouz.coverage
-          --console=plain --stacktrace --no-parallel
+      - name: Run test suite and publish coverage summary
+        shell: bash
+        run: |
+          coverage_log="$RUNNER_TEMP/kover.log"
+          ./gradlew test :sharedLogic:allTests :sharedUI:allTests \
+            :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage \
+            --console=plain --stacktrace --no-parallel | tee "$coverage_log"
+
+          coverage_marker_pattern='^SOUZ_KOVER_LINE_COVERAGE=[0-9]+([.][0-9]+)?%$'
+          if [[ "$(grep -Ec "$coverage_marker_pattern" "$coverage_log")" -ne 1 ]]; then
+            echo "Expected exactly one aggregate Kover coverage marker"
+            exit 1
+          fi
+          coverage_marker="$(grep -E "$coverage_marker_pattern" "$coverage_log")"
+
+          printf '## JVM coverage\n\n%s\n' "$coverage_marker" >> "$GITHUB_STEP_SUMMARY"
+          grep -Fqx "$coverage_marker" "$GITHUB_STEP_SUMMARY"
 
       - name: Verify coverage reports
         shell: bash

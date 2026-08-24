@@ -92,11 +92,14 @@ required JVM test suite:
 
 ```bash
 ./gradlew test :sharedLogic:allTests :sharedUI:allTests \
-  :koverXmlReport :koverHtmlReport -Psouz.coverage --no-parallel
+  :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage --no-parallel
 ```
 
 Report generation and the presence of `build/reports/kover/report.xml` and
 `build/reports/kover/html/index.html` are blocking pull-request requirements.
+CI publishes the root `:koverLog` aggregate line coverage as
+`SOUZ_KOVER_LINE_COVERAGE=<percent>%` in the job summary. Generated resource
+classes matching `*.generated.resources.*` are excluded from the aggregate.
 No Kover verification rule or minimum coverage threshold is configured. Kover
 is activated only with `-Psouz.coverage`, so `souzGateFast` and ordinary local
 builds are not instrumented.
@@ -137,5 +140,5 @@ When changing the quality implementation, run:
 ./gradlew souzGateFast --configuration-cache --configuration-cache-problems=fail
 npm ci --prefix quality
 ./gradlew souzDuplicationCheck
-./gradlew test :sharedLogic:allTests :sharedUI:allTests :koverXmlReport :koverHtmlReport -Psouz.coverage --no-parallel
+./gradlew test :sharedLogic:allTests :sharedUI:allTests :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage --no-parallel
 ```
