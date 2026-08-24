@@ -83,7 +83,7 @@ internal object SouzQualityChecks {
 
     val cancellationPropagation = QualityCheckDefinition(
         id = "cancellation-propagation",
-        implementationVersion = 2,
+        implementationVersion = 3,
         description = "Suspend paths propagate CancellationException immediately.",
         policy = "AGENTS.md",
         enforcement = QualityEnforcement.ADVISORY,
@@ -91,7 +91,7 @@ internal object SouzQualityChecks {
 
     val coroutineThreadLocal = QualityCheckDefinition(
         id = "coroutine-thread-local",
-        implementationVersion = 2,
+        implementationVersion = 3,
         description = "JVM ThreadLocal state is reviewed explicitly before use.",
         policy = "AGENTS.md",
         enforcement = QualityEnforcement.ADVISORY,
@@ -99,7 +99,7 @@ internal object SouzQualityChecks {
 
     val coroutineMonitorUse = QualityCheckDefinition(
         id = "coroutine-monitor-use",
-        implementationVersion = 2,
+        implementationVersion = 3,
         description = "JVM monitor coordination directly inside coroutine execution is reviewed.",
         policy = "AGENTS.md",
         enforcement = QualityEnforcement.ADVISORY,

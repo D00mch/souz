@@ -41,8 +41,14 @@ are not part of the version 1 repository contract.
 
 Detekt runs one type-resolved analysis task for every JVM production and test
 compilation. Non-coroutine rule sets are disabled in
-[`quality/detekt.yml`](../quality/detekt.yml). Advisory analysis has no baseline,
-so every finding remains visible.
+[`quality/detekt.yml`](../quality/detekt.yml). Reviewed findings live in
+module- and analysis-scoped files under `quality/detekt-baselines/`; they are
+suppressed so the gate summary shows only new findings. Refresh the reviewed
+baseline explicitly after resolving or accepting debt:
+
+```bash
+./gradlew updateSouzCoroutineBaseline
+```
 
 The enabled built-in rule is `SuspendFunSwallowedCancellation`.
 
@@ -98,11 +104,13 @@ required JVM test suite:
 
 Report generation and the presence of `build/reports/kover/report.xml` and
 `build/reports/kover/html/index.html` are blocking pull-request requirements.
-CI publishes the root aggregate line coverage as
-`SOUZ_KOVER_LINE_COVERAGE=<percent>%` and a table of module-local line coverage
-in the job summary. Generated resource classes matching
+CI compares the root aggregate and module-local line coverage with the reviewed
+values in [`quality/coverage-baseline.json`](../quality/coverage-baseline.json)
+and publishes baseline, current, and percentage-point delta columns in the job
+summary. Generated resource classes matching
 `*.generated.resources.*` are excluded from every report. No Kover verification
-rule or minimum coverage threshold is configured. Kover is activated only with
+rule or minimum coverage threshold is configured; the baseline is a comparison
+reference. Kover is activated only with
 `-Psouz.coverage`, so `souzGateFast` and ordinary local builds are not
 instrumented.
 

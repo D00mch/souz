@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunSwallowedCancellation:BackendExecutionLlmChatApiTest.kt:BackendExecutionLlmChatApiTest$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:BackendRuntimeResourcesTest.kt:BackendRuntimeResourcesTest$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ExecutionQuotaManagerTest.kt:catch (error: Throwable) { error as? T ?: throw AssertionError(&quot;Expected exception ${T::class.simpleName}, got ${error::class.simpleName}.&quot;, error) }</ID>
+  </CurrentIssues>
+</SmellBaseline>

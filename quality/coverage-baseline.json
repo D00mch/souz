@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "referenceCommitSha": "c4b718c5ecdfafd04c18b9cd57565b0994191335",
+  "aggregate": 49.434,
+  "modules": {
+    ":agent": 69.2616,
+    ":ambientAgent": 81.7185,
+    ":backend": 87.0506,
+    ":desktopApp": 37.6907,
+    ":graph-engine": 73.75,
+    ":llms": 37.8022,
+    ":native": 77.2606,
+    ":sharedLogic": 53.4602,
+    ":sharedUI": 15.3267,
+    ":skill-oauth-api": 0,
+    ":skill-oauth-impl": 84.5011
+  }
+}
