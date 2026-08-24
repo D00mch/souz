@@ -72,12 +72,22 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { WebResearchClient() }
     bindSingleton { ToolWebPageText(webResearchClient = instance()) }
 
+    bindPortableRuntimeToolsFactory()
+    if (bindAgentToolCatalog) {
+        bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
+    }
+    bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
+}
+
+fun DI.Builder.bindPortableRuntimeToolsFactory(
+    includeSkillOAuthTools: Boolean = true,
+) {
     bindSingleton {
         // Constructed only when a real SkillOAuthGateway is bound (a host with no OAuth service
         // configured — a supported, valid deployment — simply never sees ToolCategory.OAUTH
         // populated), mirroring how ToolDeleteFile resolves its own optional ToolPermissionBroker
         // dependency inline rather than threading a separate "is it available" flag alongside it.
-        val gateway = instanceOrNull<SkillOAuthGateway>()
+        val gateway = if (includeSkillOAuthTools) instanceOrNull<SkillOAuthGateway>() else null
         PortableRuntimeToolsFactory(
             toolListFiles = instance(),
             toolFindInFiles = instance(),
@@ -105,10 +115,6 @@ fun portableRuntimeToolsDiModule(
             },
         )
     }
-    if (bindAgentToolCatalog) {
-        bindSingleton<AgentToolCatalog> { instance<PortableRuntimeToolsFactory>() }
-    }
-    bindSingleton<AgentToolsFilter> { RuntimePassThroughToolsFilter }
 }
 
 /**

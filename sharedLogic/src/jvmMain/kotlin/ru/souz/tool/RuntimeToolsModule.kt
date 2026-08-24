@@ -41,6 +41,13 @@ fun runtimeToolsDiModule(
         bindSingleton { ToolWebImageSearch(filesToolUtil = instance(), webResearchClient = instance(), webImageDownloader = instance()) }
     }
 
+    bindRuntimeToolsFactory(includeWebImageSearch = includeWebImageSearch)
+    bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
+}
+
+fun DI.Builder.bindRuntimeToolsFactory(
+    includeWebImageSearch: Boolean = true,
+) {
     bindSingleton {
         RuntimeToolsFactory(
             portableToolsFactory = instance(),
@@ -52,7 +59,6 @@ fun runtimeToolsDiModule(
             toolWebImageSearch = if (includeWebImageSearch) instance() else null,
         )
     }
-    bindSingleton<AgentToolCatalog> { instance<RuntimeToolsFactory>() }
 }
 
 class RuntimeToolsFactory(
