@@ -20,10 +20,16 @@ class SourceSetBoundariesTest {
             import androidx.compose.ui.window.FutureDesktopWindowApi
             import ru.souz.llms.local.LocalChatAPI
             import ru.souz.tool.desktop.ToolGetCurrentWindow
+            import ru.souz.App
+            import ru.souz.LocalWindowScope
+            import ru.souz.di.sharedUiDesktopDiModule
+            import ru.souz.di.sharedUiDiModule
+            import ru.souz.*
+            import ru.souz.di.*
             """,
         )
 
-        assertEquals(8, findings.size)
+        assertEquals(14, findings.size)
         assertTrue(findings.all { it.message.contains(":sharedUI commonJvmMain") })
     }
 
@@ -84,7 +90,7 @@ class SourceSetBoundariesTest {
             """
             import androidx.compose.runtime.Composable
             import ru.souz.backend.client.PublicClientService
-            import ru.souz.di.SharedUiDiModule
+            import ru.souz.di.sharedUiDesktopDiModule
             import ru.souz.service.speech.MacOsSpeechBridge
             """,
         )

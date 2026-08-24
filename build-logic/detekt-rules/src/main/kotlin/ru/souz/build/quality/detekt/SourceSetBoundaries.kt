@@ -81,13 +81,13 @@ private fun String.isPortableHostImport(isAllUnder: Boolean): Boolean =
         isUnreviewedAndroidXImport() ||
         isDesktopWindowImport(isAllUnder) ||
         matchesAny(HOST_IMPLEMENTATION_PREFIXES) ||
-        this in HOST_IMPLEMENTATION_TYPES
+        matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder)
 
 private fun String.isSharedUiHostImport(isAllUnder: Boolean): Boolean =
     matchesAny(SHARED_UI_HOST_PREFIXES) ||
         isDesktopWindowImport(isAllUnder) ||
         matchesAny(HOST_IMPLEMENTATION_PREFIXES) ||
-        this in HOST_IMPLEMENTATION_TYPES
+        matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder)
 
 private fun String.isDesktopWindowImport(isAllUnder: Boolean): Boolean =
     when {
@@ -102,6 +102,10 @@ private fun String.isUnreviewedAndroidXImport(): Boolean =
 
 private fun String.matchesAny(prefixes: List<String>): Boolean =
     prefixes.any { prefix -> this == prefix.removeSuffix(".") || startsWith(prefix) }
+
+private fun String.matchesAnySymbol(symbols: Set<String>, isAllUnder: Boolean): Boolean =
+    this in symbols ||
+        isAllUnder && symbols.any { symbol -> symbol.substringBeforeLast('.') == this }
 
 private val SOURCE_LAYOUT = Regex("(?:^|/)([^/]+)/src/([^/]+)/")
 
@@ -160,10 +164,11 @@ private val HOST_IMPLEMENTATION_PREFIXES = listOf(
     "ru.souz.ui.macos.",
 ) + DESKTOP_ONLY_SERVICE_PREFIXES + DESKTOP_TOOL_PREFIXES
 
-private val HOST_IMPLEMENTATION_TYPES = setOf(
+private val HOST_IMPLEMENTATION_SYMBOLS = setOf(
     "ru.souz.App",
-    "ru.souz.WindowLocals",
-    "ru.souz.di.SharedUiDiModule",
+    "ru.souz.LocalWindowScope",
+    "ru.souz.di.sharedUiDesktopDiModule",
+    "ru.souz.di.sharedUiDiModule",
 )
 
 private val SHARED_UI_HOST_PREFIXES = listOf(
