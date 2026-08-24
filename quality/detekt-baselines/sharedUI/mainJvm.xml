@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunSwallowedCancellation:AmbientModeController.kt:AmbientModeController$catch (error: Throwable) { if (error is CancellationException) throw error false }</ID>
+    <ID>SuspendFunSwallowedCancellation:AmbientModeController.kt:AmbientModeController$catch (error: Throwable) { if (error is CancellationException) throw error logger.warn( &quot;Ambient block analysis failed: blockId={} error={}&quot;, block.id, error.message ?: error::class.simpleName, ) null }</ID>
+    <ID>SuspendFunSwallowedCancellation:AmbientModeController.kt:AmbientModeController$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:ChatUseCase.kt:ChatUseCase$catch (e: CancellationException) { session.requestStatus = ChatRequestStatus.CANCELLED session.requestErrorType = requestErrorType(e) handleRequestCancellation(session, e, onResult) }</ID>
+    <ID>SuspendFunSwallowedCancellation:DesktopAttachmentHostPorts.kt:DesktopPathPicker$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:FinderService.kt:FinderService$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:LocalModelUiCoordinator.kt:LocalModelUiCoordinator$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:MainViewModel.kt:MainViewModel$runCatching</ID>
+    <ID>SuspendFunSwallowedCancellation:MemoryViewModel.kt:MemoryViewModel$catch (error: CancellationException) { onCancellation() throw error }</ID>
+    <ID>SuspendFunSwallowedCancellation:SettingsViewModel.kt:SettingsViewModel$runCatching</ID>
+  </CurrentIssues>
+</SmellBaseline>

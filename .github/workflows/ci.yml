@@ -166,6 +166,7 @@ jobs:
         shell: bash
         run: |
           coverage_log="$RUNNER_TEMP/kover.log"
+          coverage_baseline=quality/coverage-baseline.json
           ./gradlew test :sharedLogic:allTests :sharedUI:allTests \
             :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage \
             --console=plain --stacktrace --no-parallel | tee "$coverage_log"
@@ -182,18 +183,51 @@ jobs:
             echo "Expected Kover coverage markers for project modules"
             exit 1
           fi
+          if ! jq -e '
+            .schemaVersion == 1 and
+            (.referenceCommitSha | test("^[0-9a-f]{40}$")) and
+            (.aggregate | type == "number") and
+            (.modules | type == "object") and
+            ([.modules[] | type == "number"] | all)
+          ' "$coverage_baseline" >/dev/null; then
+            echo "Invalid coverage baseline: $coverage_baseline"
+            exit 1
+          fi
+
+          coverage_delta() {
+            awk -v current="${1%%%}" -v baseline="$2" 'BEGIN { printf "%+.4f pp", current - baseline }'
+          }
+
+          aggregate_coverage="${coverage_marker#SOUZ_KOVER_LINE_COVERAGE=}"
+          aggregate_baseline="$(jq -r '.aggregate' "$coverage_baseline")"
+          baseline_module_count="$(jq -r '.modules | length' "$coverage_baseline")"
+          current_module_count="$(printf '%s\n' "$module_markers" | wc -l | tr -d ' ')"
+          if [[ "$current_module_count" -ne "$baseline_module_count" ]]; then
+            echo "Coverage module count $current_module_count does not match baseline $baseline_module_count"
+            exit 1
+          fi
 
           {
-            printf '## JVM coverage\n\n%s\n\n' "$coverage_marker"
-            printf '| Module | Line coverage |\n| --- | ---: |\n'
-            while IFS= read -r module_marker; do
-              module_and_coverage="${module_marker#SOUZ_KOVER_MODULE_LINE_COVERAGE=}"
-              module="${module_and_coverage%=*}"
-              coverage="${module_and_coverage##*=}"
-              printf '| `%s` | %s |\n' "$module" "$coverage"
-            done < <(printf '%s\n' "$module_markers" | sort)
+            printf '## JVM coverage\n\n'
+            printf '| Module | Baseline | Current | Delta |\n| --- | ---: | ---: | ---: |\n'
+            printf '| **Aggregate** | %s%% | %s | %s |\n' \
+              "$aggregate_baseline" "$aggregate_coverage" \
+              "$(coverage_delta "$aggregate_coverage" "$aggregate_baseline")"
+            while IFS=$'\t' read -r module baseline; do
+              matching_markers="$(
+                printf '%s\n' "$module_markers" |
+                  grep -F "SOUZ_KOVER_MODULE_LINE_COVERAGE=$module=" || true
+              )"
+              if [[ "$(printf '%s\n' "$matching_markers" | grep -c .)" -ne 1 ]]; then
+                echo "Expected one Kover coverage marker for baseline module $module"
+                exit 1
+              fi
+              coverage="${matching_markers##*=}"
+              printf '| `%s` | %s%% | %s | %s |\n' \
+                "$module" "$baseline" "$coverage" "$(coverage_delta "$coverage" "$baseline")"
+            done < <(jq -r '.modules | to_entries[] | [.key, (.value | tostring)] | @tsv' "$coverage_baseline")
           } >> "$GITHUB_STEP_SUMMARY"
-          grep -Fqx "$coverage_marker" "$GITHUB_STEP_SUMMARY"
+          grep -Fq "| **Aggregate** | $aggregate_baseline% | $aggregate_coverage |" "$GITHUB_STEP_SUMMARY"
 
       - name: Verify coverage reports
         shell: bash

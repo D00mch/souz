@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SuspendFunSwallowedCancellation:GraphRunner.kt:GraphRunner$catch (cancel: CancellationException) { throw GraphCancellation(lastCtx, cancel) }</ID>
+    <ID>SuspendFunSwallowedCancellation:GraphRunner.kt:GraphRunner$catch (t: Throwable) { if (t is CancellationException) throw t lastError = t val shouldRetry = policy.shouldRetry(t, inCtx, node, attempt) val attemptsLeft = policy.maxAttempts - attempt if (!shouldRetry || attemptsLeft &lt;= 0) break logger.warn( &quot;Node &apos;{}&apos; failed on attempt {} (depth {}), retrying ({} attempts left): {}&quot;, node.name, attempt, runtime.counter.get(), attemptsLeft, t.message, t ) }</ID>
+  </CurrentIssues>
+</SmellBaseline>

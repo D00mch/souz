@@ -1,6 +1,7 @@
 package ru.souz.build.quality
 
 import dev.detekt.gradle.Detekt
+import dev.detekt.gradle.DetektCreateBaselineTask
 import dev.detekt.gradle.extensions.DetektExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -97,9 +98,19 @@ class SouzQualityPlugin : Plugin<Project> {
         reportFiles: ConfigurableFileCollection,
     ) {
         val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
+        val baselineDirectory = project.layout.projectDirectory.dir("quality/detekt-baselines")
         val rulesJar = project.layout.projectDirectory.file(
             "build-logic/detekt-rules/build/libs/souz-detekt-rules.jar"
         )
+        val updateBaseline = project.tasks.register(
+            "updateSouzCoroutineBaseline",
+            UpdateSouzCoroutineBaselineTask::class.java,
+        ) {
+            group = "verification"
+            description = "Updates the reviewed module- and analysis-scoped coroutine baselines."
+            repositoryDirectory.set(project.layout.projectDirectory)
+            baselines.set(baselineDirectory)
+        }
 
         project.subprojects.forEach { subproject ->
             var configured = false
@@ -125,6 +136,11 @@ class SouzQualityPlugin : Plugin<Project> {
                     analysisTasks.configureEach {
                         dependsOn(rulesJarTask)
                         exclude("**/generated/resources/**")
+                        val projectPath = subproject.projectDir.relativeInvariantPath(
+                            project.layout.projectDirectory.asFile
+                        )
+                        val analysis = name.removePrefix("detekt").replaceFirstChar(Char::lowercase)
+                        baseline.set(baselineDirectory.file("$projectPath/$analysis.xml"))
                         reports.checkstyle.required.set(true)
                         reports.html.required.set(false)
                         reports.markdown.required.set(false)
@@ -138,6 +154,20 @@ class SouzQualityPlugin : Plugin<Project> {
                         finalizedBy(report)
                     }
                     gate.configure { dependsOn(analysisTasks) }
+
+                    val baselineTasks = subproject.tasks.withType(DetektCreateBaselineTask::class.java)
+                        .matching { task -> task.name != "detektBaseline" && !task.name.endsWith("SourceSet") }
+                    baselineTasks.configureEach {
+                        dependsOn(rulesJarTask)
+                        baseline.set(
+                            subproject.layout.buildDirectory.file("reports/detekt/baselines/$name.xml")
+                        )
+                        exclude("**/generated/resources/**")
+                        val partialBaseline = baseline
+                        doFirst { partialBaseline.get().asFile.delete() }
+                        updateBaseline.configure { partialBaselines.from(partialBaseline) }
+                    }
+                    updateBaseline.configure { dependsOn(baselineTasks) }
                 }
             }
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") { configure() }
