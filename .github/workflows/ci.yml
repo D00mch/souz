@@ -145,6 +145,106 @@ jobs:
           done
           exit "$missing"
 
+  repowise-quality:
+    name: RepoWise PR Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DO_NOT_TRACK: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      REPOWISE_NO_SAVE_KEY: "1"
+      REPOWISE_SKIP_EDITOR_SETUP: "1"
+      SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: quality/repowise-requirements.txt
+
+      - name: Install pinned RepoWise
+        run: >-
+          python -m pip install --disable-pip-version-check
+          --requirement quality/repowise-requirements.txt
+
+      - name: Test RepoWise quality ratchet
+        run: python -m unittest quality.repowise_quality_gate_test
+
+      - name: Prepare pull-request base checkout
+        shell: bash
+        run: |
+          base_checkout="$RUNNER_TEMP/repowise-base"
+          git worktree add --detach "$base_checkout" "$SOUZ_PR_BASE_SHA"
+          echo "REPOWISE_BASE_CHECKOUT=$base_checkout" >> "$GITHUB_ENV"
+
+      - name: Build deterministic RepoWise indexes
+        run: |
+          repowise init "$REPOWISE_BASE_CHECKOUT" --yes --no-prose --no-workspace
+          repowise init . --yes --no-prose --no-workspace
+
+      - name: Generate PR-focused RepoWise reports
+        shell: bash
+        run: |
+          mkdir -p build/reports/repowise
+          repowise risk "$SOUZ_PR_BASE_SHA..$SOUZ_PR_HEAD_SHA" \
+            --path . --baseline 200 --format json \
+            > build/reports/repowise/pr-risk.json
+          repowise health "$REPOWISE_BASE_CHECKOUT" --no-workspace --format json \
+            > build/reports/repowise/base-health.json
+          repowise health . --no-workspace --format json \
+            > build/reports/repowise/pr-health.json
+
+      - name: Enforce RepoWise code quality
+        shell: bash
+        run: |
+          quality_report=build/reports/repowise/quality-ratchet.md
+          set +e
+          python quality/repowise_quality_gate.py \
+            --base build/reports/repowise/base-health.json \
+            --head build/reports/repowise/pr-health.json \
+            --risk build/reports/repowise/pr-risk.json \
+            --markdown "$quality_report" \
+            --base-sha "$SOUZ_PR_BASE_SHA" \
+            --head-sha "$SOUZ_PR_HEAD_SHA"
+          quality_status=$?
+          set -e
+          tee -a "$GITHUB_STEP_SUMMARY" < "$quality_report"
+          exit "$quality_status"
+
+      - name: Upload RepoWise report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-repowise-pr-quality-${{ github.run_id }}
+          path: build/reports/repowise/**
+          if-no-files-found: warn
+
+      - name: Verify RepoWise evidence
+        if: always()
+        shell: bash
+        run: |
+          missing=0
+          for repowise_report in \
+            build/reports/repowise/base-health.json \
+            build/reports/repowise/pr-health.json \
+            build/reports/repowise/pr-risk.json \
+            build/reports/repowise/quality-ratchet.md; do
+            if [[ ! -s "$repowise_report" ]]; then
+              echo "Missing required RepoWise report: $repowise_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
   tests:
     runs-on: ubuntu-latest
 

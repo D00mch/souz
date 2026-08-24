@@ -11,6 +11,10 @@ local.properties
 .repowise/
 node_modules/
 
+### Python ###
+__pycache__/
+*.py[cod]
+
 ### IntelliJ IDEA ###
 .idea/
 *.iws

@@ -1,0 +1,88 @@
+name: RepoWise Maintenance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  repowise-refactoring:
+    name: RepoWise Refactoring and Performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DO_NOT_TRACK: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      REPOWISE_NO_SAVE_KEY: "1"
+      REPOWISE_SKIP_EDITOR_SETUP: "1"
+
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: quality/repowise-requirements.txt
+
+      - name: Install pinned RepoWise
+        run: >-
+          python -m pip install --disable-pip-version-check
+          --requirement quality/repowise-requirements.txt
+
+      - name: Test RepoWise maintenance report
+        run: python -m unittest quality.repowise_maintenance_report_test
+
+      - name: Build deterministic RepoWise index
+        run: repowise init . --yes --no-prose --no-workspace
+
+      - name: Generate detailed maintenance reports
+        shell: bash
+        run: |
+          report_dir=build/reports/repowise-maintenance
+          mkdir -p "$report_dir"
+          repowise health . --no-workspace --format json \
+            > "$report_dir/code-health.json"
+          repowise health . --no-workspace --refactoring-targets --format json \
+            > "$report_dir/refactoring-targets.json"
+          python quality/repowise_maintenance_report.py \
+            --health "$report_dir/code-health.json" \
+            --refactoring "$report_dir/refactoring-targets.json" \
+            --performance-json "$report_dir/performance-opportunities.json" \
+            --markdown "$report_dir/maintenance-report.md" \
+            --summary "$report_dir/maintenance-summary.md" \
+            --revision "$GITHUB_SHA"
+          tee -a "$GITHUB_STEP_SUMMARY" < "$report_dir/maintenance-summary.md"
+
+      - name: Upload RepoWise maintenance report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-repowise-maintenance-${{ github.run_id }}
+          path: build/reports/repowise-maintenance/**
+          if-no-files-found: warn
+
+      - name: Verify RepoWise maintenance evidence
+        if: always()
+        shell: bash
+        run: |
+          missing=0
+          for maintenance_report in \
+            build/reports/repowise-maintenance/code-health.json \
+            build/reports/repowise-maintenance/refactoring-targets.json \
+            build/reports/repowise-maintenance/performance-opportunities.json \
+            build/reports/repowise-maintenance/maintenance-report.md \
+            build/reports/repowise-maintenance/maintenance-summary.md; do
+            if [[ ! -s "$maintenance_report" ]]; then
+              echo "Missing required RepoWise maintenance report: $maintenance_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
