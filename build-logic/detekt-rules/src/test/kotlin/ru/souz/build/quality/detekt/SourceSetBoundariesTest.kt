@@ -61,13 +61,14 @@ class SourceSetBoundariesTest {
     }
 
     @Test
-    fun `rejects Android-only AndroidX and allows reviewed Compose in portable common sources`() {
+    fun `rejects Android-only AndroidX and allows reviewed multiplatform APIs in portable common sources`() {
         val findings = lint(
             "sharedUI/src/commonMain/kotlin/PortableUi.kt",
             """
             import androidx.appcompat.app.AppCompatActivity
             import androidx.compose.desktop.ui.tooling.preview.Preview
             import androidx.compose.material3.Text
+            import androidx.lifecycle.ViewModel
             """,
         )
 
