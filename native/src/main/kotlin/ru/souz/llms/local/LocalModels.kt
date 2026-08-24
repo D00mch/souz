@@ -4,8 +4,11 @@ import com.sun.management.OperatingSystemMXBean
 import java.lang.management.ManagementFactory
 import org.slf4j.LoggerFactory
 import ru.souz.llms.DEFAULT_MAX_TOKENS
+import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMResponse
 import ru.souz.llms.LocalModelAvailability
 
 data class LocalLicenseRequirements(
@@ -320,6 +323,54 @@ object LocalEmbeddingProfiles {
     }
 
     fun default(): LocalEmbeddingProfile = EMBEDDING_GEMMA_300M
+
+    internal fun forAliasOrDefault(alias: String): LocalEmbeddingProfile = forAlias(alias) ?: default()
+
+    internal fun prepareRequest(body: LLMRequest.Embeddings): PreparedEmbeddingsRequest {
+        val profile = forAliasOrDefault(body.model)
+        val inputKind = resolveInputKind(body)
+        return PreparedEmbeddingsRequest(
+            profile = profile,
+            inputKind = inputKind,
+            request = LocalLlamaRuntime.LocalEmbeddingsRequest(
+                inputs = body.input.map { text -> profile.format(text, inputKind) },
+                contextSize = profile.maxContextSize,
+                normalize = true,
+            ),
+        )
+    }
+
+    internal fun embeddings(
+        body: LLMRequest.Embeddings,
+        nativeResult: LocalLlamaRuntime.NativeEmbeddingsResult,
+    ): LLMResponse.Embeddings {
+        nativeResult.error?.let { message ->
+            return LLMResponse.Embeddings.Error(-1, message)
+        }
+        return LLMResponse.Embeddings.Ok(
+            data = nativeResult.embeddings.mapIndexed { index, embedding ->
+                LLMResponse.Embedding(
+                    embedding = embedding,
+                    index = index,
+                    objectType = "embedding",
+                )
+            },
+            model = forAliasOrDefault(body.model).embeddingsModel.alias,
+            objectType = "list",
+        )
+    }
+
+    internal fun resolveInputKind(body: LLMRequest.Embeddings): LocalEmbeddingInputKind =
+        when (body.inputKind) {
+            EmbeddingInputKind.QUERY -> LocalEmbeddingInputKind.QUERY
+            EmbeddingInputKind.DOCUMENT -> LocalEmbeddingInputKind.DOCUMENT
+        }
+
+    internal data class PreparedEmbeddingsRequest(
+        val profile: LocalEmbeddingProfile,
+        val inputKind: LocalEmbeddingInputKind,
+        val request: LocalLlamaRuntime.LocalEmbeddingsRequest,
+    )
 }
 
 fun LocalModelProfile.requiredDownloadProfiles(): List<LocalDownloadableProfile> =

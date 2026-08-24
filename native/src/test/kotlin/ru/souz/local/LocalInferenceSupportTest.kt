@@ -1687,7 +1687,7 @@ class LocalInferenceSupportTest {
         val queryRequest = restJsonMapper.readValue(requests[0], LocalLlamaRuntime.LocalEmbeddingsRequest::class.java)
         assertEquals(
             LocalEmbeddingInputKind.QUERY,
-            runtime.resolveEmbeddingInputKind(
+            LocalEmbeddingProfiles.resolveInputKind(
                 LLMRequest.Embeddings(input = listOf("hello"), inputKind = EmbeddingInputKind.QUERY)
             )
         )
@@ -1696,7 +1696,7 @@ class LocalInferenceSupportTest {
         val documentRequest = restJsonMapper.readValue(requests[1], LocalLlamaRuntime.LocalEmbeddingsRequest::class.java)
         assertEquals(
             LocalEmbeddingInputKind.DOCUMENT,
-            runtime.resolveEmbeddingInputKind(
+            LocalEmbeddingProfiles.resolveInputKind(
                 LLMRequest.Embeddings(input = listOf("doc one"), inputKind = EmbeddingInputKind.DOCUMENT)
             )
         )
@@ -1776,10 +1776,8 @@ class LocalInferenceSupportTest {
     @Test
     fun `local chat api supports embeddings and still rejects unsupported file features`() = runTest {
         val runtime = mockk<LocalLlamaRuntime>(relaxed = true)
-        coEvery { runtime.embeddings(any()) } returns LLMResponse.Embeddings.Ok(
-            data = listOf(LLMResponse.Embedding(listOf(0.1, 0.2), 0, "embedding")),
-            model = LocalEmbeddingProfiles.default().embeddingsModel.alias,
-            objectType = "list",
+        coEvery { runtime.nativeEmbeddings(any()) } returns LocalLlamaRuntime.NativeEmbeddingsResult(
+            embeddings = listOf(listOf(0.1, 0.2)),
         )
         val api = LocalChatAPI(runtime = runtime)
 

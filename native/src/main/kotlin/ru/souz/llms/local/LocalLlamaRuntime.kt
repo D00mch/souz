@@ -21,7 +21,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -87,27 +86,14 @@ class LocalLlamaRuntime(
         emit(response)
     }
 
-    suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
-        val nativeResult = runCatching { embed(body) }
+    suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
+        LocalEmbeddingProfiles.embeddings(body, nativeEmbeddings(body))
+
+    internal suspend fun nativeEmbeddings(body: LLMRequest.Embeddings): NativeEmbeddingsResult =
+        runCatching { executeEmbeddings(body) }
             .getOrElse { error ->
                 NativeEmbeddingsResult.error("Local embeddings failed: ${error.message ?: error::class.simpleName.orEmpty()}")
             }
-        nativeResult.error?.let { message ->
-            return LLMResponse.Embeddings.Error(-1, message)
-        }
-        return LLMResponse.Embeddings.Ok(
-            data = nativeResult.embeddings.mapIndexed { index, embedding ->
-                LLMResponse.Embedding(
-                    embedding = embedding,
-                    index = index,
-                    objectType = "embedding",
-                )
-            },
-            model = LocalEmbeddingProfiles.forAlias(body.model)?.embeddingsModel?.alias
-                ?: LocalEmbeddingProfiles.default().embeddingsModel.alias,
-            objectType = "list",
-        )
-    }
 
     fun cancelActiveRequest() {
         runtimeHandle.get()?.let { runtime ->
@@ -152,7 +138,7 @@ class LocalLlamaRuntime(
         }
     }
 
-    private suspend fun embed(body: LLMRequest.Embeddings): NativeEmbeddingsResult {
+    private suspend fun executeEmbeddings(body: LLMRequest.Embeddings): NativeEmbeddingsResult {
         val availabilityStatus = availability.status()
         if (!availabilityStatus.available) {
             return NativeEmbeddingsResult.error(availabilityStatus.message)
@@ -162,24 +148,17 @@ class LocalLlamaRuntime(
             return NativeEmbeddingsResult.error("Local embeddings request is empty.")
         }
 
-        val profile = LocalEmbeddingProfiles.forAlias(body.model) ?: LocalEmbeddingProfiles.default()
+        val prepared = LocalEmbeddingProfiles.prepareRequest(body)
+        val profile = prepared.profile
         val runtime = ensureRuntime()
         val modelHandle = ensureEmbeddingModel(profile)
-        val inputKind = resolveEmbeddingInputKind(body)
-        val preparedInputs = body.input.map { text -> profile.format(text, inputKind) }
-        val requestJson = restJsonMapper.writeValueAsString(
-            LocalEmbeddingsRequest(
-                inputs = preparedInputs,
-                contextSize = profile.maxContextSize,
-                normalize = true,
-            )
-        )
+        val requestJson = restJsonMapper.writeValueAsString(prepared.request)
 
         l.debug(
             "Prepared local embeddings for model={} items={} inputKind={} contextSize={}",
             profile.id,
-            preparedInputs.size,
-            inputKind,
+            prepared.request.inputs.size,
+            prepared.inputKind,
             profile.maxContextSize,
         )
         val responseJson = withContext(Dispatchers.IO) {
@@ -461,12 +440,6 @@ class LocalLlamaRuntime(
             profile.maxContextSize.coerceAtMost(MAX_VISION_CONTEXT_SIZE)
         } else {
             profile.maxContextSize
-        }
-
-    internal fun resolveEmbeddingInputKind(body: LLMRequest.Embeddings): LocalEmbeddingInputKind =
-        when (body.inputKind) {
-            EmbeddingInputKind.QUERY -> LocalEmbeddingInputKind.QUERY
-            EmbeddingInputKind.DOCUMENT -> LocalEmbeddingInputKind.DOCUMENT
         }
 
     private fun nextContextBucket(tokens: Int): Int {
