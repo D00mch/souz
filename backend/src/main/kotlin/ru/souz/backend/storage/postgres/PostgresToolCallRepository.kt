@@ -62,21 +62,8 @@ class PostgresToolCallRepository(
             statement.setObject(17, null)
             statement.executeUpdate()
         }
-        connection.prepareStatement(
-            """
-            select * from tool_calls
-            where user_id = ? and chat_id = ? and execution_id = ? and tool_call_id = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, context.userId)
-            statement.setObject(2, chatId)
-            statement.setObject(3, executionId)
-            statement.setString(4, context.toolCallId)
-            statement.executeQuery().use { resultSet ->
-                resultSet.next()
-                resultSet.toToolCall()
-            }
-        }
+        connection.getToolCall(context, chatId, executionId)
+            ?: error("Tool call disappeared after starting: ${context.toolCallId}")
     }
 
     override suspend fun finished(
@@ -269,21 +256,8 @@ class PostgresToolCallRepository(
             statement.setLong(12, durationMs)
             statement.executeUpdate()
         }
-        connection.prepareStatement(
-            """
-            select * from tool_calls
-            where user_id = ? and chat_id = ? and execution_id = ? and tool_call_id = ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, context.userId)
-            statement.setObject(2, chatId)
-            statement.setObject(3, executionId)
-            statement.setString(4, context.toolCallId)
-            statement.executeQuery().use { resultSet ->
-                resultSet.next()
-                resultSet.toToolCall()
-            }
-        }
+        connection.getToolCall(context, chatId, executionId)
+            ?: error("Tool call disappeared after finishing: ${context.toolCallId}")
     }
 }
 

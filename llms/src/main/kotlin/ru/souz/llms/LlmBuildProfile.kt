@@ -46,6 +46,40 @@ class LlmBuildProfile(
 
     fun providerPriorities(): List<LlmProvider> = providerPrioritiesForEdition(currentEdition())
 
+    fun defaultConfiguredModel(hasKey: (LlmProvider) -> Boolean): LLMModel {
+        val availableLocalDefault = localProviderAvailability.defaultGigaModel()
+        return providerPriorities()
+            .firstNotNullOfOrNull { provider ->
+                when (provider) {
+                    LlmProvider.LOCAL -> availableLocalDefault
+                    else -> currentDefaults()[provider]?.takeIf { hasKey(it.provider) }
+                }
+            }
+            ?: availableLocalDefault
+            ?: defaultModel
+    }
+
+    fun normalizeConfiguredModel(
+        model: LLMModel,
+        customOpenAiModel: String?,
+        fallback: () -> LLMModel,
+    ): LLMModel = when {
+        model == LLMModel.OpenAICompatibleCustom && customOpenAiModel.isNullOrBlank() -> fallback()
+        model.provider == LlmProvider.LOCAL && model !in localProviderAvailability.availableGigaModels() -> fallback()
+        model.provider !in currentDefaults() -> fallback()
+        else -> model
+    }
+
+    fun defaultAmbientAnalysisModel(): LLMModel =
+        localProviderAvailability.defaultGigaModel()
+            ?: LLMModel.LocalQwen3_4B_Instruct_2507
+
+    fun normalizeAmbientAnalysisModel(model: LLMModel): LLMModel = when {
+        model.provider != LlmProvider.LOCAL -> defaultAmbientAnalysisModel()
+        model !in localProviderAvailability.availableGigaModels() -> defaultAmbientAnalysisModel()
+        else -> model
+    }
+
     companion object {
         private val providerDefaultsByEdition: Map<BuildEdition, Map<LlmProvider, LLMModel>> = mapOf(
             BuildEdition.RU to mapOf(

@@ -5,11 +5,11 @@
   "production" : {
     "minLines" : 15,
     "minTokens" : 100,
-    "duplicatedTokens" : 2676
+    "duplicatedTokens" : 511
   },
   "tests" : {
     "minLines" : 20,
     "minTokens" : 120,
-    "duplicatedTokens" : 3218
+    "duplicatedTokens" : 0
   }
 }
