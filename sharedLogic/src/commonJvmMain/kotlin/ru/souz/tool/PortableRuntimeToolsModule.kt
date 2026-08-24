@@ -210,40 +210,23 @@ class PortableRuntimeToolsFactory(
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
         immutableToolCatalogFromLists(
-            ToolCategory.entries.associateWith { category -> category.tools() }
+            mapOf(
+                ToolCategory.FILES to listOf(
+                    toolListFiles.toGiga(),
+                    toolFindInFiles.toGiga(),
+                    toolNewFile.toGiga(),
+                    toolDeleteFile.toGiga(),
+                    toolModifyFile.toGiga(),
+                    toolMoveFile.toGiga(),
+                    toolFindFilesByName.toGiga(),
+                    toolFindFolders.toGiga(),
+                ),
+                ToolCategory.WEB_SEARCH to listOf(toolWebPageText.toGiga()),
+                ToolCategory.CALCULATOR to listOf(toolCalculator.toGiga()),
+                ToolCategory.OAUTH to listOfNotNull(
+                    toolConnectOAuthProvider?.toGiga(),
+                    toolSafeApiCall?.toGiga(),
+                ),
+            )
         ).toolsByCategory
-
-    private fun ToolCategory.tools(): List<LLMToolSetup> = when (this) {
-        ToolCategory.FILES -> listOf(
-            toolListFiles.toGiga(),
-            toolFindInFiles.toGiga(),
-            toolNewFile.toGiga(),
-            toolDeleteFile.toGiga(),
-            toolModifyFile.toGiga(),
-            toolMoveFile.toGiga(),
-            toolFindFilesByName.toGiga(),
-            toolFindFolders.toGiga(),
-        )
-
-        ToolCategory.WEB_SEARCH -> listOf(toolWebPageText.toGiga())
-        ToolCategory.CALCULATOR -> listOf(toolCalculator.toGiga())
-
-        ToolCategory.OAUTH -> listOfNotNull(toolConnectOAuthProvider?.toGiga(), toolSafeApiCall?.toGiga())
-
-        ToolCategory.CONFIG,
-        ToolCategory.DATA_ANALYTICS,
-        ToolCategory.BROWSER,
-        ToolCategory.IMAGE,
-        ToolCategory.IMAGE_GENERATION,
-        ToolCategory.NOTES,
-        ToolCategory.APPLICATIONS,
-        ToolCategory.CALENDAR,
-        ToolCategory.MAIL,
-        ToolCategory.TEXT_REPLACE,
-        ToolCategory.CHAT,
-        ToolCategory.TELEGRAM,
-        ToolCategory.DESKTOP,
-        ToolCategory.HELP,
-        ToolCategory.CHANNEL_MESSAGING -> emptyList()
-    }
 }
