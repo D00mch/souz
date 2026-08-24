@@ -3,8 +3,8 @@ package ru.souz.backend.agent.session
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
-import java.util.UUID
 import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.chatId
 import ru.souz.llms.LLMRequest
 
 /** Persisted backend conversation snapshot used to resume the next agent turn. */
@@ -46,8 +46,6 @@ class AgentStateBackedSessionRepository(
         )
     }
 }
-
-private fun AgentConversationKey.chatId(): UUID = UUID.fromString(conversationId)
 
 private fun AgentConversationState.toConversationSession(): AgentConversationSession =
     AgentConversationSession(

@@ -2,12 +2,6 @@ package ru.souz.backend.agent.model
 
 import ru.souz.llms.LLMModel
 
-/** Stable backend conversation identifier composed from user and conversation ids. */
-data class AgentConversationKey(
-    val userId: String,
-    val conversationId: String,
-)
-
 /** Internal request model for one chat-oriented backend agent turn. */
 internal data class BackendConversationTurnRequest(
     val prompt: String,

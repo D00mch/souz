@@ -100,7 +100,7 @@ internal class AgentExecutionRequestFactory(
             normalizedClientMessageId = normalizedClientMessageId,
             effectiveSettings = effectiveSettings,
             execution = execution,
-            conversationKey = conversationKey(userId, chatId),
+            conversationKey = AgentConversationKey.fromChat(userId, chatId),
             runtimeRequest = BackendConversationTurnRequest(
                 prompt = content,
                 model = effectiveSettings.defaultModel,
@@ -126,7 +126,7 @@ internal class AgentExecutionRequestFactory(
     ): PreparedContinuationTurn {
         val runtimeRequest = createContinuationTurnRequest(execution, option)
         return PreparedContinuationTurn(
-            conversationKey = conversationKey(execution.userId, execution.chatId),
+            conversationKey = AgentConversationKey.fromChat(execution.userId, execution.chatId),
             runtimeRequest = runtimeRequest,
             streamingMessagesEnabled = runtimeRequest.streamingMessages == true,
             toolEventsEnabled = executionMetadataBoolean(execution, METADATA_SHOW_TOOL_EVENTS) ?: false,
@@ -187,12 +187,6 @@ internal class AgentExecutionRequestFactory(
             assistantMessageId = execution.assistantMessageId,
             beforePublicEvent = { clientThreadRegistry?.awaitAcceptedInputAcks(execution.id) },
             publicClientThread = clientThreadRegistry?.contains(execution.id) == true,
-        )
-
-    private fun conversationKey(userId: String, chatId: UUID): AgentConversationKey =
-        AgentConversationKey(
-            userId = userId,
-            conversationId = chatId.toString(),
         )
 
     private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =

@@ -894,9 +894,9 @@ class PostgresRepositoriesTest {
                 ).copy(id = chatId)
             )
             val repository = AgentStateBackedSessionRepository(repositories.stateRepository)
-            val key = AgentConversationKey(
+            val key = AgentConversationKey.fromChat(
                 userId = "opaque/user:session",
-                conversationId = chatId.toString(),
+                chatId = chatId,
             )
             val session = AgentConversationSession(
                 history = listOf(

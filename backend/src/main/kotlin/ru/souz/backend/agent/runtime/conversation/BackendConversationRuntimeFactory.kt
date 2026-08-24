@@ -1,7 +1,6 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
@@ -10,6 +9,7 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
@@ -94,7 +94,7 @@ internal class BackendConversationRuntimeFactory(
         } else {
             messageRepository.list(
                 userId = key.userId,
-                chatId = UUID.fromString(key.conversationId),
+                chatId = key.chatId(),
                 afterSeq = basedOnMessageSeq.takeIf { it > 0L },
                 limit = MessageRepository.MAX_LIMIT,
             )
