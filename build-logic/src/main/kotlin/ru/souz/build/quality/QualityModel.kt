@@ -72,7 +72,7 @@ internal object SouzQualityChecks {
     val sourceSetBoundaries = QualityCheckDefinition(
         id = "source-set-boundaries",
         implementationVersion = 1,
-        description = "Production imports stay within portable, core, backend, and shared UI host boundaries.",
+        description = "Production package declarations and references stay within source-set and host boundaries.",
         policy = "AGENTS.md",
     )
 

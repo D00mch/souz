@@ -6,6 +6,12 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.tasks.TaskProvider
+import org.jetbrains.kotlin.gradle.dsl.KotlinBaseExtension
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmExtension
+import org.jetbrains.kotlin.gradle.plugin.KotlinCompilation
+import org.jetbrains.kotlin.gradle.plugin.KotlinTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinTargetsContainer
 import ru.souz.build.quality.detekt.SouzDetektRulesClasspathMarker
 import java.io.File
 
@@ -22,7 +28,18 @@ class SouzQualityPlugin : Plugin<Project> {
             )
         }.sortedBy(ProjectDescriptor::path)
         val edgeInputs = project.objects.listProperty(String::class.java).convention(emptyList())
+        val sourceRootInputs = project.objects.listProperty(String::class.java).convention(emptyList())
         val detektReportFiles = project.objects.fileCollection()
+
+        val sourceSetBoundaryConfig = project.tasks.register(
+            "generateSourceSetBoundaryConfig",
+            SourceSetBoundaryConfigTask::class.java,
+        ) {
+            sourceRoots.set(sourceRootInputs)
+            outputFile.set(
+                project.layout.buildDirectory.file("generated/souz-quality/detekt/source-set-boundaries.yml")
+            )
+        }
 
         project.gradle.projectsEvaluated {
             edgeInputs.set(
@@ -32,6 +49,16 @@ class SouzQualityPlugin : Plugin<Project> {
                     .sorted()
             )
             edgeInputs.finalizeValue()
+            sourceRootInputs.set(
+                project.subprojects
+                    .filter { subproject ->
+                        subproject.pluginManager.hasPlugin("org.jetbrains.kotlin.jvm") ||
+                            subproject.pluginManager.hasPlugin("org.jetbrains.kotlin.multiplatform")
+                    }
+                    .flatMap(::sourceRootMappings)
+                    .sorted()
+            )
+            sourceRootInputs.finalizeValue()
         }
 
         val policyFiles = project.fileTree(repository) {
@@ -64,7 +91,7 @@ class SouzQualityPlugin : Plugin<Project> {
             finalizedBy(report)
         }
 
-        configureDetekt(project, gate, report, detektReportFiles)
+        configureDetekt(project, gate, report, detektReportFiles, sourceSetBoundaryConfig)
     }
 
     private fun configureDetekt(
@@ -72,6 +99,7 @@ class SouzQualityPlugin : Plugin<Project> {
         gate: org.gradle.api.tasks.TaskProvider<org.gradle.api.Task>,
         report: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
         reportFiles: ConfigurableFileCollection,
+        sourceSetBoundaryConfig: TaskProvider<SourceSetBoundaryConfigTask>,
     ) {
         val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
         val rulesClasspath = detektRulesClasspath(project)
@@ -97,6 +125,7 @@ class SouzQualityPlugin : Plugin<Project> {
                     val analysisTasks = subproject.tasks.withType(Detekt::class.java)
                         .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
                     analysisTasks.configureEach {
+                        config.from(sourceSetBoundaryConfig.flatMap { task -> task.outputFile })
                         exclude("**/generated/resources/**")
                         reports.checkstyle.required.set(true)
                         reports.html.required.set(false)
@@ -121,6 +150,32 @@ class SouzQualityPlugin : Plugin<Project> {
     private fun detektRulesClasspath(project: Project): ConfigurableFileCollection {
         val markerClass = SouzDetektRulesClasspathMarker::class.java
         return project.files(File(markerClass.protectionDomain.codeSource.location.toURI()))
+    }
+
+    private fun sourceRootMappings(sourceProject: Project): List<String> {
+        val kotlin = sourceProject.extensions.findByType(KotlinBaseExtension::class.java) ?: return emptyList()
+        val targets: Collection<KotlinTarget> = when (kotlin) {
+            is KotlinJvmExtension -> listOf(kotlin.target)
+            is KotlinTargetsContainer -> kotlin.targets.toList()
+            else -> emptyList()
+        }
+        val mainCompilations = targets.mapNotNull { target ->
+            target.compilations.findByName(KotlinCompilation.MAIN_COMPILATION_NAME)
+        }
+        val productionSourceSets = mainCompilations
+            .flatMap { compilation -> compilation.allKotlinSourceSets }
+            .mapTo(mutableSetOf()) { sourceSet -> sourceSet.name }
+        val hostMainSourceSets = mainCompilations
+            .mapTo(mutableSetOf()) { compilation -> compilation.defaultSourceSet.name }
+        return kotlin.sourceSets.flatMap { sourceSet ->
+            sourceSet.kotlin.sourceDirectories.files.map { root ->
+                val normalizedRoot = root.toPath().toAbsolutePath().normalize().toString()
+                    .replace(File.separatorChar, '/')
+                require('|' !in normalizedRoot) { "Kotlin source root cannot contain '|': $normalizedRoot" }
+                "$normalizedRoot|${sourceProject.name}|${sourceSet.name}|" +
+                    "${sourceSet.name in productionSourceSets}|${sourceSet.name in hostMainSourceSets}"
+            }
+        }
     }
 
     private fun dependencyEdges(sourceProject: Project, repository: java.io.File): List<DependencyEdge> {

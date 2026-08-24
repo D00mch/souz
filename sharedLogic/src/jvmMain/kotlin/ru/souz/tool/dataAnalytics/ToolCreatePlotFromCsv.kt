@@ -18,6 +18,7 @@ import ru.souz.runtime.sandbox.SandboxMode
 import ru.souz.tool.*
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.files.ForbiddenFolder
+import ru.souz.runtime.files.createDefaultFilesToolUtil
 import ru.souz.db.ConfigStore
 import ru.souz.db.SettingsProviderImpl
 import java.awt.Desktop
@@ -269,7 +270,7 @@ class ToolCreatePlotFromCsv(private val filesToolUtil: FilesToolUtil) : ToolSetu
 }
 
 fun main() {
-    val tool = ToolCreatePlotFromCsv(FilesToolUtil(SettingsProviderImpl(ConfigStore)))
+    val tool = ToolCreatePlotFromCsv(createDefaultFilesToolUtil(SettingsProviderImpl(ConfigStore)))
     println(
         tool.invoke(
             ToolCreatePlotFromCsv.Input(

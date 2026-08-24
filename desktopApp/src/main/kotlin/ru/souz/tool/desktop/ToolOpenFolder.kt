@@ -4,6 +4,7 @@ import ru.souz.llms.ToolInvocationMeta
 
 import ru.souz.tool.*
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.runtime.files.createDefaultFilesToolUtil
 import ru.souz.tool.files.ToolListFiles
 import org.slf4j.LoggerFactory
 import ru.souz.db.ConfigStore
@@ -124,7 +125,7 @@ class ToolOpenFolder(
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
+    val filesToolUtil = createDefaultFilesToolUtil(SettingsProviderImpl(ConfigStore))
     val v = ToolOpenFolder(ToolRunBashCommand, filesToolUtil)
         .invoke(ToolOpenFolder.Input("семья"), ToolInvocationMeta.localDefault())
     println(v)

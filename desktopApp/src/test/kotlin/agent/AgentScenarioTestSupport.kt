@@ -52,6 +52,7 @@ import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolsFactory
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.runtime.files.createDefaultFilesToolUtil
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -60,7 +61,7 @@ class AgentScenarioTestSupport(
     private val selectedModel: LLMModel,
 ) {
     private val agentType: AgentId = parseScenarioAgentId(readEnvironment(SOUZ_AGENT_INTEGRATION_TEST_AGENT))
-    val filesUtil: FilesToolUtil by lazy { FilesToolUtil(spySettings) }
+    val filesUtil: FilesToolUtil by lazy { createDefaultFilesToolUtil(spySettings) }
     private var fewShotExamplesEnabled: Boolean = true
 
     private val spySettings: SettingsProviderImpl by lazy {

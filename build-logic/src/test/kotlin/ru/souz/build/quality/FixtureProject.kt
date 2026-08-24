@@ -64,7 +64,10 @@ internal class FixtureProject(private val root: Path) {
         )
     }
 
-    fun addSharedUiKmpBoundaryViolation() {
+    fun addSharedUiKmpBoundaryViolation(
+        sourceDirectory: String = "src/commonJvmMain/kotlin",
+        sourceSetName: String = "commonJvmMain",
+    ) {
         needsKotlinPluginClasspath = true
         write(
             "build.gradle.kts",
@@ -86,11 +89,12 @@ internal class FixtureProject(private val root: Path) {
                 jvm()
                 sourceSets {
                     val commonMain by getting
-                    val commonJvmMain by creating {
+                    val boundarySource = maybeCreate("$sourceSetName").apply {
                         dependsOn(commonMain)
+                        kotlin.srcDir("$sourceDirectory")
                     }
                     val jvmMain by getting {
-                        dependsOn(commonJvmMain)
+                        dependsOn(boundarySource)
                     }
                 }
             }
@@ -112,7 +116,7 @@ internal class FixtureProject(private val root: Path) {
             """.trimIndent() + "\n",
         )
         write(
-            "sharedUI/src/commonJvmMain/kotlin/fixture/SharedUiState.kt",
+            "sharedUI/$sourceDirectory/fixture/SharedUiState.kt",
             """
             package fixture
 

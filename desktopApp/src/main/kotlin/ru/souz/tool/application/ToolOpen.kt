@@ -8,6 +8,7 @@ import ru.souz.db.SettingsProviderImpl
 import ru.souz.tool.*
 import ru.souz.tool.desktop.ToolOpenFolder
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.runtime.files.createDefaultFilesToolUtil
 import java.awt.Desktop
 import java.io.File
 import java.net.URI
@@ -118,7 +119,7 @@ class ToolOpen(
 }
 
 fun main() {
-    val filesToolUtil = FilesToolUtil(SettingsProviderImpl(ConfigStore))
+    val filesToolUtil = createDefaultFilesToolUtil(SettingsProviderImpl(ConfigStore))
     val result = ToolOpen(ToolRunBashCommand, filesToolUtil).invoke(
         ToolOpen.Input("ru.keepcoder.Telegram"),
         ToolInvocationMeta.localDefault(),

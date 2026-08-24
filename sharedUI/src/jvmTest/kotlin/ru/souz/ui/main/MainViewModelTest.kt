@@ -96,6 +96,7 @@ import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.runtime.files.FilesToolUtil
+import ru.souz.runtime.files.createDefaultFilesToolUtil
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.ui.BaseViewModel
 import ru.souz.di.sharedUiMainViewModelUseCasesDiModule
@@ -1904,7 +1905,8 @@ class MainViewModelTest {
         }
 
         val toolPermissionBroker: ToolPermissionBroker = ImmediateToolPermissionBroker(settingsProvider)
-        val deferredToolModifyPermissionBroker = DeferredToolModifyPermissionBroker(settingsProvider, FilesToolUtil(settingsProvider))
+        val deferredToolModifyPermissionBroker =
+            DeferredToolModifyPermissionBroker(settingsProvider, createDefaultFilesToolUtil(settingsProvider))
 
         val telegramBotController = mockk<TelegramControlBot>(relaxed = true)
         val incomingMessages = MutableSharedFlow<TelegramControlIncomingMessage>()
@@ -1952,7 +1954,7 @@ class MainViewModelTest {
             bindSingleton { deferredToolModifyPermissionBroker }
             bindSingleton<TelegramControlBot> { telegramBotController }
             bindSingleton<UiAudioRecorder> { audioRecorder }
-            bindSingleton { FilesToolUtil(instance<SettingsProvider>()) }
+            bindSingleton { createDefaultFilesToolUtil(instance<SettingsProvider>()) }
             bindSingleton { FinderPathExtractor(instance()) }
             bindSingleton<PathPicker> { DesktopPathPicker() }
             bindSingleton<DroppedFilePathExtractor> { DesktopDroppedFilePathExtractor() }

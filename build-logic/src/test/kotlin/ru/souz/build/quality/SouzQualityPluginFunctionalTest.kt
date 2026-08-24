@@ -216,6 +216,58 @@ class SouzQualityPluginFunctionalTest {
     }
 
     @Test
+    fun `custom KMP production source set and root preserve classification and configuration cache`(
+        @TempDir root: Path,
+    ) {
+        val fixture = FixtureProject(root).apply {
+            create()
+            addSharedUiKmpBoundaryViolation("portable-ui", "portable")
+            commit()
+        }
+        val arguments = arrayOf(
+            "souzGateFast",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+        )
+
+        val first = fixture.buildAndFail(*arguments)
+        val second = fixture.buildAndFail(*arguments)
+        val diagnostics = check(report(fixture), "source-set-boundaries").path("diagnostics")
+
+        assertTrue(first.output.contains("Configuration cache entry stored."), first.output)
+        assertTrue(second.output.contains("Configuration cache entry reused."), second.output)
+        assertEquals(1, diagnostics.size())
+        assertEquals(
+            "sharedUI/portable-ui/fixture/SharedUiState.kt",
+            diagnostics.single().path("path").asText(),
+        )
+    }
+
+    @Test
+    fun `overlapping source roots owned by different source sets are rejected`(@TempDir root: Path) {
+        val fixture = FixtureProject(root).apply {
+            create()
+            addSharedUiKmpBoundaryViolation("portable-ui")
+            append(
+                "sharedUI/build.gradle.kts",
+                """
+
+                kotlin.sourceSets.named("jvmTest") {
+                    kotlin.srcDir("portable-ui/tests")
+                }
+                """.trimIndent() + "\n",
+            )
+            commit()
+        }
+
+        val result = fixture.buildAndFail("generateSourceSetBoundaryConfig")
+
+        assertTrue(result.output.contains("Overlapping source roots belong to different Kotlin source sets"), result.output)
+        assertTrue(result.output.contains("sharedUI:commonJvmMain"), result.output)
+        assertTrue(result.output.contains("sharedUI:jvmTest"), result.output)
+    }
+
+    @Test
     fun `invalid policy encoding is an internal error without hiding the other check`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()

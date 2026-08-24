@@ -1,115 +1,345 @@
 package ru.souz.build.quality.detekt
 
+import com.intellij.psi.PsiElement
 import dev.detekt.api.Config
 import dev.detekt.api.Entity
 import dev.detekt.api.Finding
+import dev.detekt.api.RequiresAnalysisApi
 import dev.detekt.api.Rule
+import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
+import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.symbols.KaCallableSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassLikeSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaPackageSymbol
+import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtImportDirective
+import org.jetbrains.kotlin.psi.KtNameReferenceExpression
+import org.jetbrains.kotlin.psi.KtPackageDirective
+import org.jetbrains.kotlin.psi.KtParenthesizedExpression
+import org.jetbrains.kotlin.psi.KtQualifiedExpression
+import org.jetbrains.kotlin.psi.KtSafeQualifiedExpression
+import org.jetbrains.kotlin.psi.KtUserType
 
-/** Keeps portable, core, backend, and shared UI production sources behind their host boundaries. */
+/** Keeps production package declarations and references behind their source-set and host boundaries. */
 class SourceSetBoundaries private constructor(
     config: Config,
     private val sourcePath: (KtFile) -> String,
+    private val sourceRoots: List<SourceRoot>,
 ) : Rule(
     config,
-    "Production imports must respect Souz source-set and host boundaries.",
-) {
-    constructor(config: Config) : this(config, { file -> file.virtualFilePath })
+    "Production package declarations and references must respect Souz source-set and host boundaries.",
+), RequiresAnalysisApi {
+    constructor(config: Config) : this(
+        config,
+        { file -> file.virtualFilePath },
+        config.valueOrDefault("sourceRoots", emptyList<String>()).map(::sourceRoot),
+    )
 
-    internal constructor(config: Config, sourcePath: String) : this(config, { sourcePath })
+    internal constructor(
+        config: Config,
+        sourcePath: String,
+        sourceRoots: List<String> = emptyList(),
+    ) : this(config, { sourcePath }, sourceRoots.map(::sourceRoot))
 
     override fun visitImportDirective(importDirective: KtImportDirective) {
         val importPath = importDirective.importPath?.pathStr?.removeSuffix(".*")
         if (importPath != null) {
-            sourceSetBoundaryViolation(
-                sourcePath = sourcePath(importDirective.containingKtFile),
-                importPath = importPath,
+            reportBoundaryViolation(
+                element = importDirective,
+                referencePath = importPath,
                 isAllUnder = importDirective.isAllUnder,
-            )?.let { message -> report(Finding(Entity.from(importDirective), message)) }
+                subject = "Import",
+            )
         }
         super.visitImportDirective(importDirective)
+    }
+
+    override fun visitPackageDirective(directive: KtPackageDirective) {
+        directive.fqName.asString().takeIf(String::isNotEmpty)?.let { packagePath ->
+            reportBoundaryViolation(
+                element = directive,
+                referencePath = packagePath,
+                subject = "Package",
+            )
+        }
+        super.visitPackageDirective(directive)
+    }
+
+    override fun visitDotQualifiedExpression(expression: KtDotQualifiedExpression) {
+        visitQualifiedBoundaryReference(expression)
+        super.visitDotQualifiedExpression(expression)
+    }
+
+    override fun visitSafeQualifiedExpression(expression: KtSafeQualifiedExpression) {
+        visitQualifiedBoundaryReference(expression)
+        super.visitSafeQualifiedExpression(expression)
+    }
+
+    private fun visitQualifiedBoundaryReference(expression: KtQualifiedExpression) {
+        if (!expression.isNestedQualifiedReceiver() && !expression.isInsideDirective()) {
+            expression.referencePath()?.let { referencePath ->
+                reportBoundaryViolation(expression, referencePath, subject = "Reference")
+            }
+        }
+    }
+
+    override fun visitUserType(type: KtUserType) {
+        if (type.parent !is KtUserType) {
+            type.referencePath()?.let { referencePath ->
+                reportBoundaryViolation(type, referencePath, subject = "Reference")
+            }
+        }
+        super.visitUserType(type)
+    }
+
+    private fun reportBoundaryViolation(
+        element: PsiElement,
+        referencePath: String,
+        isAllUnder: Boolean = false,
+        subject: String,
+    ) {
+        val file = element.containingFile as? KtFile ?: return
+        val message = sourceSetBoundaryViolation(
+            sourcePath = sourcePath(file),
+            sourceRoots = sourceRoots,
+            referencePath = referencePath,
+            isAllUnder = isAllUnder,
+            subject = subject,
+        ) ?: return
+        if (
+            (element is KtQualifiedExpression || element is KtUserType) &&
+            element.rootReference()?.isQualifiedPackageReference(referencePath) != true
+        ) {
+            return
+        }
+        report(Finding(Entity.from(element), message))
     }
 }
 
 private data class SourceLocation(
     val module: String,
     val sourceSet: String,
-) {
-    val isProduction: Boolean = sourceSet == "main" || sourceSet.endsWith("Main")
-}
+    val isProduction: Boolean,
+    val isHostMain: Boolean,
+)
+
+private data class SourceRoot(
+    val path: String,
+    val source: SourceLocation,
+)
 
 private fun sourceSetBoundaryViolation(
     sourcePath: String,
-    importPath: String,
+    sourceRoots: List<SourceRoot>,
+    referencePath: String,
     isAllUnder: Boolean,
+    subject: String,
 ): String? {
-    val source = sourceLocation(sourcePath) ?: return null
+    val source = sourceLocation(sourcePath, sourceRoots) ?: return null
     if (!source.isProduction) return null
-    val renderedImport = importPath + if (isAllUnder) ".*" else ""
+    val renderedReference = referencePath + if (isAllUnder) ".*" else ""
 
-    if (source.sourceSet == "commonMain" && importPath.isPortableHostImport(isAllUnder)) {
-        return "Import '$renderedImport' is host-specific; commonMain must remain portable. " +
+    if (source.sourceSet == "commonMain" && referencePath.isPortableHostReference(isAllUnder)) {
+        return "$subject '$renderedReference' is host-specific; commonMain must remain portable. " +
             "Move the implementation to a platform source set."
     }
     if (
-        source.module == "sharedUI" && source.sourceSet == "commonJvmMain" &&
-        importPath.isSharedUiHostImport(isAllUnder)
+        source.module == "sharedUI" && !source.isHostMain &&
+        referencePath.isSharedUiHostReference(isAllUnder)
     ) {
-        return "Import '$renderedImport' is not allowed in :sharedUI commonJvmMain. " +
-            "Move desktop or native integration to jvmMain and expose a host port."
+        return "$subject '$renderedReference' is not allowed in :sharedUI ${source.sourceSet}. " +
+            "Move desktop or native integration to a host target main source set and expose a host port."
     }
-    if (source.module in CORE_MODULES && importPath.matchesAny(CORE_FORBIDDEN_PREFIXES)) {
-        return "Import '$renderedImport' is not allowed in :${source.module} ${source.sourceSet}. " +
+    if (
+        source.module in CORE_MODULES &&
+        referencePath.isCoreForbiddenReference(isAllUnder)
+    ) {
+        return "$subject '$renderedReference' is not allowed in :${source.module} ${source.sourceSet}. " +
             "Core production code must not depend on Compose or host/backend implementations."
     }
-    if (source.module == "backend" && importPath.matchesAny(BACKEND_FORBIDDEN_PREFIXES)) {
-        return "Import '$renderedImport' is not allowed in :backend ${source.sourceSet}. " +
+    if (
+        source.module == "backend" &&
+        referencePath.isBackendForbiddenReference(isAllUnder)
+    ) {
+        return "$subject '$renderedReference' is not allowed in :backend ${source.sourceSet}. " +
             "Backend production code must not depend on UI or desktop integrations."
     }
     return null
 }
 
-private fun sourceLocation(path: String): SourceLocation? {
+private fun sourceLocation(path: String, roots: List<SourceRoot>): SourceLocation? {
     val normalized = path.replace('\\', '/')
+    if (roots.isNotEmpty()) {
+        val matchingRoots = roots
+            .asSequence()
+            .filter { root -> normalized == root.path || normalized.startsWith("${root.path}/") }
+            .toList()
+        val configuredSource = matchingRoots
+            .filter { root -> root.source.isProduction }
+            .ifEmpty { matchingRoots }
+            .maxByOrNull { root -> root.path.length }
+            ?.source
+        if (configuredSource != null) return configuredSource
+    }
     val match = SOURCE_LAYOUT.findAll(normalized).lastOrNull() ?: return null
-    return SourceLocation(module = match.groupValues[1], sourceSet = match.groupValues[2])
+    val sourceSet = match.groupValues[2]
+    return SourceLocation(
+        module = match.groupValues[1],
+        sourceSet = sourceSet,
+        isProduction = sourceSet == "main" || sourceSet.endsWith("Main"),
+        isHostMain = sourceSet == "main" || sourceSet == "jvmMain",
+    )
 }
 
-private fun String.isPortableHostImport(isAllUnder: Boolean): Boolean =
+private fun sourceRoot(encoded: String): SourceRoot {
+    val parts = encoded.split(SOURCE_ROOT_SEPARATOR)
+    require(parts.size == SOURCE_ROOT_PARTS) { "Invalid SourceSetBoundaries source root '$encoded'." }
+    return SourceRoot(
+        path = parts[0].replace('\\', '/').trimEnd('/'),
+        source = SourceLocation(
+            module = parts[1],
+            sourceSet = parts[2],
+            isProduction = parts[3].toBooleanStrict(),
+            isHostMain = parts[4].toBooleanStrict(),
+        ),
+    )
+}
+
+private fun String.isPortableHostReference(isAllUnder: Boolean): Boolean =
     matchesAny(PORTABLE_HOST_PREFIXES) ||
-        isUnreviewedAndroidXImport(isAllUnder) ||
-        isDesktopWindowImport(isAllUnder) ||
+        matchesAny(JVM_ONLY_IMPLEMENTATION_PREFIXES) ||
+        isUnreviewedAndroidXReference(isAllUnder) ||
+        isDesktopWindowReference(isAllUnder) ||
         matchesAny(HOST_IMPLEMENTATION_PREFIXES) ||
-        matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder)
+        matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder) ||
+        matchesAnySymbol(JVM_ONLY_IMPLEMENTATION_SYMBOLS, isAllUnder)
 
-private fun String.isSharedUiHostImport(isAllUnder: Boolean): Boolean =
+private fun String.isSharedUiHostReference(isAllUnder: Boolean): Boolean =
     matchesAny(SHARED_UI_HOST_PREFIXES) ||
-        isDesktopWindowImport(isAllUnder) ||
+        matchesAny(JVM_ONLY_IMPLEMENTATION_PREFIXES) ||
+        isDesktopWindowReference(isAllUnder) ||
         matchesAny(HOST_IMPLEMENTATION_PREFIXES) ||
-        matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder)
+        matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder) ||
+        matchesAnySymbol(JVM_ONLY_IMPLEMENTATION_SYMBOLS, isAllUnder)
 
-private fun String.isDesktopWindowImport(isAllUnder: Boolean): Boolean =
+private fun String.isDesktopWindowReference(isAllUnder: Boolean): Boolean =
     when {
-        this == COMPOSE_WINDOW_PACKAGE -> isAllUnder
+        this == COMPOSE_WINDOW_PACKAGE -> true
         !startsWith("$COMPOSE_WINDOW_PACKAGE.") -> false
         else -> !PORTABLE_WINDOW_TYPES.any { type -> this == type || startsWith("$type.") }
     }
 
-private fun String.isUnreviewedAndroidXImport(isAllUnder: Boolean): Boolean =
+private fun String.isUnreviewedAndroidXReference(isAllUnder: Boolean): Boolean =
     (this == "androidx" || startsWith("androidx.")) &&
-        (isAllUnder || this !in COMMON_MAIN_ALLOWED_ANDROIDX_IMPORTS)
+        (isAllUnder || COMMON_MAIN_ALLOWED_ANDROIDX_REFERENCES.none { symbol ->
+            this == symbol || startsWith("$symbol.")
+        })
 
 private fun String.matchesAny(prefixes: List<String>): Boolean =
     prefixes.any { prefix -> this == prefix.removeSuffix(".") || startsWith(prefix) }
 
 private fun String.matchesAnySymbol(symbols: Set<String>, isAllUnder: Boolean): Boolean =
-    this in symbols ||
-        isAllUnder && symbols.any { symbol -> symbol.substringBeforeLast('.') == this }
+    symbols.any { symbol ->
+        this == symbol || startsWith("$symbol.") ||
+            isAllUnder && symbol.substringBeforeLast('.') == this
+    }
 
+private fun String.isCoreForbiddenReference(isAllUnder: Boolean): Boolean =
+    matchesAny(CORE_FORBIDDEN_PREFIXES) ||
+        matchesAny(JVM_ONLY_IMPLEMENTATION_PREFIXES) ||
+        matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder) ||
+        matchesAnySymbol(JVM_ONLY_IMPLEMENTATION_SYMBOLS, isAllUnder)
+
+private fun String.isBackendForbiddenReference(isAllUnder: Boolean): Boolean =
+    matchesAny(BACKEND_FORBIDDEN_PREFIXES) || matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder)
+
+private fun KtQualifiedExpression.referencePath(): String? = referenceSegments()?.joinToString(".")
+
+private fun KtExpression.referenceSegments(): List<String>? = when (this) {
+    is KtNameReferenceExpression -> listOf(getReferencedName())
+    is KtQualifiedExpression -> {
+        val receiver = receiverExpression.referenceSegments() ?: return null
+        val selector = selectorExpression?.referenceSegments() ?: return null
+        receiver + selector
+    }
+    is KtCallExpression -> calleeExpression?.referenceSegments()
+    is KtParenthesizedExpression -> expression?.referenceSegments()
+    else -> null
+}
+
+private fun KtUserType.referencePath(): String? =
+    generateSequence(this) { type -> type.qualifier }
+        .toList()
+        .asReversed()
+        .mapNotNull { type -> type.referencedName }
+        .takeIf { segments -> segments.size > 1 }
+        ?.joinToString(".")
+
+private fun PsiElement.rootReference(): KtNameReferenceExpression? = when (this) {
+    is KtQualifiedExpression -> receiverExpression.rootReference()
+    is KtCallExpression -> calleeExpression?.rootReference()
+    is KtParenthesizedExpression -> expression?.rootReference()
+    is KtUserType ->
+        generateSequence(this) { type -> type.qualifier }.last().referenceExpression as? KtNameReferenceExpression
+    is KtNameReferenceExpression -> this
+    else -> null
+}
+
+@OptIn(KaExperimentalApi::class)
+private fun KtNameReferenceExpression.isQualifiedPackageReference(referencePath: String): Boolean {
+    val symbol = analyze(this) { resolveSymbol() }
+    if (symbol == null) return referencePath.substringBefore('.') in BOUNDARY_PACKAGE_ROOTS
+    if (symbol is KaPackageSymbol) return true
+    val resolvedPath = when (symbol) {
+        is KaCallableSymbol -> symbol.callableId?.asSingleFqName()?.asString()
+        is KaClassLikeSymbol -> symbol.classId?.asSingleFqName()?.asString()
+        else -> null
+    } ?: return false
+    return referencePath == resolvedPath || referencePath.startsWith("$resolvedPath.")
+}
+
+private fun KtQualifiedExpression.isNestedQualifiedReceiver(): Boolean {
+    var child: PsiElement = this
+    var ancestor = child.parent
+    while (
+        ancestor is KtCallExpression && ancestor.calleeExpression == child ||
+        ancestor is KtParenthesizedExpression && ancestor.expression == child
+    ) {
+        child = ancestor
+        ancestor = ancestor.parent
+    }
+    return ancestor is KtQualifiedExpression && ancestor.receiverExpression == child
+}
+
+private fun PsiElement.isInsideDirective(): Boolean {
+    var ancestor = parent
+    while (ancestor != null && ancestor !is KtFile) {
+        if (ancestor is KtImportDirective || ancestor is KtPackageDirective) return true
+        ancestor = ancestor.parent
+    }
+    return false
+}
+
+private const val SOURCE_ROOT_SEPARATOR = '|'
+private const val SOURCE_ROOT_PARTS = 5
 private val SOURCE_LAYOUT = Regex("(?:^|/)([^/]+)/src/([^/]+)/")
 
 private val CORE_MODULES = setOf("graph-engine", "llms", "agent", "skill-oauth-api")
+
+private val BOUNDARY_PACKAGE_ROOTS = setOf(
+    "android",
+    "androidx",
+    "com",
+    "java",
+    "javax",
+    "kotlinx",
+    "org",
+    "platform",
+    "ru",
+)
 
 private const val COMPOSE_WINDOW_PACKAGE = "androidx.compose.ui.window"
 
@@ -121,7 +351,7 @@ private val PORTABLE_WINDOW_TYPES = setOf(
 )
 
 // AndroidX packages mix common and platform declarations, so portable imports are reviewed by symbol.
-private val COMMON_MAIN_ALLOWED_ANDROIDX_IMPORTS = setOf(
+private val COMMON_MAIN_ALLOWED_ANDROIDX_REFERENCES = setOf(
     "androidx.compose.animation.animateColorAsState",
     "androidx.compose.animation.core.FastOutSlowInEasing",
     "androidx.compose.animation.core.animateFloatAsState",
@@ -247,11 +477,141 @@ private val HOST_IMPLEMENTATION_PREFIXES = listOf(
     "ru.souz.ui.macos.",
 ) + DESKTOP_ONLY_SERVICE_PREFIXES + DESKTOP_TOOL_PREFIXES
 
+private val JVM_ONLY_IMPLEMENTATION_PREFIXES = listOf(
+    "ru.souz.llms.tunnel.",
+    "ru.souz.runtime.di.",
+    "ru.souz.runtime.sandbox.docker.",
+    "ru.souz.runtime.sandbox.local.",
+    "ru.souz.service.mcp.",
+    "ru.souz.service.speech.",
+    "ru.souz.service.telegram.",
+    "ru.souz.tool.dataAnalytics.",
+    "ru.souz.ui.approval.",
+    "ru.souz.ui.graphlog.",
+)
+
 private val HOST_IMPLEMENTATION_SYMBOLS = setOf(
     "ru.souz.App",
     "ru.souz.LocalWindowScope",
+    "ru.souz.ambient.LocalChatAmbientLocalLlm",
+    "ru.souz.ambient.selectAmbientLocalModel",
+    "ru.souz.db.DesktopDataExtractor",
+    "ru.souz.db.DesktopInfoRepository",
+    "ru.souz.db.asString",
+    "ru.souz.di.mainDiModule",
     "ru.souz.di.sharedUiDesktopDiModule",
     "ru.souz.di.sharedUiDiModule",
+    "ru.souz.main",
+    "ru.souz.memory.ConfigStoreMemoryMaintenanceSettingsStore",
+    "ru.souz.memory.DesktopConversationMemoryRuntime",
+    "ru.souz.memory.DesktopMemoryContextProvider",
+    "ru.souz.memory.DesktopMemoryMaintenanceBackgroundRunner",
+    "ru.souz.memory.DesktopMemoryMaintenanceController",
+    "ru.souz.memory.DesktopMemoryOwnerProvider",
+    "ru.souz.memory.DesktopMemoryProjectContextProvider",
+    "ru.souz.memory.MemoryMaintenanceSettingsStore",
+    "ru.souz.memory.MemoryMaintenanceWorker",
+    "ru.souz.memory.NoopDesktopMemoryProjectContextProvider",
+    "ru.souz.memory.SqliteMemoryRepository",
+    "ru.souz.service.speech.MacOsSpeechBridge",
+    "ru.souz.service.speech.MacOsSpeechBridgeLoader",
+    "ru.souz.service.telegram.PreferencesTelegramBotConfigProvider",
+    "ru.souz.service.telegram.TelegramBotApi",
+    "ru.souz.service.telegram.TelegramBotConfigProvider",
+    "ru.souz.service.telegram.TelegramBotController",
+    "ru.souz.service.telegram.TelegramBotFile",
+    "ru.souz.service.telegram.TelegramBotFileResponse",
+    "ru.souz.service.telegram.TelegramChat",
+    "ru.souz.service.telegram.TelegramDocument",
+    "ru.souz.service.telegram.TelegramMessage",
+    "ru.souz.service.telegram.TelegramPlatformSupport",
+    "ru.souz.service.telegram.TelegramService",
+    "ru.souz.service.telegram.TelegramUpdate",
+    "ru.souz.service.telegram.TelegramUpdatesResponse",
+    "ru.souz.service.telegram.TelegramUser",
+    "ru.souz.service.telegram.TelegramVoice",
+    "ru.souz.tool.DesktopToolAvailabilityPolicy",
+    "ru.souz.tool.ShellException",
+    "ru.souz.tool.ToolRunBashCommand",
+    "ru.souz.tool.ToolsFactory",
+    "ru.souz.tool.files.ToolRequestSelection",
+    "ru.souz.tool.main",
+    "ru.souz.ui.DockWindowController",
+    "ru.souz.ui.rememberDockWindowController",
+    "ru.souz.ui.common.DesktopExternalLinkOpener",
+    "ru.souz.ui.common.DraggableWindowArea",
+    "ru.souz.ui.common.FinderService",
+    "ru.souz.ui.common.LocalModelUiCoordinator",
+    "ru.souz.ui.common.MAIN_WINDOW_MIN_HEIGHT_PX",
+    "ru.souz.ui.common.MAIN_WINDOW_MIN_WIDTH_PX",
+    "ru.souz.ui.common.applyMinWindowSize",
+    "ru.souz.ui.common.openProviderLink",
+    "ru.souz.ui.common.toUi",
+    "ru.souz.ui.host.DesktopChatCommandInputSource",
+    "ru.souz.ui.host.DesktopLocalModelUiHost",
+    "ru.souz.ui.host.DesktopPathOpener",
+    "ru.souz.ui.host.DesktopPrivacyPolicyOpener",
+    "ru.souz.ui.host.DesktopSettingsHostPreferences",
+    "ru.souz.ui.host.DesktopSupportLogService",
+    "ru.souz.ui.host.DesktopTelegramSettingsHost",
+    "ru.souz.ui.host.TelegramControlBot",
+    "ru.souz.ui.host.TelegramControlIncomingMessage",
+    "ru.souz.ui.host.TelegramUiService",
+    "ru.souz.ui.main.ChatModeContent",
+    "ru.souz.ui.main.MainScreen",
+    "ru.souz.ui.main.MainScreenContent",
+    "ru.souz.ui.main.PreviewChatMode",
+    "ru.souz.ui.main.PreviewChatModeEmpty",
+    "ru.souz.ui.main.PreviewSmartFocusGlass",
+    "ru.souz.ui.main.usecases.DesktopAttachmentMetadataProvider",
+    "ru.souz.ui.main.usecases.DesktopDroppedFilePathExtractor",
+    "ru.souz.ui.main.usecases.DesktopPathPicker",
+    "ru.souz.ui.main.usecases.VoiceInputUseCase",
+    "ru.souz.ui.memory.MemoryScreen",
+    "ru.souz.ui.settings.AgentDropdown",
+    "ru.souz.ui.settings.CalendarDropdown",
+    "ru.souz.ui.settings.EmbeddingsModelDropdown",
+    "ru.souz.ui.settings.FoldersManagementScreen",
+    "ru.souz.ui.settings.FunctionsSettingsContent",
+    "ru.souz.ui.settings.GeneralSettingsContent",
+    "ru.souz.ui.settings.KeysSettingsContent",
+    "ru.souz.ui.settings.LogsView",
+    "ru.souz.ui.settings.ModelDropdown",
+    "ru.souz.ui.settings.ModelsSettingsContent",
+    "ru.souz.ui.settings.SecuritySettingsContent",
+    "ru.souz.ui.settings.SettingsRow",
+    "ru.souz.ui.settings.SettingsScreen",
+    "ru.souz.ui.settings.SettingsScreenMain",
+    "ru.souz.ui.settings.SettingsScreenPreview",
+    "ru.souz.ui.settings.SupportLogSender",
+    "ru.souz.ui.settings.SupportSettingsContent",
+    "ru.souz.ui.settings.TelegramLoginContent",
+    "ru.souz.ui.settings.TelegramSettingsScreen",
+    "ru.souz.ui.settings.TokensBalanceSection",
+    "ru.souz.ui.settings.VoiceRecognitionModelDropdown",
+    "ru.souz.ui.setup.SetupScreen",
+    "ru.souz.ui.setup.SetupScreenContent",
+    "ru.souz.ui.tools.ToolDetailsScreen",
+    "ru.souz.ui.tools.ToolsScreen",
+)
+
+private val JVM_ONLY_IMPLEMENTATION_SYMBOLS = setOf(
+    "ru.souz.ambient.DefaultAmbientTranscriptionService",
+    "ru.souz.db.AesGcmSecretCodec",
+    "ru.souz.db.ConfigStore",
+    "ru.souz.db.SettingsProviderImpl",
+    "ru.souz.db.VectorDB",
+    "ru.souz.llms.openai.MissingOpenAiVoiceKeyException",
+    "ru.souz.llms.openai.OpenAIVoiceAPI",
+    "ru.souz.runtime.files.createDefaultFilesToolUtil",
+    "ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory",
+    "ru.souz.runtime.sandbox.RuntimeSandboxModeResolver",
+    "ru.souz.tool.RuntimeToolsFactory",
+    "ru.souz.tool.files.ToolExtractText",
+    "ru.souz.tool.files.ToolReadPdfPages",
+    "ru.souz.tool.runtimeToolsDiModule",
+    "ru.souz.tool.web.ToolWebImageSearch",
+    "ru.souz.tool.web.internal.WebImageDownloader",
 )
 
 private val SHARED_UI_HOST_PREFIXES = listOf(

@@ -5,8 +5,7 @@ import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationSandboxScopeResolver
 
-@Suppress("FunctionName")
-fun FilesToolUtil(settingsProvider: SettingsProvider): FilesToolUtil =
+fun createDefaultFilesToolUtil(settingsProvider: SettingsProvider): FilesToolUtil =
     FilesToolUtil(
         sandboxFactory = DefaultRuntimeSandboxFactory(settingsProvider = settingsProvider),
         scopeResolver = ToolInvocationSandboxScopeResolver {
