@@ -122,18 +122,24 @@ sets; non-JVM targets are outside this report. Each module row covers that
 module's classes using its own JVM test tasks, while the root aggregate also
 includes coverage produced across module boundaries.
 
-## Refactoring guidance
+## RepoWise quality and refactoring
 
 Pull-request CI installs the version of RepoWise pinned in
 [`quality/repowise-requirements.txt`](../quality/repowise-requirements.txt),
-checks out full Git history, and builds a deterministic index without an LLM,
-saved credentials, editor integration, or telemetry. The ranked refactoring
-targets are advisory: reported opportunities do not fail the job, while an
-analysis failure or missing report does.
+checks out full Git history, and builds deterministic indexes for the PR base
+and head without an LLM, saved credentials, editor integration, or telemetry.
 
-CI publishes the top RepoWise refactoring plans in the job summary and uploads
-the Markdown report as an artifact. The same report can be generated from an
-indexed local checkout with:
+The blocking ratchet requires the head to keep every RepoWise repository KPI at
+or above its base value: average and hotspot defect health, worst-performer
+health, average and hotspot maintainability, and average and hotspot
+performance. Equal and improved values pass; any decrease, analysis failure, or
+missing report fails. The comparison uses the PR base directly, so each merged
+improvement becomes the baseline for following pull requests.
+
+Ranked refactoring targets remain advisory. CI publishes the quality comparison
+and top refactoring plans in the job summary and uploads the Markdown and JSON
+reports as an artifact. The refactoring report can be generated from an indexed
+local checkout with:
 
 ```bash
 repowise health . --no-workspace --refactoring-targets --format md
@@ -150,8 +156,9 @@ build/reports/souz-quality/fast/gate-summary.md
 
 The duplication lane writes the same v1 contract under
 `build/reports/souz-quality/expensive/`. Kover writes XML and HTML under
-`build/reports/kover/`. RepoWise writes its advisory refactoring report to
-`build/reports/repowise/refactoring-targets.md`.
+`build/reports/kover/`. RepoWise writes base and PR health JSON, the blocking
+quality ratchet, and advisory refactoring targets under
+`build/reports/repowise/`.
 
 The JSON contract is defined by
 [`quality/gate-summary-v1.schema.json`](../quality/gate-summary-v1.schema.json).

@@ -145,20 +145,24 @@ jobs:
           done
           exit "$missing"
 
-  repowise-refactoring:
-    name: RepoWise Refactoring
+  repowise-quality:
+    name: RepoWise Quality
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       DO_NOT_TRACK: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
       REPOWISE_NO_SAVE_KEY: "1"
       REPOWISE_SKIP_EDITOR_SETUP: "1"
+      SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
       - name: Checkout full repository history
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -172,23 +176,54 @@ jobs:
           python -m pip install --disable-pip-version-check
           --requirement quality/repowise-requirements.txt
 
-      - name: Build deterministic RepoWise index
+      - name: Test RepoWise quality ratchet
+        run: python -m unittest quality.repowise_quality_gate_test
+
+      - name: Prepare pull-request base checkout
+        shell: bash
         run: |
+          base_checkout="$RUNNER_TEMP/repowise-base"
+          git worktree add --detach "$base_checkout" "$SOUZ_PR_BASE_SHA"
+          echo "REPOWISE_BASE_CHECKOUT=$base_checkout" >> "$GITHUB_ENV"
+
+      - name: Build deterministic RepoWise indexes
+        run: |
+          repowise init "$REPOWISE_BASE_CHECKOUT" --yes --no-prose --no-workspace
           repowise init . --yes --no-prose --no-workspace
 
-      - name: Publish refactoring targets
+      - name: Generate RepoWise reports
         shell: bash
         run: |
           mkdir -p build/reports/repowise
+          repowise health "$REPOWISE_BASE_CHECKOUT" --no-workspace --format json \
+            > build/reports/repowise/base-health.json
+          repowise health . --no-workspace --format json \
+            > build/reports/repowise/pr-health.json
           repowise health . --no-workspace --refactoring-targets --format md \
             | tee build/reports/repowise/refactoring-targets.md \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce RepoWise code quality
+        shell: bash
+        run: |
+          quality_report=build/reports/repowise/quality-ratchet.md
+          set +e
+          python quality/repowise_quality_gate.py \
+            --base build/reports/repowise/base-health.json \
+            --head build/reports/repowise/pr-health.json \
+            --markdown "$quality_report" \
+            --base-sha "$SOUZ_PR_BASE_SHA" \
+            --head-sha "$SOUZ_PR_HEAD_SHA"
+          quality_status=$?
+          set -e
+          tee -a "$GITHUB_STEP_SUMMARY" < "$quality_report"
+          exit "$quality_status"
 
       - name: Upload RepoWise report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: souz-repowise-refactoring-${{ github.run_id }}
+          name: souz-repowise-quality-${{ github.run_id }}
           path: build/reports/repowise/**
           if-no-files-found: warn
 
@@ -196,10 +231,18 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if [[ ! -s build/reports/repowise/refactoring-targets.md ]]; then
-            echo "Missing required RepoWise refactoring report"
-            exit 1
-          fi
+          missing=0
+          for repowise_report in \
+            build/reports/repowise/base-health.json \
+            build/reports/repowise/pr-health.json \
+            build/reports/repowise/quality-ratchet.md \
+            build/reports/repowise/refactoring-targets.md; do
+            if [[ ! -s "$repowise_report" ]]; then
+              echo "Missing required RepoWise report: $repowise_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
   tests:
     runs-on: ubuntu-latest
