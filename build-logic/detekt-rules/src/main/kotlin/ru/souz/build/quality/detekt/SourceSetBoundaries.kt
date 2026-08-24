@@ -78,6 +78,7 @@ private fun sourceLocation(path: String): SourceLocation? {
 
 private fun String.isPortableHostImport(isAllUnder: Boolean): Boolean =
     matchesAny(PORTABLE_HOST_PREFIXES) ||
+        isUnreviewedAndroidXImport() ||
         isDesktopWindowImport(isAllUnder) ||
         matchesAny(HOST_IMPLEMENTATION_PREFIXES) ||
         this in HOST_IMPLEMENTATION_TYPES
@@ -92,6 +93,9 @@ private fun String.isDesktopWindowImport(isAllUnder: Boolean): Boolean =
     (isAllUnder && this == COMPOSE_WINDOW_PACKAGE) ||
         DESKTOP_WINDOW_TYPES.any { type -> this == type || startsWith("$type.") }
 
+private fun String.isUnreviewedAndroidXImport(): Boolean =
+    startsWith("androidx.") && !matchesAny(COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES)
+
 private fun String.matchesAny(prefixes: List<String>): Boolean =
     prefixes.any { prefix -> this == prefix.removeSuffix(".") || startsWith(prefix) }
 
@@ -100,6 +104,8 @@ private val SOURCE_LAYOUT = Regex("(?:^|/)([^/]+)/src/([^/]+)/")
 private val CORE_MODULES = setOf("graph-engine", "llms", "agent", "skill-oauth-api")
 
 private const val COMPOSE_WINDOW_PACKAGE = "androidx.compose.ui.window"
+
+private val COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES = listOf("androidx.compose.")
 
 private val DESKTOP_WINDOW_TYPES = setOf(
     "$COMPOSE_WINDOW_PACKAGE.ApplicationScope",

@@ -58,6 +58,20 @@ class SourceSetBoundariesTest {
     }
 
     @Test
+    fun `rejects Android-only AndroidX and allows reviewed Compose in portable common sources`() {
+        val findings = lint(
+            "sharedUI/src/commonMain/kotlin/PortableUi.kt",
+            """
+            import androidx.appcompat.app.AppCompatActivity
+            import androidx.compose.material3.Text
+            """,
+        )
+
+        assertEquals(1, findings.size)
+        assertTrue(findings.single().message.contains("androidx.appcompat.app.AppCompatActivity"))
+    }
+
+    @Test
     fun `reports UI and host implementation imports from core production modules`() {
         val findings = lint(
             "agent/src/main/kotlin/AgentRuntime.kt",
