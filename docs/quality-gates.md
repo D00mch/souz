@@ -86,6 +86,9 @@ reviewed baseline update:
 ./gradlew updateSouzDuplicationBaseline
 ```
 
+The expensive-lane summary shows the reviewed baseline, current duplicated-token
+total, and signed delta for production and tests.
+
 The local task compares the same inputs but reports `not_authoritative` for the
 exact-checkout preflight. Pull-request CI requires a clean checkout whose
 `HEAD` matches `GITHUB_SHA`. Local HTML reports are written to
