@@ -17,7 +17,7 @@ class ToolListActiveChannels(
 
     data class Output(val channels: List<ChannelDescriptor>)
 
-    override val name: String = "ListActiveChannels"
+    override val name: String = LIST_ACTIVE_CHANNELS_TOOL_NAME
     override val description: String =
         "Lists the calling user's configured communication channels (e.g. Telegram) " +
             "that a message can be forwarded to. Returns an empty list " +

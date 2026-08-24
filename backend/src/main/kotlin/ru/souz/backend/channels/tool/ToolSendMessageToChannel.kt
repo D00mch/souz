@@ -16,9 +16,9 @@ class ToolSendMessageToChannel(
     private val registry: ChannelProviderRegistry,
 ) : ToolSetup<ToolSendMessageToChannel.Input> {
     data class Input(
-        @InputParamDescription("Channel type from ListActiveChannels, e.g. telegram.")
+        @InputParamDescription(CHANNEL_TYPE_DESCRIPTION)
         val channelType: String,
-        @InputParamDescription("Channel id from ListActiveChannels.")
+        @InputParamDescription(CHANNEL_ID_DESCRIPTION)
         val channelId: String,
         @InputParamDescription("Message text to deliver.")
         val text: String,
@@ -26,15 +26,19 @@ class ToolSendMessageToChannel(
 
     data class Output(val success: Boolean, val detail: String? = null, val reason: String? = null)
 
-    override val name: String = "SendMessageToChannel"
+    override val name: String = SEND_MESSAGE_TO_CHANNEL_TOOL_NAME
     override val description: String =
         "Delivers a message into another of the user's configured communication channels " +
-            "(from ListActiveChannels) and reports whether delivery succeeded."
+            "(from $LIST_ACTIVE_CHANNELS_TOOL_NAME) and reports whether delivery succeeded."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
             request = "Перешли краткую сводку в телеграм",
-            params = mapOf("channelType" to "telegram", "channelId" to "<id из ListActiveChannels>", "text" to "Краткая сводка: ..."),
+            params = mapOf(
+                "channelType" to "telegram",
+                "channelId" to "<id из $LIST_ACTIVE_CHANNELS_TOOL_NAME>",
+                "text" to "Краткая сводка: ...",
+            ),
         )
     )
 
@@ -70,3 +74,8 @@ class ToolSendMessageToChannel(
         }
     }
 }
+
+private const val CHANNEL_TYPE_DESCRIPTION =
+    "Channel type from $LIST_ACTIVE_CHANNELS_TOOL_NAME, e.g. telegram."
+private const val CHANNEL_ID_DESCRIPTION =
+    "Channel id from $LIST_ACTIVE_CHANNELS_TOOL_NAME."
