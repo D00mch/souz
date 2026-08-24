@@ -9,6 +9,16 @@ internal enum class QualityEnforcement(val wireName: String) {
     ADVISORY("advisory"),
 }
 
+internal enum class QualityLane(val wireName: String) {
+    FAST("fast"),
+    EXPENSIVE("expensive"),
+}
+
+internal enum class QualityAuthority(val wireName: String) {
+    LOCAL_SAFE("local-safe"),
+    CI_EXACT_CHECKOUT("ci-exact-checkout"),
+}
+
 internal enum class QualityStatus(val wireName: String) {
     PASS("pass"),
     FAIL("fail"),
@@ -23,6 +33,8 @@ internal data class QualityCheckDefinition(
     val implementationVersion: Int,
     val description: String,
     val policy: String,
+    val lane: QualityLane = QualityLane.FAST,
+    val authority: QualityAuthority = QualityAuthority.LOCAL_SAFE,
     val enforcement: QualityEnforcement = QualityEnforcement.BLOCKING,
 )
 
@@ -93,6 +105,24 @@ internal object SouzQualityChecks {
         enforcement = QualityEnforcement.ADVISORY,
     )
 
+    val ciExactCheckout = QualityCheckDefinition(
+        id = "ci-exact-checkout",
+        implementationVersion = 1,
+        description = "The expensive lane runs against GitHub's exact clean checkout.",
+        policy = "docs/quality-gates.md",
+        lane = QualityLane.EXPENSIVE,
+        authority = QualityAuthority.CI_EXACT_CHECKOUT,
+    )
+
+    val duplicateCode = QualityCheckDefinition(
+        id = "duplicate-code",
+        implementationVersion = 1,
+        description = "Production and test duplicated-token totals match their reviewed baselines.",
+        policy = "docs/quality-gates.md",
+        lane = QualityLane.EXPENSIVE,
+        authority = QualityAuthority.CI_EXACT_CHECKOUT,
+    )
+
     val fast = listOf(
         gitMetadata,
         repositoryContracts,
@@ -101,6 +131,10 @@ internal object SouzQualityChecks {
         coroutineThreadLocal,
         coroutineMonitorUse,
     )
+
+    val expensive = listOf(ciExactCheckout, duplicateCode)
+
+    val all = fast + expensive
 }
 
 internal object QualityCheckRunner {

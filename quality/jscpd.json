@@ -1,0 +1,8 @@
+{
+  "format": ["kotlin"],
+  "gitignore": true,
+  "maxLines": 10000,
+  "maxSize": "2mb",
+  "mode": "mild",
+  "reporters": ["json"]
+}

@@ -71,6 +71,80 @@ jobs:
           done
           exit "$missing"
 
+  quality-expensive:
+    name: Quality Expensive
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+          cache: gradle
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: quality/package-lock.json
+
+      - name: Install pinned quality tools
+        run: npm ci --prefix quality
+
+      - name: Run duplication ratchet
+        shell: bash
+        env:
+          SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gate_log="$RUNNER_TEMP/souz-duplication.log"
+          gate_report=build/reports/souz-quality/expensive/gate-summary.md
+          gate_json=build/reports/souz-quality/expensive/gate-summary-v1.json
+
+          rm -f "$gate_report" "$gate_json"
+
+          set +e
+          ./gradlew souzDuplicationCheck --console=plain --stacktrace >"$gate_log" 2>&1
+          gate_status=$?
+          set -e
+
+          if [[ -f "$gate_report" ]]; then
+            tee -a "$GITHUB_STEP_SUMMARY" < "$gate_report"
+          else
+            cat "$gate_log"
+            echo "Souz expensive quality report was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit "$gate_status"
+
+      - name: Upload duplication reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-quality-expensive-${{ github.run_id }}
+          path: build/reports/souz-quality/expensive/**
+          if-no-files-found: warn
+
+      - name: Verify duplication evidence
+        if: always()
+        shell: bash
+        run: |
+          missing=0
+          for quality_report in \
+            build/reports/souz-quality/expensive/gate-summary-v1.json \
+            build/reports/souz-quality/expensive/gate-summary.md; do
+            if [[ ! -f "$quality_report" ]]; then
+              echo "Missing required quality report: $quality_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
   tests:
     runs-on: ubuntu-latest
 
@@ -89,4 +163,29 @@ jobs:
         run: ./gradlew assemble --console=plain --stacktrace --no-parallel
 
       - name: Run test suite
-        run: ./gradlew test :sharedLogic:allTests :sharedUI:allTests --console=plain --stacktrace
+        run: >-
+          ./gradlew test :sharedLogic:allTests :sharedUI:allTests
+          :koverXmlReport :koverHtmlReport -Psouz.coverage
+          --console=plain --stacktrace --no-parallel
+
+      - name: Verify coverage reports
+        shell: bash
+        run: |
+          missing=0
+          for coverage_report in \
+            build/reports/kover/report.xml \
+            build/reports/kover/html/index.html; do
+            if [[ ! -f "$coverage_report" ]]; then
+              echo "Missing required coverage report: $coverage_report"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-coverage-${{ github.run_id }}
+          path: build/reports/kover/**
+          if-no-files-found: warn

@@ -1,0 +1,15 @@
+{
+  "schemaVersion" : 1,
+  "jscpdVersion" : "5.0.16",
+  "configurationSha256" : "sha256:e1c44b807e59c435e81acee6e6999500a35d267a11b2e26d1e19b3dea62c3d6d",
+  "production" : {
+    "minLines" : 15,
+    "minTokens" : 100,
+    "duplicatedTokens" : 2676
+  },
+  "tests" : {
+    "minLines" : 20,
+    "minTokens" : 120,
+    "duplicatedTokens" : 3218
+  }
+}
