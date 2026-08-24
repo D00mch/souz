@@ -397,35 +397,10 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton(tag = DiTags.TAG_API) { ApiClassifier(instance()) }
     bindSingleton(tag = DiTags.TAG_LOCAL) { LocalRegexClassifier }
 
-    bindSingleton {
-        PortableRuntimeToolsFactory(
-            toolListFiles = instance(),
-            toolFindInFiles = instance(),
-            toolNewFile = instance(),
-            toolDeleteFile = instance(),
-            toolModifyFile = instance(),
-            toolMoveFile = instance(),
-            toolFindFilesByName = instance(),
-            toolFindFolders = instance(),
-            toolCalculator = instance(),
-            toolWebPageText = instance(),
-            // Skill OAuth needs a public HTTP callback endpoint, which only :backend exposes —
-            // desktop never binds a SkillOAuthGateway, so these tools stay absent here.
-            toolConnectOAuthProvider = null,
-            toolSafeApiCall = null,
-        )
-    }
-    bindSingleton {
-        RuntimeToolsFactory(
-            portableToolsFactory = instance(),
-            toolExtractText = instance(),
-            toolReadPdfPages = instance(),
-            toolCreatePlotFromCsv = instance(),
-            excelRead = instance(),
-            excelReport = instance(),
-            toolWebImageSearch = instance(),
-        )
-    }
+    // Skill OAuth needs a public HTTP callback endpoint, which only :backend exposes —
+    // desktop never binds a SkillOAuthGateway, so these tools stay absent here.
+    bindPortableRuntimeToolsFactory(includeSkillOAuthTools = false)
+    bindRuntimeToolsFactory()
     bindSingleton {
         LlmBackedToolCatalog(
             llmApi = instance(),

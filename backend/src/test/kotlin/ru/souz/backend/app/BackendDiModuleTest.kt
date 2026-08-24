@@ -170,11 +170,13 @@ class BackendDiModuleTest {
         val di = testDi(testAppConfig(), dataSource)
 
         try {
-            val configTools = di.direct.instance<AgentToolCatalog>()
+            val toolsByCategory = di.direct.instance<AgentToolCatalog>()
                 .toolsByCategory
-                .getValue(ToolCategory.CONFIG)
+
+            val configTools = toolsByCategory.getValue(ToolCategory.CONFIG)
 
             assertTrue(configTools.isEmpty())
+            assertEquals(setOf("WebPageText"), toolsByCategory.getValue(ToolCategory.WEB_SEARCH).keys)
         } finally {
             dataSource.close()
         }
