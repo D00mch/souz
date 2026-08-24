@@ -14,17 +14,6 @@ data class LocalModelDownloadPrompt(
         rootDir.resolve(profile.storageId).resolve(profile.ggufFilename).toAbsolutePath().toString()
 }
 
-data class LocalModelDownloadState(
-    val prompt: LocalModelDownloadPrompt,
-    val progress: LocalModelDownloadProgress = LocalModelDownloadProgress(
-        bytesDownloaded = 0,
-        totalBytes = null,
-    ),
-) {
-    val fraction: Float?
-        get() = progress.fraction
-}
-
 fun LocalModelStore.downloadPromptFor(model: LLMModel): LocalModelDownloadPrompt? {
     if (model.provider != LlmProvider.LOCAL) return null
     val profile = LocalModelProfiles.forAlias(model.alias) ?: return null
