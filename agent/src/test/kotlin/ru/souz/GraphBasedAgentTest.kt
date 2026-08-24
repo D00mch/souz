@@ -4,6 +4,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.nodes.CLASSIFY_NODE_NAME
 import ru.souz.agent.nodes.NodesClassification
 import ru.souz.agent.nodes.NodesCommon
@@ -49,6 +50,15 @@ class GraphBasedAgentTest {
         val searchKnowledgeTool = testTool("SearchKnowledge")
         val searchMemoryTool = testTool("SearchMemory")
         val runtimeCommandTool = testTool("RunSkillCommand")
+        val coreTools = AgentCoreTools(
+            getSkillByName = getSkillByNameTool,
+            getSkillsByCategory = testTool("GetSkillsByCategory"),
+            getSkillsNamesByCategory = testTool("GetSkillsNamesByCategory"),
+            getKnowledge = getKnowledgeTool,
+            searchKnowledge = searchKnowledgeTool,
+            searchMemory = searchMemoryTool,
+            runtimeCommand = runtimeCommandTool,
+        )
         val expectedCoreTools = listOf(
             getSkillByNameTool,
             getKnowledgeTool,
@@ -96,11 +106,7 @@ class GraphBasedAgentTest {
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
             nodesMemory = nodesMemory,
-            getSkillByNameTool = getSkillByNameTool,
-            getKnowledgeTool = getKnowledgeTool,
-            searchKnowledgeTool = searchKnowledgeTool,
-            searchMemoryTool = searchMemoryTool,
-            runtimeCommandTool = runtimeCommandTool,
+            coreTools = coreTools,
         )
         val expectedRun = listOf(
             "Input->History",
