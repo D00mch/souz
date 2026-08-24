@@ -82,8 +82,9 @@ reviewed baseline update:
 
 The local task compares the same inputs but reports `not_authoritative` for the
 exact-checkout preflight. Pull-request CI requires a clean checkout whose
-`HEAD` matches `GITHUB_SHA`. jscpd source fragments remain under `build/tmp` and
-are not uploaded as quality evidence.
+`HEAD` matches `GITHUB_SHA`. Local HTML reports are written to
+`build/tmp/souzDuplicationCheck/{production,tests}/jscpd-report.html`. They
+contain source fragments and are not uploaded as quality evidence.
 
 ## Coverage
 

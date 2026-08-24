@@ -4,5 +4,5 @@
   "maxLines": 10000,
   "maxSize": "2mb",
   "mode": "mild",
-  "reporters": ["json"]
+  "reporters": ["json", "html"]
 }
