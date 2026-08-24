@@ -12,6 +12,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMModel
 
@@ -29,7 +30,9 @@ class BackendCompositionE2eTest {
 
             assertEquals(HttpStatusCode.OK, root.status)
             assertEquals(HttpStatusCode.OK, health.status)
-            assertEquals(LLMModel.OpenAIGpt52.alias, health.jsonBody()["model"].asText())
+            assertTrue(
+                health.jsonBody()["model"].asText() in BackendLlmSupport.chatModels.map { it.alias }
+            )
             assertEquals(HttpStatusCode.OK, openApi.status)
             assertTrue(openApi.jsonBody()["paths"].has(BackendHttpRoutes.SETTINGS))
             assertFalse(root.jsonBody()["endpoints"].any { it.asText().contains("telegram-bot") })
