@@ -85,10 +85,11 @@ internal class AgentExecutionLauncher(
         val registry = clientThreadRegistry ?: return null
         if (!registry.contains(execution.id)) return null
         val owner = registry.runtimeOwner
+        val refreshDelayMillis = leaseRefreshInterval.toMillis()
         return owningScope.launch {
             var leaseExpiresAt = execution.runtimeLeaseUntil ?: ClientThreadRuntimeRegistry.leaseUntil()
             while (isActive) {
-                delay(leaseRefreshInterval.toMillis())
+                delay(refreshDelayMillis)
                 if (!Instant.now().isBefore(leaseExpiresAt)) {
                     activeJobs.cancel(
                         execution.id,
