@@ -78,7 +78,7 @@ private fun sourceLocation(path: String): SourceLocation? {
 
 private fun String.isPortableHostImport(isAllUnder: Boolean): Boolean =
     matchesAny(PORTABLE_HOST_PREFIXES) ||
-        isUnreviewedAndroidXImport() ||
+        isUnreviewedAndroidXImport(isAllUnder) ||
         isDesktopWindowImport(isAllUnder) ||
         matchesAny(HOST_IMPLEMENTATION_PREFIXES) ||
         matchesAnySymbol(HOST_IMPLEMENTATION_SYMBOLS, isAllUnder)
@@ -96,9 +96,9 @@ private fun String.isDesktopWindowImport(isAllUnder: Boolean): Boolean =
         else -> !PORTABLE_WINDOW_TYPES.any { type -> this == type || startsWith("$type.") }
     }
 
-private fun String.isUnreviewedAndroidXImport(): Boolean =
-    matchesAny(COMMON_MAIN_FORBIDDEN_ANDROIDX_PREFIXES) ||
-        startsWith("androidx.") && !matchesAny(COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES)
+private fun String.isUnreviewedAndroidXImport(isAllUnder: Boolean): Boolean =
+    (this == "androidx" || startsWith("androidx.")) &&
+        (isAllUnder || this !in COMMON_MAIN_ALLOWED_ANDROIDX_IMPORTS)
 
 private fun String.matchesAny(prefixes: List<String>): Boolean =
     prefixes.any { prefix -> this == prefix.removeSuffix(".") || startsWith(prefix) }
@@ -113,19 +113,102 @@ private val CORE_MODULES = setOf("graph-engine", "llms", "agent", "skill-oauth-a
 
 private const val COMPOSE_WINDOW_PACKAGE = "androidx.compose.ui.window"
 
-private val COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES = listOf(
-    "androidx.compose.",
-    "androidx.lifecycle.",
-)
-
-private val COMMON_MAIN_FORBIDDEN_ANDROIDX_PREFIXES = listOf("androidx.compose.desktop.")
-
 private val PORTABLE_WINDOW_TYPES = setOf(
     "$COMPOSE_WINDOW_PACKAGE.Dialog",
     "$COMPOSE_WINDOW_PACKAGE.DialogProperties",
     "$COMPOSE_WINDOW_PACKAGE.Popup",
     "$COMPOSE_WINDOW_PACKAGE.PopupProperties",
 )
+
+// AndroidX packages mix common and platform declarations, so portable imports are reviewed by symbol.
+private val COMMON_MAIN_ALLOWED_ANDROIDX_IMPORTS = setOf(
+    "androidx.compose.animation.animateColorAsState",
+    "androidx.compose.animation.core.FastOutSlowInEasing",
+    "androidx.compose.animation.core.animateFloatAsState",
+    "androidx.compose.animation.core.tween",
+    "androidx.compose.foundation.BorderStroke",
+    "androidx.compose.foundation.background",
+    "androidx.compose.foundation.border",
+    "androidx.compose.foundation.clickable",
+    "androidx.compose.foundation.interaction.MutableInteractionSource",
+    "androidx.compose.foundation.interaction.collectIsHoveredAsState",
+    "androidx.compose.foundation.interaction.collectIsPressedAsState",
+    "androidx.compose.foundation.layout.Arrangement",
+    "androidx.compose.foundation.layout.Box",
+    "androidx.compose.foundation.layout.BoxWithConstraints",
+    "androidx.compose.foundation.layout.Column",
+    "androidx.compose.foundation.layout.ColumnScope",
+    "androidx.compose.foundation.layout.PaddingValues",
+    "androidx.compose.foundation.layout.Row",
+    "androidx.compose.foundation.layout.Spacer",
+    "androidx.compose.foundation.layout.fillMaxSize",
+    "androidx.compose.foundation.layout.fillMaxWidth",
+    "androidx.compose.foundation.layout.height",
+    "androidx.compose.foundation.layout.heightIn",
+    "androidx.compose.foundation.layout.padding",
+    "androidx.compose.foundation.layout.size",
+    "androidx.compose.foundation.layout.width",
+    "androidx.compose.foundation.layout.widthIn",
+    "androidx.compose.foundation.rememberScrollState",
+    "androidx.compose.foundation.shape.CircleShape",
+    "androidx.compose.foundation.shape.RoundedCornerShape",
+    "androidx.compose.foundation.text.BasicTextField",
+    "androidx.compose.foundation.text.selection.DisableSelection",
+    "androidx.compose.foundation.verticalScroll",
+    "androidx.compose.material.icons.Icons",
+    "androidx.compose.material.icons.filled.ArrowDropDown",
+    "androidx.compose.material.icons.filled.Visibility",
+    "androidx.compose.material.icons.filled.VisibilityOff",
+    "androidx.compose.material.icons.outlined.Info",
+    "androidx.compose.material.icons.outlined.Warning",
+    "androidx.compose.material.icons.rounded.Check",
+    "androidx.compose.material.icons.rounded.ContentCopy",
+    "androidx.compose.material3.Button",
+    "androidx.compose.material3.ButtonDefaults",
+    "androidx.compose.material3.CircularProgressIndicator",
+    "androidx.compose.material3.DropdownMenu",
+    "androidx.compose.material3.DropdownMenuItem",
+    "androidx.compose.material3.HorizontalDivider",
+    "androidx.compose.material3.Icon",
+    "androidx.compose.material3.IconButton",
+    "androidx.compose.material3.MaterialTheme",
+    "androidx.compose.material3.OutlinedButton",
+    "androidx.compose.material3.Surface",
+    "androidx.compose.material3.Text",
+    "androidx.compose.material3.TextButton",
+    "androidx.compose.runtime.Composable",
+    "androidx.compose.runtime.Immutable",
+    "androidx.compose.runtime.LaunchedEffect",
+    "androidx.compose.runtime.getValue",
+    "androidx.compose.runtime.mutableStateOf",
+    "androidx.compose.runtime.remember",
+    "androidx.compose.runtime.setValue",
+    "androidx.compose.runtime.staticCompositionLocalOf",
+    "androidx.compose.ui.Alignment",
+    "androidx.compose.ui.Modifier",
+    "androidx.compose.ui.draw.clip",
+    "androidx.compose.ui.draw.scale",
+    "androidx.compose.ui.focus.onFocusChanged",
+    "androidx.compose.ui.graphics.Color",
+    "androidx.compose.ui.graphics.SolidColor",
+    "androidx.compose.ui.graphics.graphicsLayer",
+    "androidx.compose.ui.graphics.vector.ImageVector",
+    "androidx.compose.ui.platform.LocalClipboardManager",
+    "androidx.compose.ui.text.AnnotatedString",
+    "androidx.compose.ui.text.TextStyle",
+    "androidx.compose.ui.text.font.FontFamily",
+    "androidx.compose.ui.text.font.FontWeight",
+    "androidx.compose.ui.text.input.PasswordVisualTransformation",
+    "androidx.compose.ui.text.input.VisualTransformation",
+    "androidx.compose.ui.text.style.TextAlign",
+    "androidx.compose.ui.text.style.TextOverflow",
+    "androidx.compose.ui.unit.Dp",
+    "androidx.compose.ui.unit.dp",
+    "androidx.compose.ui.unit.sp",
+    "androidx.compose.ui.zIndex",
+    "androidx.lifecycle.ViewModel",
+    "androidx.lifecycle.viewModelScope",
+) + PORTABLE_WINDOW_TYPES
 
 private val PORTABLE_HOST_PREFIXES = listOf(
     "android.",

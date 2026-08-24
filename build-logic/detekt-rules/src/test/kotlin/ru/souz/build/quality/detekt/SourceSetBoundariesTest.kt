@@ -67,20 +67,35 @@ class SourceSetBoundariesTest {
     }
 
     @Test
-    fun `rejects Android-only AndroidX and allows reviewed multiplatform APIs in portable common sources`() {
+    fun `rejects unreviewed AndroidX siblings and wildcards in portable common sources`() {
         val findings = lint(
             "sharedUI/src/commonMain/kotlin/PortableUi.kt",
             """
             import androidx.appcompat.app.AppCompatActivity
             import androidx.compose.desktop.ui.tooling.preview.Preview
+            import androidx.compose.foundation.AndroidExternalSurface
+            import androidx.compose.material3.*
             import androidx.compose.material3.Text
+            import androidx.compose.ui.platform.*
+            import androidx.compose.ui.platform.LocalClipboardManager
+            import androidx.compose.ui.platform.LocalContext
+            import androidx.compose.ui.window.Dialog
+            import androidx.lifecycle.*
+            import androidx.lifecycle.LifecycleService
             import androidx.lifecycle.ViewModel
+            import androidx.lifecycle.viewModelScope
             """,
         )
 
-        assertEquals(2, findings.size)
+        assertEquals(8, findings.size)
         assertTrue(findings.any { it.message.contains("androidx.appcompat.app.AppCompatActivity") })
         assertTrue(findings.any { it.message.contains("androidx.compose.desktop.ui.tooling.preview.Preview") })
+        assertTrue(findings.any { it.message.contains("androidx.compose.foundation.AndroidExternalSurface") })
+        assertTrue(findings.any { it.message.contains("androidx.compose.material3.*") })
+        assertTrue(findings.any { it.message.contains("androidx.compose.ui.platform.*") })
+        assertTrue(findings.any { it.message.contains("androidx.compose.ui.platform.LocalContext") })
+        assertTrue(findings.any { it.message.contains("androidx.lifecycle.*") })
+        assertTrue(findings.any { it.message.contains("androidx.lifecycle.LifecycleService") })
     }
 
     @Test

@@ -41,7 +41,8 @@ The custom `SourceSetBoundaries` rule inspects production import directives and
 enforces these boundaries:
 
 - `commonMain` rejects JVM, Android, native-platform, Skiko/JNA, desktop-window,
-  and Souz host-implementation imports.
+  and Souz host-implementation imports. AndroidX imports fail closed: portable
+  symbols are reviewed individually, and wildcard imports are rejected.
 - `sharedUI/commonJvmMain` rejects AWT/Swing, Skiko/JNA, desktop-only Compose
   window APIs, native model implementations, backend code, and desktop service
   or tool implementations. Portable `Dialog` and `Popup` APIs and ordinary JVM
