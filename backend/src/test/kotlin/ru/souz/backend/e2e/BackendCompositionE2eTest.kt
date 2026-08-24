@@ -328,7 +328,7 @@ class BackendCompositionE2eTest {
                     emptyMap()
                 }
                 val methods = setOf("get", "post", "put", "patch", "delete")
-                val actual = document["paths"].properties().asSequence().associate { (path, item) ->
+                val actual = document["paths"].properties().associate { (path, item) ->
                     path to item.fieldNames().asSequence().filter(methods::contains).toSet()
                 }
 
@@ -464,8 +464,7 @@ class BackendCompositionE2eTest {
         }, "$location parameter $name")
 
     private fun JsonNode.resolveSchema(schema: JsonNode): JsonNode {
-        val ref = schema["\$ref"]?.asText()
-        if (ref == null) return schema
+        val ref = schema[$$"$ref"]?.asText() ?: return schema
         val name = ref.removePrefix("#/components/schemas/")
         return assertNotNull(this["components"]["schemas"][name], ref)
     }

@@ -18,7 +18,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -35,6 +34,7 @@ import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.local.LocalChatAPI
+import kotlin.time.Duration.Companion.milliseconds
 
 class BackendExecutionLlmChatApiTest {
     @Test
@@ -314,7 +314,7 @@ private class CountingCredentialResolver(
 
     override suspend fun resolve(userId: String, provider: LlmProvider): ResolvedProviderCredential? {
         calls.incrementAndGet()
-        if (delayMs > 0) delay(delayMs)
+        if (delayMs > 0) delay(delayMs.milliseconds)
         return value?.let {
             ResolvedProviderCredential(provider, it, CredentialSource.USER_MANAGED)
         }
@@ -337,7 +337,7 @@ private class StubChatApi(
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile = error("not used")
 
-    override suspend fun downloadFile(fileId: String): String? = error("not used")
+    override suspend fun downloadFile(fileId: String): String = error("not used")
 
     override suspend fun balance(): LLMResponse.Balance = error("not used")
 }

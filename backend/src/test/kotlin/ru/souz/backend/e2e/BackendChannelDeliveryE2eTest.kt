@@ -16,6 +16,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMMessageRole
+import kotlin.time.Duration.Companion.milliseconds
 
 class BackendChannelDeliveryE2eTest {
     @Test
@@ -53,7 +54,7 @@ class BackendChannelDeliveryE2eTest {
 
                 val delivery = sendTurn(sourceChatId, userId, deliveryPrompt)
                 assertEquals(HttpStatusCode.OK, delivery.status)
-                val pushed = withTimeout(5_000) {
+                val pushed = withTimeout(5_000.milliseconds) {
                     json.readTree((session.incoming.receive() as Frame.Text).readText())
                 }
                 assertEquals("event", pushed["kind"].asText())

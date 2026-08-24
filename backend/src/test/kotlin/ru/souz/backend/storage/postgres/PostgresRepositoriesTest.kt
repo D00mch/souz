@@ -12,7 +12,6 @@ import java.util.UUID
 import javax.sql.DataSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -51,7 +50,6 @@ import ru.souz.backend.settings.model.UserSettings
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.testutil.rawEventPayload
-import ru.souz.backend.user.model.UserRecord
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -1005,85 +1003,12 @@ class PostgresRepositoriesTest {
             rowVersion = 7L,
         )
 
-    private fun appliedMigrationVersions(dataSource: DataSource): List<String> =
-        dataSource.connection.use { connection ->
-            connection.prepareStatement(
-                """
-                select version
-                from flyway_schema_history
-                where success = true
-                order by installed_rank
-                """.trimIndent()
-            ).use { statement ->
-                statement.executeQuery().use { resultSet ->
-                    buildList {
-                        while (resultSet.next()) {
-                            add(resultSet.getString("version"))
-                        }
-                    }
-                }
-            }
-        }
-
     private fun userCount(dataSource: DataSource): Int =
         dataSource.connection.use { connection ->
             connection.prepareStatement("select count(*) from users").use { statement ->
                 statement.executeQuery().use { resultSet ->
                     resultSet.next()
                     resultSet.getInt(1)
-                }
-            }
-        }
-
-    private fun tableExists(
-        dataSource: DataSource,
-        tableName: String,
-    ): Boolean =
-        dataSource.connection.use { connection ->
-            connection.prepareStatement(
-                """
-                select exists(
-                  select 1
-                  from information_schema.tables
-                  where table_schema = current_schema()
-                    and table_name = ?
-                )
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, tableName)
-                statement.executeQuery().use { resultSet ->
-                    resultSet.next()
-                    resultSet.getBoolean(1)
-                }
-            }
-        }
-
-    private fun foreignKeyExists(
-        dataSource: DataSource,
-        tableName: String,
-        columnName: String,
-    ): Boolean =
-        dataSource.connection.use { connection ->
-            connection.prepareStatement(
-                """
-                select exists(
-                  select 1
-                  from information_schema.table_constraints tc
-                  join information_schema.key_column_usage kcu
-                    on tc.constraint_name = kcu.constraint_name
-                   and tc.table_schema = kcu.table_schema
-                  where tc.table_schema = current_schema()
-                    and tc.table_name = ?
-                    and tc.constraint_type = 'FOREIGN KEY'
-                    and kcu.column_name = ?
-                )
-                """.trimIndent()
-            ).use { statement ->
-                statement.setString(1, tableName)
-                statement.setString(2, columnName)
-                statement.executeQuery().use { resultSet ->
-                    resultSet.next()
-                    resultSet.getBoolean(1)
                 }
             }
         }

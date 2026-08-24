@@ -42,6 +42,7 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalProviderAvailability
+import kotlin.time.Duration.Companion.milliseconds
 
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
 internal const val E2E_TELEGRAM_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
@@ -68,10 +69,8 @@ internal fun backendE2eTest(
     application {
         backendApplication(backend.dependencies)
     }
-    try {
+    backend.use { backend ->
         BackendE2eScope(this, backend, llm).block()
-    } finally {
-        backend.close()
     }
 }
 
@@ -111,7 +110,7 @@ internal class BackendE2eScope(
             if (deadline.hasPassedNow()) {
                 throw AssertionError("Timed out waiting for $description.")
             }
-            delay(25)
+            delay(25.milliseconds)
         }
     }
 

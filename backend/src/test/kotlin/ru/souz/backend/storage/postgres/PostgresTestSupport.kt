@@ -78,7 +78,7 @@ internal fun postgresAppConfig(
 
 private fun requireDocker() {
     configureDockerHostForDesktop()
-    if (runCatching { DockerClientFactory.instance().isDockerAvailable() }.getOrDefault(false)) {
+    if (runCatching { DockerClientFactory.instance().isDockerAvailable }.getOrDefault(false)) {
         return
     }
     error("Docker is required for backend Postgres Testcontainers tests. Start Docker and rerun :backend:test.")
