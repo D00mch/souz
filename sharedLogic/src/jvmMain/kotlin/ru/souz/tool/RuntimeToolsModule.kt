@@ -69,40 +69,19 @@ class RuntimeToolsFactory(
             listOf(
                 portableToolsFactory,
                 immutableToolCatalogFromLists(
-                    ToolCategory.entries.associateWith { category -> category.jvmTools() }
+                    mapOf(
+                        ToolCategory.FILES to listOf(
+                            toolExtractText.toGiga(),
+                            toolReadPdfPages.toGiga(),
+                        ),
+                        ToolCategory.WEB_SEARCH to listOfNotNull(toolWebImageSearch?.toGiga()),
+                        ToolCategory.DATA_ANALYTICS to listOf(
+                            toolCreatePlotFromCsv.toGiga(),
+                            excelRead.toGiga(),
+                            excelReport.toGiga(),
+                        ),
+                    )
                 ),
             )
         ).toolsByCategory
-
-    private fun ToolCategory.jvmTools(): List<LLMToolSetup> = when (this) {
-        ToolCategory.FILES -> listOf(
-            toolExtractText.toGiga(),
-            toolReadPdfPages.toGiga(),
-        )
-
-        ToolCategory.WEB_SEARCH -> listOfNotNull(toolWebImageSearch?.toGiga())
-
-        ToolCategory.DATA_ANALYTICS -> listOf(
-            toolCreatePlotFromCsv.toGiga(),
-            excelRead.toGiga(),
-            excelReport.toGiga(),
-        )
-
-        ToolCategory.BROWSER,
-        ToolCategory.CONFIG,
-        ToolCategory.IMAGE,
-        ToolCategory.IMAGE_GENERATION,
-        ToolCategory.NOTES,
-        ToolCategory.APPLICATIONS,
-        ToolCategory.CALENDAR,
-        ToolCategory.MAIL,
-        ToolCategory.TEXT_REPLACE,
-        ToolCategory.CHAT,
-        ToolCategory.TELEGRAM,
-        ToolCategory.DESKTOP,
-        ToolCategory.CALCULATOR,
-        ToolCategory.OAUTH,
-        ToolCategory.HELP,
-        ToolCategory.CHANNEL_MESSAGING -> emptyList()
-    }
 }
