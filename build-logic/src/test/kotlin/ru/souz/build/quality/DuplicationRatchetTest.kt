@@ -23,10 +23,11 @@ class DuplicationRatchetTest {
         val stale = evaluate(baselineFile, measurements(production = 100, tests = 199))
 
         assertFalse(unchanged.failed)
+        assertTrue(unchanged.diagnostics.any { it.message.contains("100 baseline -> 100 current (delta +0") })
         assertTrue(growth.failed)
-        assertTrue(growth.diagnostics.any { it.message.contains("exceeds baseline 100") })
+        assertTrue(growth.diagnostics.any { it.message.contains("100 baseline -> 101 current (delta +1") })
         assertTrue(stale.failed)
-        assertTrue(stale.diagnostics.any { it.message.contains("below the stale") })
+        assertTrue(stale.diagnostics.any { it.message.contains("200 baseline -> 199 current (delta -1") })
     }
 
     @Test

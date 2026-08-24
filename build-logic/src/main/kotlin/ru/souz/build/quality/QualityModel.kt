@@ -116,7 +116,7 @@ internal object SouzQualityChecks {
 
     val duplicateCode = QualityCheckDefinition(
         id = "duplicate-code",
-        implementationVersion = 1,
+        implementationVersion = 2,
         description = "Production and test duplicated-token totals match their reviewed baselines.",
         policy = "docs/quality-gates.md",
         lane = QualityLane.EXPENSIVE,

@@ -151,20 +151,22 @@ internal object DuplicationRatchet {
             }
 
             val comparison = measurement.duplicatedTokens.compareTo(baselineEntry.duplicatedTokens)
+            val delta = measurement.duplicatedTokens - baselineEntry.duplicatedTokens
             if (comparison != 0) {
                 failed = true
             }
-            val ratchet = when {
-                comparison > 0 -> "exceeds"
-                comparison < 0 -> "is below the stale"
-                else -> "matches"
+            val comparisonLabel = when {
+                comparison > 0 -> "exceeds baseline"
+                comparison < 0 -> "baseline is stale"
+                else -> "matches baseline"
             }
             diagnostics += diagnostic(
                 baselinePath,
-                "${scope.wireName}: ${measurement.duplicatedTokens} duplicated tokens in " +
-                    "${measurement.clones} clones (${formatPercentage(measurement.percentageTokens)}% of " +
-                    "${measurement.tokens} tokens across ${measurement.sources} files) $ratchet baseline " +
-                    "${baselineEntry.duplicatedTokens}; minimum ${threshold.minLines} lines/${threshold.minTokens} tokens.",
+                "${scope.wireName}: duplicated tokens ${baselineEntry.duplicatedTokens} baseline -> " +
+                    "${measurement.duplicatedTokens} current (delta ${formatDelta(delta)}; $comparisonLabel); " +
+                    "${measurement.clones} clones, ${formatPercentage(measurement.percentageTokens)}% of " +
+                    "${measurement.tokens} tokens across ${measurement.sources} files; " +
+                    "minimum ${threshold.minLines} lines/${threshold.minTokens} tokens.",
             )
         }
 
@@ -187,6 +189,8 @@ internal object DuplicationRatchet {
     )
 
     private fun formatPercentage(value: Double): String = String.format(Locale.ROOT, "%.3f", value)
+
+    private fun formatDelta(value: Long): String = if (value >= 0) "+$value" else value.toString()
 
     private fun JsonNode.requiredObject(name: String): JsonNode = required(name).also {
         require(it.isObject) { "'$name' must be a JSON object." }
