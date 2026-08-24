@@ -470,6 +470,56 @@ class PostgresRepositoriesTest {
     }
 
     @Test
+    fun `follow-up input commit rolls back execution revision when message insert fails`() = runTest {
+        val schema = newPostgresSchema("postgres_followup_input_rollback")
+
+        postgresRepositories(schema).use { repositories ->
+            val userId = UUID.randomUUID().toString()
+            val chat = chat(userId, Instant.parse("2026-05-01T10:00:00Z"))
+            repositories.userRepository.ensureUser(userId)
+            repositories.chatRepository.create(chat)
+            val execution = execution(
+                userId = userId,
+                chatId = chat.id,
+                assistantMessageId = null,
+                status = AgentExecutionStatus.RUNNING,
+                startedAt = Instant.parse("2026-05-01T10:01:00Z"),
+            )
+            repositories.executionRepository.create(execution)
+            val messageId = UUID.randomUUID()
+            val first = repositories.clientInputRepository.appendFollowUpInput(
+                execution = execution,
+                content = "first follow-up",
+                metadata = mapOf("inputSeq" to "2"),
+                latestDeviceContextJson = """{"deviceId":"device-2"}""",
+                messageId = messageId,
+                createdAt = Instant.parse("2026-05-01T10:01:02Z"),
+            )
+            assertEquals(2L, first?.revision)
+
+            assertFailsWith<Exception> {
+                repositories.clientInputRepository.appendFollowUpInput(
+                    execution = requireNotNull(first),
+                    content = "duplicate-message-id follow-up",
+                    metadata = mapOf("inputSeq" to "3"),
+                    latestDeviceContextJson = """{"deviceId":"device-3"}""",
+                    messageId = messageId,
+                    createdAt = Instant.parse("2026-05-01T10:01:03Z"),
+                )
+            }
+
+            val storedExecution = repositories.executionRepository.getByChat(userId, chat.id, execution.id)
+            val storedMessages = repositories.messageRepository.list(userId, chat.id)
+            assertEquals(2L, storedExecution?.revision)
+            assertEquals(
+                "device-2",
+                storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText(),
+            )
+            assertEquals(listOf("first follow-up"), storedMessages.map { it.content })
+        }
+    }
+
+    @Test
     fun `chat repository updates title and archived fields`() = runTest {
         val schema = newPostgresSchema("postgres_chat_updates")
         val userId = "opaque/user:42@example.com"

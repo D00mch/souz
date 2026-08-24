@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -360,6 +361,145 @@ class BackendCompositionE2eTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun `OpenAPI contract documents parameters errors nullable fields and write-only secrets`() =
+        backendE2eTest(
+            schemaPrefix = "e2e_openapi_contract",
+            featureFlags = BackendFeatureFlags(telegramBot = true),
+            telegramApi = FakeCompositionTelegramApi,
+        ) {
+            val document = client.get(BackendHttpRoutes.OPENAPI_DOCUMENT).jsonBody()
+            val schemes = document["components"]["securitySchemes"]
+            assertEquals("apiKey", schemes["souzProxyAuth"]["type"].asText())
+            assertEquals("header", schemes["souzProxyAuth"]["in"].asText())
+            assertEquals("X-Souz-Proxy-Auth", schemes["souzProxyAuth"]["name"].asText())
+            assertEquals("apiKey", schemes["souzUserIdentity"]["type"].asText())
+            assertEquals("header", schemes["souzUserIdentity"]["in"].asText())
+            assertEquals("X-User-Id", schemes["souzUserIdentity"]["name"].asText())
+
+            val putProviderKey = document.operation(BackendHttpRoutes.PROVIDER_KEY_PATTERN, "put")
+            assertEquals("putProviderKey", putProviderKey["operationId"].asText())
+            assertProxySecurity(putProviderKey)
+            val providerParameter = putProviderKey.pathParameter("provider")
+            assertEquals(
+                BackendLlmSupport.userManagedKeyProviders.map { it.name.lowercase() }.toSet(),
+                providerParameter["schema"]["enum"].map { it.asText() }.toSet(),
+            )
+            val providerKeyRequest = document.resolveSchema(putProviderKey.jsonRequestSchema())
+            assertEquals(listOf("apiKey"), providerKeyRequest.requiredNames())
+            val apiKey = providerKeyRequest["properties"]["apiKey"]
+            assertTrue(apiKey["writeOnly"].asBoolean())
+            assertEquals(1, apiKey["minLength"].asInt())
+            assertEquals("\\S", apiKey["pattern"].asText())
+
+            val putTelegram = document.operation(BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN, "put")
+            assertEquals("upsertTelegramBotBinding", putTelegram["operationId"].asText())
+            assertProxySecurity(putTelegram)
+            assertUuidPathParameter(putTelegram, "chatId")
+            val telegramRequest = document.resolveSchema(putTelegram.jsonRequestSchema())
+            assertEquals(listOf("token"), telegramRequest.requiredNames())
+            val telegramToken = telegramRequest["properties"]["token"]
+            assertTrue(telegramToken["writeOnly"].asBoolean())
+            assertEquals(1, telegramToken["minLength"].asInt())
+            assertEquals(4096, telegramToken["maxLength"].asInt())
+
+            val createMessage = document.operation(BackendHttpRoutes.CHAT_MESSAGES_PATTERN, "post")
+            assertEquals("createChatMessage", createMessage["operationId"].asText())
+            assertProxySecurity(createMessage)
+            assertUuidPathParameter(createMessage, "chatId")
+            val createMessageRequest = document.resolveSchema(createMessage.jsonRequestSchema())
+            assertEquals(listOf("content"), createMessageRequest.requiredNames())
+            assertEquals("\\S", createMessageRequest["properties"]["content"]["pattern"].asText())
+            val createMessageResponse = document.resolveSchema(createMessage.jsonResponseSchema("200"))
+            assertFalse("assistantMessage" in createMessageResponse.requiredNames())
+            assertTrue(createMessageResponse["properties"]["assistantMessage"].allowsNull())
+
+            val listMessages = document.operation(BackendHttpRoutes.CHAT_MESSAGES_PATTERN, "get")
+            assertUuidPathParameter(listMessages, "chatId")
+            assertEquals(1.0, listMessages.queryParameter("limit")["schema"]["minimum"].asDouble())
+            val messagesResponse = document.resolveSchema(listMessages.jsonResponseSchema("200"))
+            assertFalse("nextBeforeSeq" in messagesResponse.requiredNames())
+            assertTrue(messagesResponse["properties"]["nextBeforeSeq"].allowsNull())
+
+            val cancelExecution = document.operation(BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN, "post")
+            assertEquals("cancelExecution", cancelExecution["operationId"].asText())
+            assertProxySecurity(cancelExecution)
+            assertUuidPathParameter(cancelExecution, "chatId")
+            assertUuidPathParameter(cancelExecution, "executionId")
+            assertV1ErrorSchema(document, cancelExecution, "404")
+
+            val listEvents = document.operation(BackendHttpRoutes.CHAT_EVENTS_PATTERN, "get")
+            assertEquals("listChatEvents", listEvents["operationId"].asText())
+            assertProxySecurity(listEvents)
+            assertUuidPathParameter(listEvents, "chatId")
+            assertEquals(0.0, listEvents.queryParameter("afterSeq")["schema"]["minimum"].asDouble())
+            assertEquals("array", document.resolveSchema(listEvents.jsonResponseSchema("200"))["properties"]["items"]["type"].asText())
+
+            val createChat = document.operation(BackendHttpRoutes.CHATS, "post")
+            assertFalse(createChat.has("security"))
+            assertEquals("createClientChat", createChat["operationId"].asText())
+            assertV1ErrorSchema(document, createChat, "409")
+        }
+
+    private fun JsonNode.operation(path: String, method: String): JsonNode =
+        assertNotNull(this["paths"][path][method], "$method $path")
+
+    private fun JsonNode.jsonRequestSchema(): JsonNode =
+        this["requestBody"]["content"]["application/json"]["schema"]
+
+    private fun JsonNode.jsonResponseSchema(status: String): JsonNode =
+        this["responses"][status]["content"]["application/json"]["schema"]
+
+    private fun JsonNode.pathParameter(name: String): JsonNode =
+        parameter(name, "path")
+
+    private fun JsonNode.queryParameter(name: String): JsonNode =
+        parameter(name, "query")
+
+    private fun JsonNode.parameter(name: String, location: String): JsonNode =
+        assertNotNull(this["parameters"].firstOrNull { parameter ->
+            parameter["name"].asText() == name && parameter["in"].asText() == location
+        }, "$location parameter $name")
+
+    private fun JsonNode.resolveSchema(schema: JsonNode): JsonNode {
+        val ref = schema["\$ref"]?.asText()
+        if (ref == null) return schema
+        val name = ref.removePrefix("#/components/schemas/")
+        return assertNotNull(this["components"]["schemas"][name], ref)
+    }
+
+    private fun JsonNode.requiredNames(): List<String> =
+        this["required"]?.map { it.asText() }.orEmpty()
+
+    private fun JsonNode.allowsNull(): Boolean =
+        when {
+            this["type"]?.isTextual == true && this["type"].asText() == "null" -> true
+            this["type"]?.isArray == true && this["type"].any { it.asText() == "null" } -> true
+            this["anyOf"]?.any { it.allowsNull() } == true -> true
+            this["oneOf"]?.any { it.allowsNull() } == true -> true
+            else -> false
+        }
+
+    private fun assertProxySecurity(operation: JsonNode) {
+        assertEquals(
+            setOf("souzProxyAuth", "souzUserIdentity"),
+            operation["security"][0].fieldNames().asSequence().toSet(),
+        )
+    }
+
+    private fun assertUuidPathParameter(operation: JsonNode, name: String) {
+        val parameter = operation.pathParameter(name)
+        assertTrue(parameter["required"].asBoolean(), name)
+        assertEquals("string", parameter["schema"]["type"].asText(), name)
+        assertEquals("uuid", parameter["schema"]["format"].asText(), name)
+    }
+
+    private fun assertV1ErrorSchema(document: JsonNode, operation: JsonNode, status: String) {
+        val errorEnvelope = document.resolveSchema(operation.jsonResponseSchema(status))
+        val error = document.resolveSchema(errorEnvelope["properties"]["error"])
+        assertEquals(setOf("code", "message"), error["properties"].fieldNames().asSequence().toSet())
     }
 }
 

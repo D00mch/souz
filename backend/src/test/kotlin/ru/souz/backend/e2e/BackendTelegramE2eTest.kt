@@ -218,6 +218,87 @@ class BackendTelegramE2eTest {
     }
 
     @Test
+    fun `agent can deliver to linked Telegram and failed API send is not persisted as delivered`() {
+        val telegramApi = FakeTelegramBotApi()
+        backendE2eTest(
+            schemaPrefix = "e2e_telegram_outbound",
+            featureFlags = BackendFeatureFlags(wsEvents = true, telegramBot = true),
+            telegramApi = telegramApi,
+            startBackgroundServices = true,
+        ) {
+            val userId = UUID.randomUUID().toString()
+            val telegramChatId = createPublicChat(userId, "create-telegram-target")
+            val sourceChatId = createPublicChat(userId, "create-telegram-source")
+            val failedSourceChatId = createPublicChat(userId, "create-telegram-failure")
+            val upserted = client.put(BackendHttpRoutes.chatTelegramBot(telegramChatId)) {
+                trusted(userId)
+                jsonBody("""{"token":"123456:outbound-token"}""")
+            }
+            assertEquals(HttpStatusCode.OK, upserted.status)
+            val linkCommand = upserted.jsonBody()["pendingLinkCommand"].asText()
+            telegramApi.enqueue(update(20, senderId = 701, text = linkCommand, username = "linked_user"))
+            eventually("linked outbound Telegram binding") {
+                binding(userId, telegramChatId).takeIf { it["linked"].asBoolean() }
+            }
+
+            val deliveredText = "telegram outbound delivery"
+            llm.requestSkillForPrompt(
+                prompt = "send telegram outbound",
+                skillId = "SendMessageToChannel",
+                arguments = mapOf(
+                    "channelType" to "telegram",
+                    "channelId" to telegramChatId,
+                    "text" to deliveredText,
+                ),
+            )
+            val deliveredTurn = client.post(BackendHttpRoutes.chatMessages(sourceChatId)) {
+                trusted(userId)
+                jsonBody("""{"content":"send telegram outbound","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            }
+            assertEquals(HttpStatusCode.OK, deliveredTurn.status)
+            awaitTerminal(sourceChatId, userId)
+            eventually("Telegram outbound message") {
+                telegramApi.sentMessages.firstOrNull { it.chatId == 701L && it.text == deliveredText }
+            }
+            val deliveredMessages = client.get(BackendHttpRoutes.chatMessages(telegramChatId)) {
+                trusted(userId)
+            }.jsonBody()["items"]
+            assertTrue(deliveredMessages.any { message ->
+                message["content"].asText() == deliveredText &&
+                    message.path("metadata").path("crossChannel").asText() == "true"
+            })
+
+            val failedText = "telegram outbound should not persist"
+            telegramApi.failSendText(failedText)
+            llm.requestSkillForPrompt(
+                prompt = "send telegram outbound failure",
+                skillId = "SendMessageToChannel",
+                arguments = mapOf(
+                    "channelType" to "telegram",
+                    "channelId" to telegramChatId,
+                    "text" to failedText,
+                ),
+            )
+            val failedTurn = client.post(BackendHttpRoutes.chatMessages(failedSourceChatId)) {
+                trusted(userId)
+                jsonBody("""{"content":"send telegram outbound failure","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            }
+            assertEquals(HttpStatusCode.OK, failedTurn.status)
+            awaitTerminal(failedSourceChatId, userId)
+
+            assertTrue(telegramApi.sentMessages.none { it.text == failedText })
+            val messagesAfterFailure = client.get(BackendHttpRoutes.chatMessages(telegramChatId)) {
+                trusted(userId)
+            }.jsonBody()["items"]
+            assertTrue(messagesAfterFailure.none { it["content"].asText() == failedText })
+            assertEquals(
+                1,
+                messagesAfterFailure.count { it.path("metadata").path("crossChannel").asText() == "true" },
+            )
+        }
+    }
+
+    @Test
     fun `polling discards an update after its database lease is stolen`() {
         val telegramApi = FakeTelegramBotApi()
         val pausedPoll = telegramApi.pauseNextGetUpdates()
@@ -290,6 +371,22 @@ class BackendTelegramE2eTest {
             }.jsonBody()["telegramBot"]
         )
 
+    private suspend fun BackendE2eScope.awaitTerminal(chatId: String, userId: String) {
+        eventually("terminal Telegram source execution") {
+            client.get(BackendHttpRoutes.chatEvents(chatId)) {
+                trusted(userId)
+            }.jsonBody()["items"].takeIf { events ->
+                events.any { event ->
+                    event["type"].asText() in setOf(
+                        "execution.finished",
+                        "execution.failed",
+                        "execution.cancelled",
+                    )
+                }
+            }
+        }
+    }
+
     private fun update(
         id: Long,
         senderId: Long,
@@ -320,10 +417,15 @@ private class FakeTelegramBotApi : TelegramBotApi {
     val sentMessages = CopyOnWriteArrayList<SentMessage>()
     val chatActions = CopyOnWriteArrayList<ChatAction>()
     private val updates = CopyOnWriteArrayList<TelegramUpdate>()
+    private val failedSendTexts = CopyOnWriteArrayList<String>()
     private val nextGetUpdatesPause = AtomicReference<PausedTelegramPoll?>()
 
     fun enqueue(update: TelegramUpdate) {
         updates += update
+    }
+
+    fun failSendText(text: String) {
+        failedSendTexts += text
     }
 
     fun pauseNextGetUpdates(): PausedTelegramPoll =
@@ -363,6 +465,9 @@ private class FakeTelegramBotApi : TelegramBotApi {
     }
 
     override suspend fun sendMessage(token: String, chatId: Long, text: String) {
+        if (text in failedSendTexts) {
+            error("Simulated Telegram send failure.")
+        }
         sentMessages += SentMessage(chatId, text)
     }
 
