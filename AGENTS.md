@@ -50,6 +50,13 @@ Only these direct production project dependencies are allowed. Standard test-sou
 - `:backend` `main` → `:agent`, `:llms`, `:native`, `:sharedLogic`, `:skill-oauth-api`, `:skill-oauth-impl`.
 - `:desktopApp` `main` → `:ambientAgent`, `:sharedLogic`, `:sharedUI`, `:agent`, `:llms`, `:native`.
 
+## Production source boundaries
+
+- `commonMain` must not import JVM, Android, native-platform, desktop-window, or host-implementation APIs.
+- `:sharedUI` `commonJvmMain` must not import AWT/Swing, desktop-only Compose window APIs, backend or desktop implementations, or native-model implementations. Portable `Dialog` and `Popup` APIs are allowed.
+- `:graph-engine`, `:llms`, `:agent`, and `:skill-oauth-api` production code must not import Compose, UI, backend, native-model, host-DI, or host-service implementations.
+- `:backend` production code must not import Compose, UI, host-DI, AWT/Swing, or desktop service and tool implementations.
+
 ## Verification
 
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.

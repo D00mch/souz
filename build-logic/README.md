@@ -2,8 +2,8 @@
 
 This included Gradle build contains the `souz.quality` plugin used by the root
 project. It owns repository-contract checks, production module-boundary checks,
-type-resolved coroutine analysis, the Souz coroutine Detekt extension, and
-versioned quality reports; it is not a product module.
+source-set import boundaries, type-resolved coroutine analysis, Souz Detekt
+extensions, and versioned quality reports; it is not a product module.
 
 See [Quality gates](../docs/quality-gates.md) for tasks, check contracts, report
 locations, CI authority, and remediation guidance.

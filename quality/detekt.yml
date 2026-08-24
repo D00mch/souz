@@ -46,3 +46,8 @@ souz-coroutines:
     active: true
   ThreadLocalInCoroutineCode:
     active: true
+
+souz-architecture:
+  active: true
+  SourceSetBoundaries:
+    active: true

@@ -69,6 +69,13 @@ internal object SouzQualityChecks {
         policy = "AGENTS.md",
     )
 
+    val sourceSetBoundaries = QualityCheckDefinition(
+        id = "source-set-boundaries",
+        implementationVersion = 1,
+        description = "Production imports stay within portable, core, backend, and shared UI host boundaries.",
+        policy = "AGENTS.md",
+    )
+
     val cancellationPropagation = QualityCheckDefinition(
         id = "cancellation-propagation",
         implementationVersion = 2,
@@ -97,6 +104,7 @@ internal object SouzQualityChecks {
         gitMetadata,
         repositoryContracts,
         moduleBoundaries,
+        sourceSetBoundaries,
         cancellationPropagation,
         coroutineThreadLocal,
         coroutineMonitorUse,

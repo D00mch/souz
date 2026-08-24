@@ -87,6 +87,9 @@ abstract class SouzGateFastTask : DefaultTask() {
                     edges = edges,
                 )
             },
+            runCheck(SouzQualityChecks.sourceSetBoundaries) {
+                detektDiagnostics { it in SOURCE_SET_BOUNDARY_RULES }
+            },
             runCheck(SouzQualityChecks.cancellationPropagation) {
                 detektDiagnostics { it in CANCELLATION_RULES }
             },

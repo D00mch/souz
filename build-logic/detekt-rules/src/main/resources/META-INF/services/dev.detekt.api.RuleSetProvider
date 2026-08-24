@@ -1,1 +1,2 @@
 ru.souz.build.quality.detekt.SouzCoroutineRuleSetProvider
+ru.souz.build.quality.detekt.SouzArchitectureRuleSetProvider

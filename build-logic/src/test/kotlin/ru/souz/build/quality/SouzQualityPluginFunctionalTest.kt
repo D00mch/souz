@@ -192,6 +192,30 @@ class SouzQualityPluginFunctionalTest {
     }
 
     @Test
+    fun `KMP common JVM source is analyzed once with path and line diagnostics`(@TempDir root: Path) {
+        val fixture = FixtureProject(root).apply {
+            create()
+            addSharedUiKmpBoundaryViolation()
+            commit()
+        }
+
+        val result = fixture.buildAndFail("souzGateFast")
+        assertTrue(Files.isRegularFile(fixture.reportPath()), result.output)
+        val boundaryResult = check(report(fixture), "source-set-boundaries")
+        val diagnostics = boundaryResult.path("diagnostics")
+
+        assertTrue(result.output.contains(":sharedUI:detektMainJvm"))
+        assertFalse(result.output.contains("detektCommonJvmMainSourceSet"))
+        assertEquals("fail", boundaryResult.path("status").asText())
+        assertEquals(1, diagnostics.size())
+        assertEquals(
+            "sharedUI/src/commonJvmMain/kotlin/fixture/SharedUiState.kt",
+            diagnostics.single().path("path").asText(),
+        )
+        assertEquals(3, diagnostics.single().path("line").asInt())
+    }
+
+    @Test
     fun `invalid policy encoding is an internal error without hiding the other check`(@TempDir root: Path) {
         val fixture = FixtureProject(root).apply {
             create()
@@ -223,6 +247,7 @@ class SouzQualityPluginFunctionalTest {
         val report = report(fixture)
 
         assertEquals("error", report.path("status").asText())
+        assertEquals("error", check(report, "source-set-boundaries").path("status").asText())
         assertEquals("error", check(report, "cancellation-propagation").path("status").asText())
         assertEquals("error", check(report, "coroutine-thread-local").path("status").asText())
         assertEquals("error", check(report, "coroutine-monitor-use").path("status").asText())

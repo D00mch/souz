@@ -1,0 +1,112 @@
+package ru.souz.build.quality.detekt
+
+import dev.detekt.api.Config
+import dev.detekt.test.lint
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class SourceSetBoundariesTest {
+    @Test
+    fun `reports desktop and native imports from shared UI common JVM sources`() {
+        val findings = lint(
+            "sharedUI/src/commonJvmMain/kotlin/SharedUi.kt",
+            """
+            import java.awt.Desktop
+            import javax.swing.JButton
+            import androidx.compose.foundation.window.WindowDraggableArea
+            import androidx.compose.ui.awt.ComposeWindow
+            import androidx.compose.ui.window.Window
+            import ru.souz.llms.local.LocalChatAPI
+            import ru.souz.tool.desktop.ToolGetCurrentWindow
+            """,
+        )
+
+        assertEquals(7, findings.size)
+        assertTrue(findings.all { it.message.contains(":sharedUI commonJvmMain") })
+    }
+
+    @Test
+    fun `allows portable Compose windows and ordinary JVM APIs in shared UI common JVM sources`() {
+        val findings = lint(
+            "sharedUI/src/commonJvmMain/kotlin/SharedUi.kt",
+            """
+            import androidx.compose.material3.Text
+            import androidx.compose.ui.window.Dialog
+            import androidx.compose.ui.window.Popup
+            import java.time.Clock
+            """,
+        )
+
+        assertEquals(0, findings.size)
+    }
+
+    @Test
+    fun `reports host imports from portable common sources`() {
+        val findings = lint(
+            "/repo/sharedUI/src/commonMain/kotlin/PortableUi.kt",
+            """
+            import java.time.Clock
+            import platform.AppKit.NSWindow
+            import ru.souz.service.speech.MacOsSpeechBridge
+            import androidx.compose.ui.window.*
+            """,
+        )
+
+        assertEquals(4, findings.size)
+        assertTrue(findings.all { it.message.contains("commonMain must remain portable") })
+    }
+
+    @Test
+    fun `reports UI and host implementation imports from core production modules`() {
+        val findings = lint(
+            "agent/src/main/kotlin/AgentRuntime.kt",
+            """
+            import androidx.compose.runtime.Composable
+            import ru.souz.backend.client.PublicClientService
+            import ru.souz.di.SharedUiDiModule
+            import ru.souz.service.speech.MacOsSpeechBridge
+            """,
+        )
+
+        assertEquals(4, findings.size)
+        assertTrue(findings.all { it.message.contains(":agent main") })
+    }
+
+    @Test
+    fun `reports UI and desktop tool imports from backend production sources`() {
+        val findings = lint(
+            "backend/src/main/kotlin/BackendRuntime.kt",
+            """
+            import ru.souz.ui.main.MainViewModel
+            import ru.souz.tool.calendar.ToolGetCalendarEvents
+            import ru.souz.llms.local.LocalChatAPI
+            import ru.souz.tool.skills.ToolInvokeSkill
+            """,
+        )
+
+        assertEquals(2, findings.size)
+        assertTrue(findings.all { it.message.contains(":backend main") })
+    }
+
+    @Test
+    fun `ignores test sources and unknown layouts`() {
+        val import = "import java.awt.Desktop"
+
+        assertEquals(0, lint("sharedUI/src/jvmTest/kotlin/SharedUiTest.kt", import).size)
+        assertEquals(0, lint("scratch/SharedUi.kt", import).size)
+    }
+
+    @Test
+    fun `normalizes Windows source paths`() {
+        val findings = lint(
+            "C:\\repo\\sharedUI\\src\\commonJvmMain\\kotlin\\SharedUi.kt",
+            "import java.awt.Desktop",
+        )
+
+        assertEquals(1, findings.size)
+    }
+
+    private fun lint(path: String, code: String) =
+        SourceSetBoundaries(Config.empty, path).lint(code.trimIndent())
+}

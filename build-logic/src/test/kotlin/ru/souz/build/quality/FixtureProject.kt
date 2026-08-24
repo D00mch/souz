@@ -2,11 +2,14 @@ package ru.souz.build.quality
 
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Properties
 
 internal class FixtureProject(private val root: Path) {
     private val modules = listOf(":graph-engine", ":llms", ":agent", ":sharedUI")
+    private var needsKotlinPluginClasspath = false
 
     fun create() {
         write(
@@ -61,6 +64,65 @@ internal class FixtureProject(private val root: Path) {
         )
     }
 
+    fun addSharedUiKmpBoundaryViolation() {
+        needsKotlinPluginClasspath = true
+        write(
+            "build.gradle.kts",
+            """
+            plugins {
+                id("souz.quality")
+                id("org.jetbrains.kotlin.multiplatform") apply false
+            }
+            """.trimIndent() + "\n",
+        )
+        write(
+            "sharedUI/build.gradle.kts",
+            """
+            plugins { id("org.jetbrains.kotlin.multiplatform") }
+
+            repositories { mavenCentral() }
+
+            kotlin {
+                jvm()
+                sourceSets {
+                    val commonMain by getting
+                    val commonJvmMain by creating {
+                        dependsOn(commonMain)
+                    }
+                    val jvmMain by getting {
+                        dependsOn(commonJvmMain)
+                    }
+                }
+            }
+            """.trimIndent() + "\n",
+        )
+        write(
+            "quality/detekt.yml",
+            """
+            config:
+              validation: false
+
+            souz-coroutines:
+              active: false
+
+            souz-architecture:
+              active: true
+              SourceSetBoundaries:
+                active: true
+            """.trimIndent() + "\n",
+        )
+        write(
+            "sharedUI/src/commonJvmMain/kotlin/fixture/SharedUiState.kt",
+            """
+            package fixture
+
+            import java.awt.Desktop
+
+            class SharedUiState
+            """.trimIndent() + "\n",
+        )
+    }
+
     fun append(path: String, content: String) {
         Files.writeString(root.resolve(path), content, java.nio.file.StandardOpenOption.APPEND)
     }
@@ -108,10 +170,35 @@ internal class FixtureProject(private val root: Path) {
 
     fun reportPath(): Path = root.resolve("build/reports/souz-quality/fast/gate-summary-v1.json")
 
-    private fun runner(arguments: List<String>): GradleRunner = GradleRunner.create()
-        .withProjectDir(root.toFile())
-        .withPluginClasspath()
-        .withArguments(arguments + listOf("--console=plain", "--stacktrace"))
+    private fun runner(arguments: List<String>): GradleRunner {
+        val runner = GradleRunner.create()
+            .withProjectDir(root.toFile())
+            .withArguments(arguments + listOf("--console=plain", "--stacktrace"))
+        return if (needsKotlinPluginClasspath) {
+            runner.withPluginClasspath(pluginUnderTestClasspath() + kotlinPluginClasspath())
+        } else {
+            runner.withPluginClasspath()
+        }
+    }
+
+    private fun pluginUnderTestClasspath(): List<File> {
+        val properties = Properties().apply {
+            val metadata = checkNotNull(
+                FixtureProject::class.java.classLoader.getResourceAsStream(PLUGIN_METADATA)
+            ) {
+                "Missing $PLUGIN_METADATA on the test runtime classpath."
+            }
+            metadata.use { load(it) }
+        }
+        return properties.getProperty("implementation-classpath")
+            .split(File.pathSeparator)
+            .map(::File)
+    }
+
+    private fun kotlinPluginClasspath(): List<File> =
+        checkNotNull(System.getProperty("souz.test.kotlin-plugin-classpath")) {
+            "Missing Kotlin plugin classpath for the KMP functional fixture."
+        }.split(File.pathSeparator).map(::File)
 
     private fun git(vararg arguments: String) {
         val process = ProcessBuilder(listOf("git", "-C", root.toString()) + arguments)
@@ -121,3 +208,5 @@ internal class FixtureProject(private val root: Path) {
         check(process.waitFor() == 0) { "git ${arguments.joinToString(" ")} failed: $output" }
     }
 }
+
+private const val PLUGIN_METADATA = "plugin-under-test-metadata.properties"

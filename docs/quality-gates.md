@@ -8,9 +8,9 @@ the fast gate from the repository root:
 ```
 
 The fast lane is local-safe: its results remain meaningful in a dirty
-checkout. Repository and module contracts are blocking locally and in
-pull-request CI. Coroutine analysis is advisory. CI publishes the quality
-summary and report artifacts even when a blocking check fails.
+checkout. Repository, module, and source-set contracts are blocking locally
+and in pull-request CI. Coroutine analysis is advisory. CI publishes the
+quality summary and report artifacts even when a blocking check fails.
 
 ## Checks
 
@@ -19,6 +19,7 @@ summary and report artifacts even when a blocking check fails.
 | `git-metadata` | The gate can identify the tested commit and worktree state. | Run the gate from the repository checkout and remove Git routing overrides that point outside it. |
 | `repository-contracts` | The Gradle project set, root Module Map, module policies, pain-point indexes, local policy links, and registered check policy paths agree. | Repair the reported repository-relative policy path or update the owning policy with the reviewed module change. |
 | `module-boundaries` | Direct production `ProjectDependency` edges match the explicit module and KMP source-set allowlist. Test dependencies are excluded. | Remove the edge or update the owning module policy and allowlist together when the architecture change is intentional. |
+| `source-set-boundaries` | Production imports keep portable, core, backend, and shared UI source sets behind their reviewed host boundaries. Test source sets are excluded. | Move host-specific code to the owning platform or composition-root source set and expose a contract or host port where the inward module needs one. |
 | `cancellation-propagation` | Suspend paths do not swallow `CancellationException`, including through `runCatching`. | Catch the expected exception type or rethrow cancellation immediately. |
 | `coroutine-thread-local` | Every JVM `ThreadLocal` state declaration is reviewed explicitly. | Move the state into coroutine context, or suppress the reviewed declaration and propagate coroutine access with `asContextElement`. |
 | `coroutine-monitor-use` | `synchronized`, `@Synchronized`, and `Collections.synchronized*` use inside suspend execution is reported for review. | Prefer `Mutex` inside suspend execution or keep monitor coordination behind an explicit non-suspending JVM boundary. |
@@ -34,12 +35,35 @@ gate can exclude them explicitly.
 Local-link checks validate filesystem targets. Markdown fragment identifiers
 are not part of the version 1 repository contract.
 
+## Source-set analysis
+
+The custom `SourceSetBoundaries` rule inspects production import directives and
+enforces these boundaries:
+
+- `commonMain` rejects JVM, Android, native-platform, Skiko/JNA, desktop-window,
+  and Souz host-implementation imports.
+- `sharedUI/commonJvmMain` rejects AWT/Swing, Skiko/JNA, desktop-only Compose
+  window APIs, native model implementations, backend code, and desktop service
+  or tool implementations. Portable `Dialog` and `Popup` APIs and ordinary JVM
+  APIs remain allowed.
+- `:graph-engine`, `:llms`, `:agent`, and `:skill-oauth-api` production code
+  rejects Compose, UI, backend, native-model, host-DI, and host-service imports.
+- `:backend` production code rejects Compose, UI, host-DI, AWT/Swing, Skiko/JNA,
+  and desktop service or tool imports. Its reviewed `:native` dependency remains
+  available.
+
+The rule reports the forbidden import's repository-relative path and line.
+Gradle project-dependency checks remain the primary module authority; this rule
+adds source-level diagnostics and protects boundaries inside allowed dependency
+graphs.
+
 ## Coroutine analysis
 
 Detekt runs one type-resolved analysis task for every JVM production and test
-compilation. Non-coroutine rule sets are disabled in
-[`quality/detekt.yml`](../quality/detekt.yml). Advisory analysis has no baseline,
-so every finding remains visible.
+compilation. General built-in rule sets are disabled in
+[`quality/detekt.yml`](../quality/detekt.yml); the Souz architecture and
+coroutine rule sets are enabled. Detekt analysis has no baseline, so every
+blocking or advisory finding remains visible.
 
 The enabled built-in rule is `SuspendFunSwallowedCancellation`.
 

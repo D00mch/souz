@@ -6,6 +6,8 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.ConfigurableFileCollection
+import ru.souz.build.quality.detekt.SouzDetektRulesClasspathMarker
+import java.io.File
 
 class SouzQualityPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -58,7 +60,7 @@ class SouzQualityPlugin : Plugin<Project> {
         }
         val gate = project.tasks.register("souzGateFast") {
             group = "verification"
-            description = "Runs exact, local-safe Souz repository, module, and coroutine checks."
+            description = "Runs exact, local-safe Souz repository, module, source-set, and coroutine checks."
             finalizedBy(report)
         }
 
@@ -72,18 +74,15 @@ class SouzQualityPlugin : Plugin<Project> {
         reportFiles: ConfigurableFileCollection,
     ) {
         val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
-        val rulesJar = project.layout.projectDirectory.file(
-            "build-logic/detekt-rules/build/libs/souz-detekt-rules.jar"
-        )
+        val rulesClasspath = detektRulesClasspath(project)
 
         project.subprojects.forEach { subproject ->
             var configured = false
             val configure = {
                 if (!configured) {
                     configured = true
-                    val rulesJarTask = project.gradle.includedBuild("build-logic").task(":detekt-rules:jar")
                     subproject.pluginManager.apply("dev.detekt")
-                    subproject.dependencies.add("detektPlugins", subproject.files(rulesJar))
+                    subproject.dependencies.add("detektPlugins", subproject.files(rulesClasspath))
                     subproject.extensions.configure(DetektExtension::class.java) {
                         toolVersion.set("2.0.0-alpha.6")
                         config.setFrom(configFile)
@@ -98,7 +97,6 @@ class SouzQualityPlugin : Plugin<Project> {
                     val analysisTasks = subproject.tasks.withType(Detekt::class.java)
                         .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
                     analysisTasks.configureEach {
-                        dependsOn(rulesJarTask)
                         exclude("**/generated/resources/**")
                         reports.checkstyle.required.set(true)
                         reports.html.required.set(false)
@@ -118,6 +116,11 @@ class SouzQualityPlugin : Plugin<Project> {
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") { configure() }
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") { configure() }
         }
+    }
+
+    private fun detektRulesClasspath(project: Project): ConfigurableFileCollection {
+        val markerClass = SouzDetektRulesClasspathMarker::class.java
+        return project.files(File(markerClass.protectionDomain.codeSource.location.toURI()))
     }
 
     private fun dependencyEdges(sourceProject: Project, repository: java.io.File): List<DependencyEdge> {
