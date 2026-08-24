@@ -90,8 +90,11 @@ private fun String.isSharedUiHostImport(isAllUnder: Boolean): Boolean =
         this in HOST_IMPLEMENTATION_TYPES
 
 private fun String.isDesktopWindowImport(isAllUnder: Boolean): Boolean =
-    (isAllUnder && this == COMPOSE_WINDOW_PACKAGE) ||
-        DESKTOP_WINDOW_TYPES.any { type -> this == type || startsWith("$type.") }
+    when {
+        this == COMPOSE_WINDOW_PACKAGE -> isAllUnder
+        !startsWith("$COMPOSE_WINDOW_PACKAGE.") -> false
+        else -> !PORTABLE_WINDOW_TYPES.any { type -> this == type || startsWith("$type.") }
+    }
 
 private fun String.isUnreviewedAndroidXImport(): Boolean =
     matchesAny(COMMON_MAIN_FORBIDDEN_ANDROIDX_PREFIXES) ||
@@ -110,27 +113,11 @@ private val COMMON_MAIN_ALLOWED_ANDROIDX_PREFIXES = listOf("androidx.compose.")
 
 private val COMMON_MAIN_FORBIDDEN_ANDROIDX_PREFIXES = listOf("androidx.compose.desktop.")
 
-private val DESKTOP_WINDOW_TYPES = setOf(
-    "$COMPOSE_WINDOW_PACKAGE.ApplicationScope",
-    "$COMPOSE_WINDOW_PACKAGE.DialogWindow",
-    "$COMPOSE_WINDOW_PACKAGE.DialogWindowScope",
-    "$COMPOSE_WINDOW_PACKAGE.FrameWindowScope",
-    "$COMPOSE_WINDOW_PACKAGE.MenuBar",
-    "$COMPOSE_WINDOW_PACKAGE.Notification",
-    "$COMPOSE_WINDOW_PACKAGE.Tray",
-    "$COMPOSE_WINDOW_PACKAGE.TrayState",
-    "$COMPOSE_WINDOW_PACKAGE.Window",
-    "$COMPOSE_WINDOW_PACKAGE.WindowPlacement",
-    "$COMPOSE_WINDOW_PACKAGE.WindowPosition",
-    "$COMPOSE_WINDOW_PACKAGE.WindowScope",
-    "$COMPOSE_WINDOW_PACKAGE.WindowState",
-    "$COMPOSE_WINDOW_PACKAGE.application",
-    "$COMPOSE_WINDOW_PACKAGE.awaitApplication",
-    "$COMPOSE_WINDOW_PACKAGE.exitApplication",
-    "$COMPOSE_WINDOW_PACKAGE.rememberDialogState",
-    "$COMPOSE_WINDOW_PACKAGE.rememberTrayState",
-    "$COMPOSE_WINDOW_PACKAGE.rememberWindowState",
-    "$COMPOSE_WINDOW_PACKAGE.singleWindowApplication",
+private val PORTABLE_WINDOW_TYPES = setOf(
+    "$COMPOSE_WINDOW_PACKAGE.Dialog",
+    "$COMPOSE_WINDOW_PACKAGE.DialogProperties",
+    "$COMPOSE_WINDOW_PACKAGE.Popup",
+    "$COMPOSE_WINDOW_PACKAGE.PopupProperties",
 )
 
 private val PORTABLE_HOST_PREFIXES = listOf(

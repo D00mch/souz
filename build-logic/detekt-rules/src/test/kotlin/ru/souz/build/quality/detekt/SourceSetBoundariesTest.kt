@@ -17,12 +17,13 @@ class SourceSetBoundariesTest {
             import androidx.compose.foundation.window.WindowDraggableArea
             import androidx.compose.ui.awt.ComposeWindow
             import androidx.compose.ui.window.Window
+            import androidx.compose.ui.window.FutureDesktopWindowApi
             import ru.souz.llms.local.LocalChatAPI
             import ru.souz.tool.desktop.ToolGetCurrentWindow
             """,
         )
 
-        assertEquals(7, findings.size)
+        assertEquals(8, findings.size)
         assertTrue(findings.all { it.message.contains(":sharedUI commonJvmMain") })
     }
 
@@ -33,7 +34,9 @@ class SourceSetBoundariesTest {
             """
             import androidx.compose.material3.Text
             import androidx.compose.ui.window.Dialog
+            import androidx.compose.ui.window.DialogProperties
             import androidx.compose.ui.window.Popup
+            import androidx.compose.ui.window.PopupProperties
             import java.time.Clock
             """,
         )
