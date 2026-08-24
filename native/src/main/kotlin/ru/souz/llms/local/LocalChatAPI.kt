@@ -22,7 +22,7 @@ class LocalChatAPI(
         runtime.chatStream(body)
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings = try {
-        runtime.embeddings(body)
+        LocalEmbeddingProfiles.embeddings(body, runtime.nativeEmbeddings(body))
     } catch (error: Exception) {
         LLMResponse.Embeddings.Error(-1, "Local provider error: ${error.message}")
     }
