@@ -12,7 +12,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMModel
 
@@ -129,7 +131,7 @@ class BackendCompositionE2eTest {
             val list = client.get(BackendHttpRoutes.CHATS) {
                 trusted(userId)
             }
-            val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
+            val persistedMessages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
                 trusted(userId)
             }
 
@@ -137,8 +139,23 @@ class BackendCompositionE2eTest {
             assertEquals(chatId, list.jsonBody()["items"].single()["id"].asText())
             assertEquals(
                 listOf("remember me", "assistant reply to remember me"),
-                messages.jsonBody()["items"].map { it["content"].asText() },
+                persistedMessages.jsonBody()["items"].map { it["content"].asText() },
             )
+
+            val continued = client.post(BackendHttpRoutes.chatMessages(chatId)) {
+                trusted(userId)
+                jsonBody(
+                    """{"content":"continue after restart","clientMessageId":"msg-2","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}"""
+                )
+            }
+            assertEquals(HttpStatusCode.OK, continued.status)
+            val messages = eventually("continued execution after restart", timeout = 10.seconds) {
+                client.get(BackendHttpRoutes.chatMessages(chatId)) {
+                    trusted(userId)
+                }.jsonBody()["items"].takeIf { it.size() == 4 }
+            }
+            assertEquals(listOf(1L, 2L, 3L, 4L), messages.map { it["seq"].asLong() })
+            assertEquals("assistant", messages.last()["role"].asText())
         }
     }
 
@@ -171,4 +188,194 @@ class BackendCompositionE2eTest {
             assertEquals(E2E_LOCAL_MODEL.alias, llm.requests.single().model)
             assertEquals(0.2f, llm.requests.single().temperature)
         }
+
+    @Test
+    fun `bootstrap and onboarding expose effective capabilities and persist completion`() =
+        backendE2eTest("e2e_onboarding") {
+            val userId = "onboarding-user"
+            val bootstrap = client.get(BackendHttpRoutes.BOOTSTRAP) {
+                trusted(userId)
+            }
+            val initial = client.get(BackendHttpRoutes.ONBOARDING_STATE) {
+                trusted(userId)
+            }
+
+            assertEquals(HttpStatusCode.OK, bootstrap.status)
+            assertEquals(userId, bootstrap.jsonBody()["user"]["id"].asText())
+            val models = bootstrap.jsonBody()["capabilities"]["models"]
+            assertTrue(models.any { model ->
+                model["model"].asText() == E2E_LOCAL_MODEL.alias && model["serverManagedKey"].asBoolean()
+            })
+            assertFalse(models.any { it["provider"].asText() == "giga" })
+            assertTrue(initial.jsonBody()["required"].asBoolean())
+            assertFalse(initial.jsonBody()["completed"].asBoolean())
+            assertEquals("preferences", initial.jsonBody()["currentStep"].asText())
+            assertTrue(initial.jsonBody()["hasUsableModelAccess"].asBoolean())
+
+            val complete = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+                trusted(userId)
+                jsonBody(
+                    """
+                    {
+                      "defaultModel": "${E2E_LOCAL_MODEL.alias}",
+                      "locale": "iw-IL",
+                      "timeZone": "Europe/Amsterdam",
+                      "enabledTools": [],
+                      "streamingMessages": true,
+                      "interfaceLanguage": "en",
+                      "requestTimeoutMillis": 45000,
+                      "useFewShotExamples": false
+                    }
+                    """.trimIndent()
+                )
+            }
+            val completed = client.get(BackendHttpRoutes.ONBOARDING_STATE) {
+                trusted(userId)
+            }.jsonBody()
+
+            assertEquals(HttpStatusCode.OK, complete.status)
+            assertTrue(complete.jsonBody()["completed"].asBoolean())
+            assertFalse(completed["required"].asBoolean())
+            assertTrue(completed["completed"].asBoolean())
+            assertEquals("done", completed["currentStep"].asText())
+            assertEquals("he-IL", completed["currentSettings"]["locale"].asText())
+            assertEquals("Europe/Amsterdam", completed["currentSettings"]["timeZone"].asText())
+            assertEquals("en", completed["currentSettings"]["interfaceLanguage"].asText())
+            assertEquals(45_000L, completed["currentSettings"]["requestTimeoutMillis"].asLong())
+            assertFalse(completed["currentSettings"]["useFewShotExamples"].asBoolean())
+        }
+
+    @Test
+    fun `onboarding validation rejects malformed preferences without partial completion`() =
+        backendE2eTest("e2e_onboarding_validation") {
+            val invalidBodies = listOf(
+                "unknown model" to """{"defaultModel":"unknown-model"}""",
+                "Giga model" to """{"defaultModel":"GigaChat-Max"}""",
+                "unsafe tool" to """{"enabledTools":["OpenBrowser"]}""",
+                "locale" to """{"locale":"not-a-locale"}""",
+                "time zone" to """{"timeZone":"Mars/Phobos"}""",
+                "request timeout" to """{"requestTimeoutMillis":999}""",
+            )
+
+            invalidBodies.forEachIndexed { index, (description, body) ->
+                val userId = "invalid-onboarding-$index"
+                val before = client.get(BackendHttpRoutes.ONBOARDING_STATE) {
+                    trusted(userId)
+                }.jsonBody()["currentSettings"]
+                val response = client.post(BackendHttpRoutes.ONBOARDING_COMPLETE) {
+                    trusted(userId)
+                    jsonBody(body)
+                }
+                val after = client.get(BackendHttpRoutes.ONBOARDING_STATE) {
+                    trusted(userId)
+                }.jsonBody()
+
+                assertEquals(HttpStatusCode.BadRequest, response.status, description)
+                assertEquals("invalid_request", response.jsonBody()["error"]["code"].asText(), description)
+                assertFalse(after["completed"].asBoolean(), description)
+                val afterSettings = after["currentSettings"]
+                assertEquals(
+                    before.properties().asSequence()
+                        .filter { it.key != "enabledTools" }
+                        .associate { it.key to it.value },
+                    afterSettings.properties().asSequence()
+                        .filter { it.key != "enabledTools" }
+                        .associate { it.key to it.value },
+                    description,
+                )
+                assertEquals(
+                    before["enabledTools"].map { it.asText() }.toSet(),
+                    afterSettings["enabledTools"].map { it.asText() }.toSet(),
+                    description,
+                )
+            }
+        }
+
+    @Test
+    fun `OpenAPI inventory and proxy security are exact with Telegram disabled and enabled`() {
+        val expectedWithoutTelegram = linkedMapOf(
+            "/" to setOf("get"),
+            "/health" to setOf("get"),
+            "/v1/bootstrap" to setOf("get"),
+            "/v1/onboarding/state" to setOf("get"),
+            "/v1/onboarding/complete" to setOf("post"),
+            "/v1/me/settings" to setOf("get", "patch"),
+            "/v1/me/provider-keys" to setOf("get"),
+            "/v1/me/provider-keys/{provider}" to setOf("put", "delete"),
+            "/v1/chats" to setOf("get", "post"),
+            "/v1/chats/{chatId}/threads/{threadId}" to setOf("get"),
+            "/v1/chats/{chatId}/title" to setOf("patch"),
+            "/v1/chats/{chatId}/archive" to setOf("post"),
+            "/v1/chats/{chatId}/unarchive" to setOf("post"),
+            "/v1/chats/{chatId}/messages" to setOf("get", "post"),
+            "/v1/chats/{chatId}/events" to setOf("get"),
+            "/v1/chats/{chatId}/cancel-active" to setOf("post"),
+            "/v1/chats/{chatId}/executions/{executionId}/cancel" to setOf("post"),
+            "/v1/options/{optionId}/answer" to setOf("post"),
+        )
+        listOf(false, true).forEach { telegramEnabled ->
+            backendE2eTest(
+                schemaPrefix = "e2e_openapi_${if (telegramEnabled) "telegram" else "base"}",
+                featureFlags = BackendFeatureFlags(telegramBot = telegramEnabled),
+                telegramApi = FakeCompositionTelegramApi.takeIf { telegramEnabled },
+            ) {
+                val docs = client.get(BackendHttpRoutes.DOCS)
+                val document = client.get(BackendHttpRoutes.OPENAPI_DOCUMENT).jsonBody()
+                val expected = expectedWithoutTelegram + if (telegramEnabled) {
+                    mapOf("/v1/chats/{chatId}/telegram-bot" to setOf("get", "put", "delete"))
+                } else {
+                    emptyMap()
+                }
+                val methods = setOf("get", "post", "put", "patch", "delete")
+                val actual = document["paths"].properties().asSequence().associate { (path, item) ->
+                    path to item.fieldNames().asSequence().filter(methods::contains).toSet()
+                }
+
+                assertEquals(HttpStatusCode.OK, docs.status)
+                assertTrue(docs.bodyAsText().contains("url: '/docs/openapi.json'"))
+                assertEquals(expected, actual)
+                assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
+                assertEquals(
+                    setOf("souzProxyAuth", "souzUserIdentity"),
+                    document["components"]["securitySchemes"].fieldNames().asSequence().toSet(),
+                )
+                document["paths"].properties().forEach { (path, pathItem) ->
+                    pathItem.properties().asSequence()
+                        .filter { it.key in methods }
+                        .forEach { (method, operation) ->
+                            val publicOperation =
+                                path == "/" || path == "/health" ||
+                                    (path == "/v1/chats" && method == "post") ||
+                                    (path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get")
+                            if (publicOperation) {
+                                assertFalse(operation.has("security"), "$method $path")
+                            } else {
+                                assertEquals(
+                                    setOf("souzProxyAuth", "souzUserIdentity"),
+                                    operation["security"][0].fieldNames().asSequence().toSet(),
+                                    "$method $path",
+                                )
+                            }
+                        }
+                }
+            }
+        }
+    }
+}
+
+private object FakeCompositionTelegramApi : ru.souz.backend.telegram.TelegramBotApi {
+    override suspend fun getMe(token: String) = ru.souz.backend.telegram.TelegramGetMeResponse(ok = true)
+
+    override suspend fun getUpdates(
+        token: String,
+        offset: Long?,
+        timeoutSeconds: Int,
+        allowedUpdates: List<String>,
+    ) = ru.souz.backend.telegram.TelegramUpdatesResponse(ok = true)
+
+    override suspend fun sendMessage(token: String, chatId: Long, text: String) = Unit
+
+    override suspend fun sendChatAction(token: String, chatId: Long, action: String) = Unit
+
+    override suspend fun deleteWebhook(token: String, dropPendingUpdates: Boolean) = Unit
 }

@@ -19,14 +19,17 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.app.BackendAppConfig
+import ru.souz.backend.app.BackendApplicationScope
 import ru.souz.backend.app.BackendRuntimeResources
 import ru.souz.backend.app.backendDiModule
+import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendOpenApiSecurity
@@ -34,6 +37,7 @@ import ru.souz.backend.http.backendApplication
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.telegram.TelegramBotApi
+import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.llms.LLMModel
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
@@ -50,6 +54,7 @@ internal fun backendE2eTest(
     llm: E2eLlmApi = E2eLlmApi(),
     telegramApi: TelegramBotApi? = null,
     turnRunnerOverride: BackendConversationTurnRunner? = null,
+    startBackgroundServices: Boolean = false,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
@@ -58,6 +63,7 @@ internal fun backendE2eTest(
         llm = llm,
         telegramApi = telegramApi,
         turnRunnerOverride = turnRunnerOverride,
+        startBackgroundServices = startBackgroundServices,
     )
     application {
         backendApplication(backend.dependencies)
@@ -119,6 +125,7 @@ internal class BackendE2eBackend(
     llm: E2eLlmApi,
     telegramApi: TelegramBotApi?,
     turnRunnerOverride: BackendConversationTurnRunner?,
+    startBackgroundServices: Boolean,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
         schema = schema,
@@ -152,6 +159,20 @@ internal class BackendE2eBackend(
     val dependencies: BackendHttpDependencies = di.direct.instance()
     private val dataSource: HikariDataSource = di.direct.instance()
     private val resources: BackendRuntimeResources = di.direct.instance()
+
+    init {
+        if (startBackgroundServices) {
+            val applicationScope: BackendApplicationScope = di.direct.instance()
+            if (featureFlags.wsEvents) {
+                val recoveryService: ClientThreadRecoveryService = di.direct.instance()
+                runBlocking { recoveryService.recover() }
+                recoveryService.start(applicationScope)
+            }
+            if (featureFlags.telegramBot) {
+                di.direct.instance<TelegramBotPollingService>().start()
+            }
+        }
+    }
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)

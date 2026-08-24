@@ -36,6 +36,7 @@ class BackendOptionsE2eTest {
                 jsonBody("""{"content":"need option"}""")
             }
             assertEquals(HttpStatusCode.OK, sent.status)
+            val executionId = sent.jsonBody()["execution"]["id"].asText()
 
             val optionEvent = eventually("option requested event") {
                 client.get(BackendHttpRoutes.chatEvents(chatId)) {
@@ -43,8 +44,27 @@ class BackendOptionsE2eTest {
                 }.jsonBody()["items"].firstOrNull { it["type"].asText() == "option.requested" }
             }
             val optionId = optionEvent["payload"]["optionId"].asText()
+            assertEquals(executionId, optionEvent["executionId"].asText())
             assertEquals("Select variant", optionEvent["payload"]["title"].asText())
             assertEquals(2, optionEvent["payload"]["options"].size())
+
+            val foreign = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
+                trusted(UUID.randomUUID().toString())
+                jsonBody("""{"selectedOptionIds":["a"]}""")
+            }
+            val invalid = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
+                trusted(userId)
+                jsonBody("""{"selectedOptionIds":["missing"]}""")
+            }
+            val wrongMode = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
+                trusted(userId)
+                jsonBody("""{"selectedOptionIds":["a","b"]}""")
+            }
+            assertEquals(HttpStatusCode.NotFound, foreign.status)
+            assertEquals("option_not_found", foreign.jsonBody()["error"]["code"].asText())
+            assertEquals(HttpStatusCode.BadRequest, invalid.status)
+            assertEquals("invalid_request", invalid.jsonBody()["error"]["code"].asText())
+            assertEquals(HttpStatusCode.BadRequest, wrongMode.status)
 
             val answer = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
                 trusted(userId)
@@ -52,6 +72,7 @@ class BackendOptionsE2eTest {
             }
             assertEquals(HttpStatusCode.OK, answer.status)
             assertEquals("answered", answer.jsonBody()["option"]["status"].asText())
+            assertEquals(executionId, answer.jsonBody()["execution"]["id"].asText())
             eventually("continued assistant message") {
                 client.get(BackendHttpRoutes.chatMessages(chatId)) {
                     trusted(userId)
@@ -61,6 +82,37 @@ class BackendOptionsE2eTest {
             }.let { messages ->
                 assertTrue(messages.any { it["content"].asText() == "continued after choosing Alpha" })
             }
+            val events = client.get(BackendHttpRoutes.chatEvents(chatId)) {
+                trusted(userId)
+            }.jsonBody()["items"]
+            assertTrue(events.any { it["type"].asText() == "option.answered" })
+            assertTrue(events.filter {
+                it["type"].asText() in setOf("option.requested", "option.answered", "execution.finished")
+            }.all {
+                it["executionId"].asText() == executionId
+            })
+
+            val second = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
+                trusted(userId)
+                jsonBody("""{"selectedOptionIds":["a"]}""")
+            }
+            assertEquals(HttpStatusCode.BadRequest, second.status)
+            assertEquals("invalid_request", second.jsonBody()["error"]["code"].asText())
+        }
+
+    @Test
+    fun `option answer route reports feature disabled through the production graph`() =
+        backendE2eTest(
+            schemaPrefix = "e2e_options_disabled",
+            featureFlags = BackendFeatureFlags(wsEvents = true, options = false),
+        ) {
+            val response = client.post(BackendHttpRoutes.optionAnswer(UUID.randomUUID())) {
+                trusted("options-disabled-user")
+                jsonBody("""{"selectedOptionIds":["a"]}""")
+            }
+
+            assertEquals(HttpStatusCode.NotFound, response.status)
+            assertEquals("feature_disabled", response.jsonBody()["error"]["code"].asText())
         }
 
     private suspend fun BackendE2eScope.createPublicChat(userId: String): String {

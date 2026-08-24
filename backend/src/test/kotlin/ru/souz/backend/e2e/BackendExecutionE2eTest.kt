@@ -3,6 +3,7 @@ package ru.souz.backend.e2e
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlin.test.Test
@@ -66,12 +67,20 @@ class BackendExecutionE2eTest {
 
     @Test
     fun `failed execution records terminal event and no partial assistant message`() =
-        backendE2eTest("e2e_execution_failure", llm = E2eLlmApi().apply { failWith("simulated failure") }) {
+        backendE2eTest(
+            "e2e_execution_failure",
+            featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true),
+            llm = E2eLlmApi().apply { streamThenFail(listOf("partial ", "assistant"), "simulated failure") },
+        ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":true}""")
+            }
             val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                 trusted(userId)
-                jsonBody("""{"content":"fail please","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                jsonBody("""{"content":"fail please"}""")
             }
 
             assertEquals(HttpStatusCode.OK, sent.status)
@@ -88,14 +97,23 @@ class BackendExecutionE2eTest {
 
             assertEquals(listOf("message.created", "execution.started", "execution.failed"), events.map { it["type"].asText() })
             assertEquals(listOf("user"), messages.map { it["role"].asText() })
+            assertEquals(listOf("partial ", "assistant"), llm.streamedChunks)
             assertEquals("agent_execution_failed", events.last()["payload"]["errorCode"].asText())
         }
 
     @Test
     fun `concurrent HTTP turn conflicts and cancellation reaches a terminal event`() =
-        backendE2eTest("e2e_execution_cancel", llm = E2eLlmApi().apply { hangUntilCancelled() }) {
+        backendE2eTest(
+            "e2e_execution_cancel",
+            featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true),
+            llm = E2eLlmApi().apply { streamThenHang(listOf("partial ", "assistant")) },
+        ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":true}""")
+            }
             coroutineScope {
                 val runningSend = async {
                     client.post(BackendHttpRoutes.chatMessages(chatId)) {
@@ -104,6 +122,9 @@ class BackendExecutionE2eTest {
                     }
                 }
                 llm.awaitPrompt("cancel me")
+                eventually("streamed partial response") {
+                    llm.streamedChunks.takeIf { it.size == 2 }
+                }
                 val conflicting = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                     trusted(userId)
                     jsonBody("""{"content":"second message"}""")
@@ -126,11 +147,70 @@ class BackendExecutionE2eTest {
                 }
             }
             assertEquals("execution.cancelled", events.last()["type"].asText())
+            val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
+                trusted(userId)
+            }.jsonBody()["items"]
+            assertEquals(listOf("user"), messages.map { it["role"].asText() })
         }
 
-    private suspend fun BackendE2eScope.createPublicChat(userId: String): String {
+    @Test
+    fun `tool audit events redact secrets while production delivery keeps the original payload`() {
+        val secret = "sk-audit-secret-123"
+        val deliveredText = "Authorization: Bearer $secret"
+        val prompt = "deliver an audit payload"
+        val llm = E2eLlmApi()
+        backendE2eTest(
+            schemaPrefix = "e2e_execution_audit",
+            featureFlags = BackendFeatureFlags(wsEvents = true, toolEvents = true),
+            llm = llm,
+        ) {
+            val userId = UUID.randomUUID().toString()
+            val sourceChatId = createPublicChat(userId, "create-source")
+            val targetChatId = createPublicChat(userId, "create-target")
+            llm.requestSkillForPrompt(
+                prompt = prompt,
+                skillId = "SendMessageToChannel",
+                arguments = mapOf(
+                    "channelType" to "public_client",
+                    "channelId" to targetChatId,
+                    "text" to deliveredText,
+                ),
+            )
+
+            val sent = client.post(BackendHttpRoutes.chatMessages(sourceChatId)) {
+                trusted(userId)
+                jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            }
+            assertEquals(HttpStatusCode.OK, sent.status)
+            val auditResponse = eventually("redacted tool audit events") {
+                client.get(BackendHttpRoutes.chatEvents(sourceChatId)) {
+                    trusted(userId)
+                }.takeIf { response ->
+                    val items = response.jsonBody()["items"]
+                    items.any { event ->
+                        event["type"].asText() == "tool.call.started" &&
+                            event["payload"]["name"].asText() == "RunSkillCommand"
+                    } && items.any { event -> event["type"].asText() == "execution.finished" }
+                }
+            }
+            val auditBody = auditResponse.bodyAsText()
+            assertFalse(auditBody.contains(secret))
+            assertTrue(auditBody.contains("[REDACTED]"))
+
+            val delivered = client.get(BackendHttpRoutes.chatMessages(targetChatId)) {
+                trusted(userId)
+            }.jsonBody()["items"].single()
+            assertEquals(deliveredText, delivered["content"].asText())
+            assertEquals("true", delivered["metadata"]["crossChannel"].asText())
+        }
+    }
+
+    private suspend fun BackendE2eScope.createPublicChat(
+        userId: String,
+        requestId: String = "create-1",
+    ): String {
         val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"create-1","clientType":"backend"}""")
+            jsonBody("""{"userId":"$userId","requestId":"$requestId","clientType":"backend"}""")
         }
         assertEquals(HttpStatusCode.Created, created.status)
         return created.jsonBody()["chat"]["id"].asText()
