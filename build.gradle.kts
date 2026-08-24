@@ -19,25 +19,30 @@ plugins {
 }
 
 if (providers.gradleProperty("souz.coverage").isPresent) {
-    pluginManager.apply("org.jetbrains.kotlinx.kover")
-    subprojects.forEach { subproject ->
-        subproject.pluginManager.apply("org.jetbrains.kotlinx.kover")
-        dependencies.add("kover", project(subproject.path))
-    }
+    allprojects.forEach { coverageProject ->
+        coverageProject.pluginManager.apply("org.jetbrains.kotlinx.kover")
+        if (coverageProject != rootProject) {
+            dependencies.add("kover", project(coverageProject.path))
+        }
 
-    extensions.configure<KoverProjectExtension> {
-        reports {
-            total {
-                filters {
-                    excludes {
-                        classes("*.generated.resources.*")
+        coverageProject.extensions.configure<KoverProjectExtension> {
+            reports {
+                total {
+                    filters {
+                        excludes {
+                            classes("*.generated.resources.*")
+                        }
                     }
-                }
-                log {
-                    format = "SOUZ_KOVER_LINE_COVERAGE=<value>%"
-                    groupBy = GroupingEntityType.APPLICATION
-                    coverageUnits = CoverageUnit.LINE
-                    aggregationForGroup = AggregationType.COVERED_PERCENTAGE
+                    log {
+                        format = if (coverageProject == rootProject) {
+                            "SOUZ_KOVER_LINE_COVERAGE=<value>%"
+                        } else {
+                            "SOUZ_KOVER_MODULE_LINE_COVERAGE=${coverageProject.path}=<value>%"
+                        }
+                        groupBy = GroupingEntityType.APPLICATION
+                        coverageUnits = CoverageUnit.LINE
+                        aggregationForGroup = AggregationType.COVERED_PERCENTAGE
+                    }
                 }
             }
         }

@@ -167,7 +167,7 @@ jobs:
         run: |
           coverage_log="$RUNNER_TEMP/kover.log"
           ./gradlew test :sharedLogic:allTests :sharedUI:allTests \
-            :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage \
+            :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage \
             --console=plain --stacktrace --no-parallel | tee "$coverage_log"
 
           coverage_marker_pattern='^SOUZ_KOVER_LINE_COVERAGE=[0-9]+([.][0-9]+)?%$'
@@ -176,8 +176,23 @@ jobs:
             exit 1
           fi
           coverage_marker="$(grep -E "$coverage_marker_pattern" "$coverage_log")"
+          module_marker_pattern='^SOUZ_KOVER_MODULE_LINE_COVERAGE=(:[[:alnum:]_-]+)+=[0-9]+([.][0-9]+)?%$'
+          module_markers="$(grep -E "$module_marker_pattern" "$coverage_log" || true)"
+          if [[ -z "$module_markers" ]]; then
+            echo "Expected Kover coverage markers for project modules"
+            exit 1
+          fi
 
-          printf '## JVM coverage\n\n%s\n' "$coverage_marker" >> "$GITHUB_STEP_SUMMARY"
+          {
+            printf '## JVM coverage\n\n%s\n\n' "$coverage_marker"
+            printf '| Module | Line coverage |\n| --- | ---: |\n'
+            while IFS= read -r module_marker; do
+              module_and_coverage="${module_marker#SOUZ_KOVER_MODULE_LINE_COVERAGE=}"
+              module="${module_and_coverage%=*}"
+              coverage="${module_and_coverage##*=}"
+              printf '| `%s` | %s |\n' "$module" "$coverage"
+            done < <(printf '%s\n' "$module_markers" | sort)
+          } >> "$GITHUB_STEP_SUMMARY"
           grep -Fqx "$coverage_marker" "$GITHUB_STEP_SUMMARY"
 
       - name: Verify coverage reports

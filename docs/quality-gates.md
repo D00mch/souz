@@ -93,20 +93,23 @@ required JVM test suite:
 
 ```bash
 ./gradlew test :sharedLogic:allTests :sharedUI:allTests \
-  :koverXmlReport :koverHtmlReport :koverLog -Psouz.coverage --no-parallel
+  :koverXmlReport :koverHtmlReport koverLog -Psouz.coverage --no-parallel
 ```
 
 Report generation and the presence of `build/reports/kover/report.xml` and
 `build/reports/kover/html/index.html` are blocking pull-request requirements.
-CI publishes the root `:koverLog` aggregate line coverage as
-`SOUZ_KOVER_LINE_COVERAGE=<percent>%` in the job summary. Generated resource
-classes matching `*.generated.resources.*` are excluded from the aggregate.
-No Kover verification rule or minimum coverage threshold is configured. Kover
-is activated only with `-Psouz.coverage`, so `souzGateFast` and ordinary local
-builds are not instrumented.
+CI publishes the root aggregate line coverage as
+`SOUZ_KOVER_LINE_COVERAGE=<percent>%` and a table of module-local line coverage
+in the job summary. Generated resource classes matching
+`*.generated.resources.*` are excluded from every report. No Kover verification
+rule or minimum coverage threshold is configured. Kover is activated only with
+`-Psouz.coverage`, so `souzGateFast` and ordinary local builds are not
+instrumented.
 
 The root report merges every product module. Kover covers common and JVM source
-sets; non-JVM targets are outside this report.
+sets; non-JVM targets are outside this report. Each module row covers that
+module's classes using its own JVM test tasks, while the root aggregate also
+includes coverage produced across module boundaries.
 
 ## Reports
 
