@@ -30,6 +30,7 @@ import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
+import kotlin.time.Duration.Companion.milliseconds
 
 class TelegramBotPollingServiceTest {
     @Test
@@ -83,7 +84,7 @@ class TelegramBotPollingServiceTest {
             val service = TelegramBotPollingService(
                 repository = bindingRepository,
                 botApi = api,
-                turnExecutor = TelegramTurnExecutor { id, targetChatId, content, _, _: UserSettingsOverrides ->
+                turnExecutor = { id, targetChatId, content, _, _: UserSettingsOverrides ->
                     assertEquals(userId, id)
                     assertEquals(chatId, targetChatId)
                     assertEquals("long lease turn", content)
@@ -110,7 +111,7 @@ class TelegramBotPollingServiceTest {
                         if (candidate != null && candidate.isAfter(initialLease)) {
                             renewedLease = candidate
                         }
-                        delay(25)
+                        delay(25.milliseconds)
                     }
                 }
                 assertTrue(assertNotNull(renewedLease).isAfter(initialLease))
