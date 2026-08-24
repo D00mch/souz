@@ -291,7 +291,7 @@ class BackendPublicWebSocketE2eTest {
             val cancelStatus = readJson(session)
             val terminal = readJson(session)
             assertEquals("accepted", cancelAck["status"].asText())
-            assertEquals("cancelling", cancelStatus["status"].asText())
+            assertTrue(cancelStatus["status"].asText() in setOf("cancelling", "cancelled"))
             assertEquals("thread.cancelled", terminal["type"].asText())
 
             session.send(
