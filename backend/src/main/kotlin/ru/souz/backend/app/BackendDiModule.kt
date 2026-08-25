@@ -57,6 +57,7 @@ import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
+import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
@@ -85,6 +86,8 @@ import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLocalLlmDiModule
 import ru.souz.runtime.di.runtimeProviderHttpDiModule
@@ -242,6 +245,19 @@ fun backendDiModule(
             eventService = instance(),
         )
     }
+    bindSingleton<ConversationMemoryRuntime> {
+        val hindsightUrl = appConfig.hindsightApiUrl
+        val hindsightToken = appConfig.hindsightApiToken
+        if (hindsightUrl != null && hindsightToken != null) {
+            HindsightConversationMemoryRuntime(
+                httpClient = instance<ProviderHttpClients>().standard,
+                baseUrl = hindsightUrl,
+                apiToken = hindsightToken,
+            )
+        } else {
+            NoopConversationMemoryRuntime
+        }
+    }
     bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
@@ -265,6 +281,7 @@ fun backendDiModule(
             searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
+            memoryRuntime = instance<ConversationMemoryRuntime>(),
         )
     }
     bindSingleton {
