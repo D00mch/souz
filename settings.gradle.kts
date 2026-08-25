@@ -8,26 +8,6 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
-
-    resolutionStrategy {
-        eachPlugin {
-            val version = target.version ?: requested.version ?: return@eachPlugin
-            when (requested.id.id) {
-                "org.jetbrains.kotlin.jvm",
-                "org.jetbrains.kotlin.multiplatform" ->
-                    useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:$version")
-
-                "org.jetbrains.kotlin.plugin.compose" ->
-                    useModule("org.jetbrains.kotlin:compose-compiler-gradle-plugin:$version")
-
-                "org.jetbrains.compose" ->
-                    useModule("org.jetbrains.compose:compose-gradle-plugin:$version")
-
-                "org.jetbrains.kotlinx.kover" ->
-                    useModule("org.jetbrains.kotlinx:kover-gradle-plugin:$version")
-            }
-        }
-    }
 }
 
 dependencyResolutionManagement {
