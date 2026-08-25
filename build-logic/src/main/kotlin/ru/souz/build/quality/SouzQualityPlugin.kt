@@ -3,10 +3,13 @@ package ru.souz.build.quality
 import dev.detekt.gradle.Detekt
 import dev.detekt.gradle.DetektCreateBaselineTask
 import dev.detekt.gradle.extensions.DetektExtension
+import org.gradle.api.Action
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.Task
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.tasks.TaskProvider
 
 class SouzQualityPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -33,7 +36,7 @@ class SouzQualityPlugin : Plugin<Project> {
             edgeInputs.finalizeValue()
         }
 
-        val policyFiles = project.fileTree(repository) {
+        val policyFiles = project.fileTree(repository).apply {
             include("**/AGENTS.md")
             include("docs/pain-points.md")
             include("**/docs/pain-points.md")
@@ -47,54 +50,69 @@ class SouzQualityPlugin : Plugin<Project> {
             exclude("native/third_party/**")
         }
 
-        val report = project.tasks.register("souzGateFastReport", SouzGateFastTask::class.java) {
-            repositoryDirectory.set(project.layout.projectDirectory)
-            projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
-            dependencyEdges.set(edgeInputs)
-            this.policyFiles.from(policyFiles)
-            detektReports.from(detektReportFiles)
-            jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary-v1.json"))
-            markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary.md"))
-            doNotTrackState("The report records current Git identity and worktree state.")
-        }
-        val gate = project.tasks.register("souzGateFast") {
-            group = "verification"
-            description = "Runs exact, local-safe Souz repository, module, and coroutine checks."
-            finalizedBy(report)
-        }
+        val report = project.tasks.register(
+            "souzGateFastReport",
+            SouzGateFastTask::class.java,
+            Action { task ->
+                task.repositoryDirectory.set(project.layout.projectDirectory)
+                task.projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
+                task.dependencyEdges.set(edgeInputs)
+                task.policyFiles.from(policyFiles)
+                task.detektReports.from(detektReportFiles)
+                task.jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary-v1.json"))
+                task.markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/fast/gate-summary.md"))
+                task.doNotTrackState("The report records current Git identity and worktree state.")
+            },
+        )
+        val gate = project.tasks.register(
+            "souzGateFast",
+            Action { task ->
+                task.group = "verification"
+                task.description = "Runs exact, local-safe Souz repository, module, and coroutine checks."
+                task.finalizedBy(report)
+            },
+        )
 
         configureDetekt(project, gate, report, detektReportFiles)
 
-        project.tasks.register("souzDuplicationCheck", SouzDuplicationTask::class.java) {
-            group = "verification"
-            description = "Checks production and test Kotlin duplication against the jscpd baseline."
-            repositoryDirectory.set(project.layout.projectDirectory)
-            projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
-            configFile.set(project.layout.projectDirectory.file("quality/jscpd.json"))
-            packageFile.set(project.layout.projectDirectory.file("quality/package.json"))
-            baselineFile.set(project.layout.projectDirectory.file("quality/duplication-baseline.json"))
-            jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/expensive/gate-summary-v1.json"))
-            markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/expensive/gate-summary.md"))
-            updateBaseline.set(false)
-            doNotTrackState("The check records current Git identity and invokes the pinned jscpd binary.")
-        }
-        project.tasks.register("updateSouzDuplicationBaseline", SouzDuplicationTask::class.java) {
-            group = "verification"
-            description = "Updates the reviewed production and test jscpd duplication baseline."
-            repositoryDirectory.set(project.layout.projectDirectory)
-            projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
-            configFile.set(project.layout.projectDirectory.file("quality/jscpd.json"))
-            packageFile.set(project.layout.projectDirectory.file("quality/package.json"))
-            baselineFile.set(project.layout.projectDirectory.file("quality/duplication-baseline.json"))
-            updateBaseline.set(true)
-            doNotTrackState("Baseline updates are explicit reviewed mutations.")
-        }
+        project.tasks.register(
+            "souzDuplicationCheck",
+            SouzDuplicationTask::class.java,
+            Action { task ->
+                task.group = "verification"
+                task.description = "Checks production and test Kotlin duplication against the jscpd baseline."
+                task.repositoryDirectory.set(project.layout.projectDirectory)
+                task.projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
+                task.configFile.set(project.layout.projectDirectory.file("quality/jscpd.json"))
+                task.packageFile.set(project.layout.projectDirectory.file("quality/package.json"))
+                task.baselineFile.set(project.layout.projectDirectory.file("quality/duplication-baseline.json"))
+                task.jsonReport.set(project.layout.buildDirectory.file("reports/souz-quality/expensive/gate-summary-v1.json"))
+                task.markdownReport.set(project.layout.buildDirectory.file("reports/souz-quality/expensive/gate-summary.md"))
+                task.updateBaseline.set(false)
+                task.doNotTrackState("The check records current Git identity and invokes the pinned jscpd binary.")
+            },
+        )
+        project.tasks.register(
+            "updateSouzDuplicationBaseline",
+            SouzDuplicationTask::class.java,
+            Action { task ->
+                task.group = "verification"
+                task.description = "Updates the reviewed production and test jscpd duplication baseline."
+                task.repositoryDirectory.set(project.layout.projectDirectory)
+                task.projectDescriptors.set(descriptors.map(ProjectDescriptor::encode))
+                task.configFile.set(project.layout.projectDirectory.file("quality/jscpd.json"))
+                task.packageFile.set(project.layout.projectDirectory.file("quality/package.json"))
+                task.baselineFile.set(project.layout.projectDirectory.file("quality/duplication-baseline.json"))
+                task.updateBaseline.set(true)
+                task.doNotTrackState("Baseline updates are explicit reviewed mutations.")
+            },
+        )
     }
 
     private fun configureDetekt(
         project: Project,
-        gate: org.gradle.api.tasks.TaskProvider<org.gradle.api.Task>,
-        report: org.gradle.api.tasks.TaskProvider<SouzGateFastTask>,
+        gate: TaskProvider<Task>,
+        report: TaskProvider<SouzGateFastTask>,
         reportFiles: ConfigurableFileCollection,
     ) {
         val configFile = project.layout.projectDirectory.file("quality/detekt.yml")
@@ -105,12 +123,13 @@ class SouzQualityPlugin : Plugin<Project> {
         val updateBaseline = project.tasks.register(
             "updateSouzCoroutineBaseline",
             UpdateSouzCoroutineBaselineTask::class.java,
-        ) {
-            group = "verification"
-            description = "Updates the reviewed module- and analysis-scoped coroutine baselines."
-            repositoryDirectory.set(project.layout.projectDirectory)
-            baselines.set(baselineDirectory)
-        }
+            Action { task ->
+                task.group = "verification"
+                task.description = "Updates the reviewed module- and analysis-scoped coroutine baselines."
+                task.repositoryDirectory.set(project.layout.projectDirectory)
+                task.baselines.set(baselineDirectory)
+            },
+        )
 
         project.subprojects.forEach { subproject ->
             var configured = false
@@ -120,54 +139,57 @@ class SouzQualityPlugin : Plugin<Project> {
                     val rulesJarTask = project.gradle.includedBuild("build-logic").task(":detekt-rules:jar")
                     subproject.pluginManager.apply("dev.detekt")
                     subproject.dependencies.add("detektPlugins", subproject.files(rulesJar))
-                    subproject.extensions.configure(DetektExtension::class.java) {
-                        toolVersion.set("2.0.0-alpha.6")
-                        config.setFrom(configFile)
-                        basePath.set(project.layout.projectDirectory)
-                        buildUponDefaultConfig.set(false)
-                        allRules.set(false)
-                        disableDefaultRuleSets.set(false)
-                        ignoreFailures.set(true)
-                        parallel.set(true)
-                    }
+                    subproject.extensions.configure(
+                        DetektExtension::class.java,
+                        Action { extension ->
+                            extension.toolVersion.set("2.0.0-alpha.6")
+                            extension.config.setFrom(configFile)
+                            extension.basePath.set(project.layout.projectDirectory)
+                            extension.buildUponDefaultConfig.set(false)
+                            extension.allRules.set(false)
+                            extension.disableDefaultRuleSets.set(false)
+                            extension.ignoreFailures.set(true)
+                            extension.parallel.set(true)
+                        },
+                    )
 
                     val analysisTasks = subproject.tasks.withType(Detekt::class.java)
                         .matching { task -> task.name != "detekt" && !task.name.endsWith("SourceSet") }
-                    analysisTasks.configureEach {
-                        dependsOn(rulesJarTask)
-                        exclude("**/generated/resources/**")
+                    analysisTasks.configureEach { task ->
+                        task.dependsOn(rulesJarTask)
+                        task.exclude("**/generated/resources/**")
                         val projectPath = subproject.projectDir.relativeInvariantPath(
                             project.layout.projectDirectory.asFile
                         )
-                        val analysis = name.removePrefix("detekt").replaceFirstChar(Char::lowercase)
-                        baseline.set(baselineDirectory.file("$projectPath/$analysis.xml"))
-                        reports.checkstyle.required.set(true)
-                        reports.html.required.set(false)
-                        reports.markdown.required.set(false)
-                        reports.sarif.required.set(false)
-                        val checkstyleReport = reports.checkstyle.outputLocation
+                        val analysis = task.name.removePrefix("detekt").replaceFirstChar(Char::lowercase)
+                        task.baseline.set(baselineDirectory.file("$projectPath/$analysis.xml"))
+                        task.reports.checkstyle.required.set(true)
+                        task.reports.html.required.set(false)
+                        task.reports.markdown.required.set(false)
+                        task.reports.sarif.required.set(false)
+                        val checkstyleReport = task.reports.checkstyle.outputLocation
                         reportFiles.from(
                             project.provider {
-                                if (source.isEmpty) emptyList() else listOf(checkstyleReport.get().asFile)
+                                if (task.source.isEmpty) emptyList() else listOf(checkstyleReport.get().asFile)
                             }
                         )
-                        finalizedBy(report)
+                        task.finalizedBy(report)
                     }
-                    gate.configure { dependsOn(analysisTasks) }
+                    gate.configure { task -> task.dependsOn(analysisTasks) }
 
                     val baselineTasks = subproject.tasks.withType(DetektCreateBaselineTask::class.java)
                         .matching { task -> task.name != "detektBaseline" && !task.name.endsWith("SourceSet") }
-                    baselineTasks.configureEach {
-                        dependsOn(rulesJarTask)
-                        baseline.set(
-                            subproject.layout.buildDirectory.file("reports/detekt/baselines/$name.xml")
+                    baselineTasks.configureEach { task ->
+                        task.dependsOn(rulesJarTask)
+                        task.baseline.set(
+                            subproject.layout.buildDirectory.file("reports/detekt/baselines/${task.name}.xml")
                         )
-                        exclude("**/generated/resources/**")
-                        val partialBaseline = baseline
-                        doFirst { partialBaseline.get().asFile.delete() }
-                        updateBaseline.configure { partialBaselines.from(partialBaseline) }
+                        task.exclude("**/generated/resources/**")
+                        val partialBaseline = task.baseline
+                        task.doFirst { partialBaseline.get().asFile.delete() }
+                        updateBaseline.configure { baselineTask -> baselineTask.partialBaselines.from(partialBaseline) }
                     }
-                    updateBaseline.configure { dependsOn(baselineTasks) }
+                    updateBaseline.configure { task -> task.dependsOn(baselineTasks) }
                 }
             }
             subproject.pluginManager.withPlugin("org.jetbrains.kotlin.jvm") { configure() }
