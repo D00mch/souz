@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm")
+    id("org.jetbrains.kotlin.jvm")
 }
 
 group = "ru.souz.build"
