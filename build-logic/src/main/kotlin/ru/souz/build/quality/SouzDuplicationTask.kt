@@ -106,11 +106,11 @@ abstract class SouzDuplicationTask @Inject constructor(
                 "Pinned jscpd is not installed; run 'npm ci --prefix quality' from the repository root."
             }
             val threshold = DuplicationRatchet.thresholds.getValue(scope)
-            execOperations.exec { spec ->
-                spec.workingDir(repository)
-                spec.executable(binary)
-                spec.args(roots.map { it.relativeInvariantPath(repository) })
-                spec.args(
+            execOperations.exec {
+                workingDir(repository)
+                executable(binary)
+                args(roots.map { it.relativeInvariantPath(repository) })
+                args(
                     "--config", configFile.get().asFile.relativeInvariantPath(repository),
                     "--min-lines", threshold.minLines.toString(),
                     "--min-tokens", threshold.minTokens.toString(),
