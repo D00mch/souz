@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   quality-fast:
-    name: Quality Fast
+    name: Quality Gate
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +22,7 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - name: Run fast quality gate
+      - name: Run quality gate
         shell: bash
         env:
           SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -43,20 +43,20 @@ jobs:
             tee -a "$GITHUB_STEP_SUMMARY" < "$gate_report"
           else
             cat "$gate_log"
-            echo "Souz fast quality report was not produced." >> "$GITHUB_STEP_SUMMARY"
+            echo "Souz quality gate report was not produced." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           exit "$gate_status"
 
-      - name: Upload quality reports
+      - name: Upload quality gate reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: souz-quality-fast-${{ github.run_id }}
+          name: souz-quality-gate-${{ github.run_id }}
           path: build/reports/souz-quality/fast/**
           if-no-files-found: warn
 
-      - name: Verify quality evidence
+      - name: Verify quality gate evidence
         if: always()
         shell: bash
         run: |
@@ -72,7 +72,7 @@ jobs:
           exit "$missing"
 
   quality-expensive:
-    name: Quality Expensive
+    name: Duplicate Code Ratchet
     runs-on: ubuntu-latest
 
     steps:
@@ -117,7 +117,7 @@ jobs:
             tee -a "$GITHUB_STEP_SUMMARY" < "$gate_report"
           else
             cat "$gate_log"
-            echo "Souz expensive quality report was not produced." >> "$GITHUB_STEP_SUMMARY"
+            echo "Souz duplication report was not produced." >> "$GITHUB_STEP_SUMMARY"
           fi
 
           exit "$gate_status"
@@ -126,7 +126,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: souz-quality-expensive-${{ github.run_id }}
+          name: souz-duplication-ratchet-${{ github.run_id }}
           path: build/reports/souz-quality/expensive/**
           if-no-files-found: warn
 
