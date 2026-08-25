@@ -11,7 +11,7 @@ pluginManagement {
 
     resolutionStrategy {
         eachPlugin {
-            val version = requested.version ?: return@eachPlugin
+            val version = target.version ?: requested.version ?: return@eachPlugin
             when (requested.id.id) {
                 "org.jetbrains.kotlin.jvm",
                 "org.jetbrains.kotlin.multiplatform" ->
