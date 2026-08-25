@@ -10,7 +10,7 @@ pluginManagement {
 
     resolutionStrategy {
         eachPlugin {
-            val version = requested.version ?: return@eachPlugin
+            val version = target.version ?: requested.version ?: return@eachPlugin
             if (requested.id.id == "org.jetbrains.kotlin.jvm") {
                 useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:$version")
             }
