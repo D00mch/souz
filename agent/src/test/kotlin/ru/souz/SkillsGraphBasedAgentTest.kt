@@ -5,6 +5,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Node
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesCommon
@@ -160,13 +161,7 @@ class SkillsGraphBasedAgentTest {
             nodesCommon = nodesCommon,
             knowledgeStore = null,
         ),
-        getSkillByNameTool = testTool("GetSkillByName"),
-        getSkillsByCategoryTool = testTool("GetSkillsByCategory"),
-        getSkillsNamesByCategoryTool = testTool("GetSkillsNamesByCategory"),
-        getKnowledgeTool = testTool("GetKnowledge"),
-        searchKnowledgeTool = testTool("SearchKnowledge"),
-        searchMemoryTool = testTool("SearchMemory"),
-        runtimeCommandTool = testTool("RunSkillCommand"),
+        coreTools = testCoreTools(),
     )
 
     private fun passthrough(name: String, executed: MutableList<String>) = Node<String, String>(name) { ctx ->
@@ -288,6 +283,16 @@ class SkillsGraphBasedAgentTest {
         """.trimIndent()
     }
 }
+
+internal fun testCoreTools(): AgentCoreTools = AgentCoreTools(
+    getSkillByName = testTool("GetSkillByName"),
+    getSkillsByCategory = testTool("GetSkillsByCategory"),
+    getSkillsNamesByCategory = testTool("GetSkillsNamesByCategory"),
+    getKnowledge = testTool("GetKnowledge"),
+    searchKnowledge = testTool("SearchKnowledge"),
+    searchMemory = testTool("SearchMemory"),
+    runtimeCommand = testTool("RunSkillCommand"),
+)
 
 internal fun testTool(name: String): LLMToolSetup = object : LLMToolSetup {
     override val fn = LLMRequest.Function(name, name, LLMRequest.Parameters("object", emptyMap()))

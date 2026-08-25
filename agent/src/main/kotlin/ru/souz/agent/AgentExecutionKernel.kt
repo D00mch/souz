@@ -76,6 +76,15 @@ class AgentExecutionKernelFactory(
         val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
+        val coreTools = AgentCoreTools(
+            getSkillByName = getSkillByNameTool,
+            getSkillsByCategory = getSkillsByCategoryTool,
+            getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
+            getKnowledge = getKnowledgeTool,
+            searchKnowledge = searchKnowledgeTool,
+            searchMemory = searchMemoryTool,
+            runtimeCommand = runtimeCommandTool,
+        )
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)
         val contextFactory = AgentContextFactory(
             settingsProvider = settingsProvider,
@@ -92,13 +101,7 @@ class AgentExecutionKernelFactory(
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUseWithKnowledge,
-            getSkillByNameTool = getSkillByNameTool,
-            getSkillsByCategoryTool = getSkillsByCategoryTool,
-            getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,
-            getKnowledgeTool = getKnowledgeTool,
-            searchKnowledgeTool = searchKnowledgeTool,
-            searchMemoryTool = searchMemoryTool,
-            runtimeCommandTool = runtimeCommandTool,
+            coreTools = coreTools,
         )
         val executor = AgentExecutor(
             agentProvider = { skillsGraphAgent },

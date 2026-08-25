@@ -6,6 +6,7 @@ import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
@@ -24,7 +25,6 @@ import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 
 class GraphBasedAgent internal constructor(
     logObjectMapper: ObjectMapper,
@@ -37,11 +37,7 @@ class GraphBasedAgent internal constructor(
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     private val nodesMemory: NodesMemory,
-    getSkillByNameTool: LLMToolSetup,
-    getKnowledgeTool: LLMToolSetup,
-    searchKnowledgeTool: LLMToolSetup,
-    searchMemoryTool: LLMToolSetup,
-    runtimeCommandTool: LLMToolSetup,
+    coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
@@ -49,8 +45,8 @@ class GraphBasedAgent internal constructor(
 ) : TraceableAgent {
 
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
-    private val alwaysInlineResultTools = listOf(getSkillByNameTool, getKnowledgeTool, searchKnowledgeTool)
-    private val coreTools = alwaysInlineResultTools + searchMemoryTool + runtimeCommandTool
+    private val alwaysInlineResultTools = coreTools.graphAlwaysInlineResultTools
+    private val graphCoreTools = coreTools.graphCoreTools
 
     private val graph: Graph<String, String> = buildGraph(name = "Agent") {
         val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("LLM")
@@ -62,7 +58,7 @@ class GraphBasedAgent internal constructor(
         val memoryRecall: Node<String, String> = nodesMemory.recall()
         val nodeClassify: Node<String, String> = nodesClassify.node(CLASSIFY_NODE_NAME)
         val nodeSkillInventory: Node<String, String> = nodesSkillInventory.node(
-            skillTools = coreTools,
+            skillTools = graphCoreTools,
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")

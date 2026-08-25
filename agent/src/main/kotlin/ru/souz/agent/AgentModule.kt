@@ -96,6 +96,17 @@ fun agentDiModule(
     }
     bindSingleton { SystemPromptResolver() }
     bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
+    bindSingleton {
+        AgentCoreTools(
+            getSkillByName = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
+            getSkillsByCategory = instance(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL),
+            getSkillsNamesByCategory = instance(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL),
+            getKnowledge = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
+            searchKnowledge = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
+            searchMemory = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
+            runtimeCommand = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
+        )
+    }
     bindSingleton { AgentContextFactory(instance(), instance(), instance()) }
     bindSingleton {
         GraphBasedAgent(
@@ -109,11 +120,7 @@ fun agentDiModule(
             nodesSkillInventory = instance(),
             nodesToolUseWithKnowledge = instance(),
             nodesMemory = instance(),
-            getSkillByNameTool = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
-            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
-            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
-            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
+            coreTools = instance(),
         )
     }
     bindSingleton {
@@ -126,13 +133,7 @@ fun agentDiModule(
             nodesMemory = instance(),
             nodesSkillInventory = instance(),
             nodesToolUseWithKnowledge = instance(),
-            getSkillByNameTool = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
-            getSkillsByCategoryTool = instance(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL),
-            getSkillsNamesByCategoryTool = instance(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL),
-            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
-            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
-            runtimeCommandTool = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
+            coreTools = instance(),
         )
     }
     bindSingleton {

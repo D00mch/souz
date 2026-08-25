@@ -26,7 +26,6 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -370,13 +369,7 @@ private class Harness(
             nodesMemory = nodesMemory,
             nodesSkillInventory = nodesSkillInventory,
             nodesToolUseWithKnowledge = nodesToolUse,
-            getSkillByNameTool = tool("GetSkillByName"),
-            getSkillsByCategoryTool = tool("GetSkillsByCategory"),
-            getSkillsNamesByCategoryTool = tool("GetSkillsNamesByCategory"),
-            getKnowledgeTool = tool("GetKnowledge"),
-            searchKnowledgeTool = tool("SearchKnowledge"),
-            searchMemoryTool = tool("SearchMemory"),
-            runtimeCommandTool = tool("RunSkillCommand"),
+            coreTools = testCoreTools(),
         )
     }
 
@@ -433,14 +426,3 @@ private fun functionCall(): LLMResponse.FunctionCall =
 
 private fun responseContent(response: LLMResponse.Chat.Ok): String =
     response.choices.lastOrNull()?.message?.content.orEmpty()
-
-private fun tool(name: String): LLMToolSetup = object : LLMToolSetup {
-    override val fn = LLMRequest.Function(
-        name = name,
-        description = name,
-        parameters = LLMRequest.Parameters("object", emptyMap()),
-    )
-
-    override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
-        LLMRequest.Message(LLMMessageRole.function, "{}", name = name)
-}

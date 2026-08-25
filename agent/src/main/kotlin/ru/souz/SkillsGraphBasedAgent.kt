@@ -10,6 +10,7 @@ import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
 import ru.souz.agent.TraceableAgent
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
@@ -27,7 +28,6 @@ import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 
 /**
  * Agent graph whose model always sees only the core skill-discovery, Knowledge, and execution tools.
@@ -42,13 +42,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesMemory: NodesMemory,
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
-    getSkillByNameTool: LLMToolSetup,
-    getSkillsByCategoryTool: LLMToolSetup,
-    getSkillsNamesByCategoryTool: LLMToolSetup,
-    getKnowledgeTool: LLMToolSetup,
-    searchKnowledgeTool: LLMToolSetup,
-    searchMemoryTool: LLMToolSetup,
-    runtimeCommandTool: LLMToolSetup,
+    coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
@@ -56,14 +50,8 @@ class SkillsGraphBasedAgent internal constructor(
 ) : TraceableAgent {
     override val supportsActiveRunInput: Boolean = true
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
-    private val alwaysInlineResultTools = listOf(
-        getSkillByNameTool,
-        getSkillsByCategoryTool,
-        getSkillsNamesByCategoryTool,
-        getKnowledgeTool,
-        searchKnowledgeTool,
-    )
-    private val coreTools = alwaysInlineResultTools + searchMemoryTool + runtimeCommandTool
+    private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
+    private val skillsCoreTools = coreTools.skillsCoreTools
     private val activeRun = MutableStateFlow<ActiveRunInputController?>(null)
 
     private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
@@ -123,7 +111,7 @@ class SkillsGraphBasedAgent internal constructor(
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()
-        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, coreTools)
+        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, skillsCoreTools)
         val controller = ActiveRunInputController()
         val executionGraph = graph(controller)
         activeRun.value = controller
