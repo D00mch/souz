@@ -58,6 +58,30 @@ adb shell am start -n ru.souz.android/.MainActivity
 
 You can also open the repo in Android Studio and run the `androidApp` configuration.
 
+## Becoming The System Assistant
+
+The remote's assist key is routed by `PhoneWindowManager`, which reads `Settings.Secure.assistant`.
+Installing the app is not enough; it has to hold the assistant role:
+
+```bash
+adb shell cmd role remove-role-holder --user 0 android.app.role.ASSISTANT ru.souz.android
+adb shell cmd role add-role-holder    --user 0 android.app.role.ASSISTANT ru.souz.android
+adb shell pm grant ru.souz.android android.permission.RECORD_AUDIO
+```
+
+The removal is not redundant. After a reinstall the role record can survive while the secure
+settings are cleared, and `add-role-holder` then answers "Package is already a role holder" and
+writes nothing. The service ends up bound while `Settings.Secure.assistant` stays empty, so the
+assist key is silently dropped.
+
+Both settings should name the voice interaction service afterwards:
+
+```bash
+adb shell settings get secure assistant
+adb shell settings get secure voice_interaction_service
+adb shell dumpsys voiceinteraction | head -20
+```
+
 ## Provisioning Credentials Over adb
 
 Typing API keys with a TV remote is painful, so keys can be provisioned by broadcast:
