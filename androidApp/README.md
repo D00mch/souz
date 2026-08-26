@@ -22,7 +22,21 @@ Build a debug APK:
 ./gradlew :androidApp:assembleDebug
 ```
 
-Default Android builds include Chaquopy Python 3.11 standard library support and app Python sources only, and do not require host Python. The Android APK targets `armeabi-v7a`, `arm64-v8a`, and `x86_64` native runtimes; devices that report both `armeabi-v7a` and legacy `armeabi` are covered by the `armeabi-v7a` build. To also bundle document/data skill packages (`lxml`, `Pillow`, `XlsxWriter`, and `python-pptx`), build with:
+Default Android builds target the `armeabi-v7a` ABI only and omit the embedded Python runtime, which together account for roughly 40 MB of APK size. Devices that report both `armeabi-v7a` and legacy `armeabi` are covered by the `armeabi-v7a` build.
+
+Build for other ABIs with a comma separated list:
+
+```bash
+./gradlew :androidApp:assembleDebug -Psouz.android.abis=armeabi-v7a,arm64-v8a,x86_64
+```
+
+Skills that execute Python need the embedded Chaquopy runtime, which is opt-in. Without it, `PYTHON` skill commands fail and the rest of the app is unaffected:
+
+```bash
+./gradlew :androidApp:assembleDebug -Psouz.android.python=true
+```
+
+Chaquopy builds include Python 3.11 standard library support and app Python sources only, and do not require host Python. To also bundle document/data skill packages (`lxml`, `Pillow`, `XlsxWriter`, and `python-pptx`), add:
 
 ```bash
 ./gradlew :androidApp:assembleDebug -Psouz.android.bundlePythonRequirements=true
@@ -66,7 +80,7 @@ Run Android instrumentation tests on a connected device or emulator:
 - ClawHub/OpenClaw-style skills stored in the app-private filesystem registry.
 - Skill command execution through the Android sandbox:
   - shell commands run with POSIX `/system/bin/sh`
-  - Python commands run through the embedded Chaquopy Python 3.11 service process
+  - Python commands run through the embedded Chaquopy Python 3.11 service process, when built with `souz.android.python=true`
 - Runtime state under app-private files, including `souz-home`, `souz-workspace`, and `souz-state`.
 
 Android skills can use the Python standard library plus pure-Python files vendored inside a skill bundle. Runtime `pip install` is intentionally unsupported. The optional bundled document/data packages (`lxml`, `Pillow`, `XlsxWriter`, and `python-pptx`) are available only when `souz.android.bundlePythonRequirements=true`.
@@ -89,7 +103,8 @@ The manifest declares network access plus optional permissions for microphone, c
 
 - `androidApp/src/main/kotlin/ru/souz/android/MainActivity.kt` - Android entry point and runtime permission launcher.
 - `androidApp/src/main/kotlin/ru/souz/android/agent/AndroidAgentRuntime.kt` - Android DI graph, provider clients, runtime sandbox, tools, and agent facade wiring.
-- `androidApp/src/main/kotlin/ru/souz/android/python/` - Chaquopy skill execution bridge and service protocol.
+- `androidApp/src/pythonRuntime/kotlin/ru/souz/android/python/` - Chaquopy skill execution bridge and service protocol, compiled only when the Python runtime is enabled.
+- `androidApp/src/noPython/kotlin/ru/souz/android/python/` - stand-in used when it is not.
 - `androidApp/src/main/python/souz_skill_runner.py` - Python-side skill runner entry point.
 - `sharedUI/src/androidMain/kotlin/ru/souz/ui/android/` - Android Compose screens backed by shared ViewModels.
 - `sharedLogic/src/androidMain/kotlin/ru/souz/android/` - Android settings and runtime sandbox implementations.

@@ -4,9 +4,33 @@ import java.io.File
 
 plugins {
     alias(libs.plugins.androidApplication)
-    alias(libs.plugins.chaquopy)
+    alias(libs.plugins.chaquopy) apply false
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+}
+
+/**
+ * The embedded Python runtime costs roughly 20 MB of the APK. It is only needed for skills that
+ * execute Python, so it is opt-in: build with `-Psouz.android.python=true` to bring it back.
+ */
+private val pythonRuntimeEnabled: Boolean =
+    providers.gradleProperty("souz.android.python")
+        .orElse(providers.environmentVariable("SOUZ_ANDROID_PYTHON"))
+        .orNull
+        .isEnabledGradleFlag()
+
+/** Defaults to the 32-bit ABI this project targets; override for emulators or other devices. */
+private val configuredAbis: List<String> =
+    providers.gradleProperty("souz.android.abis")
+        .orElse(providers.environmentVariable("SOUZ_ANDROID_ABIS"))
+        .orNull
+        ?.split(",")
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
+        ?: listOf("armeabi-v7a")
+
+if (pythonRuntimeEnabled) {
+    apply(plugin = libs.plugins.chaquopy.get().pluginId)
 }
 
 private val chaquopyPythonVersion = "3.11"
@@ -89,7 +113,18 @@ extensions.configure<ApplicationExtension>("android") {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            abiFilters += configuredAbis
+        }
+    }
+
+    sourceSets.named("main") {
+        val variant = if (pythonRuntimeEnabled) "pythonRuntime" else "noPython"
+        kotlin.srcDir("src/$variant/kotlin")
+    }
+
+    sourceSets.named("androidTest") {
+        if (pythonRuntimeEnabled) {
+            kotlin.srcDir("src/pythonRuntime/androidTest/kotlin")
         }
     }
 
@@ -105,7 +140,7 @@ extensions.configure<ApplicationExtension>("android") {
     }
 }
 
-chaquopy {
+if (pythonRuntimeEnabled) extensions.configure<com.chaquo.python.ChaquopyExtension>("chaquopy") {
     defaultConfig {
         version = chaquopyPythonVersion
         val bundlePythonRequirements = providers.gradleProperty("souz.android.bundlePythonRequirements")

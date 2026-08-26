@@ -29,7 +29,7 @@ import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.android.assistant.VoiceAssistantTurnCoordinator
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
-import ru.souz.android.python.ChaquopyPythonSkillRunner
+import ru.souz.android.python.androidPythonCommandRunner
 import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.android.tool.AndroidToolAvailabilityPolicy
 import ru.souz.android.tool.AndroidToolsFactory
@@ -157,7 +157,7 @@ class AndroidAgentRuntime(
                 AndroidRuntimeSandboxFactory(
                     context = appContext,
                     settingsProvider = instance<SettingsProvider>(),
-                    pythonCommandRunner = ChaquopyPythonSkillRunner(appContext),
+                    pythonCommandRunner = androidPythonCommandRunner(appContext),
                 )
             }
             bindSingleton<GraphSessionRepository>(tag = DiTags.GRAPH_SESSION_REPOSITORY) {
