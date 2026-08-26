@@ -133,6 +133,17 @@ extensions.configure<ApplicationExtension>("android") {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildTypes.named("release") {
+        isMinifyEnabled = true
+        isShrinkResources = true
+        proguardFiles(
+            getDefaultProguardFile("proguard-android-optimize.txt"),
+            "proguard-rules.pro",
+        )
+        // Signed like the debug build so the shrunk APK can actually be installed and measured.
+        signingConfig = configuredSigning ?: signingConfigs.getByName("debug")
+    }
+
     configuredSigning?.let { signing ->
         buildTypes.named("debug") {
             signingConfig = signing
