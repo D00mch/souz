@@ -63,14 +63,25 @@ You can also open the repo in Android Studio and run the `androidApp` configurat
 Typing API keys with a TV remote is painful, so keys can be provisioned by broadcast:
 
 ```bash
-adb shell am broadcast -W \
+adb shell am broadcast -W -f 0x00000020 \
   -n ru.souz.android/.provisioning.SouzProvisioningReceiver \
   -a ru.souz.android.action.PROVISION \
   --es aitunnel 'sk-aitunnel-...' \
   --es gigachat '...'
 ```
 
-Supported extras: `gigachat`, `aitunnel`, `openai`, `openai_base_url`, `openai_model`, and `salutespeech`. An empty value clears that setting. `-W` makes `am` print which settings were applied; values are never logged.
+`-f 0x00000020` is `FLAG_INCLUDE_STOPPED_PACKAGES`. An app that has not been launched since it was installed is in the stopped state, and broadcasts are dropped without that flag, silently: exactly the case when provisioning a freshly flashed device.
+
+Supported extras: `gigachat`, `aitunnel`, `openai`, `openai_base_url`, `openai_model`, and `salutespeech`. `-W` makes `am` print which settings were applied; values are never logged.
+
+An empty value clears that setting, but the whole command has to be quoted so the empty argument survives: `adb shell` reassembles its arguments and the device shell parses them again, so a bare `--es aitunnel ''` arrives as `--es aitunnel --es`, silently storing the literal `--es`.
+
+```bash
+adb shell "am broadcast -W \
+  -n ru.souz.android/.provisioning.SouzProvisioningReceiver \
+  -a ru.souz.android.action.PROVISION \
+  --es aitunnel '' --es gigachat ''"
+```
 
 The receiver requires senders to hold `android.permission.WRITE_SECURE_SETTINGS`, which shell and system hold and installed apps cannot obtain. Without that gate any app could point the assistant at its own OpenAI-compatible proxy and capture conversations.
 
