@@ -52,6 +52,9 @@ class LlmBuildProfile(
                 LlmProvider.GIGA to LLMModel.Max,
                 LlmProvider.QWEN to LLMModel.QwenMax,
                 LlmProvider.AI_TUNNEL to LLMModel.AiTunnelClaudeHaiku,
+                // Available so OpenAI-compatible endpoints (Cloud.ru and friends) can be configured
+                // in RU builds; deliberately absent from RU provider priorities.
+                LlmProvider.OPENAI to LLMModel.OpenAIGpt5Nano,
                 LlmProvider.LOCAL to LLMModel.LocalQwen3_4B_Instruct_2507,
             ),
             BuildEdition.EN to mapOf(
