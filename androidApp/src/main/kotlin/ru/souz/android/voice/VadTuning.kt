@@ -8,7 +8,11 @@ import android.provider.Settings
  * so they can be tuned against the real remote without rebuilding.
  */
 data class VadParams(
+    /** Level a chunk must exceed to start an utterance. */
     val silenceRms: Int,
+    /** Lower level that keeps an already started utterance going, so gaps between syllables
+     * neither end it early nor go uncounted. */
+    val continuationRms: Int,
     val leadInMs: Long,
     val trailingSilenceMs: Long,
     val maxUtteranceMs: Long,
@@ -18,6 +22,7 @@ data class VadParams(
 ) {
     companion object {
         const val KEY_SILENCE_RMS = "souz_vad_silence_rms"
+        const val KEY_CONTINUATION_RMS = "souz_vad_continue_rms"
         const val KEY_LEAD_IN_MS = "souz_vad_lead_in_ms"
         const val KEY_TRAILING_SILENCE_MS = "souz_vad_trailing_silence_ms"
         const val KEY_MAX_MS = "souz_vad_max_ms"
@@ -28,10 +33,11 @@ data class VadParams(
         // Measured on the BLE remote: noise peaks at ~1980 RMS per 20 ms chunk, speech at ~6600.
         val DEFAULT = VadParams(
             silenceRms = 2_000,
+            continuationRms = 500,
             leadInMs = 5_000,
             trailingSilenceMs = 1_000,
             maxUtteranceMs = 20_000,
-            minSpeechMs = 400,
+            minSpeechMs = 300,
             recognizeWithoutSpeech = false,
             dumpAudio = false,
         )
@@ -39,8 +45,10 @@ data class VadParams(
         fun read(context: Context): VadParams {
             val resolver = context.contentResolver
             fun int(key: String, fallback: Int) = Settings.Global.getInt(resolver, key, fallback)
+            val silenceRms = int(KEY_SILENCE_RMS, DEFAULT.silenceRms)
             return VadParams(
-                silenceRms = int(KEY_SILENCE_RMS, DEFAULT.silenceRms),
+                silenceRms = silenceRms,
+                continuationRms = int(KEY_CONTINUATION_RMS, silenceRms / 4),
                 leadInMs = int(KEY_LEAD_IN_MS, DEFAULT.leadInMs.toInt()).toLong(),
                 trailingSilenceMs = int(KEY_TRAILING_SILENCE_MS, DEFAULT.trailingSilenceMs.toInt()).toLong(),
                 maxUtteranceMs = int(KEY_MAX_MS, DEFAULT.maxUtteranceMs.toInt()).toLong(),

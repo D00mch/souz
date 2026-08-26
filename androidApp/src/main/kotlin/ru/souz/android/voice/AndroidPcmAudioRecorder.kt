@@ -141,13 +141,16 @@ class AndroidPcmAudioRecorder(
                 if (rms > windowPeak) windowPeak = rms
                 windowMs += CHUNK_MS
                 if (windowMs >= LEVEL_LOG_INTERVAL_MS) {
-                    l.info("Level: peakRms={} threshold={} at {}ms", windowPeak, vad.silenceRms, elapsedMs)
+                    l.info(
+                        "Level: peakRms={} start={} continue={} speech={}ms at {}ms",
+                        windowPeak, vad.silenceRms, vad.continuationRms, speechMs, elapsedMs,
+                    )
                     windowPeak = 0
                     windowMs = 0
                 }
 
-                if (rms > vad.silenceRms) {
-                    speechStarted = true
+                if (!speechStarted && rms > vad.silenceRms) speechStarted = true
+                if (speechStarted && rms > vad.continuationRms) {
                     speechMs += CHUNK_MS
                     silenceMs = 0
                 } else {
