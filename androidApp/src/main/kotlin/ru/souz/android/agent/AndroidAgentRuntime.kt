@@ -108,6 +108,8 @@ class AndroidAgentRuntime(
     val agentFacade: AgentFacade
 
     init {
+        val l = org.slf4j.LoggerFactory.getLogger(AndroidAgentRuntime::class.java)
+        val declaredAt = System.currentTimeMillis()
         val appContext = context.applicationContext
         val paths = AndroidSouzPaths(
             stateRoot = appContext.filesDir.toPath().resolve("souz-state"),
@@ -262,7 +264,10 @@ class AndroidAgentRuntime(
                 }
             }
         }
+        val resolveStartedAt = System.currentTimeMillis()
+        l.info("DI declarations built in {} ms", resolveStartedAt - declaredAt)
         agentFacade = di.direct.instance()
+        l.info("Agent graph resolved in {} ms", System.currentTimeMillis() - resolveStartedAt)
     }
 
     private object DiTags {
