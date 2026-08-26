@@ -25,9 +25,10 @@ data class VadParams(
         const val KEY_RECOGNIZE_WITHOUT_SPEECH = "souz_vad_recognize_without_speech"
         const val KEY_DUMP_AUDIO = "souz_vad_dump_audio"
 
+        // Measured on the BLE remote: noise peaks at ~1980 RMS per 20 ms chunk, speech at ~6600.
         val DEFAULT = VadParams(
-            silenceRms = 500,
-            leadInMs = 3_000,
+            silenceRms = 2_000,
+            leadInMs = 5_000,
             trailingSilenceMs = 1_000,
             maxUtteranceMs = 20_000,
             minSpeechMs = 400,
