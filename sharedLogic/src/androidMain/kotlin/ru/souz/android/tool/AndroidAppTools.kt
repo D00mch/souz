@@ -252,7 +252,10 @@ class ToolKinopoiskSearch(
         ),
     )
 
-    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String =
+        runBlocking { suspendInvoke(input, meta) }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val query = input.query.trim()
         if (query.isEmpty()) return "Error: query must not be empty"
         return runCatching {
@@ -263,8 +266,6 @@ class ToolKinopoiskSearch(
             "Error searching Kinopoisk for '$query': ${error.message ?: error::class.java.simpleName}"
         }
     }
-
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 
     private companion object {
         const val DEFAULT_LIMIT = 5
@@ -280,7 +281,9 @@ class ToolKinopoiskMovie(
     private val packageManager: PackageManager = appContext.packageManager
 
     data class Input(
-        @InputParamDescription("Title to resolve through Kinopoisk search. Use this unless a filmId is already known.")
+        @InputParamDescription(
+            "Title to open, copied exactly as the user named it. Use this unless a filmId is already known.",
+        )
         val title: String? = null,
         @InputParamDescription(
             "Kinopoisk film ID, only when it came from KinopoiskSearch. It is a 32-character hex string, never guess it.",
@@ -299,6 +302,7 @@ class ToolKinopoiskMovie(
     override val name: String = "KinopoiskMovie"
     override val description: String =
         "Opens Kinopoisk content by title, resolving it through on-device Kinopoisk search first. " +
+            "Always pass the title the user actually asked for; never reuse a title from the examples. " +
             "A filmId may be passed instead, but only when it came from KinopoiskSearch."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
@@ -316,10 +320,15 @@ class ToolKinopoiskMovie(
         properties = mapOf("result" to ReturnProperty("string", "Kinopoisk deeplink launch status.")),
     )
 
-    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String =
+        runBlocking { suspendInvoke(input, meta) }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
         val filmId = input.filmId?.trim().orEmpty()
         val title = input.title?.trim().orEmpty()
-        if (filmId.isEmpty() && title.isEmpty()) return "Error: either title or filmId must be provided"
+        if (filmId.isEmpty() && title.isEmpty()) {
+            return "Error: pass the title the user asked for in the 'title' parameter"
+        }
 
         val resolvedId = filmId.ifEmpty {
             val match = runCatching { searchGateway.search(title, 1).firstOrNull() }
@@ -342,8 +351,6 @@ class ToolKinopoiskMovie(
         }
         return startViewUri(appContext, packageManager, builder.build(), KINOPOISK_PACKAGE)
     }
-
-    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
 class ToolShowAndroidApps(

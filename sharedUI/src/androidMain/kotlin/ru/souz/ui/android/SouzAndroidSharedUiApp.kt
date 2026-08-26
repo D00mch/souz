@@ -124,6 +124,8 @@ import ru.souz.ui.main.ThinkingProcessPanel
 import ru.souz.ui.main.createMainViewModel
 import ru.souz.ui.main.search.ChatMessageSearchProjection
 import ru.souz.ui.settings.CodexOAuthUiState
+import ru.souz.ui.settings.DefaultTtsVoice
+import ru.souz.ui.settings.OpenAiCompatibleTtsVoices
 import ru.souz.ui.settings.ApiKeyFieldState
 import ru.souz.ui.settings.HIDDEN_API_KEY_MASK
 import ru.souz.ui.settings.SettingsEffect
@@ -1150,13 +1152,13 @@ private fun AndroidSettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            OutlinedTextField(
-                value = state.ttsVoice,
-                onValueChange = { onEvent(SettingsEvent.InputTtsVoice(it)) },
-                label = { Text("Голос") },
-                placeholder = { Text("alloy") },
+            AndroidDropdownSelector(
+                label = "Голос",
+                value = state.ttsVoice.ifBlank { DefaultTtsVoice },
+                options = OpenAiCompatibleTtsVoices,
+                optionLabel = { it },
+                onSelect = { onEvent(SettingsEvent.InputTtsVoice(it)) },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
             )
 
             AndroidTextSettingRow(

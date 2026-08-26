@@ -1,8 +1,10 @@
 package ru.souz.android.tool
 
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import com.fasterxml.jackson.annotation.JsonInclude
+import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 
 private const val SEARCH_AUTHORITY = "ru.kinopoisk.tv.search.kinopoisk.tv"
@@ -11,6 +13,8 @@ private const val COLUMN_TEXT_2 = "suggest_text_2"
 private const val COLUMN_INTENT_DATA = "suggest_intent_data"
 private const val COLUMN_INTENT_DATA_ID = "suggest_intent_data_id"
 private const val COLUMN_RATING_SCORE = "suggest_rating_score"
+private const val QUERY_ATTEMPTS = 3
+private val RETRY_DELAYS_MS = longArrayOf(700, 1_500)
 
 /**
  * Kinopoisk exposes no search intent or deep link; the only search surface is its Android TV
@@ -21,15 +25,29 @@ class KinopoiskSearchGateway(context: Context) {
     private val appContext = context.applicationContext
     private val suggestUri: Uri = Uri.parse("content://$SEARCH_AUTHORITY/search_suggest_query")
 
-    fun search(query: String, limit: Int): List<KinopoiskSuggestion> {
-        val cursor = runCatching {
-            appContext.contentResolver.query(suggestUri, null, null, arrayOf(query), null)
-        }.getOrElse {
-            l.warn("Kinopoisk suggestion query failed: {}", it.message)
-            throw IllegalStateException("Kinopoisk search is unavailable: ${it.message}")
-        } ?: return emptyList()
+    /**
+     * Kinopoisk builds its DI graph in `Application.onCreate`, which Android runs *after* content
+     * providers are instantiated. A query that cold-starts their process therefore fails with
+     * "applicationComponent is not initialized"; retrying once their process is up succeeds.
+     */
+    suspend fun search(query: String, limit: Int): List<KinopoiskSuggestion> {
+        var lastError: Throwable? = null
+        repeat(QUERY_ATTEMPTS) { attempt ->
+            if (attempt > 0) delay(RETRY_DELAYS_MS[attempt - 1])
+            val result = runCatching {
+                appContext.contentResolver.query(suggestUri, null, null, arrayOf(query), null)
+            }
+            result.onSuccess { cursor -> return cursor?.let { read(it, query, limit) } ?: emptyList() }
+            result.onFailure { error ->
+                lastError = error
+                l.warn("Kinopoisk suggestion query failed (attempt {}): {}", attempt + 1, error.message)
+            }
+        }
+        throw IllegalStateException("Kinopoisk search is unavailable: ${lastError?.message}")
+    }
 
-        return cursor.use {
+    private fun read(cursor: Cursor, query: String, limit: Int): List<KinopoiskSuggestion> =
+        cursor.use {
             l.info("Kinopoisk suggestions for '{}': rows={} columns={}", query, it.count, it.columnNames.toList())
             buildList {
                 while (it.moveToNext() && size < limit) {
@@ -40,7 +58,6 @@ class KinopoiskSearchGateway(context: Context) {
                 }
             }
         }
-    }
 }
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
