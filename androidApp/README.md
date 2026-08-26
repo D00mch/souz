@@ -58,6 +58,24 @@ adb shell am start -n ru.souz.android/.MainActivity
 
 You can also open the repo in Android Studio and run the `androidApp` configuration.
 
+## Provisioning Credentials Over adb
+
+Typing API keys with a TV remote is painful, so keys can be provisioned by broadcast:
+
+```bash
+adb shell am broadcast -W \
+  -n ru.souz.android/.provisioning.SouzProvisioningReceiver \
+  -a ru.souz.android.action.PROVISION \
+  --es aitunnel 'sk-aitunnel-...' \
+  --es gigachat '...'
+```
+
+Supported extras: `gigachat`, `aitunnel`, `openai`, `openai_base_url`, `openai_model`, and `salutespeech`. An empty value clears that setting. `-W` makes `am` print which settings were applied; values are never logged.
+
+The receiver requires senders to hold `android.permission.WRITE_SECURE_SETTINGS`, which shell and system hold and installed apps cannot obtain. Without that gate any app could point the assistant at its own OpenAI-compatible proxy and capture conversations.
+
+Keys are stored the same way the Settings screen stores them, in Keystore-encrypted `SharedPreferences`. A running app picks them up on the next request; the Settings screen shows them after it is reopened.
+
 Run Android instrumentation tests on a connected device or emulator:
 
 ```bash

@@ -104,6 +104,15 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".provisioning.SouzProvisioningReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="ru.souz.android.action.PROVISION" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".assistant.SouzVoiceInteractionService"
             android:exported="true"
