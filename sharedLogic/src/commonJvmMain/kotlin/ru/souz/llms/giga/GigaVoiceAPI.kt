@@ -19,7 +19,7 @@ class GigaVoiceAPI(
     private val auth: GigaAuth,
     private val keysProvider: SettingsProvider,
 ) {
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         var token = ""
         gigaDefaults(keysProvider)
         install(Auth) {
@@ -34,7 +34,7 @@ class GigaVoiceAPI(
                 }
             }
         }
-    }
+    }}
 
     suspend fun synthesize(text: String): ByteArray {
         val response = client.post("https://smartspeech.sber.ru/rest/v1/text:synthesize?format=wav16&voice=Nec_24000") {

@@ -43,7 +43,7 @@ class OpenAIVoiceAPI(
             ?: System.getProperty("OPENAI_TRANSCRIPTION_MODEL")
             ?: DEFAULT_TRANSCRIPTION_MODEL
 
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         defaultRequest {
             header(HttpHeaders.Authorization, "Bearer $apiKey")
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -52,7 +52,7 @@ class OpenAIVoiceAPI(
             requestTimeoutMillis = settingsProvider.requestTimeoutMillis
         }
         openAiTlsDefaults()
-    }
+    }}
 
     suspend fun recognize(audio: ByteArray): String {
         val wavAudio = pcm16MonoToWav(

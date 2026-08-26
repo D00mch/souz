@@ -72,7 +72,7 @@ class AnthropicChatAPI(
             ?: System.getProperty("ANTHROPIC_MODEL")
             ?: DEFAULT_ANTHROPIC_MODEL
 
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         anthropicDefaults(
             apiKey = apiKey,
             requestTimeoutMillis = settingsProvider.requestTimeoutMillis,
@@ -90,7 +90,7 @@ class AnthropicChatAPI(
             maxReconnectionAttempts = 0
             reconnectionTime = 3.seconds
         }
-    }
+    }}
 
     private val fileTypes = ConcurrentHashMap<String, String>()
 

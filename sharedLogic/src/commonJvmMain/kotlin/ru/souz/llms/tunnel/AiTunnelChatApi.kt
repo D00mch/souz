@@ -59,7 +59,7 @@ class AiTunnelChatAPI(
             ?: System.getProperty("AITUNNEL_EMBEDDINGS_MODEL")
             ?: "text-embedding-3-small"
 
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         defaultRequest {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -82,7 +82,7 @@ class AiTunnelChatAPI(
             level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
-    }
+    }}
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(CHAT_COMPLETIONS_URL) {

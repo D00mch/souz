@@ -16,9 +16,9 @@ class GigaAuth(
     private val l = LoggerFactory.getLogger(GigaAuth::class.java)
 
     suspend fun requestToken(apiKey: String, scope: String): String {
-        val client = HttpClient(CIO) {
+        val client by lazy { HttpClient(CIO) {
             gigaDefaults(settingsProvider)
-        }
+        }}
         val response = client.submitForm(
             url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
             formParameters = Parameters.build {

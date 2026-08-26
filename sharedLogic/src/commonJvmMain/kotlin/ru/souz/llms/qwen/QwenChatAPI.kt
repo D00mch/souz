@@ -60,7 +60,7 @@ class QwenChatAPI(
             ?: System.getProperty("QWEN_EMBEDDINGS_MODEL")
             ?: "text-embedding-v3"
 
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         defaultRequest {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -87,7 +87,7 @@ class QwenChatAPI(
             maxReconnectionAttempts = 0
             reconnectionTime = 3.seconds
         }
-    }
+    }}
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
         val response = client.post(CHAT_COMPLETIONS_URL) {

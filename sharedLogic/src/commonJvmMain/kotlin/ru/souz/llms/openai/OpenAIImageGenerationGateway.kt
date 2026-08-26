@@ -38,7 +38,7 @@ class OpenAIImageGenerationGateway(
             ?: System.getProperty("OPENAI_API_KEY")
             ?: throw IllegalStateException("OPENAI_API_KEY is not set")
 
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         defaultRequest {
             header(HttpHeaders.ContentType, ContentType.Application.Json)
             header(HttpHeaders.Accept, ContentType.Application.Json)
@@ -62,7 +62,7 @@ class OpenAIImageGenerationGateway(
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
         openAiTlsDefaults()
-    }
+    }}
 
     override suspend fun generate(input: ImageGenerationInput): GeneratedImage = try {
         val outputFormat = (input.outputFormat ?: OpenAIImageGenerationRequestBuilder.DEFAULT_OUTPUT_FORMAT).lowercase()

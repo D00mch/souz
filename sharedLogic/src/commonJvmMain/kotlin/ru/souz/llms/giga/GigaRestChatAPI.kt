@@ -47,7 +47,7 @@ class GigaRestChatAPI(
     private val apiKey: String
         get() = keysProvider.gigaChatKey ?: throw IllegalStateException("GIGA_KEY is not set")
 
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         gigaDefaults(keysProvider)
         install(Logging) {
             val envLevel = System.getenv("GIGA_LOG_LEVEL")
@@ -75,7 +75,7 @@ class GigaRestChatAPI(
             maxReconnectionAttempts = 0
             reconnectionTime = 3.seconds
         }
-    }
+    }}
 
     private val uuid = UUID.randomUUID().toString() // for cache to work
 

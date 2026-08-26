@@ -41,7 +41,7 @@ class CodexChatAPI(
 
     private val l = LoggerFactory.getLogger(CodexChatAPI::class.java)
 
-    private val client = HttpClient(CIO) {
+    private val client by lazy { HttpClient(CIO) {
         install(HttpTimeout) { requestTimeoutMillis = settingsProvider.requestTimeoutMillis }
         install(ContentNegotiation) {
             jackson { disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES) }
@@ -53,7 +53,7 @@ class CodexChatAPI(
             level = LogLevel.INFO
             sanitizeHeader { it.equals(HttpHeaders.Authorization, true) }
         }
-    }
+    }}
 
     // Codex API requires stream=true; accumulate all chunks into one response.
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
