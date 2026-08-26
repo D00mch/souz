@@ -7,10 +7,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import ru.souz.db.SettingsProvider
 import ru.souz.db.SettingsProviderImpl.Companion.REGION_EN
-import ru.souz.db.SettingsProviderImpl.Companion.REGION_RU
-import ru.souz.llms.giga.GigaVoiceAPI
 import ru.souz.llms.VoiceRecognitionProvider
-import ru.souz.llms.tunnel.AiTunnelVoiceAPI
 import ru.souz.llms.openai.OpenAIVoiceAPI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,27 +20,6 @@ private const val LOCAL_MACOS_PCM_BYTES_PER_SAMPLE = 2
 private const val LOCAL_MACOS_PCM_CHANNELS = 1
 private const val MAX_LOCAL_MACOS_STT_AUDIO_SECONDS = 45
 
-/** Provide locality specific Voice recognition, e.g. SaluteSpeech for Ru. */
-interface SpeechRecognitionProvider {
-    val enabled: Boolean
-    val hasRequiredKey: Boolean
-
-    suspend fun recognize(audio: ByteArray): String
-}
-
-class SaluteSpeechRecognitionProvider(
-    private val gigaVoiceAPI: GigaVoiceAPI,
-    private val settingsProvider: SettingsProvider,
-) : SpeechRecognitionProvider {
-    override val enabled: Boolean
-        get() = settingsProvider.regionProfile == REGION_RU
-    override val hasRequiredKey: Boolean
-        get() = enabled && !settingsProvider.saluteSpeechKey.isNullOrBlank()
-
-    override suspend fun recognize(audio: ByteArray): String =
-        gigaVoiceAPI.recognize(audio).result.joinToString("\n").trim()
-}
-
 class OpenAISpeechRecognitionProvider(
     private val openAIVoiceAPI: OpenAIVoiceAPI,
     private val settingsProvider: SettingsProvider,
@@ -54,23 +30,6 @@ class OpenAISpeechRecognitionProvider(
         get() = enabled && !settingsProvider.openaiKey.isNullOrBlank()
 
     override suspend fun recognize(audio: ByteArray): String = openAIVoiceAPI.recognize(audio).trim()
-}
-
-class AiTunnelSpeechRecognitionProvider(
-    private val aiTunnelVoiceAPI: AiTunnelVoiceAPI,
-    private val settingsProvider: SettingsProvider,
-    private val isRuBuildProvider: () -> Boolean = { settingsProvider.regionProfile == REGION_RU },
-) : SpeechRecognitionProvider {
-    override val enabled: Boolean
-        get() = isRuBuildProvider()
-
-    override val hasRequiredKey: Boolean
-        get() = enabled && !settingsProvider.aiTunnelKey.isNullOrBlank()
-
-    override suspend fun recognize(audio: ByteArray): String {
-        if (!enabled) throw VoiceRecognitionUnavailableException()
-        return aiTunnelVoiceAPI.recognize(audio).trim()
-    }
 }
 
 class MacOsSpeechRecognitionProvider(
@@ -390,8 +349,6 @@ class ModelAwareSpeechRecognitionProvider(
         VoiceRecognitionProvider.LOCAL_MACOS -> macOsSpeechProvider
     }
 }
-
-class VoiceRecognitionUnavailableException : IllegalStateException("Voice recognition is not configured for this build")
 
 sealed class LocalMacOsSpeechRecognitionException(message: String) : IllegalStateException(message)
 

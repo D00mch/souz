@@ -11,9 +11,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.kodein.di.DI
+import org.kodein.di.bind
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.kodein.di.scoped
+import org.kodein.di.singleton
 import ru.souz.agent.AgentFacade
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.session.GraphSessionRepository
@@ -24,18 +27,25 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
+import ru.souz.android.assistant.VoiceAssistantTurnCoordinator
 import ru.souz.android.sandbox.AndroidRuntimeSandboxFactory
 import ru.souz.android.python.ChaquopyPythonSkillRunner
 import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.android.tool.AndroidToolAvailabilityPolicy
 import ru.souz.android.tool.AndroidToolsFactory
+import ru.souz.android.tool.KinopoiskSearchGateway
 import ru.souz.android.tool.ToolKinopoiskMovie
+import ru.souz.android.tool.ToolKinopoiskSearch
 import ru.souz.android.tool.ToolMediaControl
 import ru.souz.android.tool.ToolOpenAndroid
 import ru.souz.android.tool.ToolSberAssistantCommand
 import ru.souz.android.tool.ToolSberLauncherSearch
 import ru.souz.android.tool.ToolSberTvChannel
 import ru.souz.android.tool.ToolShowAndroidApps
+import ru.souz.android.voice.AndroidMicPermissionGate
+import ru.souz.android.voice.AndroidPcmAudioRecorder
+import ru.souz.android.voice.AndroidVoiceInputController
+import ru.souz.android.voice.CloudSpeechPlayer
 import ru.souz.db.SettingsProvider
 import ru.souz.di.sharedUiCommonJvmDiModule
 import ru.souz.llms.LLMChatAPI
@@ -68,6 +78,11 @@ import ru.souz.llms.runtime.ApiClassifier
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.service.observability.DesktopStructuredLogger
+import ru.souz.llms.tunnel.AiTunnelVoiceAPI
+import ru.souz.service.speech.AiTunnelSpeechRecognitionProvider
+import ru.souz.service.speech.AiTunnelSpeechSynthesisProvider
+import ru.souz.service.speech.SpeechRecognitionProvider
+import ru.souz.service.speech.SpeechSynthesisProvider
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ImmediateToolPermissionBroker
 import ru.souz.tool.ToolAvailabilityPolicy
@@ -79,6 +94,10 @@ import ru.souz.tool.UserMessageClassifier
 import ru.souz.tool.files.DeferredToolModifyPermissionBroker
 import ru.souz.tool.portableRuntimeToolsDiModule
 import ru.souz.ui.host.ExternalLinkOpener
+import ru.souz.ui.host.UiAudioRecorder
+import ru.souz.ui.host.UiSpeechPlayer
+import ru.souz.ui.main.mainViewModelDiScope
+import ru.souz.ui.main.usecases.VoiceInputController
 import java.nio.file.Path
 
 class AndroidAgentRuntime(
@@ -172,7 +191,9 @@ class AndroidAgentRuntime(
             bindSingleton { ToolSberAssistantCommand(appContext) }
             bindSingleton { ToolSberLauncherSearch(appContext) }
             bindSingleton { ToolSberTvChannel(appContext) }
-            bindSingleton { ToolKinopoiskMovie(appContext) }
+            bindSingleton { KinopoiskSearchGateway(appContext) }
+            bindSingleton { ToolKinopoiskMovie(appContext, instance()) }
+            bindSingleton { ToolKinopoiskSearch(appContext, instance()) }
             bindSingleton {
                 AndroidToolsFactory(
                     portableToolsFactory = instance(),
@@ -183,6 +204,7 @@ class AndroidAgentRuntime(
                     toolSberLauncherSearch = instance(),
                     toolSberTvChannel = instance(),
                     toolKinopoiskMovie = instance(),
+                    toolKinopoiskSearch = instance(),
                     availabilityPolicy = instance(),
                 )
             }
@@ -201,6 +223,34 @@ class AndroidAgentRuntime(
                 )
             )
             import(sharedUiCommonJvmDiModule(), allowOverride = true)
+            bindSingleton { AiTunnelVoiceAPI(instance()) }
+            bindSingleton { AndroidMicPermissionGate(appContext) }
+            bindSingleton { AndroidPcmAudioRecorder(appContext) }
+            bindSingleton<SpeechRecognitionProvider> {
+                AiTunnelSpeechRecognitionProvider(instance(), instance())
+            }
+            bindSingleton<SpeechSynthesisProvider> {
+                AiTunnelSpeechSynthesisProvider(instance(), instance())
+            }
+            bindSingleton { CloudSpeechPlayer(instance()) }
+            bindSingleton {
+                VoiceAssistantTurnCoordinator(
+                    recorder = instance(),
+                    recognition = instance(),
+                    speechPlayer = instance(),
+                    agentFacade = instance(),
+                )
+            }
+            bindSingleton<UiAudioRecorder>(overrides = true) { instance<AndroidPcmAudioRecorder>() }
+            bindSingleton<UiSpeechPlayer>(overrides = true) { instance<CloudSpeechPlayer>() }
+            bind<VoiceInputController>(overrides = true) with scoped(mainViewModelDiScope).singleton {
+                AndroidVoiceInputController(
+                    audioRecorder = instance(),
+                    speechRecognitionProvider = instance(),
+                    speechPlayer = instance(),
+                    micPermissionGate = instance(),
+                )
+            }
             bindSingleton<ExternalLinkOpener>(overrides = true) {
                 ExternalLinkOpener { url ->
                     runCatching {

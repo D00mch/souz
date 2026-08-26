@@ -39,6 +39,8 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -52,6 +54,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -177,7 +180,7 @@ import souz.sharedui.generated.resources.settings_title
 import souz.sharedui.generated.resources.settings_value_not_set
 
 @Composable
-fun SouzAndroidSharedUiApp(di: DI) {
+fun SouzAndroidSharedUiApp(di: DI, voiceTrigger: Int = 0) {
     withDI(di) {
         val settingsHostPreferences: SettingsHostPreferences by localDI().instance()
         val themeMode by settingsHostPreferences.themeMode.collectAsState()
@@ -192,6 +195,7 @@ fun SouzAndroidSharedUiApp(di: DI) {
                 var route by remember { mutableStateOf(AndroidRoute.Chat) }
                 when (route) {
                     AndroidRoute.Chat -> AndroidChatRoute(
+                        voiceTrigger = voiceTrigger,
                         onOpenSettings = { route = AndroidRoute.Settings },
                         onOpenGraphSessions = { route = AndroidRoute.GraphSessions },
                     )
@@ -211,6 +215,7 @@ private enum class AndroidRoute {
 
 @Composable
 private fun AndroidChatRoute(
+    voiceTrigger: Int,
     onOpenSettings: () -> Unit,
     onOpenGraphSessions: () -> Unit,
 ) {
@@ -232,6 +237,10 @@ private fun AndroidChatRoute(
         viewModel.send(MainEvent.RefreshSettings)
     }
 
+    LaunchedEffect(voiceTrigger) {
+        if (voiceTrigger > 0) viewModel.send(MainEvent.StartListening)
+    }
+
     AndroidChatScreen(
         state = state,
         snackbarHostState = snackbarHostState,
@@ -241,6 +250,9 @@ private fun AndroidChatRoute(
         onConfirmNewConversation = { viewModel.send(MainEvent.ConfirmNewConversation) },
         onDismissNewConversation = { viewModel.send(MainEvent.DismissNewConversationDialog) },
         onSendMessage = { viewModel.send(MainEvent.SendChatMessage(it)) },
+        onToggleListening = {
+            viewModel.send(if (state.isListening) MainEvent.StopListening else MainEvent.StartListening)
+        },
         onCancel = { viewModel.send(MainEvent.UserPressStop) },
         onModelChange = { viewModel.send(MainEvent.UpdateChatModel(it)) },
         onContextChange = { viewModel.send(MainEvent.UpdateChatContextSize(it)) },
@@ -280,6 +292,7 @@ private fun AndroidChatScreen(
     onConfirmNewConversation: () -> Unit,
     onDismissNewConversation: () -> Unit,
     onSendMessage: (String) -> Unit,
+    onToggleListening: () -> Unit,
     onCancel: () -> Unit,
     onModelChange: (String) -> Unit,
     onContextChange: (Int) -> Unit,
@@ -450,12 +463,22 @@ private fun AndroidChatScreen(
                     onOpenSettings = onOpenSettings,
                 )
 
+                if (state.statusMessage.isNotBlank()) {
+                    Text(
+                        text = state.statusMessage,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+
                 AndroidMessageInput(
                     value = input,
                     onValueChange = { input = it },
                     enabled = !state.isProcessing && !state.isAwaitingToolReview,
                     isProcessing = state.isProcessing,
+                    isListening = state.isListening,
                     canSend = canSend,
+                    onToggleListening = onToggleListening,
                     onCancel = onCancel,
                     onSend = {
                         val text = input.trim()
@@ -733,7 +756,9 @@ private fun AndroidMessageInput(
     onValueChange: (String) -> Unit,
     enabled: Boolean,
     isProcessing: Boolean,
+    isListening: Boolean,
     canSend: Boolean,
+    onToggleListening: () -> Unit,
     onCancel: () -> Unit,
     onSend: () -> Unit,
 ) {
@@ -760,6 +785,13 @@ private fun AndroidMessageInput(
             minLines = 1,
             maxLines = 8,
         )
+        IconButton(onClick = onToggleListening) {
+            Icon(
+                imageVector = if (isListening) Icons.Rounded.MicOff else Icons.Rounded.Mic,
+                contentDescription = null,
+                tint = if (isListening) MaterialTheme.colorScheme.error else LocalContentColor.current,
+            )
+        }
         IconButton(
             enabled = isProcessing || canSend,
             onClick = {

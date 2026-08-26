@@ -7,6 +7,7 @@ import ru.souz.ui.android.SouzAndroidSharedUiApp
 @Composable
 fun SouzAndroidApp(
     agentRuntime: AndroidAgentRuntime,
+    voiceTrigger: Int = 0,
 ) {
-    SouzAndroidSharedUiApp(di = agentRuntime.di)
+    SouzAndroidSharedUiApp(di = agentRuntime.di, voiceTrigger = voiceTrigger)
 }

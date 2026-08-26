@@ -4,4 +4,9 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:fontFamily">sans</item>
     </style>
+
+    <style name="SouzAssistantWindowAnimation">
+        <item name="android:windowEnterAnimation">@anim/souz_assistant_enter</item>
+        <item name="android:windowExitAnimation">@anim/souz_assistant_exit</item>
+    </style>
 </resources>

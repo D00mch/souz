@@ -1,6 +1,7 @@
 package ru.souz.llms.tunnel
 
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
@@ -10,6 +11,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.content.TextContent
 import io.ktor.http.isSuccess
 import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
@@ -91,12 +93,66 @@ class AiTunnelVoiceAPI(
         return restJsonMapper.readTree(responseBody)["text"]?.asText()?.trim().orEmpty()
     }
 
+    /**
+     * Returns synthesized audio bytes. Defaults to raw `pcm` because `wav` is only offered by
+     * `tts-1`/`tts-1-hd`, while the modern models expose `mp3` and `pcm` only.
+     */
+    suspend fun synthesize(text: String): ByteArray {
+        val payload = restJsonMapper.writeValueAsString(
+            mapOf(
+                "model" to synthesisModel,
+                "voice" to synthesisVoice,
+                "input" to text,
+                "response_format" to synthesisFormat,
+            ),
+        )
+        val response = client.post(SPEECH_URL) {
+            setBody(TextContent(payload, ContentType.Application.Json))
+        }
+
+        if (!response.status.isSuccess()) {
+            val body = response.bodyAsText()
+            l.warn("AiTunnel speech request failed: status={}, body={}", response.status.value, body)
+            throw IllegalStateException("AiTunnel speech synthesis failed: ${response.status.value}")
+        }
+
+        val audio = response.body<ByteArray>()
+        l.info(
+            "AiTunnel speech ok: model={} format={} contentType={} bytes={}",
+            synthesisModel,
+            synthesisFormat,
+            response.headers[HttpHeaders.ContentType],
+            audio.size,
+        )
+        if (audio.isEmpty()) throw IllegalStateException("AiTunnel speech synthesis returned no audio")
+        return audio
+    }
+
     fun clear() = client.close()
+
+    private val synthesisModel: String
+        get() = System.getenv("AITUNNEL_TTS_MODEL")
+            ?: System.getProperty("AITUNNEL_TTS_MODEL")
+            ?: DEFAULT_TTS_MODEL
+
+    private val synthesisVoice: String
+        get() = System.getenv("AITUNNEL_TTS_VOICE")
+            ?: System.getProperty("AITUNNEL_TTS_VOICE")
+            ?: DEFAULT_TTS_VOICE
+
+    private val synthesisFormat: String
+        get() = System.getenv("AITUNNEL_TTS_FORMAT")
+            ?: System.getProperty("AITUNNEL_TTS_FORMAT")
+            ?: DEFAULT_TTS_FORMAT
 
     private companion object {
         const val TRANSCRIPTIONS_URL = "https://api.aitunnel.ru/v1/audio/transcriptions"
+        const val SPEECH_URL = "https://api.aitunnel.ru/v1/audio/speech"
         const val DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
         const val DEFAULT_TRANSCRIPTION_LANGUAGE = "ru"
+        const val DEFAULT_TTS_MODEL = "gpt-4o-mini-tts"
+        const val DEFAULT_TTS_VOICE = "alloy"
+        const val DEFAULT_TTS_FORMAT = "pcm"
         const val AUDIO_SAMPLE_RATE_HZ = 16_000
         const val AUDIO_BITS_PER_SAMPLE = 16
         const val AUDIO_CHANNELS = 1

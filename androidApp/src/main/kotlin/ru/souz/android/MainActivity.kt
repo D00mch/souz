@@ -1,6 +1,7 @@
 package ru.souz.android
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -8,9 +9,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import ru.souz.android.agent.AndroidAgentRuntime
-import ru.souz.android.settings.AndroidSettingsProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import org.kodein.di.direct
+import org.kodein.di.instance
 import ru.souz.android.ui.SouzAndroidApp
+import ru.souz.android.voice.AndroidMicPermissionGate
 
 class MainActivity : ComponentActivity() {
     private val permissionRequestLauncher: ActivityResultLauncher<Array<String>> =
@@ -31,17 +36,45 @@ class MainActivity : ComponentActivity() {
 
     private var pendingPermissionRequest: PendingAndroidPermissionRequest? = null
 
+    private val micPermissionGate: AndroidMicPermissionGate by lazy {
+        souzAgentRuntime.di.direct.instance()
+    }
+
+    private var voiceTrigger by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val settings = AndroidSettingsProvider(applicationContext)
-        val agentRuntime = AndroidAgentRuntime(applicationContext, settings)
+        val agentRuntime = souzAgentRuntime
+        micPermissionGate.bindRequester { onResult ->
+            val requested = requestPermissionsFor(AndroidPermissionPurpose.VoiceInput) {
+                onResult(it.allGranted)
+            }
+            if (!requested) onResult(false)
+        }
+        consumeVoiceTrigger(intent)
 
         setContent {
             SouzAndroidApp(
                 agentRuntime = agentRuntime,
+                voiceTrigger = voiceTrigger,
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeVoiceTrigger(intent)
+    }
+
+    private fun consumeVoiceTrigger(intent: Intent?) {
+        if (intent?.action in VOICE_TRIGGER_ACTIONS) voiceTrigger++
+    }
+
+    override fun onDestroy() {
+        micPermissionGate.bindRequester(null)
+        super.onDestroy()
     }
 
     private fun hasPermissionsFor(purpose: AndroidPermissionPurpose): Boolean =
@@ -122,6 +155,15 @@ class MainActivity : ComponentActivity() {
         val permissions: List<String>,
         val onResult: (AndroidPermissionResult) -> Unit,
     )
+
+    private companion object {
+        val VOICE_TRIGGER_ACTIONS = setOf(
+            Intent.ACTION_ASSIST,
+            Intent.ACTION_VOICE_COMMAND,
+            "android.intent.action.VOICE_ASSIST",
+            "android.speech.action.VOICE_SEARCH_HANDS_FREE",
+        )
+    }
 
     private data class AndroidPermissionResult(
         val purpose: AndroidPermissionPurpose,

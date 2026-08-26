@@ -49,6 +49,7 @@ class AndroidToolsFactory(
     private val toolSberLauncherSearch: ToolSberLauncherSearch,
     private val toolSberTvChannel: ToolSberTvChannel,
     private val toolKinopoiskMovie: ToolKinopoiskMovie,
+    private val toolKinopoiskSearch: ToolKinopoiskSearch,
     private val availabilityPolicy: ToolAvailabilityPolicy = AndroidToolAvailabilityPolicy,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
@@ -65,6 +66,7 @@ class AndroidToolsFactory(
                         toolSberLauncherSearch.toGiga(),
                         toolSberTvChannel.toGiga(),
                         toolKinopoiskMovie.toGiga(),
+                        toolKinopoiskSearch.toGiga(),
                     )
 
                     else -> emptyList()
@@ -216,15 +218,74 @@ class ToolSberTvChannel(
     override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
 }
 
+class ToolKinopoiskSearch(
+    context: Context,
+    private val searchGateway: KinopoiskSearchGateway = KinopoiskSearchGateway(context),
+) : ToolSetup<ToolKinopoiskSearch.Input> {
+
+    data class Input(
+        @InputParamDescription("Title to look up in Kinopoisk, for example Холоп.")
+        val query: String,
+        @InputParamDescription("How many results to return. Defaults to 5.")
+        val limit: Int = DEFAULT_LIMIT,
+    )
+
+    override val name: String = "KinopoiskSearch"
+    override val description: String =
+        "Searches Kinopoisk content by title on this device and returns matches with their Kinopoisk " +
+            "film IDs and deep links. Use this to resolve a title before opening or playing it; never guess film IDs."
+
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Найди фильм Холоп",
+            params = mapOf("query" to "Холоп"),
+        ),
+        FewShotExample(
+            request = "Что есть в Кинопоиске про Гарри Поттера",
+            params = mapOf("query" to "Гарри Поттер", "limit" to 10),
+        ),
+    )
+
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "JSON list of Kinopoisk matches with title, year, filmId, and deeplink."),
+        ),
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String {
+        val query = input.query.trim()
+        if (query.isEmpty()) return "Error: query must not be empty"
+        return runCatching {
+            val results = searchGateway.search(query, input.limit.coerceIn(1, MAX_LIMIT))
+            if (results.isEmpty()) "No Kinopoisk matches for '$query'"
+            else restJsonMapper.writeValueAsString(results)
+        }.getOrElse { error ->
+            "Error searching Kinopoisk for '$query': ${error.message ?: error::class.java.simpleName}"
+        }
+    }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String = invoke(input, meta)
+
+    private companion object {
+        const val DEFAULT_LIMIT = 5
+        const val MAX_LIMIT = 20
+    }
+}
+
 class ToolKinopoiskMovie(
     context: Context,
+    private val searchGateway: KinopoiskSearchGateway = KinopoiskSearchGateway(context),
 ) : ToolSetup<ToolKinopoiskMovie.Input> {
     private val appContext = context.applicationContext
     private val packageManager: PackageManager = appContext.packageManager
 
     data class Input(
-        @InputParamDescription("Kinopoisk film ID. For example, 1+1 / Intouchables is 535341.")
-        val filmId: String,
+        @InputParamDescription("Title to resolve through Kinopoisk search. Use this unless a filmId is already known.")
+        val title: String? = null,
+        @InputParamDescription(
+            "Kinopoisk film ID, only when it came from KinopoiskSearch. It is a 32-character hex string, never guess it.",
+        )
+        val filmId: String? = null,
         @InputParamDescription("What to open: details card, playback, or trailer.")
         val action: KinopoiskAction = KinopoiskAction.OPEN,
     )
@@ -237,16 +298,17 @@ class ToolKinopoiskMovie(
 
     override val name: String = "KinopoiskMovie"
     override val description: String =
-        "Opens a Kinopoisk movie by known Kinopoisk film ID through kpatv://film?filmId=..."
+        "Opens Kinopoisk content by title, resolving it through on-device Kinopoisk search first. " +
+            "A filmId may be passed instead, but only when it came from KinopoiskSearch."
 
     override val fewShotExamples: List<FewShotExample> = listOf(
         FewShotExample(
-            request = "Открой фильм 1+1 в Кинопоиске",
-            params = mapOf("filmId" to "535341", "action" to KinopoiskAction.OPEN),
+            request = "Открой фильм Холоп в Кинопоиске",
+            params = mapOf("title" to "Холоп", "action" to KinopoiskAction.OPEN),
         ),
         FewShotExample(
-            request = "Включи 1+1 в Кинопоиске",
-            params = mapOf("filmId" to "535341", "action" to KinopoiskAction.PLAY),
+            request = "Включи 1+1",
+            params = mapOf("title" to "1+1", "action" to KinopoiskAction.PLAY),
         ),
     )
 
@@ -255,12 +317,24 @@ class ToolKinopoiskMovie(
     )
 
     override fun invoke(input: Input, meta: ToolInvocationMeta): String {
-        val filmId = input.filmId.trim()
-        if (filmId.isEmpty()) return "Error: filmId must not be empty"
+        val filmId = input.filmId?.trim().orEmpty()
+        val title = input.title?.trim().orEmpty()
+        if (filmId.isEmpty() && title.isEmpty()) return "Error: either title or filmId must be provided"
+
+        val resolvedId = filmId.ifEmpty {
+            val match = runCatching { searchGateway.search(title, 1).firstOrNull() }
+                .getOrElse { return "Error searching Kinopoisk for '$title': ${it.message.orEmpty()}" }
+                ?: return "No Kinopoisk matches for '$title'"
+            match.filmId
+                ?: return match.deeplink
+                    ?.let { startViewUri(appContext, packageManager, Uri.parse(it), KINOPOISK_PACKAGE) }
+                    ?: "Kinopoisk match for '$title' has no usable deeplink"
+        }
+
         val builder = Uri.Builder()
             .scheme("kpatv")
             .authority("film")
-            .appendQueryParameter("filmId", filmId)
+            .appendQueryParameter("filmId", resolvedId)
         when (input.action) {
             KinopoiskAction.OPEN -> Unit
             KinopoiskAction.PLAY -> builder.appendQueryParameter("action", "play")
