@@ -41,7 +41,11 @@ class ToolInvokeSkill(
             type = "object",
             properties = mapOf(
                 "skillId" to LLMRequest.Property("string", "Exact unqualified Skill ID returned by a Skill discovery tool."),
-                "arguments" to LLMRequest.Property("object", "Arguments matching the input schema returned by a Skill discovery tool."),
+                "arguments" to LLMRequest.Property(
+                    "object",
+                    "Arguments matching the input schema returned by a Skill discovery tool. " +
+                        "Must not be empty when that schema declares any property.",
+                ),
             ),
             required = listOf("skillId"),
         ),
@@ -85,6 +89,16 @@ class ToolInvokeSkill(
 
         val enabledTool = enabledTools[skillId]
         if (enabledTool != null) {
+            // Weaker models tend to send an empty object for the untyped `arguments` property.
+            // Answer with the concrete schema instead of letting the skill guess its own defaults.
+            if (input.arguments.isEmpty() && enabledTool.fn.parameters.properties.isNotEmpty()) {
+                return errorMessage(
+                    outerFunctionName,
+                    "missing_skill_arguments",
+                    "Skill '$skillId' takes arguments and none were passed. Call $outerFunctionName again with " +
+                        "'arguments' filled from this schema: ${restJsonMapper.writeValueAsString(enabledTool.fn.parameters)}",
+                )
+            }
             return enabledTool.invoke(
                 LLMResponse.FunctionCall(
                     name = enabledTool.fn.name,
