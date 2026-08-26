@@ -81,6 +81,8 @@ data class SettingsState(
     val availableAmbientAnalysisModels: List<LLMModel> = emptyList(),
     val availableEmbeddingsModels: List<EmbeddingsModel> = emptyList(),
     val availableVoiceRecognitionModels: List<VoiceRecognitionModel> = emptyList(),
+    val ttsModel: String = "",
+    val ttsVoice: String = "",
     val systemPrompt: String = "",
     val requestTimeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MILLIS,
     val requestTimeoutInput: String = DEFAULT_REQUEST_TIMEOUT_MILLIS.toString(),
@@ -159,6 +161,8 @@ sealed interface SettingsEvent : VMEvent {
     object CancelLocalModelDownload : SettingsEvent
     data class SelectEmbeddingsModel(val model: EmbeddingsModel): SettingsEvent
     data class SelectVoiceRecognitionModel(val model: VoiceRecognitionModel): SettingsEvent
+    data class InputTtsModel(val model: String): SettingsEvent
+    data class InputTtsVoice(val voice: String): SettingsEvent
     data class InputRequestTimeoutMillis(val millis: String) : SettingsEvent
     data class InputContextSize(val size: String) : SettingsEvent
     data class InputTemperature(val temperature: String) : SettingsEvent

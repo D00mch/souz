@@ -47,6 +47,15 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var forbiddenFolders: List<String>
     var embeddingsModel: EmbeddingsModel
     var voiceRecognitionModel: VoiceRecognitionModel
+
+    /** Speech synthesis model and voice; hosts without spoken output leave these unset. */
+    var ttsModel: String?
+        get() = null
+        set(_) = Unit
+    var ttsVoice: String?
+        get() = null
+        set(_) = Unit
+
     var mcpServersJson: String?
     var mcpServersFile: String?
 

@@ -266,6 +266,12 @@ class SettingsViewModel(
                 }
                 setState { copy(embeddingsModel = effectiveModel) }
             }
+            is InputTtsModel -> {
+                handleDeferredTextSettingInput(DeferredTextSetting.TTS_MODEL, event.model)
+            }
+            is InputTtsVoice -> {
+                handleDeferredTextSettingInput(DeferredTextSetting.TTS_VOICE, event.voice)
+            }
             is SelectVoiceRecognitionModel -> {
                 if (event.model !in currentState.availableVoiceRecognitionModels) return
                 keysProvider.voiceRecognitionModel = event.model
@@ -581,6 +587,8 @@ class SettingsViewModel(
             ?: (keysProvider.openaiModel ?: "")
         val supportEmail = pendingTextSettingDrafts[DeferredTextSetting.SUPPORT_EMAIL]
             ?: (keysProvider.supportEmail ?: DEFAULT_SUPPORT_EMAIL)
+        val ttsModel = pendingTextSettingDrafts[DeferredTextSetting.TTS_MODEL] ?: (keysProvider.ttsModel ?: "")
+        val ttsVoice = pendingTextSettingDrafts[DeferredTextSetting.TTS_VOICE] ?: (keysProvider.ttsVoice ?: "")
         val apiKeyAvailability = apiKeyAvailabilityUseCase.availability()
         val apiKeyFields = apiKeyAvailability.fields
             .asSequence()
@@ -664,6 +672,8 @@ class SettingsViewModel(
                 configuredKeysCount = configuredKeysCount,
                 openaiBaseUrl = openaiBaseUrl,
                 openaiModel = openaiModel,
+                ttsModel = ttsModel,
+                ttsVoice = ttsVoice,
                 mcpServersJson = mcpServersJson,
                 useFewShotExamples = keysProvider.useFewShotExamples,
                 useStreaming = keysProvider.useStreaming,
@@ -907,6 +917,8 @@ class SettingsViewModel(
                 copy(supportEmail = value, sendLogsMessage = null, sendLogsPath = null)
             }
             DeferredTextSetting.SYSTEM_PROMPT -> setState { copy(systemPrompt = value) }
+            DeferredTextSetting.TTS_MODEL -> setState { copy(ttsModel = value) }
+            DeferredTextSetting.TTS_VOICE -> setState { copy(ttsVoice = value) }
         }
     }
 
@@ -933,6 +945,12 @@ class SettingsViewModel(
             DeferredTextSetting.SYSTEM_PROMPT -> {
                 agentFacade.updateSystemPrompt(value)
                 send(SettingsEffect.NotifyOnSystemPrompt)
+            }
+            DeferredTextSetting.TTS_MODEL -> withContext(Dispatchers.IO) {
+                keysProvider.ttsModel = value.trim().takeUnless(String::isBlank)
+            }
+            DeferredTextSetting.TTS_VOICE -> withContext(Dispatchers.IO) {
+                keysProvider.ttsVoice = value.trim().takeUnless(String::isBlank)
             }
         }
         if (pendingTextSettingDrafts[field] == value) {
@@ -1255,6 +1273,8 @@ class SettingsViewModel(
         OPENAI_MODEL,
         SUPPORT_EMAIL,
         SYSTEM_PROMPT,
+        TTS_MODEL,
+        TTS_VOICE,
     }
 
     private enum class LocalModelSelectionTarget {

@@ -103,6 +103,7 @@ import org.kodein.di.instance
 import org.kodein.di.compose.localDI
 import org.kodein.di.compose.withDI
 import ru.souz.llms.LLMModel
+import ru.souz.llms.VoiceRecognitionProvider
 import ru.souz.tool.files.ToolModifySelectionAction
 import ru.souz.ui.AppTheme
 import ru.souz.ui.ThemeMode
@@ -1118,6 +1119,45 @@ private fun AndroidSettingsScreen(
                     }
                 }
             }
+
+            // Android speech recognition always runs through AiTunnel, so other providers would
+            // be selectable but silently ignored.
+            val voiceModels = state.availableVoiceRecognitionModels
+                .filter { it.provider == VoiceRecognitionProvider.AI_TUNNEL }
+            if (voiceModels.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text("Распознавание речи", style = MaterialTheme.typography.titleMedium)
+                voiceModels.forEach { model ->
+                    if (model == state.voiceRecognitionModel) {
+                        Button(onClick = { onEvent(SettingsEvent.SelectVoiceRecognitionModel(model)) }) {
+                            Text(model.displayName)
+                        }
+                    } else {
+                        TextButton(onClick = { onEvent(SettingsEvent.SelectVoiceRecognitionModel(model)) }) {
+                            Text(model.displayName)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            Text("Синтез речи", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = state.ttsModel,
+                onValueChange = { onEvent(SettingsEvent.InputTtsModel(it)) },
+                label = { Text("Модель синтеза") },
+                placeholder = { Text("gpt-4o-mini-tts") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = state.ttsVoice,
+                onValueChange = { onEvent(SettingsEvent.InputTtsVoice(it)) },
+                label = { Text("Голос") },
+                placeholder = { Text("alloy") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
 
             AndroidTextSettingRow(
                 label = stringResource(Res.string.label_context_size),

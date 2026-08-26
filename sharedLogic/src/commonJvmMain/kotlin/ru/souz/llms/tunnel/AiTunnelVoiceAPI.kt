@@ -131,12 +131,14 @@ class AiTunnelVoiceAPI(
     fun clear() = client.close()
 
     private val synthesisModel: String
-        get() = System.getenv("AITUNNEL_TTS_MODEL")
+        get() = settingsProvider.ttsModel?.trim()?.takeIf { it.isNotBlank() }
+            ?: System.getenv("AITUNNEL_TTS_MODEL")
             ?: System.getProperty("AITUNNEL_TTS_MODEL")
             ?: DEFAULT_TTS_MODEL
 
     private val synthesisVoice: String
-        get() = System.getenv("AITUNNEL_TTS_VOICE")
+        get() = settingsProvider.ttsVoice?.trim()?.takeIf { it.isNotBlank() }
+            ?: System.getenv("AITUNNEL_TTS_VOICE")
             ?: System.getProperty("AITUNNEL_TTS_VOICE")
             ?: DEFAULT_TTS_VOICE
 

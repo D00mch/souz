@@ -209,8 +209,16 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
 
     override var voiceRecognitionModel: VoiceRecognitionModel
         get() = string(VOICE_RECOGNITION_MODEL)?.let(::voiceRecognitionModelFromAlias)
-            ?: VoiceRecognitionModel.OpenAIGpt4oMiniTranscribe
+            ?: VoiceRecognitionModel.AiTunnelGpt4oMiniTranscribe
         set(value) = putString(VOICE_RECOGNITION_MODEL, value.alias)
+
+    override var ttsModel: String?
+        get() = string(TTS_MODEL)
+        set(value) = putString(TTS_MODEL, value)
+
+    override var ttsVoice: String?
+        get() = string(TTS_VOICE)
+        set(value) = putString(TTS_VOICE, value)
 
     override var mcpServersJson: String?
         get() = string(MCP_SERVERS_JSON)
@@ -316,6 +324,8 @@ class AndroidSettingsProvider(context: Context) : SettingsProvider {
         const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
         const val EMBEDDINGS_MODEL = "EMBEDDINGS_MODEL"
         const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
+        const val TTS_MODEL = "TTS_MODEL"
+        const val TTS_VOICE = "TTS_VOICE"
         const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         const val REGION_RU = "ru"

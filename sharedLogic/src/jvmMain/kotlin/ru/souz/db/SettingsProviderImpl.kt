@@ -297,6 +297,10 @@ class SettingsProviderImpl(
             _voiceRecognitionModelDelegate = value.name
         }
 
+    override var ttsModel: String? by keyDelegate(configKey = TTS_MODEL, envKey = TTS_MODEL)
+
+    override var ttsVoice: String? by keyDelegate(configKey = TTS_VOICE, envKey = TTS_VOICE)
+
     override var mcpServersJson: String? by keyDelegate(
         configKey = MCP_SERVERS_JSON,
         envKey = MCP_SERVERS_JSON
@@ -404,6 +408,8 @@ class SettingsProviderImpl(
         private const val FORBIDDEN_FOLDERS = "FORBIDDEN_FOLDERS"
         private const val EMBEDDINGS_MODEL = "EMBEDDINGS_MODEL"
         private const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
+        private const val TTS_MODEL = "TTS_MODEL"
+        private const val TTS_VOICE = "TTS_VOICE"
         private const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         private const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
         const val REGION_RU = ru.souz.db.REGION_RU
