@@ -27,7 +27,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.kodein.di.direct
 import org.kodein.di.instance
 import ru.souz.android.R
-import ru.souz.android.souzAgentRuntime
+import ru.souz.android.awaitSouzAgentRuntime
 
 private const val AUTO_HIDE_DELAY_MS = 5_000L
 private const val SPEECH_START_TIMEOUT_MS = 10_000L
@@ -35,9 +35,7 @@ private const val HIDE_GRACE_MS = 700L
 
 class SouzVoiceInteractionSession(context: Context) : VoiceInteractionSession(context) {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private val coordinator: VoiceAssistantTurnCoordinator by lazy {
-        context.souzAgentRuntime.di.direct.instance()
-    }
+    private var coordinator: VoiceAssistantTurnCoordinator? = null
 
     private lateinit var statusView: TextView
     private lateinit var replyView: TextView
@@ -102,13 +100,17 @@ class SouzVoiceInteractionSession(context: Context) : VoiceInteractionSession(co
         super.onShow(args, showFlags)
         applyBottomSheetWindow()
         scope.coroutineContext.cancelChildren()
-        scope.launch { coordinator.state.collect(::render) }
-        coordinator.startTurn()
+        scope.launch {
+            val turnCoordinator = context.awaitSouzAgentRuntime().di.direct.instance<VoiceAssistantTurnCoordinator>()
+            coordinator = turnCoordinator
+            turnCoordinator.startTurn()
+            turnCoordinator.state.collect(::render)
+        }
     }
 
     override fun onHide() {
         autoHideJob?.cancel()
-        coordinator.cancelTurn()
+        coordinator?.cancelTurn()
         scope.coroutineContext.cancelChildren()
         super.onHide()
     }
@@ -155,8 +157,9 @@ class SouzVoiceInteractionSession(context: Context) : VoiceInteractionSession(co
     /** Synthesis takes a few seconds, so the overlay must outlive the reply, not a fixed timer. */
     private fun hideAfterSpeech() {
         autoHideJob = scope.launch {
-            withTimeoutOrNull(SPEECH_START_TIMEOUT_MS) { coordinator.isSpeaking.first { it } }
-            coordinator.isSpeaking.first { !it }
+            val speaking = coordinator?.isSpeaking ?: return@launch
+            withTimeoutOrNull(SPEECH_START_TIMEOUT_MS) { speaking.first { it } }
+            speaking.first { !it }
             delay(HIDE_GRACE_MS)
             hide()
         }

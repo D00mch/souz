@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
-import ru.souz.android.souzAgentRuntime
+import ru.souz.android.awaitSouzAgentRuntime
 
 /**
  * Keeps the Souz runtime resident so an assist key press does not pay cold-start cost.
@@ -19,7 +19,7 @@ class SouzVoiceInteractionService : VoiceInteractionService() {
         super.onReady()
         scope.launch {
             val startedAt = System.currentTimeMillis()
-            runCatching { souzAgentRuntime }
+            runCatching { awaitSouzAgentRuntime() }
                 .onSuccess { l.info("Agent runtime warmed up in {} ms", System.currentTimeMillis() - startedAt) }
                 .onFailure { l.error("Agent runtime warm-up failed", it) }
         }

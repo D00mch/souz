@@ -9,11 +9,23 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import org.kodein.di.direct
 import org.kodein.di.instance
+import ru.souz.android.agent.AndroidAgentRuntime
 import ru.souz.android.ui.SouzAndroidApp
 import ru.souz.android.voice.AndroidMicPermissionGate
 
@@ -36,29 +48,33 @@ class MainActivity : ComponentActivity() {
 
     private var pendingPermissionRequest: PendingAndroidPermissionRequest? = null
 
-    private val micPermissionGate: AndroidMicPermissionGate by lazy {
-        souzAgentRuntime.di.direct.instance()
-    }
+    private var micPermissionGate: AndroidMicPermissionGate? = null
 
     private var voiceTrigger by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val agentRuntime = souzAgentRuntime
-        micPermissionGate.bindRequester { onResult ->
-            val requested = requestPermissionsFor(AndroidPermissionPurpose.VoiceInput) {
-                onResult(it.allGranted)
-            }
-            if (!requested) onResult(false)
-        }
         consumeVoiceTrigger(intent)
 
         setContent {
-            SouzAndroidApp(
-                agentRuntime = agentRuntime,
-                voiceTrigger = voiceTrigger,
-            )
+            var agentRuntime by remember { mutableStateOf<AndroidAgentRuntime?>(null) }
+
+            LaunchedEffect(Unit) {
+                val runtime = awaitSouzAgentRuntime()
+                micPermissionGate = runtime.di.direct.instance<AndroidMicPermissionGate>().apply {
+                    bindRequester { onResult ->
+                        val requested = requestPermissionsFor(AndroidPermissionPurpose.VoiceInput) {
+                            onResult(it.allGranted)
+                        }
+                        if (!requested) onResult(false)
+                    }
+                }
+                agentRuntime = runtime
+            }
+
+            agentRuntime
+                ?.let { SouzAndroidApp(agentRuntime = it, voiceTrigger = voiceTrigger) }
+                ?: StartingUpScreen()
         }
     }
 
@@ -73,7 +89,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        micPermissionGate.bindRequester(null)
+        micPermissionGate?.bindRequester(null)
         super.onDestroy()
     }
 
@@ -170,5 +186,14 @@ class MainActivity : ComponentActivity() {
         val grantResults: Map<String, Boolean>,
     ) {
         val allGranted: Boolean = grantResults.values.all { it }
+    }
+}
+
+@Composable
+private fun StartingUpScreen() {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
     }
 }
