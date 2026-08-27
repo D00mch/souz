@@ -60,3 +60,8 @@
 # stripping those subclasses erases the type and parsing fails.
 -keep class * extends com.fasterxml.jackson.core.type.TypeReference { *; }
 -keep class com.fasterxml.jackson.core.type.TypeReference { *; }
+
+# Tool results are serialised to JSON by reflection over their getters, which have no static
+# callers. Without this the accessors are shrunk away and every result serialises as {}, while the
+# rows themselves are read correctly.
+-keep class ru.souz.android.tool.** { *; }
