@@ -332,7 +332,9 @@ class ToolRuStoreSearch(
         return runCatching {
             val results = searchGateway.search(query, input.limit.coerceIn(1, MAX_LIMIT))
             if (results.isEmpty()) "No RuStore matches for '$query'"
-            else restJsonMapper.writeValueAsString(results)
+            else restJsonMapper.writeValueAsString(results).also {
+                toolLog.info("RuStoreSearch returning {} chars: {}", it.length, it.take(300))
+            }
         }.getOrElse { error ->
             "Error searching RuStore for '$query': ${error.message ?: error::class.java.simpleName}"
         }
