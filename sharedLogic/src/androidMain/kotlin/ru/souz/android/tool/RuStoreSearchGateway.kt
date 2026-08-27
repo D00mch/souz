@@ -61,8 +61,16 @@ class RuStoreSearchGateway(context: Context) {
             buildList {
                 while (it.moveToNext() && size < limit) {
                     val row = (0 until it.columnCount).associate { index ->
-                        it.getColumnName(index) to runCatching { it.getString(index) }.getOrNull().orEmpty()
+                        val column = it.getColumnName(index)
+                        val value = runCatching { it.getString(index) }
+                            .onFailure { error ->
+                                l.warn("Column {} (type {}) is not readable as text: {}", column, it.getType(index), error.message)
+                            }
+                            .getOrNull()
+                            .orEmpty()
+                        column to value
                     }.filterValues(String::isNotBlank)
+                    if (isEmpty()) l.info("First RuStore row: {}", row)
                     add(row.toSuggestion())
                 }
             }
