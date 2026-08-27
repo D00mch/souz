@@ -54,3 +54,9 @@
 -keep class com.fasterxml.jackson.databind.annotation.** { *; }
 -keep class * extends com.fasterxml.jackson.databind.JsonDeserializer { *; }
 -keep class * extends com.fasterxml.jackson.databind.JsonSerializer { *; }
+
+# Tool arguments are read with jackson-module-kotlin's reified readValue, which builds an anonymous
+# TypeReference subclass and recovers the element types from its generic superclass. Merging or
+# stripping those subclasses erases the type and parsing fails.
+-keep class * extends com.fasterxml.jackson.core.type.TypeReference { *; }
+-keep class com.fasterxml.jackson.core.type.TypeReference { *; }

@@ -450,8 +450,8 @@ class AiTunnelChatAPI(
     private fun parseFunctionArguments(argsText: String): Map<String, Any> {
         if (argsText.isBlank()) return emptyMap()
         return runCatching { restJsonMapper.readValue<Map<String, Any>>(argsText) }
-            .getOrElse {
-                l.warn("Failed to parse AiTunnel tool arguments: $argsText")
+            .getOrElse { error ->
+                l.warn("Failed to parse AiTunnel tool arguments: {}", argsText, error)
                 emptyMap()
             }
     }
