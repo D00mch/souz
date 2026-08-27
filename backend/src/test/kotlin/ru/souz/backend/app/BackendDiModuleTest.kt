@@ -32,6 +32,7 @@ import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
+import ru.souz.backend.llm.RetryingLlmMessageApi
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
@@ -51,6 +52,7 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmMessageApi
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.skills.SkillCommandExecutor
@@ -161,6 +163,39 @@ class BackendDiModuleTest {
             )
         } finally {
             di.direct.instance<BackendRuntimeResources>().close()
+        }
+    }
+
+    @Test
+    fun `compaction llm api is not bound when summarization llm is not configured`() {
+        val dataSource = HikariDataSource()
+        val di = testDi(testAppConfig(), dataSource)
+
+        try {
+            assertNull(di.direct.instanceOrNull<LlmMessageApi>(tag = BackendDiTags.COMPACTION_LLM_API))
+        } finally {
+            dataSource.close()
+        }
+    }
+
+    @Test
+    fun `compaction llm api is bound with retry when summarization llm is configured`() {
+        val appConfig = testAppConfig().copy(
+            summarizationLlm = BackendSummarizationLlmConfig(
+                apiUrl = "https://openrouter.ai/api/v1",
+                apiKey = "test-summarization-key",
+                model = "google/gemini-3.7-flash",
+            ),
+        )
+        val dataSource = HikariDataSource()
+        val di = testDi(appConfig, dataSource)
+
+        try {
+            assertIs<RetryingLlmMessageApi>(
+                di.direct.instance<LlmMessageApi>(tag = BackendDiTags.COMPACTION_LLM_API)
+            )
+        } finally {
+            dataSource.close()
         }
     }
 

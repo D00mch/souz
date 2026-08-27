@@ -25,6 +25,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmMessageApi
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexOAuthService
@@ -67,6 +68,7 @@ internal class BackendConversationRuntimeFactory(
     private val searchMemoryTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: CoroutineScope,
+    private val compactionLlmApi: LlmMessageApi? = null,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
@@ -191,6 +193,7 @@ internal class BackendConversationRuntimeFactory(
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
             captureScope = agentBackgroundScope,
+            compactionLlmApi = compactionLlmApi,
         ).create()
         return BackendConversationRuntime(
             key = key,

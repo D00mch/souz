@@ -12,6 +12,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse.FinishReason
+import ru.souz.llms.LlmMessageApi
 import ru.souz.llms.toMessage
 import ru.souz.llms.toSystemPromptMessage
 import kotlin.math.ceil
@@ -22,6 +23,7 @@ import kotlin.math.ceil
 internal class NodesSummarization(
     private val llmApi: LLMChatAPI,
     private val nodesCommon: NodesCommon,
+    private val compactionLlmApi: LlmMessageApi? = null,
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)
 
@@ -57,7 +59,7 @@ internal class NodesSummarization(
                     )
                 }
                 val request = ctx.toGigaRequest(conversation).copy(functions = emptyList())
-                llmApi.message(request)
+                (compactionLlmApi ?: llmApi).message(request)
             }
 
             when (summaryResponse) {

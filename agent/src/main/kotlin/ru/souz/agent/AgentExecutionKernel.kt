@@ -23,6 +23,7 @@ import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmMessageApi
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 
@@ -53,6 +54,7 @@ class AgentExecutionKernelFactory(
     private val llmApi: LLMChatAPI,
     private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
+    private val compactionLlmApi: LlmMessageApi? = null,
 ) {
     fun create(): AgentExecutionKernel {
         val agentToolExecutor = AgentToolExecutor(telemetry)
@@ -75,7 +77,11 @@ class AgentExecutionKernelFactory(
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
-        val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
+        val nodesSummarization = NodesSummarization(
+            llmApi = llmApi,
+            nodesCommon = nodesCommon,
+            compactionLlmApi = compactionLlmApi,
+        )
         val coreTools = AgentCoreTools(
             getSkillByName = getSkillByNameTool,
             getSkillsByCategory = getSkillsByCategoryTool,

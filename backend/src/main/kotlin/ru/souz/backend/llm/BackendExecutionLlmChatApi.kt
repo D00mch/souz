@@ -1,7 +1,6 @@
 package ru.souz.backend.llm
 
 import java.io.File
-import kotlin.math.min
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -51,7 +50,9 @@ internal class BackendExecutionLlmChatApi(
             is ModelResolution.Resolved -> resolution.value
             else -> return unsupportedChatModel(resolution)
         }
-        val response = retryChat { apiFor(model.provider).message(body.copy(model = model.alias)) }
+        val response = retryChat(retryPolicy, delayMillis) {
+            apiFor(model.provider).message(body.copy(model = model.alias))
+        }
         recordUsage(response)
         return response
     }
@@ -160,19 +161,6 @@ internal class BackendExecutionLlmChatApi(
             ?: error("Missing configured credential for provider $provider.")
     }
 
-    private suspend fun retryChat(request: suspend () -> LLMResponse.Chat): LLMResponse.Chat {
-        var attempt = 0
-        while (true) {
-            val response = request()
-            if (response !is LLMResponse.Chat.Error || response.status != TOO_MANY_REQUESTS) {
-                return response
-            }
-            if (attempt == retryPolicy.max429Retries) return response
-            delayMillis(backoffForAttempt(attempt, response.message))
-            attempt += 1
-        }
-    }
-
     private fun retryingStream(api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         var attempt = 0
         while (true) {
@@ -183,7 +171,7 @@ internal class BackendExecutionLlmChatApi(
                     if (
                         !emitted &&
                         response is LLMResponse.Chat.Error &&
-                        response.status == TOO_MANY_REQUESTS &&
+                        response.status == HTTP_TOO_MANY_REQUESTS &&
                         attempt < retryPolicy.max429Retries
                     ) {
                         throw RetryFirstStreaming429(response)
@@ -193,7 +181,7 @@ internal class BackendExecutionLlmChatApi(
                 }
                 return@flow
             } catch (retry: RetryFirstStreaming429) {
-                delayMillis(backoffForAttempt(attempt, retry.error.message))
+                delayMillis(backoffForAttempt(retryPolicy, attempt, retry.error.message))
                 attempt += 1
             }
         }
@@ -218,12 +206,6 @@ internal class BackendExecutionLlmChatApi(
         usageMutex.withLock { usage = usage.plus(response.usage) }
     }
 
-    private fun backoffForAttempt(attempt: Int, message: String): Long {
-        val retryAfter = RETRY_AFTER.find(message)?.groupValues?.getOrNull(1)?.toLongOrNull()
-        if (retryAfter != null) return min(retryAfter, retryPolicy.backoffMaxMs)
-        return min(retryPolicy.backoffBaseMs * (attempt + 1), retryPolicy.backoffMaxMs)
-    }
-
     private fun unsupportedChatModel(resolution: ModelResolution<*>): LLMResponse.Chat.Error =
         LLMResponse.Chat.Error(-1, "Unsupported backend chat model: ${resolution.description()}.")
 
@@ -231,8 +213,6 @@ internal class BackendExecutionLlmChatApi(
         LLMResponse.Embeddings.Error(-1, "Unsupported backend embeddings model: ${resolution.description()}.")
 
     private companion object {
-        const val TOO_MANY_REQUESTS = 429
-        val RETRY_AFTER = Regex("""retry-after=(\d+)""", RegexOption.IGNORE_CASE)
         val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
     }
 }

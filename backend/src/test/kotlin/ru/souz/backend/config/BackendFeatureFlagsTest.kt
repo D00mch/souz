@@ -11,6 +11,7 @@ import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendPostgresConfig
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.app.BackendServerConfig
+import ru.souz.backend.app.BackendSummarizationLlmConfig
 import ru.souz.backend.common.BackendConfigurationException
 
 class BackendFeatureFlagsTest {
@@ -319,6 +320,76 @@ class BackendAppConfigTest {
 
         assertTrue(invalidLimit.message.orEmpty().contains("requests"))
         assertTrue(invalidRetry.message.orEmpty().contains("429"))
+    }
+
+    @Test
+    fun `summarization llm config is absent when unset`() {
+        val config = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"),
+            )
+        ).validate()
+
+        assertNull(config.summarizationLlm)
+    }
+
+    @Test
+    fun `summarization llm config reads url, key, model and optional reasoning effort together`() {
+        val config = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                    "SUMMARIZATION_LLM_API_URL" to "https://openrouter.ai/api/v1",
+                    "SUMMARIZATION_LLM_API_KEY" to "test-summarization-key",
+                    "SUMMARIZATION_LLM_MODEL" to "google/gemini-3.7-flash",
+                    "SUMMARIZATION_LLM_REASONING_EFFORT" to "low",
+                ),
+            )
+        ).validate()
+
+        assertEquals(
+            BackendSummarizationLlmConfig(
+                apiUrl = "https://openrouter.ai/api/v1",
+                apiKey = "test-summarization-key",
+                model = "google/gemini-3.7-flash",
+                reasoningEffort = "low",
+            ),
+            config.summarizationLlm,
+        )
+    }
+
+    @Test
+    fun `summarization llm config omits reasoning effort when not set`() {
+        val config = BackendAppConfig.load(
+            MapBackendConfigSource(
+                env = mapOf(
+                    "SOUZ_MASTER_KEY" to "test-master-key",
+                    "SUMMARIZATION_LLM_API_URL" to "https://openrouter.ai/api/v1",
+                    "SUMMARIZATION_LLM_API_KEY" to "test-summarization-key",
+                    "SUMMARIZATION_LLM_MODEL" to "google/gemini-3.7-flash",
+                ),
+            )
+        ).validate()
+
+        assertNull(config.summarizationLlm?.reasoningEffort)
+    }
+
+    @Test
+    fun `summarization llm config requires url, key and model together`() {
+        val error = assertFailsWith<BackendConfigurationException> {
+            BackendAppConfig.load(
+                MapBackendConfigSource(
+                    env = mapOf(
+                        "SOUZ_MASTER_KEY" to "test-master-key",
+                        "SUMMARIZATION_LLM_API_URL" to "https://openrouter.ai/api/v1",
+                    ),
+                )
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("SUMMARIZATION_LLM_API_URL"))
+        assertTrue(error.message.orEmpty().contains("SUMMARIZATION_LLM_API_KEY"))
+        assertTrue(error.message.orEmpty().contains("SUMMARIZATION_LLM_MODEL"))
     }
 }
 

@@ -63,6 +63,13 @@ data class BackendProviderRetryPolicy(
     }
 }
 
+data class BackendSummarizationLlmConfig(
+    val apiUrl: String,
+    val apiKey: String,
+    val model: String,
+    val reasoningEffort: String? = null,
+)
+
 data class BackendServerConfig(
     val host: String,
     val port: Int,
@@ -139,6 +146,7 @@ data class BackendAppConfig(
     val telegramPollingMaxConcurrency: Int = 4,
     val skillOAuthTokenEncryptionKey: String? = null,
     val skillOAuthProviderCredentials: Map<String, SkillOAuthProviderCredentials> = emptyMap(),
+    val summarizationLlm: BackendSummarizationLlmConfig? = null,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
 ) {
@@ -223,6 +231,7 @@ data class BackendAppConfig(
                         null
                     }
                 }.toMap(),
+                summarizationLlm = source.summarizationLlmConfig(),
                 llmLimits = BackendLlmLimits(
                     perUserConcurrentExecutions = source.intValue(
                         envKey = "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS",
@@ -326,6 +335,35 @@ private fun BackendConfigSource.postgresConfig(): BackendPostgresConfig {
         ),
         dsn = dsn,
     )
+}
+
+private fun BackendConfigSource.summarizationLlmConfig(): BackendSummarizationLlmConfig? {
+    val apiUrl = value(
+        envKey = "SUMMARIZATION_LLM_API_URL",
+        propertyKey = "souz.summarizationLlm.apiUrl",
+    )?.trim()?.takeIf { it.isNotEmpty() }
+    val apiKey = value(
+        envKey = "SUMMARIZATION_LLM_API_KEY",
+        propertyKey = "souz.summarizationLlm.apiKey",
+    )?.trim()?.takeIf { it.isNotEmpty() }
+    val model = value(
+        envKey = "SUMMARIZATION_LLM_MODEL",
+        propertyKey = "souz.summarizationLlm.model",
+    )?.trim()?.takeIf { it.isNotEmpty() }
+    val reasoningEffort = value(
+        envKey = "SUMMARIZATION_LLM_REASONING_EFFORT",
+        propertyKey = "souz.summarizationLlm.reasoningEffort",
+    )?.trim()?.takeIf { it.isNotEmpty() }
+
+    if (apiUrl == null && apiKey == null && model == null) return null
+    if (apiUrl == null || apiKey == null || model == null) {
+        throw BackendConfigurationException(
+            "SUMMARIZATION_LLM_API_URL / souz.summarizationLlm.apiUrl, " +
+                "SUMMARIZATION_LLM_API_KEY / souz.summarizationLlm.apiKey and " +
+                "SUMMARIZATION_LLM_MODEL / souz.summarizationLlm.model must be set together."
+        )
+    }
+    return BackendSummarizationLlmConfig(apiUrl, apiKey, model, reasoningEffort)
 }
 
 private fun BackendConfigSource.stringValue(

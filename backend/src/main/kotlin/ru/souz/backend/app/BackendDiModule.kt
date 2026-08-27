@@ -55,6 +55,7 @@ import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.llm.ProviderCredentialResolver
+import ru.souz.backend.llm.RetryingLlmMessageApi
 import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.onboarding.BackendOnboardingService
@@ -81,10 +82,12 @@ import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LlmMessageApi
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalProviderAvailability
+import ru.souz.llms.openai.OpenAICompatibleMessageAPI
 import ru.souz.runtime.di.runtimeCoreDiModule
 import ru.souz.runtime.di.runtimeLocalLlmDiModule
 import ru.souz.runtime.di.runtimeProviderHttpDiModule
@@ -104,9 +107,10 @@ import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.web.internal.WebResearchClient
 
-private object BackendDiTags {
+internal object BackendDiTags {
     const val LOG_OBJECT_MAPPER = "backendLogObjectMapper"
     const val MERGED_TOOL_CATALOG = "backendMergedToolCatalog"
+    const val COMPACTION_LLM_API = "backendCompactionLlmApi"
 }
 
 /** Backend Kodein module that wires HTTP services to the shared JVM runtime. */
@@ -242,6 +246,20 @@ fun backendDiModule(
             eventService = instance(),
         )
     }
+    appConfig.summarizationLlm?.let { summarizationLlm ->
+        bindSingleton<LlmMessageApi>(tag = BackendDiTags.COMPACTION_LLM_API) {
+            RetryingLlmMessageApi(
+                delegate = OpenAICompatibleMessageAPI(
+                    client = instance<ProviderHttpClients>().standard,
+                    apiKey = summarizationLlm.apiKey,
+                    baseUrl = summarizationLlm.apiUrl,
+                    model = summarizationLlm.model,
+                    reasoningEffort = summarizationLlm.reasoningEffort,
+                ),
+                retryPolicy = appConfig.providerRetryPolicy,
+            )
+        }
+    }
     bindSingleton {
         BackendConversationRuntimeFactory(
             baseSettingsProvider = instance(),
@@ -265,6 +283,7 @@ fun backendDiModule(
             searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
+            compactionLlmApi = instanceOrNull<LlmMessageApi>(tag = BackendDiTags.COMPACTION_LLM_API),
         )
     }
     bindSingleton {
