@@ -50,6 +50,7 @@ class AndroidToolsFactory(
     private val toolSberTvChannel: ToolSberTvChannel,
     private val toolKinopoiskMovie: ToolKinopoiskMovie,
     private val toolKinopoiskSearch: ToolKinopoiskSearch,
+    private val toolRuStoreSearch: ToolRuStoreSearch,
     private val availabilityPolicy: ToolAvailabilityPolicy = AndroidToolAvailabilityPolicy,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> by lazy {
@@ -67,6 +68,7 @@ class AndroidToolsFactory(
                         toolSberTvChannel.toGiga(),
                         toolKinopoiskMovie.toGiga(),
                         toolKinopoiskSearch.toGiga(),
+                        toolRuStoreSearch.toGiga(),
                     )
 
                     else -> emptyList()
@@ -264,6 +266,62 @@ class ToolKinopoiskSearch(
             else restJsonMapper.writeValueAsString(results)
         }.getOrElse { error ->
             "Error searching Kinopoisk for '$query': ${error.message ?: error::class.java.simpleName}"
+        }
+    }
+
+    private companion object {
+        const val DEFAULT_LIMIT = 5
+        const val MAX_LIMIT = 20
+    }
+}
+
+class ToolRuStoreSearch(
+    context: Context,
+    private val searchGateway: RuStoreSearchGateway = RuStoreSearchGateway(context),
+) : ToolSetup<ToolRuStoreSearch.Input> {
+
+    data class Input(
+        @InputParamDescription("App name to look up in RuStore, copied as the user named it.")
+        val query: String,
+        @InputParamDescription("How many results to return. Defaults to 5.")
+        val limit: Int = DEFAULT_LIMIT,
+    )
+
+    override val name: String = "RuStoreSearch"
+    override val description: String =
+        "Searches the RuStore catalogue for apps that are not installed, returning their package " +
+            "names and store deep links. Open a result with the Open tool using its deeplink. Use " +
+            "ShowApps first: an app that is already installed should be launched, not installed again."
+
+    override val fewShotExamples: List<FewShotExample> = listOf(
+        FewShotExample(
+            request = "Найди в магазине приложение Телеграм",
+            params = mapOf("query" to "Телеграм"),
+        ),
+        FewShotExample(
+            request = "Установи VK Видео",
+            params = mapOf("query" to "VK Видео"),
+        ),
+    )
+
+    override val returnParameters: ReturnParameters = ReturnParameters(
+        properties = mapOf(
+            "result" to ReturnProperty("string", "JSON list of RuStore matches with title, package name, and deeplink."),
+        ),
+    )
+
+    override fun invoke(input: Input, meta: ToolInvocationMeta): String =
+        runBlocking { suspendInvoke(input, meta) }
+
+    override suspend fun suspendInvoke(input: Input, meta: ToolInvocationMeta): String {
+        val query = input.query.trim()
+        if (query.isEmpty()) return "Error: query must not be empty"
+        return runCatching {
+            val results = searchGateway.search(query, input.limit.coerceIn(1, MAX_LIMIT))
+            if (results.isEmpty()) "No RuStore matches for '$query'"
+            else restJsonMapper.writeValueAsString(results)
+        }.getOrElse { error ->
+            "Error searching RuStore for '$query': ${error.message ?: error::class.java.simpleName}"
         }
     }
 

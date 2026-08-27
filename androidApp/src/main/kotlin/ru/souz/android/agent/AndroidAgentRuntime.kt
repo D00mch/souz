@@ -34,6 +34,8 @@ import ru.souz.android.settings.AndroidSettingsProvider
 import ru.souz.android.tool.AndroidToolAvailabilityPolicy
 import ru.souz.android.tool.AndroidToolsFactory
 import ru.souz.android.tool.KinopoiskSearchGateway
+import ru.souz.android.tool.RuStoreSearchGateway
+import ru.souz.android.tool.ToolRuStoreSearch
 import ru.souz.android.tool.ToolKinopoiskMovie
 import ru.souz.android.tool.ToolKinopoiskSearch
 import ru.souz.android.tool.ToolMediaControl
@@ -196,6 +198,8 @@ class AndroidAgentRuntime(
             bindSingleton { KinopoiskSearchGateway(appContext) }
             bindSingleton { ToolKinopoiskMovie(appContext, instance()) }
             bindSingleton { ToolKinopoiskSearch(appContext, instance()) }
+            bindSingleton { RuStoreSearchGateway(appContext) }
+            bindSingleton { ToolRuStoreSearch(appContext, instance()) }
             bindSingleton {
                 AndroidToolsFactory(
                     portableToolsFactory = instance(),
@@ -207,6 +211,7 @@ class AndroidAgentRuntime(
                     toolSberTvChannel = instance(),
                     toolKinopoiskMovie = instance(),
                     toolKinopoiskSearch = instance(),
+                    toolRuStoreSearch = instance(),
                     availabilityPolicy = instance(),
                 )
             }

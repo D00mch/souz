@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!--
+      Guards the RuStore catalogue search provider. Granted only to a platform-signed or
+      privileged build; ordinary installs simply keep failing that one tool.
+    -->
+    <uses-permission android:name="android.permission.GLOBAL_SEARCH" />
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />

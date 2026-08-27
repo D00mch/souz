@@ -82,6 +82,25 @@ adb shell settings get secure voice_interaction_service
 adb shell dumpsys voiceinteraction | head -20
 ```
 
+## RuStore Catalogue Search
+
+`RuStoreSearch` looks up apps that are not installed. RuStore exposes no search intent and no search
+deep link, only its Android TV suggestion provider at authority `rustore.search`, which requires
+`android.permission.GLOBAL_SEARCH`.
+
+That permission is `signature|privileged`, so `adb shell pm grant` cannot hand it out. The build has
+to be platform signed, or installed under `priv-app` and whitelisted:
+
+```xml
+<privapp-permissions package="ru.souz.android">
+    <permission name="android.permission.GLOBAL_SEARCH"/>
+</privapp-permissions>
+```
+
+Without it the tool returns a SecurityException message and the rest of the app is unaffected.
+Results carry a store deep link; open one with the `Open` tool, which already accepts arbitrary
+URIs such as `market://details?id=<package>`.
+
 ## Provisioning Credentials Over adb
 
 Typing API keys with a TV remote is painful, so keys can be provisioned by broadcast:
