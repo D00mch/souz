@@ -801,6 +801,17 @@ components:
         - message_rejected
         - client_tool_timed_out
         - internal_error
+        # Reported by the client device itself inside a tool.result's error (device.exec,
+        # device.media.open, device.mcp.*) — not produced by the backend.
+        - device_not_connected
+        - device_disconnected
+        - device_timeout
+        - mcp_discovery_failed
+        - mcp_target_not_found
+        - mcp_server_unreachable
+        - mcp_protocol_error
+        - mcp_tool_not_found
+        - mcp_invalid_arguments
     Error:
       type: object
       additionalProperties: false

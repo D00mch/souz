@@ -263,6 +263,113 @@ class BackendPublicWebSocketE2eTest {
         }
 
     @Test
+    fun `device mcp list_devices reaches the client device and returns discovered devices`() =
+        backendE2eTest(
+            schemaPrefix = "e2e_ws_device_mcp_list_devices",
+            llm = E2eLlmApi().apply {
+                requestSkill("device.mcp.list_devices", emptyMap())
+            },
+        ) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = createPublicChat(userId)
+            val wsClient = webSocketClient()
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+
+            session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-devices", null, "list mcp devices", "device-mcp")))
+            val messageAck = readJson(session)
+            readJson(session)
+            val started = readJson(session)
+            val threadId = messageAck["thread"]["id"].asText()
+            val toolCallId = started["payload"]["toolCallId"].asText()
+
+            assertEquals("tool.call.started", started["type"].asText())
+            assertEquals("device.mcp.list_devices", started["payload"]["name"].asText())
+            assertEquals("device-mcp", started["payload"]["deviceId"].asText())
+            assertTrue(started["payload"]["arguments"].isEmpty)
+
+            val resultFrame = """
+                {"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId",
+                 "status":"succeeded","result":{"devices":[{"id":"device-4471","name":"Кухонная станция","self":true}]}}
+            """.trimIndent()
+            session.send(Frame.Text(resultFrame))
+            val accepted = readJson(session)
+            val terminal = readJson(session)
+            assertEquals("accepted", accepted["status"].asText())
+            assertEquals("thread.completed", terminal["type"].asText())
+
+            session.close()
+            wsClient.close()
+        }
+
+    @Test
+    fun `device mcp call_tool forwards the target tool name and arguments to the device`() =
+        backendE2eTest(
+            schemaPrefix = "e2e_ws_device_mcp_call_tool_success",
+            llm = E2eLlmApi().apply {
+                requestSkill("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to 7)))
+            },
+        ) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = createPublicChat(userId)
+            val wsClient = webSocketClient()
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+
+            session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call", null, "set the volume", "device-mcp")))
+            val messageAck = readJson(session)
+            readJson(session)
+            val started = readJson(session)
+            val threadId = messageAck["thread"]["id"].asText()
+            val toolCallId = started["payload"]["toolCallId"].asText()
+
+            assertEquals("device.mcp.call_tool", started["payload"]["name"].asText())
+            assertEquals("set_volume", started["payload"]["arguments"]["name"].asText())
+            assertEquals(7, started["payload"]["arguments"]["arguments"]["level"].asInt())
+
+            val resultFrame =
+                """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"Volume set to 7"}],"isError":false}}"""
+            session.send(Frame.Text(resultFrame))
+            val accepted = readJson(session)
+            val terminal = readJson(session)
+            assertEquals("accepted", accepted["status"].asText())
+            assertEquals("thread.completed", terminal["type"].asText())
+
+            session.close()
+            wsClient.close()
+        }
+
+    @Test
+    fun `device mcp call_tool completes normally when the MCP tool itself reports isError`() =
+        backendE2eTest(
+            schemaPrefix = "e2e_ws_device_mcp_call_tool_is_error",
+            llm = E2eLlmApi().apply {
+                requestSkill("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to 500)))
+            },
+        ) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = createPublicChat(userId)
+            val wsClient = webSocketClient()
+            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+
+            session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call-error", null, "set an invalid volume", "device-mcp")))
+            val messageAck = readJson(session)
+            readJson(session)
+            val started = readJson(session)
+            val threadId = messageAck["thread"]["id"].asText()
+            val toolCallId = started["payload"]["toolCallId"].asText()
+
+            val resultFrame =
+                """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}}"""
+            session.send(Frame.Text(resultFrame))
+            val accepted = readJson(session)
+            val terminal = readJson(session)
+            assertEquals("accepted", accepted["status"].asText())
+            assertEquals("thread.completed", terminal["type"].asText())
+
+            session.close()
+            wsClient.close()
+        }
+
+    @Test
     fun `thread cancellation cancels a pending client tool and rejects a later result`() =
         backendE2eTest(
             schemaPrefix = "e2e_ws_client_tool_cancel",
