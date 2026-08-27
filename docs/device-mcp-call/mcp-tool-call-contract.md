@@ -92,8 +92,7 @@ WebSocket-соединению (`ru.souz.orion.deviceclient.DeviceExecArguments`
         "self": false
       }
     ]
-  },
-  "error": null
+  }
 }
 ```
 
@@ -161,8 +160,7 @@ WebSocket-соединению (`ru.souz.orion.deviceclient.DeviceExecArguments`
         "inputSchema": { "type": "object", "properties": { "level": { "type": "integer" } }, "required": ["level"] }
       }
     ]
-  },
-  "error": null
+  }
 }
 ```
 
@@ -209,8 +207,7 @@ WebSocket-соединению (`ru.souz.orion.deviceclient.DeviceExecArguments`
       { "type": "text", "text": "Volume set to 7" }
     ],
     "isError": false
-  },
-  "error": null
+  }
 }
 ```
 
@@ -237,8 +234,7 @@ WebSocket-соединению (`ru.souz.orion.deviceclient.DeviceExecArguments`
         { "type": "text", "text": "level must be between 0 and 10" }
       ],
       "isError": true
-    },
-    "error": null
+    }
   }
   ```
 
@@ -253,7 +249,6 @@ WebSocket-соединению (`ru.souz.orion.deviceclient.DeviceExecArguments`
     "threadId": "thread-771a",
     "toolCallId": "call-8a2f",
     "status": "failed",
-    "result": null,
     "error": {
       "code": "mcp_tool_not_found",
       "message": "Tool 'set_volume' is not exposed by device a1b2c3."

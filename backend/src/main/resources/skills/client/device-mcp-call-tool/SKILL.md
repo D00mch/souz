@@ -34,7 +34,8 @@ The result preserves MCP's own two-level error model exactly:
   {"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}
   ```
   Treat this exactly like a normal tool response: read `content[]` (each item's `type` is `text`,
-  `image`, or `resource`; non-text items carry `data`/`mimeType`) and `isError`, and tell the user
+  `image`, or `resource`; `image` items carry `data`/`mimeType` directly, `resource` items carry a
+  nested `resource` object with `uri` and either `text` or `blob`) and `isError`, and tell the user
   what actually happened — don't report this as a Skill/tool-call failure.
 - **The call itself never reached the operation** (target unreachable, tool name doesn't exist,
   arguments don't satisfy `inputSchema`, timeout) → `RunSkillCommand` reports a `ClientError`:
