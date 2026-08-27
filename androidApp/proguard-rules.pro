@@ -45,3 +45,12 @@
 -keep @interface ru.souz.tool.InputParamDescription
 -keep class ru.souz.tool.** { *; }
 -keepattributes AnnotationDefault
+
+# Same failure mode one level down: function call arguments arrive as a JSON string and are turned
+# into a map by a custom deserializer wired through @JsonDeserialize. Drop the Jackson annotation
+# types and that wiring disappears, leaving every tool call with an empty argument map even though
+# the model sent the arguments.
+-keep class com.fasterxml.jackson.annotation.** { *; }
+-keep class com.fasterxml.jackson.databind.annotation.** { *; }
+-keep class * extends com.fasterxml.jackson.databind.JsonDeserializer { *; }
+-keep class * extends com.fasterxml.jackson.databind.JsonSerializer { *; }
