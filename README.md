@@ -505,7 +505,7 @@ SOUZ_BACKEND_PROVIDER_BACKOFF_MAX_MS=5000
 
 # Postgres
 # Optional JDBC URL override for multi-host/TLS deployments.
-POSTGRES_DSN=jdbc:postgresql://123.45.67.89:5432,123.45.67.890:5432:5432/souz_preprod?sslmode=require&targetServerType=primary
+POSTGRES_DSN=jdbc:postgresql://123.45.67.89:5432,123.45.67.890:5432:5432/souz_preprod?sslmode=require
 SOUZ_BACKEND_DB_HOST=127.0.0.1
 SOUZ_BACKEND_DB_PORT=5432
 SOUZ_BACKEND_DB_NAME=souz
