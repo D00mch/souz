@@ -37,3 +37,11 @@
 # Logger names come from class names, and this device is debugged over adb. Keep the names of our
 # own classes so logcat stays readable; they can still be shrunk away when unused.
 -keepnames class ru.souz.** { *; }
+
+# Tool parameters are declared by a property-targeted annotation that nothing references
+# statically, so R8 is free to drop it. Then every property is skipped while building the schema
+# and tools reach the model with no parameters at all, which shows up as calls with empty
+# arguments. Keeping the annotation type keeps its uses.
+-keep @interface ru.souz.tool.InputParamDescription
+-keep class ru.souz.tool.** { *; }
+-keepattributes AnnotationDefault

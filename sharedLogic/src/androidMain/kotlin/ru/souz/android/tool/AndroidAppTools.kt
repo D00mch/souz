@@ -73,10 +73,23 @@ class AndroidToolsFactory(
 
                     else -> emptyList()
                 }.associateBy { it.fn.name }
-                base + androidTools
+                (base + androidTools).also { tools ->
+                    // A tool advertised without parameters is silently useless: the model calls it
+                    // with an empty argument object. Cheap to log once, hard to spot otherwise.
+                    tools.values.forEach { tool ->
+                        val params = tool.fn.parameters.properties.keys
+                        if (params.isEmpty()) {
+                            toolLog.warn("Tool {} has no parameters in its schema", tool.fn.name)
+                        } else {
+                            toolLog.info("Tool {} parameters: {}", tool.fn.name, params)
+                        }
+                    }
+                }
             }
     }
 }
+
+private val toolLog = org.slf4j.LoggerFactory.getLogger("AndroidToolSchemas")
 
 class ToolSberAssistantCommand(
     context: Context,
