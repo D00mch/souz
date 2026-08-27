@@ -1,16 +1,43 @@
 package ru.souz.tool.web
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import ru.souz.tool.BadInputException
 import ru.souz.tool.web.internal.WebHttpSupport
+import ru.souz.tool.web.internal.WebToolSupport
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class WebHttpSupportTest {
     private val webHttpSupport = WebHttpSupport()
+
+    @Test
+    fun `configured user agent is sent by the web client`() = runTest {
+        var observedUserAgent: String? = null
+        val webToolSupport = WebToolSupport(userAgent = "ProxyApprovedClient/1.0")
+        val client = HttpClient(
+            MockEngine { request ->
+                observedUserAgent = request.headers[HttpHeaders.UserAgent]
+                respond("ok")
+            },
+        ) {
+            WebHttpSupport.applyDefaults(this, webToolSupport)
+        }
+
+        try {
+            WebHttpSupport(webToolSupport, client).getText("https://example.com", timeoutMillis = 1_000L)
+            assertEquals("ProxyApprovedClient/1.0", observedUserAgent)
+        } finally {
+            client.close()
+        }
+    }
 
     @Test
     fun `read limited binary body returns bytes within limit`() = runTest {

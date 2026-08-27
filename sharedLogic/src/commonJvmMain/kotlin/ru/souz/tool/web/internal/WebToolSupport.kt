@@ -2,9 +2,13 @@ package ru.souz.tool.web.internal
 
 import ru.souz.tool.BadInputException
 
-class WebToolSupport {
-    val userAgent: String =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+private const val WEB_USER_AGENT_ENV = "SOUZ_WEB_USER_AGENT"
+private const val DEFAULT_WEB_USER_AGENT =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+
+class WebToolSupport(
+    val userAgent: String = configuredWebUserAgent(),
+) {
 
     val acceptHeader: String = "text/html,application/json;q=0.9,*/*;q=0.8"
 
@@ -24,3 +28,7 @@ class WebToolSupport {
 
     fun toSafeHttpUrl(raw: String): String = raw.replace(" ", "%20")
 }
+
+private fun configuredWebUserAgent(): String =
+    System.getenv(WEB_USER_AGENT_ENV)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: DEFAULT_WEB_USER_AGENT

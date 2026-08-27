@@ -6,10 +6,10 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.HttpRequest
-import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.timeout
+import io.ktor.client.request.HttpRequest
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
@@ -17,16 +17,20 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
-import kotlinx.coroutines.CancellationException
-import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readAvailable
-import ru.souz.tool.BadInputException
-import java.io.ByteArrayOutputStream
-import java.io.IOException
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import io.ktor.util.AttributeKey
 import io.ktor.util.Attributes
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readAvailable
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.URI
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.CancellationException
+import org.slf4j.LoggerFactory
+import ru.souz.tool.BadInputException
 
 private const val WEB_HTTP_CONNECT_TIMEOUT_MILLIS = 6_000L
 private const val WEB_HTTP_INITIAL_RETRY_DELAY_MILLIS = 2_000L
@@ -35,6 +39,7 @@ private const val WEB_HTTP_MAX_RETRIES = 2
 private const val WEB_HTTP_DEFAULT_MAX_BINARY_BYTES = 20 * 1024 * 1024
 private const val WEB_HTTP_BINARY_READ_CHUNK_BYTES = 8_192
 private val WEB_HTTP_RETRY_ENABLED_KEY = AttributeKey<Boolean>("web_http_retry_enabled")
+private val webHttpLogger = LoggerFactory.getLogger(WebHttpSupport::class.java)
 private val defaultSharedWebHttpClient by lazy {
     val webToolSupport = WebToolSupport()
     HttpClient(CIO) { WebHttpSupport.applyDefaults(this, webToolSupport) }
@@ -151,8 +156,10 @@ class WebHttpSupport(
         } catch (e: CancellationException) {
             throw e
         } catch (e: HttpRequestTimeoutException) {
+            logWebRequestFailure(url, webToolSupport.userAgent, e)
             throw BadInputException("HTTP request timed out for $url")
         } catch (e: IOException) {
+            logWebRequestFailure(url, webToolSupport.userAgent, e)
             val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
             throw BadInputException("HTTP request failed for $url: $message")
         } catch (e: IllegalArgumentException) {
@@ -193,6 +200,29 @@ class WebHttpSupport(
         }
     }
 }
+
+private fun logWebRequestFailure(url: String, userAgent: String, error: Exception) {
+    val host = runCatching { URI.create(url).host }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?: "unknown"
+    webHttpLogger.warn(
+        "Web HTTP request failed host={} route={} userAgent={}",
+        host,
+        selectedProxyRoute(url),
+        userAgent,
+        error,
+    )
+}
+
+private fun selectedProxyRoute(url: String): String = runCatching {
+    val proxy = ProxySelector.getDefault()?.select(URI.create(url))?.firstOrNull()
+    when {
+        proxy == null -> "UNKNOWN"
+        proxy.type() == Proxy.Type.DIRECT -> "DIRECT"
+        else -> "${proxy.type()} ${proxy.address() ?: "unknown"}"
+    }
+}.getOrElse { "UNKNOWN (${it.javaClass.simpleName})" }
 
 private fun isRetryEnabled(request: HttpRequest): Boolean = isRetryEnabled(request.attributes)
 
