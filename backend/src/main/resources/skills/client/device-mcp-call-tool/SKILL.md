@@ -40,8 +40,8 @@ The result preserves MCP's own two-level error model exactly:
 - **The call itself never reached the operation** (target unreachable, tool name doesn't exist,
   arguments don't satisfy `inputSchema`, timeout) → `RunSkillCommand` reports a `ClientError`:
   `device_not_connected`, `device_disconnected`, `device_timeout`, `mcp_target_not_found`,
-  `mcp_tool_not_found`, `mcp_invalid_arguments`. If the Skill reports missing client context, no
-  active public WebSocket device is available for this execution.
+  `mcp_server_unreachable`, `mcp_tool_not_found`, `mcp_invalid_arguments`. If the Skill reports
+  missing client context, no active public WebSocket device is available for this execution.
 
 Only claim the operation succeeded when you see `isError: false` (or absent) in the result — a
 `ClientError` here means the operation's actual outcome is unknown, not that it failed to run.

@@ -257,7 +257,7 @@ WebSocket-соединению (`ru.souz.orion.deviceclient.DeviceExecArguments`
   ```
 
 Ошибки для второго случая: `device_not_connected`, `device_disconnected`, `device_timeout`,
-`mcp_target_not_found`, `mcp_tool_not_found`, `mcp_invalid_arguments`.
+`mcp_target_not_found`, `mcp_server_unreachable`, `mcp_tool_not_found`, `mcp_invalid_arguments`.
 
 ## Незакрытая зависимость (вне рамок этого этапа)
 
