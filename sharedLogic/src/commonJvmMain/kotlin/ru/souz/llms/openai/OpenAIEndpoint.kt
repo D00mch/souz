@@ -27,8 +27,8 @@ internal class OpenAIEndpoint private constructor(
     }
 }
 
-internal fun SettingsProvider.openAIEndpoint(): OpenAIEndpoint =
-    OpenAIEndpoint.from(openaiBaseUrl)
+internal fun SettingsProvider.openAIEndpoint(baseUrl: String? = null): OpenAIEndpoint =
+    OpenAIEndpoint.from(baseUrl ?: openaiBaseUrl)
 
 private fun String.isOfficialOpenAiBaseUrl(): Boolean {
     val uri = runCatching { URI(this) }.getOrNull() ?: return false

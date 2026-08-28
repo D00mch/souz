@@ -5,16 +5,15 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMResponse.FinishReason
 import ru.souz.llms.toMessage
 import ru.souz.llms.toSystemPromptMessage
-import kotlin.math.ceil
 
 /**
  * Nodes responsible for summarizing conversation history.
@@ -22,6 +21,7 @@ import kotlin.math.ceil
 internal class NodesSummarization(
     private val llmApi: LLMChatAPI,
     private val nodesCommon: NodesCommon,
+    private val settingsProvider: AgentSettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)
 
@@ -34,13 +34,16 @@ internal class NodesSummarization(
     ): Node<LLMResponse.Chat.Ok, String> = buildGraph(name) {
         // nodes
         val summarize: Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> = nodeSummarize()
-        val summaryToHistory: Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> = summaryToHistory()
+        val summaryToHistory: Node<LLMResponse.Chat.Ok, String> = summaryToHistory()
         val respToString: Node<LLMResponse.Chat.Ok, String> = nodesCommon.responseToString()
 
         // graph
-        nodeInput.edgeTo { ctx -> if (ctx.historyIsTooBig()) summarize else respToString }
+        nodeInput.edgeTo { ctx ->
+            val contextWindow = minOf(ctx.settings.contextSize, settingsProvider.summarizationContextSize ?: Int.MAX_VALUE)
+            if (ctx.historyIsTooBig(contextWindow)) summarize else respToString
+        }
         summarize.edgeTo(summaryToHistory)
-        summaryToHistory.edgeTo(respToString)
+        summaryToHistory.edgeTo(nodeFinish)
         respToString.edgeTo(nodeFinish)
     }
 
@@ -48,15 +51,8 @@ internal class NodesSummarization(
     private fun nodeSummarize(name: String = "llmSummarize"): Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> =
         Node(name) { ctx ->
             val summaryResponse: LLMResponse.Chat = withContext(Dispatchers.IO) {
-                val conversation = ArrayList(ctx.history).apply {
-                    add(
-                        LLMRequest.Message(
-                            role = LLMMessageRole.user,
-                            content = SUMMARIZATION_PROMPT,
-                        )
-                    )
-                }
-                val request = ctx.toGigaRequest(conversation).copy(functions = emptyList())
+                val conversation = ctx.history + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT)
+                val request = ctx.toGigaRequest(conversation).copy(functions = emptyList(), isSummarization = true)
                 llmApi.message(request)
             }
 
@@ -66,45 +62,25 @@ internal class NodesSummarization(
             }
         }
 
-    private fun summaryToHistory(name: String = "summary->history"): Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> =
+    private fun summaryToHistory(name: String = "summary->history"): Node<LLMResponse.Chat.Ok, String> =
         Node(name) { ctx ->
-            val msg: LLMRequest.Message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
-            val msgPlus = msg.copy(content = "$SUMMARIZATION_PREFIX:\n${msg.content}")
-            val newHistory = listOf(ctx.systemPrompt.toSystemPromptMessage(), msgPlus, ctx.history.last())
-            l.info("Summarization\n\n${msgPlus.content}")
-            ctx.map(history = newHistory) {
-                ctx.input
-                LLMResponse.Chat.Ok(
-                    choices = listOf(
-                        LLMResponse.Choice(
-                            message = LLMResponse.Message(
-                                content = ctx.history.lastOrNull()?.content ?: msgPlus.content,
-                                role = LLMMessageRole.assistant,
-                                functionsStateId = null,
-                            ),
-                            index = ctx.input.choices.firstOrNull()?.index ?: 0,
-                            finishReason = ctx.input.choices.firstOrNull()?.finishReason ?: FinishReason.stop
-                        )
-                    ),
-                    created = ctx.input.created,
-                    model = ctx.input.model,
-                    usage = ctx.input.usage,
-                )
-            }
+            val message = ctx.input.choices.mapNotNull { it.toMessage() }.last()
+            val summary = message.copy(content = "$SUMMARIZATION_PREFIX:\n${message.content}")
+            val response = ctx.history.last()
+            l.info("Summarization\n\n{}", summary.content)
+            ctx.map(history = listOf(ctx.systemPrompt.toSystemPromptMessage(), summary, response)) { response.content }
         }
 }
 
 private const val HISTORY_SUMMARIZE_THRESHOLD = 0.8
-private const val APPROX_CHARS_PER_TOKEN = 4.0
 
-private fun String.estimateTokenCount(): Int = ceil(length / APPROX_CHARS_PER_TOKEN).toInt()
+private fun String.estimateTokenCount(): Int = (length + 3) / 4
 
 private fun AgentContext<*>.historyIsTooBig(
+    contextWindow: Int,
     threshold: Double = HISTORY_SUMMARIZE_THRESHOLD,
 ): Boolean {
-    val contextWindow = settings.contextSize
-    val estimatedTokens = systemPrompt.estimateTokenCount() +
-        history.sumOf { it.content.estimateTokenCount() }
+    val estimatedTokens = history.sumOf { it.content.estimateTokenCount() }
     return estimatedTokens >= contextWindow * threshold
 }
 

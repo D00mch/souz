@@ -21,6 +21,10 @@ interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
     var openaiKey: String?
     var openaiBaseUrl: String?
     var openaiModel: String?
+    val openaiSummarizationApiKey: String? get() = null
+    val openaiSummarizationBaseUrl: String? get() = null
+    val openaiSummarizationModel: String? get() = null
+    val openaiSummarizationParameters: String? get() = null
     var codexAccessToken: String?
     var codexRefreshToken: String?
     var codexAccountId: String?

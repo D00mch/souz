@@ -45,12 +45,51 @@ class OpenAICompatibleChatAPIRequestTest {
             )
 
             assertEquals("${case.expectedBaseUrl}/chat/completions", invokeChatCompletionsUrl(api))
+            assertEquals(modelFor(case.provider), chatRequest["model"])
             assertEquals(256, chatRequest[case.expectedMaxTokensField])
             assertEquals(case.sendsTemperature, "temperature" in chatRequest)
             assertEquals(case.sendsStreamUsage, "stream_options" in chatRequest)
             assertEquals(case.embeddingEncodingFormat, embeddingsRequest["encoding_format"])
             assertEquals(case.provider == LlmProvider.QWEN, chatRequest["parallel_tool_calls"] == true)
         }
+    }
+
+    @Test
+    fun `request overrides preserve configured output limit and structural fields`() {
+        val request = invokeBuildChatRequest(
+            api = createApi(
+                modelOverride = "provider-summary-model",
+                requestParameters =
+                    """{"model":"ignored","messages":[],"stream":true,"max_completion_tokens":512,"reasoning_effort":"low"}""",
+            ),
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Mini.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                maxTokens = 0,
+            ),
+            stream = false,
+        )
+
+        assertEquals("provider-summary-model", request["model"])
+        assertEquals(false, request["stream"])
+        assertEquals(1, (request["messages"] as List<*>).size)
+        assertEquals(512, request["max_completion_tokens"])
+        assertEquals("low", request["reasoning_effort"])
+    }
+
+    @Test
+    fun `zero max tokens omits generated output limit`() {
+        val request = invokeBuildChatRequest(
+            api = createApi(modelOverride = "provider-summary-model"),
+            body = LLMRequest.Chat(
+                model = LLMModel.OpenAIGpt5Mini.alias,
+                messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
+                maxTokens = 0,
+            ),
+            stream = false,
+        )
+
+        assertTrue("max_completion_tokens" !in request)
     }
 
     @Test
@@ -91,6 +130,7 @@ class OpenAICompatibleChatAPIRequestTest {
         )
 
         assertEquals(LLMModel.OpenAIGpt5Mini.alias, request["model"])
+        assertEquals(256, request["max_completion_tokens"])
         assertEquals("auto", request["tool_choice"])
         val tools = request["tools"] as List<*>
         assertEquals(1, tools.size)
@@ -645,6 +685,9 @@ class OpenAICompatibleChatAPIRequestTest {
         provider: LlmProvider = LlmProvider.OPENAI,
         openaiModel: String? = null,
         openaiBaseUrl: String? = null,
+        baseUrl: String? = null,
+        modelOverride: String? = null,
+        requestParameters: String? = null,
     ): OpenAICompatibleChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
         every { settingsProvider.openaiKey } returns "test-key"
@@ -655,7 +698,14 @@ class OpenAICompatibleChatAPIRequestTest {
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
 
-        return OpenAICompatibleChatAPI(provider, settingsProvider, mockk<HttpClient>())
+        return OpenAICompatibleChatAPI(
+            provider = provider,
+            settingsProvider = settingsProvider,
+            client = mockk<HttpClient>(),
+            baseUrl = baseUrl,
+            modelOverride = modelOverride,
+            requestParameters = requestParameters,
+        )
     }
 
     @Suppress("UNCHECKED_CAST")
