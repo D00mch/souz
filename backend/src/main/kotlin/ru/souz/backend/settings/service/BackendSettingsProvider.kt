@@ -34,6 +34,13 @@ class BackendSettingsProvider(
     override var openaiKey: String? = configured("OPENAI_API_KEY")
     override var openaiBaseUrl: String? = configured(OPENAI_BASE_URL)
     override var openaiModel: String? = configured(OPENAI_MODEL)
+    override val openaiSummarizationApiKey: String? = configured("OPENAI_SUMMARIZATION_API_KEY")
+    override val openaiSummarizationBaseUrl: String? = configured("OPENAI_SUMMARIZATION_BASE_URL")
+    override val openaiSummarizationModel: String? = configured("OPENAI_SUMMARIZATION_MODEL")
+    override val openaiSummarizationParameters: String? = configured("OPENAI_SUMMARIZATION_PARAMETERS")
+    override val summarizationContextSize: Int? = openaiSummarizationModel
+        ?.let { configured("OPENAI_SUMMARIZATION_CONTEXT_SIZE")?.toIntOrNull() }
+        ?.takeIf { it > 0 }
     override var saluteSpeechKey: String? = configured("VOICE_KEY")
     override var supportEmail: String? = configured(SUPPORT_EMAIL)
     override var defaultCalendar: String? = configured(DEFAULT_CALENDAR)

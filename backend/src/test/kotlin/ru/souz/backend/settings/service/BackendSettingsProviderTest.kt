@@ -3,6 +3,7 @@ package ru.souz.backend.settings.service
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
@@ -47,6 +48,11 @@ class BackendSettingsProviderTest {
                 "GIGA_MODEL" to "gpt-5.2",
                 "OPENAI_API_KEY" to "openai-key",
                 "OPENAI_MODEL" to "custom-model",
+                "OPENAI_SUMMARIZATION_API_KEY" to "  summary-key  ",
+                "OPENAI_SUMMARIZATION_BASE_URL" to "  https://summary.test/v1/  ",
+                "OPENAI_SUMMARIZATION_CONTEXT_SIZE" to "  1000000  ",
+                "OPENAI_SUMMARIZATION_MODEL" to "  provider-summary-model  ",
+                "OPENAI_SUMMARIZATION_PARAMETERS" to """{"reasoning_effort":"low","anotherOne":false}""",
                 "REQUEST_TIMEOUT_MILLIS" to "45000",
             ),
         )
@@ -55,8 +61,20 @@ class BackendSettingsProviderTest {
         assertEquals(LLMModel.OpenAIGpt52, provider.gigaModel)
         assertEquals("openai-key", provider.openaiKey)
         assertEquals("custom-model", provider.openaiModel)
+        assertEquals("summary-key", provider.openaiSummarizationApiKey)
+        assertEquals("https://summary.test/v1/", provider.openaiSummarizationBaseUrl)
+        assertEquals(1_000_000, provider.summarizationContextSize)
+        assertEquals("provider-summary-model", provider.openaiSummarizationModel)
+        assertEquals("""{"reasoning_effort":"low","anotherOne":false}""", provider.openaiSummarizationParameters)
         assertEquals(45_000L, provider.requestTimeoutMillis)
         assertTrue(provider.hasKey(LlmProvider.OPENAI))
+        assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_API_KEY" to "  ")).openaiSummarizationApiKey)
+        assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_BASE_URL" to "  ")).openaiSummarizationBaseUrl)
+        assertNull(
+            provider(env = mapOf("OPENAI_SUMMARIZATION_CONTEXT_SIZE" to "1000000")).summarizationContextSize
+        )
+        assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_MODEL" to "  ")).openaiSummarizationModel)
+        assertNull(provider(env = mapOf("OPENAI_SUMMARIZATION_PARAMETERS" to "  ")).openaiSummarizationParameters)
     }
 
     private fun provider(

@@ -35,13 +35,12 @@ class OpenAICompatibleChatAPI(
     private val settingsProvider: SettingsProvider,
     private val client: HttpClient,
     apiKey: String? = null,
+    private val baseUrl: String? = null,
+    private val modelOverride: String? = null,
+    private val requestParameters: String? = null,
 ) : LLMChatAPI {
     init {
-        require(
-            provider == LlmProvider.OPENAI ||
-                provider == LlmProvider.AI_TUNNEL ||
-                provider == LlmProvider.QWEN
-        ) {
+        require(provider == LlmProvider.OPENAI || provider == LlmProvider.AI_TUNNEL || provider == LlmProvider.QWEN) {
             "$provider is not an OpenAI-compatible provider"
         }
     }
@@ -192,29 +191,13 @@ class OpenAICompatibleChatAPI(
         LLMResponse.Embeddings.Error(-1, "Connection error: ${t.message}")
     }
 
-    override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
-        val message = when (provider) {
-            LlmProvider.OPENAI -> "OpenAI file upload is not supported in this implementation"
-            LlmProvider.AI_TUNNEL -> "AiTunnel file upload is not supported in this implementation"
-            LlmProvider.QWEN -> "Qwen file upload is not supported"
-            else -> error("Unsupported provider: $provider")
-        }
-        throw UnsupportedOperationException(message)
-    }
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
+        throw UnsupportedOperationException("$provider file upload is not supported")
 
-    override suspend fun downloadFile(fileId: String): String? {
-        return null
-    }
+    override suspend fun downloadFile(fileId: String): String? = null
 
-    override suspend fun balance(): LLMResponse.Balance {
-        val message = when (provider) {
-            LlmProvider.OPENAI -> "Balance check not implemented for OpenAI"
-            LlmProvider.AI_TUNNEL -> "Balance check not implemented for AiTunnel"
-            LlmProvider.QWEN -> "Qwen doesn't have billing API"
-            else -> error("Unsupported provider: $provider")
-        }
-        return LLMResponse.Balance.Error(-1, message)
-    }
+    override suspend fun balance(): LLMResponse.Balance =
+        LLMResponse.Balance.Error(-1, "Balance check not implemented for $provider")
 
     private fun io.ktor.client.request.HttpRequestBuilder.applyRequestDefaults() {
         header(HttpHeaders.ContentType, ContentType.Application.Json)
@@ -226,10 +209,11 @@ class OpenAICompatibleChatAPI(
     private fun buildChatRequest(body: LLMRequest.Chat, stream: Boolean): Map<String, Any> {
         val tools = buildTools(body.functions)
         return buildMap {
-            val model = resolveChatModel(body.model)
-            put("model", model)
+            requestParameters?.let { putAll(restJsonMapper.readValue<Map<String, Any>>(it)) }
+            put("model", modelOverride ?: resolveChatModel(body.model))
             put("messages", buildMessages(body.messages))
             put("stream", stream)
+            body.reasoningEffort?.takeIf { provider == LlmProvider.OPENAI }?.let { put("reasoning_effort", it) }
             if (stream && shouldIncludeStreamUsage()) {
                 put("stream_options", mapOf("include_usage" to true))
             }
@@ -720,7 +704,6 @@ class OpenAICompatibleChatAPI(
         }.getOrDefault("")
     }
 
-
     private fun resolveChatModel(model: String): String = when (provider) {
         LlmProvider.OPENAI -> resolveOpenAiChatModel(model)
         LlmProvider.AI_TUNNEL -> when {
@@ -788,14 +771,14 @@ class OpenAICompatibleChatAPI(
         get() = endpoint(EMBEDDINGS_PATH)
 
     private fun endpoint(path: String): String = when (provider) {
-        LlmProvider.OPENAI -> settingsProvider.openAIEndpoint().endpoint(path)
+        LlmProvider.OPENAI -> settingsProvider.openAIEndpoint(baseUrl).endpoint(path)
         LlmProvider.AI_TUNNEL -> "$AI_TUNNEL_BASE_URL/$path"
         LlmProvider.QWEN -> "$QWEN_BASE_URL/$path"
         else -> error("Unsupported provider: $provider")
     }
 
     private fun shouldIncludeStreamUsage(): Boolean = when (provider) {
-        LlmProvider.OPENAI -> settingsProvider.openAIEndpoint().isOfficial
+        LlmProvider.OPENAI -> settingsProvider.openAIEndpoint(baseUrl).isOfficial
         LlmProvider.AI_TUNNEL,
         LlmProvider.QWEN,
         -> true

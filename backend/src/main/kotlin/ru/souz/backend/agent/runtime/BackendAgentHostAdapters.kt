@@ -11,8 +11,6 @@ import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
-import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 

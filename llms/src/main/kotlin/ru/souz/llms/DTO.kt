@@ -246,6 +246,9 @@ object LLMRequest {
         @field:JsonProperty("response_format") val responseFormat: Map<String, Any?>? = null,
         @get:JsonIgnore
         @field:JsonIgnore
+        val isSummarization: Boolean = false,
+        @get:JsonIgnore
+        @field:JsonIgnore
         val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
     ) {
         /**

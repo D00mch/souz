@@ -75,7 +75,7 @@ fun agentDiModule(
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { JsonUtils(restJsonMapper) }
-    bindSingleton { NodesSummarization(instance(), instance()) }
+    bindSingleton { NodesSummarization(instance(), instance(), instance()) }
     bindSingleton {
         NodesClassification(
             settingsProvider = instance(),

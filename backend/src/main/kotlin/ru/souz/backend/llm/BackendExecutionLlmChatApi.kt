@@ -47,6 +47,20 @@ internal class BackendExecutionLlmChatApi(
     private var usage = initialUsage
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        val summarizationModel = settingsProvider.openaiSummarizationModel
+        if (body.isSummarization && summarizationModel != null) {
+            val api = providerApiOverride?.invoke(LlmProvider.OPENAI) ?: OpenAICompatibleChatAPI(
+                provider = LlmProvider.OPENAI,
+                settingsProvider = settingsProvider,
+                client = httpClients.openAi,
+                apiKey = settingsProvider.openaiSummarizationApiKey ?: credentialFor(LlmProvider.OPENAI),
+                baseUrl = settingsProvider.openaiSummarizationBaseUrl,
+                modelOverride = summarizationModel,
+                requestParameters = settingsProvider.openaiSummarizationParameters,
+            )
+            val request = body.copy(model = summarizationModel, maxTokens = 0)
+            return retryChat { api.message(request) }.also { recordUsage(it) }
+        }
         val model = when (val resolution = chatModel(body.model)) {
             is ModelResolution.Resolved -> resolution.value
             else -> return unsupportedChatModel(resolution)

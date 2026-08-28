@@ -16,6 +16,10 @@ internal class LlmSettingsStub : SettingsProvider {
     override var openaiKey: String? = null
     override var openaiBaseUrl: String? = null
     override var openaiModel: String? = null
+    override var openaiSummarizationApiKey: String? = null
+    override var openaiSummarizationBaseUrl: String? = null
+    override var openaiSummarizationModel: String? = null
+    override var openaiSummarizationParameters: String? = null
     override var codexAccessToken: String? = null
     override var codexRefreshToken: String? = null
     override var codexAccountId: String? = null

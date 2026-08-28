@@ -1,8 +1,14 @@
 package ru.souz.backend.llm
 
+import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondOk
+import io.ktor.client.engine.mock.toByteArray
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
 import io.mockk.mockk
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -34,6 +40,7 @@ import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.local.LocalChatAPI
+import ru.souz.llms.restJsonMapper
 import kotlin.time.Duration.Companion.milliseconds
 
 class BackendExecutionLlmChatApiTest {
@@ -279,6 +286,29 @@ private class FacadeFixture(
     override fun close() = clients.close()
 }
 
+private data class CapturedRequest(
+    val url: String,
+    val authorization: String?,
+    val body: JsonNode,
+)
+
+private fun recordingClient(requests: MutableList<CapturedRequest>): HttpClient =
+    HttpClient(
+        MockEngine { request ->
+            requests += CapturedRequest(
+                url = request.url.toString(),
+                authorization = request.headers[HttpHeaders.Authorization],
+                body = restJsonMapper.readTree(request.body.toByteArray()),
+            )
+            respond(
+                content = OPENAI_CHAT_RESPONSE,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+    ) {
+        providerHttpClientDefaults()
+    }
+
 private fun facadeFixture(
     settingsProvider: LlmSettingsStub = LlmSettingsStub(),
     credentialResolver: CountingCredentialResolver = CountingCredentialResolver("test-key"),
@@ -286,10 +316,10 @@ private fun facadeFixture(
     initialUsage: LLMResponse.Usage = usage(0, 0, 0, 0),
     delayMillis: suspend (Long) -> Unit = {},
     providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = { StubChatApi() },
-): FacadeFixture {
-    val client = HttpClient(MockEngine { respondOk() }) {
+    client: HttpClient = HttpClient(MockEngine { respondOk() }) {
         providerHttpClientDefaults()
-    }
+    },
+): FacadeFixture {
     val clients = ProviderHttpClients(standard = client, openAi = client)
     val api = BackendExecutionLlmChatApi(
         userId = "user-a",
@@ -366,3 +396,7 @@ private fun usage(
     total: Int,
     precached: Int,
 ): LLMResponse.Usage = LLMResponse.Usage(prompt, completion, total, precached)
+
+private const val OPENAI_CHAT_RESPONSE =
+    """{"choices":[],"created":0,"model":"provider-summary-model",""" +
+        """"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"""

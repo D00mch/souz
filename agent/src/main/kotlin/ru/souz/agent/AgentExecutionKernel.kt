@@ -75,7 +75,11 @@ class AgentExecutionKernelFactory(
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
         val nodesLLM = NodesLLM(llmApi = llmApi, settingsProvider = settingsProvider)
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
-        val nodesSummarization = NodesSummarization(llmApi = llmApi, nodesCommon = nodesCommon)
+        val nodesSummarization = NodesSummarization(
+            llmApi = llmApi,
+            nodesCommon = nodesCommon,
+            settingsProvider = settingsProvider,
+        )
         val coreTools = AgentCoreTools(
             getSkillByName = getSkillByNameTool,
             getSkillsByCategory = getSkillsByCategoryTool,
