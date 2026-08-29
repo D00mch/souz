@@ -30,7 +30,7 @@ advisory and produce warnings; the other fast checks are blocking. Duplicate
 code is blocking with `ci-exact-checkout` authority. An unexpected checker
 failure is reported as `error`, not as a pass or policy failure.
 The RepoWise ratchet is blocking only in pull-request CI and compares the base
-and head directly.
+with the squash-equivalent PR head.
 
 Project dependencies declared in an unclassified configuration fail closed.
 Test-only edges should use a standard test source-set configuration so the
@@ -131,6 +131,11 @@ Pull-request CI installs the version of RepoWise pinned in
 checks out full Git history, and builds deterministic indexes for the PR base
 and head without an LLM, saved credentials, editor integration, or telemetry.
 
+Pull requests are squash-merged. CI checks out GitHub's PR merge commit, verifies
+that its parents match the event's base and head, then grafts it onto the base as
+one commit. The merge tree includes base changes missing from a stale PR branch,
+while intermediate PR commits do not affect RepoWise health scores.
+
 The blocking ratchet requires the head to keep every RepoWise repository KPI at
 or above its base value: average and hotspot defect health, worst-performer
 health, average and hotspot maintainability, and average and hotspot
@@ -138,10 +143,11 @@ performance. Equal and improved values pass; any decrease, analysis failure, or
 missing report fails. The comparison uses the PR base directly, so each merged
 improvement becomes the baseline for following pull requests.
 
-The same job runs `repowise risk` over the exact base-to-head revision range and
-publishes the PR's change-risk classification, percentile, size, spread, and
-main risk drivers. Change risk is advisory; only a code-health regression is
-blocking. Global refactoring targets are intentionally excluded from PR runs.
+The same job runs `repowise risk` over the grafted base-to-merge revision range
+and publishes the PR's change-risk classification, percentile, size, spread,
+and main risk drivers. Change risk is advisory; only a code-health regression
+is blocking. The risk model keeps a 200-commit baseline. Global refactoring
+targets are intentionally excluded from PR runs.
 
 ## RepoWise maintenance guidance
 
