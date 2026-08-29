@@ -131,10 +131,13 @@ Pull-request CI installs the version of RepoWise pinned in
 checks out full Git history, and builds deterministic indexes for the PR base
 and head without an LLM, saved credentials, editor integration, or telemetry.
 
-Pull requests are squash-merged. Before indexing, CI runs
-`git replace --graft "$SOUZ_PR_HEAD_SHA" "$SOUZ_PR_BASE_SHA"` so RepoWise
-evaluates the final PR tree as one commit on top of the base. Intermediate PR
-commits do not affect health scores.
+Pull requests are squash-merged. CI uses
+[`quality/create_repowise_pr_commit.sh`](../quality/create_repowise_pr_commit.sh)
+to merge the PR head tree onto the event's base, write the result as a real
+commit whose only parent is that base, and check out the synthetic commit before
+indexing. This includes base changes missing from a stale PR branch. RepoWise
+sees the base history plus one commit using PR-level author, title, and timestamp
+metadata; intermediate PR commits do not affect health scores.
 
 The blocking ratchet requires the head to keep every RepoWise repository KPI at
 or above its base value: average and hotspot defect health, worst-performer
@@ -143,10 +146,10 @@ performance. Equal and improved values pass; any decrease, analysis failure, or
 missing report fails. The comparison uses the PR base directly, so each merged
 improvement becomes the baseline for following pull requests.
 
-The same job runs `repowise risk` over the exact base-to-head revision range and
-publishes the PR's change-risk classification, percentile, size, spread, and
-main risk drivers. Change risk is advisory; only a code-health regression is
-blocking. The risk model keeps a 200-commit baseline. Global refactoring
+The same job runs `repowise risk` over the base-to-synthetic-head revision range
+and publishes the PR's change-risk classification, percentile, size, spread,
+and main risk drivers. Change risk is advisory; only a code-health regression
+is blocking. The risk model keeps a 200-commit baseline. Global refactoring
 targets are intentionally excluded from PR runs.
 
 ## RepoWise maintenance guidance

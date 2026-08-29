@@ -164,6 +164,27 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Build squash-equivalent PR commit
+        shell: bash
+        env:
+          SOUZ_PR_AUTHOR_EMAIL: ${{ format('{0}+{1}@users.noreply.github.com', github.event.pull_request.user.id, github.event.pull_request.user.login) }}
+          SOUZ_PR_AUTHOR_NAME: ${{ github.event.pull_request.user.login }}
+          SOUZ_PR_TITLE: ${{ github.event.pull_request.title }}
+          SOUZ_PR_UPDATED_AT: ${{ github.event.pull_request.updated_at }}
+        run: |
+          repowise_pr_sha="$(quality/create_repowise_pr_commit.sh \
+            "$SOUZ_PR_BASE_SHA" \
+            "$SOUZ_PR_HEAD_SHA" \
+            "$SOUZ_PR_TITLE" \
+            "$SOUZ_PR_AUTHOR_NAME" \
+            "$SOUZ_PR_AUTHOR_EMAIL" \
+            "$SOUZ_PR_UPDATED_AT")"
+
+          git checkout --detach "$repowise_pr_sha"
+          test "$(git rev-parse HEAD)" = "$repowise_pr_sha"
+          test -z "$(git replace --list)"
+          echo "REPOWISE_PR_SHA=$repowise_pr_sha" >> "$GITHUB_ENV"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -176,8 +197,11 @@ jobs:
           python -m pip install --disable-pip-version-check
           --requirement quality/repowise-requirements.txt
 
-      - name: Test RepoWise quality ratchet
-        run: python -m unittest quality.repowise_quality_gate_test
+      - name: Test RepoWise quality tooling
+        run: >-
+          python -m unittest
+          quality.repowise_pr_commit_test
+          quality.repowise_quality_gate_test
 
       - name: Prepare pull-request base checkout
         shell: bash
@@ -185,10 +209,6 @@ jobs:
           base_checkout="$RUNNER_TEMP/repowise-base"
           git worktree add --detach "$base_checkout" "$SOUZ_PR_BASE_SHA"
           echo "REPOWISE_BASE_CHECKOUT=$base_checkout" >> "$GITHUB_ENV"
-
-      - name: Graft PR head onto the base
-        shell: bash
-        run: git replace --graft "$SOUZ_PR_HEAD_SHA" "$SOUZ_PR_BASE_SHA"
 
       - name: Build deterministic RepoWise indexes
         run: |
@@ -199,7 +219,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p build/reports/repowise
-          repowise risk "$SOUZ_PR_BASE_SHA..$SOUZ_PR_HEAD_SHA" \
+          repowise risk "$SOUZ_PR_BASE_SHA..$REPOWISE_PR_SHA" \
             --path . --baseline 200 --format json \
             > build/reports/repowise/pr-risk.json
           repowise health "$REPOWISE_BASE_CHECKOUT" --no-workspace --format json \
