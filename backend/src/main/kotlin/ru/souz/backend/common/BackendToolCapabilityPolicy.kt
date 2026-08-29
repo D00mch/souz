@@ -32,19 +32,6 @@ object BackendToolCapabilityPolicy {
     /** Tools that sit in a safe category yet are neither advertised nor executable on the backend. */
     val deniedToolNames: Set<String> = setOf(ToolWebImageSearch.NAME)
 
-    /** The hostable view of a process catalog: safe categories only, denied names removed. */
-    fun hostableTools(processToolCatalog: AgentToolCatalog): AgentToolCatalog =
-        immutableToolCatalogSnapshot(
-            ToolCategory.entries.associateWith { category ->
-                if (category in safeCategories) {
-                    processToolCatalog.toolsByCategory[category].orEmpty()
-                        .filterKeys { toolName -> toolName !in deniedToolNames }
-                } else {
-                    emptyMap()
-                }
-            }
-        )
-
     /** Names the backend advertises and accepts in a user's `enabledTools`, in stable order. */
     fun advertisedToolNames(processToolCatalog: AgentToolCatalog): Set<String> =
         buildSet {
@@ -61,26 +48,21 @@ object BackendToolCapabilityPolicy {
         executionLlmToolCatalog: AgentToolCatalog,
         enabledToolNames: Set<String>?,
     ): AgentToolCatalog {
-        val hostableTools = composeToolCatalogs(
+        val candidates = composeToolCatalogs(
             listOf(hostableTools(processToolCatalog), executionLlmToolCatalog)
         )
-        if (enabledToolNames == null) {
-            return hostableTools
-        }
         return immutableToolCatalogSnapshot(
-            hostableTools.toolsByCategory.mapValues { (_, tools) ->
-                tools.filterKeys { toolName -> toolName in enabledToolNames }
+            candidates.toolsByCategory.mapValues { (_, tools) ->
+                tools.filterKeys { toolName -> enabledToolNames == null || toolName in enabledToolNames }
             }
         )
     }
-}
 
-/** Names exposed by the backend, including tools whose LLM dependency is bound per execution. */
-data class BackendAvailableToolNames(
-    val values: Set<String>,
-) {
-    companion object {
-        fun fromProcessCatalog(toolCatalog: AgentToolCatalog): BackendAvailableToolNames =
-            BackendAvailableToolNames(BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog))
-    }
+    /** The hostable view of a process catalog: safe categories only, denied names removed. */
+    private fun hostableTools(processToolCatalog: AgentToolCatalog): AgentToolCatalog =
+        immutableToolCatalogSnapshot(
+            processToolCatalog.toolsByCategory
+                .filterKeys { category -> category in safeCategories }
+                .mapValues { (_, tools) -> tools.filterKeys { toolName -> toolName !in deniedToolNames } }
+        )
 }

@@ -4,8 +4,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.backend.common.BackendAvailableToolNames
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
@@ -42,24 +42,11 @@ class EffectiveSettingsResolver(
     private val userSettingsRepository: UserSettingsRepository,
     private val userProviderKeyRepository: UserProviderKeyRepository,
     private val featureFlags: BackendFeatureFlags,
-    private val availableToolNames: BackendAvailableToolNames,
+    toolCatalog: AgentToolCatalog,
     private val localModelAvailability: LocalModelAvailability,
 ) {
-    constructor(
-        baseSettingsProvider: SettingsProvider,
-        userSettingsRepository: UserSettingsRepository,
-        userProviderKeyRepository: UserProviderKeyRepository,
-        featureFlags: BackendFeatureFlags,
-        toolCatalog: AgentToolCatalog,
-        localModelAvailability: LocalModelAvailability,
-    ) : this(
-        baseSettingsProvider = baseSettingsProvider,
-        userSettingsRepository = userSettingsRepository,
-        userProviderKeyRepository = userProviderKeyRepository,
-        featureFlags = featureFlags,
-        availableToolNames = BackendAvailableToolNames.fromProcessCatalog(toolCatalog),
-        localModelAvailability = localModelAvailability,
-    )
+    private val advertisedToolNames: Set<String> =
+        BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
     suspend fun isSelectableDefaultModel(
         userId: String,
@@ -149,11 +136,8 @@ class EffectiveSettingsResolver(
         )
     }
 
-    private fun normalizeEnabledTools(enabledTools: Set<String>?): Set<String> {
-        val supportedTools = availableToolNames.values
-        val requested = enabledTools ?: supportedTools
-        return requested.filterTo(linkedSetOf()) { it in supportedTools }
-    }
+    private fun normalizeEnabledTools(enabledTools: Set<String>?): Set<String> =
+        (enabledTools ?: advertisedToolNames).filterTo(linkedSetOf()) { it in advertisedToolNames }
 
     private suspend fun normalizeModel(
         userId: String,

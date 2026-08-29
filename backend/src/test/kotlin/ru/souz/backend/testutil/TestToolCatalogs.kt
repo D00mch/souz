@@ -10,19 +10,18 @@ import ru.souz.tool.ToolCategory
 /** Catalog of inert tools that only carry their identity, for capability and selection tests. */
 internal class TestToolCatalog(
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
-) : AgentToolCatalog
-
-internal fun testToolCatalog(vararg categories: Pair<ToolCategory, List<String>>): AgentToolCatalog =
-    TestToolCatalog(
+) : AgentToolCatalog {
+    constructor(vararg categories: Pair<ToolCategory, List<String>>) : this(
         categories.associate { (category, toolNames) ->
-            category to toolNames.associateWith { toolName -> testToolSetup(toolName) }
+            category to toolNames.associateWith { toolName -> TestToolSetup(toolName) }
         }
     )
+}
 
 internal class TestToolSetup(
     name: String,
-    description: String,
-    fewShotExamples: List<LLMRequest.FewShotExample>?,
+    description: String = "$name description",
+    fewShotExamples: List<LLMRequest.FewShotExample>? = null,
 ) : LLMToolSetup {
     override val fn: LLMRequest.Function = LLMRequest.Function(
         name = name,
@@ -33,9 +32,3 @@ internal class TestToolSetup(
     override suspend fun invoke(functionCall: LLMResponse.FunctionCall): LLMRequest.Message =
         LLMRequest.Message(LLMMessageRole.function, "ok")
 }
-
-internal fun testToolSetup(
-    name: String,
-    description: String = "$name description",
-    fewShotExamples: List<LLMRequest.FewShotExample>? = null,
-): LLMToolSetup = TestToolSetup(name, description, fewShotExamples)

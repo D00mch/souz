@@ -2,20 +2,14 @@ package ru.souz.backend.common
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.backend.testutil.testToolCatalog
+import ru.souz.backend.testutil.TestToolCatalog
 import ru.souz.tool.LLM_BACKED_TOOL_NAMES
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendToolCapabilityPolicyTest {
-    @Test
-    fun `channel messaging is a backend-safe category`() {
-        assertTrue(ToolCategory.CHANNEL_MESSAGING in BackendToolCapabilityPolicy.safeCategories)
-    }
-
     @Test
     fun `advertised names combine safe process tools and execution-bound LLM tools`() {
         val names = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
@@ -28,19 +22,15 @@ class BackendToolCapabilityPolicyTest {
     }
 
     @Test
-    fun `desktop-only categories never reach backend capabilities or executions`() {
-        val advertised = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
-
-        assertFalse("ControlBrowser" in advertised)
-        assertFalse("ControlBrowser" in executionToolNames(enabledToolNames = null))
-    }
-
-    @Test
-    fun `WebImageSearch stays denied even though its category is backend-safe`() {
+    fun `desktop-only categories and denied names reach neither capabilities nor executions`() {
         assertTrue(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
+        val excluded = setOf("ControlBrowser", ToolWebImageSearch.NAME)
 
-        assertFalse(ToolWebImageSearch.NAME in BackendToolCapabilityPolicy.advertisedToolNames(processCatalog()))
-        assertFalse(ToolWebImageSearch.NAME in executionToolNames(enabledToolNames = null))
+        val advertised = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
+        val selected = executionToolNames(enabledToolNames = null)
+
+        assertEquals(emptySet(), advertised intersect excluded)
+        assertEquals(emptySet(), selected intersect excluded)
     }
 
     @Test
@@ -65,13 +55,13 @@ class BackendToolCapabilityPolicyTest {
     private fun executionToolNames(enabledToolNames: Set<String>?): Set<String> =
         BackendToolCapabilityPolicy.selectExecutionTools(
             processToolCatalog = processCatalog(),
-            executionLlmToolCatalog = testToolCatalog(
+            executionLlmToolCatalog = TestToolCatalog(
                 ToolCategory.WEB_SEARCH to BackendToolCapabilityPolicy.executionBoundToolNames.toList(),
             ),
             enabledToolNames = enabledToolNames,
         ).toolNames()
 
-    private fun processCatalog(): AgentToolCatalog = testToolCatalog(
+    private fun processCatalog(): AgentToolCatalog = TestToolCatalog(
         ToolCategory.FILES to listOf("ReadFile"),
         ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME),
         ToolCategory.CHANNEL_MESSAGING to listOf("ListActiveChannels", "SendMessageToChannel"),
