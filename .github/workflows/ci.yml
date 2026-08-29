@@ -186,6 +186,10 @@ jobs:
           git worktree add --detach "$base_checkout" "$SOUZ_PR_BASE_SHA"
           echo "REPOWISE_BASE_CHECKOUT=$base_checkout" >> "$GITHUB_ENV"
 
+      - name: Graft PR head onto the base
+        shell: bash
+        run: git replace --graft "$SOUZ_PR_HEAD_SHA" "$SOUZ_PR_BASE_SHA"
+
       - name: Build deterministic RepoWise indexes
         run: |
           repowise init "$REPOWISE_BASE_CHECKOUT" --yes --no-prose --no-workspace

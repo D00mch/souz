@@ -30,7 +30,7 @@ advisory and produce warnings; the other fast checks are blocking. Duplicate
 code is blocking with `ci-exact-checkout` authority. An unexpected checker
 failure is reported as `error`, not as a pass or policy failure.
 The RepoWise ratchet is blocking only in pull-request CI and compares the base
-and head directly.
+with the squash-equivalent PR head.
 
 Project dependencies declared in an unclassified configuration fail closed.
 Test-only edges should use a standard test source-set configuration so the
@@ -131,6 +131,11 @@ Pull-request CI installs the version of RepoWise pinned in
 checks out full Git history, and builds deterministic indexes for the PR base
 and head without an LLM, saved credentials, editor integration, or telemetry.
 
+Pull requests are squash-merged. Before indexing, CI runs
+`git replace --graft "$SOUZ_PR_HEAD_SHA" "$SOUZ_PR_BASE_SHA"` so RepoWise
+evaluates the final PR tree as one commit on top of the base. Intermediate PR
+commits do not affect health scores.
+
 The blocking ratchet requires the head to keep every RepoWise repository KPI at
 or above its base value: average and hotspot defect health, worst-performer
 health, average and hotspot maintainability, and average and hotspot
@@ -141,7 +146,8 @@ improvement becomes the baseline for following pull requests.
 The same job runs `repowise risk` over the exact base-to-head revision range and
 publishes the PR's change-risk classification, percentile, size, spread, and
 main risk drivers. Change risk is advisory; only a code-health regression is
-blocking. Global refactoring targets are intentionally excluded from PR runs.
+blocking. The risk model keeps a 200-commit baseline. Global refactoring
+targets are intentionally excluded from PR runs.
 
 ## RepoWise maintenance guidance
 
