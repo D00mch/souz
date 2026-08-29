@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.composeToolCatalogs
@@ -18,16 +19,10 @@ internal class BackendExecutionToolCatalog(
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>
 
     init {
-        val enabledToolNames = enabledCompiledToolNames?.toSet()
-        val compiledTools = composeToolCatalogs(
-            listOf(compiledToolCatalog, executionLlmToolCatalog)
-        )
-        val selectedCompiledTools = immutableToolCatalogSnapshot(
-            ToolCategory.entries.associateWith { category ->
-                compiledTools.toolsByCategory.getValue(category).filterKeys { toolName ->
-                    enabledToolNames == null || toolName in enabledToolNames
-                }
-            }
+        val selectedCompiledTools = BackendToolCapabilityPolicy.selectExecutionTools(
+            processToolCatalog = compiledToolCatalog,
+            executionLlmToolCatalog = executionLlmToolCatalog,
+            enabledToolNames = enabledCompiledToolNames?.toSet(),
         )
 
         // Client tools intentionally win name collisions because the live client owns their execution boundary.
