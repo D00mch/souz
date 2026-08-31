@@ -8,9 +8,12 @@ import io.ktor.client.request.header
 import io.ktor.client.request.put
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 import ru.souz.memory.CompletedTurnMemoryInput
@@ -50,7 +53,7 @@ class HindsightConversationMemoryRuntime(
                         "max_tokens" to (request.maxPromptTokens ?: recallTokenBudget(maxFacts)),
                     )
                 )
-            }.body<JsonNode>()
+            }.requireSuccess().body<JsonNode>()
             val items = response.path("results").take(maxFacts)
             val block = items.mapNotNull { it.memoryText() }.joinToString("\n") { "- $it" }
             MemoryRetrievalResult(
@@ -76,7 +79,7 @@ class HindsightConversationMemoryRuntime(
             val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories/recall") {
                 authenticated()
                 setBody(mapOf("query" to query, "max_tokens" to recallTokenBudget(maxFacts)))
-            }.body<JsonNode>()
+            }.requireSuccess().body<JsonNode>()
             response.path("results").take(maxFacts).mapIndexed { index, item ->
                 ConversationMemoryRuntime.SearchFact(
                     factId = item.path("id").asText("hindsight-$index"),
@@ -113,7 +116,7 @@ class HindsightConversationMemoryRuntime(
                         "async" to true,
                     )
                 )
-            }
+            }.requireSuccess()
         }.onFailure { e ->
             l.warn("Hindsight retain failed for bank {}: {}", bankId, e.message)
         }
@@ -125,7 +128,7 @@ class HindsightConversationMemoryRuntime(
             httpClient.put("$baseUrl/v1/default/banks/$bankId") {
                 authenticated()
                 setBody(mapOf("bank_id" to bankId))
-            }
+            }.requireSuccess()
         }.onSuccess {
             knownBanks += bankId
         }.onFailure { e ->
@@ -136,6 +139,16 @@ class HindsightConversationMemoryRuntime(
     private fun HttpRequestBuilder.authenticated() {
         header(HttpHeaders.Authorization, "Bearer $apiToken")
         contentType(ContentType.Application.Json)
+    }
+
+    /**
+     * `ProviderHttpClients.standard` doesn't enable Ktor's `expectSuccess`, so a non-2xx response
+     * completes normally instead of throwing — check explicitly, or a failed bank creation/retain
+     * would be silently treated as success (and, for `ensureBank`, permanently cached as such).
+     */
+    private suspend fun HttpResponse.requireSuccess(): HttpResponse {
+        if (!status.isSuccess()) error("Hindsight returned $status: ${bodyAsText()}")
+        return this
     }
 
     /**
