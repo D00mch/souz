@@ -147,7 +147,13 @@ class CodexOAuthService(
                 parseAndStoreTokens(response.bodyAsText())
                     ?: error("Codex: token refresh failed")
             } else {
-                error("Codex: token refresh failed: ${response.status} ${response.bodyAsText()}")
+                val text = response.bodyAsText()
+                // A reused/expired refresh token is terminal — only a fresh device-flow login recovers.
+                if (text.contains("refresh_token_reused") || text.contains("invalid_grant")) {
+                    _oauthState.value = CodexOAuthState.Error("Codex: re-authentication required ($text)")
+                    error("Codex: refresh token rejected, re-authentication required: $text")
+                }
+                error("Codex: token refresh failed: ${response.status} $text")
             }
         } catch (e: CancellationException) {
             throw e
@@ -183,16 +189,24 @@ class CodexOAuthService(
         val data = runCatching { restJsonMapper.readValue<Map<String, Any>>(responseBody) }.getOrNull()
             ?: return null
         val accessToken = data["access_token"] as? String ?: return null
-        val refreshToken = data["refresh_token"] as? String
+        // A refresh response MAY omit refresh_token (RFC 6749 §6) — keep the current one then.
+        val rotatedRefreshToken = (data["refresh_token"] as? String)?.takeIf { it.isNotBlank() }
         val expiresIn = when (val v = data["expires_in"]) {
             is Number -> v.toLong()
             is String -> v.toLongOrNull() ?: 3600L
             else -> 3600L
         }
+        // JWT shape can change between issuances; don't wipe a good account id on a parse miss.
         val accountId = extractAccountId(accessToken)
+        // The provider rotates and immediately invalidates the old refresh token, so persist the
+        // rotated one FIRST: if a later write (or the process) dies, we're left holding a usable
+        // refresh token rather than a fresh access token paired with an already-burned one.
+        if (rotatedRefreshToken != null && rotatedRefreshToken != settingsProvider.codexRefreshToken) {
+            settingsProvider.codexRefreshToken = rotatedRefreshToken
+            l.info("Codex: refresh token rotated and persisted")
+        }
         settingsProvider.codexAccessToken = accessToken
-        settingsProvider.codexRefreshToken = refreshToken
-        settingsProvider.codexAccountId = accountId
+        if (accountId != null) settingsProvider.codexAccountId = accountId
         settingsProvider.codexExpiresAt = System.currentTimeMillis() / 1000 + expiresIn
         return accessToken
     }
