@@ -1,6 +1,6 @@
 # Android App
 
-`:androidApp` is the Android entry point for Souz. It hosts `MainActivity`, builds the Android dependency graph in `AndroidAgentRuntime`, renders the Android Compose surface from `:sharedUI`, and runs `GraphBasedAgent` through the Android-safe runtime pieces in `:sharedLogic`.
+`:androidApp` is the Android entry point for Souz. It hosts `MainActivity`, builds the Android dependency graph in `AndroidAgentRuntime`, renders the Android Compose surface from `:sharedUI`, and runs the selected graph agent through the Android-safe runtime pieces in `:sharedLogic`. `SkillsGraphBasedAgent` is the default.
 
 The Android app is a chat-agent host, not a full port of the desktop app. Keep Android-specific platform code here, reusable UI logic in `:sharedUI`, and reusable runtime/tool logic in `:sharedLogic`.
 
@@ -138,7 +138,7 @@ Run Android instrumentation tests on a connected device or emulator:
 
 ## Supported
 
-- Chat UI backed by shared `MainViewModel` and `GraphBasedAgent`.
+- Chat UI backed by shared `MainViewModel` and the selected graph agent.
 - Settings UI for model selection, provider credentials, safe mode, language profile, request timeout, context size, temperature, and provider links.
 - Remote chat providers wired through the Android runtime: GigaChat, Qwen, AiTunnel, Anthropic, OpenAI, and Codex.
 - Provider secrets stored with Android Keystore-backed encryption in app `SharedPreferences`.

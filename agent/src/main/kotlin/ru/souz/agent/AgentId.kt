@@ -6,7 +6,7 @@ enum class AgentId(val storageValue: String) {
     ;
 
     companion object {
-        val default: AgentId = GRAPH
+        val default: AgentId = SKILLS_GRAPH
 
         fun fromStorageValue(raw: String?): AgentId {
             if (raw.isNullOrBlank()) return default

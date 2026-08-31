@@ -12,8 +12,9 @@ class AgentIdTest {
     }
 
     @Test
-    fun `classic graph remains the default`() {
-        assertEquals(AgentId.GRAPH, AgentId.default)
-        assertEquals(AgentId.GRAPH, AgentId.fromStorageValue("unknown"))
+    fun `skills graph is the default`() {
+        assertEquals(AgentId.SKILLS_GRAPH, AgentId.default)
+        assertEquals(AgentId.SKILLS_GRAPH, AgentId.fromStorageValue(null))
+        assertEquals(AgentId.SKILLS_GRAPH, AgentId.fromStorageValue("unknown"))
     }
 }

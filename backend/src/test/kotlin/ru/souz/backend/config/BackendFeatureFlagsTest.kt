@@ -52,7 +52,7 @@ class BackendFeatureFlagsTest {
 
 class BackendAppConfigTest {
     @Test
-    fun `backend agent defaults to graph and reads env or property`() {
+    fun `backend agent defaults to skills and reads env or property`() {
         val defaultConfig = BackendAppConfig.load(
             MapBackendConfigSource(env = mapOf("SOUZ_MASTER_KEY" to "test-master-key"))
         )
@@ -60,9 +60,9 @@ class BackendAppConfigTest {
             MapBackendConfigSource(
                 env = mapOf(
                     "SOUZ_MASTER_KEY" to "test-master-key",
-                    "SOUZ_BACKEND_AGENT" to " skills ",
+                    "SOUZ_BACKEND_AGENT" to " graph ",
                 ),
-                properties = mapOf("souz.backend.agent" to "graph"),
+                properties = mapOf("souz.backend.agent" to "skills"),
             )
         )
         val propertyConfig = BackendAppConfig.load(
@@ -72,8 +72,8 @@ class BackendAppConfigTest {
             )
         )
 
-        assertEquals(AgentId.GRAPH, defaultConfig.agentId)
-        assertEquals(AgentId.SKILLS_GRAPH, envConfig.agentId)
+        assertEquals(AgentId.SKILLS_GRAPH, defaultConfig.agentId)
+        assertEquals(AgentId.GRAPH, envConfig.agentId)
         assertEquals(AgentId.SKILLS_GRAPH, propertyConfig.agentId)
     }
 
