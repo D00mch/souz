@@ -20,7 +20,7 @@ class ToolCatalogsTest {
         )
 
         val error = assertFailsWith<IllegalStateException> {
-            composeToolCatalogs(listOf(first, second))
+            composeToolCatalogs(first, second)
         }
 
         assertEquals(ToolCategory.entries, first.toolsByCategory.keys.toList())
@@ -35,10 +35,8 @@ class ToolCatalogsTest {
         val compiled = tool("ClientOwned")
         val client = tool("ClientOwned")
         val catalog = composeToolCatalogs(
-            catalogs = listOf(
-                immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to listOf(compiled))),
-                immutableToolCatalogFromLists(mapOf(ToolCategory.DESKTOP to listOf(client))),
-            ),
+            immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to listOf(compiled))),
+            immutableToolCatalogFromLists(mapOf(ToolCategory.DESKTOP to listOf(client))),
             allowLaterSourceOverrides = true,
         )
 
@@ -57,7 +55,7 @@ class ToolCatalogsTest {
 
         val error = assertFailsWith<IllegalArgumentException> {
             composeToolCatalogs(
-                catalogs = listOf(duplicateSource),
+                duplicateSource,
                 allowLaterSourceOverrides = true,
             )
         }

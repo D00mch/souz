@@ -22,7 +22,8 @@ internal fun backendExecutionToolCatalog(
 
     // Client tools intentionally win name collisions because the live client owns their execution boundary.
     val mergedTools = composeToolCatalogs(
-        catalogs = listOf(selectedCompiledTools, clientToolCatalog),
+        selectedCompiledTools,
+        clientToolCatalog,
         allowLaterSourceOverrides = true,
     )
     if (includeFewShotExamples) {

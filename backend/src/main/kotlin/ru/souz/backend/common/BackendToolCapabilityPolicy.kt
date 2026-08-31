@@ -48,9 +48,7 @@ object BackendToolCapabilityPolicy {
         executionLlmToolCatalog: AgentToolCatalog,
         enabledToolNames: Set<String>?,
     ): AgentToolCatalog {
-        val candidates = composeToolCatalogs(
-            listOf(hostableTools(processToolCatalog), executionLlmToolCatalog)
-        )
+        val candidates = composeToolCatalogs(hostableTools(processToolCatalog), executionLlmToolCatalog)
         return immutableToolCatalogSnapshot(
             candidates.toolsByCategory.mapValues { (_, tools) ->
                 tools.filterKeys { toolName -> enabledToolNames == null || toolName in enabledToolNames }
