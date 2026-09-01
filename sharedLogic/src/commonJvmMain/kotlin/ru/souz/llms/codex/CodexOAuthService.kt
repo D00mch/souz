@@ -179,7 +179,8 @@ class CodexOAuthService(
             _oauthState.value = CodexOAuthState.Error("Token exchange failed: ${response.status} $text")
             return
         }
-        if (parseAndStoreTokens(response.bodyAsText(), fresh = true) == null) {
+        val responseBody = response.bodyAsText()
+        if (refreshMutex.withLock { parseAndStoreTokens(responseBody, fresh = true) } == null) {
             _oauthState.value = CodexOAuthState.Error("Token exchange failed: missing required credentials")
             return
         }
