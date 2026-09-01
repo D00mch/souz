@@ -61,7 +61,7 @@ class HindsightConversationMemoryRuntime(
                 context = request.context,
                 query = request.query,
                 maxFacts = maxFacts,
-                maxTokens = request.maxPromptTokens ?: recallTokenBudget(maxFacts),
+                maxTokens = request.maxPromptTokens ?: maxFacts * TOKENS_PER_FACT_BUDGET,
             )
             val block = items.map { it.promptText() }
                 .takeIf(List<String>::isNotEmpty)
@@ -87,7 +87,7 @@ class HindsightConversationMemoryRuntime(
         context = context,
         query = (listOf(semanticQuery) + lexicalHints).joinToString(" "),
         maxFacts = maxFacts,
-        maxTokens = recallTokenBudget(maxFacts),
+        maxTokens = maxFacts * TOKENS_PER_FACT_BUDGET,
     ).map { item ->
         ConversationMemoryRuntime.SearchFact(
             factId = item.id,
@@ -136,7 +136,7 @@ class HindsightConversationMemoryRuntime(
         val response = httpClient.post(
             "$baseUrl/v1/default/banks/${bankIdFor(context.ownerId)}/memories/recall"
         ) {
-            authenticated()
+            authenticated(apiToken)
             setBody(
                 buildMap<String, Any> {
                     put("query", query)
@@ -154,7 +154,7 @@ class HindsightConversationMemoryRuntime(
         repeat(if (retryOnIoFailure) 2 else 1) { attempt ->
             try {
                 val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories") {
-                    authenticated()
+                    authenticated(apiToken)
                     timeout { requestTimeoutMillis = RETAIN_TIMEOUT_MILLIS }
                     setBody(mapOf("items" to listOf(item)))
                 }.requireSuccess().body<RetainResponse>()
@@ -165,53 +165,51 @@ class HindsightConversationMemoryRuntime(
             }
         }
     }
-
-    private fun CompletedTurnMemoryInput.retainedContent(includeToolEvidence: Boolean): String = buildList {
-        add("[USER]\n${MemorySanitizer.redact(userMessage.trim())}")
-        if (!includeToolEvidence) return@buildList
-        evidence.filter { it.kind == CompletedTurnEvidenceKind.TOOL_OUTPUT }.forEach { item ->
-            val source = item.sourceName
-                ?.let(MemorySanitizer::redact)
-                ?.replace('\n', ' ')
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.let { " source=$it" }
-                .orEmpty()
-            add("[${item.kind.name}$source]\n${MemorySanitizer.redact(item.text.trim())}")
-        }
-    }.joinToString("\n\n")
-
-    private fun MemoryContext.chatTags(): List<String> =
-        listOfNotNull(conversationId?.value?.let { "chat:$it" })
-
-    private fun HttpRequestBuilder.authenticated() {
-        header(HttpHeaders.Authorization, "Bearer $apiToken")
-        contentType(ContentType.Application.Json)
-    }
-
-    private fun HttpResponse.requireSuccess(): HttpResponse {
-        if (!status.isSuccess()) error("Hindsight returned $status")
-        return this
-    }
-
-    private fun recallTokenBudget(maxFacts: Int): Int = maxFacts * TOKENS_PER_FACT_BUDGET
-
-    private fun bankIdFor(ownerId: MemoryOwnerId): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(ownerId.value.toByteArray(Charsets.UTF_8))
-        return "souz-" + digest.take(16).joinToString("") { "%02x".format(it) }
-    }
-
-    private fun RecalledMemory.scope(context: MemoryContext): String =
-        if (tags.orEmpty().any { it in context.chatTags() }) "session" else "global"
-
-    private fun RecalledMemory.toPromptFact(context: MemoryContext): MemoryPromptFact = MemoryPromptFact(
-        factId = id,
-        scope = scope(context),
-        score = this.score,
-    )
-
-    private fun RecalledMemory.promptText(): String = text.trim().replace('\r', ' ').replace('\n', ' ')
 }
+
+private fun CompletedTurnMemoryInput.retainedContent(includeToolEvidence: Boolean): String = buildList {
+    add("[USER]\n${MemorySanitizer.redact(userMessage.trim())}")
+    if (!includeToolEvidence) return@buildList
+    evidence.filter { it.kind == CompletedTurnEvidenceKind.TOOL_OUTPUT }.forEach { item ->
+        val source = item.sourceName
+            ?.let(MemorySanitizer::redact)
+            ?.replace('\n', ' ')
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { " source=$it" }
+            .orEmpty()
+        add("[${item.kind.name}$source]\n${MemorySanitizer.redact(item.text.trim())}")
+    }
+}.joinToString("\n\n")
+
+private fun MemoryContext.chatTags(): List<String> =
+    listOfNotNull(conversationId?.value?.let { "chat:$it" })
+
+private fun HttpRequestBuilder.authenticated(apiToken: String) {
+    header(HttpHeaders.Authorization, "Bearer $apiToken")
+    contentType(ContentType.Application.Json)
+}
+
+private fun HttpResponse.requireSuccess(): HttpResponse {
+    if (!status.isSuccess()) error("Hindsight returned $status")
+    return this
+}
+
+private fun bankIdFor(ownerId: MemoryOwnerId): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(ownerId.value.toByteArray(Charsets.UTF_8))
+    return "souz-" + digest.take(16).joinToString("") { "%02x".format(it) }
+}
+
+private fun RecalledMemory.scope(context: MemoryContext): String =
+    if (tags.orEmpty().any { it in context.chatTags() }) "session" else "global"
+
+private fun RecalledMemory.toPromptFact(context: MemoryContext): MemoryPromptFact = MemoryPromptFact(
+    factId = id,
+    scope = scope(context),
+    score = score,
+)
+
+private fun RecalledMemory.promptText(): String = text.trim().replace('\r', ' ').replace('\n', ' ')
 
 private data class RecallResponse(val results: List<RecalledMemory>)
 
