@@ -34,10 +34,8 @@ object BackendToolCapabilityPolicy {
 
     /** Names the backend advertises and accepts in a user's `enabledTools`, in stable order. */
     fun advertisedToolNames(processToolCatalog: AgentToolCatalog): Set<String> =
-        buildSet {
-            hostableTools(processToolCatalog).toolsByCategory.values.forEach { tools -> addAll(tools.keys) }
-            addAll(executionBoundToolNames)
-        }.toSortedSet()
+        (hostableTools(processToolCatalog).toolsByCategory.values.flatMap { it.keys } +
+            executionBoundToolNames).toSortedSet()
 
     /**
      * Compiled tools one execution may call: the hostable process tools plus the execution-bound
@@ -48,19 +46,18 @@ object BackendToolCapabilityPolicy {
         executionLlmToolCatalog: AgentToolCatalog,
         enabledToolNames: Set<String>?,
     ): AgentToolCatalog {
-        val candidates = composeToolCatalogs(hostableTools(processToolCatalog), executionLlmToolCatalog)
-        return immutableToolCatalogSnapshot(
-            candidates.toolsByCategory.mapValues { (_, tools) ->
-                tools.filterKeys { toolName -> enabledToolNames == null || toolName in enabledToolNames }
-            }
+        val isEnabled = { toolName: String -> enabledToolNames == null || toolName in enabledToolNames }
+        return composeToolCatalogs(
+            hostableTools(processToolCatalog, isEnabled),
+            hostableTools(executionLlmToolCatalog) { it in executionBoundToolNames && isEnabled(it) },
         )
     }
 
     /** The hostable view of a process catalog: safe categories only, denied names removed. */
-    private fun hostableTools(processToolCatalog: AgentToolCatalog): AgentToolCatalog =
+    private fun hostableTools(catalog: AgentToolCatalog, allow: (String) -> Boolean = { true }): AgentToolCatalog =
         immutableToolCatalogSnapshot(
-            processToolCatalog.toolsByCategory
+            catalog.toolsByCategory
                 .filterKeys { category -> category in safeCategories }
-                .mapValues { (_, tools) -> tools.filterKeys { toolName -> toolName !in deniedToolNames } }
+                .mapValues { (_, tools) -> tools.filterKeys { it !in deniedToolNames && allow(it) } }
         )
 }
