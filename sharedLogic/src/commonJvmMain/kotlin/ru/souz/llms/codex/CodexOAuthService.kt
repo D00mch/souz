@@ -180,7 +180,7 @@ class CodexOAuthService(
             return
         }
         if (parseAndStoreTokens(response.bodyAsText(), fresh = true) == null) {
-            _oauthState.value = CodexOAuthState.Error("Token exchange failed: could not read account from token")
+            _oauthState.value = CodexOAuthState.Error("Token exchange failed: missing required credentials")
             return
         }
         _oauthState.value = CodexOAuthState.Success(accountId = settingsProvider.codexAccountId ?: "")
@@ -188,12 +188,13 @@ class CodexOAuthService(
 
     /**
      * Parses a token response, persists it, returns the access token. A [fresh] device-flow
-     * exchange fails when the account id can't be extracted; a refresh keeps the known one.
+     * exchange requires an account id and refresh token; a refresh keeps either stored value
+     * when the response omits it.
      */
     private fun parseAndStoreTokens(responseBody: String, fresh: Boolean): String? {
         val data = runCatching { restJsonMapper.readValue<Map<String, Any>>(responseBody) }.getOrNull()
             ?: return null
-        val accessToken = data["access_token"] as? String ?: return null
+        val accessToken = (data["access_token"] as? String)?.takeIf(String::isNotBlank) ?: return null
         // A refresh response MAY omit refresh_token (RFC 6749 §6) — keep the current one then.
         val rotatedRefreshToken = (data["refresh_token"] as? String)?.takeIf { it.isNotBlank() }
         val expiresIn = when (val v = data["expires_in"]) {
@@ -202,7 +203,7 @@ class CodexOAuthService(
             else -> 3600L
         }
         val accountId = extractAccountId(accessToken)
-        if (fresh && accountId == null) return null
+        if (fresh && (accountId == null || rotatedRefreshToken == null)) return null
         // The provider rotates and immediately invalidates the old refresh token, so persist the
         // rotated one FIRST: if a later write (or the process) dies, we're left holding a usable
         // refresh token rather than a fresh access token paired with an already-burned one.

@@ -91,19 +91,19 @@ class BackendSettingsProvider(
     override var mcpServersFile: String? = configured(MCP_SERVERS_FILE)
 
     override var codexAccessToken: String?
-        get() = storedOrPreConfigured(CODEX_ACCESS_TOKEN)
+        get() = storedOrConfigured(CODEX_ACCESS_TOKEN)
         set(value) = putOrTombstone(CODEX_ACCESS_TOKEN, value)
 
     override var codexRefreshToken: String?
-        get() = storedOrPreConfigured(CODEX_REFRESH_TOKEN)
+        get() = storedOrConfigured(CODEX_REFRESH_TOKEN)
         set(value) = putOrTombstone(CODEX_REFRESH_TOKEN, value)
 
     override var codexAccountId: String?
-        get() = storedOrPreConfigured(CODEX_ACCOUNT_ID)
+        get() = storedOrConfigured(CODEX_ACCOUNT_ID)
         set(value) = putOrTombstone(CODEX_ACCOUNT_ID, value)
 
     override var codexExpiresAt: Long?
-        get() = storedOrPreConfigured(CODEX_EXPIRES_AT)?.toLongOrNull()
+        get() = storedOrConfigured(CODEX_EXPIRES_AT)?.toLongOrNull()
         set(value) = putOrTombstone(CODEX_EXPIRES_AT, value?.toString())
 
     override var gigaModel: LLMModel = configured(GIGA_MODEL)
@@ -156,20 +156,8 @@ class BackendSettingsProvider(
             ?.trim()
             ?.takeIf(String::isNotEmpty)
 
+    // An absent row falls back to deploy config; an empty row is a persisted tombstone.
     private fun storedOrConfigured(key: String): String? =
-        preferenceStore.get(key)?.takeIf(String::isNotBlank) ?: configured(key)
-
-    private fun putOrRemove(key: String, value: String?) {
-        if (value.isNullOrBlank()) {
-            preferenceStore.remove(key)
-        } else {
-            preferenceStore.put(key, value)
-        }
-    }
-
-    // Three persisted states, unlike [storedOrConfigured]: absent row -> pre-configured deploy
-    // value; non-blank row -> stored value; empty row -> tombstone (set via null) suppressing it.
-    private fun storedOrPreConfigured(key: String): String? =
         when (val stored = preferenceStore.get(key)) {
             null -> configured(key)
             "" -> null
