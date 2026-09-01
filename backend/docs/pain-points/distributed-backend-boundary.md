@@ -6,9 +6,7 @@ Backend storage is PostgreSQL-backed, but active runtime ownership is distribute
 
 Ordinary trusted-proxy HTTP executions and Telegram-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
 
-Server-managed Codex OAuth is a test-deployment facility that is safe for a single backend process through the process-local refresh mutex. Production keeps it disabled. Multi-replica deployments must not enable it unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
-
-A terminal Codex refresh rejection suppresses the rejected deployment refresh token across restarts. Replacing the complete `CODEX_*` bundle with one containing a different refresh token and restarting the backend restores the deployment credentials.
+Server-managed Codex OAuth is a single-process test facility and remains disabled in production. A terminal refresh rejection suppresses the matching deployment bundle until all four deployment credentials are replaced, including a different refresh token, and the backend restarts. Multi-replica deployments must not enable it unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
 
 ## Why it is fragile
 
@@ -26,8 +24,7 @@ Codex refresh tokens can rotate. Without database coordination, two replicas can
 - Keep live Client-Souz frames owner-sticky while the live registry remains process-local.
 - Do not fail active ordinary executions on backend startup in a multi-replica deployment unless ownership proves the starting process is recovering only abandoned work.
 - Do not enable server-managed Codex OAuth on multiple replicas without a database-backed lock or compare-and-set path that re-reads credentials before refresh and stores the refreshed credential set atomically.
-- Recover a rejected single-process Codex test credential by replacing the complete deployment bundle and restarting; do not edit encrypted preference rows manually.
 
 ## Verification
 
-Run `./gradlew :backend:test` for changes to execution ownership or recovery. Cover ordinary HTTP execution crash recovery, Telegram-triggered execution crash recovery, Client-Souz expired lease recovery, sticky active-thread routing, cancellation races, option resume from `waiting_option`, single-process Codex deployment-credential replacement, and concurrent Codex OAuth refresh when Codex is enabled on multiple replicas.
+Run `./gradlew :backend:test` for changes to execution ownership or recovery. Cover ordinary HTTP execution crash recovery, Telegram-triggered execution crash recovery, Client-Souz expired lease recovery, sticky active-thread routing, cancellation races, option resume from `waiting_option`, and concurrent Codex OAuth refresh when Codex is enabled on multiple replicas.

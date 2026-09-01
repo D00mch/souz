@@ -156,13 +156,19 @@ class BackendSettingsProvider(
             ?.trim()
             ?.takeIf(String::isNotEmpty)
 
-    // An absent row falls back to deploy config; an empty row is a persisted tombstone.
-    private fun storedOrConfigured(key: String): String? =
-        when (val stored = preferenceStore.get(key)) {
+    private fun storedOrConfigured(key: String): String? {
+        val rejectedRefreshToken = preferenceStore.get(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
+        if (rejectedRefreshToken != null) {
+            if (configured(CODEX_REFRESH_TOKEN).orEmpty() == rejectedRefreshToken) return null
+            CODEX_CREDENTIAL_KEYS.forEach(preferenceStore::remove)
+            preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
+        }
+        return when (val stored = preferenceStore.get(key)) {
             null -> configured(key)
-            "" -> configuredAfterRejectedBundleReplacement(key)
+            "" -> null
             else -> stored
         }
+    }
 
     private fun putOrTombstone(key: String, value: String?) {
         if (value == null) {
@@ -173,14 +179,6 @@ class BackendSettingsProvider(
             preferenceStore.put(key, value)
             if (key == CODEX_ACCESS_TOKEN) preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
         }
-    }
-
-    private fun configuredAfterRejectedBundleReplacement(key: String): String? {
-        val rejectedRefreshToken = preferenceStore.get(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN) ?: return null
-        if (configured(CODEX_REFRESH_TOKEN).orEmpty() == rejectedRefreshToken) return null
-        CODEX_CREDENTIAL_KEYS.forEach(preferenceStore::remove)
-        preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
-        return configured(key)
     }
 
     private fun normalizeRegion(value: String?): String =
