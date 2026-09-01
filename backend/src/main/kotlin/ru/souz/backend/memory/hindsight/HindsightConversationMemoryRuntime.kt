@@ -5,7 +5,6 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
-import io.ktor.client.request.put
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -14,7 +13,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
@@ -29,6 +28,7 @@ import ru.souz.memory.MemorySearchPolicy
  * Bridges Souz's [ConversationMemoryRuntime] port to a self-hosted Hindsight instance
  * (https://hindsight.vectorize.io) via its standalone REST API. One bank per Souz user
  * (`ownerId`, sourced from the trusted `ToolInvocationMeta` upstream) keeps users isolated.
+ * Hindsight creates a bank on first recall/retain, so no explicit bank-creation call is made.
  */
 private const val TOKENS_PER_FACT_BUDGET = 200
 
@@ -38,13 +38,11 @@ class HindsightConversationMemoryRuntime(
     private val apiToken: String,
 ) : ConversationMemoryRuntime {
     private val l = LoggerFactory.getLogger(HindsightConversationMemoryRuntime::class.java)
-    private val knownBanks = ConcurrentHashMap.newKeySet<String>()
 
     override suspend fun retrieveMemory(request: MemoryRetrievalRequest): MemoryRetrievalResult {
         val bankId = bankIdFor(request.context.ownerId)
         val maxFacts = request.maxFacts ?: MemorySearchPolicy.DEFAULT_MAX_FACTS
-        return runCatching {
-            ensureBank(bankId)
+        return try {
             val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories/recall") {
                 authenticated()
                 setBody(
@@ -60,7 +58,10 @@ class HindsightConversationMemoryRuntime(
                 renderedPromptBlock = block.takeIf { it.isNotBlank() },
                 facts = items.mapIndexed { index, item -> item.toPromptFact(index) },
             )
-        }.getOrElse { e ->
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            // Auto per-turn recall is best-effort: a failure must not abort the turn.
             l.warn("Hindsight recall failed for bank {}: {}", bankId, e.message)
             MemoryRetrievalResult(renderedPromptBlock = null)
         }
@@ -73,14 +74,13 @@ class HindsightConversationMemoryRuntime(
         maxFacts: Int,
     ): List<ConversationMemoryRuntime.SearchFact> {
         val bankId = bankIdFor(context.ownerId)
-        return runCatching {
-            ensureBank(bankId)
+        try {
             val query = (listOf(semanticQuery) + lexicalHints).joinToString(" ")
             val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories/recall") {
                 authenticated()
                 setBody(mapOf("query" to query, "max_tokens" to recallTokenBudget(maxFacts)))
             }.requireSuccess().body<JsonNode>()
-            response.path("results").take(maxFacts).mapIndexed { index, item ->
+            return response.path("results").take(maxFacts).mapIndexed { index, item ->
                 ConversationMemoryRuntime.SearchFact(
                     factId = item.path("id").asText("hindsight-$index"),
                     scope = "hindsight",
@@ -90,16 +90,19 @@ class HindsightConversationMemoryRuntime(
                     score = item.finalScore(),
                 )
             }
-        }.getOrElse { e ->
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            // Explicit SearchMemory tool call: let the failure reach ToolSearchMemory's
+            // `search_failed` result instead of masking an outage as "no matches".
             l.warn("Hindsight search failed for bank {}: {}", bankId, e.message)
-            emptyList()
+            throw e
         }
     }
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
         val bankId = bankIdFor(input.context.ownerId)
-        runCatching {
-            ensureBank(bankId)
+        try {
             val content = buildString {
                 append("User: ").append(input.userMessage).append('\n')
                 append("Assistant: ").append(input.assistantMessage)
@@ -117,22 +120,10 @@ class HindsightConversationMemoryRuntime(
                     )
                 )
             }.requireSuccess()
-        }.onFailure { e ->
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
             l.warn("Hindsight retain failed for bank {}: {}", bankId, e.message)
-        }
-    }
-
-    private suspend fun ensureBank(bankId: String) {
-        if (bankId in knownBanks) return
-        runCatching {
-            httpClient.put("$baseUrl/v1/default/banks/$bankId") {
-                authenticated()
-                setBody(mapOf("bank_id" to bankId))
-            }.requireSuccess()
-        }.onSuccess {
-            knownBanks += bankId
-        }.onFailure { e ->
-            l.warn("Hindsight ensureBank failed for {}: {}", bankId, e.message)
         }
     }
 
@@ -143,8 +134,8 @@ class HindsightConversationMemoryRuntime(
 
     /**
      * `ProviderHttpClients.standard` doesn't enable Ktor's `expectSuccess`, so a non-2xx response
-     * completes normally instead of throwing — check explicitly, or a failed bank creation/retain
-     * would be silently treated as success (and, for `ensureBank`, permanently cached as such).
+     * completes normally instead of throwing — check explicitly, or a failed retain/recall would
+     * be silently treated as an empty success.
      */
     private suspend fun HttpResponse.requireSuccess(): HttpResponse {
         if (!status.isSuccess()) error("Hindsight returned $status: ${bodyAsText()}")
