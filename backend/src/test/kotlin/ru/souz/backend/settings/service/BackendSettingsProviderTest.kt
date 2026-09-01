@@ -36,8 +36,42 @@ class BackendSettingsProviderTest {
 
         provider.codexAccessToken = null
 
-        assertFalse("CODEX_ACCESS_TOKEN" in store.values)
-        assertEquals("env-access", provider.codexAccessToken)
+        assertEquals("", store.values.getValue("CODEX_ACCESS_TOKEN"))
+        assertNull(provider.codexAccessToken)
+    }
+
+    @Test
+    fun `terminal disconnect tombstones survive restart and suppress deploy config`() {
+        val store = MapBackendServerPreferenceStore()
+        val env = mapOf(
+            "CODEX_ACCESS_TOKEN" to "env-access",
+            "CODEX_REFRESH_TOKEN" to "env-refresh",
+            "CODEX_ACCOUNT_ID" to "env-account",
+            "CODEX_EXPIRES_AT" to "1800000000",
+        )
+        val provider = provider(store = store, env = env)
+        assertTrue(provider.hasCompleteCodexOAuthCredentials())
+
+        // Terminal refresh failure clears every field.
+        provider.codexAccessToken = null
+        provider.codexRefreshToken = null
+        provider.codexAccountId = null
+        provider.codexExpiresAt = null
+
+        // Rebuild from the same store to simulate a process restart.
+        val restarted = provider(store = store, env = env)
+        assertNull(restarted.codexAccessToken)
+        assertNull(restarted.codexRefreshToken)
+        assertNull(restarted.codexAccountId)
+        assertNull(restarted.codexExpiresAt)
+        assertFalse(restarted.hasCompleteCodexOAuthCredentials())
+
+        // A fresh device-flow login overwrites the tombstones.
+        restarted.codexAccessToken = "new-access"
+        restarted.codexRefreshToken = "new-refresh"
+        restarted.codexAccountId = "new-account"
+        restarted.codexExpiresAt = 1_900_000_000L
+        assertTrue(provider(store = store, env = env).hasCompleteCodexOAuthCredentials())
     }
 
     @Test
