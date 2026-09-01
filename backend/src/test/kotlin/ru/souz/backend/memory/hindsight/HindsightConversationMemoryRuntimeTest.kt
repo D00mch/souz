@@ -103,29 +103,48 @@ class HindsightConversationMemoryRuntimeTest {
     }
 
     @Test
-    fun `forget invalidates a single curatable recall match and never retains`() = runTest {
+    fun `forget soft-invalidates a single curatable recall match and never retains`() = runTest {
         responder = { request ->
             if (request.url.encodedPath.endsWith("/recall")) {
-                respondJson("""{"results":[{"id":"m1","text":"x","type":"world"}]}""")
+                respondJson("""{"results":[{"id":"m1","type":"world","document_id":"d1"}]}""")
             } else {
                 respondJson("""{"ok":true}""")
             }
         }
         runtime().captureCompletedTurn(turn("u", "forget that my address is X"))
 
-        val patched = recorded.filter { it.first == "PATCH" }.map { it.second.substringAfterLast("/memories/") }
-        assertEquals(listOf("m1"), patched)
+        assertEquals(listOf("PATCH memories/m1"), curationCalls())
         assertTrue(recorded.none { it.first == "POST" && it.second.endsWith("/memories") }, "forget must not retain")
     }
 
     @Test
-    fun `forget does nothing when the target is ambiguous or an observation`() = runTest {
+    fun `delete-from-memory removes the whole source document`() = runTest {
+        responder = { request ->
+            if (request.url.encodedPath.endsWith("/recall")) {
+                respondJson("""{"results":[{"id":"m1","type":"world","document_id":"d1"}]}""")
+            } else {
+                respondJson("""{"ok":true}""")
+            }
+        }
+        runtime().captureCompletedTurn(turn("u", "delete from memory my address"))
+
+        assertEquals(listOf("DELETE documents/d1"), curationCalls())
+    }
+
+    @Test
+    fun `forget and delete do nothing when the target is ambiguous or an observation`() = runTest {
         responder = {
             respondJson(
-                """{"results":[{"id":"a","text":"x","type":"world"},{"id":"b","text":"y","type":"world"},{"id":"o","text":"z","type":"observation"}]}"""
+                """{"results":[{"id":"a","type":"world"},{"id":"b","type":"world"},{"id":"o","type":"observation"}]}"""
             )
         }
         runtime().captureCompletedTurn(turn("u", "forget that my address is X"))
-        assertTrue(recorded.none { it.first == "PATCH" })
+        runtime().captureCompletedTurn(turn("u", "delete from memory my address"))
+        assertTrue(recorded.none { it.first == "PATCH" || it.first == "DELETE" })
     }
+
+    /** Curation calls (not recall) as "METHOD <tail>", e.g. "PATCH memories/m1" / "DELETE documents/d1". */
+    private fun curationCalls() = recorded
+        .filterNot { it.second.endsWith("/recall") }
+        .map { (method, url) -> "$method ${url.substringAfterLast("/banks/").substringAfter('/')}" }
 }

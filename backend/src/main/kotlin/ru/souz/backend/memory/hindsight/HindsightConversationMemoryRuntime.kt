@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -118,12 +119,15 @@ class HindsightConversationMemoryRuntime(
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
         val bankId = bankIdFor(input.context.ownerId)
         when (parseExplicitMemoryIntent(input.userMessage)) {
-            // Honour explicit "don't remember this" / "forget that" intent, same as the built-in path.
+            // Honour explicit "don't remember this" / "forget that" / "delete from memory" intent,
+            // same as the built-in MemoryCaptureService path.
             ExplicitMemoryIntent.DO_NOT_CAPTURE_THIS_TURN -> return
-            ExplicitMemoryIntent.FORGET_EXISTING,
-            ExplicitMemoryIntent.DELETE_EXISTING,
-            -> {
-                invalidateMatching(bankId, input.userMessage)
+            ExplicitMemoryIntent.FORGET_EXISTING -> {
+                forgetMatching(bankId, input.userMessage, hardDelete = false)
+                return
+            }
+            ExplicitMemoryIntent.DELETE_EXISTING -> {
+                forgetMatching(bankId, input.userMessage, hardDelete = true)
                 return
             }
             else -> Unit
@@ -158,36 +162,52 @@ class HindsightConversationMemoryRuntime(
     /**
      * Best-effort forget. Hindsight has no delete-by-query, and `scores.final` is a relative
      * ranking signal rather than a confidence, so — mirroring MemoryService.confidentForgetMatch —
-     * act only when recall pins a *single* curatable ([CURATABLE_TYPES]) fact, and soft-retire it
-     * via PATCH `state=invalidated` (excluded from recall/consolidation/graph, kept for audit).
+     * act only when recall pins a *single* curatable ([CURATABLE_TYPES]) fact.
+     *
+     * [hardDelete] false ("forget that…"): PATCH `state=invalidated` — the fact drops out of
+     * recall/consolidation/graph but is kept for audit and is restorable.
+     * [hardDelete] true ("delete from memory"): DELETE the fact's source document, which
+     * irreversibly removes that document, its raw text, and every fact extracted from it — in
+     * this bridge one document is one captured conversation turn.
      */
-    private suspend fun invalidateMatching(bankId: String, query: String) {
+    private suspend fun forgetMatching(bankId: String, query: String, hardDelete: Boolean) {
         try {
-            val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories/recall") {
-                authenticated()
-                setBody(
-                    mapOf(
-                        "query" to query,
-                        "types" to CURATABLE_TYPES.toList(),
-                        "max_tokens" to recallTokenBudget(MemorySearchPolicy.DEFAULT_MAX_FACTS),
-                    )
-                )
-            }.requireSuccess().body<JsonNode>()
-            val target = response.path("results")
-                .filter { it.path("type").asText() in CURATABLE_TYPES }
-                .singleOrNull()
-                ?.path("id")?.takeIf(JsonNode::isTextual)?.asText()
-                ?: return
-            httpClient.patch("$baseUrl/v1/default/banks/$bankId/memories/$target") {
-                authenticated()
-                setBody(mapOf("state" to "invalidated", "reason" to "explicit_forget"))
-            }.requireSuccess()
-            l.info("Hindsight: invalidated memory {} on explicit forget for bank {}", target, bankId)
+            val match = recallSingleCuratable(bankId, query) ?: return
+            if (hardDelete) {
+                val documentId = match.path("document_id").takeIf(JsonNode::isTextual)?.asText()?.takeIf { it.isNotBlank() }
+                    ?: return
+                httpClient.delete("$baseUrl/v1/default/banks/$bankId/documents/$documentId") { authenticated() }
+                    .requireSuccess()
+                l.info("Hindsight: deleted source document {} and its facts on explicit delete for bank {}", documentId, bankId)
+            } else {
+                val factId = match.path("id").takeIf(JsonNode::isTextual)?.asText() ?: return
+                httpClient.patch("$baseUrl/v1/default/banks/$bankId/memories/$factId") {
+                    authenticated()
+                    setBody(mapOf("state" to "invalidated", "reason" to "explicit_forget"))
+                }.requireSuccess()
+                l.info("Hindsight: invalidated memory {} on explicit forget for bank {}", factId, bankId)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            l.warn("Hindsight forget failed for bank {}: {}", bankId, e.message)
+            l.warn("Hindsight forget (hardDelete={}) failed for bank {}: {}", hardDelete, bankId, e.message)
         }
+    }
+
+    private suspend fun recallSingleCuratable(bankId: String, query: String): JsonNode? {
+        val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories/recall") {
+            authenticated()
+            setBody(
+                mapOf(
+                    "query" to query,
+                    "types" to CURATABLE_TYPES.toList(),
+                    "max_tokens" to recallTokenBudget(MemorySearchPolicy.DEFAULT_MAX_FACTS),
+                )
+            )
+        }.requireSuccess().body<JsonNode>()
+        return response.path("results")
+            .filter { it.path("type").asText() in CURATABLE_TYPES }
+            .singleOrNull()
     }
 
     private fun HttpRequestBuilder.authenticated() {
