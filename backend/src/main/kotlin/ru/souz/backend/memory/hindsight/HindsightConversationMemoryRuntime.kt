@@ -37,8 +37,8 @@ import ru.souz.memory.parseExplicitMemoryIntent
  */
 private const val TOKENS_PER_FACT_BUDGET = 200
 
-/** Minimum recall score for a memory to be invalidated on an explicit forget request. */
-private const val FORGET_MIN_SCORE = 0.6f
+/** Memory types Hindsight lets us curate; observations are derived and reject PATCH. */
+private val CURATABLE_TYPES = setOf("world", "experience")
 
 /** Prepended to the recalled block so the model treats memory as data, never as instructions. */
 private const val UNTRUSTED_MEMORY_NOTICE =
@@ -156,26 +156,33 @@ class HindsightConversationMemoryRuntime(
     }
 
     /**
-     * Best-effort forget: Hindsight has no delete-by-query, so recall the target text and soft-
-     * invalidate the confident matches ([FORGET_MIN_SCORE]) via PATCH `state=invalidated`, which
-     * excludes them from future recall/consolidation.
+     * Best-effort forget. Hindsight has no delete-by-query, and `scores.final` is a relative
+     * ranking signal rather than a confidence, so — mirroring MemoryService.confidentForgetMatch —
+     * act only when recall pins a *single* curatable ([CURATABLE_TYPES]) fact, and soft-retire it
+     * via PATCH `state=invalidated` (excluded from recall/consolidation/graph, kept for audit).
      */
     private suspend fun invalidateMatching(bankId: String, query: String) {
         try {
             val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories/recall") {
                 authenticated()
-                setBody(mapOf("query" to query, "max_tokens" to recallTokenBudget(MemorySearchPolicy.DEFAULT_MAX_FACTS)))
+                setBody(
+                    mapOf(
+                        "query" to query,
+                        "types" to CURATABLE_TYPES.toList(),
+                        "max_tokens" to recallTokenBudget(MemorySearchPolicy.DEFAULT_MAX_FACTS),
+                    )
+                )
             }.requireSuccess().body<JsonNode>()
-            val ids = response.path("results")
-                .filter { it.finalScore() >= FORGET_MIN_SCORE }
-                .mapNotNull { it.path("id").takeIf(JsonNode::isTextual)?.asText() }
-            ids.forEach { id ->
-                httpClient.patch("$baseUrl/v1/default/banks/$bankId/memories/$id") {
-                    authenticated()
-                    setBody(mapOf("state" to "invalidated", "reason" to "explicit_forget"))
-                }.requireSuccess()
-            }
-            if (ids.isNotEmpty()) l.info("Hindsight: invalidated {} memories on forget for bank {}", ids.size, bankId)
+            val target = response.path("results")
+                .filter { it.path("type").asText() in CURATABLE_TYPES }
+                .singleOrNull()
+                ?.path("id")?.takeIf(JsonNode::isTextual)?.asText()
+                ?: return
+            httpClient.patch("$baseUrl/v1/default/banks/$bankId/memories/$target") {
+                authenticated()
+                setBody(mapOf("state" to "invalidated", "reason" to "explicit_forget"))
+            }.requireSuccess()
+            l.info("Hindsight: invalidated memory {} on explicit forget for bank {}", target, bankId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {

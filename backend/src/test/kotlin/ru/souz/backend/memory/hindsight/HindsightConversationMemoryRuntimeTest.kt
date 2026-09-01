@@ -103,19 +103,29 @@ class HindsightConversationMemoryRuntimeTest {
     }
 
     @Test
-    fun `forget intent recalls then invalidates confident matches`() = runTest {
-        responder = handler@{ request ->
+    fun `forget invalidates a single curatable recall match and never retains`() = runTest {
+        responder = { request ->
             if (request.url.encodedPath.endsWith("/recall")) {
-                return@handler respondJson(
-                    """{"results":[{"id":"m1","text":"x","scores":{"final":0.9}},{"id":"m2","text":"y","scores":{"final":0.1}}]}"""
-                )
+                respondJson("""{"results":[{"id":"m1","text":"x","type":"world"}]}""")
+            } else {
+                respondJson("""{"ok":true}""")
             }
-            respondJson("""{"ok":true}""")
         }
         runtime().captureCompletedTurn(turn("u", "forget that my address is X"))
 
         val patched = recorded.filter { it.first == "PATCH" }.map { it.second.substringAfterLast("/memories/") }
-        assertEquals(listOf("m1"), patched, "only the high-score match should be invalidated")
-        assertTrue(recorded.none { it.first == "POST" && it.second.endsWith("/memories") }, "forget must not also retain")
+        assertEquals(listOf("m1"), patched)
+        assertTrue(recorded.none { it.first == "POST" && it.second.endsWith("/memories") }, "forget must not retain")
+    }
+
+    @Test
+    fun `forget does nothing when the target is ambiguous or an observation`() = runTest {
+        responder = {
+            respondJson(
+                """{"results":[{"id":"a","text":"x","type":"world"},{"id":"b","text":"y","type":"world"},{"id":"o","text":"z","type":"observation"}]}"""
+            )
+        }
+        runtime().captureCompletedTurn(turn("u", "forget that my address is X"))
+        assertTrue(recorded.none { it.first == "PATCH" })
     }
 }

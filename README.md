@@ -381,7 +381,7 @@ Confirmation-related flows:
 
 ## Memory
 
-The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime; the backend currently uses the no-op implementation.
+The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime. The backend uses the no-op runtime unless `HINDSIGHT_API_URL` and `HINDSIGHT_API_TOKEN` are both set, in which case it bridges recall / `SearchMemory` / completed-turn capture to a self-hosted [Hindsight](https://hindsight.vectorize.io) instance, one bank per user. The bridge targets Hindsight's standalone REST API ([reference](https://hindsight.vectorize.io/api-reference)) — `POST /v1/default/banks/{bank}/memories` (retain, auto-creates the bank), `POST .../memories/recall`, and `PATCH .../memories/{id}` for explicit-forget invalidation. It redacts secrets before retain, honours explicit do-not-capture / forget intent, and prefixes recalled text with the untrusted-memory notice.
 
 Memory flow:
 
