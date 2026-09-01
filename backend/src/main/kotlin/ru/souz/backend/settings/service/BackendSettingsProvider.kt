@@ -160,12 +160,27 @@ class BackendSettingsProvider(
     private fun storedOrConfigured(key: String): String? =
         when (val stored = preferenceStore.get(key)) {
             null -> configured(key)
-            "" -> null
+            "" -> configuredAfterRejectedBundleReplacement(key)
             else -> stored
         }
 
     private fun putOrTombstone(key: String, value: String?) {
-        preferenceStore.put(key, value ?: "")
+        if (value == null) {
+            // Persist the rejected deployment token first so an interrupted tombstone stays recoverable.
+            preferenceStore.put(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN, configured(CODEX_REFRESH_TOKEN).orEmpty())
+            preferenceStore.put(key, "")
+        } else {
+            preferenceStore.put(key, value)
+            if (key == CODEX_ACCESS_TOKEN) preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
+        }
+    }
+
+    private fun configuredAfterRejectedBundleReplacement(key: String): String? {
+        val rejectedRefreshToken = preferenceStore.get(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN) ?: return null
+        if (configured(CODEX_REFRESH_TOKEN).orEmpty() == rejectedRefreshToken) return null
+        CODEX_CREDENTIAL_KEYS.forEach(preferenceStore::remove)
+        preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
+        return configured(key)
     }
 
     private fun normalizeRegion(value: String?): String =
@@ -186,6 +201,7 @@ class BackendSettingsProvider(
         const val CODEX_REFRESH_TOKEN = "CODEX_REFRESH_TOKEN"
         const val CODEX_ACCOUNT_ID = "CODEX_ACCOUNT_ID"
         const val CODEX_EXPIRES_AT = "CODEX_EXPIRES_AT"
+        const val CODEX_REJECTED_DEPLOY_REFRESH_TOKEN = "CODEX_REJECTED_DEPLOY_REFRESH_TOKEN"
         const val APP_LANGUAGE = "APP_LANGUAGE"
         const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         const val USE_STREAMING = "USE_STREAMING"
@@ -211,6 +227,12 @@ class BackendSettingsProvider(
         const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
         const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
+        val CODEX_CREDENTIAL_KEYS = listOf(
+            CODEX_ACCESS_TOKEN,
+            CODEX_REFRESH_TOKEN,
+            CODEX_ACCOUNT_ID,
+            CODEX_EXPIRES_AT,
+        )
         val DEFAULT_FORBIDDEN_FOLDERS = listOf(
             "~/Library/",
             "~/.bash_history",

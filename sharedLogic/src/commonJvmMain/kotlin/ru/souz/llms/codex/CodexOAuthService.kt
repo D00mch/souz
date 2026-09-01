@@ -204,6 +204,9 @@ class CodexOAuthService(
         }
         val accountId = extractAccountId(accessToken)
         if (fresh && (accountId == null || rotatedRefreshToken == null)) return null
+        // Access is the desktop connectivity marker. Keep a fresh login disconnected until every
+        // other credential field is durable, including when replacing an existing login.
+        if (fresh) settingsProvider.codexAccessToken = null
         // The provider rotates and immediately invalidates the old refresh token, so persist the
         // rotated one FIRST: if a later write (or the process) dies, we're left holding a usable
         // refresh token rather than a fresh access token paired with an already-burned one.
@@ -211,10 +214,11 @@ class CodexOAuthService(
             settingsProvider.codexRefreshToken = rotatedRefreshToken
             l.info("Codex: refresh token rotated and persisted")
         }
-        settingsProvider.codexAccessToken = accessToken
+        if (!fresh) settingsProvider.codexAccessToken = accessToken
         // On a fresh login accountId is non-null here; on a refresh, keep the stored one on a miss.
         if (accountId != null) settingsProvider.codexAccountId = accountId
         settingsProvider.codexExpiresAt = System.currentTimeMillis() / 1000 + expiresIn
+        if (fresh) settingsProvider.codexAccessToken = accessToken
         return accessToken
     }
 
