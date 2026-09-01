@@ -13,6 +13,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.memory.CompletedTurnMemoryInput
@@ -148,10 +149,13 @@ class HindsightConversationMemoryRuntime(
      */
     private fun recallTokenBudget(maxFacts: Int): Int = maxFacts * TOKENS_PER_FACT_BUDGET
 
+    /**
+     * Bank id per owner. Must be injective — a lossy filter would map distinct owners (`user1`,
+     * `user_1`) onto the same bank and leak memory between them — so hash the raw owner id.
+     */
     private fun bankIdFor(ownerId: MemoryOwnerId): String {
-        val sanitized = ownerId.value.filter { it.isLetterOrDigit() || it == '-' }
-        val safe = sanitized.ifEmpty { ownerId.value.hashCode().toUInt().toString(16) }
-        return "souz-$safe"
+        val digest = MessageDigest.getInstance("SHA-256").digest(ownerId.value.toByteArray(Charsets.UTF_8))
+        return "souz-" + digest.take(16).joinToString("") { "%02x".format(it) }
     }
 
     private fun JsonNode.memoryText(): String? =
