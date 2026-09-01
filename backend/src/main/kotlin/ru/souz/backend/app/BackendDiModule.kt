@@ -123,6 +123,8 @@ fun backendDiModule(
 
     import(runtimeCoreDiModule(bindSettingsProvider = false))
     import(
+        // BackendToolCapabilityPolicy denies WebImageSearch anyway; skipping construction keeps its
+        // downloader off the backend classpath instead of relying on the filter alone.
         runtimeToolsDiModule(
             includeWebImageSearch = false,
             scopeResolver = BackendSandboxScopeResolver,
@@ -376,7 +378,7 @@ fun backendDiModule(
     bindSingleton { ToolSendMessageToChannel(registry = instance()) }
     bindSingleton { BackendChannelToolCatalog(instance(), instance()) }
     bindSingleton<AgentToolCatalog>(tag = BackendDiTags.MERGED_TOOL_CATALOG) {
-        composeToolCatalogs(listOf(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>()))
+        composeToolCatalogs(instance<RuntimeToolsFactory>(), instance<BackendChannelToolCatalog>())
     }
     bindSingleton {
         OptionService(

@@ -62,32 +62,30 @@ fun DI.Builder.bindRuntimeToolsFactory(
 }
 
 class RuntimeToolsFactory(
-    private val portableToolsFactory: PortableRuntimeToolsFactory,
-    private val toolExtractText: ToolExtractText,
-    private val toolReadPdfPages: ToolReadPdfPages,
-    private val toolCreatePlotFromCsv: ToolCreatePlotFromCsv,
-    private val excelRead: ExcelRead,
-    private val excelReport: ExcelReport,
-    private val toolWebImageSearch: ToolWebImageSearch?,
+    portableToolsFactory: PortableRuntimeToolsFactory,
+    toolExtractText: ToolExtractText,
+    toolReadPdfPages: ToolReadPdfPages,
+    toolCreatePlotFromCsv: ToolCreatePlotFromCsv,
+    excelRead: ExcelRead,
+    excelReport: ExcelReport,
+    toolWebImageSearch: ToolWebImageSearch?,
 ) : AgentToolCatalog {
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
         composeToolCatalogs(
-            listOf(
-                portableToolsFactory,
-                immutableToolCatalogFromLists(
-                    mapOf(
-                        ToolCategory.FILES to listOf(
-                            toolExtractText.toGiga(),
-                            toolReadPdfPages.toGiga(),
-                        ),
-                        ToolCategory.WEB_SEARCH to listOfNotNull(toolWebImageSearch?.toGiga()),
-                        ToolCategory.DATA_ANALYTICS to listOf(
-                            toolCreatePlotFromCsv.toGiga(),
-                            excelRead.toGiga(),
-                            excelReport.toGiga(),
-                        ),
-                    )
-                ),
-            )
+            portableToolsFactory,
+            immutableToolCatalogFromLists(
+                mapOf(
+                    ToolCategory.FILES to listOf(
+                        toolExtractText.toGiga(),
+                        toolReadPdfPages.toGiga(),
+                    ),
+                    ToolCategory.WEB_SEARCH to listOfNotNull(toolWebImageSearch?.toGiga()),
+                    ToolCategory.DATA_ANALYTICS to listOf(
+                        toolCreatePlotFromCsv.toGiga(),
+                        excelRead.toGiga(),
+                        excelReport.toGiga(),
+                    ),
+                )
+            ),
         ).toolsByCategory
 }

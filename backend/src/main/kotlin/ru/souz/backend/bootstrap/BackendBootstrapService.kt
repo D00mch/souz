@@ -1,8 +1,8 @@
 package ru.souz.backend.bootstrap
 
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.backend.common.BackendAvailableToolNames
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.common.BackendToolCapabilityPolicy
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.llm.hasCompleteCodexOAuthCredentials
@@ -17,26 +17,13 @@ import ru.souz.llms.LocalModelAvailability
 class BackendBootstrapService(
     private val settingsProvider: SettingsProvider,
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
-    private val availableToolNames: BackendAvailableToolNames,
+    toolCatalog: AgentToolCatalog,
     private val featureFlags: BackendFeatureFlags,
     private val localModelAvailability: LocalModelAvailability,
     private val userProviderKeyRepository: UserProviderKeyRepository,
 ) {
-    constructor(
-        settingsProvider: SettingsProvider,
-        effectiveSettingsResolver: EffectiveSettingsResolver,
-        toolCatalog: AgentToolCatalog,
-        featureFlags: BackendFeatureFlags,
-        localModelAvailability: LocalModelAvailability,
-        userProviderKeyRepository: UserProviderKeyRepository,
-    ) : this(
-        settingsProvider = settingsProvider,
-        effectiveSettingsResolver = effectiveSettingsResolver,
-        availableToolNames = BackendAvailableToolNames.fromProcessCatalog(toolCatalog),
-        featureFlags = featureFlags,
-        localModelAvailability = localModelAvailability,
-        userProviderKeyRepository = userProviderKeyRepository,
-    )
+    private val advertisedToolNames: Set<String> =
+        BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
     suspend fun response(identity: RequestIdentity): BootstrapResponse {
         val buildProfile = LlmBuildProfile(settingsProvider, localModelAvailability)
@@ -76,7 +63,7 @@ class BackendBootstrapService(
                         }
                     }
                     .map { modelCapability(it, userManagedProviders) },
-                tools = availableToolNames.values.sorted().map { toolName ->
+                tools = advertisedToolNames.map { toolName ->
                     BootstrapToolCapability(name = toolName, enabled = true)
                 },
             ),

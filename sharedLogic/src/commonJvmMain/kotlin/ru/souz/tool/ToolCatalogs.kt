@@ -58,7 +58,7 @@ class LlmBackedToolCatalog(
 }
 
 fun composeToolCatalogs(
-    catalogs: List<AgentToolCatalog>,
+    vararg catalogs: AgentToolCatalog,
     allowLaterSourceOverrides: Boolean = false,
 ): AgentToolCatalog {
     val toolsByCategory = ToolCategory.entries.associateWith { linkedMapOf<String, LLMToolSetup>() }
@@ -73,18 +73,14 @@ fun composeToolCatalogs(
                 }
                 val duplicateSourceCategory = sourceCategoryByToolName.putIfAbsent(toolName, category)
                 require(duplicateSourceCategory == null) {
-                    "Duplicate tool name '$toolName' in one source across categories " +
-                        "$duplicateSourceCategory and $category."
+                    "Duplicate tool name '$toolName' in one source across categories $duplicateSourceCategory and $category."
                 }
-                val previousCategory = categoryByToolName[toolName]
-                if (previousCategory != null && !allowLaterSourceOverrides) {
-                    error("Duplicate tool name '$toolName' in categories $previousCategory and $category.")
+                val previousCategory = categoryByToolName.put(toolName, category)
+                check(previousCategory == null || allowLaterSourceOverrides) {
+                    "Duplicate tool name '$toolName' in categories $previousCategory and $category."
                 }
-                if (previousCategory != null) {
-                    toolsByCategory.getValue(previousCategory).remove(toolName)
-                }
+                previousCategory?.let { toolsByCategory.getValue(it).remove(toolName) }
                 toolsByCategory.getValue(category)[toolName] = tool
-                categoryByToolName[toolName] = category
             }
         }
     }
@@ -94,39 +90,33 @@ fun composeToolCatalogs(
 
 fun immutableToolCatalogFromLists(
     toolsByCategory: Map<ToolCategory, List<LLMToolSetup>>,
-): AgentToolCatalog {
-    val catalog = object : AgentToolCatalog {
-        override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> =
-            ToolCategory.entries.associateWith { category ->
-                val tools = toolsByCategory[category].orEmpty()
-                val duplicateNames = tools.groupingBy { it.fn.name }.eachCount().filterValues { it > 1 }.keys
-                require(duplicateNames.isEmpty()) { "Duplicate tool names: ${duplicateNames.joinToString()}." }
-                tools.associateByTo(linkedMapOf()) { it.fn.name }
-            }
+): AgentToolCatalog = immutableToolCatalogSnapshot(
+    ToolCategory.entries.associateWith { category ->
+        val tools = toolsByCategory[category].orEmpty()
+        val duplicateNames = tools.groupingBy { it.fn.name }.eachCount().filterValues { it > 1 }.keys
+        require(duplicateNames.isEmpty()) { "Duplicate tool names: ${duplicateNames.joinToString()}." }
+        tools.associateByTo(linkedMapOf()) { it.fn.name }
     }
-    return composeToolCatalogs(listOf(catalog))
-}
+)
 
 fun immutableToolCatalogSnapshot(
     toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
 ): AgentToolCatalog {
-    val immutableCategories = linkedMapOf<ToolCategory, Map<String, LLMToolSetup>>()
     val categoryByToolName = linkedMapOf<String, ToolCategory>()
-    ToolCategory.entries.forEach { category ->
-        toolsByCategory[category].orEmpty().forEach { (toolName, tool) ->
-            require(toolName == tool.fn.name) {
-                "Tool catalog key '$toolName' does not match function name '${tool.fn.name}'."
+    val immutableSnapshot = Collections.unmodifiableMap(
+        ToolCategory.entries.associateWithTo(linkedMapOf()) { category ->
+            toolsByCategory[category].orEmpty().forEach { (toolName, tool) ->
+                require(toolName == tool.fn.name) {
+                    "Tool catalog key '$toolName' does not match function name '${tool.fn.name}'."
+                }
+                val previousCategory = categoryByToolName.putIfAbsent(toolName, category)
+                require(previousCategory == null) {
+                    "Duplicate tool name '$toolName' in categories $previousCategory and $category."
+                }
             }
-            val previousCategory = categoryByToolName.putIfAbsent(toolName, category)
-            require(previousCategory == null) {
-                "Duplicate tool name '$toolName' in categories $previousCategory and $category."
-            }
+            Collections.unmodifiableMap(LinkedHashMap(toolsByCategory[category].orEmpty()))
         }
-        immutableCategories[category] = Collections.unmodifiableMap(
-            LinkedHashMap(toolsByCategory[category].orEmpty())
-        )
-    }
-    val immutableSnapshot = Collections.unmodifiableMap(immutableCategories)
+    )
     return object : AgentToolCatalog {
         override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>> = immutableSnapshot
     }

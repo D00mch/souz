@@ -13,9 +13,7 @@ class ToolsFactory(
     override val toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>
 
     init {
-        val composed = composeToolCatalogs(
-            listOf(runtimeToolCatalog, llmBackedToolCatalog, desktopToolCatalog)
-        )
+        val composed = composeToolCatalogs(runtimeToolCatalog, llmBackedToolCatalog, desktopToolCatalog)
         toolsByCategory = immutableToolCatalogSnapshot(
             ToolCategory.entries.associateWith { category ->
                 composed.toolsByCategory.getValue(category).mapValues { (_, tool) ->

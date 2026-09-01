@@ -138,7 +138,7 @@ internal class BackendConversationRuntimeFactory(
             visionGateway = visionGateway,
             imageGenerationGateway = imageGenerationGateway,
         )
-        val executionToolCatalog = BackendExecutionToolCatalog(
+        val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
             executionLlmToolCatalog = executionLlmToolCatalog,
             enabledCompiledToolNames = request.enabledTools,

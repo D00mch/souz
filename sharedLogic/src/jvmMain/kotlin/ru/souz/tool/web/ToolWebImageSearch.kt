@@ -51,7 +51,7 @@ class ToolWebImageSearch(
         val outputDir: String? = null,
     )
 
-    override val name: String = "WebImageSearch"
+    override val name: String = NAME
     override val description: String =
         "Searches for image candidates by topic and optionally downloads them to local files."
 
@@ -110,5 +110,9 @@ class ToolWebImageSearch(
                 },
             )
         )
+    }
+
+    companion object {
+        const val NAME = "WebImageSearch"
     }
 }
