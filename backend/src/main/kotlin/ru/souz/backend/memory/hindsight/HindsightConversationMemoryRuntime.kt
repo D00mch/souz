@@ -92,7 +92,7 @@ class HindsightConversationMemoryRuntime(
         ConversationMemoryRuntime.SearchFact(
             factId = item.id,
             scope = item.scope(context),
-            kind = item.type,
+            kind = item.type ?: "memory",
             title = item.text.take(80),
             body = item.text,
             score = item.score,
@@ -202,7 +202,7 @@ class HindsightConversationMemoryRuntime(
     }
 
     private fun RecalledMemory.scope(context: MemoryContext): String =
-        if (tags.any { it in context.chatTags() }) "session" else "global"
+        if (tags.orEmpty().any { it in context.chatTags() }) "session" else "global"
 
     private fun RecalledMemory.toPromptFact(context: MemoryContext): MemoryPromptFact = MemoryPromptFact(
         factId = id,
@@ -218,8 +218,8 @@ private data class RecallResponse(val results: List<RecalledMemory>)
 private data class RecalledMemory(
     val id: String,
     val text: String,
-    val type: String,
-    val tags: List<String> = emptyList(),
+    val type: String? = null,
+    val tags: List<String>? = null,
     val scores: Map<String, Float?>? = null,
 ) {
     init {
