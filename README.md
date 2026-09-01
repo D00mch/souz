@@ -381,12 +381,12 @@ Confirmation-related flows:
 
 ## Memory
 
-The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime. The backend uses the no-op runtime unless `HINDSIGHT_API_URL` and `HINDSIGHT_API_TOKEN` are both set, in which case it bridges recall / `SearchMemory` / completed-turn capture to a self-hosted [Hindsight](https://hindsight.vectorize.io) instance, one bank per user. The bridge targets Hindsight's standalone REST API ([reference](https://hindsight.vectorize.io/api-reference)) — `POST /v1/default/banks/{bank}/memories` (retain, auto-creates the bank), `POST .../memories/recall`, `PATCH .../memories/{id}` to invalidate on "forget", and `DELETE .../documents/{id}` to erase the source turn on "delete from memory". It redacts secrets before retain, honours explicit do-not-capture / forget / delete intent, and prefixes recalled text with the untrusted-memory notice.
+The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime. The backend uses the no-op runtime unless `HINDSIGHT_API_URL` and `HINDSIGHT_API_TOKEN` are both set, in which case it bridges recall, `SearchMemory`, and completed-turn capture to a self-hosted [Hindsight](https://hindsight.vectorize.io) instance with one bank per user. Ordinary turns remain conversation-scoped, explicit remember turns are global, and retained content is limited to redacted user and tool evidence. Natural-language forget or delete requests report exact-ID deletion as unavailable instead of mutating a semantic recall hit or claiming success.
 
 Memory flow:
 
 - `NodesMemory` recalls facts relevant to the current user input and injects them as a tagged memory block before tool setup.
-- Completed turns are captured asynchronously after successful finalization, with user text, assistant synthesis, and bounded tool-output evidence.
+- Completed turns are handed to the host memory runtime asynchronously after successful finalization; each runtime selects the grounded fields it persists.
 - The memory model supports global, project, and session scopes. Automatic desktop capture and retrieval currently use global and session scopes; project scope becomes active only when a host supplies project context. Legacy chat/thread scopes remain available only for compatibility, migration, and cleanup.
 - Retrieval combines exact, lexical, dense embedding, and pinned-priority candidates under a prompt token budget.
 - Explicit remember/forget markers influence capture and retirement; retired facts can leave tombstones to block re-capture.

@@ -1,5 +1,6 @@
 package ru.souz.backend.app
 
+import java.net.URI
 import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
@@ -164,6 +165,11 @@ data class BackendAppConfig(
                     "must be set together."
             )
         }
+        if (hindsightApiUrl != null && !hindsightApiUrl.isHindsightBaseUrl()) {
+            throw BackendConfigurationException(
+                "HINDSIGHT_API_URL / souz.hindsight.apiUrl must be an absolute HTTP(S) URL without a query or fragment."
+            )
+        }
         // Skill OAuth config (skillOAuthTokenEncryptionKey/skillOAuthProviderCredentials) is
         // intentionally not validated here — it is unconditionally wired in BackendDiModule (no
         // feature flag), but each value is only required lazily at the point it's actually used
@@ -281,6 +287,15 @@ data class BackendAppConfig(
             )
     }
 }
+
+private fun String.isHindsightBaseUrl(): Boolean = runCatching { URI(this) }.getOrNull()?.let { uri ->
+    uri.scheme?.lowercase() in setOf("http", "https") &&
+        uri.host != null &&
+        uri.port in -1..65_535 &&
+        uri.rawUserInfo == null &&
+        uri.rawQuery == null &&
+        uri.rawFragment == null
+} == true
 
 private fun BackendConfigSource.postgresConfig(): BackendPostgresConfig {
     val dsn = value(
