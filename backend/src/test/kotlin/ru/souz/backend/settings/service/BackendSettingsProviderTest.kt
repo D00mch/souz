@@ -36,8 +36,8 @@ class BackendSettingsProviderTest {
 
         provider.codexAccessToken = null
 
-        assertFalse("CODEX_ACCESS_TOKEN" in store.values)
-        assertEquals("env-access", provider.codexAccessToken)
+        assertEquals("", store.values.getValue("CODEX_ACCESS_TOKEN"))
+        assertNull(provider.codexAccessToken)
     }
 
     @Test

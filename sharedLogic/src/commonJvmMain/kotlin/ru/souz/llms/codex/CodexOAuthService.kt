@@ -131,29 +131,34 @@ class CodexOAuthService(
     private suspend fun refreshToken(): String {
         val refreshToken = settingsProvider.codexRefreshToken
             ?: error("Codex: refresh token is missing")
-        return try {
-            val body = buildString {
-                append("grant_type=refresh_token")
-                append("&refresh_token=${refreshToken.urlEncode()}")
-                append("&client_id=${CLIENT_ID.urlEncode()}")
-                append("&scope=openid%20profile%20email")
-            }
-            val response = client.post(OAUTH_TOKEN_URL) {
+        val body = "grant_type=refresh_token&refresh_token=${refreshToken.urlEncode()}" +
+            "&client_id=${CLIENT_ID.urlEncode()}&scope=openid%20profile%20email"
+        val response = try {
+            client.post(OAUTH_TOKEN_URL) {
                 timeout { requestTimeoutMillis = OAUTH_REQUEST_TIMEOUT_MILLIS }
                 contentType(ContentType.Application.FormUrlEncoded)
                 setBody(body)
             }
-            if (response.status.isSuccess()) {
-                parseAndStoreTokens(response.bodyAsText())
-                    ?: error("Codex: token refresh failed")
-            } else {
-                error("Codex: token refresh failed: ${response.status} ${response.bodyAsText()}")
-            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // Transient (network/timeout): stored credentials stay intact, next call retries.
             throw IllegalStateException("Codex: token refresh failed", e)
         }
+        val text = response.bodyAsText()
+        if (response.status.isSuccess()) {
+            return parseAndStoreTokens(text, fresh = false) ?: error("Codex: token refresh failed")
+        }
+        // A reused/expired refresh token is terminal: clear the stored credential (null writes a
+        // tombstone) so it reads as disconnected everywhere instead of retrying forever.
+        if ("refresh_token_reused" in text || "invalid_grant" in text) {
+            settingsProvider.codexAccessToken = null
+            settingsProvider.codexRefreshToken = null
+            settingsProvider.codexAccountId = null
+            settingsProvider.codexExpiresAt = null
+            _oauthState.value = CodexOAuthState.Error("Codex: re-authentication required")
+        }
+        error("Codex: token refresh failed: ${response.status} $text")
     }
 
     private suspend fun exchangeCodeForTokens(authorizationCode: String, codeVerifier: String) {
@@ -174,26 +179,47 @@ class CodexOAuthService(
             _oauthState.value = CodexOAuthState.Error("Token exchange failed: ${response.status} $text")
             return
         }
-        parseAndStoreTokens(response.bodyAsText())
+        val responseBody = response.bodyAsText()
+        if (refreshMutex.withLock { parseAndStoreTokens(responseBody, fresh = true) } == null) {
+            _oauthState.value = CodexOAuthState.Error("Token exchange failed: missing required credentials")
+            return
+        }
         _oauthState.value = CodexOAuthState.Success(accountId = settingsProvider.codexAccountId ?: "")
     }
 
-    /** Parses token response, persists to SettingsProvider, returns access token. */
-    private fun parseAndStoreTokens(responseBody: String): String? {
+    /**
+     * Parses a token response, persists it, returns the access token. A [fresh] device-flow
+     * exchange requires an account id and refresh token; a refresh keeps either stored value
+     * when the response omits it.
+     */
+    private fun parseAndStoreTokens(responseBody: String, fresh: Boolean): String? {
         val data = runCatching { restJsonMapper.readValue<Map<String, Any>>(responseBody) }.getOrNull()
             ?: return null
-        val accessToken = data["access_token"] as? String ?: return null
-        val refreshToken = data["refresh_token"] as? String
+        val accessToken = (data["access_token"] as? String)?.takeIf(String::isNotBlank) ?: return null
+        // A refresh response MAY omit refresh_token (RFC 6749 §6) — keep the current one then.
+        val rotatedRefreshToken = (data["refresh_token"] as? String)?.takeIf { it.isNotBlank() }
         val expiresIn = when (val v = data["expires_in"]) {
             is Number -> v.toLong()
             is String -> v.toLongOrNull() ?: 3600L
             else -> 3600L
         }
         val accountId = extractAccountId(accessToken)
-        settingsProvider.codexAccessToken = accessToken
-        settingsProvider.codexRefreshToken = refreshToken
-        settingsProvider.codexAccountId = accountId
+        if (fresh && (accountId == null || rotatedRefreshToken == null)) return null
+        // Access is the desktop connectivity marker. Keep a fresh login disconnected until every
+        // other credential field is durable, including when replacing an existing login.
+        if (fresh) settingsProvider.codexAccessToken = null
+        // The provider rotates and immediately invalidates the old refresh token, so persist the
+        // rotated one FIRST: if a later write (or the process) dies, we're left holding a usable
+        // refresh token rather than a fresh access token paired with an already-burned one.
+        if (rotatedRefreshToken != null && rotatedRefreshToken != settingsProvider.codexRefreshToken) {
+            settingsProvider.codexRefreshToken = rotatedRefreshToken
+            l.info("Codex: refresh token rotated and persisted")
+        }
+        if (!fresh) settingsProvider.codexAccessToken = accessToken
+        // On a fresh login accountId is non-null here; on a refresh, keep the stored one on a miss.
+        if (accountId != null) settingsProvider.codexAccountId = accountId
         settingsProvider.codexExpiresAt = System.currentTimeMillis() / 1000 + expiresIn
+        if (fresh) settingsProvider.codexAccessToken = accessToken
         return accessToken
     }
 

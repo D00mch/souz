@@ -114,10 +114,10 @@ class SettingsProviderImpl(
     override var openaiKey: String? by keyDelegate(configKey = OPENAI_KEY, envKey = "OPENAI_API_KEY")
     override var openaiBaseUrl: String? by keyDelegate(configKey = OPENAI_BASE_URL, envKey = OPENAI_BASE_URL)
     override var openaiModel: String? by keyDelegate(configKey = OPENAI_MODEL, envKey = OPENAI_MODEL)
-    override var codexAccessToken: String? by keyDelegate(configKey = CODEX_ACCESS_TOKEN, envKey = CODEX_ACCESS_TOKEN)
-    override var codexRefreshToken: String? by keyDelegate(configKey = CODEX_REFRESH_TOKEN, envKey = CODEX_REFRESH_TOKEN)
-    override var codexAccountId: String? by keyDelegate(configKey = CODEX_ACCOUNT_ID, envKey = CODEX_ACCOUNT_ID)
-    private var _codexExpiresAtDelegate: String? by keyDelegate(configKey = CODEX_EXPIRES_AT, envKey = CODEX_EXPIRES_AT)
+    override var codexAccessToken: String? by tombstoningKeyDelegate(CODEX_ACCESS_TOKEN)
+    override var codexRefreshToken: String? by tombstoningKeyDelegate(CODEX_REFRESH_TOKEN)
+    override var codexAccountId: String? by tombstoningKeyDelegate(CODEX_ACCOUNT_ID)
+    private var _codexExpiresAtDelegate: String? by tombstoningKeyDelegate(CODEX_EXPIRES_AT)
     override var codexExpiresAt: Long?
         get() = _codexExpiresAtDelegate?.toLongOrNull()
         set(value) { _codexExpiresAtDelegate = value?.toString() }
@@ -130,7 +130,8 @@ class SettingsProviderImpl(
         LlmProvider.ANTHROPIC -> hasConfiguredValue(ANTHROPIC_KEY, "ANTHROPIC_API_KEY")
         LlmProvider.OPENAI -> hasConfiguredValue(OPENAI_KEY, "OPENAI_API_KEY")
         LlmProvider.LOCAL -> true
-        LlmProvider.CODEX -> hasConfiguredValue(CODEX_ACCESS_TOKEN, CODEX_ACCESS_TOKEN)
+        // Goes through tombstoningKeyDelegate so a disconnect tombstone reads as "no key".
+        LlmProvider.CODEX -> !codexAccessToken.isNullOrBlank()
     }
 
     override fun hasKey(provider: VoiceRecognitionProvider): Boolean = when (provider) {
@@ -334,6 +335,23 @@ class SettingsProviderImpl(
                     null, "" -> configStore.rm(configKey)
                     else -> configStore.put(configKey, value)
                 }
+            }
+        }
+
+    // Three persisted states, unlike [keyDelegate]: absent entry -> env/system property; non-blank
+    // entry -> stored value; empty entry -> tombstone (set via null) suppressing that fallback.
+    private fun tombstoningKeyDelegate(key: String) =
+        object : ReadWriteProperty<Any?, String?> {
+
+            override fun getValue(thisRef: Any?, property: KProperty<*>): String? =
+                when (val stored = configStore.get<String>(key)) {
+                    null -> System.getenv(key) ?: System.getProperty(key)
+                    "" -> null
+                    else -> stored
+                }
+
+            override fun setValue(thisRef: Any?, property: KProperty<*>, value: String?) {
+                configStore.put(key, value ?: "")
             }
         }
 

@@ -92,19 +92,19 @@ class BackendSettingsProvider(
 
     override var codexAccessToken: String?
         get() = storedOrConfigured(CODEX_ACCESS_TOKEN)
-        set(value) = putOrRemove(CODEX_ACCESS_TOKEN, value)
+        set(value) = putOrTombstone(CODEX_ACCESS_TOKEN, value)
 
     override var codexRefreshToken: String?
         get() = storedOrConfigured(CODEX_REFRESH_TOKEN)
-        set(value) = putOrRemove(CODEX_REFRESH_TOKEN, value)
+        set(value) = putOrTombstone(CODEX_REFRESH_TOKEN, value)
 
     override var codexAccountId: String?
         get() = storedOrConfigured(CODEX_ACCOUNT_ID)
-        set(value) = putOrRemove(CODEX_ACCOUNT_ID, value)
+        set(value) = putOrTombstone(CODEX_ACCOUNT_ID, value)
 
     override var codexExpiresAt: Long?
         get() = storedOrConfigured(CODEX_EXPIRES_AT)?.toLongOrNull()
-        set(value) = putOrRemove(CODEX_EXPIRES_AT, value?.toString())
+        set(value) = putOrTombstone(CODEX_EXPIRES_AT, value?.toString())
 
     override var gigaModel: LLMModel = configured(GIGA_MODEL)
         ?.let(::findLLMModel)
@@ -156,14 +156,28 @@ class BackendSettingsProvider(
             ?.trim()
             ?.takeIf(String::isNotEmpty)
 
-    private fun storedOrConfigured(key: String): String? =
-        preferenceStore.get(key)?.takeIf(String::isNotBlank) ?: configured(key)
+    private fun storedOrConfigured(key: String): String? {
+        val rejectedRefreshToken = preferenceStore.get(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
+        if (rejectedRefreshToken != null) {
+            if (configured(CODEX_REFRESH_TOKEN).orEmpty() == rejectedRefreshToken) return null
+            CODEX_CREDENTIAL_KEYS.forEach(preferenceStore::remove)
+            preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
+        }
+        return when (val stored = preferenceStore.get(key)) {
+            null -> configured(key)
+            "" -> null
+            else -> stored
+        }
+    }
 
-    private fun putOrRemove(key: String, value: String?) {
-        if (value.isNullOrBlank()) {
-            preferenceStore.remove(key)
+    private fun putOrTombstone(key: String, value: String?) {
+        if (value == null) {
+            // Persist the rejected deployment token first so an interrupted tombstone stays recoverable.
+            preferenceStore.put(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN, configured(CODEX_REFRESH_TOKEN).orEmpty())
+            preferenceStore.put(key, "")
         } else {
             preferenceStore.put(key, value)
+            if (key == CODEX_ACCESS_TOKEN) preferenceStore.remove(CODEX_REJECTED_DEPLOY_REFRESH_TOKEN)
         }
     }
 
@@ -185,6 +199,7 @@ class BackendSettingsProvider(
         const val CODEX_REFRESH_TOKEN = "CODEX_REFRESH_TOKEN"
         const val CODEX_ACCOUNT_ID = "CODEX_ACCOUNT_ID"
         const val CODEX_EXPIRES_AT = "CODEX_EXPIRES_AT"
+        const val CODEX_REJECTED_DEPLOY_REFRESH_TOKEN = "CODEX_REJECTED_DEPLOY_REFRESH_TOKEN"
         const val APP_LANGUAGE = "APP_LANGUAGE"
         const val USE_FEW_SHOTS = "USE_FEW_SHOTS"
         const val USE_STREAMING = "USE_STREAMING"
@@ -210,6 +225,12 @@ class BackendSettingsProvider(
         const val VOICE_RECOGNITION_MODEL = "VOICE_RECOGNITION_MODEL"
         const val MCP_SERVERS_JSON = "MCP_SERVERS_JSON"
         const val MCP_SERVERS_FILE = "MCP_SERVERS_FILE"
+        val CODEX_CREDENTIAL_KEYS = listOf(
+            CODEX_ACCESS_TOKEN,
+            CODEX_REFRESH_TOKEN,
+            CODEX_ACCOUNT_ID,
+            CODEX_EXPIRES_AT,
+        )
         val DEFAULT_FORBIDDEN_FOLDERS = listOf(
             "~/Library/",
             "~/.bash_history",
