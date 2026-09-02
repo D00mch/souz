@@ -1,9 +1,11 @@
 package ru.souz.backend.storage.postgres
 
 import java.sql.Connection
+import java.sql.SQLException
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.client.model.ClientRequest
+import ru.souz.backend.client.repository.ClientRequestCreateResult
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.execution.model.AgentExecution
 
@@ -14,6 +16,16 @@ class PostgresClientRequestRepository(
 
     override suspend fun create(request: ClientRequest): ClientRequest = dataSource.write { connection ->
         insertClientRequest(connection, request)
+    }
+
+    override suspend fun createOrGet(request: ClientRequest): ClientRequestCreateResult = try {
+        ClientRequestCreateResult(create(request), created = true)
+    } catch (error: SQLException) {
+        if (!error.isConstraintViolation(CLIENT_REQUEST_CONSTRAINT)) throw error
+        ClientRequestCreateResult(
+            request = requireNotNull(get(request.chatId, request.requestId)),
+            created = false,
+        )
     }
 
     override suspend fun createWithExecution(

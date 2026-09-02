@@ -56,6 +56,11 @@ internal class PublicClientService(
         var users: Int = 0,
     )
 
+    private sealed interface StartThreadResult {
+        data class Handled(val frame: HandledClientFrame) : StartThreadResult
+        data object Reselect : StartThreadResult
+    }
+
     private val chatRequestLocksMutex = Mutex()
     private val chatRequestLocks = mutableMapOf<UUID, ChatRequestLock>()
 
@@ -91,13 +96,20 @@ internal class PublicClientService(
                 "meta" to frame.payload.meta,
             )
         )
-        clientRequestRepository.get(chat.id, requestId)?.let { stored ->
-            return handledStoredMessage(stored, frame, payloadHash, now, duplicate = true)
+        repeat (2) {
+            clientRequestRepository.get(chat.id, requestId)?.let { stored ->
+                return handledStoredMessage(stored, frame, payloadHash, now, duplicate = true)
+            }
+            val selectedThreadId = requestedThreadId
+                ?: executionRepository.findActive(chat.userId, chat.id)?.id
+            if (selectedThreadId != null) {
+                return continueThread(chat, frame, selectedThreadId, requestId, payloadHash, now)
+            }
+            when (val result = startThread(chat, frame, requestId, payloadHash, now)) {
+                is StartThreadResult.Handled -> return result.frame
+                StartThreadResult.Reselect -> Unit
+            }
         }
-        val selectedThreadId = requestedThreadId
-            ?: executionRepository.findActive(chat.userId, chat.id)?.id
-        return selectedThreadId?.let { continueThread(chat, frame, it, requestId, payloadHash, now) }
-            ?: startThread(chat, frame, requestId, payloadHash, now)
     }
 
     suspend fun handleToolResult(chat: Chat, frame: ToolResultFrame): HandledClientFrame {
@@ -242,7 +254,7 @@ internal class PublicClientService(
         requestId: String,
         payloadHash: String,
         now: Instant,
-    ): HandledClientFrame {
+    ): StartThreadResult {
         val deviceJson = mapper.writeValueAsString(frame.payload.device)
         val metadata = inputMetadata(frame, inputSeq = 1)
         val overrides = requestOverrides(frame.payload.meta)
@@ -281,13 +293,32 @@ internal class PublicClientService(
         } catch (error: Exception) {
             val stored = runCatching { reconcileFailedStart(chat, requestId, threadId) }
                 .getOrElse { throw error }
-            return stored?.let { request ->
-                handledStoredMessage(request, frame, payloadHash, now, duplicate = request.threadId != threadId)
-            } ?: rejectedMessage(
-                chat.id, requestId, "message_rejected", error.message ?: "Message was rejected.", now
+            if (stored != null) {
+                return StartThreadResult.Handled(
+                    handledStoredMessage(
+                        stored, frame, payloadHash, now, duplicate = stored.threadId != threadId,
+                    ),
+                )
+            }
+            if (error is BackendV1Exception && error.code == "chat_already_has_active_execution") {
+                return StartThreadResult.Reselect
+            }
+            return StartThreadResult.Handled(
+                rejectAndStoreMessage(
+                    chatId = chat.id,
+                    frame = frame,
+                    requestId = requestId,
+                    threadId = null,
+                    payloadHash = payloadHash,
+                    code = "message_rejected",
+                    message = error.message ?: "Message was rejected.",
+                    now = now,
+                ),
             )
         }
-        return HandledClientFrame(ack) { registry.ackSent(threadId, requestId) }
+        return StartThreadResult.Handled(
+            HandledClientFrame(ack) { registry.ackSent(threadId, requestId) },
+        )
     }
 
     private suspend fun continueThread(
@@ -586,16 +617,42 @@ internal class PublicClientService(
             !execution.status.isActive() -> "thread_already_terminal" to "Thread is already terminal."
             else -> "message_rejected" to "Thread no longer accepts input."
         }
+        return rejectAndStoreMessage(
+            chatId = chatId,
+            frame = frame,
+            requestId = requestId,
+            threadId = execution?.id,
+            payloadHash = payloadHash,
+            code = code,
+            message = message,
+            now = now,
+        )
+    }
+
+    private suspend fun rejectAndStoreMessage(
+        chatId: UUID,
+        frame: MessageSubmitFrame,
+        requestId: String,
+        threadId: UUID?,
+        payloadHash: String,
+        code: String,
+        message: String,
+        now: Instant,
+    ): HandledClientFrame {
         val handled = rejectedMessage(chatId, requestId, code, message, now)
-        withContext(NonCancellable) {
-            clientRequestRepository.create(
+        val stored = withContext(NonCancellable) {
+            clientRequestRepository.createOrGet(
                 ClientRequest(
-                    chatId, requestId, frame.kind, execution?.id, payloadHash,
+                    chatId, requestId, frame.kind, threadId, payloadHash,
                     mapper.writeValueAsString(handled.response), now,
                 )
             )
         }
-        return handled
+        return if (stored.created) {
+            handled
+        } else {
+            handledStoredMessage(stored.request, frame, payloadHash, now, duplicate = true)
+        }
     }
 
     private fun acceptedTool(chatId: UUID, threadId: UUID, toolCallId: String, duplicate: Boolean, now: Instant) =

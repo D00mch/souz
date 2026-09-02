@@ -17,6 +17,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationSession
@@ -467,6 +469,53 @@ class PostgresRepositoriesTest {
 
             assertNull(repositories.executionRepository.get(chat.userId, rolledBackExecution.id))
             assertEquals(firstRequest, repositories.clientRequestRepository.get(chat.id, firstRequest.requestId))
+        }
+    }
+
+    @Test
+    fun `concurrent client receipt creation returns the stored winner`() = runTest {
+        val schema = newPostgresSchema("postgres_client_receipt_race")
+
+        postgresRepositories(schema).use { repositories ->
+            val chat = chat(UUID.randomUUID().toString(), Instant.parse("2026-05-01T10:00:00Z"))
+            repositories.userRepository.ensureUser(chat.userId)
+            repositories.chatRepository.create(chat)
+            val requests = listOf(
+                ClientRequest(
+                    chatId = chat.id,
+                    requestId = "message-1",
+                    kind = "message.submit",
+                    threadId = null,
+                    payloadHash = "payload-1",
+                    ackJson = """{"winner":1}""",
+                    receivedAt = Instant.parse("2026-05-01T10:01:00Z"),
+                ),
+                ClientRequest(
+                    chatId = chat.id,
+                    requestId = "message-1",
+                    kind = "message.submit",
+                    threadId = null,
+                    payloadHash = "payload-1",
+                    ackJson = """{"winner":2}""",
+                    receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
+                ),
+            )
+
+            val results = requests.map { request ->
+                async { repositories.clientRequestRepository.createOrGet(request) }
+            }.awaitAll()
+            val winner = results.single { it.created }.request
+
+            assertEquals(1, results.count { it.created })
+            assertEquals(setOf(winner.receivedAt), results.map { it.request.receivedAt }.toSet())
+            assertTrue(
+                results.all {
+                    restJsonMapper.readTree(it.request.ackJson) == restJsonMapper.readTree(winner.ackJson)
+                }
+            )
+            val persisted = repositories.clientRequestRepository.get(chat.id, "message-1")
+            assertEquals(winner.receivedAt, persisted?.receivedAt)
+            assertEquals(restJsonMapper.readTree(winner.ackJson), persisted?.ackJson?.let(restJsonMapper::readTree))
         }
     }
 

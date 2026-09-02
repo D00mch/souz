@@ -4,8 +4,14 @@ import java.util.UUID
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.execution.model.AgentExecution
 
+data class ClientRequestCreateResult(
+    val request: ClientRequest,
+    val created: Boolean,
+)
+
 interface ClientRequestRepository {
     suspend fun create(request: ClientRequest): ClientRequest
+    suspend fun createOrGet(request: ClientRequest): ClientRequestCreateResult
     suspend fun createWithExecution(execution: AgentExecution, request: ClientRequest): AgentExecution
     suspend fun get(chatId: UUID, requestId: String): ClientRequest?
 }

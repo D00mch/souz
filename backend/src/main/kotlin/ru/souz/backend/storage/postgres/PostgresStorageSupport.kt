@@ -47,6 +47,7 @@ import ru.souz.llms.findLLMModel
 
 internal const val ACTIVE_EXECUTION_CONSTRAINT: String = "agent_executions_one_active_per_chat_idx"
 internal const val CHAT_REQUEST_CONSTRAINT: String = "chats_user_id_request_id_key"
+internal const val CLIENT_REQUEST_CONSTRAINT: String = "client_requests_pkey"
 internal const val PRIMARY_KEY_CONSTRAINT: String = "agent_conversation_state_pkey"
 internal const val TELEGRAM_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "telegram_bot_bindings_bot_token_hash_key"
 internal val postgresStorageMapper = jacksonObjectMapper().findAndRegisterModules()
