@@ -35,7 +35,6 @@ import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
 import ru.souz.memory.ConversationMemoryRuntime
-import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.LlmBackedToolCatalog
@@ -69,7 +68,7 @@ internal class BackendConversationRuntimeFactory(
     private val searchMemoryTool: LLMToolSetup,
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: CoroutineScope,
-    private val memoryRuntime: ConversationMemoryRuntime = NoopConversationMemoryRuntime,
+    private val memoryRuntime: ConversationMemoryRuntime,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
