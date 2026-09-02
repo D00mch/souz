@@ -1,5 +1,6 @@
 package ru.souz.backend.app
 
+import java.net.URI
 import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
@@ -139,6 +140,8 @@ data class BackendAppConfig(
     val telegramPollingMaxConcurrency: Int = 4,
     val skillOAuthTokenEncryptionKey: String? = null,
     val skillOAuthProviderCredentials: Map<String, SkillOAuthProviderCredentials> = emptyMap(),
+    val hindsightApiUrl: String? = null,
+    val hindsightApiToken: String? = null,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
 ) {
@@ -155,6 +158,17 @@ data class BackendAppConfig(
         }
         if (telegramPollingMaxConcurrency <= 0) {
             throw BackendConfigurationException("Telegram polling max concurrency must be positive.")
+        }
+        if ((hindsightApiUrl == null) != (hindsightApiToken == null)) {
+            throw BackendConfigurationException(
+                "HINDSIGHT_API_URL / souz.hindsight.apiUrl and HINDSIGHT_API_TOKEN / souz.hindsight.apiToken " +
+                    "must be set together."
+            )
+        }
+        if (hindsightApiUrl != null && !hindsightApiUrl.isHindsightBaseUrl()) {
+            throw BackendConfigurationException(
+                "HINDSIGHT_API_URL / souz.hindsight.apiUrl must be an absolute HTTP(S) URL without a query or fragment."
+            )
         }
         // Skill OAuth config (skillOAuthTokenEncryptionKey/skillOAuthProviderCredentials) is
         // intentionally not validated here — it is unconditionally wired in BackendDiModule (no
@@ -223,6 +237,14 @@ data class BackendAppConfig(
                         null
                     }
                 }.toMap(),
+                hindsightApiUrl = source.value(
+                    envKey = "HINDSIGHT_API_URL",
+                    propertyKey = "souz.hindsight.apiUrl",
+                )?.trim()?.takeIf { it.isNotEmpty() },
+                hindsightApiToken = source.value(
+                    envKey = "HINDSIGHT_API_TOKEN",
+                    propertyKey = "souz.hindsight.apiToken",
+                )?.trim()?.takeIf { it.isNotEmpty() },
                 llmLimits = BackendLlmLimits(
                     perUserConcurrentExecutions = source.intValue(
                         envKey = "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS",
@@ -265,6 +287,15 @@ data class BackendAppConfig(
             )
     }
 }
+
+private fun String.isHindsightBaseUrl(): Boolean = runCatching { URI(this) }.getOrNull()?.let { uri ->
+    uri.scheme?.lowercase() in setOf("http", "https") &&
+        uri.host != null &&
+        uri.port in -1..65_535 &&
+        uri.rawUserInfo == null &&
+        uri.rawQuery == null &&
+        uri.rawFragment == null
+} == true
 
 private fun BackendConfigSource.postgresConfig(): BackendPostgresConfig {
     val dsn = value(
