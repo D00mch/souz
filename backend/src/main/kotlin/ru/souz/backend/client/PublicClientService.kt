@@ -19,8 +19,9 @@ import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientInputRepository
 import ru.souz.backend.client.repository.ClientRequestRepository
+import ru.souz.backend.client.repository.FollowUpInputResult
 import ru.souz.backend.execution.model.AgentExecution
-import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.model.acceptsInput
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.execution.service.AgentExecutionService
@@ -33,6 +34,7 @@ import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.ModelResolution
 import ru.souz.llms.resolveChatModel
 import ru.souz.llms.LlmProvider
+import kotlin.time.Duration.Companion.milliseconds
 
 internal data class HandledClientFrame(
     val response: Any,
@@ -79,11 +81,11 @@ internal class PublicClientService(
         val requestId = frame.requestId.required("requestId")
         validateDevice(chat, frame.payload.device)
         validateContent(frame.payload.content)
-        val threadId = frame.threadId?.uuid("threadId")
+        val requestedThreadId = frame.threadId?.uuid("threadId")
         val payloadHash = PublicPayloadHash.ofValue(
             linkedMapOf(
                 "kind" to frame.kind,
-                "threadId" to threadId?.toString(),
+                "threadId" to requestedThreadId?.toString(),
                 "device" to frame.payload.device.copy(capabilities = frame.payload.device.capabilities.toSortedSet()),
                 "content" to frame.payload.content,
                 "meta" to frame.payload.meta,
@@ -92,11 +94,10 @@ internal class PublicClientService(
         clientRequestRepository.get(chat.id, requestId)?.let { stored ->
             return handledStoredMessage(stored, frame, payloadHash, now, duplicate = true)
         }
-        return if (threadId == null) {
-            startThread(chat, frame, requestId, payloadHash, now)
-        } else {
-            continueThread(chat, frame, threadId, requestId, payloadHash, now)
-        }
+        val selectedThreadId = requestedThreadId
+            ?: executionRepository.findActive(chat.userId, chat.id)?.id
+        return selectedThreadId?.let { continueThread(chat, frame, it, requestId, payloadHash, now) }
+            ?: startThread(chat, frame, requestId, payloadHash, now)
     }
 
     suspend fun handleToolResult(chat: Chat, frame: ToolResultFrame): HandledClientFrame {
@@ -136,7 +137,7 @@ internal class PublicClientService(
             return timeOutExpiredTool(chat.id, threadId, toolCallId, context, now)
         }
         val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
-        if (execution == null || !execution.status.isRunningThread()) {
+        if (execution == null || !execution.status.acceptsInput()) {
             return rejectedTool(chat.id, threadId, toolCallId, "thread_already_terminal", "Thread is not running.", now)
         }
         if (!registry.contains(threadId)) {
@@ -189,7 +190,7 @@ internal class PublicClientService(
         }
         val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
             ?: return rejectedCancel(chat.id, requestId, threadId, "thread_not_found", "Thread not found.", now)
-        if (!execution.status.isRunningThread()) {
+        if (!execution.status.acceptsInput()) {
             return rejectedCancel(chat.id, requestId, threadId, "thread_already_terminal", "Thread is already terminal.", now)
         }
         val ack = ThreadCancelAck(
@@ -207,7 +208,7 @@ internal class PublicClientService(
                 threadId = threadId,
                 requestId = requestId,
                 canAccept = {
-                    executionRepository.getByChat(chat.userId, chat.id, threadId)?.status?.isRunningThread() == true
+                    executionRepository.getByChat(chat.userId, chat.id, threadId)?.status?.acceptsInput() == true
                 },
                 commit = {
                     executionService.cancelExecution(chat.userId, chat.id, threadId).also {
@@ -226,7 +227,7 @@ internal class PublicClientService(
         }
         if (cancelled == null) {
             val latest = executionRepository.getByChat(chat.userId, chat.id, threadId)
-            return if (latest != null && !latest.status.isRunningThread()) {
+            return if (latest != null && !latest.status.acceptsInput()) {
                 rejectedCancel(chat.id, requestId, threadId, "thread_already_terminal", "Thread is already terminal.", now)
             } else {
                 rejectedCancel(chat.id, requestId, threadId, "message_rejected", "Live thread state is unavailable.", now)
@@ -242,21 +243,11 @@ internal class PublicClientService(
         payloadHash: String,
         now: Instant,
     ): HandledClientFrame {
-        if (executionRepository.findActive(chat.userId, chat.id) != null) {
-            return rejectedMessage(chat.id, requestId, "message_rejected", "The chat already has a running thread.", now)
-        }
         val deviceJson = mapper.writeValueAsString(frame.payload.device)
         val metadata = inputMetadata(frame, inputSeq = 1)
         val overrides = requestOverrides(frame.payload.meta)
         val threadId = UUID.randomUUID()
-        val ack = AcceptedMessageAck(
-            chatId = chat.id.toString(),
-            requestId = requestId,
-            duplicate = false,
-            submission = SubmissionAck(1),
-            thread = ThreadAck(threadId.toString(), created = true, revision = 1),
-            receivedAt = now.toString(),
-        )
+        val ack = acceptedMessage(chat.id, requestId, threadId, created = true, revision = 1, now = now)
         val receipt = ClientRequest(
             chat.id,
             requestId,
@@ -308,60 +299,83 @@ internal class PublicClientService(
         now: Instant,
     ): HandledClientFrame {
         val execution = executionRepository.getByChat(chat.userId, chat.id, threadId)
-            ?: return rejectedMessage(chat.id, requestId, "thread_not_found", "Thread not found.", now)
-        if (!execution.status.isRunningThread()) {
-            return rejectedMessage(chat.id, requestId, "thread_already_terminal", "Thread is already terminal.", now)
+            ?: return rejectContinuation(chat.id, frame, requestId, null, payloadHash, now)
+        if (!execution.status.acceptsInput()) {
+            return rejectContinuation(chat.id, frame, requestId, execution, payloadHash, now)
         }
-        val runtimeAvailable = withTimeoutOrNull(5_000) { registry.awaitRuntimeAvailable(threadId) } == true
-        var activeExecution: ru.souz.backend.execution.model.AgentExecution? = null
-        val inputSeq = if (runtimeAvailable) {
+        val runtimeAvailable = withTimeoutOrNull(5_000.milliseconds) {
+            registry.awaitRuntimeAvailable(threadId)
+        } == true
+        var activeExecution: AgentExecution? = null
+        var commitRejection: FollowUpInputResult.Rejected? = null
+        val ack = if (runtimeAvailable) {
             registry.acceptInput(
                 threadId = threadId,
                 requestId = requestId,
                 device = frame.payload.device,
                 input = frame.payload.content.text,
                 canAccept = {
-                    executionRepository.getByChat(chat.userId, chat.id, threadId)
-                        ?.takeIf { it.status.isRunningThread() }
-                        ?.also { activeExecution = it } != null
+                    activeExecution = executionRepository.getByChat(chat.userId, chat.id, threadId)
+                    activeExecution?.status?.acceptsInput() == true
                 },
                 commit = {
-                    val current = requireNotNull(activeExecution)
+                    val current: AgentExecution = requireNotNull(activeExecution)
                     val nextInputSeq = current.revision + 1
-                    clientInputRepository.appendFollowUpInput(
-                        execution = current,
-                        content = frame.payload.content.text,
-                        metadata = inputMetadata(frame, nextInputSeq),
-                        latestDeviceContextJson = mapper.writeValueAsString(frame.payload.device),
-                    )?.revision
+                    val accepted: MessageSubmitAck = acceptedMessage(
+                        chat.id, requestId, threadId, created = false,
+                        revision = nextInputSeq,
+                        now = now,
+                    )
+                    val receipt = ClientRequest(
+                        chat.id, requestId, frame.kind, threadId,
+                        payloadHash, mapper.writeValueAsString(accepted), now,
+                    )
+                    when (
+                        val result = clientInputRepository.appendFollowUpInput(
+                            execution = current,
+                            request = receipt,
+                            content = frame.payload.content.text,
+                            metadata = inputMetadata(frame, nextInputSeq),
+                            latestDeviceContextJson = mapper.writeValueAsString(frame.payload.device),
+                        )
+                    ) {
+                        is FollowUpInputResult.Accepted -> accepted
+                        is FollowUpInputResult.Rejected -> {
+                            commitRejection = result
+                            null
+                        }
+                    }
                 },
             )
         } else {
             null
         }
-        if (inputSeq == null) {
-            val latest = executionRepository.getByChat(chat.userId, chat.id, threadId)
-            val code = if (latest != null && !latest.status.isRunningThread()) {
-                "thread_already_terminal"
-            } else {
-                "message_rejected"
-            }
-            val message = if (code == "thread_already_terminal") "Thread is already terminal." else "Thread no longer accepts input."
-            return rejectedMessage(chat.id, requestId, code, message, now)
+        if (ack == null) {
+            val rejection = commitRejection
+            val latest = if (rejection == null) activeExecution ?: execution else rejection.currentExecution
+            return rejectContinuation(
+                chat.id, frame, requestId, latest, payloadHash, now,
+            )
         }
-        val ack = AcceptedMessageAck(
-            chatId = chat.id.toString(),
-            requestId = requestId,
-            duplicate = false,
-            submission = SubmissionAck(inputSeq),
-            thread = ThreadAck(threadId.toString(), created = false, revision = inputSeq),
-            receivedAt = now.toString(),
-        )
-        clientRequestRepository.create(
-            ClientRequest(chat.id, requestId, frame.kind, threadId, payloadHash, mapper.writeValueAsString(ack), now)
-        )
         return HandledClientFrame(ack) { registry.ackSent(threadId, requestId) }
     }
+
+    private fun acceptedMessage(
+        chatId: UUID,
+        requestId: String,
+        threadId: UUID,
+        created: Boolean,
+        revision: Long,
+        now: Instant,
+    ) = MessageSubmitAck(
+        chatId = chatId.toString(),
+        requestId = requestId,
+        status = "accepted",
+        duplicate = false,
+        submission = SubmissionAck(revision),
+        thread = ThreadAck(threadId.toString(), created = created, revision = revision),
+        receivedAt = now.toString(),
+    )
 
     private fun inputMetadata(frame: MessageSubmitFrame, inputSeq: Long): Map<String, String> = buildMap {
         put("inputSeq", inputSeq.toString())
@@ -436,7 +450,7 @@ internal class PublicClientService(
         )
     }
 
-    private fun ru.souz.backend.toolcall.model.ToolCall.toClientToolOutcome(): ClientToolOutcome =
+    private fun ToolCall.toClientToolOutcome(): ClientToolOutcome =
         ClientToolOutcome(
             status = status.value,
             result = resultJson?.let { mapper.readTree(it) },
@@ -448,14 +462,14 @@ internal class PublicClientService(
 
     private fun AgentExecution.toPublicThreadStatus(chatId: UUID, now: Instant): PublicThreadStatusResponse {
         val active = status.isActive()
-        val leaseAlive = runtimeLeaseUntil?.let { it.isAfter(now) } ?: true
+        val leaseAlive = runtimeLeaseUntil?.isAfter(now) ?: true
         val alive = active && leaseAlive
         return PublicThreadStatusResponse(
             chatId = chatId.toString(),
             threadId = id.toString(),
             status = status.value,
             alive = alive,
-            acceptsInput = status.isRunningThread() && alive,
+            acceptsInput = status.acceptsInput() && alive,
             revision = revision,
             startedAt = startedAt.toString(),
             finishedAt = finishedAt?.toString(),
@@ -518,9 +532,9 @@ internal class PublicClientService(
                 "requestId was used with a different payload.", now,
             )
         }
-        val original = mapper.readValue(stored.ackJson, AcceptedMessageAck::class.java)
+        val original = mapper.readValue(stored.ackJson, MessageSubmitAck::class.java)
         return HandledClientFrame(original.copy(duplicate = duplicate)) {
-            registry.ackSent(UUID.fromString(original.thread.id), stored.requestId)
+            if (original.status == "accepted") stored.threadId?.let { registry.ackSent(it, stored.requestId) }
         }
     }
 
@@ -553,10 +567,36 @@ internal class PublicClientService(
 
     private fun rejectedMessage(chatId: UUID, requestId: String, code: String, message: String, now: Instant) =
         HandledClientFrame(
-            RejectedMessageAck(
-                chatId = chatId.toString(), requestId = requestId, error = ClientError(code, message), receivedAt = now.toString()
+            MessageSubmitAck(
+                chatId = chatId.toString(), requestId = requestId, status = "rejected", duplicate = false,
+                error = ClientError(code, message), receivedAt = now.toString(),
             )
         )
+
+    private suspend fun rejectContinuation(
+        chatId: UUID,
+        frame: MessageSubmitFrame,
+        requestId: String,
+        execution: AgentExecution?,
+        payloadHash: String,
+        now: Instant,
+    ): HandledClientFrame {
+        val (code, message) = when {
+            execution == null -> "thread_not_found" to "Thread not found."
+            !execution.status.isActive() -> "thread_already_terminal" to "Thread is already terminal."
+            else -> "message_rejected" to "Thread no longer accepts input."
+        }
+        val handled = rejectedMessage(chatId, requestId, code, message, now)
+        withContext(NonCancellable) {
+            clientRequestRepository.create(
+                ClientRequest(
+                    chatId, requestId, frame.kind, execution?.id, payloadHash,
+                    mapper.writeValueAsString(handled.response), now,
+                )
+            )
+        }
+        return handled
+    }
 
     private fun acceptedTool(chatId: UUID, threadId: UUID, toolCallId: String, duplicate: Boolean, now: Instant) =
         ToolResultAck(
@@ -600,9 +640,6 @@ private fun String.toToolCallStatus(): ToolCallStatus = when (this) {
     "timed_out" -> ToolCallStatus.TIMED_OUT
     else -> error("Unsupported tool status: $this")
 }
-
-private fun AgentExecutionStatus.isRunningThread(): Boolean =
-    this == AgentExecutionStatus.QUEUED || this == AgentExecutionStatus.RUNNING
 
 private fun String.toPublicClientErrorCode(): String =
     if (this in publicClientErrorCodes) this else "internal_error"

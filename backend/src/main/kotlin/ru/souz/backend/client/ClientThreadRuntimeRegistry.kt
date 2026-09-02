@@ -6,8 +6,10 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 
 internal data class ClientToolOutcome(
@@ -121,7 +123,7 @@ internal class ClientThreadRuntimeRegistry(
         try {
             var committed: T? = null
             val accepted = runtime.submitToActiveRunAfter(input) {
-                committed = commit()
+                committed = withContext(NonCancellable) { commit() }
                 committed != null
             }
             if (!accepted) {

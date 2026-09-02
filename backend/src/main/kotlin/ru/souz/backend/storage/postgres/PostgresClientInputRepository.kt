@@ -4,21 +4,26 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.ChatRole
+import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientInputRepository
+import ru.souz.backend.client.repository.FollowUpInputResult
 import ru.souz.backend.execution.model.AgentExecution
-import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.model.acceptsInput
 
 class PostgresClientInputRepository(
     private val dataSource: DataSource,
 ) : ClientInputRepository {
     override suspend fun appendFollowUpInput(
         execution: AgentExecution,
+        request: ClientRequest,
         content: String,
         metadata: Map<String, String>,
         latestDeviceContextJson: String,
         messageId: UUID,
         createdAt: Instant,
-    ): AgentExecution? = dataSource.write { connection ->
+    ): FollowUpInputResult = dataSource.write { connection ->
+        require(request.chatId == execution.chatId) { "Client request and execution must belong to the same chat." }
+        require(request.threadId == execution.id) { "Client request must reference the continued execution." }
         connection.lockChat(execution.userId, execution.chatId)
         val current = connection.prepareStatement(
             """
@@ -33,10 +38,22 @@ class PostgresClientInputRepository(
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toExecution() else null
             }
-        } ?: return@write null
+        } ?: return@write FollowUpInputResult.Rejected(
+            FollowUpInputResult.RejectionReason.EXECUTION_NOT_FOUND,
+            currentExecution = null,
+        )
 
-        if (!current.status.acceptsFollowUpInput() || current.revision != execution.revision) {
-            return@write null
+        if (!current.status.acceptsInput()) {
+            return@write FollowUpInputResult.Rejected(
+                FollowUpInputResult.RejectionReason.NOT_ACCEPTING_INPUT,
+                current,
+            )
+        }
+        if (current.revision != execution.revision) {
+            return@write FollowUpInputResult.Rejected(
+                FollowUpInputResult.RejectionReason.REVISION_MISMATCH,
+                current,
+            )
         }
 
         val nextRevision = current.revision + 1
@@ -46,8 +63,6 @@ class PostgresClientInputRepository(
             set revision = ?,
                 latest_device_context = ?
             where user_id = ? and chat_id = ? and id = ?
-              and revision = ?
-              and status in ('queued', 'running')
             returning *
             """.trimIndent()
         ).use { statement ->
@@ -56,11 +71,10 @@ class PostgresClientInputRepository(
             statement.setString(3, execution.userId)
             statement.setObject(4, execution.chatId)
             statement.setObject(5, execution.id)
-            statement.setLong(6, execution.revision)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toExecution() else null
             }
-        } ?: error("Execution changed while locked.")
+        } ?: error("Execution disappeared while locked.")
 
         val nextMessageSeq = connection.prepareStatement(
             "select coalesce(max(seq), 0) + 1 from messages where user_id = ? and chat_id = ?"
@@ -89,9 +103,8 @@ class PostgresClientInputRepository(
             statement.executeUpdate()
         }
 
-        updatedExecution
+        insertClientRequest(connection, request)
+
+        FollowUpInputResult.Accepted(updatedExecution)
     }
 }
-
-private fun AgentExecutionStatus.acceptsFollowUpInput(): Boolean =
-    this == AgentExecutionStatus.QUEUED || this == AgentExecutionStatus.RUNNING

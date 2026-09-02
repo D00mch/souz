@@ -6,12 +6,10 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.call
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.openapi.hide
-import io.ktor.server.websocket.WebSocketServerSession
 import io.ktor.server.websocket.webSocket
 import io.ktor.utils.io.ExperimentalKtorApi
 import io.ktor.websocket.CloseReason
@@ -29,9 +27,9 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientError
 import ru.souz.backend.client.HandledClientFrame
+import ru.souz.backend.client.MessageSubmitAck
 import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.PublicClientService
-import ru.souz.backend.client.RejectedMessageAck
 import ru.souz.backend.client.ThreadCancelAck
 import ru.souz.backend.client.ThreadCancelFrame
 import ru.souz.backend.client.ToolResultAck
@@ -232,18 +230,39 @@ private suspend fun sendStatusFeedback(
     response: Any,
     sendJson: suspend (Any) -> Unit,
 ) {
-    val requestAndThread = when (response) {
-        is ru.souz.backend.client.AcceptedMessageAck ->
-            response.requestId to runCatching { UUID.fromString(response.thread.id) }.getOrNull()
-        is ThreadCancelAck ->
-            response.requestId.takeIf { response.status == "accepted" } to
-                runCatching { UUID.fromString(response.threadId) }.getOrNull()
-        else -> null to null
+    suspend fun send(requestId: String, rawThreadId: String) {
+        val threadId = try {
+            UUID.fromString(rawThreadId)
+        } catch (cause: IllegalArgumentException) {
+            throw IllegalStateException(
+                "Accepted acknowledgement for request $requestId has invalid threadId=$rawThreadId.",
+                cause,
+            )
+        }
+        sendJson(service.threadStatus(chat, threadId).toStatusFrame(requestId))
     }
-    val requestId = requestAndThread.first ?: return
-    val threadId = requestAndThread.second ?: return
-    val status = runCatching { service.threadStatus(chat, threadId).toStatusFrame(requestId) }.getOrNull() ?: return
-    sendJson(status)
+
+    when (response) {
+        is MessageSubmitAck -> when (response.status) {
+            "accepted" -> send(
+                response.requestId,
+                checkNotNull(response.thread) {
+                    "Accepted message.submit ${response.requestId} has no thread."
+                }.id,
+            )
+            "rejected" -> Unit
+            else -> error("Unexpected message.submit status: ${response.status}")
+        }
+
+        is ThreadCancelAck -> when (response.status) {
+            "accepted" -> send(response.requestId, response.threadId)
+            "rejected" -> Unit
+            else -> error("Unexpected thread.cancel status: ${response.status}")
+        }
+
+        is ToolResultAck -> Unit
+        else -> error("Unsupported handled response: ${response.javaClass.name}")
+    }
 }
 
 private fun <T> decodeClientFrame(node: JsonNode, type: Class<T>): T = try {
@@ -271,9 +290,11 @@ private fun rejectedFor(
     val error = ClientError(code, message)
     return when (kind) {
         "message.submit" -> HandledClientFrame(
-            RejectedMessageAck(
+            MessageSubmitAck(
                 chatId = chatId.toString(),
                 requestId = node.path("requestId").asText("invalid"),
+                status = "rejected",
+                duplicate = false,
                 error = error,
                 receivedAt = now,
             )

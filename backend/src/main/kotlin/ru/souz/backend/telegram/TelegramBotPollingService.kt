@@ -4,7 +4,6 @@ import io.ktor.http.HttpStatusCode
 import java.io.IOException
 import java.net.InetAddress
 import java.time.Clock
-import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +24,7 @@ import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.service.AgentExecutionService
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.settings.service.UserSettingsOverrides
+import kotlin.time.Duration.Companion.milliseconds
 
 fun interface TelegramTurnExecutor {
     suspend fun execute(
@@ -111,7 +111,7 @@ class TelegramBotPollingService(
                 } catch (e: Exception) {
                     logger.warn("Telegram polling loop iteration failed: {}", e.message)
                 }
-                delay(pollLoopDelayMs)
+                delay(pollLoopDelayMs.milliseconds)
             }
         }
     }
@@ -141,7 +141,7 @@ class TelegramBotPollingService(
         val leaseHeartbeat = launch {
             val renewIntervalMs = leaseRenewIntervalMs(leaseTtlSeconds)
             while (isActive) {
-                delay(renewIntervalMs)
+                delay(renewIntervalMs.milliseconds)
                 repository.tryAcquireLease(
                     id = leasedBinding.id,
                     owner = instanceId,
@@ -159,7 +159,7 @@ class TelegramBotPollingService(
                 tokenCrypto.decrypt(leasedBinding.botTokenEncrypted)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 repository.markError(leasedBinding.id, TELEGRAM_TOKEN_DECRYPT_ERROR)
                 logger.warn("Telegram token decrypt failed for binding {}", leasedBinding.id)
                 return@coroutineScope
@@ -177,15 +177,15 @@ class TelegramBotPollingService(
             } catch (e: TelegramBotApiHttpException) {
                 handleHttpError(leasedBinding, e)
                 return@coroutineScope
-            } catch (e: TelegramBotApiTransportException) {
+            } catch (_: TelegramBotApiTransportException) {
                 repository.markError(leasedBinding.id, TELEGRAM_NETWORK_ERROR)
                 logger.warn("Telegram long polling transport failure for binding {}", leasedBinding.id)
                 return@coroutineScope
-            } catch (e: IOException) {
+            } catch (_: IOException) {
                 repository.markError(leasedBinding.id, TELEGRAM_NETWORK_ERROR)
                 logger.warn("Telegram long polling IO failure for binding {}", leasedBinding.id)
                 return@coroutineScope
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 repository.markError(leasedBinding.id, TELEGRAM_UNKNOWN_ERROR)
                 logger.warn("Telegram long polling unexpected failure for binding {}", leasedBinding.id)
                 return@coroutineScope
@@ -313,7 +313,7 @@ class TelegramBotPollingService(
                 logger.warn("Telegram turn execution failed with v1 code {} for binding {}", e.code, binding.id)
                 sendReplySafely(binding.id, token, message.chat.id, GENERIC_FAILURE_REPLY)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             logger.warn("Telegram turn execution failed for binding {}", binding.id)
             sendReplySafely(binding.id, token, message.chat.id, GENERIC_FAILURE_REPLY)
         }
@@ -361,7 +361,7 @@ class TelegramBotPollingService(
 
             HttpStatusCode.TooManyRequests.value -> {
                 repository.markError(binding.id, TELEGRAM_RATE_LIMITED)
-                response.parameters?.retryAfter?.takeIf { it > 0 }?.let { delay(it * 1_000L) }
+                response.parameters?.retryAfter?.takeIf { it > 0 }?.let { delay((it * 1_000L).milliseconds) }
             }
 
             else -> repository.markError(binding.id, TELEGRAM_UNKNOWN_ERROR)
@@ -382,7 +382,7 @@ class TelegramBotPollingService(
 
             HttpStatusCode.TooManyRequests.value -> {
                 repository.markError(binding.id, TELEGRAM_RATE_LIMITED)
-                error.parameters?.retryAfter?.takeIf { it > 0 }?.let { delay(it * 1_000L) }
+                error.parameters?.retryAfter?.takeIf { it > 0 }?.let { delay((it * 1_000L).milliseconds) }
             }
 
             else -> repository.markError(binding.id, TELEGRAM_UNKNOWN_ERROR)
@@ -398,10 +398,10 @@ class TelegramBotPollingService(
      * a turn that hangs instead of failing or completing).
      */
     private suspend fun repeatTypingIndicator(bindingId: UUID, token: String, chatId: Long) {
-        withTimeoutOrNull(TYPING_MAX_DURATION_MS) {
+        withTimeoutOrNull(TYPING_MAX_DURATION_MS.milliseconds) {
             while (isActive) {
                 sendChatActionSafely(bindingId, token, chatId)
-                delay(TYPING_REPEAT_INTERVAL_MS)
+                delay(TYPING_REPEAT_INTERVAL_MS.milliseconds)
             }
         }
     }
@@ -414,7 +414,7 @@ class TelegramBotPollingService(
             botApi.sendChatAction(token = token, chatId = chatId, action = "typing")
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             logger.warn("Telegram typing indicator send failed for chat {}", chatId)
         }
     }
@@ -432,7 +432,7 @@ class TelegramBotPollingService(
             botApi.sendMessage(token = token, chatId = chatId, text = text)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             logger.warn("Telegram reply send failed for chat {}", chatId)
         }
     }

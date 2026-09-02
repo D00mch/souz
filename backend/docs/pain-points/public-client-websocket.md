@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`POST /v1/chats` is idempotent by `(user_id, request_id)` and stores the normalized payload hash on `chats`. The chat-scoped socket accepts one active thread, where `agent_executions.id` is the public `threadId`. `message.submit` and `thread.cancel` share `(chat_id, request_id)` in `client_requests`; `tool.result` uses the client `tool_calls` row.
+`POST /v1/chats` is idempotent by `(user_id, request_id)` and stores the normalized payload hash on `chats`. The chat-scoped socket accepts one active thread, where `agent_executions.id` is the public `threadId`. An omitted `message.submit.threadId` selects that active thread and creates one only when none exists. `message.submit` and `thread.cancel` share `(chat_id, request_id)` in `client_requests`; `tool.result` uses the client `tool_calls` row.
 
 Accepted user inputs are `messages` with `inputSeq`, source, device, request ID, and request metadata. The execution keeps the latest revision and device JSON. Built-in client operations are tool-backed Skills loaded from an explicit classpath index. Their `SKILL.md` resources own IDs, categories, instructions, and timeouts, while their request-scoped catalog adapters share one WebSocket transport and forward generic argument objects.
 
@@ -20,8 +20,8 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 
 - Keep strict JSON decoding and reject unknown fields.
 - Validate and serialize initial input before registering live thread state. Propagate startup cancellation instead of converting it to a rejected acknowledgement.
-- Serialize the shared `message.submit` and `thread.cancel` receipt check and acceptance in the single backend process.
-- Serialize input acceptance with terminal persistence. Reserve the steerable runtime mailbox, commit the message and revision, then publish the input; release the reservation without publishing when the commit fails. Release the event gate immediately after the acknowledgement is sent and before status feedback.
+- Serialize the shared `message.submit` and `thread.cancel` receipt check and acceptance in the single backend process. Replay a stored submit receipt before inferring an omitted thread ID, hash the client-supplied nullable ID rather than the inferred thread, and store rejections made after thread selection so later thread state cannot change a retry's outcome.
+- Serialize input acceptance with terminal persistence. Reserve the steerable runtime mailbox, commit the message, revision, and idempotency receipt together without cancellation, then publish the input; release the reservation without publishing when the commit fails. Release the event gate immediately after the acknowledgement is sent and before status feedback.
 - Persist a tool result before acknowledging it; complete the suspended client tool only after sending the acknowledgement.
 - Send live `thread.status` feedback after accepted submit/cancel acknowledgements without adding it to durable replay.
 - Persist pending client tool calls as cancelled before propagating thread cancellation.
@@ -34,4 +34,4 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 
 ## Verification
 
-Run `./gradlew :backend:test --tests 'ru.souz.backend.http.BackendPublicClientContractRouteTest'` and `./gradlew :agent:test`. Cover create idempotency, strict frames, second input during an active run, acknowledgement ordering, tool result duplicates/conflicts, cancellation, and reconnect replay.
+Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendPublicWebSocketE2eTest' --tests 'ru.souz.backend.storage.postgres.PostgresRepositoriesTest'` and `./gradlew :agent:test`. Cover create idempotency, strict frames, second input during an active run, acknowledgement ordering, tool result duplicates/conflicts, cancellation, and reconnect replay.

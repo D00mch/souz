@@ -61,7 +61,7 @@ Active-thread live frames are owner-sticky. In multi-replica deployments, reconn
 
 Client frames:
 
-- `message.submit`: `{kind, chatId, requestId, threadId?, payload}`. `payload.device.userId` carries the trusted user scope. Omit `threadId` for the first submission in a thread.
+- `message.submit`: `{kind, chatId, requestId, threadId?, payload}`. `payload.device.userId` carries the trusted user scope. An explicit `threadId` selects that thread. Without one, Souz continues the chat's active thread or creates a thread when none is active.
 - `tool.result`: `{kind, chatId, threadId, toolCallId, status, result|error}`. `status` is `succeeded`, `failed`, `cancelled`, or `timed_out`.
 - `thread.cancel`: `{kind, chatId, requestId, threadId, reason?}`.
 
@@ -113,21 +113,23 @@ Souz-to-Client events:
 
 A thread is a task inside a chat. A chat can outlive many WebSocket connections and many threads.
 
-The first accepted `message.submit` creates a thread. The acknowledgement returns:
+An explicit `message.submit.threadId` continues that thread. When `threadId` is absent, Souz continues the chat's active thread; it creates a thread only when the chat has no active thread. An active thread that does not accept input rejects the submission without creating a replacement.
+
+The acknowledgement returns:
 
 - `submission.inputSeq`: thread-local sequence of accepted user input.
 - `thread.id`.
-- `thread.created`: `true` for first submission, `false` for continuation.
+- `thread.created`: `true` when the originally acknowledged request created the thread, `false` for a continuation.
 - `thread.status = running`.
 - `thread.revision`: latest accepted input sequence.
 
-Additional accepted submissions to a running thread append to its input log. The agent must observe every committed input before terminal state. A public `thread.started` event is not emitted because the first ack carries that state; live `thread.status` frames provide immediate non-replayable feedback.
+Additional accepted submissions to a running thread append to its input log. The agent must observe every committed input before terminal state. A public `thread.started` event is not emitted because an ack with `thread.created = true` carries that state; live `thread.status` frames provide immediate non-replayable feedback.
 
 Each thread has exactly one terminal event. If completion and cancellation race, first persisted terminal state wins. If `message.submit` commits before terminal, terminal output must account for it; if terminal commits first, the submission is rejected with `thread_already_terminal`.
 
 ## Idempotency
 
-`message.submit` and `thread.cancel` use `(chatId, requestId)`. Same key and normalized payload returns the original ack with `duplicate = true`; same key with a different payload returns rejected ack with `idempotency_conflict`.
+`message.submit` and `thread.cancel` use `(chatId, requestId)`. Same key and normalized payload returns the original ack with `duplicate = true`; same key with a different payload returns rejected ack with `idempotency_conflict`. For `message.submit`, the normalized payload contains the client-supplied nullable `threadId`, and receipt replay precedes active-thread inference so a retry returns the originally selected thread even after it completes.
 
 `tool.result` uses `(chatId, threadId, toolCallId)`. Repeating the same terminal result returns accepted ack with `duplicate = true` and does not append another event. Reusing the same key with a different terminal payload returns rejected ack with `duplicate = false` and `idempotency_conflict`.
 

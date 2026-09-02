@@ -26,6 +26,7 @@ import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.client.model.ClientRequest
+import ru.souz.backend.client.repository.FollowUpInputResult
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionAnswer
 import ru.souz.backend.options.model.OptionKind
@@ -334,19 +335,6 @@ class PostgresRepositoriesTest {
             assertEquals(2, storedExecution?.revision)
             assertEquals("phone-1", storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
 
-            val updatedExecution = repositories.clientInputRepository.appendFollowUpInput(
-                execution = requireNotNull(storedExecution),
-                content = "next public input",
-                metadata = mapOf("inputSeq" to "3", "requestId" to "message-2"),
-                latestDeviceContextJson = """{"deviceId":"phone-2"}""",
-                createdAt = Instant.parse("2026-05-01T10:01:01Z"),
-            )
-            val storedMessages = repositories.messageRepository.list(userId, chat.id)
-            assertEquals(3, updatedExecution?.revision)
-            assertEquals("phone-2", updatedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
-            assertEquals(listOf("next public input"), storedMessages.map { it.content })
-            assertEquals(listOf("3"), storedMessages.map { it.metadata["inputSeq"] })
-
             val receipt = ClientRequest(
                 chatId = chat.id,
                 requestId = "message-2",
@@ -356,7 +344,22 @@ class PostgresRepositoriesTest {
                 ackJson = """{"status":"accepted"}""",
                 receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
             )
-            repositories.clientRequestRepository.create(receipt)
+            val updatedExecution = assertIs<FollowUpInputResult.Accepted>(
+                repositories.clientInputRepository.appendFollowUpInput(
+                    execution = requireNotNull(storedExecution),
+                    request = receipt,
+                    content = "next public input",
+                    metadata = mapOf("inputSeq" to "3", "requestId" to "message-2"),
+                    latestDeviceContextJson = """{"deviceId":"phone-2"}""",
+                    createdAt = Instant.parse("2026-05-01T10:01:01Z"),
+                )
+            ).execution
+            val storedMessages = repositories.messageRepository.list(userId, chat.id)
+            assertEquals(3, updatedExecution.revision)
+            assertEquals("phone-2", restJsonMapper.readTree(updatedExecution.latestDeviceContextJson).path("deviceId").asText())
+            assertEquals(listOf("next public input"), storedMessages.map { it.content })
+            assertEquals(listOf("3"), storedMessages.map { it.metadata["inputSeq"] })
+
             val storedReceipt = repositories.clientRequestRepository.get(chat.id, receipt.requestId)
             assertEquals(receipt.copy(ackJson = storedReceipt?.ackJson.orEmpty()), storedReceipt)
             assertEquals("accepted", storedReceipt?.ackJson?.let { restJsonMapper.readTree(it) }?.path("status")?.asText())
@@ -468,7 +471,7 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `follow-up input commit rolls back execution revision when message insert fails`() = runTest {
+    fun `follow-up input and receipt commit atomically`() = runTest {
         val schema = newPostgresSchema("postgres_followup_input_rollback")
 
         postgresRepositories(schema).use { repositories ->
@@ -484,24 +487,74 @@ class PostgresRepositoriesTest {
                 startedAt = Instant.parse("2026-05-01T10:01:00Z"),
             )
             repositories.executionRepository.create(execution)
-            val messageId = UUID.randomUUID()
-            val first = repositories.clientInputRepository.appendFollowUpInput(
-                execution = execution,
-                content = "first follow-up",
-                metadata = mapOf("inputSeq" to "2"),
-                latestDeviceContextJson = """{"deviceId":"device-2"}""",
-                messageId = messageId,
-                createdAt = Instant.parse("2026-05-01T10:01:02Z"),
+            val request = ClientRequest(
+                chatId = chat.id,
+                requestId = "message-2",
+                kind = "message.submit",
+                threadId = execution.id,
+                payloadHash = "payload-2",
+                ackJson = "{}",
+                receivedAt = Instant.parse("2026-05-01T10:01:02Z"),
             )
-            assertEquals(2L, first?.revision)
+            val messageId = UUID.randomUUID()
+            val first = assertIs<FollowUpInputResult.Accepted>(
+                repositories.clientInputRepository.appendFollowUpInput(
+                    execution = execution,
+                    request = request,
+                    content = "first follow-up",
+                    metadata = mapOf("inputSeq" to "2"),
+                    latestDeviceContextJson = """{"deviceId":"device-2"}""",
+                    messageId = messageId,
+                    createdAt = Instant.parse("2026-05-01T10:01:02Z"),
+                )
+            ).execution
+            assertEquals(2L, first.revision)
+            assertEquals(request, repositories.clientRequestRepository.get(chat.id, request.requestId))
 
+            val staleRequest = request.copy(
+                requestId = "message-stale",
+                payloadHash = "payload-stale",
+                receivedAt = Instant.parse("2026-05-01T10:01:03Z"),
+            )
+            val stale = assertIs<FollowUpInputResult.Rejected>(
+                repositories.clientInputRepository.appendFollowUpInput(
+                    execution = execution,
+                    request = staleRequest,
+                    content = "stale follow-up",
+                    metadata = mapOf("inputSeq" to "2"),
+                    latestDeviceContextJson = """{"deviceId":"device-stale"}""",
+                    createdAt = Instant.parse("2026-05-01T10:01:03Z"),
+                )
+            )
+            assertEquals(FollowUpInputResult.RejectionReason.REVISION_MISMATCH, stale.reason)
+            assertEquals(first, stale.currentExecution)
+            assertNull(repositories.clientRequestRepository.get(chat.id, staleRequest.requestId))
+
+            val failedRequest = request.copy(
+                requestId = "message-3",
+                payloadHash = "payload-3",
+                receivedAt = Instant.parse("2026-05-01T10:01:03Z"),
+            )
             assertFailsWith<Exception> {
                 repositories.clientInputRepository.appendFollowUpInput(
-                    execution = requireNotNull(first),
-                    content = "duplicate-message-id follow-up",
+                    execution = first,
+                    request = failedRequest,
+                    content = "duplicate-message follow-up",
                     metadata = mapOf("inputSeq" to "3"),
                     latestDeviceContextJson = """{"deviceId":"device-3"}""",
                     messageId = messageId,
+                    createdAt = Instant.parse("2026-05-01T10:01:03Z"),
+                )
+            }
+            assertNull(repositories.clientRequestRepository.get(chat.id, failedRequest.requestId))
+
+            assertFailsWith<Exception> {
+                repositories.clientInputRepository.appendFollowUpInput(
+                    execution = first,
+                    request = request,
+                    content = "duplicate-request follow-up",
+                    metadata = mapOf("inputSeq" to "3"),
+                    latestDeviceContextJson = """{"deviceId":"device-3"}""",
                     createdAt = Instant.parse("2026-05-01T10:01:03Z"),
                 )
             }
@@ -514,6 +567,21 @@ class PostgresRepositoriesTest {
                 storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText(),
             )
             assertEquals(listOf("first follow-up"), storedMessages.map { it.content })
+
+            val cancelling = repositories.executionRepository.update(first.copy(status = AgentExecutionStatus.CANCELLING))
+            val rejectedRequest = request.copy(requestId = "message-rejected", payloadHash = "payload-rejected")
+            val rejected = assertIs<FollowUpInputResult.Rejected>(
+                repositories.clientInputRepository.appendFollowUpInput(
+                    execution = cancelling,
+                    request = rejectedRequest,
+                    content = "too late",
+                    metadata = mapOf("inputSeq" to "3"),
+                    latestDeviceContextJson = """{"deviceId":"device-3"}""",
+                )
+            )
+            assertEquals(FollowUpInputResult.RejectionReason.NOT_ACCEPTING_INPUT, rejected.reason)
+            assertEquals(cancelling, rejected.currentExecution)
+            assertNull(repositories.clientRequestRepository.get(chat.id, rejectedRequest.requestId))
         }
     }
 
