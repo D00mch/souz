@@ -1,5 +1,8 @@
 package ru.souz.backend.e2e
 
+import com.fasterxml.jackson.databind.JsonNode
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -19,6 +22,14 @@ import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.storage.postgres.newPostgresSchema
 
 class BackendPublicWebSocketE2eTest {
+    private data class SocketNode(
+        val scope: BackendE2eScope,
+        val client: HttpClient,
+        val session: DefaultClientWebSocketSession,
+    )
+
+    private data class SocketReply(val acknowledgement: JsonNode, val status: JsonNode?)
+
     @Test
     fun `public socket acknowledges before status and terminal event and replays durable terminal`() =
         backendE2eTest("e2e_ws_ordering") {
@@ -236,43 +247,142 @@ class BackendPublicWebSocketE2eTest {
     }
 
     @Test
-    fun `concurrent socket retries execute once and return the same thread`() =
-        backendE2eTest("e2e_ws_retry", llm = E2eLlmApi().apply { pauseUntilReleased() }) {
+    fun `cross instance retries execute once and replay the original thread after completion`() {
+        val primaryLlm = E2eLlmApi().apply { pauseUntilReleased() }
+        val peerLlm = E2eLlmApi().apply { pauseUntilReleased() }
+        backendE2eTest("e2e_ws_retry", llm = primaryLlm) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val sessions = listOf(
-                wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"),
-                wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"),
-            )
             val raw = messageFrame(chatId, userId, "message-retry", null, "execute once", "device-1")
+            try {
+                withPeerSockets(chatId, peerLlm) { nodes ->
+                    val responses = race(nodes, listOf(raw, raw))
+                    val acknowledgements = responses.map { it.acknowledgement }
+                    val threadId = acknowledgements.first()["thread"]["id"].asText()
 
-            coroutineScope {
-                val responses = sessions.map { session ->
-                    async {
-                        session.send(Frame.Text(raw))
-                        readJson(session) to readJson(session)
+                    assertEquals(listOf(false, true), acknowledgements.map { it["duplicate"].asBoolean() }.sorted())
+                    assertTrue(acknowledgements.all { it["thread"]["created"].asBoolean() })
+                    assertEquals(1, acknowledgements.map { it["thread"]["id"].asText() }.distinct().size)
+                    assertEquals(1, acknowledgements.map { it["receivedAt"].asText() }.distinct().size)
+                    assertEquals(1, responses.map { it.status?.get("threadId")?.asText() }.distinct().size)
+                    eventually("one runtime request") {
+                        (primaryLlm.requests.size + peerLlm.requests.size).takeIf { it == 1 }
                     }
-                }.awaitAll()
-                val acknowledgements = responses.map { it.first }
-                val statuses = responses.map { it.second }
 
-                assertEquals(listOf(false, true), acknowledgements.map { it["duplicate"].asBoolean() }.sorted())
-                assertEquals(1, acknowledgements.map { it["thread"]["id"].asText() }.distinct().size)
-                assertEquals(1, statuses.map { it["threadId"].asText() }.distinct().size)
-                llm.awaitPrompt("execute once")
-                assertEquals(1, llm.requests.size)
-                val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
-                    trusted(userId)
-                }.jsonBody()["items"]
-                assertEquals(1, messages.count { it["role"].asText() == "user" })
+                    val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
+                        trusted(userId)
+                    }.jsonBody()["items"]
+                    assertEquals(1, messages.count { it["role"].asText() == "user" })
+                    assertEquals(1, rowCount("agent_executions", chatId))
+                    assertEquals(1, rowCount("client_requests", chatId))
 
-                llm.release()
-                assertEquals("thread.completed", readJson(sessions.first())["type"].asText())
+                    primaryLlm.release()
+                    peerLlm.release()
+                    eventually("thread completion") { executionStatus(threadId).takeIf { it == "completed" } }
+
+                    val losingNode = if (primaryLlm.requests.isEmpty()) 0 else 1
+                    val duplicate = nodes[losingNode].request(raw)
+                    val duplicateAck = duplicate.acknowledgement
+                    assertTrue(duplicateAck["duplicate"].asBoolean())
+                    assertTrue(duplicateAck["thread"]["created"].asBoolean())
+                    assertEquals(threadId, duplicateAck["thread"]["id"].asText())
+                    assertEquals(acknowledgements.first()["receivedAt"], duplicateAck["receivedAt"])
+                    assertEquals("completed", duplicate.status?.get("status")?.asText())
+                }
+            } finally {
+                primaryLlm.release()
+                peerLlm.release()
             }
-            sessions.forEach { it.close() }
-            wsClient.close()
         }
+    }
+
+    @Test
+    fun `cross instance initial submissions create one thread and reject the non owner`() {
+        val primaryLlm = E2eLlmApi().apply { pauseUntilReleased() }
+        val peerLlm = E2eLlmApi().apply { pauseUntilReleased() }
+        backendE2eTest("e2e_ws_initial_race", llm = primaryLlm) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = createPublicChat(userId)
+            try {
+                withPeerSockets(chatId, peerLlm) { nodes ->
+                    val acknowledgements = race(
+                        nodes,
+                        listOf(
+                            messageFrame(chatId, userId, "message-a", null, "first contender", "device-a"),
+                            messageFrame(chatId, userId, "message-b", null, "second contender", "device-b"),
+                        ),
+                    ).map { it.acknowledgement }
+                    val accepted = acknowledgements.single { it["status"].asText() == "accepted" }
+                    val rejected = acknowledgements.single { it["status"].asText() == "rejected" }
+
+                    assertTrue(accepted["thread"]["created"].asBoolean())
+                    assertEquals("message_rejected", rejected["error"]["code"].asText())
+                    assertEquals(1, rowCount("agent_executions", chatId))
+                    assertEquals(2, rowCount("client_requests", chatId))
+                    assertEquals(2 to 1, requestThreadCounts(chatId))
+                    eventually("one runtime request") {
+                        (primaryLlm.requests.size + peerLlm.requests.size).takeIf { it == 1 }
+                    }
+                }
+            } finally {
+                primaryLlm.release()
+                peerLlm.release()
+            }
+        }
+    }
+
+    @Test
+    fun `cross instance submit cancel race applies only the stored winner`() {
+        val llm = E2eLlmApi().apply { hangUntilCancellationReleased() }
+        backendE2eTest("e2e_ws_submit_cancel_race", llm = llm) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = createPublicChat(userId)
+            try {
+                withPeerSockets(chatId) { nodes ->
+                    val initial = nodes.first().request(
+                        messageFrame(chatId, userId, "initial", null, "stay active", "device-a")
+                    ).acknowledgement
+                    val threadId = initial["thread"]["id"].asText()
+                    llm.awaitPrompt("stay active")
+                    val (submit, cancel) = race(
+                        listOf(nodes[1], nodes[0]),
+                        listOf(
+                            messageFrame(chatId, userId, "race", threadId, "losing input", "device-b"),
+                            """{"kind":"thread.cancel","chatId":"$chatId","requestId":"race","threadId":"$threadId"}""",
+                        ),
+                    ).map { it.acknowledgement }
+
+                    assertEquals(
+                        1,
+                        listOf(submit, cancel).count {
+                            it.path("error").path("code").asText() == "idempotency_conflict"
+                        },
+                    )
+                    assertEquals(2, rowCount("client_requests", chatId))
+                    assertEquals(1, rowCount("messages", chatId))
+                    val winnerKind = requestKind(chatId, "race")
+                    if (cancel["status"].asText() == "accepted") {
+                        assertEquals("thread.cancel", winnerKind)
+                        assertEquals("idempotency_conflict", submit["error"]["code"].asText())
+                        assertEquals("cancelling" to 1L, executionState(threadId))
+                    } else {
+                        assertEquals("message.submit", winnerKind)
+                        assertEquals("message_rejected", submit["error"]["code"].asText())
+                        assertEquals("idempotency_conflict", cancel["error"]["code"].asText())
+                        assertEquals("running" to 1L, executionState(threadId))
+                        val cleanup = nodes.first().request(
+                            """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cleanup","threadId":"$threadId"}"""
+                        )
+                        assertEquals("accepted", cleanup.acknowledgement["status"].asText())
+                    }
+                    llm.releaseCancellation()
+                    eventually("cancelled thread") { executionStatus(threadId).takeIf { it == "cancelled" } }
+                }
+            } finally {
+                llm.releaseCancellation()
+            }
+        }
+    }
 
     @Test
     fun `client tool result is acknowledged idempotently before the thread completes`() =
@@ -614,8 +724,97 @@ class BackendPublicWebSocketE2eTest {
         return created.jsonBody()["chat"]["id"].asText()
     }
 
-    private suspend fun BackendE2eScope.readJson(session: io.ktor.client.plugins.websocket.DefaultClientWebSocketSession) =
+    private suspend fun <T> BackendE2eScope.withPeerSockets(
+        chatId: String,
+        peerLlm: E2eLlmApi = E2eLlmApi(),
+        block: suspend (List<SocketNode>) -> T,
+    ): T {
+        val primary = this
+        return withPeerBackend(peerLlm) { peer ->
+            val nodes = listOf(primary, peer).map { scope ->
+                val client = scope.webSocketClient()
+                SocketNode(
+                    scope,
+                    client,
+                    client.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"),
+                )
+            }
+            try {
+                block(nodes)
+            } finally {
+                nodes.forEach { it.session.close() }
+                nodes.forEach { it.client.close() }
+            }
+        }
+    }
+
+    private suspend fun race(nodes: List<SocketNode>, requests: List<String>): List<SocketReply> = coroutineScope {
+        nodes.zip(requests).map { (node, request) -> async { node.request(request) } }.awaitAll()
+    }
+
+    private suspend fun SocketNode.request(raw: String): SocketReply {
+        session.send(Frame.Text(raw))
+        val acknowledgement = scope.readJson(session)
+        val status = if (acknowledgement["status"].asText() == "accepted") scope.readJson(session) else null
+        return SocketReply(acknowledgement, status)
+    }
+
+    private suspend fun BackendE2eScope.readJson(session: DefaultClientWebSocketSession) =
         json.readTree((session.incoming.receive() as Frame.Text).readText())
+
+    private fun BackendE2eScope.rowCount(table: String, chatId: String): Int = sql { connection ->
+        connection.prepareStatement("select count(*) from $table where chat_id = ?").use { statement ->
+            statement.setObject(1, UUID.fromString(chatId))
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt(1)
+            }
+        }
+    }
+
+    private fun BackendE2eScope.executionStatus(threadId: String): String? = sql { connection ->
+        connection.prepareStatement("select status from agent_executions where id = ?").use { statement ->
+            statement.setObject(1, UUID.fromString(threadId))
+            statement.executeQuery().use { resultSet ->
+                resultSet.takeIf { it.next() }?.getString(1)
+            }
+        }
+    }
+
+    private fun BackendE2eScope.executionState(threadId: String): Pair<String, Long> = sql { connection ->
+        connection.prepareStatement("select status, revision from agent_executions where id = ?").use { statement ->
+            statement.setObject(1, UUID.fromString(threadId))
+            statement.executeQuery().use { resultSet ->
+                check(resultSet.next())
+                resultSet.getString(1) to resultSet.getLong(2)
+            }
+        }
+    }
+
+    private fun BackendE2eScope.requestKind(chatId: String, requestId: String): String = sql { connection ->
+        connection.prepareStatement(
+            "select kind from client_requests where chat_id = ? and request_id = ?"
+        ).use { statement ->
+            statement.setObject(1, UUID.fromString(chatId))
+            statement.setString(2, requestId)
+            statement.executeQuery().use { resultSet ->
+                check(resultSet.next())
+                resultSet.getString(1)
+            }
+        }
+    }
+
+    private fun BackendE2eScope.requestThreadCounts(chatId: String): Pair<Int, Int> = sql { connection ->
+        connection.prepareStatement(
+            "select count(thread_id), count(distinct thread_id) from client_requests where chat_id = ?"
+        ).use { statement ->
+            statement.setObject(1, UUID.fromString(chatId))
+            statement.executeQuery().use { resultSet ->
+                resultSet.next()
+                resultSet.getInt(1) to resultSet.getInt(2)
+            }
+        }
+    }
 
     private fun messageFrame(
         chatId: String,

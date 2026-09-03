@@ -12,7 +12,8 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
-import io.ktor.server.testing.ApplicationTestBuilder
+import io.ktor.server.testing.ClientProvider
+import io.ktor.server.testing.TestApplication
 import io.ktor.server.testing.testApplication
 import java.sql.Connection
 import kotlin.time.Duration
@@ -75,7 +76,7 @@ internal fun backendE2eTest(
 }
 
 internal class BackendE2eScope(
-    private val app: ApplicationTestBuilder,
+    private val app: ClientProvider,
     val backend: BackendE2eBackend,
     val llm: E2eLlmApi,
 ) {
@@ -116,11 +117,33 @@ internal class BackendE2eScope(
 
     fun <T> sql(block: (Connection) -> T): T =
         backend.sql(block)
+
+    suspend fun <T> withPeerBackend(
+        llm: E2eLlmApi = E2eLlmApi(),
+        block: suspend (BackendE2eScope) -> T,
+    ): T {
+        val peerBackend = backend.createPeer(llm)
+        val peerApplication = TestApplication {
+            application {
+                backendApplication(peerBackend.dependencies)
+            }
+        }
+        return try {
+            peerApplication.start()
+            block(BackendE2eScope(peerApplication, peerBackend, llm))
+        } finally {
+            try {
+                peerApplication.stop()
+            } finally {
+                peerBackend.close()
+            }
+        }
+    }
 }
 
 internal class BackendE2eBackend(
-    schema: String,
-    featureFlags: BackendFeatureFlags,
+    private val schema: String,
+    private val featureFlags: BackendFeatureFlags,
     llm: E2eLlmApi,
     telegramApi: TelegramBotApi?,
     turnRunnerOverride: BackendConversationTurnRunner?,
@@ -175,6 +198,16 @@ internal class BackendE2eBackend(
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)
+
+    fun createPeer(llm: E2eLlmApi = E2eLlmApi()): BackendE2eBackend =
+        BackendE2eBackend(
+            schema = schema,
+            featureFlags = featureFlags,
+            llm = llm,
+            telegramApi = null,
+            turnRunnerOverride = null,
+            startBackgroundServices = false,
+        )
 
     override fun close() {
         resources.close()

@@ -186,7 +186,7 @@ internal class AgentExecutionRequestFactory(
             optionsEnabled = featureFlags.options,
             assistantMessageId = execution.assistantMessageId,
             beforePublicEvent = { clientThreadRegistry?.awaitAcceptedInputAcks(execution.id) },
-            publicClientThread = clientThreadRegistry?.contains(execution.id) == true,
+            publicClientThread = execution.runtimeOwner != null,
         )
 
     private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =

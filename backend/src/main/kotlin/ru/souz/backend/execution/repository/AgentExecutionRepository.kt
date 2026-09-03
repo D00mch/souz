@@ -12,6 +12,7 @@ class ActiveAgentExecutionConflictException(
 interface AgentExecutionRepository {
     suspend fun create(execution: AgentExecution): AgentExecution
     suspend fun update(execution: AgentExecution): AgentExecution
+    suspend fun start(execution: AgentExecution, userMessageId: UUID): AgentExecution?
     suspend fun get(userId: String, executionId: UUID): AgentExecution?
     suspend fun getByChat(userId: String, chatId: UUID, executionId: UUID): AgentExecution?
     suspend fun findByClientMessageId(userId: String, chatId: UUID, clientMessageId: String): AgentExecution?

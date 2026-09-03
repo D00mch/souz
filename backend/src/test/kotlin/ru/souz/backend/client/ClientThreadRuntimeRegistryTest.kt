@@ -1,10 +1,13 @@
 package ru.souz.backend.client
 
+import io.mockk.mockk
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
+import ru.souz.backend.client.repository.ClientRequestResult
 
 class ClientThreadRuntimeRegistryTest {
     @Test
@@ -19,8 +22,8 @@ class ClientThreadRuntimeRegistryTest {
                 deviceType = "tv_box",
                 capabilities = setOf("speech"),
             ),
+            "request-1",
         )
-        registry.registerAck(threadId, "request-1")
 
         registry.withTerminalTransition(threadId) { Unit }
 
@@ -42,15 +45,20 @@ class ClientThreadRuntimeRegistryTest {
                 capabilities = setOf("speech"),
             ),
         )
+        val runtime = mockk<BackendConversationRuntime>(relaxed = true)
+        registry.attach(threadId, runtime)
+        registry.markRuntimeReady(threadId, runtime)
 
-        val result = registry.acceptCancellation(
+        val accepted = mockk<ClientRequestResult.Accepted>()
+        val result = registry.commitCancellation(
             threadId = threadId,
             requestId = "cancel-1",
-            canAccept = { true },
-            commit = { registry.withTerminalTransition(threadId) { "cancelled" } },
+            commit = { accepted },
+            afterAccepted = {},
         )
 
-        assertTrue(result == "cancelled")
+        assertTrue(result === accepted)
+        registry.detach(threadId, runtime)
         assertTrue(registry.contains(threadId))
         registry.ackSent(threadId, "cancel-1")
         assertFalse(registry.contains(threadId))

@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
+import ru.souz.backend.client.repository.ClientRequestResult
 
 internal data class ClientToolOutcome(
     val status: String,
@@ -59,9 +60,10 @@ internal class ClientThreadRuntimeRegistry(
         removed.await()
     }
 
-    suspend fun register(threadId: UUID, device: ClientDevice) {
+    suspend fun register(threadId: UUID, device: ClientDevice, requestId: String? = null) {
         mutex.withLock {
-            states.putIfAbsent(threadId, State(latestDevice = device))
+            val state = states.getOrPut(threadId) { State(latestDevice = device) }
+            requestId?.let { state.pendingAcks.putIfAbsent(it, CompletableDeferred()) }
         }
     }
 
@@ -108,33 +110,43 @@ internal class ClientThreadRuntimeRegistry(
         }
     }
 
-    suspend fun <T> acceptInput(
+    suspend fun acceptInput(
         threadId: UUID,
         requestId: String,
         device: ClientDevice,
         input: String,
-        canAccept: suspend () -> Boolean,
-        commit: suspend () -> T,
-    ): T? = mutex.withLock {
+        commit: suspend () -> ClientRequestResult,
+    ): ClientRequestResult? = mutex.withLock {
         val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock null
         val runtime = state.runtime ?: return@withLock null
-        if (!canAccept()) return@withLock null
-        val pendingAck = state.pendingAcks.getOrPut(requestId) { CompletableDeferred() }
-        try {
-            var committed: T? = null
-            val accepted = runtime.submitToActiveRunAfter(input) {
-                committed = withContext(NonCancellable) { commit() }
-                committed != null
+        var committed: ClientRequestResult? = null
+        val published = runtime.submitToActiveRunAfter(input) {
+            withContext(NonCancellable) { commit() }.let { result ->
+                committed = result
+                (result is ClientRequestResult.Accepted).also { accepted ->
+                    if (accepted) state.pendingAcks[requestId] = CompletableDeferred()
+                }
             }
-            if (!accepted) {
-                clearAck(threadId, state, requestId, pendingAck)
-                return@withLock null
+        }
+        if (published) state.latestDevice = device
+        committed
+    }
+
+    suspend fun commitCancellation(
+        threadId: UUID,
+        requestId: String,
+        commit: suspend (runtimeAvailable: Boolean) -> ClientRequestResult,
+        afterAccepted: suspend (ClientRequestResult.Accepted) -> Unit,
+    ): ClientRequestResult = mutex.withLock {
+        val state = states[threadId]?.takeUnless { it.terminal || it.runtime == null }
+        withContext(NonCancellable) { commit(state != null) }.also { result ->
+            if (state != null && result is ClientRequestResult.Accepted) {
+                state.pendingAcks[requestId] = CompletableDeferred()
+                state.terminal = true
+                state.runtimeReady.complete(Unit)
+                withContext(NonCancellable) { afterAccepted(result) }
+                removeIfTerminalAndIdle(threadId, state)
             }
-            state.latestDevice = device
-            committed
-        } catch (error: Exception) {
-            clearAck(threadId, state, requestId, pendingAck)
-            throw error
         }
     }
 
@@ -149,33 +161,6 @@ internal class ClientThreadRuntimeRegistry(
             }
             result
         }
-
-    suspend fun <T> acceptCancellation(
-        threadId: UUID,
-        requestId: String,
-        canAccept: suspend () -> Boolean,
-        commit: suspend () -> T,
-    ): T? {
-        val accepted = mutex.withLock {
-            val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock false
-            if (!canAccept()) return@withLock false
-            state.pendingAcks.putIfAbsent(requestId, CompletableDeferred())
-            true
-        }
-        if (!accepted) return null
-        return try {
-            commit()
-        } catch (error: Exception) {
-            ackSent(threadId, requestId)
-            throw error
-        }
-    }
-
-    suspend fun registerAck(threadId: UUID, requestId: String): Boolean = mutex.withLock {
-        val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock false
-        state.pendingAcks.putIfAbsent(requestId, CompletableDeferred())
-        true
-    }
 
     suspend fun ackSent(threadId: UUID, requestId: String) {
         val pending = mutex.withLock {
@@ -227,17 +212,6 @@ internal class ClientThreadRuntimeRegistry(
             states.remove(threadId)
             state.removed.complete(Unit)
         }
-    }
-
-    private fun clearAck(
-        threadId: UUID,
-        state: State,
-        requestId: String,
-        pendingAck: CompletableDeferred<Unit>,
-    ) {
-        if (state.pendingAcks[requestId] === pendingAck) state.pendingAcks.remove(requestId)
-        pendingAck.complete(Unit)
-        removeIfTerminalAndIdle(threadId, state)
     }
 
     companion object {
