@@ -1,7 +1,6 @@
 package ru.souz.agent
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,7 +9,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.AgentToolExecutor
@@ -152,7 +150,6 @@ class AgentFacade internal constructor(
         } finally {
             executionMailbox?.let { mailbox ->
                 activeRunMailbox.compareAndSet(mailbox, null)
-                withContext(NonCancellable) { mailbox.close() }
             }
             runCatching { sessionService.finishTask() }
                 .onFailure { e -> l.warn("sessionService fail", e) }

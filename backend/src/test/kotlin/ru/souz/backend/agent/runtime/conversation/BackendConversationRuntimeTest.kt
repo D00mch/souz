@@ -54,7 +54,7 @@ class BackendConversationRuntimeTest {
         assertEquals(1_001, loaded.messages.size)
         assertEquals("history-1", loaded.messages.first().content)
         assertEquals("history-1001", loaded.messages.last().content)
-        assertEquals(3, fixture.repository.listCalls)
+        assertEquals(3, fixture.listCalls)
     }
 
     @Test
@@ -83,30 +83,37 @@ class BackendConversationRuntimeTest {
     }
 
     @Test
-    fun `active execute publishes durable history roles and advances one shared cursor`() = runTest {
-        val fixture = Fixture()
-        val trigger = ordinaryMessage(14L, ChatRole.USER, "execute")
+    fun `passive history and active execute share one paginated role preserving cursor`() = runTest {
+        val fixture = Fixture(
+            messages = (11L..1_011L).map { seq -> historyMessage(seq, roleFor(seq), "history-$seq") },
+        )
+        val runtime = fixture.runtime(initialObservedSeq = 10L)
+
+        assertTrue(runtime.notifyHistoryPending(1_011L))
+        val trigger = ordinaryMessage(1_015L, ChatRole.USER, "next execute")
         val accepted = ClientRequestResult.Accepted(
             request = mockk<ClientRequest>(),
             execution = mockk<AgentExecution>(),
             message = trigger,
             messageDelta = listOf(
-                historyMessage(11L, ChatRole.USER, "user history"),
-                ordinaryMessage(12L, ChatRole.ASSISTANT, "already represented"),
-                crossChannelMessage(13L, "cross-channel"),
+                historyMessage(1_012L, ChatRole.USER, "user history"),
+                ordinaryMessage(1_013L, ChatRole.ASSISTANT, "already represented"),
+                crossChannelMessage(1_014L, "cross-channel"),
                 trigger,
             ),
         )
         var commitAfterSeq = -1L
-        val runtime = fixture.runtime(initialObservedSeq = 10L)
-        var result: ClientRequestResult? = null
         var nextCommitAfterSeq = -1L
+        var result: ClientRequestResult? = null
+        var loaded = emptyList<LLMRequest.Message>()
+        var emptyReload = listOf(LLMRequest.Message(LLMMessageRole.user, "not empty"))
         val duplicate = mockk<ClientRequestResult.Duplicate>()
 
         runtime.execute(
             request = turnRequest(),
             persistSession = false,
             onRuntimeReady = {
+                loaded = fixture.loadHistoryAtBoundary()
                 result = runtime.commitActiveRunInput { afterSeq ->
                     commitAfterSeq = afterSeq
                     accepted
@@ -115,12 +122,13 @@ class BackendConversationRuntimeTest {
                     nextCommitAfterSeq = afterSeq
                     duplicate
                 }
+                emptyReload = fixture.loadHistoryAtBoundary()
             },
         )
 
         assertSame(accepted, result)
-        assertEquals(10L, commitAfterSeq)
-        assertEquals("execute", fixture.publishedInputs.single().input)
+        assertEquals(1_001, loaded.size)
+        assertEquals(1_011L, commitAfterSeq)
         assertEquals(
             listOf(
                 LLMRequest.Message(LLMMessageRole.user, "user history"),
@@ -128,52 +136,18 @@ class BackendConversationRuntimeTest {
             ),
             fixture.publishedInputs.single().history,
         )
-        assertEquals(14L, nextCommitAfterSeq)
-    }
-
-    @Test
-    fun `fixed boundary loader pages passive history without duplicating execute catch-up`() = runTest {
-        val fixture = Fixture(
-            messages = (11L..1_011L).map { seq -> historyMessage(seq, roleFor(seq), "history-$seq") },
-        )
-        val runtime = fixture.runtime(initialObservedSeq = 10L)
-
-        assertTrue(runtime.notifyHistoryPending(1_011L))
-        val nextTrigger = ordinaryMessage(1_012L, ChatRole.USER, "next execute")
-        var commitAfterSeq = -1L
-        var loaded = emptyList<LLMRequest.Message>()
-        var emptyReload = listOf(LLMRequest.Message(LLMMessageRole.user, "not empty"))
-
-        runtime.execute(
-            request = turnRequest(),
-            persistSession = false,
-            onRuntimeReady = {
-                loaded = fixture.loadHistoryAtBoundary()
-                runtime.commitActiveRunInput { afterSeq ->
-                    commitAfterSeq = afterSeq
-                    ClientRequestResult.Accepted(
-                        request = mockk<ClientRequest>(),
-                        execution = mockk<AgentExecution>(),
-                        message = nextTrigger,
-                        messageDelta = listOf(nextTrigger),
-                    )
-                }
-                emptyReload = fixture.loadHistoryAtBoundary()
-            },
-        )
-
-        assertEquals(1_001, loaded.size)
-        assertEquals(1_011L, commitAfterSeq)
-        assertEquals(emptyList(), fixture.publishedInputs.single().history)
         assertEquals("next execute", fixture.publishedInputs.single().input)
+        assertEquals(1_015L, nextCommitAfterSeq)
         assertEquals(emptyList(), emptyReload)
-        assertEquals(3, fixture.repository.listCalls)
-        assertFalse(runtime.notifyHistoryPending(1_013L))
+        assertEquals(3, fixture.listCalls)
+        assertFalse(runtime.notifyHistoryPending(1_016L))
     }
 
     private class Fixture(messages: List<ChatMessage> = emptyList()) {
         val key = AgentConversationKey(userId = "user-1", conversationId = TEST_CHAT_ID.toString())
-        val repository = InMemoryMessageRepository(messages)
+        val repository = mockk<MessageRepository>()
+        var listCalls = 0
+            private set
         val executor = mockk<AgentExecutor>()
         val publishedInputs = mutableListOf<ActiveRunInput>()
         private val mailbox = mockk<ActiveRunMailbox>()
@@ -182,6 +156,26 @@ class BackendConversationRuntimeTest {
         private var historyLoader: (suspend () -> List<LLMRequest.Message>)? = null
 
         init {
+            coEvery { repository.latest(any(), any()) } coAnswers {
+                val userId = arg<String>(0)
+                val chatId = arg<UUID>(1)
+                messages.filter { it.userId == userId && it.chatId == chatId }.maxByOrNull(ChatMessage::seq)
+            }
+            coEvery { repository.list(any(), any(), any(), any(), any()) } coAnswers {
+                val userId = arg<String>(0)
+                val chatId = arg<UUID>(1)
+                val afterSeq = arg<Long?>(2)
+                val beforeSeq = arg<Long?>(3)
+                val limit = arg<Int>(4)
+                listCalls += 1
+                messages.asSequence()
+                    .filter { it.userId == userId && it.chatId == chatId }
+                    .filter { afterSeq == null || it.seq > afterSeq }
+                    .filter { beforeSeq == null || it.seq < beforeSeq }
+                    .sortedBy(ChatMessage::seq)
+                    .take(limit)
+                    .toList()
+            }
             every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
             every { settingsProvider.temperature } returns 0f
             every { contextFactory.create(any(), any(), any(), any(), any(), any()) } returns baseContext()
@@ -228,55 +222,6 @@ class BackendConversationRuntimeTest {
             activeTools = emptyList(),
             systemPrompt = "system",
         )
-    }
-
-    private class InMemoryMessageRepository(
-        private val messages: List<ChatMessage>,
-    ) : MessageRepository {
-        var listCalls: Int = 0
-
-        override suspend fun append(
-            userId: String,
-            chatId: UUID,
-            role: ChatRole,
-            content: String,
-            metadata: Map<String, String>,
-            id: UUID,
-            createdAt: Instant,
-        ): ChatMessage = error("Not used")
-
-        override suspend fun get(userId: String, chatId: UUID, seq: Long): ChatMessage? =
-            messages.singleOrNull { it.userId == userId && it.chatId == chatId && it.seq == seq }
-
-        override suspend fun getById(userId: String, chatId: UUID, messageId: UUID): ChatMessage? =
-            messages.singleOrNull { it.userId == userId && it.chatId == chatId && it.id == messageId }
-
-        override suspend fun latest(userId: String, chatId: UUID): ChatMessage? =
-            messages.filter { it.userId == userId && it.chatId == chatId }.maxByOrNull(ChatMessage::seq)
-
-        override suspend fun updateContent(
-            userId: String,
-            chatId: UUID,
-            messageId: UUID,
-            content: String,
-        ): ChatMessage? = error("Not used")
-
-        override suspend fun list(
-            userId: String,
-            chatId: UUID,
-            afterSeq: Long?,
-            beforeSeq: Long?,
-            limit: Int,
-        ): List<ChatMessage> {
-            listCalls += 1
-            return messages.asSequence()
-                .filter { it.userId == userId && it.chatId == chatId }
-                .filter { afterSeq == null || it.seq > afterSeq }
-                .filter { beforeSeq == null || it.seq < beforeSeq }
-                .sortedBy(ChatMessage::seq)
-                .take(limit)
-                .toList()
-        }
     }
 
     companion object {

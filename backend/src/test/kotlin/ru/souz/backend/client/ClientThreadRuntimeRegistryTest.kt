@@ -127,13 +127,16 @@ class ClientThreadRuntimeRegistryTest {
     }
 
     @Test
-    fun `detached watermark is not carried into option continuation`() = runBlocking {
+    fun `option continuation ignores detached history until execute makes it eligible`() = runBlocking {
         val registry = ClientThreadRuntimeRegistry()
         val chatId = UUID.randomUUID()
         val threadId = UUID.randomUUID()
         val executeRuntime = mockk<BackendConversationRuntime>()
         val optionRuntime = mockk<BackendConversationRuntime>()
+        val accepted = mockk<ClientRequestResult.Accepted>()
         coEvery { executeRuntime.notifyHistoryPending(7L) } returns false
+        coEvery { optionRuntime.commitActiveRunInput(any()) } returns accepted
+        coEvery { optionRuntime.notifyHistoryPending(13L) } returns true
         registry.register(chatId, threadId, device())
         registry.attach(threadId, executeRuntime, historyEligible = true)
         registry.markRuntimeReady(threadId, executeRuntime)
@@ -145,20 +148,6 @@ class ClientThreadRuntimeRegistryTest {
 
         assertFalse(registry.notifyHistoryPending(chatId, 8L))
         coVerify(exactly = 0) { optionRuntime.notifyHistoryPending(any()) }
-    }
-
-    @Test
-    fun `option continuation becomes history eligible after accepting execute input`() = runBlocking {
-        val registry = ClientThreadRuntimeRegistry()
-        val chatId = UUID.randomUUID()
-        val threadId = UUID.randomUUID()
-        val runtime = mockk<BackendConversationRuntime>()
-        val accepted = mockk<ClientRequestResult.Accepted>()
-        coEvery { runtime.commitActiveRunInput(any()) } returns accepted
-        coEvery { runtime.notifyHistoryPending(13L) } returns true
-        registry.register(chatId, threadId, device())
-        registry.attach(threadId, runtime, historyEligible = false)
-        registry.markRuntimeReady(threadId, runtime)
 
         assertTrue(
             registry.acceptInput(
@@ -170,7 +159,7 @@ class ClientThreadRuntimeRegistryTest {
         )
         assertTrue(registry.notifyHistoryPending(chatId, 13L))
 
-        coVerify(exactly = 1) { runtime.notifyHistoryPending(13L) }
+        coVerify(exactly = 1) { optionRuntime.notifyHistoryPending(13L) }
     }
 
     private fun device() = ClientDevice(

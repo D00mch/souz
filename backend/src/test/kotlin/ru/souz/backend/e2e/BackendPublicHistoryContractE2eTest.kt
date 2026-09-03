@@ -23,14 +23,7 @@ class BackendPublicHistoryContractE2eTest {
     @Test
     fun `history contract is strict durable and thread independent`() =
         backendE2eTest("e2e_ws_history_contract") {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession(
-                "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-            )
-
-            try {
+            withPublicChatSocket { userId, chatId, session ->
                 session.send(Frame.Text(historyFrame(chatId, userId, "history-user", "user", "client solved it")))
                 val userAck = readJson(session)
                 assertEquals("accepted", userAck["status"].asText())
@@ -146,9 +139,6 @@ class BackendPublicHistoryContractE2eTest {
                     assertEquals("true", json.readTree(metadata)[CLIENT_HISTORY_MESSAGE_METADATA_KEY].asText())
                     assertNull(json.readTree(metadata)["inputSeq"])
                 }
-            } finally {
-                session.close()
-                wsClient.close()
             }
         }
 
@@ -156,14 +146,9 @@ class BackendPublicHistoryContractE2eTest {
     fun `history during an active request waits for implicit execute and keeps the active thread`() {
         val llm = E2eLlmApi().apply { pausePromptUntilReleased("first active") }
         backendE2eTest("e2e_ws_history_active_thread", llm = llm) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession(
-                "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-            )
-
-            try {
+            withPublicChatSocket(
+                cleanup = { llm.releasePrompt("first active") },
+            ) { userId, chatId, session ->
                 session.send(
                     Frame.Text(
                         messageFrame(
@@ -242,10 +227,6 @@ class BackendPublicHistoryContractE2eTest {
                     relevantMessages.map { it.content },
                 )
                 assertEquals(2, llm.requests.size)
-            } finally {
-                llm.releasePrompt("first active")
-                session.close()
-                wsClient.close()
             }
         }
     }
@@ -255,14 +236,9 @@ class BackendPublicHistoryContractE2eTest {
         val ownerLlm = E2eLlmApi().apply { pausePromptUntilReleased("owner active") }
         val peerLlm = E2eLlmApi()
         backendE2eTest("e2e_ws_history_cross_instance", llm = ownerLlm) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val ownerClient = webSocketClient()
-            val ownerSession = ownerClient.webSocketSession(
-                "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-            )
-
-            try {
+            withPublicChatSocket(
+                cleanup = { ownerLlm.releasePrompt("owner active") },
+            ) { userId, chatId, ownerSession ->
                 ownerSession.send(
                     Frame.Text(
                         messageFrame(
@@ -279,11 +255,7 @@ class BackendPublicHistoryContractE2eTest {
                 ownerLlm.awaitPrompt("owner active")
 
                 withPeerBackend(peerLlm) { peer ->
-                    val peerClient = peer.webSocketClient()
-                    val peerSession = peerClient.webSocketSession(
-                        "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-                    )
-                    try {
+                    peer.withPublicSocket(chatId) { peerSession ->
                         peerSession.send(
                             Frame.Text(
                                 historyFrame(
@@ -328,15 +300,8 @@ class BackendPublicHistoryContractE2eTest {
                         )
                         assertEquals(1, replacement.count { it.content == "completed by peer" })
                         assertTrue(peerLlm.requests.isEmpty())
-                    } finally {
-                        peerSession.close()
-                        peerClient.close()
                     }
                 }
-            } finally {
-                ownerLlm.releasePrompt("owner active")
-                ownerSession.close()
-                ownerClient.close()
             }
         }
     }
@@ -349,14 +314,7 @@ class BackendPublicHistoryContractE2eTest {
                 requestSkill("user.ask", mapOf("question" to "Which genre?"))
             },
         ) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession(
-                "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-            )
-
-            try {
+            withPublicChatSocket { userId, chatId, session ->
                 session.send(
                     Frame.Text(
                         messageFrame(
@@ -410,9 +368,6 @@ class BackendPublicHistoryContractE2eTest {
                 assertTrue(historyIndex < toolCallIndex)
                 assertTrue(toolCallIndex < toolResultIndex)
                 assertEquals(1, finalRequest.count { it.content == "client context during tool" })
-            } finally {
-                session.close()
-                wsClient.close()
             }
         }
 
@@ -420,14 +375,9 @@ class BackendPublicHistoryContractE2eTest {
     fun `history during a final response remains after that response until the next execute`() {
         val llm = E2eLlmApi().apply { pausePromptUntilReleased("final active") }
         backendE2eTest("e2e_ws_history_final_gap", llm = llm) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession(
-                "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-            )
-
-            try {
+            withPublicChatSocket(
+                cleanup = { llm.releasePrompt("final active") },
+            ) { userId, chatId, session ->
                 session.send(
                     Frame.Text(
                         messageFrame(
@@ -484,10 +434,6 @@ class BackendPublicHistoryContractE2eTest {
                 assertTrue(savedResponseIndex < historyIndex)
                 assertTrue(historyIndex < executeIndex)
                 assertEquals(1, nextRequest.count { it.content == "late client history" })
-            } finally {
-                llm.releasePrompt("final active")
-                session.close()
-                wsClient.close()
             }
         }
     }
@@ -495,14 +441,7 @@ class BackendPublicHistoryContractE2eTest {
     @Test
     fun `implicit execute creates a thread with preceding role preserving history`() =
         backendE2eTest("e2e_ws_history_new_thread") {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession(
-                "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-            )
-
-            try {
+            withPublicChatSocket { userId, chatId, session ->
                 session.send(Frame.Text(historyFrame(chatId, userId, "history-before-1", "user", "solved request")))
                 assertEquals("accepted", readJson(session)["status"].asText())
                 session.send(
@@ -557,11 +496,39 @@ class BackendPublicHistoryContractE2eTest {
                 val nextRequest = llm.requests[1]
                 assertEquals(1, nextRequest.messages.count { it.content == "solved request" })
                 assertEquals(1, nextRequest.messages.count { it.content == "request solved" })
-            } finally {
-                session.close()
-                wsClient.close()
             }
         }
+
+    private suspend fun <T> BackendE2eScope.withPublicChatSocket(
+        cleanup: suspend () -> Unit = {},
+        block: suspend (userId: String, chatId: String, session: DefaultClientWebSocketSession) -> T,
+    ): T {
+        val userId = UUID.randomUUID().toString()
+        val chatId = createPublicChat(userId)
+        return withPublicSocket(chatId) { session ->
+            try {
+                block(userId, chatId, session)
+            } finally {
+                cleanup()
+            }
+        }
+    }
+
+    private suspend fun <T> BackendE2eScope.withPublicSocket(
+        chatId: String,
+        block: suspend (DefaultClientWebSocketSession) -> T,
+    ): T {
+        val client = webSocketClient()
+        val session = client.webSocketSession(
+            "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
+        )
+        return try {
+            block(session)
+        } finally {
+            session.close()
+            client.close()
+        }
+    }
 
     private suspend fun BackendE2eScope.createPublicChat(userId: String): String {
         val created = client.post(BackendHttpRoutes.CHATS) {

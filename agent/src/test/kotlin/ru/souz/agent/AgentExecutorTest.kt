@@ -16,19 +16,34 @@ import kotlin.test.assertTrue
 
 class AgentExecutorTest {
     @Test
-    fun `executor exposes the exact active mailbox instead of proxying submissions`() = runTest {
+    fun `executor normalizes and forwards execution state without proxying the mailbox`() = runTest {
         val agent = CapturingAgent()
-        val executor = AgentExecutor(agentProvider = { agent })
+        val selectedAgents = mutableListOf<AgentId>()
+        val eventSink = object : AgentRuntimeEventSink {
+            override suspend fun emit(event: AgentRuntimeEvent) = Unit
+        }
+        val callback: GraphStepCallback = { _, _, _, _ -> }
+        val executor = AgentExecutor(
+            agentProvider = { id ->
+                selectedAgents += id
+                agent
+            },
+            availableAgents = listOf(AgentId.SKILLS_GRAPH),
+            onStep = callback,
+        )
         val input = ActiveRunInput(
             history = listOf(LLMRequest.Message(LLMMessageRole.assistant, "client answer")),
             input = "continue",
         )
+        val history = listOf(LLMRequest.Message(LLMMessageRole.user, "pending history"))
         var readyMailbox: ActiveRunMailbox? = null
 
-        executor.execute(
-            agentId = AgentId.SKILLS_GRAPH,
+        val result = executor.execute(
+            agentId = AgentId.GRAPH,
             context = baseContext(),
             input = "hello",
+            eventSink = eventSink,
+            loadPendingHistory = { history },
             onActiveRunReady = { mailbox ->
                 readyMailbox = mailbox
                 assertTrue(mailbox.submit { input })
@@ -37,26 +52,6 @@ class AgentExecutorTest {
 
         assertSame(agent.mailbox, readyMailbox)
         assertEquals(listOf(input), agent.receivedInputs)
-    }
-
-    @Test
-    fun `executor prepares seed and forwards fixed history source and tracing`() = runTest {
-        val agent = CapturingAgent()
-        val eventSink = object : AgentRuntimeEventSink {
-            override suspend fun emit(event: AgentRuntimeEvent) = Unit
-        }
-        val callback: GraphStepCallback = { _, _, _, _ -> }
-        val executor = AgentExecutor(agentProvider = { agent }, onStep = callback)
-        val history = listOf(LLMRequest.Message(LLMMessageRole.user, "pending history"))
-
-        val result = executor.execute(
-            agentId = AgentId.GRAPH,
-            context = baseContext(),
-            input = "hello",
-            eventSink = eventSink,
-            loadPendingHistory = { history },
-        )
-
         val executedContext = agent.executedContexts.single()
         assertEquals("hello", executedContext.input)
         assertEquals("Base system prompt", executedContext.systemPrompt)
@@ -65,21 +60,10 @@ class AgentExecutorTest {
         assertEquals(history, agent.loadedHistory)
         assertEquals("assistant response", result.output)
         assertEquals("Base system prompt", result.context.systemPrompt)
-    }
-
-    @Test
-    fun `executor normalizes unavailable agent IDs before cancellation`() {
-        val agent = CapturingAgent()
-        val executor = AgentExecutor(
-            agentProvider = { id ->
-                assertEquals(AgentId.SKILLS_GRAPH, id)
-                agent
-            },
-            availableAgents = listOf(AgentId.SKILLS_GRAPH),
-        )
 
         executor.cancel(AgentId.GRAPH)
 
+        assertEquals(listOf(AgentId.SKILLS_GRAPH, AgentId.SKILLS_GRAPH), selectedAgents)
         assertEquals(1, agent.cancelCount)
     }
 

@@ -21,16 +21,6 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class ActiveRunMailboxTest {
     @Test
-    fun `closed mailbox rejects submission without enqueueing it`() = runTest {
-        val mailbox = ActiveRunMailbox { emptyList() }
-
-        mailbox.close()
-
-        assertFalse(mailbox.submit { ActiveRunInput(input = "too late") })
-        assertFailsWith<CancellationException> { mailbox.drain() }
-    }
-
-    @Test
     fun `reserved submission remains ordered before final sealing`() = runTest {
         val mailbox = ActiveRunMailbox { emptyList() }
         val releaseProducer = CompletableDeferred<Unit>()
@@ -43,29 +33,13 @@ class ActiveRunMailboxTest {
         runCurrent()
         val sealing = async { mailbox.drainOrSeal() }
         runCurrent()
+        assertFalse(sealing.isCompleted)
         releaseProducer.complete(Unit)
 
         assertTrue(submission.await())
         assertEquals("accepted first", sealing.await()?.single()?.input)
         assertNull(mailbox.drainOrSeal())
         assertFalse(mailbox.submit { ActiveRunInput(input = "after close") })
-    }
-
-    @Test
-    fun `reserved submission is published only after producer succeeds`() = runTest {
-        val mailbox = ActiveRunMailbox { emptyList() }
-        val producedInput = CompletableDeferred<ActiveRunInput?>()
-        val submission = async { mailbox.submit { producedInput.await() } }
-        runCurrent()
-
-        val sealing = async { mailbox.drainOrSeal() }
-        runCurrent()
-
-        assertFalse(sealing.isCompleted)
-        producedInput.complete(ActiveRunInput(input = "durable input"))
-
-        assertTrue(submission.await())
-        assertEquals("durable input", sealing.await()?.single()?.input)
     }
 
     @Test
@@ -127,20 +101,6 @@ class ActiveRunMailboxTest {
     }
 
     @Test
-    fun `fixed history source is consulted at every boundary`() = runTest {
-        var loads = 0
-        var pending = listOf(message(LLMMessageRole.user, "pending"))
-        val mailbox = ActiveRunMailbox {
-            loads += 1
-            pending.also { pending = emptyList() }
-        }
-
-        assertEquals(listOf("pending"), mailbox.loadHistoryAtBoundary().map { it.content })
-        assertTrue(mailbox.loadHistoryAtBoundary().isEmpty())
-        assertEquals(2, loads)
-    }
-
-    @Test
     fun `history staged after a boundary snapshot belongs to the next boundary`() = runTest {
         val firstLoadStarted = CompletableDeferred<Unit>()
         val releaseFirstLoad = CompletableDeferred<Unit>()
@@ -162,31 +122,21 @@ class ActiveRunMailboxTest {
     }
 
     @Test
-    fun `failed fixed history source is retried at a later boundary`() = runTest {
+    fun `failed history loads preserve retry and cancellation semantics`() = runTest {
         var attempts = 0
         val mailbox = ActiveRunMailbox {
             attempts += 1
-            if (attempts == 1) error("temporarily unavailable")
+            when (attempts) {
+                1 -> error("temporarily unavailable")
+                2 -> throw CancellationException("boundary cancelled")
+            }
             listOf(message(LLMMessageRole.user, "recovered"))
         }
 
         assertTrue(mailbox.loadHistoryAtBoundary().isEmpty())
-        assertEquals(listOf("recovered"), mailbox.loadHistoryAtBoundary().map { it.content })
-        assertEquals(2, attempts)
-    }
-
-    @Test
-    fun `cancelled fixed history source propagates cancellation and can be retried`() = runTest {
-        var attempts = 0
-        val mailbox = ActiveRunMailbox {
-            attempts += 1
-            if (attempts == 1) throw CancellationException("boundary cancelled")
-            listOf(message(LLMMessageRole.assistant, "recovered"))
-        }
-
         assertFailsWith<CancellationException> { mailbox.loadHistoryAtBoundary() }
         assertEquals(listOf("recovered"), mailbox.loadHistoryAtBoundary().map { it.content })
-        assertEquals(2, attempts)
+        assertEquals(3, attempts)
     }
 
     @Test
@@ -200,6 +150,7 @@ class ActiveRunMailboxTest {
         assertNull(mailbox.drainOrSeal())
         assertEquals(0, loads)
         assertFalse(mailbox.submit { ActiveRunInput(input = "too late") })
+        assertFailsWith<CancellationException> { mailbox.drain() }
         assertFailsWith<CancellationException> { mailbox.loadHistoryAtBoundary() }
     }
 
@@ -221,10 +172,7 @@ class ActiveRunMailboxTest {
         assertEquals(listOf(first, second), mailbox.drain())
         val request = mailbox.nextLlmStep() as ActiveRunMailbox.NextLlmStep.Request
         assertEquals(2L, request.streamRevision)
-    }
 
-    @Test
-    fun `structured submissions reject non conversational history roles`() {
         assertFailsWith<IllegalArgumentException> {
             ActiveRunInput(
                 history = listOf(message(LLMMessageRole.function, "tool result")),

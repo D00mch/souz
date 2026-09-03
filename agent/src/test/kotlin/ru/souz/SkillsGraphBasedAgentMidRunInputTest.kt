@@ -37,33 +37,6 @@ import kotlin.test.assertTrue
 
 class SkillsGraphBasedAgentMidRunInputTest {
     @Test
-    fun `active run readiness callback fires after mailbox opens`() = runTest {
-        val ready = CompletableDeferred<Unit>()
-        val firstStarted = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val harness = Harness(chatHandler = { _, ctx ->
-            firstStarted.complete(Unit)
-            release.await()
-            ctx.map { finalResponse("done") }
-        })
-
-        val execution = async {
-            harness.execute(
-                context = harness.context(),
-                onActiveRunReady = { ready.complete(Unit) },
-            )
-        }
-        ready.await()
-
-        assertTrue(harness.submit("follow-up after readiness"))
-        firstStarted.await()
-        release.complete(Unit)
-
-        assertEquals("done", execution.await().output)
-        assertEquals("follow-up after readiness", harness.requestHistories.single().last().content)
-    }
-
-    @Test
     fun `submissions cancel only the active LLM and drain together in FIFO order`() = runTest {
         val firstStarted = CompletableDeferred<Unit>()
         val firstCancelled = CompletableDeferred<Unit>()
@@ -258,13 +231,13 @@ class SkillsGraphBasedAgentMidRunInputTest {
     }
 
     @Test
-    fun `passive history during tools is spliced before tool call and result`() = runTest {
+    fun `passive history neither cancels nor splits a multi tool exchange`() = runTest {
         val toolStarted = CompletableDeferred<Unit>()
         val releaseTool = CompletableDeferred<Unit>()
         var toolCancelled = false
         val harness = Harness(
             chatHandler = { call, ctx ->
-                ctx.map { if (call == 1) toolResponse() else finalResponse("after tool") }
+                ctx.map { if (call == 1) multiToolResponse() else finalResponse("after tools") }
             },
             toolHandler = {
                 toolStarted.complete(Unit)
@@ -273,39 +246,6 @@ class SkillsGraphBasedAgentMidRunInputTest {
                 } finally {
                     toolCancelled = !currentCoroutineContext().isActive
                 }
-                listOf(executedTool("tool-result"))
-            },
-        )
-
-        val execution = async { harness.execute() }
-        toolStarted.await()
-        assertTrue(harness.stageHistory {
-            listOf(LLMRequest.Message(LLMMessageRole.user, "client-side history"))
-        })
-        assertFalse(toolCancelled)
-        releaseTool.complete(Unit)
-
-        assertEquals("after tool", execution.await().output)
-        assertFalse(toolCancelled)
-        assertOrdered(
-            harness.requestHistories[1],
-            "client-side history",
-            "call-1",
-            "tool-result",
-        )
-    }
-
-    @Test
-    fun `passive history stays before a complete multi tool exchange`() = runTest {
-        val toolStarted = CompletableDeferred<Unit>()
-        val releaseTool = CompletableDeferred<Unit>()
-        val harness = Harness(
-            chatHandler = { call, ctx ->
-                ctx.map { if (call == 1) multiToolResponse() else finalResponse("after tools") }
-            },
-            toolHandler = {
-                toolStarted.complete(Unit)
-                releaseTool.await()
                 listOf(
                     executedTool("first result", callId = "call-1"),
                     executedTool("second result", callId = "call-2"),
@@ -318,9 +258,11 @@ class SkillsGraphBasedAgentMidRunInputTest {
         assertTrue(harness.stageHistory {
             listOf(LLMRequest.Message(LLMMessageRole.assistant, "client answer"))
         })
+        assertFalse(toolCancelled)
         releaseTool.complete(Unit)
 
         assertEquals("after tools", execution.await().output)
+        assertFalse(toolCancelled)
         assertOrdered(
             harness.requestHistories[1],
             "client answer",
@@ -332,56 +274,23 @@ class SkillsGraphBasedAgentMidRunInputTest {
     }
 
     @Test
-    fun `structured execute during tools places its history before exchange and input after result`() = runTest {
-        val toolStarted = CompletableDeferred<Unit>()
-        val releaseTool = CompletableDeferred<Unit>()
-        val harness = Harness(
-            chatHandler = { call, ctx ->
-                ctx.map { if (call == 1) toolResponse() else finalResponse("after tool") }
-            },
-            toolHandler = {
-                toolStarted.complete(Unit)
-                releaseTool.await()
-                listOf(executedTool("tool-result"))
-            },
-        )
-
-        val execution = async { harness.execute() }
-        toolStarted.await()
-        assertTrue(
-            harness.submit(
-                ActiveRunInput(
-                    history = listOf(LLMRequest.Message(LLMMessageRole.assistant, "client answer")),
-                    input = "continue with this requirement",
-                )
-            )
-        )
-        releaseTool.complete(Unit)
-
-        assertEquals("after tool", execution.await().output)
-        assertOrdered(
-            harness.requestHistories[1],
-            "client answer",
-            "call-1",
-            "tool-result",
-            "continue with this requirement",
-        )
-        assertEquals(listOf(0L, 1L), harness.streamRevisions)
-    }
-
-    @Test
     fun `tool boundary preserves execute groups around a passive history claim`() = runTest {
         val toolStarted = CompletableDeferred<Unit>()
         val releaseTool = CompletableDeferred<Unit>()
         val passiveLoadStarted = CompletableDeferred<Unit>()
         val releasePassiveLoad = CompletableDeferred<Unit>()
+        var toolCancelled = false
         val harness = Harness(
             chatHandler = { call, ctx ->
                 ctx.map { if (call == 1) toolResponse() else finalResponse("after tool") }
             },
             toolHandler = {
                 toolStarted.complete(Unit)
-                releaseTool.await()
+                try {
+                    releaseTool.await()
+                } finally {
+                    toolCancelled = !currentCoroutineContext().isActive
+                }
                 listOf(executedTool("tool-result"))
             },
         )
@@ -401,6 +310,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
             releasePassiveLoad.await()
             listOf(LLMRequest.Message(LLMMessageRole.user, "passive history"))
         })
+        assertFalse(toolCancelled)
         releaseTool.complete(Unit)
         passiveLoadStarted.await()
         assertTrue(
@@ -414,6 +324,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         releasePassiveLoad.complete(Unit)
 
         assertEquals("after tool", execution.await().output)
+        assertFalse(toolCancelled)
         assertOrdered(
             harness.requestHistories[1],
             "before history",
@@ -425,61 +336,6 @@ class SkillsGraphBasedAgentMidRunInputTest {
             "after execute",
         )
         assertEquals(listOf(0L, 2L), harness.streamRevisions)
-    }
-
-    @Test
-    fun `submission during tools waits for results and does not cancel the tool`() = runTest {
-        val toolStarted = CompletableDeferred<Unit>()
-        val releaseTool = CompletableDeferred<Unit>()
-        var toolCancelled = false
-        val harness = Harness(
-            chatHandler = { call, ctx ->
-                ctx.map { if (call == 1) toolResponse() else finalResponse("after tool") }
-            },
-            toolHandler = {
-                toolStarted.complete(Unit)
-                try {
-                    releaseTool.await()
-                } finally {
-                    toolCancelled = !currentCoroutineContext().isActive
-                }
-                listOf(
-                    ExecutedToolCall(
-                        functionCall = functionCall(),
-                        message = LLMRequest.Message(
-                            role = LLMMessageRole.function,
-                            content = "tool-result",
-                            name = "TestTool",
-                            functionsStateId = "call-1",
-                        ),
-                    )
-                )
-            },
-        )
-
-        val execution = async { harness.execute() }
-        toolStarted.await()
-        assertTrue(harness.submit("use the result differently"))
-        assertFalse(toolCancelled)
-
-        releaseTool.complete(Unit)
-        val result = execution.await()
-        assertEquals("after tool", result.output)
-        assertFalse(toolCancelled)
-
-        val replacementHistory = harness.requestHistories[1]
-        val assistantCallIndex = replacementHistory.indexOfFirst {
-            it.role == LLMMessageRole.assistant && it.functionsStateId == "call-1"
-        }
-        val functionResultIndex = replacementHistory.indexOfFirst {
-            it.role == LLMMessageRole.function && it.content == "tool-result"
-        }
-        val queuedInputIndex = replacementHistory.indexOfFirst {
-            it.role == LLMMessageRole.user && it.content == "use the result differently"
-        }
-        assertTrue(assistantCallIndex >= 0)
-        assertTrue(functionResultIndex > assistantCallIndex)
-        assertTrue(queuedInputIndex > functionResultIndex)
     }
 
     @Test
