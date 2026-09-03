@@ -1,69 +1,213 @@
 package ru.souz.backend.storage.postgres
 
+import java.sql.Connection
+import java.sql.ResultSet
 import java.util.UUID
 import javax.sql.DataSource
+import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.client.model.ClientRequest
+import ru.souz.backend.client.repository.ClientFollowUpInput
+import ru.souz.backend.client.repository.ClientRequestKey
 import ru.souz.backend.client.repository.ClientRequestRepository
+import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.execution.model.AgentExecution
+import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.model.acceptsInput
 
 class PostgresClientRequestRepository(
     private val dataSource: DataSource,
 ) : ClientRequestRepository {
     private val executionWriter = PostgresAgentExecutionRepository(dataSource)
+    private val messageWriter = PostgresMessageRepository(dataSource)
 
-    override suspend fun create(request: ClientRequest): ClientRequest = dataSource.write { connection ->
-        insert(connection, request)
+    internal suspend fun get(chatId: UUID, requestId: String): ClientRequest? = dataSource.read { connection ->
+        connection.findClientRequest(chatId, requestId)
     }
 
-    private fun insert(connection: java.sql.Connection, request: ClientRequest): ClientRequest {
-        connection.prepareStatement(
-            """
-            insert into client_requests(
-              chat_id, request_id, kind, thread_id, payload_hash, ack_json, received_at
-            ) values (?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent()
-        ).use { statement ->
-            statement.setObject(1, request.chatId)
-            statement.setString(2, request.requestId)
-            statement.setString(3, request.kind)
-            statement.setObject(4, request.threadId)
-            statement.setString(5, request.payloadHash)
-            statement.setJson(6, request.ackJson)
-            statement.setInstant(7, request.receivedAt)
-            statement.executeUpdate()
+    override suspend fun resolveMessage(
+        userId: String,
+        key: ClientRequestKey,
+        requestedThreadId: UUID?,
+        newExecution: AgentExecution?,
+        acceptedRequest: ClientRequest?,
+        rejectedRequest: (AgentExecution?) -> ClientRequest,
+    ): ClientRequestResult = serialize(userId, key) {
+        val execution = if (requestedThreadId != null) {
+            findExecution(userId, key.chatId, requestedThreadId)
+        } else {
+            findActiveExecution(userId, key.chatId)
         }
-        return request
-    }
-
-    override suspend fun createWithExecution(
-        execution: AgentExecution,
-        request: ClientRequest,
-    ): AgentExecution = dataSource.write { connection ->
-        require(request.chatId == execution.chatId) { "Client request and execution must belong to the same chat." }
-        require(request.threadId == execution.id) { "Client request must reference the created execution." }
-        executionWriter.insert(connection, execution)
-        insert(connection, request)
-        execution
-    }
-
-    override suspend fun get(chatId: UUID, requestId: String): ClientRequest? = dataSource.read { connection ->
-        connection.prepareStatement(
-            "select * from client_requests where chat_id = ? and request_id = ?"
-        ).use { statement ->
-            statement.setObject(1, chatId)
-            statement.setString(2, requestId)
-            statement.executeQuery().use { resultSet ->
-                if (!resultSet.next()) return@read null
-                ClientRequest(
-                    chatId = resultSet.getObject("chat_id", UUID::class.java),
-                    requestId = resultSet.getString("request_id"),
-                    kind = resultSet.getString("kind"),
-                    threadId = resultSet.getObject("thread_id", UUID::class.java),
-                    payloadHash = resultSet.getString("payload_hash"),
-                    ackJson = resultSet.getString("ack_json"),
-                    receivedAt = resultSet.instant("received_at"),
-                )
+        when {
+            execution != null && execution.status.acceptsInput() -> ClientRequestResult.Continue(execution)
+            execution != null -> reject(key, execution, rejectedRequest)
+            requestedThreadId != null -> reject(key, null, rejectedRequest)
+            newExecution == null -> ClientRequestResult.CreateThread
+            else -> {
+                val request = requireNotNull(acceptedRequest) { "Accepted request is required for a new execution." }
+                require(newExecution.userId == userId && newExecution.chatId == key.chatId)
+                require(request.threadId == newExecution.id)
+                request.requireKey(key)
+                executionWriter.insert(this, newExecution)
+                insertClientRequest(this, request)
+                ClientRequestResult.Accepted(request, newExecution)
             }
         }
+    }
+
+    override suspend fun commitFollowUp(
+        userId: String,
+        key: ClientRequestKey,
+        threadId: UUID,
+        input: ClientFollowUpInput?,
+        acceptedRequest: (Long) -> ClientRequest,
+        rejectedRequest: (AgentExecution?) -> ClientRequest,
+    ): ClientRequestResult = serialize(userId, key) {
+        val execution = findExecution(userId, key.chatId, threadId)
+        if (execution == null || !execution.status.acceptsInput() || input == null) {
+            reject(key, execution, rejectedRequest)
+        } else {
+            val revision = execution.revision + 1
+            val request = acceptedRequest(revision).also {
+                it.requireKey(key)
+                require(it.threadId == threadId)
+            }
+            val updatedExecution = executionWriter.update(
+                this,
+                execution.copy(revision = revision, latestDeviceContextJson = input.latestDeviceContextJson),
+            )
+            messageWriter.append(
+                connection = this,
+                userId = userId,
+                chatId = key.chatId,
+                role = ChatRole.USER,
+                content = input.content,
+                metadata = input.metadata + ("inputSeq" to revision.toString()),
+                id = input.messageId,
+                createdAt = input.createdAt,
+            )
+            insertClientRequest(this, request)
+            ClientRequestResult.Accepted(request, updatedExecution)
+        }
+    }
+
+    override suspend fun cancel(
+        userId: String,
+        key: ClientRequestKey,
+        threadId: UUID,
+        runtimeAvailable: Boolean,
+        acceptedRequest: ClientRequest,
+        rejectedRequest: (AgentExecution?) -> ClientRequest,
+    ): ClientRequestResult = serialize(userId, key) {
+        val execution = findExecution(userId, key.chatId, threadId)
+        if (execution == null || !execution.status.acceptsInput() || !runtimeAvailable) {
+            reject(key, execution, rejectedRequest)
+        } else {
+            acceptedRequest.requireKey(key)
+            require(acceptedRequest.threadId == threadId)
+            val cancelling = executionWriter.update(
+                this,
+                execution.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true),
+            )
+            insertClientRequest(this, acceptedRequest)
+            ClientRequestResult.Accepted(acceptedRequest, cancelling)
+        }
+    }
+
+    private suspend fun serialize(
+        userId: String,
+        key: ClientRequestKey,
+        mutation: Connection.() -> ClientRequestResult,
+    ): ClientRequestResult = dataSource.write { connection ->
+        connection.lockChat(userId, key.chatId)
+        connection.findClientRequest(key.chatId, key.requestId)?.replay(key) ?: connection.mutation()
+    }
+}
+
+private fun Connection.findClientRequest(chatId: UUID, requestId: String): ClientRequest? =
+    prepareStatement("select * from client_requests where chat_id = ? and request_id = ?").use { statement ->
+        statement.setObject(1, chatId)
+        statement.setString(2, requestId)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) resultSet.toClientRequest() else null
+        }
+    }
+
+private fun Connection.findExecution(userId: String, chatId: UUID, threadId: UUID): AgentExecution? =
+    prepareStatement(
+        "select * from agent_executions where user_id = ? and chat_id = ? and id = ? for update"
+    ).use { statement ->
+        statement.setString(1, userId)
+        statement.setObject(2, chatId)
+        statement.setObject(3, threadId)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) resultSet.toExecution() else null
+        }
+    }
+
+private fun Connection.findActiveExecution(userId: String, chatId: UUID): AgentExecution? =
+    prepareStatement(
+        """
+        select * from agent_executions
+        where user_id = ? and chat_id = ?
+          and status in ('queued', 'running', 'waiting_option', 'cancelling')
+        order by started_at desc
+        limit 1
+        for update
+        """.trimIndent()
+    ).use { statement ->
+        statement.setString(1, userId)
+        statement.setObject(2, chatId)
+        statement.executeQuery().use { resultSet ->
+            if (resultSet.next()) resultSet.toExecution() else null
+        }
+    }
+
+private fun Connection.reject(
+    key: ClientRequestKey,
+    execution: AgentExecution?,
+    requestFactory: (AgentExecution?) -> ClientRequest,
+): ClientRequestResult.Rejected {
+    val request = requestFactory(execution).also { it.requireKey(key) }
+    insertClientRequest(this, request)
+    return ClientRequestResult.Rejected(request)
+}
+
+private fun ClientRequest.replay(key: ClientRequestKey): ClientRequestResult =
+    if (kind == key.kind && payloadHash == key.payloadHash) {
+        ClientRequestResult.Duplicate(this)
+    } else {
+        ClientRequestResult.Conflict
+    }
+
+private fun ClientRequest.requireKey(key: ClientRequestKey) {
+    require(chatId == key.chatId && requestId == key.requestId && kind == key.kind && payloadHash == key.payloadHash)
+}
+
+private fun ResultSet.toClientRequest(): ClientRequest = ClientRequest(
+    chatId = getObject("chat_id", UUID::class.java),
+    requestId = getString("request_id"),
+    kind = getString("kind"),
+    threadId = getObject("thread_id", UUID::class.java),
+    payloadHash = getString("payload_hash"),
+    ackJson = getString("ack_json"),
+    receivedAt = instant("received_at"),
+)
+
+private fun insertClientRequest(connection: Connection, request: ClientRequest) {
+    connection.prepareStatement(
+        """
+        insert into client_requests(
+          chat_id, request_id, kind, thread_id, payload_hash, ack_json, received_at
+        ) values (?, ?, ?, ?, ?, ?, ?)
+        """.trimIndent()
+    ).use { statement ->
+        statement.setObject(1, request.chatId)
+        statement.setString(2, request.requestId)
+        statement.setString(3, request.kind)
+        statement.setObject(4, request.threadId)
+        statement.setString(5, request.payloadHash)
+        statement.setJson(6, request.ackJson)
+        statement.setInstant(7, request.receivedAt)
+        statement.executeUpdate()
     }
 }

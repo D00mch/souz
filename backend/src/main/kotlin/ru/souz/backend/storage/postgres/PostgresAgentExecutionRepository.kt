@@ -13,6 +13,7 @@ class PostgresAgentExecutionRepository(
     private val dataSource: DataSource,
 ) : AgentExecutionRepository {
     override suspend fun create(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
+        connection.lockChat(execution.userId, execution.chatId)
         insert(connection, execution)
     }
 
@@ -59,6 +60,10 @@ class PostgresAgentExecutionRepository(
     }
 
     override suspend fun update(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
+        update(connection, execution)
+    }
+
+    internal fun update(connection: java.sql.Connection, execution: AgentExecution): AgentExecution {
         try {
             connection.prepareStatement(
                 """
@@ -93,8 +98,28 @@ class PostgresAgentExecutionRepository(
             }
             throw error
         }
-        execution
+        return execution
     }
+
+    override suspend fun start(execution: AgentExecution, userMessageId: UUID): AgentExecution? =
+        dataSource.write { connection ->
+            connection.prepareStatement(
+                """
+                update agent_executions
+                set user_message_id = ?, status = 'running', started_at = now()
+                where user_id = ? and chat_id = ? and id = ? and status = 'queued'
+                returning *
+                """.trimIndent()
+            ).use { statement ->
+                statement.setObject(1, userMessageId)
+                statement.setString(2, execution.userId)
+                statement.setObject(3, execution.chatId)
+                statement.setObject(4, execution.id)
+                statement.executeQuery().use { resultSet ->
+                    if (resultSet.next()) resultSet.toExecution() else null
+                }
+            }
+        }
 
     override suspend fun get(userId: String, executionId: UUID): AgentExecution? = dataSource.read { connection ->
         connection.prepareStatement(

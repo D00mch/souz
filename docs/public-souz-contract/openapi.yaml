@@ -190,6 +190,7 @@ components:
         requestId:
           $ref: "#/components/schemas/NonEmptyString"
         threadId:
+          description: Thread to continue. When absent or null, Souz continues the chat's active thread or creates one if none is active.
           anyOf:
             - $ref: "#/components/schemas/UUID"
             - type: "null"
@@ -402,6 +403,7 @@ components:
           $ref: "#/components/schemas/UUID"
         created:
           type: boolean
+          description: True only when the originally acknowledged request created this thread.
         status:
           type: string
           enum: [running]

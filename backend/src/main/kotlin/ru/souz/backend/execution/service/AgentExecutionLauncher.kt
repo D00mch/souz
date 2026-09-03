@@ -60,9 +60,8 @@ internal class AgentExecutionLauncher(
             lifecycleReady.await()
             if (executionJob.isCompleted && activeJobs.contains(execution.id)) {
                 try {
-                    if (executionJob.isCancelled) {
-                        onCancelled()
-                    }
+                    // A leased client's lifecycle event must follow its ack, so lease recovery finalizes it.
+                    if (executionJob.isCancelled && execution.runtimeOwner == null) onCancelled()
                 } finally {
                     activeJobs.unregister(execution.id, executionJob)
                 }

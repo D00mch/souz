@@ -20,6 +20,7 @@ import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.AgentExecutionUsage
+import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.llms.LLMResponse
@@ -81,14 +82,7 @@ internal class AgentExecutionFinalizer(
         eventSink: BackendAgentRuntimeEventSink,
     ) {
         val currentExecution = executionRepository.getByChat(userId, chatId, executionId) ?: return
-        if (
-            currentExecution.status == AgentExecutionStatus.CANCELLED ||
-            currentExecution.status == AgentExecutionStatus.COMPLETED ||
-            currentExecution.status == AgentExecutionStatus.FAILED ||
-            currentExecution.status == AgentExecutionStatus.WAITING_OPTION
-        ) {
-            return
-        }
+        if (!currentExecution.status.isActive() || currentExecution.status == AgentExecutionStatus.WAITING_OPTION) return
         markCancelled(
             executionId = executionId,
             userId = userId,
@@ -125,6 +119,15 @@ internal class AgentExecutionFinalizer(
             usage = usage,
             metadata = emptyMap(),
         )
+        if (currentExecution.status == AgentExecutionStatus.CANCELLING) {
+            return@withTerminalTransition persistCancelled(
+                executionId = executionId,
+                userId = userId,
+                chatId = chatId,
+                usage = usage,
+            )
+        }
+        if (!currentExecution.status.isActive()) return@withTerminalTransition currentExecution
         executionRepository.update(
             currentExecution.copy(
                 status = AgentExecutionStatus.FAILED,
@@ -188,6 +191,11 @@ internal class AgentExecutionFinalizer(
         eventSink: BackendAgentRuntimeEventSink,
     ): AgentExecution {
         val persisted = withTerminalTransition(execution.id) {
+            val currentExecution = currentExecution(execution.id, execution.userId, execution.chatId)
+            if (currentExecution.status == AgentExecutionStatus.CANCELLING || currentExecution.cancelRequested) {
+                throw CancellationException("Execution cancellation was committed before completion.")
+            }
+            if (!currentExecution.status.isActive()) return@withTerminalTransition currentExecution
             val assistantMessage = eventSink.completeAssistantMessage(executionOutcome.output)
             val session = executionOutcome.session.let { current ->
                 if (assistantMessage.seq == current.basedOnMessageSeq + 1L) {
@@ -200,7 +208,7 @@ internal class AgentExecutionFinalizer(
             chatRepository.touchUpdatedAt(execution.userId, execution.chatId, assistantMessage.createdAt)
 
             executionRepository.update(
-                currentExecution(execution.id, execution.userId, execution.chatId).copy(
+                currentExecution.copy(
                     assistantMessageId = assistantMessage.id,
                     status = AgentExecutionStatus.COMPLETED,
                     finishedAt = Instant.now(),
@@ -210,7 +218,7 @@ internal class AgentExecutionFinalizer(
                 )
             )
         }
-        eventSink.emitExecutionFinished(persisted)
+        if (persisted.status == AgentExecutionStatus.COMPLETED) eventSink.emitExecutionFinished(persisted)
 
         return persisted
     }
@@ -263,8 +271,8 @@ internal class AgentExecutionFinalizer(
         error: Exception,
     ): Nothing {
         val failure = error.toExecutionFailure(execution)
-        withContext(NonCancellable) {
-            markFailed(
+        val cancelled = withContext(NonCancellable) {
+            val persisted = markFailed(
                 executionId = execution.id,
                 userId = execution.userId,
                 chatId = execution.chatId,
@@ -272,8 +280,14 @@ internal class AgentExecutionFinalizer(
                 errorMessage = failure.errorMessage,
                 usage = failure.usage,
             )
-            eventSink.emitExecutionFailed(failure.errorCode, failure.errorMessage)
+            when (persisted.status) {
+                AgentExecutionStatus.FAILED -> eventSink.emitExecutionFailed(failure.errorCode, failure.errorMessage)
+                AgentExecutionStatus.CANCELLED -> eventSink.emitExecutionCancelled()
+                else -> Unit
+            }
+            persisted.status == AgentExecutionStatus.CANCELLED
         }
+        if (cancelled) throw CancellationException("Execution cancellation won the terminal transition.")
         throw failure.response
     }
 }

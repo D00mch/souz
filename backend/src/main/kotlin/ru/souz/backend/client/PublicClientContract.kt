@@ -142,27 +142,16 @@ internal fun PublicThreadStatusResponse.toStatusFrame(requestId: String? = null)
     )
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
-data class AcceptedMessageAck(
+data class MessageSubmitAck(
     val kind: String = "ack",
     val chatId: String,
     val requestId: String,
-    val status: String = "accepted",
+    val status: String,
     val duplicate: Boolean,
-    val submission: SubmissionAck,
-    val thread: ThreadAck,
-    val error: Nothing? = null,
-    val receivedAt: String,
-)
-
-@JsonInclude(JsonInclude.Include.ALWAYS)
-data class RejectedMessageAck(
-    val kind: String = "ack",
-    val chatId: String,
-    val requestId: String,
-    val status: String = "rejected",
-    val duplicate: Boolean = false,
-    val thread: Nothing? = null,
-    val error: ClientError,
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    val submission: SubmissionAck? = null,
+    val thread: ThreadAck? = null,
+    val error: ClientError? = null,
     val receivedAt: String,
 )
 

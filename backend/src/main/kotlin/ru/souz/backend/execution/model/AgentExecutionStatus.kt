@@ -15,3 +15,6 @@ fun AgentExecutionStatus.isActive(): Boolean =
         this == AgentExecutionStatus.RUNNING ||
         this == AgentExecutionStatus.WAITING_OPTION ||
         this == AgentExecutionStatus.CANCELLING
+
+fun AgentExecutionStatus.acceptsInput(): Boolean =
+    this == AgentExecutionStatus.QUEUED || this == AgentExecutionStatus.RUNNING

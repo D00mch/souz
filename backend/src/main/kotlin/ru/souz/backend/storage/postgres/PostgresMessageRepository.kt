@@ -1,5 +1,6 @@
 package ru.souz.backend.storage.postgres
 
+import java.sql.Connection
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
@@ -20,6 +21,19 @@ class PostgresMessageRepository(
         createdAt: Instant,
     ): ChatMessage = dataSource.write { connection ->
         connection.lockChat(userId, chatId)
+        append(connection, userId, chatId, role, content, metadata, id, createdAt)
+    }
+
+    internal fun append(
+        connection: Connection,
+        userId: String,
+        chatId: UUID,
+        role: ChatRole,
+        content: String,
+        metadata: Map<String, String>,
+        id: UUID,
+        createdAt: Instant,
+    ): ChatMessage {
         val nextSeq = connection.prepareStatement(
             "select coalesce(max(seq), 0) + 1 from messages where user_id = ? and chat_id = ?"
         ).use { statement ->
@@ -46,7 +60,7 @@ class PostgresMessageRepository(
             statement.setInstant(8, createdAt)
             statement.executeUpdate()
         }
-        ChatMessage(
+        return ChatMessage(
             id = id,
             userId = userId,
             chatId = chatId,

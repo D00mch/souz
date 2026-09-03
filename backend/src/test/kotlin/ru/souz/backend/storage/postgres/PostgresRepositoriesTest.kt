@@ -26,6 +26,9 @@ import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.client.model.ClientRequest
+import ru.souz.backend.client.repository.ClientFollowUpInput
+import ru.souz.backend.client.repository.ClientRequestKey
+import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.options.model.OptionAnswer
 import ru.souz.backend.options.model.OptionKind
@@ -334,33 +337,6 @@ class PostgresRepositoriesTest {
             assertEquals(2, storedExecution?.revision)
             assertEquals("phone-1", storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
 
-            val updatedExecution = repositories.clientInputRepository.appendFollowUpInput(
-                execution = requireNotNull(storedExecution),
-                content = "next public input",
-                metadata = mapOf("inputSeq" to "3", "requestId" to "message-2"),
-                latestDeviceContextJson = """{"deviceId":"phone-2"}""",
-                createdAt = Instant.parse("2026-05-01T10:01:01Z"),
-            )
-            val storedMessages = repositories.messageRepository.list(userId, chat.id)
-            assertEquals(3, updatedExecution?.revision)
-            assertEquals("phone-2", updatedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
-            assertEquals(listOf("next public input"), storedMessages.map { it.content })
-            assertEquals(listOf("3"), storedMessages.map { it.metadata["inputSeq"] })
-
-            val receipt = ClientRequest(
-                chatId = chat.id,
-                requestId = "message-2",
-                kind = "message.submit",
-                threadId = execution.id,
-                payloadHash = "message-hash",
-                ackJson = """{"status":"accepted"}""",
-                receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
-            )
-            repositories.clientRequestRepository.create(receipt)
-            val storedReceipt = repositories.clientRequestRepository.get(chat.id, receipt.requestId)
-            assertEquals(receipt.copy(ackJson = storedReceipt?.ackJson.orEmpty()), storedReceipt)
-            assertEquals("accepted", storedReceipt?.ackJson?.let { restJsonMapper.readTree(it) }?.path("status")?.asText())
-
             val toolContext = ToolCallContext(userId, chat.id.toString(), execution.id.toString(), "tool-1")
             val deadline = Instant.parse("2026-05-01T10:06:00Z")
             repositories.toolCallRepository.startClientCall(
@@ -422,53 +398,48 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `initial client receipt and execution commit atomically`() = runTest {
+    fun `initial client receipt failure rolls back its execution`() = runTest {
         val schema = newPostgresSchema("postgres_initial_client_receipt")
 
         postgresRepositories(schema).use { repositories ->
             val chat = chat(UUID.randomUUID().toString(), Instant.parse("2026-05-01T10:00:00Z"))
             repositories.userRepository.ensureUser(chat.userId)
             repositories.chatRepository.create(chat)
-            val firstExecution = execution(
+            val rolledBackExecution = execution(
                 userId = chat.userId,
                 chatId = chat.id,
                 assistantMessageId = null,
-                status = AgentExecutionStatus.COMPLETED,
+                status = AgentExecutionStatus.QUEUED,
                 startedAt = Instant.parse("2026-05-01T10:01:00Z"),
             ).copy(userMessageId = null)
-            val firstRequest = ClientRequest(
+            val rolledBackRequest = ClientRequest(
                 chatId = chat.id,
-                requestId = "message-1",
+                requestId = "message-bad-json",
                 kind = "message.submit",
-                threadId = firstExecution.id,
-                payloadHash = "payload-1",
-                ackJson = "{}",
+                threadId = rolledBackExecution.id,
+                payloadHash = "payload-bad-json",
+                ackJson = "not-json",
                 receivedAt = Instant.parse("2026-05-01T10:01:00Z"),
             )
 
-            repositories.clientRequestRepository.createWithExecution(firstExecution, firstRequest)
-
-            assertEquals(firstExecution, repositories.executionRepository.get(chat.userId, firstExecution.id))
-            assertEquals(firstRequest, repositories.clientRequestRepository.get(chat.id, firstRequest.requestId))
-
-            val rolledBackExecution = firstExecution.copy(
-                id = UUID.randomUUID(),
-                startedAt = Instant.parse("2026-05-01T10:02:00Z"),
-            )
             assertFailsWith<Exception> {
-                repositories.clientRequestRepository.createWithExecution(
-                    rolledBackExecution,
-                    firstRequest.copy(threadId = rolledBackExecution.id),
+                repositories.clientRequestRepository.resolveMessage(
+                    userId = chat.userId,
+                    key = rolledBackRequest.key(),
+                    requestedThreadId = null,
+                    newExecution = rolledBackExecution,
+                    acceptedRequest = rolledBackRequest,
+                    rejectedRequest = { error("Expected a new execution") },
                 )
             }
 
             assertNull(repositories.executionRepository.get(chat.userId, rolledBackExecution.id))
-            assertEquals(firstRequest, repositories.clientRequestRepository.get(chat.id, firstRequest.requestId))
+            assertNull(repositories.clientRequestRepository.get(chat.id, rolledBackRequest.requestId))
         }
     }
 
     @Test
-    fun `follow-up input commit rolls back execution revision when message insert fails`() = runTest {
+    fun `follow-up and cancellation effects commit atomically`() = runTest {
         val schema = newPostgresSchema("postgres_followup_input_rollback")
 
         postgresRepositories(schema).use { repositories ->
@@ -484,27 +455,77 @@ class PostgresRepositoriesTest {
                 startedAt = Instant.parse("2026-05-01T10:01:00Z"),
             )
             repositories.executionRepository.create(execution)
-            val messageId = UUID.randomUUID()
-            val first = repositories.clientInputRepository.appendFollowUpInput(
-                execution = execution,
-                content = "first follow-up",
-                metadata = mapOf("inputSeq" to "2"),
-                latestDeviceContextJson = """{"deviceId":"device-2"}""",
-                messageId = messageId,
-                createdAt = Instant.parse("2026-05-01T10:01:02Z"),
+            val request = ClientRequest(
+                chatId = chat.id,
+                requestId = "message-2",
+                kind = "message.submit",
+                threadId = execution.id,
+                payloadHash = "payload-2",
+                ackJson = "{}",
+                receivedAt = Instant.parse("2026-05-01T10:01:02Z"),
             )
-            assertEquals(2L, first?.revision)
+            val messageId = UUID.randomUUID()
+            val first = assertIs<ClientRequestResult.Accepted>(
+                repositories.clientRequestRepository.commitFollowUp(
+                    userId = userId,
+                    key = request.key(),
+                    threadId = execution.id,
+                    input = ClientFollowUpInput(
+                        content = "first follow-up",
+                        metadata = emptyMap(),
+                        latestDeviceContextJson = """{"deviceId":"device-2"}""",
+                        messageId = messageId,
+                        createdAt = Instant.parse("2026-05-01T10:01:02Z"),
+                    ),
+                    acceptedRequest = { request },
+                    rejectedRequest = { error("Expected accepted input") },
+                )
+            )
+            assertEquals(2L, first.execution.revision)
+            assertEquals(request, repositories.clientRequestRepository.get(chat.id, request.requestId))
 
+            val duplicate = repositories.clientRequestRepository.commitFollowUp(
+                userId = userId,
+                key = request.key(),
+                threadId = execution.id,
+                input = ClientFollowUpInput("duplicate", emptyMap(), "{}"),
+                acceptedRequest = { error("Duplicate must replay") },
+                rejectedRequest = { error("Duplicate must replay") },
+            )
+            assertEquals(request, assertIs<ClientRequestResult.Duplicate>(duplicate).request)
+
+            val conflict = repositories.clientRequestRepository.commitFollowUp(
+                userId = userId,
+                key = request.copy(payloadHash = "other-payload").key(),
+                threadId = execution.id,
+                input = ClientFollowUpInput("conflict", emptyMap(), "{}"),
+                acceptedRequest = { error("Conflict must not append") },
+                rejectedRequest = { error("Conflict must not append") },
+            )
+            assertIs<ClientRequestResult.Conflict>(conflict)
+
+            val failedRequest = request.copy(
+                requestId = "message-3",
+                payloadHash = "payload-3",
+                receivedAt = Instant.parse("2026-05-01T10:01:03Z"),
+            )
             assertFailsWith<Exception> {
-                repositories.clientInputRepository.appendFollowUpInput(
-                    execution = requireNotNull(first),
-                    content = "duplicate-message-id follow-up",
-                    metadata = mapOf("inputSeq" to "3"),
-                    latestDeviceContextJson = """{"deviceId":"device-3"}""",
-                    messageId = messageId,
-                    createdAt = Instant.parse("2026-05-01T10:01:03Z"),
+                repositories.clientRequestRepository.commitFollowUp(
+                    userId = userId,
+                    key = failedRequest.key(),
+                    threadId = execution.id,
+                    input = ClientFollowUpInput(
+                        content = "duplicate-message follow-up",
+                        metadata = emptyMap(),
+                        latestDeviceContextJson = """{"deviceId":"device-3"}""",
+                        messageId = messageId,
+                        createdAt = Instant.parse("2026-05-01T10:01:03Z"),
+                    ),
+                    acceptedRequest = { failedRequest },
+                    rejectedRequest = { error("Expected accepted input") },
                 )
             }
+            assertNull(repositories.clientRequestRepository.get(chat.id, failedRequest.requestId))
 
             val storedExecution = repositories.executionRepository.getByChat(userId, chat.id, execution.id)
             val storedMessages = repositories.messageRepository.list(userId, chat.id)
@@ -514,6 +535,59 @@ class PostgresRepositoriesTest {
                 storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText(),
             )
             assertEquals(listOf("first follow-up"), storedMessages.map { it.content })
+
+            val failedCancel = request.copy(
+                requestId = "cancel-bad-json",
+                kind = "thread.cancel",
+                payloadHash = "cancel-bad-json",
+                ackJson = "not-json",
+            )
+            assertFailsWith<Exception> {
+                repositories.clientRequestRepository.cancel(
+                    userId = userId,
+                    key = failedCancel.key(),
+                    threadId = execution.id,
+                    runtimeAvailable = true,
+                    acceptedRequest = failedCancel,
+                    rejectedRequest = { error("Expected accepted cancellation") },
+                )
+            }
+            assertNull(repositories.clientRequestRepository.get(chat.id, failedCancel.requestId))
+            assertEquals(AgentExecutionStatus.RUNNING, repositories.executionRepository.get(userId, execution.id)?.status)
+
+            val unavailableCancel = failedCancel.copy(
+                requestId = "cancel-unavailable",
+                payloadHash = "cancel-unavailable",
+                ackJson = "{}",
+            )
+            assertIs<ClientRequestResult.Rejected>(
+                repositories.clientRequestRepository.cancel(
+                    userId, unavailableCancel.key(), execution.id, runtimeAvailable = false,
+                    acceptedRequest = unavailableCancel,
+                    rejectedRequest = { current -> unavailableCancel.copy(threadId = current?.id) },
+                )
+            )
+            assertEquals(unavailableCancel, repositories.clientRequestRepository.get(chat.id, unavailableCancel.requestId))
+            assertEquals(AgentExecutionStatus.RUNNING, repositories.executionRepository.get(userId, execution.id)?.status)
+
+            val cancelRequest = failedCancel.copy(
+                requestId = "cancel-1",
+                payloadHash = "cancel-payload",
+                ackJson = "{}",
+            )
+            val cancellation = assertIs<ClientRequestResult.Accepted>(
+                repositories.clientRequestRepository.cancel(
+                    userId = userId,
+                    key = cancelRequest.key(),
+                    threadId = execution.id,
+                    runtimeAvailable = true,
+                    acceptedRequest = cancelRequest,
+                    rejectedRequest = { error("Expected accepted cancellation") },
+                )
+            )
+            val cancelling = cancellation.execution
+            assertEquals(AgentExecutionStatus.CANCELLING, cancelling.status)
+            assertEquals(cancelRequest, repositories.clientRequestRepository.get(chat.id, cancelRequest.requestId))
         }
     }
 
@@ -935,7 +1009,6 @@ class PostgresRepositoriesTest {
             userRepository = PostgresUserRepository(dataSource),
             chatRepository = PostgresChatRepository(dataSource),
             clientRequestRepository = PostgresClientRequestRepository(dataSource),
-            clientInputRepository = PostgresClientInputRepository(dataSource),
             messageRepository = PostgresMessageRepository(dataSource),
             stateRepository = PostgresAgentStateRepository(dataSource),
             executionRepository = PostgresAgentExecutionRepository(dataSource),
@@ -1071,7 +1144,6 @@ private data class PostgresRepositoryBundle(
     val userRepository: PostgresUserRepository,
     val chatRepository: PostgresChatRepository,
     val clientRequestRepository: PostgresClientRequestRepository,
-    val clientInputRepository: PostgresClientInputRepository,
     val messageRepository: PostgresMessageRepository,
     val stateRepository: PostgresAgentStateRepository,
     val executionRepository: PostgresAgentExecutionRepository,
@@ -1085,3 +1157,5 @@ private data class PostgresRepositoryBundle(
         dataSource.close()
     }
 }
+
+private fun ClientRequest.key() = ClientRequestKey(chatId, requestId, kind, payloadHash)

@@ -7,11 +7,13 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -28,6 +30,7 @@ internal class E2eLlmApi : LLMChatAPI {
     private val mutex = Mutex()
     private var failMessage: String? = null
     private var hang = false
+    private var cancellationGate: CompletableDeferred<Unit>? = null
     private var releaseGate: CompletableDeferred<Unit>? = null
     private var streamingChunks: List<String>? = null
     private var streamFailureMessage: String? = null
@@ -38,6 +41,15 @@ internal class E2eLlmApi : LLMChatAPI {
 
     fun hangUntilCancelled() {
         hang = true
+    }
+
+    fun hangUntilCancellationReleased() {
+        hang = true
+        cancellationGate = CompletableDeferred()
+    }
+
+    fun releaseCancellation() {
+        cancellationGate?.complete(Unit)
     }
 
     fun pauseUntilReleased() {
@@ -83,7 +95,13 @@ internal class E2eLlmApi : LLMChatAPI {
         val prompt = body.conversationPrompt()
         signal(prompt).complete(Unit)
         failMessage?.let { error(it) }
-        if (hang) awaitCancellation()
+        if (hang) {
+            try {
+                awaitCancellation()
+            } finally {
+                cancellationGate?.let { gate -> withContext(NonCancellable) { gate.await() } }
+            }
+        }
         releaseGate?.await()
         promptReleaseGates[prompt]?.await()
         return (promptSkills[prompt] ?: skill)?.let { scriptedSkillReply(body, it) }
