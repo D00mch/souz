@@ -3,13 +3,12 @@ package ru.souz
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.withContext
+import ru.souz.agent.ActiveRunMailbox
 import ru.souz.agent.AgentExecutionResult
+import ru.souz.agent.Agent
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
-import ru.souz.agent.TraceableAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
@@ -23,17 +22,17 @@ import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.nodes.SteerableChat
-import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMRequest
 
 /**
  * Agent graph whose model always sees only the core skill-discovery, Knowledge, and execution tools.
  * Other capabilities are discovered and invoked through skills rather than injected directly.
  */
-class SkillsGraphBasedAgent internal constructor(
+internal class SkillsGraphBasedAgent(
     logObjectMapper: ObjectMapper,
     private val nodesLLM: NodesLLM,
     private val nodesCommon: NodesCommon,
@@ -47,14 +46,12 @@ class SkillsGraphBasedAgent internal constructor(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),
-) : TraceableAgent {
-    override val supportsActiveRunInput: Boolean = true
-    override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
+) : Agent {
+    override val stream: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
     private val skillsCoreTools = coreTools.skillsCoreTools
-    private val activeRun = MutableStateFlow<ActiveRunInputController?>(null)
 
-    private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
+    private fun graph(mailbox: ActiveRunMailbox): Graph<String, String> = buildGraph(name = "Skills Agent") {
         val inputToHistory = nodesCommon.inputToHistory()
         val memoryRecall = nodesMemory.recall()
         val skillInventory = nodesSkillInventory.node(
@@ -62,7 +59,7 @@ class SkillsGraphBasedAgent internal constructor(
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
-        val chat = SteerableChat(nodesLLM, controller)
+        val chat = SteerableChat(nodesLLM, mailbox)
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
@@ -91,37 +88,24 @@ class SkillsGraphBasedAgent internal constructor(
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
-    override suspend fun cancelActiveJob() {
-        activeRun.getAndUpdate { null }?.close()
-        executionDelegate.cancelActiveJob()
-    }
+    override fun cancel() = executionDelegate.cancelActiveJob()
 
-    override suspend fun submitToActiveRun(input: String): Boolean =
-        activeRun.value?.submit(input) ?: false
-
-    override suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
-        activeRun.value?.submitAfter(input, beforePublish) ?: false
-
-    override suspend fun execute(ctx: AgentContext<String>): String =
-        executeWithTrace(ctx).output
-
-    override suspend fun executeWithTrace(
-        ctx: AgentContext<String>,
-        onActiveRunReady: suspend () -> Unit,
+    override suspend fun execute(
+        context: AgentContext<String>,
+        loadPendingHistory: suspend () -> List<LLMRequest.Message>,
+        onActiveRunReady: suspend (ActiveRunMailbox) -> Unit,
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
-        cancelActiveJob()
-        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, skillsCoreTools)
-        val controller = ActiveRunInputController()
-        val executionGraph = graph(controller)
-        activeRun.value = controller
+        cancel()
+        val restrictedContext = nodesSkillInventory.restrictToTools(context, skillsCoreTools)
+        val mailbox = ActiveRunMailbox(loadPendingHistory)
+        val executionGraph = graph(mailbox)
         return try {
-            onActiveRunReady()
+            onActiveRunReady(mailbox)
             executionDelegate.executeWithTrace(graph = executionGraph, ctx = restrictedContext, onStep = onStep)
         } finally {
             withContext(NonCancellable) {
-                controller.close()
-                activeRun.compareAndSet(controller, null)
+                mailbox.close()
             }
         }
     }

@@ -22,9 +22,9 @@ Public client kinds:
 ```text
 POST /v1/chats {userId, requestId, clientType} -> chatId
 connect /v1/chats/{chatId}/ws?clientType=...
-client -> souz: message.submit
-souz -> client: ack with threadId, inputSeq, revision
-souz -> client: status with current thread liveness
+client -> souz: history.append | message.submit
+souz -> client: ack
+souz -> client: status with current thread liveness (execute only)
 souz -> client: tool.call.started
 client -> souz: tool.result
 souz -> client: tool result ack
@@ -57,11 +57,12 @@ Route: `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`
 
 `afterSeq` is optional and exclusive. If omitted, Souz treats it as `0` and replays every durable event in the chat. On connect, Souz sends events with `seq > afterSeq` in order, then live frames. `seq` is chat-local, monotonic, and used for replay and deduplication. A separate `eventId` is not used.
 
-Active-thread live frames are owner-sticky. In multi-replica deployments, reconnects and retries for a running thread must be routed to the Souz runtime owner that holds the live registry state; the current single-owner contract rejects live frames as `message_rejected` when they reach a process that only sees the durable running row. Durable replay and thread status remain available from any process.
+`message.submit`, tool results, and cancellations for an active thread are owner-sticky. In multi-replica deployments, those frames must reach the Souz runtime owner that holds the live registry state; the current single-owner contract rejects them as `message_rejected` when they reach a process that only sees the durable running row. `history.append` remains chat-scoped and can be stored on any process. Durable replay and thread status remain available from any process.
 
 Client frames:
 
-- `message.submit`: `{kind, chatId, requestId, threadId?, payload}`. `payload.device.userId` carries the trusted user scope. An explicit `threadId` selects that thread. Without one, Souz continues the chat's active thread or creates a thread when none is active.
+- `message.submit`: `{kind, chatId, requestId, threadId?, payload}`. Submits user input for execution and retains explicit/implicit thread selection. Its role is inherently `user` and is not a field.
+- `history.append`: `{kind, chatId, requestId, payload}`. Requires `payload.role` (`user` or `assistant`), appends durable chat context, and never selects a thread or triggers model execution.
 - `tool.result`: `{kind, chatId, threadId, toolCallId, status, result|error}`. `status` is `succeeded`, `failed`, `cancelled`, or `timed_out`.
 - `thread.cancel`: `{kind, chatId, requestId, threadId, reason?}`.
 
@@ -82,6 +83,7 @@ The canonical schema names are in `openapi.yaml` components. All frames have `ad
 Client-to-Souz frames:
 
 - `MessageSubmit`: `{kind: "message.submit", chatId, requestId, threadId?, payload}`.
+- `HistoryAppend`: `{kind: "history.append", chatId, requestId, payload: {role, device, content, meta?}}`.
 - `SucceededToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "succeeded", result}`.
 - `FailedToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "failed", error}`.
 - `CancelledToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "cancelled", error}`.
@@ -90,8 +92,8 @@ Client-to-Souz frames:
 
 Souz-to-Client acknowledgements:
 
-- `AcceptedMessageSubmitAck`: `{kind: "ack", chatId, requestId, status: "accepted", duplicate, submission, thread, error: null, receivedAt}`.
-- `RejectedMessageSubmitAck`: `{kind: "ack", chatId, requestId, status: "rejected", duplicate, thread: null, error, receivedAt}`.
+- `message.submit` acknowledgements contain submission and thread details when accepted.
+- `history.append` acknowledgements contain neither submission nor thread details and are not followed by thread status.
 - `AcceptedToolResultAck`: `{kind: "ack", chatId, toolCallId, threadId, status: "accepted", duplicate, error: null, receivedAt}`.
 - `RejectedToolResultAck`: `{kind: "ack", chatId, toolCallId, threadId, status: "rejected", duplicate, error, receivedAt}`.
 - `AcceptedThreadCancelAck`: `{kind: "ack", chatId, requestId, threadId, status: "accepted", duplicate, error: null, receivedAt}`.
@@ -127,9 +129,17 @@ Additional accepted submissions to a running thread append to its input log. The
 
 Each thread has exactly one terminal event. If completion and cancellation race, first persisted terminal state wins. If `message.submit` commits before terminal, terminal output must account for it; if terminal commits first, the submission is rejected with `thread_already_terminal`.
 
+## History
+
+History belongs to the chat and has no thread identity. It is stored with its original user or assistant role without changing an execution, input sequence, revision, cancellation state, runtime lease, or active device context. Its acknowledgement has no execution fields; no thread status or durable event follows it.
+
+An accepted history message notifies a matching active runtime on the same Souz process that durable history is pending. The notification never starts the graph, cancels an LLM request, or interrupts a tool. If the active run naturally reaches another LLM boundary, the pending history is inserted before that request. History received during tool execution is placed before the complete tool call/result exchange so the pair remains valid. If the current LLM response finishes the run, history remains pending until the next execute submission.
+
+The internal chat-local message sequence defines execute barriers. History ordered before an execute input is supplied to that execute exactly once; history ordered after it is eligible for a later safe boundary or the following execute. Storage does not require local runtime ownership. A process without the runtime relies on durable catch-up at the next execute.
+
 ## Idempotency
 
-`message.submit` and `thread.cancel` use `(chatId, requestId)`. Same key and normalized payload returns the original ack with `duplicate = true`; same key with a different payload returns rejected ack with `idempotency_conflict`. For `message.submit`, the normalized payload contains the client-supplied nullable `threadId`, and receipt replay precedes active-thread inference so a retry returns the originally selected thread even after it completes.
+`message.submit`, `history.append`, and `thread.cancel` use `(chatId, requestId)`. Same key, kind, and normalized payload returns the original result with `duplicate = true`; reusing the key with a different kind or payload returns rejected ack with `idempotency_conflict`. Message normalization includes client-supplied nullable `threadId`, content, device, and request metadata. History normalization includes role, content, device, and request metadata. Receipt replay precedes `message.submit` thread selection, while `history.append` bypasses thread selection entirely.
 
 `tool.result` uses `(chatId, threadId, toolCallId)`. Repeating the same terminal result returns accepted ack with `duplicate = true` and does not append another event. Reusing the same key with a different terminal payload returns rejected ack with `duplicate = false` and `idempotency_conflict`.
 
@@ -139,8 +149,8 @@ Tool-result acknowledgements are outside the event sequence.
 
 - `chats` stores `clientType`, create `requestId`, and its normalized payload hash.
 - `agent_executions` is the thread store; the execution ID is `threadId`, with revision and latest device context.
-- `messages.metadata` stores accepted input sequence, source, device, request ID, and request metadata.
-- `client_requests` stores the shared message/cancel idempotency scope and original acknowledgement.
+- `messages.metadata` stores source, device, request ID, and request metadata. Execute messages also store `inputSeq`; history messages store `clientHistory = true` instead.
+- `client_requests` stores the shared message/history/cancel idempotency scope and original acknowledgement.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
 - `agent_events` stores replayable client tool-start, terminal, and out-of-band `message.created` (cross-channel push, `threadId = null`) events with chat-local sequence values.
 

@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 
 internal const val CROSS_CHANNEL_MESSAGE_METADATA_KEY = "crossChannel"
+internal const val CLIENT_HISTORY_MESSAGE_METADATA_KEY = "clientHistory"
 
 data class ChatMessage(
     val id: UUID,

@@ -56,6 +56,20 @@ data class MessageSubmitFrame(
     val payload: MessageSubmitPayload,
 )
 
+data class HistoryAppendPayload(
+    val role: String,
+    val device: ClientDevice,
+    val content: RecognizedTextContent,
+    val meta: ClientRequestMeta? = null,
+)
+
+data class HistoryAppendFrame(
+    val kind: String,
+    val chatId: String,
+    val requestId: String,
+    val payload: HistoryAppendPayload,
+)
+
 data class ToolResultFrame(
     val kind: String,
     val chatId: String,
@@ -156,6 +170,17 @@ data class MessageSubmitAck(
 )
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
+data class HistoryAppendAck(
+    val kind: String = "ack",
+    val chatId: String,
+    val requestId: String,
+    val status: String,
+    val duplicate: Boolean,
+    val error: ClientError? = null,
+    val receivedAt: String,
+)
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
 data class ToolResultAck(
     val kind: String = "ack",
     val chatId: String,
@@ -180,6 +205,9 @@ data class ThreadCancelAck(
 )
 
 internal val supportedClientTypes = setOf("backend", "mobile_app")
+internal const val MESSAGE_ROLE_USER = "user"
+internal const val MESSAGE_ROLE_ASSISTANT = "assistant"
+internal val supportedMessageRoles = setOf(MESSAGE_ROLE_USER, MESSAGE_ROLE_ASSISTANT)
 internal val supportedDeviceTypes = setOf("tv_box", "smart_speaker", "smartphone", "unknown")
 internal val supportedDeviceCapabilities =
     setOf("speech", "screen", "device_tools", "user_permissions", "deep_links", "oauth")

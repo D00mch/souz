@@ -27,6 +27,8 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientError
 import ru.souz.backend.client.HandledClientFrame
+import ru.souz.backend.client.HistoryAppendAck
+import ru.souz.backend.client.HistoryAppendFrame
 import ru.souz.backend.client.MessageSubmitAck
 import ru.souz.backend.client.MessageSubmitFrame
 import ru.souz.backend.client.PublicClientService
@@ -203,11 +205,13 @@ private suspend fun handleClientFrame(
         when (kind) {
             "message.submit" -> decodeClientFrame(node, MessageSubmitFrame::class.java).also {
                 requireFrameChat(chat.id, it.chatId)
-                val capabilities = node.path("payload").path("device").path("capabilities")
-                if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
-                    throw ClientContractException("invalid_request", "device.capabilities must be unique.")
-                }
+                requireUniqueCapabilities(node)
             }.let { service.handleMessage(chat, it) }
+
+            "history.append" -> decodeClientFrame(node, HistoryAppendFrame::class.java).also {
+                requireFrameChat(chat.id, it.chatId)
+                requireUniqueCapabilities(node)
+            }.let { service.handleHistory(chat, it) }
 
             "tool.result" -> decodeClientFrame(node, ToolResultFrame::class.java).also {
                 requireFrameChat(chat.id, it.chatId)
@@ -254,6 +258,7 @@ private suspend fun sendStatusFeedback(
             else -> error("Unexpected message.submit status: ${response.status}")
         }
 
+        is HistoryAppendAck -> Unit
         is ThreadCancelAck -> when (response.status) {
             "accepted" -> send(response.requestId, response.threadId)
             "rejected" -> Unit
@@ -279,6 +284,13 @@ private fun requireFrameChat(expected: UUID, raw: String) {
     }
 }
 
+private fun requireUniqueCapabilities(node: JsonNode) {
+    val capabilities = node.path("payload").path("device").path("capabilities")
+    if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
+        throw ClientContractException("invalid_request", "device.capabilities must be unique.")
+    }
+}
+
 private fun rejectedFor(
     node: JsonNode,
     chatId: UUID,
@@ -291,6 +303,16 @@ private fun rejectedFor(
     return when (kind) {
         "message.submit" -> HandledClientFrame(
             MessageSubmitAck(
+                chatId = chatId.toString(),
+                requestId = node.path("requestId").asText("invalid"),
+                status = "rejected",
+                duplicate = false,
+                error = error,
+                receivedAt = now,
+            )
+        )
+        "history.append" -> HandledClientFrame(
+            HistoryAppendAck(
                 chatId = chatId.toString(),
                 requestId = node.path("requestId").asText("invalid"),
                 status = "rejected",

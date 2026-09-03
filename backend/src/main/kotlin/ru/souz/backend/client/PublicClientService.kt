@@ -11,11 +11,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.model.ChatRole
+import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
+import ru.souz.backend.client.repository.ClientHistoryInput
 import ru.souz.backend.client.repository.ClientRequestKey
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.client.repository.ClientRequestResult
@@ -68,6 +72,7 @@ internal class PublicClientService(
         validateDevice(chat, frame.payload.device)
         validateContent(frame.payload.content)
         val requestedThreadId = frame.threadId?.uuid("threadId")
+        val normalizedDevice = frame.payload.device.copy(capabilities = frame.payload.device.capabilities.toSortedSet())
         val key = ClientRequestKey(
             chatId = chat.id,
             requestId = requestId,
@@ -76,7 +81,7 @@ internal class PublicClientService(
                 linkedMapOf(
                     "kind" to frame.kind,
                     "threadId" to requestedThreadId?.toString(),
-                    "device" to frame.payload.device.copy(capabilities = frame.payload.device.capabilities.toSortedSet()),
+                    "device" to normalizedDevice,
                     "content" to frame.payload.content,
                     "meta" to frame.payload.meta,
                 )
@@ -93,6 +98,67 @@ internal class PublicClientService(
             ClientRequestResult.CreateThread -> startThread(chat, frame, key, now)
             else -> handledMessage(result, key, now)
         }
+    }
+
+    suspend fun handleHistory(chat: Chat, frame: HistoryAppendFrame): HandledClientFrame {
+        val now = Instant.now()
+        val requestId = frame.requestId.required("requestId")
+        validateDevice(chat, frame.payload.device)
+        validateContent(frame.payload.content)
+        val role = frame.payload.role.takeIf { it in supportedMessageRoles }
+            ?: throw ClientContractException("invalid_request", "Unsupported message role.")
+        val key = ClientRequestKey(
+            chatId = chat.id,
+            requestId = requestId,
+            kind = frame.kind,
+            payloadHash = PublicPayloadHash.ofValue(
+                linkedMapOf(
+                    "kind" to frame.kind,
+                    "role" to role,
+                    "device" to frame.payload.device.copy(
+                        capabilities = frame.payload.device.capabilities.toSortedSet()
+                    ),
+                    "content" to frame.payload.content,
+                    "meta" to frame.payload.meta,
+                )
+            ),
+        )
+        val ack = HistoryAppendAck(
+            chatId = chat.id.toString(),
+            requestId = requestId,
+            status = "accepted",
+            duplicate = false,
+            receivedAt = now.toString(),
+        )
+        val result = clientRequestRepository.commitHistory(
+            userId = chat.userId,
+            key = key,
+            input = ClientHistoryInput(
+                role = role.toChatRole(),
+                content = frame.payload.content.text,
+                metadata = inputMetadata(
+                    requestId = requestId,
+                    device = frame.payload.device,
+                    content = frame.payload.content,
+                    meta = frame.payload.meta,
+                ) + (CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"),
+            ),
+            acceptedRequest = key.request(threadId = null, response = ack, now = now),
+        )
+        if (result is ClientRequestResult.HistoryAccepted) {
+            withContext(NonCancellable) {
+                runCatching { registry.notifyHistoryPending(chat.id, result.message.seq) }
+                    .onFailure { failure ->
+                        logger.warn(
+                            "Failed to notify local runtime about history for chat {} through message {}.",
+                            chat.id,
+                            result.message.seq,
+                            failure,
+                        )
+                    }
+            }
+        }
+        return handledHistory(result, key, now)
     }
 
     suspend fun handleToolResult(chat: Chat, frame: ToolResultFrame): HandledClientFrame {
@@ -230,7 +296,7 @@ internal class PublicClientService(
         val threadId = prepared.execution.id
         val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, revision = 1, now = now)
         val result = withContext(NonCancellable) {
-            registry.register(threadId, frame.payload.device, key.requestId)
+            registry.register(chat.id, threadId, frame.payload.device, key.requestId)
             var resolution: ClientRequestResult? = null
             try {
                 clientRequestRepository.resolveMessage(
@@ -277,15 +343,23 @@ internal class PublicClientService(
             metadata = inputMetadata(frame),
             latestDeviceContextJson = mapper.writeValueAsString(frame.payload.device),
         )
-        suspend fun commit(input: ClientFollowUpInput?) = clientRequestRepository.commitFollowUp(
+        suspend fun commit(afterSeq: Long, input: ClientFollowUpInput?) = clientRequestRepository.commitFollowUp(
             userId = chat.userId,
             key = key,
             threadId = threadId,
+            afterSeq = afterSeq,
             input = input,
             acceptedRequest = { revision ->
                 key.request(
                     threadId,
-                    acceptedMessage(chat.id, key.requestId, threadId, created = false, revision = revision, now = now),
+                    acceptedMessage(
+                        chat.id,
+                        key.requestId,
+                        threadId,
+                        created = false,
+                        revision = revision,
+                        now = now,
+                    ),
                     now,
                 )
             },
@@ -299,12 +373,11 @@ internal class PublicClientService(
                 threadId = threadId,
                 requestId = key.requestId,
                 device = frame.payload.device,
-                input = frame.payload.content.text,
-                commit = { commit(input) },
+                commit = { afterSeq -> commit(afterSeq, input) },
             )
         } else {
             null
-        } ?: commit(null)
+        } ?: commit(afterSeq = 0L, input = null)
         return handledMessage(result, key, now)
     }
 
@@ -325,12 +398,26 @@ internal class PublicClientService(
         receivedAt = now.toString(),
     )
 
-    private fun inputMetadata(frame: MessageSubmitFrame, inputSeq: Long? = null): Map<String, String> = buildMap {
+    private fun inputMetadata(frame: MessageSubmitFrame, inputSeq: Long? = null): Map<String, String> = inputMetadata(
+        requestId = frame.requestId,
+        device = frame.payload.device,
+        content = frame.payload.content,
+        meta = frame.payload.meta,
+        inputSeq = inputSeq,
+    )
+
+    private fun inputMetadata(
+        requestId: String,
+        device: ClientDevice,
+        content: RecognizedTextContent,
+        meta: ClientRequestMeta?,
+        inputSeq: Long? = null,
+    ): Map<String, String> = buildMap {
         inputSeq?.let { put("inputSeq", it.toString()) }
-        put("source", frame.payload.content.source)
-        put("device", mapper.writeValueAsString(frame.payload.device))
-        put("requestId", frame.requestId)
-        frame.payload.meta?.let { put("requestMeta", mapper.writeValueAsString(it)) }
+        put("source", content.source)
+        put("device", mapper.writeValueAsString(device))
+        put("requestId", requestId)
+        meta?.let { put("requestMeta", mapper.writeValueAsString(it)) }
     }
 
     private fun requestOverrides(meta: ClientRequestMeta?): UserSettingsOverrides = UserSettingsOverrides(
@@ -489,6 +576,24 @@ internal class PublicClientService(
         }
     }
 
+    private fun handledHistory(
+        result: ClientRequestResult,
+        key: ClientRequestKey,
+        now: Instant,
+    ): HandledClientFrame {
+        if (result is ClientRequestResult.Conflict) {
+            return rejectedHistory(
+                key.chatId,
+                key.requestId,
+                "idempotency_conflict",
+                "requestId was used with a different payload.",
+                now,
+            )
+        }
+        val original = mapper.readValue(result.storedRequest().ackJson, HistoryAppendAck::class.java)
+        return HandledClientFrame(original.copy(duplicate = result is ClientRequestResult.Duplicate))
+    }
+
     private fun handledCancel(
         result: ClientRequestResult,
         key: ClientRequestKey,
@@ -559,13 +664,32 @@ internal class PublicClientService(
         receivedAt = now,
     )
 
-    private fun rejectedMessage(chatId: UUID, requestId: String, code: String, message: String, now: Instant) =
+    private fun rejectedMessage(
+        chatId: UUID,
+        requestId: String,
+        code: String,
+        message: String,
+        now: Instant,
+    ) =
         HandledClientFrame(
             MessageSubmitAck(
                 chatId = chatId.toString(), requestId = requestId, status = "rejected", duplicate = false,
                 error = ClientError(code, message), receivedAt = now.toString(),
             )
         )
+
+    private fun rejectedHistory(
+        chatId: UUID,
+        requestId: String,
+        code: String,
+        message: String,
+        now: Instant,
+    ) = HandledClientFrame(
+        HistoryAppendAck(
+            chatId = chatId.toString(), requestId = requestId, status = "rejected", duplicate = false,
+            error = ClientError(code, message), receivedAt = now.toString(),
+        )
+    )
 
     private fun acceptedTool(chatId: UUID, threadId: UUID, toolCallId: String, duplicate: Boolean, now: Instant) =
         ToolResultAck(
@@ -589,10 +713,15 @@ internal class PublicClientService(
             status = "rejected", duplicate = false, error = ClientError(code, message), receivedAt = now.toString(),
         )
     )
+
+    private companion object {
+        val logger = LoggerFactory.getLogger(PublicClientService::class.java)
+    }
 }
 
 private fun ClientRequestResult.storedRequest(): ClientRequest = when (this) {
     is ClientRequestResult.Accepted -> request
+    is ClientRequestResult.HistoryAccepted -> request
     is ClientRequestResult.Duplicate -> request
     is ClientRequestResult.Rejected -> request
     else -> error("Request has no stored transport result: $this")
@@ -615,6 +744,12 @@ private fun String.toToolCallStatus(): ToolCallStatus = when (this) {
     "cancelled" -> ToolCallStatus.CANCELLED
     "timed_out" -> ToolCallStatus.TIMED_OUT
     else -> error("Unsupported tool status: $this")
+}
+
+private fun String.toChatRole(): ChatRole = when (this) {
+    MESSAGE_ROLE_USER -> ChatRole.USER
+    MESSAGE_ROLE_ASSISTANT -> ChatRole.ASSISTANT
+    else -> error("Unsupported message role: $this")
 }
 
 private fun String.toPublicClientErrorCode(): String =

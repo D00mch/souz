@@ -1,4 +1,4 @@
-package ru.souz.agent.runtime
+package ru.souz.agent
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
@@ -8,44 +8,53 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
 import kotlin.coroutines.cancellation.CancellationException
 
-/** Mutex-serialized mailbox for one steerable graph execution. */
-internal class ActiveRunInputController(
-    private val mutex: Mutex = Mutex(),
+/** Mutex-serialized input mailbox for one steerable graph execution. */
+class ActiveRunMailbox internal constructor(
+    private val loadPendingHistory: suspend () -> List<LLMRequest.Message>,
 ) {
+    private val logger = LoggerFactory.getLogger(ActiveRunMailbox::class.java)
+    private val mutex = Mutex()
     private var state: State = State.Open()
 
-    /** Accepts [input] at one linearization point with closing and final sealing. */
-    suspend fun submit(input: String): Boolean = mutex.withLock {
-        val open = state as? State.Open ?: return false
-        enqueueLocked(open, input)
-        true
-    }
-
     /**
-     * Reserves an open mailbox, runs [beforePublish], and publishes [input] only if the
-     * callback succeeds. Final sealing waits for outstanding reservations, so callers can
-     * commit durable state before exposing the input to the running graph.
+     * Reserves an open mailbox, runs [build], and publishes its result at one ordering point.
+     * Final sealing waits for the reservation, allowing durable state to commit before input is visible.
      */
-    suspend fun submitAfter(input: String, beforePublish: suspend () -> Boolean): Boolean {
+    suspend fun submit(build: suspend () -> ActiveRunInput?): Boolean {
         if (!reserveInput()) return false
         var released = false
         return try {
-            val shouldPublish = beforePublish()
+            val input = build()
             val published = withContext(NonCancellable) {
-                releaseReservation(input.takeIf { shouldPublish }).also { released = true }
+                releaseReservation(input).also { released = true }
             }
             currentCoroutineContext().ensureActive()
             published
-        } catch (error: Exception) {
+        } finally {
             if (!released) withContext(NonCancellable) { releaseReservation(input = null) }
+        }
+    }
+
+    /** Reads the fixed history source at a boundary without waking or reserving the run. */
+    internal suspend fun loadHistoryAtBoundary(): List<LLMRequest.Message> {
+        mutex.withLock { openState() }
+        return try {
+            loadPendingHistory().also(::requireSupportedHistory)
+        } catch (error: CancellationException) {
             throw error
+        } catch (error: Exception) {
+            logger.warn("Active-run history could not be loaded; it remains pending at the source", error)
+            emptyList()
         }
     }
 
     /** Returns queued input or the revision and notification for the next LLM attempt. */
-    suspend fun nextLlmStep(): NextLlmStep = mutex.withLock {
+    internal suspend fun nextLlmStep(): NextLlmStep = mutex.withLock {
         val open = openState()
         if (open.queuedInputs.isNotEmpty()) {
             NextLlmStep.QueuedInput(drainLocked(open))
@@ -55,13 +64,13 @@ internal class ActiveRunInputController(
     }
 
     /** Drains all input accepted before this operation, preserving FIFO message boundaries. */
-    suspend fun drain(): String? = mutex.withLock {
+    internal suspend fun drain(): List<ActiveRunInput>? = mutex.withLock {
         val open = openState()
         if (open.queuedInputs.isEmpty()) null else drainLocked(open)
     }
 
     /** Atomically drains pending input or closes an empty mailbox around a final response. */
-    suspend fun drainOrSeal(): String? {
+    internal suspend fun drainOrSeal(): List<ActiveRunInput>? {
         while (true) {
             val pendingReservation = mutex.withLock {
                 val open = openState()
@@ -79,7 +88,7 @@ internal class ActiveRunInputController(
     }
 
     /** Stops accepting submissions in the same state machine as enqueueing and draining. */
-    suspend fun close() {
+    internal suspend fun close() {
         while (true) {
             val pendingReservation = mutex.withLock {
                 val open = state as? State.Open ?: return
@@ -97,7 +106,7 @@ internal class ActiveRunInputController(
     private fun openState(): State.Open = state as? State.Open
         ?: throw CancellationException("Active steerable graph run is closed")
 
-    private fun drainLocked(open: State.Open): String {
+    private fun drainLocked(open: State.Open): List<ActiveRunInput> {
         check(open.queuedInputs.isNotEmpty()) { "Queued input is required" }
         val messages = open.queuedInputs.toList()
         state = State.Open(
@@ -105,19 +114,7 @@ internal class ActiveRunInputController(
             pendingReservations = open.pendingReservations,
             reservationChanged = open.reservationChanged,
         )
-        if (messages.size == 1) return messages.single()
-
-        return buildString {
-            append("<additional_user_messages>\n")
-            messages.forEachIndexed { index, message ->
-                append("<message index=\"")
-                append(index + 1)
-                append("\">\n")
-                append(message)
-                append("\n</message>\n")
-            }
-            append("</additional_user_messages>")
-        }
+        return messages
     }
 
     private fun closeLocked(open: State.Open) {
@@ -132,12 +129,11 @@ internal class ActiveRunInputController(
         true
     }
 
-    private suspend fun releaseReservation(input: String?): Boolean = mutex.withLock {
+    private suspend fun releaseReservation(input: ActiveRunInput?): Boolean = mutex.withLock {
         val open = state as? State.Open ?: return false
         check(open.pendingReservations > 0) { "No pending input reservation to release" }
-        val pendingReservations = open.pendingReservations - 1
         state = open.copy(
-            pendingReservations = pendingReservations,
+            pendingReservations = open.pendingReservations - 1,
             reservationChanged = CompletableDeferred(),
         )
         val updated = state as State.Open
@@ -146,14 +142,20 @@ internal class ActiveRunInputController(
         input != null
     }
 
-    private fun enqueueLocked(open: State.Open, input: String) {
+    private fun enqueueLocked(open: State.Open, input: ActiveRunInput) {
         open.queuedInputs.addLast(input)
         state = open.copy(streamRevision = open.streamRevision + 1)
         open.inputAvailable.complete(Unit)
     }
 
+    private fun requireSupportedHistory(messages: List<LLMRequest.Message>) {
+        require(messages.all { it.role == LLMMessageRole.user || it.role == LLMMessageRole.assistant }) {
+            "Active-run history supports only user and assistant messages"
+        }
+    }
+
     internal sealed interface NextLlmStep {
-        data class QueuedInput(val input: String) : NextLlmStep
+        data class QueuedInput(val inputs: List<ActiveRunInput>) : NextLlmStep
 
         data class Request(
             val streamRevision: Long,
@@ -163,7 +165,7 @@ internal class ActiveRunInputController(
 
     private sealed interface State {
         data class Open(
-            val queuedInputs: ArrayDeque<String> = ArrayDeque(),
+            val queuedInputs: ArrayDeque<ActiveRunInput> = ArrayDeque(),
             val streamRevision: Long = 0L,
             val inputAvailable: CompletableDeferred<Unit> = CompletableDeferred(),
             val pendingReservations: Int = 0,

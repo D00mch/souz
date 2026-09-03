@@ -184,7 +184,7 @@ class MainViewModel(
         viewModelScope.launch {
             var firstEmission = true
             agentFacade.activeAgentId.collect { agentId ->
-                setState { copy(supportsActiveRunInput = agentFacade.supportsActiveRunInput) }
+                setState { copy(supportsActiveRunInput = agentId.supportsActiveRunInput) }
                 if (firstEmission) {
                     firstEmission = false
                     lastAppliedAgentId = agentId

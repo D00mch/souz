@@ -137,12 +137,16 @@ fun agentDiModule(
         )
     }
     bindSingleton {
+        val sessionService = instance<GraphSessionService>()
         AgentExecutor(
             agentProvider = { agentId ->
                 when (agentId) {
                     AgentId.GRAPH -> instance<GraphBasedAgent>()
                     AgentId.SKILLS_GRAPH -> instance<SkillsGraphBasedAgent>()
                 }
+            },
+            onStep = { step, node, from, to ->
+                sessionService.onStep(step, node, from, to)
             },
         )
     }

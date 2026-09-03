@@ -2,10 +2,11 @@ package ru.souz
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.flow.Flow
+import ru.souz.agent.ActiveRunMailbox
 import ru.souz.agent.AgentExecutionResult
+import ru.souz.agent.Agent
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
-import ru.souz.agent.TraceableAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
@@ -24,9 +25,10 @@ import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 
-class GraphBasedAgent internal constructor(
+internal class GraphBasedAgent(
     logObjectMapper: ObjectMapper,
     private val nodesLLM: NodesLLM,
     private val nodesCommon: NodesCommon,
@@ -42,9 +44,9 @@ class GraphBasedAgent internal constructor(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
     ),
-) : TraceableAgent {
+) : Agent {
 
-    override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
+    override val stream: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.graphAlwaysInlineResultTools
     private val graphCoreTools = coreTools.graphCoreTools
 
@@ -89,18 +91,14 @@ class GraphBasedAgent internal constructor(
         chatErrorToFinish.edgeTo(nodeFinish)
     }
 
-    override suspend fun cancelActiveJob() {
-        executionDelegate.cancelActiveJob()
-    }
+    override fun cancel() = executionDelegate.cancelActiveJob()
 
-    override suspend fun execute(ctx: AgentContext<String>): String =
-        executeWithTrace(ctx).output
-
-    override suspend fun executeWithTrace(
-        ctx: AgentContext<String>,
-        onActiveRunReady: suspend () -> Unit,
+    override suspend fun execute(
+        context: AgentContext<String>,
+        loadPendingHistory: suspend () -> List<LLMRequest.Message>,
+        onActiveRunReady: suspend (ActiveRunMailbox) -> Unit,
         onStep: GraphStepCallback?,
-    ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = ctx, onStep = onStep)
+    ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = context, onStep = onStep)
 
     private val LLMResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 }

@@ -21,13 +21,13 @@ Generated OpenAPI is also easy to drift: route helpers and deferred registration
 ## Safe-change guidance
 
 - Keep execution launch/finalization in `AgentExecutionService` and session reconstruction in the runtime factory/repository layer.
-- Advance `basedOnMessageSeq` only across a contiguous observed message prefix. A sequence gap may be a cross-channel push written during an active turn, so gaps and option continuations must load the durable message delta before the cursor moves.
+- Advance `basedOnMessageSeq` only across context that the runtime has observed. An execute barrier loads the bounded durable gap through its trigger and filters ordinary rows already represented in the saved session. Passive client history advances the cursor only when a safe LLM boundary claims it. If history precedes a terminal assistant row, retain the gap so the next execute inserts that history after the saved response rather than retroactively changing the completed turn.
 - Keep provider clients out of request-scoped runtimes and close process-owned transports exactly once at backend shutdown.
 - Route nested search, research, vision, and summarization calls through the current execution API so credentials, timeout, and usage stay in the same scope.
 - Reject unsupported backend providers explicitly. Do not silently replace a persisted or requested Giga model with another provider.
 - Do not read the shared JVM agent preference or mutate singleton tool policy. Build the immutable execution catalog from execution metadata and keep compiled-tool selection request-scoped.
 - Publish internal deltas only on the live bus. Client tool starts and thread terminals are durable `agent_events`; acknowledgements are not events.
-- Register a Client-Souz execution before launching its steerable runtime. Accepted mid-run input must use `submitToActiveRun`, and public events must wait until accepted acknowledgements are sent.
+- Register a Client-Souz execution before launching its steerable runtime. Accepted mid-run input must reserve the exact mailbox handed to `BackendConversationRuntime` at readiness, and public events must wait until accepted acknowledgements are sent.
 - Register background work before its body can run. Keep cancellation persistence and event emission non-cancellable, and unregister only in the lifecycle job's outermost cleanup.
 - Keep complete client tool arguments, results or errors, deadline, and result idempotency state in `tool_calls`. Only one client tool waiter may be outstanding per thread.
 - Preserve the canonical-or-legacy replay union and keep compatibility payloads structurally distinct.

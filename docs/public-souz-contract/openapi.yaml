@@ -172,12 +172,14 @@ components:
       description: Client-to-Souz WebSocket frame.
       oneOf:
         - $ref: "#/components/schemas/MessageSubmit"
+        - $ref: "#/components/schemas/HistoryAppend"
         - $ref: "#/components/schemas/SucceededToolResult"
         - $ref: "#/components/schemas/FailedToolResult"
         - $ref: "#/components/schemas/CancelledToolResult"
         - $ref: "#/components/schemas/TimedOutToolResult"
         - $ref: "#/components/schemas/ThreadCancel"
     MessageSubmit:
+      description: Submits user input and selects, continues, or creates an execution thread.
       type: object
       additionalProperties: false
       required: [kind, chatId, requestId, payload]
@@ -196,11 +198,41 @@ components:
             - type: "null"
         payload:
           $ref: "#/components/schemas/MessageSubmitPayload"
+    HistoryAppend:
+      description: Appends role-preserving chat history without selecting or mutating a thread or triggering model execution.
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, payload]
+      properties:
+        kind:
+          type: string
+          enum: [history.append]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        payload:
+          $ref: "#/components/schemas/HistoryAppendPayload"
     MessageSubmitPayload:
       type: object
       additionalProperties: false
       required: [device, content]
       properties:
+        device:
+          $ref: "#/components/schemas/Device"
+        content:
+          $ref: "#/components/schemas/RecognizedTextContent"
+        meta:
+          $ref: "#/components/schemas/RequestMeta"
+    HistoryAppendPayload:
+      type: object
+      additionalProperties: false
+      required: [role, device, content]
+      properties:
+        role:
+          description: Original message role.
+          type: string
+          enum: [user, assistant]
         device:
           $ref: "#/components/schemas/Device"
         content:
@@ -333,6 +365,8 @@ components:
       oneOf:
         - $ref: "#/components/schemas/AcceptedMessageSubmitAck"
         - $ref: "#/components/schemas/RejectedMessageSubmitAck"
+        - $ref: "#/components/schemas/AcceptedHistoryAppendAck"
+        - $ref: "#/components/schemas/RejectedHistoryAppendAck"
         - $ref: "#/components/schemas/AcceptedToolResultAck"
         - $ref: "#/components/schemas/RejectedToolResultAck"
         - $ref: "#/components/schemas/AcceptedThreadCancelAck"
@@ -381,6 +415,49 @@ components:
           type: boolean
         thread:
           type: "null"
+        error:
+          $ref: "#/components/schemas/Error"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    AcceptedHistoryAppendAck:
+      description: History is durable chat context. This acknowledgement is not followed by thread status.
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [accepted]
+        duplicate:
+          type: boolean
+        error:
+          type: "null"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    RejectedHistoryAppendAck:
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [rejected]
+        duplicate:
+          type: boolean
         error:
           $ref: "#/components/schemas/Error"
         receivedAt:

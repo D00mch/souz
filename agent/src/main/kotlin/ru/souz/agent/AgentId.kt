@@ -1,8 +1,11 @@
 package ru.souz.agent
 
-enum class AgentId(val storageValue: String) {
-    GRAPH("graph"),
-    SKILLS_GRAPH("skills"),
+enum class AgentId(
+    val storageValue: String,
+    val supportsActiveRunInput: Boolean,
+) {
+    GRAPH("graph", supportsActiveRunInput = false),
+    SKILLS_GRAPH("skills", supportsActiveRunInput = true),
     ;
 
     companion object {
