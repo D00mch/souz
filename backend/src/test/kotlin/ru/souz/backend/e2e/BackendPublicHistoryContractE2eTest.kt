@@ -228,6 +228,8 @@ class BackendPublicHistoryContractE2eTest {
                     )
                 )
                 assertEquals("accepted", readJson(session)["status"].asText())
+                session.send(Frame.Text(toolHistoryFrame(chatId, "active-history-tool")))
+                assertEquals("accepted", readJson(session)["status"].asText())
                 delay(100)
                 assertEquals(1, llm.requests.size)
 

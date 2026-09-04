@@ -2,7 +2,6 @@ package ru.souz.agent
 
 import kotlinx.coroutines.flow.Flow
 import ru.souz.agent.state.AgentContext
-import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 
@@ -25,13 +24,7 @@ data class AgentStreamChunk(
 data class ActiveRunInput(
     val history: List<LLMRequest.Message> = emptyList(),
     val input: String,
-) {
-    init {
-        require(history.all { it.role == LLMMessageRole.user || it.role == LLMMessageRole.assistant }) {
-            "Active-run history supports only user and assistant messages"
-        }
-    }
-}
+)
 
 interface Agent {
     val sideEffects: Flow<AgentStreamChunk>

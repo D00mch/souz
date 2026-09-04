@@ -111,7 +111,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
     }
 
     @Test
-    fun `structured submission preserves history roles before execute input`() = runTest {
+    fun `structured submission preserves tool exchange before execute input`() = runTest {
         val firstStarted = CompletableDeferred<Unit>()
         val harness = Harness(chatHandler = { call, ctx ->
             if (call == 1) {
@@ -128,7 +128,18 @@ class SkillsGraphBasedAgentMidRunInputTest {
             harness.agent.submitToActiveRun {
                 ActiveRunInput(
                     history = listOf(
-                        LLMRequest.Message(LLMMessageRole.assistant, "client handled the task")
+                        LLMRequest.Message(
+                            LLMMessageRole.assistant,
+                            "",
+                            "client-call",
+                            functionCall = LLMRequest.FunctionCall("RunSkillCommand", "{}"),
+                        ),
+                        LLMRequest.Message(
+                            LLMMessageRole.function,
+                            "client handled the task",
+                            "client-call",
+                            name = "RunSkillCommand",
+                        ),
                     ),
                     input = "next execute",
                 )
@@ -136,17 +147,16 @@ class SkillsGraphBasedAgentMidRunInputTest {
         )
 
         assertEquals("replacement", execution.await().output)
-        val relevant = harness.requestHistories[1].filter {
-            it.content in setOf("client handled the task", "next execute")
-        }
+        val relevant = harness.requestHistories[1].takeLast(3)
         assertEquals(
-            listOf(LLMMessageRole.assistant, LLMMessageRole.user),
+            listOf(LLMMessageRole.assistant, LLMMessageRole.function, LLMMessageRole.user),
             relevant.map { it.role },
         )
         assertEquals(
-            listOf("client handled the task", "next execute"),
+            listOf("", "client handled the task", "next execute"),
             relevant.map { it.content },
         )
+        assertEquals(listOf("client-call", "client-call", null), relevant.map { it.functionsStateId })
     }
 
     @Test
