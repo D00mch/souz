@@ -1,6 +1,7 @@
 package ru.souz.backend.e2e
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.webSocketSession
@@ -151,16 +152,21 @@ class BackendPublicWebSocketE2eTest {
                     val threadId = messageAck["thread"]["id"].asText()
                     assertEquals(threadId, messageStatus["threadId"].asText())
 
-                    session.send(
-                        Frame.Text(
-                            """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-1","threadId":"$threadId","reason":"user_requested"}"""
-                        )
-                    )
+                    val cancelFrame =
+                        """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-1","threadId":"$threadId","reason":"user_requested"}"""
+                    session.send(Frame.Text(cancelFrame))
                     val cancelAck = readJson(session)
                     val cancelStatus = readJson(session)
                     assertEquals("accepted", cancelAck["status"].asText())
                     assertEquals("cancel-1", cancelAck["requestId"].asText())
                     assertEquals(threadId, cancelStatus["threadId"].asText())
+
+                    session.send(Frame.Text(cancelFrame))
+                    assertEquals(cancelAck.deepCopy<ObjectNode>().put("duplicate", true), readJson(session))
+                    val duplicateStatus = readJson(session)
+                    assertEquals("thread.status", duplicateStatus["type"].asText())
+                    assertEquals("cancel-1", duplicateStatus["requestId"].asText())
+                    assertEquals(threadId, duplicateStatus["threadId"].asText())
 
                     session.send(Frame.Text(messageFrame(chatId, userId, "message-2", null, "do not replace", "device-2")))
                     val rejected = readJson(session)
@@ -222,10 +228,7 @@ class BackendPublicWebSocketE2eTest {
                     val losingNode = if (primaryLlm.requests.isEmpty()) 0 else 1
                     val duplicate = nodes[losingNode].request(raw)
                     val duplicateAck = duplicate.acknowledgement
-                    assertTrue(duplicateAck["duplicate"].asBoolean())
-                    assertTrue(duplicateAck["thread"]["created"].asBoolean())
-                    assertEquals(threadId, duplicateAck["thread"]["id"].asText())
-                    assertEquals(acknowledgements.first()["receivedAt"], duplicateAck["receivedAt"])
+                    assertEquals(acknowledgements.first().deepCopy<ObjectNode>().put("duplicate", true), duplicateAck)
                     assertEquals("completed", duplicate.status?.get("status")?.asText())
                 }
             } finally {

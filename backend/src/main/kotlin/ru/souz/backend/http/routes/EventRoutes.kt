@@ -139,7 +139,9 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
             sendMutex.withLock {
                 writeJson(handled.response)
                 handled.afterSend()
-                sendStatusFeedback(clientService, chat, handled.response, ::writeJson)
+                handled.statusFeedback?.let { feedback ->
+                    writeJson(clientService.threadStatus(chat, feedback.threadId).toStatusFrame(feedback.requestId))
+                }
             }
         }
 
@@ -224,48 +226,6 @@ private suspend fun handleClientFrame(
         }
     } catch (error: ClientContractException) {
         rejectedFor(node, chat.id, kind, error.code, error.message)
-    }
-}
-
-private suspend fun sendStatusFeedback(
-    service: PublicClientService,
-    chat: ru.souz.backend.chat.model.Chat,
-    response: Any,
-    sendJson: suspend (Any) -> Unit,
-) {
-    suspend fun send(requestId: String, rawThreadId: String) {
-        val threadId = try {
-            UUID.fromString(rawThreadId)
-        } catch (cause: IllegalArgumentException) {
-            throw IllegalStateException(
-                "Accepted acknowledgement for request $requestId has invalid threadId=$rawThreadId.",
-                cause,
-            )
-        }
-        sendJson(service.threadStatus(chat, threadId).toStatusFrame(requestId))
-    }
-
-    when (response) {
-        is MessageSubmitAck -> when (response.status) {
-            "accepted" -> send(
-                response.requestId,
-                checkNotNull(response.thread) {
-                    "Accepted message.submit ${response.requestId} has no thread."
-                }.id,
-            )
-            "rejected" -> Unit
-            else -> error("Unexpected message.submit status: ${response.status}")
-        }
-
-        is HistoryAppendAck -> Unit
-        is ThreadCancelAck -> when (response.status) {
-            "accepted" -> send(response.requestId, response.threadId)
-            "rejected" -> Unit
-            else -> error("Unexpected thread.cancel status: ${response.status}")
-        }
-
-        is ToolResultAck -> Unit
-        else -> error("Unsupported handled response: ${response.javaClass.name}")
     }
 }
 

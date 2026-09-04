@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.websocket.Frame
 import java.util.UUID
@@ -34,9 +35,7 @@ class BackendPublicHistoryContractE2eTest {
 
                 session.send(Frame.Text(assistantFrame))
                 val duplicate = readJson(session)
-                assertEquals("accepted", duplicate["status"].asText())
-                assertTrue(duplicate["duplicate"].asBoolean())
-                assertEquals(assistantAck["receivedAt"], duplicate["receivedAt"])
+                assertEquals(assistantAck.deepCopy<ObjectNode>().put("duplicate", true), duplicate)
 
                 session.send(
                     Frame.Text(

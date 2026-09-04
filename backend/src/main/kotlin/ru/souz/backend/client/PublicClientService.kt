@@ -2,6 +2,7 @@ package ru.souz.backend.client
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import java.time.Instant
@@ -39,8 +40,11 @@ import kotlin.time.Duration.Companion.milliseconds
 
 internal data class HandledClientFrame(
     val response: Any,
+    val statusFeedback: ThreadStatusFeedback? = null,
     val afterSend: suspend () -> Unit = {},
 )
+
+internal data class ThreadStatusFeedback(val threadId: UUID, val requestId: String)
 
 internal class PublicClientService(
     private val chatRepository: ChatRepository,
@@ -94,7 +98,7 @@ internal class PublicClientService(
         return when (result) {
             is ClientRequestResult.Continue -> continueThread(chat, frame, key, result.execution, now)
             ClientRequestResult.CreateThread -> startThread(chat, frame, key, now)
-            else -> handledMessage(result, key, now)
+            else -> handledReceipt(result, key, now)
         }
     }
 
@@ -131,7 +135,7 @@ internal class PublicClientService(
             input = input,
             acceptedRequest = key.request(threadId = null, response = ack, now = now),
         )
-        return handledHistory(result, key, now)
+        return handledReceipt(result, key, now)
     }
 
     suspend fun handleToolResult(chat: Chat, frame: ToolResultFrame): HandledClientFrame {
@@ -244,7 +248,7 @@ internal class PublicClientService(
                 executionService.propagateCancellation(accepted.execution)
             },
         )
-        return handledCancel(result, key, threadId, now)
+        return handledReceipt(result, key, now, threadId)
     }
 
     private suspend fun startThread(
@@ -288,7 +292,7 @@ internal class PublicClientService(
             return if (result is ClientRequestResult.Continue) {
                 continueThread(chat, frame, key, result.execution, now)
             } else {
-                handledMessage(result, key, now)
+                handledReceipt(result, key, now)
             }
         }
         val startupFailure = runCatching {
@@ -300,7 +304,7 @@ internal class PublicClientService(
             }
             if (failure is CancellationException) throw failure
         }
-        return handledMessage(result, key, now)
+        return handledReceipt(result, key, now)
     }
 
     private suspend fun continueThread(
@@ -344,7 +348,7 @@ internal class PublicClientService(
         } else {
             null
         } ?: commit(afterSeq = 0L, input = null)
-        return handledMessage(result, key, now)
+        return handledReceipt(result, key, now)
     }
 
     private fun acceptedMessage(
@@ -528,58 +532,29 @@ internal class PublicClientService(
         }
     }
 
-    private fun handledMessage(
+    private fun handledReceipt(
         result: ClientRequestResult,
         key: ClientRequestKey,
         now: Instant,
+        threadId: UUID? = null,
     ): HandledClientFrame {
         if (result is ClientRequestResult.Conflict) {
-            return rejectedMessage(
-                key.chatId, key.requestId, "idempotency_conflict",
-                "requestId was used with a different payload.", now,
-            )
+            val code = "idempotency_conflict"
+            val message = "requestId was used with a different payload."
+            return when (key.kind) {
+                "message.submit" -> rejectedMessage(key.chatId, key.requestId, code, message, now)
+                "history.append" -> rejectedHistory(key.chatId, key.requestId, code, message, now)
+                "thread.cancel" -> rejectedCancel(key.chatId, key.requestId, requireNotNull(threadId), code, message, now)
+                else -> error("Unsupported receipt kind: ${key.kind}")
+            }
         }
         val request = result.storedRequest()
-        val original = mapper.readValue(request.ackJson, MessageSubmitAck::class.java)
-        return HandledClientFrame(original.copy(duplicate = result is ClientRequestResult.Duplicate)) {
-            if (original.status == "accepted") request.threadId?.let { registry.ackSent(it, request.requestId) }
-        }
-    }
-
-    private fun handledHistory(
-        result: ClientRequestResult,
-        key: ClientRequestKey,
-        now: Instant,
-    ): HandledClientFrame {
-        if (result is ClientRequestResult.Conflict) {
-            return rejectedHistory(
-                key.chatId,
-                key.requestId,
-                "idempotency_conflict",
-                "requestId was used with a different payload.",
-                now,
-            )
-        }
-        val original = mapper.readValue(result.storedRequest().ackJson, HistoryAppendAck::class.java)
-        return HandledClientFrame(original.copy(duplicate = result is ClientRequestResult.Duplicate))
-    }
-
-    private fun handledCancel(
-        result: ClientRequestResult,
-        key: ClientRequestKey,
-        threadId: UUID,
-        now: Instant,
-    ): HandledClientFrame {
-        if (result is ClientRequestResult.Conflict) {
-            return rejectedCancel(
-                key.chatId, key.requestId, threadId, "idempotency_conflict",
-                "requestId was used with a different payload.", now,
-            )
-        }
-        val request = result.storedRequest()
-        val original = mapper.readValue(request.ackJson, ThreadCancelAck::class.java)
-        return HandledClientFrame(original.copy(duplicate = result is ClientRequestResult.Duplicate)) {
-            if (original.status == "accepted") registry.ackSent(threadId, request.requestId)
+        val response = (mapper.readTree(request.ackJson) as ObjectNode)
+            .put("duplicate", result is ClientRequestResult.Duplicate)
+        val feedback = request.threadId?.takeIf { response["status"].asText() == "accepted" }
+            ?.let { ThreadStatusFeedback(it, request.requestId) }
+        return HandledClientFrame(response, statusFeedback = feedback) {
+            feedback?.let { registry.ackSent(it.threadId, it.requestId) }
         }
     }
 

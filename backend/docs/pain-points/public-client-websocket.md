@@ -26,7 +26,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 - Serialize input acceptance with terminal persistence. Reserve the steerable runtime mailbox, commit the message, revision, and idempotency receipt together without cancellation, then publish the input; release the reservation without publishing when the commit fails. Release the event gate immediately after the acknowledgement is sent and before status feedback.
 - Couple execute publication to the durable message gap through its trigger sequence. Publish preceding role-preserving history and the execute input as one structured batch, then advance the session cursor through that trigger.
 - Persist a tool result before acknowledging it; complete the suspended client tool only after sending the acknowledgement.
-- Send live `thread.status` feedback after accepted submit/cancel acknowledgements without adding it to durable replay.
+- Replay stored acknowledgement JSON with only `duplicate` changed. Accepted submit/cancel receipts carry explicit thread status feedback; send it after releasing the acknowledgement gate, without adding it to durable replay.
 - Persist pending client tool calls as cancelled before propagating thread cancellation.
 - Refresh public thread runtime leases while the process owns the live runtime. Recovery must only fail expired leases or already failed recovered threads missing their terminal event.
 - Keep active-thread WebSocket routing sticky to the runtime owner. Do not report a local registry miss as terminal while the durable execution is still running.

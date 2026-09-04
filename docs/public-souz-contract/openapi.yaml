@@ -228,6 +228,16 @@ components:
       type: object
       additionalProperties: false
       required: [role, content]
+      if:
+        properties:
+          content:
+            properties:
+              type:
+                const: tool_exchange
+      then:
+        properties:
+          role:
+            const: assistant
       properties:
         role:
           description: Original message role.
