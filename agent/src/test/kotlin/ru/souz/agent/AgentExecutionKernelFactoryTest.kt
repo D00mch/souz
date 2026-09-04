@@ -20,6 +20,7 @@ import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class AgentExecutionKernelFactoryTest {
     @Test
@@ -49,6 +50,8 @@ class AgentExecutionKernelFactoryTest {
 
         assertEquals(listOf(AgentId.SKILLS_GRAPH), kernel.contextFactory.availableAgents)
         assertEquals(AgentId.SKILLS_GRAPH, kernel.contextFactory.normalizeAgentId(AgentId.GRAPH))
+        assertTrue(kernel.executor.supportsActiveRunInput(AgentId.GRAPH))
+        assertTrue(kernel.executor.supportsActiveRunInput(AgentId.SKILLS_GRAPH))
     }
 }
 

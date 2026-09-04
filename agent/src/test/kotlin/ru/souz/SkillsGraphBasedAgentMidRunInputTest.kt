@@ -11,7 +11,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.ActiveRunMailbox
 import ru.souz.agent.ActiveRunInput
 import ru.souz.agent.graph.Node
 import ru.souz.agent.nodes.ExecutedToolCall
@@ -37,6 +36,33 @@ import kotlin.test.assertTrue
 
 class SkillsGraphBasedAgentMidRunInputTest {
     @Test
+    fun `active run readiness callback fires after mailbox opens`() = runTest {
+        val ready = CompletableDeferred<Unit>()
+        val firstStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val harness = Harness(chatHandler = { _, ctx ->
+            firstStarted.complete(Unit)
+            release.await()
+            ctx.map { finalResponse("done") }
+        })
+
+        val execution = async {
+            harness.agent.executeWithTrace(
+                ctx = harness.context(),
+                onActiveRunReady = { ready.complete(Unit) },
+            )
+        }
+        ready.await()
+
+        assertTrue(harness.agent.submitToActiveRun("follow-up after readiness"))
+        firstStarted.await()
+        release.complete(Unit)
+
+        assertEquals("done", execution.await().output)
+        assertEquals("follow-up after readiness", harness.requestHistories.single().last().content)
+    }
+
+    @Test
     fun `submissions cancel only the active LLM and drain together in FIFO order`() = runTest {
         val firstStarted = CompletableDeferred<Unit>()
         val firstCancelled = CompletableDeferred<Unit>()
@@ -60,11 +86,11 @@ class SkillsGraphBasedAgentMidRunInputTest {
             }
         })
 
-        val execution = async { harness.execute() }
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
         firstStarted.await()
 
-        assertTrue(harness.submit("first follow-up"))
-        assertTrue(harness.submit("second follow-up"))
+        assertTrue(harness.agent.submitToActiveRun("first follow-up"))
+        assertTrue(harness.agent.submitToActiveRun("second follow-up"))
         firstCancelled.await()
         replacementStarted.await()
         assertTrue(execution.isActive)
@@ -85,10 +111,8 @@ class SkillsGraphBasedAgentMidRunInputTest {
     }
 
     @Test
-    fun `replacement boundary preserves execute groups around a passive history claim`() = runTest {
+    fun `structured submission preserves history roles before execute input`() = runTest {
         val firstStarted = CompletableDeferred<Unit>()
-        val passiveLoadStarted = CompletableDeferred<Unit>()
-        val releasePassiveLoad = CompletableDeferred<Unit>()
         val harness = Harness(chatHandler = { call, ctx ->
             if (call == 1) {
                 firstStarted.complete(Unit)
@@ -98,187 +122,37 @@ class SkillsGraphBasedAgentMidRunInputTest {
             }
         })
 
-        val execution = async { harness.execute() }
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
         firstStarted.await()
-        assertTrue(harness.stageHistory {
-            passiveLoadStarted.complete(Unit)
-            releasePassiveLoad.await()
-            listOf(LLMRequest.Message(LLMMessageRole.user, "passive history"))
-        })
         assertTrue(
-            harness.submit(
+            harness.agent.submitToActiveRunAfter {
                 ActiveRunInput(
-                    history = listOf(LLMRequest.Message(LLMMessageRole.assistant, "before history")),
-                    input = "before execute",
+                    history = listOf(
+                        LLMRequest.Message(LLMMessageRole.assistant, "client handled the task")
+                    ),
+                    input = "next execute",
                 )
-            )
+            }
         )
-        passiveLoadStarted.await()
-        assertTrue(
-            harness.submit(
-                ActiveRunInput(
-                    history = listOf(LLMRequest.Message(LLMMessageRole.assistant, "after history")),
-                    input = "after execute",
-                )
-            )
-        )
-        releasePassiveLoad.complete(Unit)
 
         assertEquals("replacement", execution.await().output)
-        assertOrdered(
-            harness.requestHistories[1],
-            "before history",
-            "before execute",
-            "passive history",
-            "after history",
-            "after execute",
+        val relevant = harness.requestHistories[1].filter {
+            it.content in setOf("client handled the task", "next execute")
+        }
+        assertEquals(
+            listOf(LLMMessageRole.assistant, LLMMessageRole.user),
+            relevant.map { it.role },
         )
-        assertEquals(listOf(0L, 2L), harness.streamRevisions)
-    }
-
-    @Test
-    fun `passive history queued at readiness is role preserving in the first request`() = runTest {
-        val history = listOf(
-            LLMRequest.Message(LLMMessageRole.assistant, "client answer"),
-            LLMRequest.Message(LLMMessageRole.user, "client clarification"),
-        )
-        val harness = Harness(chatHandler = { _, ctx -> ctx.map { finalResponse("done") } })
-
-        val result = harness.execute(
-            context = harness.context(),
-            onActiveRunReady = {
-                assertTrue(harness.stageHistory { history })
-            },
-        )
-
-        assertEquals("done", result.output)
-        assertEquals(history, harness.requestHistories.single().takeLast(2))
-        assertEquals(listOf(0L), harness.streamRevisions)
-    }
-
-    @Test
-    fun `passive history during final LLM neither cancels nor extends the run`() = runTest {
-        val requestStarted = CompletableDeferred<Unit>()
-        val releaseRequest = CompletableDeferred<Unit>()
-        var requestCancelled = false
-        var historyLoads = 0
-        val harness = Harness(chatHandler = { _, ctx ->
-            requestStarted.complete(Unit)
-            try {
-                releaseRequest.await()
-            } finally {
-                requestCancelled = !currentCoroutineContext().isActive
-            }
-            ctx.map { finalResponse("done") }
-        })
-
-        val execution = async { harness.execute() }
-        requestStarted.await()
-        assertTrue(harness.stageHistory {
-            historyLoads += 1
-            listOf(LLMRequest.Message(LLMMessageRole.assistant, "pending answer"))
-        })
-        assertFalse(requestCancelled)
-        releaseRequest.complete(Unit)
-
-        val result = execution.await()
-        assertEquals("done", result.output)
-        assertFalse(requestCancelled)
-        assertEquals(0, historyLoads)
-        assertEquals(1, harness.chatCallCount)
-        assertEquals(listOf(0L), harness.streamRevisions)
-        assertFalse(result.context.history.any { it.content == "pending answer" })
-    }
-
-    @Test
-    fun `passive history before tool acceptance is inserted before the complete exchange`() = runTest {
-        val proposalStarted = CompletableDeferred<Unit>()
-        val releaseProposal = CompletableDeferred<Unit>()
-        var proposalCancelled = false
-        val harness = Harness(
-            chatHandler = { call, ctx ->
-                if (call == 1) {
-                    proposalStarted.complete(Unit)
-                    try {
-                        releaseProposal.await()
-                    } finally {
-                        proposalCancelled = !currentCoroutineContext().isActive
-                    }
-                    ctx.map { toolResponse() }
-                } else {
-                    ctx.map { finalResponse("after tool") }
-                }
-            },
-            toolHandler = { listOf(executedTool("tool-result")) },
-        )
-
-        val execution = async { harness.execute() }
-        proposalStarted.await()
-        assertTrue(harness.stageHistory {
-            listOf(LLMRequest.Message(LLMMessageRole.assistant, "client answer"))
-        })
-        assertFalse(proposalCancelled)
-        releaseProposal.complete(Unit)
-
-        assertEquals("after tool", execution.await().output)
-        assertFalse(proposalCancelled)
-        assertOrdered(
-            harness.requestHistories[1],
-            "client answer",
-            "call-1",
-            "tool-result",
+        assertEquals(
+            listOf("client handled the task", "next execute"),
+            relevant.map { it.content },
         )
     }
 
     @Test
-    fun `passive history neither cancels nor splits a multi tool exchange`() = runTest {
+    fun `submission during tools waits for results and does not cancel the tool`() = runTest {
         val toolStarted = CompletableDeferred<Unit>()
         val releaseTool = CompletableDeferred<Unit>()
-        var toolCancelled = false
-        val harness = Harness(
-            chatHandler = { call, ctx ->
-                ctx.map { if (call == 1) multiToolResponse() else finalResponse("after tools") }
-            },
-            toolHandler = {
-                toolStarted.complete(Unit)
-                try {
-                    releaseTool.await()
-                } finally {
-                    toolCancelled = !currentCoroutineContext().isActive
-                }
-                listOf(
-                    executedTool("first result", callId = "call-1"),
-                    executedTool("second result", callId = "call-2"),
-                )
-            },
-        )
-
-        val execution = async { harness.execute() }
-        toolStarted.await()
-        assertTrue(harness.stageHistory {
-            listOf(LLMRequest.Message(LLMMessageRole.assistant, "client answer"))
-        })
-        assertFalse(toolCancelled)
-        releaseTool.complete(Unit)
-
-        assertEquals("after tools", execution.await().output)
-        assertFalse(toolCancelled)
-        assertOrdered(
-            harness.requestHistories[1],
-            "client answer",
-            "call-1",
-            "call-2",
-            "first result",
-            "second result",
-        )
-    }
-
-    @Test
-    fun `tool boundary preserves execute groups around a passive history claim`() = runTest {
-        val toolStarted = CompletableDeferred<Unit>()
-        val releaseTool = CompletableDeferred<Unit>()
-        val passiveLoadStarted = CompletableDeferred<Unit>()
-        val releasePassiveLoad = CompletableDeferred<Unit>()
         var toolCancelled = false
         val harness = Harness(
             chatHandler = { call, ctx ->
@@ -291,51 +165,43 @@ class SkillsGraphBasedAgentMidRunInputTest {
                 } finally {
                     toolCancelled = !currentCoroutineContext().isActive
                 }
-                listOf(executedTool("tool-result"))
+                listOf(
+                    ExecutedToolCall(
+                        functionCall = functionCall(),
+                        message = LLMRequest.Message(
+                            role = LLMMessageRole.function,
+                            content = "tool-result",
+                            name = "TestTool",
+                            functionsStateId = "call-1",
+                        ),
+                    )
+                )
             },
         )
 
-        val execution = async { harness.execute() }
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
         toolStarted.await()
-        assertTrue(
-            harness.submit(
-                ActiveRunInput(
-                    history = listOf(LLMRequest.Message(LLMMessageRole.assistant, "before history")),
-                    input = "before execute",
-                )
-            )
-        )
-        assertTrue(harness.stageHistory {
-            passiveLoadStarted.complete(Unit)
-            releasePassiveLoad.await()
-            listOf(LLMRequest.Message(LLMMessageRole.user, "passive history"))
-        })
+        assertTrue(harness.agent.submitToActiveRun("use the result differently"))
         assertFalse(toolCancelled)
-        releaseTool.complete(Unit)
-        passiveLoadStarted.await()
-        assertTrue(
-            harness.submit(
-                ActiveRunInput(
-                    history = listOf(LLMRequest.Message(LLMMessageRole.assistant, "after history")),
-                    input = "after execute",
-                )
-            )
-        )
-        releasePassiveLoad.complete(Unit)
 
-        assertEquals("after tool", execution.await().output)
+        releaseTool.complete(Unit)
+        val result = execution.await()
+        assertEquals("after tool", result.output)
         assertFalse(toolCancelled)
-        assertOrdered(
-            harness.requestHistories[1],
-            "before history",
-            "passive history",
-            "after history",
-            "call-1",
-            "tool-result",
-            "before execute",
-            "after execute",
-        )
-        assertEquals(listOf(0L, 2L), harness.streamRevisions)
+
+        val replacementHistory = harness.requestHistories[1]
+        val assistantCallIndex = replacementHistory.indexOfFirst {
+            it.role == LLMMessageRole.assistant && it.functionsStateId == "call-1"
+        }
+        val functionResultIndex = replacementHistory.indexOfFirst {
+            it.role == LLMMessageRole.function && it.content == "tool-result"
+        }
+        val queuedInputIndex = replacementHistory.indexOfFirst {
+            it.role == LLMMessageRole.user && it.content == "use the result differently"
+        }
+        assertTrue(assistantCallIndex >= 0)
+        assertTrue(functionResultIndex > assistantCallIndex)
+        assertTrue(queuedInputIndex > functionResultIndex)
     }
 
     @Test
@@ -357,9 +223,9 @@ class SkillsGraphBasedAgentMidRunInputTest {
             },
         )
 
-        val execution = async { harness.execute() }
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
         proposalStarted.await()
-        assertTrue(harness.submit("do not run that tool"))
+        assertTrue(harness.agent.submitToActiveRun("do not run that tool"))
         val result = execution.await()
 
         assertEquals("replanned", result.output)
@@ -380,9 +246,9 @@ class SkillsGraphBasedAgentMidRunInputTest {
             }
         })
 
-        val execution = async { harness.execute() }
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
         provisionalStarted.await()
-        assertTrue(harness.submit("one more requirement"))
+        assertTrue(harness.agent.submitToActiveRun("one more requirement"))
         val result = execution.await()
 
         assertEquals("accepted", result.output)
@@ -404,10 +270,10 @@ class SkillsGraphBasedAgentMidRunInputTest {
             },
         )
 
-        val execution = async { harness.execute() }
+        val execution = async { harness.agent.executeWithTrace(harness.context()) }
         finalizationStarted.await()
 
-        assertFalse(harness.submit("too late"))
+        assertFalse(harness.agent.submitToActiveRun("too late"))
         assertTrue(execution.isActive)
         releaseFinalization.complete(Unit)
 
@@ -432,16 +298,16 @@ class SkillsGraphBasedAgentMidRunInputTest {
             }
         })
 
-        val firstExecution = async { harness.execute(harness.context("first run")) }
+        val firstExecution = async { harness.agent.executeWithTrace(harness.context("first run")) }
         firstStarted.await()
-        assertTrue(harness.submit("old queued input"))
-        harness.cancel()
+        assertTrue(harness.agent.submitToActiveRun("old queued input"))
+        harness.agent.cancelActiveJob()
 
         assertFailsWith<CancellationException> { firstExecution.await() }
         firstCancelled.await()
-        assertFalse(harness.submit("after cancellation"))
+        assertFalse(harness.agent.submitToActiveRun("after cancellation"))
 
-        val secondResult = harness.execute(harness.context("second run"))
+        val secondResult = harness.agent.executeWithTrace(harness.context("second run"))
         assertEquals("new run", secondResult.output)
         assertFalse(harness.requestHistories.last().any { it.content.contains("old queued input") })
         assertTrue(harness.requestHistories.last().any { it.content == "second run" })
@@ -452,10 +318,10 @@ class SkillsGraphBasedAgentMidRunInputTest {
         val harness = Harness(chatHandler = { _, _ -> throw CancellationException("provider cancelled") })
 
         assertFailsWith<CancellationException> {
-            harness.execute()
+            harness.agent.executeWithTrace(harness.context())
         }
         assertEquals(1, harness.chatCallCount)
-        assertFalse(harness.submit("not accepted"))
+        assertFalse(harness.agent.submitToActiveRun("not accepted"))
         assertEquals(0, harness.finalizationCount)
     }
 }
@@ -488,9 +354,7 @@ private class Harness(
     var finalizationCount = 0
         private set
 
-    private val agent: SkillsGraphBasedAgent
-    private var activeMailbox: ActiveRunMailbox? = null
-    private var stagedHistoryRead: (suspend () -> List<LLMRequest.Message>)? = null
+    val agent: SkillsGraphBasedAgent
 
     init {
         every { nodesLLM.sideEffects } returns emptyFlow()
@@ -543,42 +407,6 @@ private class Harness(
         )
     }
 
-    suspend fun execute(
-        context: AgentContext<String> = context(),
-        onActiveRunReady: suspend (ActiveRunMailbox) -> Unit = {},
-    ) = agent.execute(
-        context = context,
-        loadPendingHistory = ::loadPendingHistory,
-        onActiveRunReady = { mailbox ->
-            activeMailbox = mailbox
-            onActiveRunReady(mailbox)
-        },
-        onStep = null,
-    )
-
-    suspend fun submit(input: String): Boolean =
-        submit(ActiveRunInput(input = input))
-
-    suspend fun submit(input: ActiveRunInput): Boolean =
-        activeMailbox?.submit { input } ?: false
-
-    fun stageHistory(loader: suspend () -> List<LLMRequest.Message>): Boolean {
-        if (activeMailbox == null) return false
-        stagedHistoryRead = loader
-        return true
-    }
-
-    suspend fun cancel() {
-        activeMailbox?.close()
-        agent.cancel()
-    }
-
-    private suspend fun loadPendingHistory(): List<LLMRequest.Message> {
-        val read = stagedHistoryRead ?: return emptyList()
-        stagedHistoryRead = null
-        return read()
-    }
-
     fun context(input: String = "initial request"): AgentContext<String> = AgentContext(
         input = input,
         settings = AgentSettings(
@@ -627,44 +455,8 @@ private fun toolResponse(): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
     usage = LLMResponse.Usage(1, 1, 2, 0),
 )
 
-private fun multiToolResponse(): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
-    choices = listOf("call-1", "call-2").mapIndexed { index, callId ->
-        LLMResponse.Choice(
-            message = LLMResponse.Message(
-                content = "",
-                role = LLMMessageRole.assistant,
-                functionCall = functionCall(),
-                functionsStateId = callId,
-            ),
-            index = index,
-            finishReason = LLMResponse.FinishReason.function_call,
-        )
-    },
-    created = 1,
-    model = "test-model",
-    usage = LLMResponse.Usage(1, 1, 2, 0),
-)
-
 private fun functionCall(): LLMResponse.FunctionCall =
     LLMResponse.FunctionCall(name = "TestTool", arguments = emptyMap())
-
-private fun executedTool(content: String, callId: String = "call-1"): ExecutedToolCall = ExecutedToolCall(
-    functionCall = functionCall(),
-    message = LLMRequest.Message(
-        role = LLMMessageRole.function,
-        content = content,
-        name = "TestTool",
-        functionsStateId = callId,
-    ),
-)
-
-private fun assertOrdered(history: List<LLMRequest.Message>, vararg markers: String) {
-    val indices = markers.map { marker ->
-        history.indexOfFirst { it.content == marker || it.functionsStateId == marker }
-    }
-    assertTrue(indices.all { it >= 0 }, "Missing marker in history: ${markers.toList()} -> $history")
-    assertEquals(indices.sorted(), indices, "History markers are out of order: ${markers.toList()}")
-}
 
 private fun responseContent(response: LLMResponse.Chat.Ok): String =
     response.choices.lastOrNull()?.message?.content.orEmpty()

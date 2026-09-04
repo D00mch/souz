@@ -11,7 +11,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
@@ -72,7 +71,6 @@ internal class PublicClientService(
         validateDevice(chat, frame.payload.device)
         validateContent(frame.payload.content)
         val requestedThreadId = frame.threadId?.uuid("threadId")
-        val normalizedDevice = frame.payload.device.copy(capabilities = frame.payload.device.capabilities.toSortedSet())
         val key = ClientRequestKey(
             chatId = chat.id,
             requestId = requestId,
@@ -81,7 +79,7 @@ internal class PublicClientService(
                 linkedMapOf(
                     "kind" to frame.kind,
                     "threadId" to requestedThreadId?.toString(),
-                    "device" to normalizedDevice,
+                    "device" to frame.payload.device.copy(capabilities = frame.payload.device.capabilities.toSortedSet()),
                     "content" to frame.payload.content,
                     "meta" to frame.payload.meta,
                 )
@@ -145,19 +143,6 @@ internal class PublicClientService(
             ),
             acceptedRequest = key.request(threadId = null, response = ack, now = now),
         )
-        if (result is ClientRequestResult.HistoryAccepted) {
-            withContext(NonCancellable) {
-                runCatching { registry.notifyHistoryPending(chat.id, result.message.seq) }
-                    .onFailure { failure ->
-                        logger.warn(
-                            "Failed to notify local runtime about history for chat {} through message {}.",
-                            chat.id,
-                            result.message.seq,
-                            failure,
-                        )
-                    }
-            }
-        }
         return handledHistory(result, key, now)
     }
 
@@ -296,7 +281,7 @@ internal class PublicClientService(
         val threadId = prepared.execution.id
         val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, revision = 1, now = now)
         val result = withContext(NonCancellable) {
-            registry.register(chat.id, threadId, frame.payload.device, key.requestId)
+            registry.register(threadId, frame.payload.device, key.requestId)
             var resolution: ClientRequestResult? = null
             try {
                 clientRequestRepository.resolveMessage(
@@ -352,14 +337,7 @@ internal class PublicClientService(
             acceptedRequest = { revision ->
                 key.request(
                     threadId,
-                    acceptedMessage(
-                        chat.id,
-                        key.requestId,
-                        threadId,
-                        created = false,
-                        revision = revision,
-                        now = now,
-                    ),
+                    acceptedMessage(chat.id, key.requestId, threadId, created = false, revision = revision, now = now),
                     now,
                 )
             },
@@ -664,13 +642,7 @@ internal class PublicClientService(
         receivedAt = now,
     )
 
-    private fun rejectedMessage(
-        chatId: UUID,
-        requestId: String,
-        code: String,
-        message: String,
-        now: Instant,
-    ) =
+    private fun rejectedMessage(chatId: UUID, requestId: String, code: String, message: String, now: Instant) =
         HandledClientFrame(
             MessageSubmitAck(
                 chatId = chatId.toString(), requestId = requestId, status = "rejected", duplicate = false,
@@ -713,10 +685,6 @@ internal class PublicClientService(
             status = "rejected", duplicate = false, error = ClientError(code, message), receivedAt = now.toString(),
         )
     )
-
-    private companion object {
-        val logger = LoggerFactory.getLogger(PublicClientService::class.java)
-    }
 }
 
 private fun ClientRequestResult.storedRequest(): ClientRequest = when (this) {

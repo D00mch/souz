@@ -95,7 +95,7 @@ class PostgresClientRequestRepository(
                 throughSeq = message.seq,
             )
             insertClientRequest(this, request)
-            ClientRequestResult.Accepted(request, updatedExecution, message, messageDelta)
+            ClientRequestResult.Accepted(request, updatedExecution, messageDelta)
         }
     }
 
@@ -107,7 +107,7 @@ class PostgresClientRequestRepository(
     ): ClientRequestResult = serialize(userId, key) {
         acceptedRequest.requireKey(key)
         require(acceptedRequest.threadId == null)
-        val message = messageWriter.append(
+        messageWriter.append(
             connection = this,
             userId = userId,
             chatId = key.chatId,
@@ -118,7 +118,7 @@ class PostgresClientRequestRepository(
             createdAt = input.createdAt,
         )
         insertClientRequest(this, acceptedRequest)
-        ClientRequestResult.HistoryAccepted(acceptedRequest, message)
+        ClientRequestResult.HistoryAccepted(acceptedRequest)
     }
 
     override suspend fun cancel(

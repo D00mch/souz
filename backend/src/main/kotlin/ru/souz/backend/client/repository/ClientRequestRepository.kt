@@ -35,14 +35,10 @@ sealed interface ClientRequestResult {
     data class Accepted(
         val request: ClientRequest,
         val execution: AgentExecution,
-        val message: ChatMessage? = null,
         val messageDelta: List<ChatMessage> = emptyList(),
     ) : ClientRequestResult
 
-    data class HistoryAccepted(
-        val request: ClientRequest,
-        val message: ChatMessage,
-    ) : ClientRequestResult
+    data class HistoryAccepted(val request: ClientRequest) : ClientRequestResult
 
     data class Duplicate(val request: ClientRequest) : ClientRequestResult
     data class Rejected(val request: ClientRequest) : ClientRequestResult

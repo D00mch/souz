@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import org.slf4j.LoggerFactory
@@ -40,12 +39,11 @@ class AgentFacade internal constructor(
 
     val sideEffects: Flow<AgentSideEffect> = _activeAgentId.flatMapLatest { id ->
         merge(
-            executor.stream(id).map { AgentSideEffect.Text(it.text, it.streamRevision) },
+            executor.sideEffects(id).map { AgentSideEffect.Text(it.text, it.streamRevision) },
             agentToolExecutor.toolInvocations.map { AgentSideEffect.Fn(it) },
         )
     }
     private var executionGeneration: Long = 0
-    private val activeRunMailbox = MutableStateFlow<ActiveRunMailbox?>(null)
 
     suspend fun setActiveAgent(agentId: AgentId) {
         val normalized = contextFactory.normalizeAgentId(agentId)
@@ -104,17 +102,16 @@ class AgentFacade internal constructor(
 
     suspend fun cancelActiveJob() {
         executionGeneration += 1
-        activeRunMailbox.getAndUpdate { null }?.close()
-        executor.cancel(_activeAgentId.value)
+        executor.cancelActiveJob(_activeAgentId.value)
         _isExecuting.value = false
     }
 
     val supportsActiveRunInput: Boolean
-        get() = activeRunMailbox.value != null
+        get() = executor.supportsActiveRunInput(_activeAgentId.value)
 
     /** Enqueues input only for the current open run; it never starts a new turn. */
     suspend fun submitToActiveRun(input: String): Boolean =
-        activeRunMailbox.value?.submit { ActiveRunInput(input = input) } ?: false
+        executor.submitToActiveRun(_activeAgentId.value, input)
 
     suspend fun execute(
         input: String,
@@ -129,28 +126,22 @@ class AgentFacade internal constructor(
         val generation = executionGeneration
         _isExecuting.value = true
         sessionService.startTask(input)
-        var executionMailbox: ActiveRunMailbox? = null
         return try {
             val baseContext = _currentContext.value
             val executionContext = toolInvocationMetaOverride
                 ?.let { baseContext.copy(toolInvocationMeta = it) }
                 ?: baseContext
-            val result = executor.execute(
+            val result = executor.executeWithTrace(
                 agentId = _activeAgentId.value,
                 context = executionContext,
                 input = input,
                 eventSink = sessionService,
-                onActiveRunReady = { mailbox ->
-                    executionMailbox = mailbox
-                    activeRunMailbox.value = mailbox
-                },
-            )
+            ) { step, node, from, to ->
+                sessionService.onStep(step, node, from, to)
+            }
             _currentContext.emit(result.context.copy(toolInvocationMeta = baseContext.toolInvocationMeta))
             result
         } finally {
-            executionMailbox?.let { mailbox ->
-                activeRunMailbox.compareAndSet(mailbox, null)
-            }
             runCatching { sessionService.finishTask() }
                 .onFailure { e -> l.warn("sessionService fail", e) }
             if (generation == executionGeneration) {

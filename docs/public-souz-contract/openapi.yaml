@@ -199,7 +199,7 @@ components:
         payload:
           $ref: "#/components/schemas/MessageSubmitPayload"
     HistoryAppend:
-      description: Appends role-preserving chat history without selecting or mutating a thread or triggering model execution.
+      description: Appends role-preserving chat history without selecting or mutating a thread or triggering model execution. Stored history is supplied with the next message.submit.
       type: object
       additionalProperties: false
       required: [kind, chatId, requestId, payload]

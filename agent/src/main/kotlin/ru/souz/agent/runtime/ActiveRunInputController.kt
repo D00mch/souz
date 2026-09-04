@@ -1,4 +1,4 @@
-package ru.souz.agent
+package ru.souz.agent.runtime
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
@@ -8,24 +8,27 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import org.slf4j.LoggerFactory
-import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMRequest
+import ru.souz.agent.ActiveRunInput
 import kotlin.coroutines.cancellation.CancellationException
 
-/** Mutex-serialized input mailbox for one steerable graph execution. */
-class ActiveRunMailbox internal constructor(
-    private val loadPendingHistory: suspend () -> List<LLMRequest.Message>,
+/** Mutex-serialized mailbox for one steerable graph execution. */
+internal class ActiveRunInputController(
+    private val mutex: Mutex = Mutex(),
 ) {
-    private val logger = LoggerFactory.getLogger(ActiveRunMailbox::class.java)
-    private val mutex = Mutex()
     private var state: State = State.Open()
+
+    /** Accepts [input] at one linearization point with closing and final sealing. */
+    suspend fun submit(input: String): Boolean = mutex.withLock {
+        val open = state as? State.Open ?: return false
+        enqueueLocked(open, ActiveRunInput(input = input))
+        true
+    }
 
     /**
      * Reserves an open mailbox, runs [build], and publishes its result at one ordering point.
      * Final sealing waits for the reservation, allowing durable state to commit before input is visible.
      */
-    suspend fun submit(build: suspend () -> ActiveRunInput?): Boolean {
+    suspend fun submitAfter(build: suspend () -> ActiveRunInput?): Boolean {
         if (!reserveInput()) return false
         var released = false
         return try {
@@ -40,21 +43,8 @@ class ActiveRunMailbox internal constructor(
         }
     }
 
-    /** Reads the fixed history source at a boundary without waking or reserving the run. */
-    internal suspend fun loadHistoryAtBoundary(): List<LLMRequest.Message> {
-        mutex.withLock { openState() }
-        return try {
-            loadPendingHistory().also(::requireSupportedHistory)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            logger.warn("Active-run history could not be loaded; it remains pending at the source", error)
-            emptyList()
-        }
-    }
-
     /** Returns queued input or the revision and notification for the next LLM attempt. */
-    internal suspend fun nextLlmStep(): NextLlmStep = mutex.withLock {
+    suspend fun nextLlmStep(): NextLlmStep = mutex.withLock {
         val open = openState()
         if (open.queuedInputs.isNotEmpty()) {
             NextLlmStep.QueuedInput(drainLocked(open))
@@ -64,13 +54,13 @@ class ActiveRunMailbox internal constructor(
     }
 
     /** Drains all input accepted before this operation, preserving FIFO message boundaries. */
-    internal suspend fun drain(): List<ActiveRunInput>? = mutex.withLock {
+    suspend fun drain(): List<ActiveRunInput>? = mutex.withLock {
         val open = openState()
         if (open.queuedInputs.isEmpty()) null else drainLocked(open)
     }
 
     /** Atomically drains pending input or closes an empty mailbox around a final response. */
-    internal suspend fun drainOrSeal(): List<ActiveRunInput>? {
+    suspend fun drainOrSeal(): List<ActiveRunInput>? {
         while (true) {
             val pendingReservation = mutex.withLock {
                 val open = openState()
@@ -88,7 +78,7 @@ class ActiveRunMailbox internal constructor(
     }
 
     /** Stops accepting submissions in the same state machine as enqueueing and draining. */
-    internal suspend fun close() {
+    suspend fun close() {
         while (true) {
             val pendingReservation = mutex.withLock {
                 val open = state as? State.Open ?: return
@@ -146,12 +136,6 @@ class ActiveRunMailbox internal constructor(
         open.queuedInputs.addLast(input)
         state = open.copy(streamRevision = open.streamRevision + 1)
         open.inputAvailable.complete(Unit)
-    }
-
-    private fun requireSupportedHistory(messages: List<LLMRequest.Message>) {
-        require(messages.all { it.role == LLMMessageRole.user || it.role == LLMMessageRole.assistant }) {
-            "Active-run history supports only user and assistant messages"
-        }
     }
 
     internal sealed interface NextLlmStep {

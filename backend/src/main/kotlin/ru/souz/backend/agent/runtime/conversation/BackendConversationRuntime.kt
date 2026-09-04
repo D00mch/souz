@@ -1,11 +1,8 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import java.util.UUID
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import ru.souz.agent.ActiveRunMailbox
 import ru.souz.agent.ActiveRunInput
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutor
@@ -38,15 +35,11 @@ internal class BackendConversationRuntime(
     private val executor: AgentExecutor,
     private val executionApi: BackendExecutionLlmChatApi,
     private val persistedSession: AgentConversationSession?,
-    private val messageRepository: MessageRepository,
     private val initialMessages: List<LLMRequest.Message>,
     initialObservedMessageSeq: Long,
 ) {
     private val cursorMutex = Mutex()
     private var observedMessageSeq = initialObservedMessageSeq
-    private var pendingHistoryThroughSeq: Long? = null
-    private var activeRunMailbox: ActiveRunMailbox? = null
-    private var acceptsHistoryNotifications = true
 
     internal suspend fun execute(
         request: BackendConversationTurnRequest,
@@ -69,32 +62,13 @@ internal class BackendConversationRuntime(
             ),
         )
 
-        var executionMailbox: ActiveRunMailbox? = null
-        val result = try {
-            executor.execute(
-                agentId = AgentId.SKILLS_GRAPH,
-                context = seedContext,
-                input = request.prompt,
-                eventSink = eventSink,
-                loadPendingHistory = ::loadPendingHistory,
-                onActiveRunReady = { mailbox ->
-                    cursorMutex.withLock {
-                        executionMailbox = mailbox
-                        activeRunMailbox = mailbox
-                    }
-                    onRuntimeReady()
-                },
-            )
-        } finally {
-            withContext(NonCancellable) {
-                cursorMutex.withLock {
-                    executionMailbox?.let { mailbox ->
-                        if (activeRunMailbox === mailbox) activeRunMailbox = null
-                    }
-                    acceptsHistoryNotifications = false
-                }
-            }
-        }
+        val result = executor.execute(
+            agentId = AgentId.SKILLS_GRAPH,
+            context = seedContext,
+            input = request.prompt,
+            eventSink = eventSink,
+            onActiveRunReady = onRuntimeReady,
+        )
         val nextSession = AgentConversationSession(
             history = result.context.history,
             temperature = result.context.settings.temperature,
@@ -118,20 +92,19 @@ internal class BackendConversationRuntime(
     internal suspend fun currentUsage(): LLMResponse.Usage = executionApi.cumulativeUsage()
 
     /**
-     * Serializes the durable execute barrier with passive history loading and publishes the
-     * committed row plus every relevant preceding message as one active-run input.
+     * Serializes the durable execute barrier and publishes the committed row plus every relevant
+     * preceding message as one active-run input.
      */
     internal suspend fun commitActiveRunInput(
         commit: suspend (afterSeq: Long) -> ClientRequestResult,
     ): ClientRequestResult? {
-        val mailbox = cursorMutex.withLock { activeRunMailbox } ?: return null
         var committed: ClientRequestResult? = null
-        val published = mailbox.submit {
+        val published = executor.submitToActiveRunAfter(AgentId.SKILLS_GRAPH) {
             cursorMutex.withLock {
                 when (val result = commit(observedMessageSeq).also { committed = it }) {
                     is ClientRequestResult.Accepted -> {
-                        val inputMessage = requireNotNull(result.message) {
-                            "An accepted active-run input must include its durable message"
+                        val inputMessage = requireNotNull(result.messageDelta.lastOrNull()) {
+                            "An accepted active-run input must include its durable message delta"
                         }
                         require(inputMessage.seq > observedMessageSeq) {
                             "Accepted active-run input must advance the durable message cursor"
@@ -149,8 +122,7 @@ internal class BackendConversationRuntime(
                                 .toList(),
                             input = inputMessage.content,
                         )
-                        // A non-null producer result is guaranteed to publish: sealing waits for this reservation.
-                        advanceCursor(inputMessage.seq)
+                        observedMessageSeq = inputMessage.seq
                         input
                     }
 
@@ -162,38 +134,6 @@ internal class BackendConversationRuntime(
             "Committed active-run input was not published"
         }
         return committed
-    }
-
-    /** Advances the runtime-owned durable watermark without touching the active mailbox. */
-    internal suspend fun notifyHistoryPending(throughSeq: Long): Boolean = cursorMutex.withLock {
-        if (!acceptsHistoryNotifications) return false
-        if (throughSeq > observedMessageSeq) {
-            pendingHistoryThroughSeq = maxOf(pendingHistoryThroughSeq ?: 0L, throughSeq)
-        }
-        true
-    }
-
-    private suspend fun loadPendingHistory(): List<LLMRequest.Message> = cursorMutex.withLock {
-        val throughSeq = pendingHistoryThroughSeq ?: return emptyList()
-        if (throughSeq <= observedMessageSeq) {
-            pendingHistoryThroughSeq = null
-            return emptyList()
-        }
-        val messages = messageRepository.listThrough(
-            userId = key.userId,
-            chatId = key.chatId(),
-            afterSeq = observedMessageSeq,
-            throughSeq = throughSeq,
-        )
-        val history = messages.mapNotNull(ChatMessage::toAgentHistoryMessage)
-        observedMessageSeq = throughSeq
-        pendingHistoryThroughSeq = pendingHistoryThroughSeq?.takeIf { it > throughSeq }
-        history
-    }
-
-    private fun advanceCursor(throughSeq: Long) {
-        observedMessageSeq = throughSeq
-        pendingHistoryThroughSeq = pendingHistoryThroughSeq?.takeIf { it > observedMessageSeq }
     }
 }
 

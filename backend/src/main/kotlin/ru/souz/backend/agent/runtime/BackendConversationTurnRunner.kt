@@ -51,13 +51,7 @@ internal class BackendConversationRuntimeTurnRunner(
     ): BackendConversationTurnOutcome {
         val runtime = runtimeFactory.create(conversationKey, request, initialUsage)
         val threadId = request.executionId?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
-        if (threadId != null) {
-            clientThreadRegistry?.attach(
-                threadId = threadId,
-                runtime = runtime,
-                historyEligible = request.inputMessageSeq != null,
-            )
-        }
+        if (threadId != null) clientThreadRegistry?.attach(threadId, runtime)
         return try {
             val execution = runtime.execute(
                 request = request,

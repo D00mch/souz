@@ -62,7 +62,7 @@ Route: `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`
 Client frames:
 
 - `message.submit`: `{kind, chatId, requestId, threadId?, payload}`. Submits user input for execution and retains explicit/implicit thread selection. Its role is inherently `user` and is not a field.
-- `history.append`: `{kind, chatId, requestId, payload}`. Requires `payload.role` (`user` or `assistant`), appends durable chat context, and never selects a thread or triggers model execution.
+- `history.append`: `{kind, chatId, requestId, payload}`. Requires `payload.role` (`user` or `assistant`), appends durable chat context, and supplies it only with the next accepted `message.submit`.
 - `tool.result`: `{kind, chatId, threadId, toolCallId, status, result|error}`. `status` is `succeeded`, `failed`, `cancelled`, or `timed_out`.
 - `thread.cancel`: `{kind, chatId, requestId, threadId, reason?}`.
 
@@ -133,9 +133,9 @@ Each thread has exactly one terminal event. If completion and cancellation race,
 
 History belongs to the chat and has no thread identity. It is stored with its original user or assistant role without changing an execution, input sequence, revision, cancellation state, runtime lease, or active device context. Its acknowledgement has no execution fields; no thread status or durable event follows it.
 
-An accepted history message notifies a matching active runtime on the same Souz process that durable history is pending. The notification never starts the graph, cancels an LLM request, or interrupts a tool. If the active run naturally reaches another LLM boundary, the pending history is inserted before that request. History received during tool execution is placed before the complete tool call/result exchange so the pair remains valid. If the current LLM response finishes the run, history remains pending until the next execute submission.
+History remains pending until the next accepted `message.submit`; it is not delivered to an active runtime on its own. The execute submission loads history ordered before its user-message row, preserves each stored role, and supplies the history followed by the execute input as one batch. History ordered after that execute remains pending for a later submission.
 
-The internal chat-local message sequence defines execute barriers. History ordered before an execute input is supplied to that execute exactly once; history ordered after it is eligible for a later safe boundary or the following execute. Storage does not require local runtime ownership. A process without the runtime relies on durable catch-up at the next execute.
+The internal chat-local message sequence defines execute barriers and makes concurrent history and execute ordering authoritative. Storage does not require local runtime ownership, and the runtime owner catches up from durable messages when it accepts the next execute.
 
 ## Idempotency
 

@@ -139,6 +139,34 @@ class BackendPublicHistoryContractE2eTest {
                     assertEquals("true", json.readTree(metadata)[CLIENT_HISTORY_MESSAGE_METADATA_KEY].asText())
                     assertNull(json.readTree(metadata)["inputSeq"])
                 }
+
+                session.send(
+                    Frame.Text(
+                        messageFrame(
+                            chatId,
+                            userId,
+                            "execute-after-history",
+                            text = "do something new",
+                        )
+                    )
+                )
+                val executeAck = readJson(session)
+                assertEquals("accepted", executeAck["status"].asText())
+                assertTrue(executeAck["thread"]["created"].asBoolean())
+                readJson(session) // thread.status
+                readJson(session) // thread.completed
+
+                val relevantMessages = llm.requests.single().messages.filter {
+                    it.content in setOf(
+                        "client solved it",
+                        "the client task is complete",
+                        "do something new",
+                    )
+                }
+                assertEquals(
+                    listOf(LLMMessageRole.user, LLMMessageRole.assistant, LLMMessageRole.user),
+                    relevantMessages.map { it.role },
+                )
             }
         }
 
@@ -307,71 +335,6 @@ class BackendPublicHistoryContractE2eTest {
     }
 
     @Test
-    fun `history received during a client tool stays before its complete exchange`() =
-        backendE2eTest(
-            schemaPrefix = "e2e_ws_history_tool_order",
-            llm = E2eLlmApi().apply {
-                requestSkill("user.ask", mapOf("question" to "Which genre?"))
-            },
-        ) {
-            withPublicChatSocket { userId, chatId, session ->
-                session.send(
-                    Frame.Text(
-                        messageFrame(
-                            chatId,
-                            userId,
-                            "execute-tool",
-                            text = "ask the client",
-                        )
-                    )
-                )
-                val executeAck = readJson(session)
-                readJson(session) // thread.status
-                val toolStarted = readJson(session)
-                val threadId = executeAck["thread"]["id"].asText()
-                val toolCallId = toolStarted["payload"]["toolCallId"].asText()
-                assertEquals("tool.call.started", toolStarted["type"].asText())
-                assertEquals(2, llm.requests.size)
-
-                session.send(
-                    Frame.Text(
-                        historyFrame(
-                            chatId,
-                            userId,
-                            "history-during-tool",
-                            "assistant",
-                            "client context during tool",
-                        )
-                    )
-                )
-                assertEquals("accepted", readJson(session)["status"].asText())
-                delay(100)
-                assertEquals(2, llm.requests.size)
-
-                session.send(
-                    Frame.Text(
-                        """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Horror"}}"""
-                    )
-                )
-                assertEquals("accepted", readJson(session)["status"].asText())
-                readJson(session) // thread.completed
-
-                val finalRequest = llm.requests.last().messages
-                val historyIndex = finalRequest.indexOfFirst { it.content == "client context during tool" }
-                val toolCallIndex = finalRequest.indexOfFirst {
-                    it.role == LLMMessageRole.assistant && it.functionCall?.name == "RunSkillCommand"
-                }
-                val toolResultIndex = finalRequest.indexOfFirst {
-                    it.role == LLMMessageRole.function && it.name == "RunSkillCommand"
-                }
-                assertTrue(historyIndex >= 0)
-                assertTrue(historyIndex < toolCallIndex)
-                assertTrue(toolCallIndex < toolResultIndex)
-                assertEquals(1, finalRequest.count { it.content == "client context during tool" })
-            }
-        }
-
-    @Test
     fun `history during a final response remains after that response until the next execute`() {
         val llm = E2eLlmApi().apply { pausePromptUntilReleased("final active") }
         backendE2eTest("e2e_ws_history_final_gap", llm = llm) {
@@ -437,67 +400,6 @@ class BackendPublicHistoryContractE2eTest {
             }
         }
     }
-
-    @Test
-    fun `implicit execute creates a thread with preceding role preserving history`() =
-        backendE2eTest("e2e_ws_history_new_thread") {
-            withPublicChatSocket { userId, chatId, session ->
-                session.send(Frame.Text(historyFrame(chatId, userId, "history-before-1", "user", "solved request")))
-                assertEquals("accepted", readJson(session)["status"].asText())
-                session.send(
-                    Frame.Text(
-                        historyFrame(chatId, userId, "history-before-2", "assistant", "request solved")
-                    )
-                )
-                assertEquals("accepted", readJson(session)["status"].asText())
-
-                session.send(
-                    Frame.Text(
-                        messageFrame(
-                            chatId,
-                            userId,
-                            "execute-after-history",
-                            text = "do something new",
-                        )
-                    )
-                )
-                val ack = readJson(session)
-                assertEquals("accepted", ack["status"].asText())
-                assertTrue(ack["thread"]["created"].asBoolean())
-                assertEquals(1L, ack["submission"]["inputSeq"].asLong())
-                readJson(session) // thread.status
-                readJson(session) // thread.completed
-
-                val relevantMessages = llm.requests.single().messages.filter {
-                    it.content in setOf("solved request", "request solved", "do something new")
-                }
-                assertEquals(
-                    listOf(LLMMessageRole.user, LLMMessageRole.assistant, LLMMessageRole.user),
-                    relevantMessages.map { it.role },
-                )
-                assertEquals(
-                    listOf("solved request", "request solved", "do something new"),
-                    relevantMessages.map { it.content },
-                )
-
-                session.send(
-                    Frame.Text(
-                        messageFrame(
-                            chatId,
-                            userId,
-                            "execute-again",
-                            text = "one more thing",
-                        )
-                    )
-                )
-                assertEquals("accepted", readJson(session)["status"].asText())
-                readJson(session) // thread.status
-                readJson(session) // thread.completed
-                val nextRequest = llm.requests[1]
-                assertEquals(1, nextRequest.messages.count { it.content == "solved request" })
-                assertEquals(1, nextRequest.messages.count { it.content == "request solved" })
-            }
-        }
 
     private suspend fun <T> BackendE2eScope.withPublicChatSocket(
         cleanup: suspend () -> Unit = {},

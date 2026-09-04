@@ -75,7 +75,7 @@ class SkillsGraphBasedAgentTest {
             nodesSummarization,
             nodesMemory,
         )
-        val result = skillsAgent.execute(baseContext())
+        val result = skillsAgent.executeWithTrace(baseContext())
 
         assertEquals("final", result.output)
         assertEquals(
@@ -93,7 +93,7 @@ class SkillsGraphBasedAgentTest {
             executed,
         )
 
-        skillsAgent.execute(result.context.copy(input = "Again"))
+        skillsAgent.executeWithTrace(result.context.copy(input = "Again"))
         assertEquals(PROVIDED_SYSTEM_PROMPT, result.context.systemPrompt)
     }
 
@@ -124,7 +124,7 @@ class SkillsGraphBasedAgentTest {
             nodesErrorHandling,
             nodesSummarization,
             nodesMemory,
-        ).execute(baseContext())
+        ).executeWithTrace(baseContext())
 
         assertEquals("friendly error", result.output)
         assertEquals(

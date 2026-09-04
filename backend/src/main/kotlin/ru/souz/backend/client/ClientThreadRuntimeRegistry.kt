@@ -34,12 +34,9 @@ internal class ClientThreadRuntimeRegistry(
     val runtimeOwner: String = defaultRuntimeOwner(),
 ) {
     private data class State(
-        val chatId: UUID,
         val runtimeReady: CompletableDeferred<Unit> = CompletableDeferred(),
         var runtime: BackendConversationRuntime? = null,
         var latestDevice: ClientDevice,
-        var historyEligible: Boolean = true,
-        var pendingHistoryThroughSeq: Long? = null,
         var pendingTool: PendingClientTool? = null,
         val pendingAcks: MutableMap<String, CompletableDeferred<Unit>> = linkedMapOf(),
         var terminal: Boolean = false,
@@ -48,7 +45,6 @@ internal class ClientThreadRuntimeRegistry(
 
     private val mutex = Mutex()
     private val states = linkedMapOf<UUID, State>()
-    private val threadByChat = linkedMapOf<UUID, UUID>()
 
     suspend fun contains(threadId: UUID): Boolean = mutex.withLock {
         states.containsKey(threadId)
@@ -64,60 +60,27 @@ internal class ClientThreadRuntimeRegistry(
         removed.await()
     }
 
-    suspend fun register(chatId: UUID, threadId: UUID, device: ClientDevice, requestId: String? = null) {
+    suspend fun register(threadId: UUID, device: ClientDevice, requestId: String? = null) {
         mutex.withLock {
-            val state = states.getOrPut(threadId) { State(chatId = chatId, latestDevice = device) }
-            check(state.chatId == chatId) { "Thread is already registered for another chat" }
-            val indexedState = threadByChat[chatId]?.let(states::get)
-            if (indexedState == null || indexedState.terminal) threadByChat[chatId] = threadId
+            val state = states.getOrPut(threadId) { State(latestDevice = device) }
             requestId?.let { state.pendingAcks.putIfAbsent(it, CompletableDeferred()) }
         }
     }
 
     suspend fun discard(threadId: UUID) {
-        var historyTarget: HistoryTarget? = null
-        val discarded = mutex.withLock {
-            states.remove(threadId)?.also { discardedState ->
-                if (threadByChat[discardedState.chatId] == threadId) {
-                    val replacement = states.entries.firstOrNull { (_, state) ->
-                        state.chatId == discardedState.chatId && !state.terminal
-                    }
-                    if (replacement == null) {
-                        threadByChat.remove(discardedState.chatId)
-                    } else {
-                        threadByChat[discardedState.chatId] = replacement.key
-                        discardedState.pendingHistoryThroughSeq?.let { throughSeq ->
-                            replacement.value.pendingHistoryThroughSeq = maxOf(
-                                replacement.value.pendingHistoryThroughSeq ?: 0L,
-                                throughSeq,
-                            )
-                        }
-                        historyTarget = replacement.value.historyTarget(replacement.key)
-                    }
-                }
-            }
-        } ?: return
+        val discarded = mutex.withLock { states.remove(threadId) } ?: return
         discarded.runtimeReady.complete(Unit)
         discarded.pendingAcks.values.forEach { it.complete(Unit) }
         discarded.pendingTool?.result?.cancel()
         discarded.removed.complete(Unit)
-        historyTarget?.let { forwardPendingHistory(it.threadId, it.runtime, it.throughSeq) }
     }
 
-    suspend fun attach(
-        threadId: UUID,
-        runtime: BackendConversationRuntime,
-        historyEligible: Boolean,
-    ) {
-        val historyTarget = mutex.withLock {
-            val state = states[threadId] ?: return@withLock null
-            if (state.terminal) return@withLock null
+    suspend fun attach(threadId: UUID, runtime: BackendConversationRuntime) {
+        mutex.withLock {
+            val state = states[threadId] ?: return@withLock
+            if (state.terminal) return@withLock
             state.runtime = runtime
-            state.historyEligible = historyEligible
-            if (!historyEligible) state.pendingHistoryThroughSeq = null
-            state.historyTarget(threadId)
         }
-        historyTarget?.let { forwardPendingHistory(it.threadId, it.runtime, it.throughSeq) }
     }
 
     suspend fun markRuntimeReady(threadId: UUID, runtime: BackendConversationRuntime) {
@@ -128,26 +91,11 @@ internal class ClientThreadRuntimeRegistry(
         }
     }
 
-    /** Signals the locally tracked runtime for [chatId] without selecting or mutating a thread. */
-    suspend fun notifyHistoryPending(chatId: UUID, throughSeq: Long): Boolean {
-        val target = mutex.withLock {
-            val threadId = threadByChat[chatId] ?: return@withLock null
-            val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock null
-            if (!state.historyEligible) return@withLock null
-            state.pendingHistoryThroughSeq = maxOf(state.pendingHistoryThroughSeq ?: 0L, throughSeq)
-            state.runtime
-                ?.let { runtime -> HistoryTarget(threadId, runtime, state.pendingHistoryThroughSeq!!) }
-        } ?: return false
-        return forwardPendingHistory(target.threadId, target.runtime, target.throughSeq)
-    }
-
     suspend fun detach(threadId: UUID, runtime: BackendConversationRuntime) {
         mutex.withLock {
             val state = states[threadId] ?: return@withLock
             if (state.runtime === runtime) {
                 state.runtime = null
-                state.historyEligible = false
-                state.pendingHistoryThroughSeq = null
                 state.runtimeReady.complete(Unit)
             }
             removeIfTerminalAndIdle(threadId, state)
@@ -176,7 +124,6 @@ internal class ClientThreadRuntimeRegistry(
         if (committed is ClientRequestResult.Accepted) {
             state.pendingAcks[requestId] = CompletableDeferred()
             state.latestDevice = device
-            state.historyEligible = true
         }
         committed
     }
@@ -259,41 +206,9 @@ internal class ClientThreadRuntimeRegistry(
     private fun removeIfTerminalAndIdle(threadId: UUID, state: State) {
         if (state.terminal && state.runtime == null && state.pendingTool == null && state.pendingAcks.isEmpty()) {
             states.remove(threadId)
-            if (threadByChat[state.chatId] == threadId) threadByChat.remove(state.chatId)
             state.removed.complete(Unit)
         }
     }
-
-    private suspend fun forwardPendingHistory(
-        threadId: UUID,
-        runtime: BackendConversationRuntime,
-        throughSeq: Long,
-    ): Boolean {
-        val accepted = runtime.notifyHistoryPending(throughSeq)
-        if (accepted) {
-            mutex.withLock {
-                val state = states[threadId]
-                if (
-                    state?.runtime === runtime &&
-                    state.pendingHistoryThroughSeq?.let { it <= throughSeq } == true
-                ) {
-                    state.pendingHistoryThroughSeq = null
-                }
-            }
-        }
-        return accepted
-    }
-
-    private fun State.historyTarget(threadId: UUID): HistoryTarget? =
-        pendingHistoryThroughSeq
-            ?.takeIf { historyEligible }
-            ?.let { throughSeq -> runtime?.let { HistoryTarget(threadId, it, throughSeq) } }
-
-    private data class HistoryTarget(
-        val threadId: UUID,
-        val runtime: BackendConversationRuntime,
-        val throughSeq: Long,
-    )
 
     companion object {
         val LEASE_DURATION: Duration = Duration.ofMinutes(2)

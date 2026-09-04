@@ -1,38 +1,19 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import io.mockk.coEvery
-import io.mockk.every
 import io.mockk.mockk
 import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertSame
-import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.ActiveRunMailbox
-import ru.souz.agent.ActiveRunInput
-import ru.souz.agent.AgentContextFactory
-import ru.souz.agent.AgentExecutionResult
-import ru.souz.agent.AgentExecutor
-import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentSettings
 import ru.souz.backend.agent.model.AgentConversationKey
-import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
-import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.model.CROSS_CHANNEL_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.client.model.ClientRequest
-import ru.souz.backend.client.repository.ClientRequestResult
-import ru.souz.backend.execution.model.AgentExecution
-import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 
 class BackendConversationRuntimeTest {
@@ -53,12 +34,14 @@ class BackendConversationRuntimeTest {
         assertEquals(1_002L, loaded.observedThroughSeq)
         assertEquals(1_001, loaded.messages.size)
         assertEquals("history-1", loaded.messages.first().content)
+        assertEquals(LLMMessageRole.user, loaded.messages.first().role)
+        assertEquals(LLMMessageRole.assistant, loaded.messages[1].role)
         assertEquals("history-1001", loaded.messages.last().content)
         assertEquals(3, fixture.listCalls)
     }
 
     @Test
-    fun `option startup stops before client history without skipping its cursor gap`() = runTest {
+    fun `non-execute continuation stops before client history without skipping its cursor gap`() = runTest {
         val fixture = Fixture(
             messages = listOf(
                 crossChannelMessage(1L, "visible cross-channel"),
@@ -82,78 +65,11 @@ class BackendConversationRuntimeTest {
         )
     }
 
-    @Test
-    fun `passive history and active execute share one paginated role preserving cursor`() = runTest {
-        val fixture = Fixture(
-            messages = (11L..1_011L).map { seq -> historyMessage(seq, roleFor(seq), "history-$seq") },
-        )
-        val runtime = fixture.runtime(initialObservedSeq = 10L)
-
-        assertTrue(runtime.notifyHistoryPending(1_011L))
-        val trigger = ordinaryMessage(1_015L, ChatRole.USER, "next execute")
-        val accepted = ClientRequestResult.Accepted(
-            request = mockk<ClientRequest>(),
-            execution = mockk<AgentExecution>(),
-            message = trigger,
-            messageDelta = listOf(
-                historyMessage(1_012L, ChatRole.USER, "user history"),
-                ordinaryMessage(1_013L, ChatRole.ASSISTANT, "already represented"),
-                crossChannelMessage(1_014L, "cross-channel"),
-                trigger,
-            ),
-        )
-        var commitAfterSeq = -1L
-        var nextCommitAfterSeq = -1L
-        var result: ClientRequestResult? = null
-        var loaded = emptyList<LLMRequest.Message>()
-        var emptyReload = listOf(LLMRequest.Message(LLMMessageRole.user, "not empty"))
-        val duplicate = mockk<ClientRequestResult.Duplicate>()
-
-        runtime.execute(
-            request = turnRequest(),
-            persistSession = false,
-            onRuntimeReady = {
-                loaded = fixture.loadHistoryAtBoundary()
-                result = runtime.commitActiveRunInput { afterSeq ->
-                    commitAfterSeq = afterSeq
-                    accepted
-                }
-                runtime.commitActiveRunInput { afterSeq ->
-                    nextCommitAfterSeq = afterSeq
-                    duplicate
-                }
-                emptyReload = fixture.loadHistoryAtBoundary()
-            },
-        )
-
-        assertSame(accepted, result)
-        assertEquals(1_001, loaded.size)
-        assertEquals(1_011L, commitAfterSeq)
-        assertEquals(
-            listOf(
-                LLMRequest.Message(LLMMessageRole.user, "user history"),
-                LLMRequest.Message(LLMMessageRole.assistant, "cross-channel"),
-            ),
-            fixture.publishedInputs.single().history,
-        )
-        assertEquals("next execute", fixture.publishedInputs.single().input)
-        assertEquals(1_015L, nextCommitAfterSeq)
-        assertEquals(emptyList(), emptyReload)
-        assertEquals(3, fixture.listCalls)
-        assertFalse(runtime.notifyHistoryPending(1_016L))
-    }
-
-    private class Fixture(messages: List<ChatMessage> = emptyList()) {
+    private class Fixture(messages: List<ChatMessage>) {
         val key = AgentConversationKey(userId = "user-1", conversationId = TEST_CHAT_ID.toString())
         val repository = mockk<MessageRepository>()
         var listCalls = 0
             private set
-        val executor = mockk<AgentExecutor>()
-        val publishedInputs = mutableListOf<ActiveRunInput>()
-        private val mailbox = mockk<ActiveRunMailbox>()
-        private val contextFactory = mockk<AgentContextFactory>()
-        private val settingsProvider = mockk<BackendConversationSettingsProvider>()
-        private var historyLoader: (suspend () -> List<LLMRequest.Message>)? = null
 
         init {
             coEvery { repository.latest(any(), any()) } coAnswers {
@@ -176,52 +92,7 @@ class BackendConversationRuntimeTest {
                     .take(limit)
                     .toList()
             }
-            every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
-            every { settingsProvider.temperature } returns 0f
-            every { contextFactory.create(any(), any(), any(), any(), any(), any()) } returns baseContext()
-            coEvery { mailbox.submit(any()) } coAnswers {
-                firstArg<suspend () -> ActiveRunInput?>().invoke()
-                    ?.also(publishedInputs::add) != null
-            }
-            coEvery {
-                executor.execute(any(), any(), any(), any(), any(), any())
-            } coAnswers {
-                historyLoader = arg(4)
-                arg<suspend (ActiveRunMailbox) -> Unit>(5).invoke(mailbox)
-                AgentExecutionResult(
-                    output = "done",
-                    context = baseContext().copy(input = "done"),
-                )
-            }
         }
-
-        suspend fun loadHistoryAtBoundary(): List<LLMRequest.Message> =
-            checkNotNull(historyLoader).invoke()
-
-        fun runtime(initialObservedSeq: Long): BackendConversationRuntime = BackendConversationRuntime(
-            key = key,
-            sessionRepository = mockk<AgentSessionRepository>(relaxed = true),
-            settingsProvider = settingsProvider,
-            contextFactory = contextFactory,
-            executor = executor,
-            executionApi = mockk<BackendExecutionLlmChatApi>(relaxed = true),
-            persistedSession = null,
-            messageRepository = repository,
-            initialMessages = emptyList(),
-            initialObservedMessageSeq = initialObservedSeq,
-        )
-
-        private fun baseContext(): AgentContext<String> = AgentContext(
-            input = "",
-            settings = AgentSettings(
-                model = LLMModel.OpenAIGpt5Mini.alias,
-                temperature = 0f,
-                toolsByCategory = emptyMap(),
-            ),
-            history = emptyList(),
-            activeTools = emptyList(),
-            systemPrompt = "system",
-        )
     }
 
     companion object {
@@ -254,14 +125,5 @@ class BackendConversationRuntimeTest {
 
         private fun roleFor(seq: Long): ChatRole =
             if (seq % 2L == 0L) ChatRole.ASSISTANT else ChatRole.USER
-
-        private fun turnRequest() = BackendConversationTurnRequest(
-            prompt = "initial execute",
-            model = LLMModel.OpenAIGpt5Mini,
-            contextSize = 8_192,
-            locale = "en",
-            timeZone = "UTC",
-            executionId = UUID.randomUUID().toString(),
-        )
     }
 }

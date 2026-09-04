@@ -16,55 +16,45 @@ import kotlin.test.assertTrue
 
 class AgentExecutorTest {
     @Test
-    fun `executor normalizes and forwards execution state without proxying the mailbox`() = runTest {
+    fun `executor forwards active run capability and input submission to the selected agent`() = runTest {
+        val agent = CapturingAgent().apply {
+            supportsActiveRunInput = true
+            acceptSubmissions = true
+        }
+        val executor = AgentExecutor(agentProvider = { agent })
+
+        assertTrue(executor.supportsActiveRunInput(AgentId.SKILLS_GRAPH))
+        assertTrue(executor.submitToActiveRun(AgentId.SKILLS_GRAPH, "follow-up"))
+        assertEquals(listOf("follow-up"), agent.submittedInputs)
+    }
+
+    @Test
+    fun `executor prepares seed and forwards tracing without changing agent context`() = runTest {
         val agent = CapturingAgent()
-        val selectedAgents = mutableListOf<AgentId>()
+        val executor = AgentExecutor(agentProvider = { agent })
         val eventSink = object : AgentRuntimeEventSink {
             override suspend fun emit(event: AgentRuntimeEvent) = Unit
         }
         val callback: GraphStepCallback = { _, _, _, _ -> }
-        val executor = AgentExecutor(
-            agentProvider = { id ->
-                selectedAgents += id
-                agent
-            },
-            availableAgents = listOf(AgentId.SKILLS_GRAPH),
-            onStep = callback,
-        )
-        val input = ActiveRunInput(
-            history = listOf(LLMRequest.Message(LLMMessageRole.assistant, "client answer")),
-            input = "continue",
-        )
-        val history = listOf(LLMRequest.Message(LLMMessageRole.user, "pending history"))
-        var readyMailbox: ActiveRunMailbox? = null
+        var activeRunReady = false
 
-        val result = executor.execute(
+        val result = executor.executeWithTrace(
             agentId = AgentId.GRAPH,
             context = baseContext(),
             input = "hello",
             eventSink = eventSink,
-            loadPendingHistory = { history },
-            onActiveRunReady = { mailbox ->
-                readyMailbox = mailbox
-                assertTrue(mailbox.submit { input })
-            },
+            onActiveRunReady = { activeRunReady = true },
+            onStep = callback,
         )
 
-        assertSame(agent.mailbox, readyMailbox)
-        assertEquals(listOf(input), agent.receivedInputs)
         val executedContext = agent.executedContexts.single()
         assertEquals("hello", executedContext.input)
         assertEquals("Base system prompt", executedContext.systemPrompt)
         assertSame(eventSink, executedContext.runtimeEventSink)
         assertSame(callback, agent.receivedCallback)
-        assertEquals(history, agent.loadedHistory)
+        assertTrue(activeRunReady)
         assertEquals("assistant response", result.output)
         assertEquals("Base system prompt", result.context.systemPrompt)
-
-        executor.cancel(AgentId.GRAPH)
-
-        assertEquals(listOf(AgentId.SKILLS_GRAPH, AgentId.SKILLS_GRAPH), selectedAgents)
-        assertEquals(1, agent.cancelCount)
     }
 
     private fun baseContext(): AgentContext<String> = AgentContext(
@@ -79,37 +69,36 @@ class AgentExecutorTest {
         systemPrompt = "Base system prompt",
     )
 
-    private class CapturingAgent : Agent {
+    private class CapturingAgent : TraceableAgent {
+        override var supportsActiveRunInput: Boolean = false
         val executedContexts = mutableListOf<AgentContext<String>>()
         var receivedCallback: GraphStepCallback? = null
-        var mailbox: ActiveRunMailbox? = null
-        var loadedHistory = emptyList<LLMRequest.Message>()
-        var receivedInputs = emptyList<ActiveRunInput>()
-        var cancelCount = 0
+        var acceptSubmissions = false
+        val submittedInputs = mutableListOf<String>()
 
-        override val stream: Flow<AgentStreamChunk> = emptyFlow()
+        override val sideEffects: Flow<AgentStreamChunk> = emptyFlow()
 
-        override suspend fun execute(
-            context: AgentContext<String>,
-            loadPendingHistory: suspend () -> List<LLMRequest.Message>,
-            onActiveRunReady: suspend (ActiveRunMailbox) -> Unit,
+        override suspend fun execute(ctx: AgentContext<String>): String = executeWithTrace(ctx).output
+
+        override suspend fun executeWithTrace(
+            ctx: AgentContext<String>,
+            onActiveRunReady: suspend () -> Unit,
             onStep: GraphStepCallback?,
         ): AgentExecutionResult {
-            val activeMailbox = ActiveRunMailbox(loadPendingHistory)
-            mailbox = activeMailbox
-            onActiveRunReady(activeMailbox)
-            loadedHistory = activeMailbox.loadHistoryAtBoundary()
-            receivedInputs = activeMailbox.drain().orEmpty()
-            executedContexts += context
+            onActiveRunReady()
+            executedContexts += ctx
             receivedCallback = onStep
             return AgentExecutionResult(
                 output = "assistant response",
-                context = context.copy(input = "assistant response"),
+                context = ctx.copy(input = "assistant response"),
             )
         }
 
-        override fun cancel() {
-            cancelCount += 1
+        override suspend fun cancelActiveJob() = Unit
+
+        override suspend fun submitToActiveRun(input: String): Boolean {
+            submittedInputs += input
+            return acceptSubmissions
         }
     }
 }

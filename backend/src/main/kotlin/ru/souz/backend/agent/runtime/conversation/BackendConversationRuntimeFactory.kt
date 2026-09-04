@@ -198,7 +198,6 @@ internal class BackendConversationRuntimeFactory(
             executor = kernel.executor,
             executionApi = executionApi,
             persistedSession = persistedSession,
-            messageRepository = messageRepository,
             initialMessages = initialMessages.messages,
             initialObservedMessageSeq = initialMessages.observedThroughSeq,
         )

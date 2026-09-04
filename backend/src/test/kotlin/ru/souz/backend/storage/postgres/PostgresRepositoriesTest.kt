@@ -472,7 +472,7 @@ class PostgresRepositoriesTest {
             )
 
             val userRequest = historyRequest("history-user", "history-user-hash")
-            val userHistory = assertIs<ClientRequestResult.HistoryAccepted>(
+            assertIs<ClientRequestResult.HistoryAccepted>(
                 repositories.clientRequestRepository.commitHistory(
                     userId = userId,
                     key = userRequest.key(),
@@ -488,12 +488,8 @@ class PostgresRepositoriesTest {
                     acceptedRequest = userRequest,
                 )
             )
-            assertEquals(1L, userHistory.message.seq)
-            assertEquals(ChatRole.USER, userHistory.message.role)
-            assertEquals("true", userHistory.message.metadata[CLIENT_HISTORY_MESSAGE_METADATA_KEY])
-
             val assistantRequest = historyRequest("history-assistant", "history-assistant-hash")
-            val assistantHistory = assertIs<ClientRequestResult.HistoryAccepted>(
+            assertIs<ClientRequestResult.HistoryAccepted>(
                 repositories.clientRequestRepository.commitHistory(
                     userId = userId,
                     key = assistantRequest.key(),
@@ -506,9 +502,6 @@ class PostgresRepositoriesTest {
                     acceptedRequest = assistantRequest,
                 )
             )
-            assertEquals(2L, assistantHistory.message.seq)
-            assertEquals(ChatRole.ASSISTANT, assistantHistory.message.role)
-
             val storedExecution = repositories.executionRepository.getByChat(userId, chat.id, execution.id)
             assertEquals(4L, storedExecution?.revision)
             assertEquals(
@@ -614,7 +607,6 @@ class PostgresRepositoriesTest {
                 )
             )
             assertEquals(2L, first.execution.revision)
-            assertEquals(messageId, first.message?.id)
             assertEquals(listOf(messageId), first.messageDelta.map { it.id })
             assertEquals(request, repositories.clientRequestRepository.get(chat.id, request.requestId))
 
