@@ -17,7 +17,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.toMessage
 
 /** Main steerable chat node that owns each cancellable LLM attempt and replans around queued input. */
-internal class SteerableChat(
+internal class SteerableChatNode(
     private val nodesLLM: NodesLLM,
     private val controller: ActiveRunInputController,
 ) : Node<String, LLMResponse.Chat> {

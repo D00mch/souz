@@ -24,7 +24,7 @@ import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
-import ru.souz.agent.nodes.SteerableChat
+import ru.souz.agent.nodes.SteerableChatNode
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
@@ -63,7 +63,7 @@ class SkillsGraphBasedAgent internal constructor(
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
-        val chat = SteerableChat(nodesLLM, controller)
+        val chat = SteerableChatNode(nodesLLM, controller)
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
