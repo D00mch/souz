@@ -210,7 +210,6 @@ private suspend fun handleClientFrame(
 
             "history.append" -> decodeClientFrame(node, HistoryAppendFrame::class.java).also {
                 requireFrameChat(chat.id, it.chatId)
-                requireUniqueCapabilities(node)
             }.let { service.handleHistory(chat, it) }
 
             "tool.result" -> decodeClientFrame(node, ToolResultFrame::class.java).also {

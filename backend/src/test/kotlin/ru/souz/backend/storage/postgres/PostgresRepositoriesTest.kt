@@ -479,10 +479,6 @@ class PostgresRepositoriesTest {
                     input = ClientHistoryInput(
                         role = ChatRole.USER,
                         content = "client solved the first task",
-                        metadata = mapOf(
-                            CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true",
-                            "device" to "history-device",
-                        ),
                         createdAt = Instant.parse("2026-05-01T10:01:02Z"),
                     ),
                     acceptedRequest = userRequest,
@@ -496,7 +492,6 @@ class PostgresRepositoriesTest {
                     input = ClientHistoryInput(
                         role = ChatRole.ASSISTANT,
                         content = "the first task is done",
-                        metadata = mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"),
                         createdAt = Instant.parse("2026-05-01T10:01:03Z"),
                     ),
                     acceptedRequest = assistantRequest,
@@ -508,10 +503,12 @@ class PostgresRepositoriesTest {
                 restJsonMapper.readTree(execution.latestDeviceContextJson),
                 storedExecution?.latestDeviceContextJson?.let(restJsonMapper::readTree),
             )
+            val storedHistory = repositories.messageRepository.list(userId, chat.id)
             assertEquals(
                 listOf("client solved the first task", "the first task is done"),
-                repositories.messageRepository.list(userId, chat.id).map { it.content },
+                storedHistory.map { it.content },
             )
+            assertTrue(storedHistory.all { it.metadata == mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true") })
 
             val failedRequest = historyRequest(
                 "history-invalid-ack",
@@ -522,7 +519,7 @@ class PostgresRepositoriesTest {
                 repositories.clientRequestRepository.commitHistory(
                     userId = userId,
                     key = failedRequest.key(),
-                    input = ClientHistoryInput(ChatRole.USER, "rolled back history", emptyMap()),
+                    input = ClientHistoryInput(ChatRole.USER, "rolled back history"),
                     acceptedRequest = failedRequest,
                 )
             }

@@ -13,7 +13,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
-import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.client.model.ClientRequest
@@ -101,7 +100,6 @@ internal class PublicClientService(
     suspend fun handleHistory(chat: Chat, frame: HistoryAppendFrame): HandledClientFrame {
         val now = Instant.now()
         val requestId = frame.requestId.required("requestId")
-        validateDevice(chat, frame.payload.device)
         validateContent(frame.payload.content)
         val role = frame.payload.role.takeIf { it in supportedMessageRoles }
             ?: throw ClientContractException("invalid_request", "Unsupported message role.")
@@ -113,11 +111,7 @@ internal class PublicClientService(
                 linkedMapOf(
                     "kind" to frame.kind,
                     "role" to role,
-                    "device" to frame.payload.device.copy(
-                        capabilities = frame.payload.device.capabilities.toSortedSet()
-                    ),
                     "content" to frame.payload.content,
-                    "meta" to frame.payload.meta,
                 )
             ),
         )
@@ -134,12 +128,6 @@ internal class PublicClientService(
             input = ClientHistoryInput(
                 role = role.toChatRole(),
                 content = frame.payload.content.text,
-                metadata = inputMetadata(
-                    requestId = requestId,
-                    device = frame.payload.device,
-                    content = frame.payload.content,
-                    meta = frame.payload.meta,
-                ) + (CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"),
             ),
             acceptedRequest = key.request(threadId = null, response = ack, now = now),
         )
@@ -376,26 +364,12 @@ internal class PublicClientService(
         receivedAt = now.toString(),
     )
 
-    private fun inputMetadata(frame: MessageSubmitFrame, inputSeq: Long? = null): Map<String, String> = inputMetadata(
-        requestId = frame.requestId,
-        device = frame.payload.device,
-        content = frame.payload.content,
-        meta = frame.payload.meta,
-        inputSeq = inputSeq,
-    )
-
-    private fun inputMetadata(
-        requestId: String,
-        device: ClientDevice,
-        content: RecognizedTextContent,
-        meta: ClientRequestMeta?,
-        inputSeq: Long? = null,
-    ): Map<String, String> = buildMap {
+    private fun inputMetadata(frame: MessageSubmitFrame, inputSeq: Long? = null): Map<String, String> = buildMap {
         inputSeq?.let { put("inputSeq", it.toString()) }
-        put("source", content.source)
-        put("device", mapper.writeValueAsString(device))
-        put("requestId", requestId)
-        meta?.let { put("requestMeta", mapper.writeValueAsString(it)) }
+        put("source", frame.payload.content.source)
+        put("device", mapper.writeValueAsString(frame.payload.device))
+        put("requestId", frame.requestId)
+        frame.payload.meta?.let { put("requestMeta", mapper.writeValueAsString(it)) }
     }
 
     private fun requestOverrides(meta: ClientRequestMeta?): UserSettingsOverrides = UserSettingsOverrides(

@@ -12,7 +12,6 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
@@ -24,7 +23,7 @@ class BackendPublicHistoryContractE2eTest {
     fun `history contract is strict durable and thread independent`() =
         backendE2eTest("e2e_ws_history_contract") {
             withPublicChatSocket { userId, chatId, session ->
-                session.send(Frame.Text(historyFrame(chatId, userId, "history-user", "user", "client solved it")))
+                session.send(Frame.Text(historyFrame(chatId, "history-user", "user", "client solved it")))
                 val userAck = readJson(session)
                 assertEquals("accepted", userAck["status"].asText())
                 assertFalse(userAck["duplicate"].asBoolean())
@@ -34,7 +33,6 @@ class BackendPublicHistoryContractE2eTest {
 
                 val assistantFrame = historyFrame(
                     chatId,
-                    userId,
                     "history-assistant",
                     "assistant",
                     "the client task is complete",
@@ -53,7 +51,6 @@ class BackendPublicHistoryContractE2eTest {
                     Frame.Text(
                         historyFrame(
                             chatId,
-                            userId,
                             "history-assistant",
                             "user",
                             "the client task is complete",
@@ -71,24 +68,31 @@ class BackendPublicHistoryContractE2eTest {
                         "history-user",
                         text = "client solved it",
                     ),
-                    historyFrame(chatId, userId, "history-user", "user", "changed content"),
+                    historyFrame(chatId, "history-user", "user", "changed content"),
                 ).forEach { changedFrame ->
                     session.send(Frame.Text(changedFrame))
                     assertEquals("idempotency_conflict", readJson(session)["error"]["code"].asText())
                 }
 
                 val invalidFrames = listOf(
-                    historyFrame(chatId, userId, "history-thread", "user", "invalid")
+                    historyFrame(chatId, "history-thread", "user", "invalid")
                         .replace("\"payload\":", "\"threadId\":null,\n          \"payload\":"),
                     messageFrame(chatId, userId, "execute-role")
                         .replace("\"device\":", "\"role\":\"assistant\",\n            \"device\":"),
                     messageFrame(chatId, userId, "execute-mode")
                         .replace("\"chatId\":", "\"mode\":\"execute\",\n          \"chatId\":"),
-                    historyFrame(chatId, userId, "missing-role", "user", "invalid")
+                    historyFrame(chatId, "history-device", "user", "invalid")
+                        .replace(
+                            "\"content\":",
+                            "\"device\":{\"userId\":\"$userId\",\"deviceId\":\"history-device\",\"deviceType\":\"tv_box\",\"capabilities\":[]},\n            \"content\":",
+                        ),
+                    historyFrame(chatId, "history-meta", "user", "invalid")
+                        .replace("\"content\":", "\"meta\":{},\n            \"content\":"),
+                    historyFrame(chatId, "missing-role", "user", "invalid")
                         .replace("\"role\":\"user\",", ""),
-                    historyFrame(chatId, userId, "null-role", "user", "invalid")
+                    historyFrame(chatId, "null-role", "user", "invalid")
                         .replace("\"role\":\"user\"", "\"role\":null"),
-                    historyFrame(chatId, userId, "unknown-role", "tool", "invalid"),
+                    historyFrame(chatId, "unknown-role", "tool", "invalid"),
                 )
                 invalidFrames.forEach { raw ->
                     session.send(Frame.Text(raw))
@@ -136,8 +140,9 @@ class BackendPublicHistoryContractE2eTest {
                     stored.map { it.second },
                 )
                 stored.forEach { (_, _, metadata) ->
-                    assertEquals("true", json.readTree(metadata)[CLIENT_HISTORY_MESSAGE_METADATA_KEY].asText())
-                    assertNull(json.readTree(metadata)["inputSeq"])
+                    val metadataJson = json.readTree(metadata)
+                    assertEquals(1, metadataJson.size())
+                    assertEquals("true", metadataJson[CLIENT_HISTORY_MESSAGE_METADATA_KEY].asText())
                 }
 
                 session.send(
@@ -195,7 +200,7 @@ class BackendPublicHistoryContractE2eTest {
 
                 session.send(
                     Frame.Text(
-                        historyFrame(chatId, userId, "active-history-user", "user", "client side request")
+                        historyFrame(chatId, "active-history-user", "user", "client side request")
                     )
                 )
                 assertEquals("accepted", readJson(session)["status"].asText())
@@ -203,7 +208,6 @@ class BackendPublicHistoryContractE2eTest {
                     Frame.Text(
                         historyFrame(
                             chatId,
-                            userId,
                             "active-history-assistant",
                             "assistant",
                             "client side response",
@@ -288,7 +292,6 @@ class BackendPublicHistoryContractE2eTest {
                             Frame.Text(
                                 historyFrame(
                                     chatId,
-                                    userId,
                                     "peer-history",
                                     "assistant",
                                     "completed by peer",
@@ -359,7 +362,6 @@ class BackendPublicHistoryContractE2eTest {
                     Frame.Text(
                         historyFrame(
                             chatId,
-                            userId,
                             "history-before-final",
                             "assistant",
                             "late client history",
@@ -445,41 +447,34 @@ class BackendPublicHistoryContractE2eTest {
 
     private fun historyFrame(
         chatId: String,
-        userId: String,
         requestId: String,
         role: String,
         text: String,
-    ): String = clientMessageFrame(
-        kind = "history.append",
-        chatId = chatId,
-        userId = userId,
-        requestId = requestId,
-        role = role,
-        text = text,
-    )
+    ): String =
+        """
+        {
+          "kind": "history.append",
+          "chatId": "$chatId",
+          "requestId": "$requestId",
+          "payload": {
+            "role":"$role",
+            "content": {"type":"text","source":"text","text":"$text"}
+          }
+        }
+        """.trimIndent()
 
     private fun messageFrame(
         chatId: String,
         userId: String,
         requestId: String,
         text: String = "execute this",
-    ): String = clientMessageFrame("message.submit", chatId, userId, requestId, text = text)
-
-    private fun clientMessageFrame(
-        kind: String,
-        chatId: String,
-        userId: String,
-        requestId: String,
-        role: String? = null,
-        text: String,
     ): String =
         """
         {
-          "kind": "$kind",
+          "kind": "message.submit",
           "chatId": "$chatId",
           "requestId": "$requestId",
           "payload": {
-            ${role?.let { "\"role\":\"$it\"," }.orEmpty()}
             "device": {
               "userId": "$userId",
               "deviceId": "history-device",

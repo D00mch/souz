@@ -4,6 +4,7 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.util.UUID
 import javax.sql.DataSource
+import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.client.model.ClientRequest
@@ -113,7 +114,7 @@ class PostgresClientRequestRepository(
             chatId = key.chatId,
             role = input.role,
             content = input.content,
-            metadata = input.metadata,
+            metadata = mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"),
             id = input.messageId,
             createdAt = input.createdAt,
         )

@@ -58,9 +58,7 @@ data class MessageSubmitFrame(
 
 data class HistoryAppendPayload(
     val role: String,
-    val device: ClientDevice,
     val content: RecognizedTextContent,
-    val meta: ClientRequestMeta? = null,
 )
 
 data class HistoryAppendFrame(

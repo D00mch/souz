@@ -26,7 +26,6 @@ data class ClientFollowUpInput(
 data class ClientHistoryInput(
     val role: ChatRole,
     val content: String,
-    val metadata: Map<String, String>,
     val messageId: UUID = UUID.randomUUID(),
     val createdAt: Instant = Instant.now().truncatedTo(ChronoUnit.MICROS),
 )

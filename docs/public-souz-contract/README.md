@@ -83,7 +83,7 @@ The canonical schema names are in `openapi.yaml` components. All frames have `ad
 Client-to-Souz frames:
 
 - `MessageSubmit`: `{kind: "message.submit", chatId, requestId, threadId?, payload}`.
-- `HistoryAppend`: `{kind: "history.append", chatId, requestId, payload: {role, device, content, meta?}}`.
+- `HistoryAppend`: `{kind: "history.append", chatId, requestId, payload: {role, content}}`.
 - `SucceededToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "succeeded", result}`.
 - `FailedToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "failed", error}`.
 - `CancelledToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "cancelled", error}`.
@@ -139,7 +139,7 @@ The internal chat-local message sequence defines execute barriers and makes conc
 
 ## Idempotency
 
-`message.submit`, `history.append`, and `thread.cancel` use `(chatId, requestId)`. Same key, kind, and normalized payload returns the original result with `duplicate = true`; reusing the key with a different kind or payload returns rejected ack with `idempotency_conflict`. Message normalization includes client-supplied nullable `threadId`, content, device, and request metadata. History normalization includes role, content, device, and request metadata. Receipt replay precedes `message.submit` thread selection, while `history.append` bypasses thread selection entirely.
+`message.submit`, `history.append`, and `thread.cancel` use `(chatId, requestId)`. Same key, kind, and normalized payload returns the original result with `duplicate = true`; reusing the key with a different kind or payload returns rejected ack with `idempotency_conflict`. Message normalization includes client-supplied nullable `threadId`, content, device, and request metadata. History normalization includes role and content. Receipt replay precedes `message.submit` thread selection, while `history.append` bypasses thread selection entirely.
 
 `tool.result` uses `(chatId, threadId, toolCallId)`. Repeating the same terminal result returns accepted ack with `duplicate = true` and does not append another event. Reusing the same key with a different terminal payload returns rejected ack with `duplicate = false` and `idempotency_conflict`.
 
@@ -149,7 +149,7 @@ Tool-result acknowledgements are outside the event sequence.
 
 - `chats` stores `clientType`, create `requestId`, and its normalized payload hash.
 - `agent_executions` is the thread store; the execution ID is `threadId`, with revision and latest device context.
-- `messages.metadata` stores source, device, request ID, and request metadata. Execute messages also store `inputSeq`; history messages store `clientHistory = true` instead.
+- Execute-message metadata stores source, device, request ID, request metadata, and `inputSeq`; history-message metadata stores only `clientHistory = true`.
 - `client_requests` stores the shared message/history/cancel idempotency scope and original acknowledgement.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
 - `agent_events` stores replayable client tool-start, terminal, and out-of-band `message.created` (cross-channel push, `threadId = null`) events with chat-local sequence values.

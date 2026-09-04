@@ -227,18 +227,14 @@ components:
     HistoryAppendPayload:
       type: object
       additionalProperties: false
-      required: [role, device, content]
+      required: [role, content]
       properties:
         role:
           description: Original message role.
           type: string
           enum: [user, assistant]
-        device:
-          $ref: "#/components/schemas/Device"
         content:
           $ref: "#/components/schemas/RecognizedTextContent"
-        meta:
-          $ref: "#/components/schemas/RequestMeta"
     RecognizedTextContent:
       type: object
       additionalProperties: false
