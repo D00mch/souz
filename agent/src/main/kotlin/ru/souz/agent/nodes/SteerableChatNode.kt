@@ -1,6 +1,5 @@
 package ru.souz.agent.nodes
 
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.selects.select
@@ -30,39 +29,35 @@ internal class SteerableChatNode(
         var current = ctx
 
         while (true) {
-            when (val next = controller.nextLlmStep()) {
+            val request = when (val step = controller.nextLlmStep()) {
                 is NextLlmStep.QueuedInput -> {
-                    current = current.appendInputs(next.inputs)
+                    current = current.appendInputs(step.inputs)
+                    continue
                 }
 
-                is NextLlmStep.Request -> {
-                    when (val attempt = runLlmAttempt(current, runtime, next)) {
-                        is LlmAttempt.Replan -> current = current.appendInputs(attempt.queuedInputs)
-                        is LlmAttempt.Completed -> {
-                            val responseContext = attempt.context
-                            val response = responseContext.input
-                            val queuedInputs = if (response is LLMResponse.Chat.Ok && response.isToolUse) {
-                                // An empty drain accepts this tool batch. Later input waits for its results.
-                                controller.drain()
-                            } else {
-                                controller.drainOrSeal()
-                            }
+                is NextLlmStep.Request -> step
+            }
 
-                            if (queuedInputs != null) {
-                                current = responseContext.appendInputs(queuedInputs)
-                                continue
-                            }
+            val responseContext = runLlmAttempt(current, runtime, request) ?: continue
+            val response = responseContext.input
+            val queuedInputs = if (response is LLMResponse.Chat.Ok && response.isToolUse) {
+                // An empty drain accepts this tool batch. Later input waits for its results.
+                controller.drain()
+            } else {
+                controller.drainOrSeal()
+            }
 
-                            return if (response is LLMResponse.Chat.Ok) {
-                                responseContext.copy(
-                                    history = responseContext.history + response.choices.mapNotNull { it.toMessage() },
-                                )
-                            } else {
-                                responseContext
-                            }
-                        }
-                    }
-                }
+            if (queuedInputs != null) {
+                current = responseContext.appendInputs(queuedInputs)
+                continue
+            }
+
+            return if (response is LLMResponse.Chat.Ok) {
+                responseContext.copy(
+                    history = responseContext.history + response.choices.mapNotNull { it.toMessage() },
+                )
+            } else {
+                responseContext
             }
         }
     }
@@ -71,33 +66,26 @@ internal class SteerableChatNode(
         context: AgentContext<String>,
         runtime: GraphRuntime,
         request: NextLlmStep.Request,
-    ): LlmAttempt = supervisorScope {
-        val llm = async(start = CoroutineStart.LAZY) {
+    ): AgentContext<LLMResponse.Chat>? = supervisorScope {
+        if (request.inputAvailable.isCompleted) return@supervisorScope null
+
+        val llm = async {
             nodesLLM.provisionalChat("LLM request", request.streamRevision).execute(context, runtime)
         }
 
-        if (request.inputAvailable.isCompleted) {
-            llm.cancelAndJoin()
-            return@supervisorScope LlmAttempt.Replan(controller.requireQueuedInputs())
-        }
-
-        llm.start()
-        select<LlmAttempt> {
+        select<AgentContext<LLMResponse.Chat>?> {
             // Completion wins when both clauses are ready, so provider cancellation always propagates.
-            llm.onAwait { LlmAttempt.Completed(it) }
+            llm.onAwait { it }
             request.inputAvailable.onAwait {
-                if (!llm.isActive) {
-                    LlmAttempt.Completed(llm.await())
-                } else {
+                if (llm.isActive) {
                     llm.cancelAndJoin()
-                    LlmAttempt.Replan(controller.requireQueuedInputs())
+                    null
+                } else {
+                    llm.await()
                 }
             }
         }
     }
-
-    private suspend fun ActiveRunInputController.requireQueuedInputs(): List<ActiveRunInput> =
-        checkNotNull(drain()) { "An input notification must have queued user input" }
 
     private val LLMResponse.Chat.Ok.isToolUse: Boolean
         get() = choices.any { it.message.functionCall != null }
@@ -112,10 +100,5 @@ internal class SteerableChatNode(
             }
         }
         return map(history = nextHistory) { inputs.last().input }
-    }
-
-    private sealed interface LlmAttempt {
-        data class Completed(val context: AgentContext<LLMResponse.Chat>) : LlmAttempt
-        data class Replan(val queuedInputs: List<ActiveRunInput>) : LlmAttempt
     }
 }
