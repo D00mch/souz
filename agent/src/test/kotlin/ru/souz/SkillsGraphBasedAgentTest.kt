@@ -25,6 +25,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.toMessage
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -49,10 +50,11 @@ class SkillsGraphBasedAgentTest {
         )
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
-        every { nodesLLM.provisionalChat("LLM request", any()) } returns Node("LLM request") { ctx ->
+        every { nodesLLM.chat("LLM request", any()) } returns Node("LLM request") { ctx ->
             executed += "LLM"
             chatCount += 1
-            ctx.map { if (chatCount <= 2) toolCallResponse() else finalResponse() }
+            val response = if (chatCount <= 2) toolCallResponse() else finalResponse()
+            ctx.map(history = ctx.history + response.choices.mapNotNull { it.toMessage() }) { response }
         }
         coEvery { nodesCommon.executeFunctionCalls(any()) } answers {
             executed += "toolUse"
@@ -110,7 +112,7 @@ class SkillsGraphBasedAgentTest {
         every { nodesCommon.inputToHistory() } returns passthrough("Input->History", executed)
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
-        every { nodesLLM.provisionalChat("LLM request", any()) } returns Node("LLM request") { ctx ->
+        every { nodesLLM.chat("LLM request", any()) } returns Node("LLM request") { ctx ->
             executed += "LLM"
             ctx.map { LLMResponse.Chat.Error(500, "provider failed") }
         }

@@ -1,20 +1,13 @@
 package ru.souz.backend.e2e
 
-import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
-import io.ktor.client.plugins.websocket.webSocketSession
-import io.ktor.client.request.post
-import io.ktor.http.HttpStatusCode
 import io.ktor.websocket.Frame
-import io.ktor.websocket.close
-import io.ktor.websocket.readText
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
-import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMMessageRole
 
 class BackendPublicHistoryContractE2eTest {
@@ -201,7 +194,7 @@ class BackendPublicHistoryContractE2eTest {
         block: suspend (userId: String, chatId: String, session: DefaultClientWebSocketSession) -> T,
     ): T {
         val userId = UUID.randomUUID().toString()
-        val chatId = createPublicChat(userId)
+        val chatId = createPublicChat(userId, "create-history")
         return withPublicSocket(chatId) { session ->
             try {
                 block(userId, chatId, session)
@@ -211,75 +204,7 @@ class BackendPublicHistoryContractE2eTest {
         }
     }
 
-    private suspend fun <T> BackendE2eScope.withPublicSocket(
-        chatId: String,
-        block: suspend (DefaultClientWebSocketSession) -> T,
-    ): T {
-        val client = webSocketClient()
-        val session = client.webSocketSession(
-            "${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend"
-        )
-        return try {
-            block(session)
-        } finally {
-            session.close()
-            client.close()
-        }
-    }
-
-    private suspend fun BackendE2eScope.createPublicChat(userId: String): String {
-        val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"create-history","clientType":"backend"}""")
-        }
-        assertEquals(HttpStatusCode.Created, created.status)
-        return created.jsonBody()["chat"]["id"].asText()
-    }
-
-    private suspend fun BackendE2eScope.readJson(session: DefaultClientWebSocketSession): JsonNode =
-        json.readTree((session.incoming.receive() as Frame.Text).readText())
-
-    private fun historyFrame(
-        chatId: String,
-        requestId: String,
-        role: String,
-        text: String,
-    ): String =
-        """
-        {
-          "kind": "history.append",
-          "chatId": "$chatId",
-          "requestId": "$requestId",
-          "payload": {
-            "role":"$role",
-            "content": {"type":"text","source":"text","text":"$text"}
-          }
-        }
-        """.trimIndent()
-
     private fun toolHistoryFrame(chatId: String, requestId: String): String =
         """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"assistant","content":{"type":"tool_exchange","name":"device.volume.adjust","arguments":{"deltaPercent":-10},"output":{"volumePercent":30}}}}"""
 
-    private fun messageFrame(
-        chatId: String,
-        userId: String,
-        requestId: String,
-        text: String = "execute this",
-    ): String =
-        """
-        {
-          "kind": "message.submit",
-          "chatId": "$chatId",
-          "requestId": "$requestId",
-          "payload": {
-            "device": {
-              "userId": "$userId",
-              "deviceId": "history-device",
-              "deviceType": "tv_box",
-              "capabilities": ["speech", "screen", "device_tools"]
-            },
-            "content": {"type":"text","source":"text","text":"$text"},
-            "meta": {"model":"${E2E_LOCAL_MODEL.alias}","locale":"en-US","timeZone":"UTC"}
-          }
-        }
-        """.trimIndent()
 }

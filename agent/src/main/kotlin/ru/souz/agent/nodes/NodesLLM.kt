@@ -55,15 +55,6 @@ internal class NodesLLM(
             ctx.map(history = history) { response }
         }
 
-    /** Calls the main chat model without committing its provisional response to history. */
-    fun provisionalChat(
-        name: String = "LLM Chat",
-        streamRevision: Long = 0L,
-    ): Node<String, LLMResponse.Chat> =
-        Node(name) { ctx: AgentContext<String> ->
-            ctx.map { request(ctx, streamRevision) }
-        }
-
     private suspend fun request(
         ctx: AgentContext<*>,
         streamRevision: Long,

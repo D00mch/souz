@@ -22,7 +22,7 @@ The facade owns mutable context, execution state, active-agent routing, and sess
 - Route mid-run input through the active controller owned by the steerable agent; do not reinterpret `executeForResult` as enqueueing.
 - Keep continuation state execution-scoped. Serialize submission, draining, final sealing, and closing through the controller mutex; never hold it while calling a provider or executing a tool.
 - Bundle durable history with the execute input that claims it. Preserve stored roles and do not add a passive history wake-up path.
-- Discard provisional LLM responses when queued input wins a tool or final boundary, and seal before memory-aware finalization.
+- Keep a completed LLM response provisional until the controller accepts the tool or final boundary. Replan from the pre-attempt context when queued input wins, and seal before memory-aware finalization.
 - Advance the stream revision with accepted input and attach the captured revision where `NodesLLM` produces each chunk.
 - Keep controller closure suspending and serialized before explicit graph cancellation. Do not reintroduce a separate job-based acceptance gate.
 - Update facade context only from the current execution and restore the facade's base invocation metadata after per-call overrides.

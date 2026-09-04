@@ -13,7 +13,6 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.toMessage
 
 /** Main steerable chat node that owns each cancellable LLM attempt and replans around queued input. */
 internal class SteerableChatNode(
@@ -48,17 +47,11 @@ internal class SteerableChatNode(
             }
 
             if (queuedInputs != null) {
-                current = responseContext.appendInputs(queuedInputs)
+                current = current.appendInputs(queuedInputs)
                 continue
             }
 
-            return if (response is LLMResponse.Chat.Ok) {
-                responseContext.copy(
-                    history = responseContext.history + response.choices.mapNotNull { it.toMessage() },
-                )
-            } else {
-                responseContext
-            }
+            return responseContext
         }
     }
 
@@ -70,7 +63,7 @@ internal class SteerableChatNode(
         if (request.inputAvailable.isCompleted) return@supervisorScope null
 
         val llm = async {
-            nodesLLM.provisionalChat("LLM request", request.streamRevision).execute(context, runtime)
+            nodesLLM.chat("LLM request", request.streamRevision).execute(context, runtime)
         }
 
         select<AgentContext<LLMResponse.Chat>?> {

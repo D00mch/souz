@@ -28,6 +28,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.toMessage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -136,6 +137,34 @@ class SkillsGraphBasedAgentMidRunInputTest {
         val result = execution.await()
         assertEquals("replacement", result.output)
         assertEquals(1, harness.finalizationCount)
+    }
+
+    @Test
+    fun `queued input discards a completed response at the tool or final boundary`() = runTest {
+        for (provisional in listOf(toolResponse(), finalResponse("provisional"))) {
+            lateinit var harness: Harness
+            harness = Harness(
+                chatHandler = { call, ctx ->
+                    if (call == 1) {
+                        assertTrue(harness.agent.submitToActiveRun("replacement input"))
+                        ctx.map { provisional }
+                    } else {
+                        ctx.map { finalResponse("replacement") }
+                    }
+                },
+                toolHandler = { error("Discarded tool call must not execute") },
+            )
+
+            val result = harness.agent.executeWithTrace(harness.context())
+
+            assertEquals(2, harness.chatCallCount)
+            assertEquals(
+                listOf("initial request", "replacement input"),
+                harness.requestHistories.last().drop(1).map { it.content },
+            )
+            assertEquals("replacement", result.output)
+            assertEquals(1, harness.finalizationCount)
+        }
     }
 
     @Test
@@ -308,12 +337,14 @@ private class Harness(
         every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME) } returns
             Node(SKILL_INVENTORY_NODE_NAME) { it }
         every { nodesCommon.nodeAppendAdditionalData() } returns Node("appendActualInformation") { it }
-        every { nodesLLM.provisionalChat("LLM request", any()) } answers {
+        every { nodesLLM.chat("LLM request", any()) } answers {
             streamRevisions += secondArg<Long>()
             Node("LLM request") { ctx ->
                 chatCallCount += 1
                 requestHistories += ctx.history.toList()
-                chatHandler(chatCallCount, ctx)
+                val result = chatHandler(chatCallCount, ctx)
+                val choices = (result.input as? LLMResponse.Chat.Ok)?.choices.orEmpty()
+                result.copy(history = result.history + choices.mapNotNull { it.toMessage() })
             }
         }
         coEvery { nodesCommon.executeFunctionCalls(any()) } coAnswers {

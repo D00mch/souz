@@ -76,40 +76,7 @@ Souz frames:
 
 Tool `target` is only `souz` or `client`. The connected Client side can be `backend` or `mobile_app`, but that does not create a third tool target.
 
-## Frame Reference
-
-The canonical schema names are in `openapi.yaml` components. All frames have `additionalProperties = false`.
-
-Client-to-Souz frames:
-
-- `MessageSubmit`: `{kind: "message.submit", chatId, requestId, threadId?, payload}`.
-- `HistoryAppend`: `{kind: "history.append", chatId, requestId, payload: {role, content: RecognizedTextContent | HistoryToolExchangeContent}}`.
-- `SucceededToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "succeeded", result}`.
-- `FailedToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "failed", error}`.
-- `CancelledToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "cancelled", error}`.
-- `TimedOutToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "timed_out", error}`.
-- `ThreadCancel`: `{kind: "thread.cancel", chatId, requestId, threadId, reason?}`.
-
-Souz-to-Client acknowledgements:
-
-- `message.submit` acknowledgements contain submission and thread details when accepted.
-- `history.append` acknowledgements contain neither submission nor thread details and are not followed by thread status.
-- `AcceptedToolResultAck`: `{kind: "ack", chatId, toolCallId, threadId, status: "accepted", duplicate, error: null, receivedAt}`.
-- `RejectedToolResultAck`: `{kind: "ack", chatId, toolCallId, threadId, status: "rejected", duplicate, error, receivedAt}`.
-- `AcceptedThreadCancelAck`: `{kind: "ack", chatId, requestId, threadId, status: "accepted", duplicate, error: null, receivedAt}`.
-- `RejectedThreadCancelAck`: `{kind: "ack", chatId, requestId, threadId, status: "rejected", duplicate, error, receivedAt}`.
-
-Souz-to-Client live status:
-
-- `ThreadStatusFrame`: `{kind: "status", type: "thread.status", chatId, threadId, requestId, status, alive, acceptsInput, revision, startedAt, finishedAt, runtimeLeaseExpiresAt, error, observedAt}`.
-
-Souz-to-Client events:
-
-- `ToolCallStartedEvent`: `{kind: "event", seq, type: "tool.call.started", chatId, threadId, payload, createdAt}`.
-- `ThreadCompletedEvent`: `{kind: "event", seq, type: "thread.completed", chatId, threadId, payload: {response}, createdAt}`.
-- `ThreadFailedEvent`: `{kind: "event", seq, type: "thread.failed", chatId, threadId, payload: {error}, createdAt}`.
-- `ThreadCancelledEvent`: `{kind: "event", seq, type: "thread.cancelled", chatId, threadId, payload: {reason?}, createdAt}`.
-- `MessageCreatedEvent`: `{kind: "event", seq, type: "message.created", chatId, threadId: null, payload: {messageId, seq, role, content, clientMessageId?}, createdAt}`.
+Frames reject unknown fields. See [OpenAPI components](openapi.yaml) for exact field shapes.
 
 ## Threads
 
@@ -145,14 +112,7 @@ The internal chat-local message sequence defines execute barriers and makes conc
 
 Tool-result acknowledgements are outside the event sequence.
 
-## Backend Mapping
-
-- `chats` stores `clientType`, create `requestId`, and its normalized payload hash.
-- `agent_executions` is the thread store; the execution ID is `threadId`, with revision and latest device context.
-- Execute-message metadata stores source, device, request ID, request metadata, and `inputSeq`; history-message metadata distinguishes text from tool exchanges.
-- `client_requests` stores the shared message/history/cancel idempotency scope and original acknowledgement.
-- `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
-- `agent_events` stores replayable client tool-start, terminal, and out-of-band `message.created` (cross-channel push, `threadId = null`) events with chat-local sequence values.
+## Client operations
 
 Client operations are backend-owned tool-backed Skills defined by indexed classpath `SKILL.md` resources. Their argument shapes are documented below and forwarded as generic JSON objects. All client adapters share one WebSocket transport, and each live invocation suspends until `tool.result` or its deadline:
 

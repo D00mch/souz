@@ -5,11 +5,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.get
-import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
-import io.ktor.websocket.readText
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -694,14 +692,6 @@ class BackendPublicWebSocketE2eTest {
         }
     }
 
-    private suspend fun BackendE2eScope.createPublicChat(userId: String): String {
-        val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"create-1","clientType":"backend"}""")
-        }
-        assertEquals(HttpStatusCode.Created, created.status)
-        return created.jsonBody()["chat"]["id"].asText()
-    }
-
     private suspend fun <T> BackendE2eScope.withPeerSockets(
         chatId: String,
         peerLlm: E2eLlmApi = E2eLlmApi(),
@@ -737,48 +727,8 @@ class BackendPublicWebSocketE2eTest {
         return SocketReply(acknowledgement, status)
     }
 
-    private suspend fun BackendE2eScope.readJson(session: DefaultClientWebSocketSession) =
-        json.readTree((session.incoming.receive() as Frame.Text).readText())
-
     private suspend fun BackendE2eScope.threadStatus(chatId: String, threadId: String): String =
         client.get("${BackendHttpRoutes.chatThread(chatId, threadId)}?clientType=backend")
             .jsonBody()["status"].asText()
 
-    private fun historyFrame(chatId: String, requestId: String, role: String, text: String): String =
-        """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"$role","content":{"type":"text","source":"text","text":"$text"}}}"""
-
-    private fun messageFrame(
-        chatId: String,
-        userId: String,
-        requestId: String,
-        threadId: String?,
-        text: String,
-        deviceId: String,
-    ): String =
-        """
-        {
-          "kind": "message.submit",
-          "chatId": "$chatId",
-          "requestId": "$requestId",
-          ${threadId?.let { "\"threadId\":\"$it\"," } ?: ""}
-          "payload": {
-            "device": {
-              "userId": "$userId",
-              "deviceId": "$deviceId",
-              "deviceType": "tv_box",
-              "capabilities": ["speech", "screen", "device_tools"]
-            },
-            "content": {
-              "type": "text",
-              "source": "voice",
-              "text": "$text"
-            },
-            "meta": {
-              "model": "${E2E_LOCAL_MODEL.alias}",
-              "locale": "ru-RU",
-              "timeZone": "Europe/Moscow"
-            }
-          }
-        }
-        """.trimIndent()
 }
