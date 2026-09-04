@@ -119,11 +119,14 @@ internal class ClientThreadRuntimeRegistry(
         val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock null
         val runtime = state.runtime ?: return@withLock null
         val committed = runtime.commitActiveRunInput { afterSeq ->
-            withContext(NonCancellable) { commit(afterSeq) }
-        }
-        if (committed is ClientRequestResult.Accepted) {
-            state.pendingAcks[requestId] = CompletableDeferred()
-            state.latestDevice = device
+            withContext(NonCancellable) {
+                commit(afterSeq).also { result ->
+                    if (result is ClientRequestResult.Accepted) {
+                        state.pendingAcks[requestId] = CompletableDeferred()
+                        state.latestDevice = device
+                    }
+                }
+            }
         }
         committed
     }
