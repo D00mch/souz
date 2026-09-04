@@ -1,6 +1,5 @@
 package ru.souz.backend.agent.runtime.conversation
 
-import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.ActiveRunInput
@@ -149,59 +148,31 @@ internal suspend fun loadInitialConversationMessages(
     basedOnMessageSeq: Long,
     inputMessageSeq: Long?,
 ): InitialConversationMessages {
-    if (inputMessageSeq != null) {
-        val messagesBeforeInput = messageRepository.listThrough(
-            userId = key.userId,
-            chatId = key.chatId(),
-            afterSeq = basedOnMessageSeq,
-            throughSeq = inputMessageSeq - 1L,
-        )
-        return InitialConversationMessages(
-            messages = messagesBeforeInput.mapNotNull(ChatMessage::toAgentHistoryMessage),
-            observedThroughSeq = maxOf(basedOnMessageSeq, inputMessageSeq),
-        )
-    }
-
-    val latestSeq = messageRepository.latest(key.userId, key.chatId())?.seq ?: basedOnMessageSeq
-    val messages = messageRepository.listThrough(
-        userId = key.userId,
-        chatId = key.chatId(),
-        afterSeq = basedOnMessageSeq,
-        throughSeq = latestSeq,
-    )
     val context = mutableListOf<LLMRequest.Message>()
     var observedThroughSeq = basedOnMessageSeq
-    for (message in messages) {
-        if (message.isClientHistory) break
-        message.toAgentHistoryMessage()?.let(context::add)
-        observedThroughSeq = message.seq
-    }
-    return InitialConversationMessages(context, observedThroughSeq)
-}
-
-private suspend fun MessageRepository.listThrough(
-    userId: String,
-    chatId: UUID,
-    afterSeq: Long,
-    throughSeq: Long,
-): List<ChatMessage> {
-    if (throughSeq <= afterSeq) return emptyList()
-    val messages = mutableListOf<ChatMessage>()
-    var pageAfterSeq = afterSeq
-    while (pageAfterSeq < throughSeq) {
-        val page = list(
-            userId = userId,
-            chatId = chatId,
+    var pageAfterSeq = basedOnMessageSeq
+    scan@ while (inputMessageSeq == null || pageAfterSeq < inputMessageSeq) {
+        val page = messageRepository.list(
+            userId = key.userId,
+            chatId = key.chatId(),
             afterSeq = pageAfterSeq.takeIf { it > 0L },
             limit = MessageRepository.MAX_LIMIT,
         )
         if (page.isEmpty()) break
-        messages += page.takeWhile { it.seq <= throughSeq }
-        if (page.last().seq >= throughSeq || page.size < MessageRepository.MAX_LIMIT) break
+        for (message in page) {
+            if (inputMessageSeq != null && message.seq >= inputMessageSeq) break@scan
+            if (inputMessageSeq == null && message.isClientHistory) break@scan
+            message.toAgentHistoryMessage()?.let(context::add)
+            observedThroughSeq = message.seq
+        }
+        if (page.size < MessageRepository.MAX_LIMIT) break
         check(page.last().seq > pageAfterSeq) { "Message pagination did not advance" }
         pageAfterSeq = page.last().seq
     }
-    return messages
+    return InitialConversationMessages(
+        messages = context,
+        observedThroughSeq = inputMessageSeq?.let { maxOf(basedOnMessageSeq, it) } ?: observedThroughSeq,
+    )
 }
 
 private val ChatMessage.isClientHistory: Boolean

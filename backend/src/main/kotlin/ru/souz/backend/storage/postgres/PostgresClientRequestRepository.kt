@@ -160,35 +160,25 @@ private fun Connection.listMessages(
     chatId: UUID,
     afterSeq: Long,
     throughSeq: Long,
-): List<ChatMessage> = buildList {
-    var cursor = afterSeq
-    while (cursor < throughSeq) {
-        val page = prepareStatement(
-            """
-            select * from messages
-            where user_id = ? and chat_id = ? and seq > ? and seq <= ?
-            order by seq asc
-            limit ?
-            """.trimIndent()
-        ).use { statement ->
-            statement.setString(1, userId)
-            statement.setObject(2, chatId)
-            statement.setLong(3, cursor)
-            statement.setLong(4, throughSeq)
-            statement.setInt(5, MESSAGE_DELTA_PAGE_SIZE)
-            statement.executeQuery().use { resultSet ->
-                buildList {
-                    while (resultSet.next()) add(resultSet.toMessage())
-                }
+): List<ChatMessage> = prepareStatement(
+    """
+    select * from messages
+    where user_id = ? and chat_id = ? and seq > ? and seq <= ?
+    order by seq asc
+    """.trimIndent()
+).use { statement ->
+    statement.setString(1, userId)
+    statement.setObject(2, chatId)
+    statement.setLong(3, afterSeq)
+    statement.setLong(4, throughSeq)
+    statement.executeQuery().use { resultSet ->
+        buildList {
+            while (resultSet.next()) {
+                add(resultSet.toMessage())
             }
         }
-        if (page.isEmpty()) break
-        addAll(page)
-        cursor = page.last().seq
     }
 }
-
-private const val MESSAGE_DELTA_PAGE_SIZE = 500
 
 private fun Connection.findClientRequest(chatId: UUID, requestId: String): ClientRequest? =
     prepareStatement("select * from client_requests where chat_id = ? and request_id = ?").use { statement ->

@@ -21,6 +21,7 @@ class BackendConversationRuntimeTest {
     fun `execute startup paginates history only through its durable input barrier`() = runTest {
         val fixture = Fixture(
             messages = (1L..1_001L).map { seq -> historyMessage(seq, roleFor(seq), "history-$seq") } +
+                ordinaryMessage(1_002L, ChatRole.USER, "execute trigger") +
                 crossChannelMessage(1_003L, "too-late"),
         )
 
@@ -43,11 +44,13 @@ class BackendConversationRuntimeTest {
     @Test
     fun `non-execute continuation stops before client history without skipping its cursor gap`() = runTest {
         val fixture = Fixture(
-            messages = listOf(
-                crossChannelMessage(1L, "visible cross-channel"),
-                ordinaryMessage(2L, ChatRole.ASSISTANT, "already in session"),
-                historyMessage(3L, ChatRole.USER, "pending history"),
-                crossChannelMessage(4L, "blocked behind history"),
+            messages = (1L..500L).map { seq ->
+                ordinaryMessage(seq, ChatRole.ASSISTANT, "already in session")
+            } + listOf(
+                crossChannelMessage(501L, "visible cross-channel"),
+                ordinaryMessage(502L, ChatRole.ASSISTANT, "already in session"),
+                historyMessage(503L, ChatRole.USER, "pending history"),
+                crossChannelMessage(504L, "blocked behind history"),
             ),
         )
 
@@ -58,11 +61,12 @@ class BackendConversationRuntimeTest {
             inputMessageSeq = null,
         )
 
-        assertEquals(2L, loaded.observedThroughSeq)
+        assertEquals(502L, loaded.observedThroughSeq)
         assertEquals(
             listOf(LLMRequest.Message(LLMMessageRole.assistant, "visible cross-channel")),
             loaded.messages,
         )
+        assertEquals(2, fixture.listCalls)
     }
 
     private class Fixture(messages: List<ChatMessage>) {
@@ -72,11 +76,6 @@ class BackendConversationRuntimeTest {
             private set
 
         init {
-            coEvery { repository.latest(any(), any()) } coAnswers {
-                val userId = arg<String>(0)
-                val chatId = arg<UUID>(1)
-                messages.filter { it.userId == userId && it.chatId == chatId }.maxByOrNull(ChatMessage::seq)
-            }
             coEvery { repository.list(any(), any(), any(), any(), any()) } coAnswers {
                 val userId = arg<String>(0)
                 val chatId = arg<UUID>(1)
