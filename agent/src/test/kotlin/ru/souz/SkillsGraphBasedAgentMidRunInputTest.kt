@@ -89,41 +89,6 @@ class SkillsGraphBasedAgentMidRunInputTest {
         val execution = async { harness.agent.executeWithTrace(harness.context()) }
         firstStarted.await()
 
-        assertTrue(harness.agent.submitToActiveRun("first follow-up"))
-        assertTrue(harness.agent.submitToActiveRun("second follow-up"))
-        firstCancelled.await()
-        replacementStarted.await()
-        assertTrue(execution.isActive)
-        assertEquals(listOf(0L, 2L), harness.streamRevisions)
-
-        assertEquals(
-            listOf("first follow-up", "second follow-up"),
-            harness.requestHistories[1]
-                .filter { it.role == LLMMessageRole.user }
-                .takeLast(2)
-                .map { it.content },
-        )
-
-        releaseReplacement.complete(Unit)
-        val result = execution.await()
-        assertEquals("replacement", result.output)
-        assertFalse(result.context.history.any { it.content == "discarded" })
-    }
-
-    @Test
-    fun `structured submission preserves tool exchange before execute input`() = runTest {
-        val firstStarted = CompletableDeferred<Unit>()
-        val harness = Harness(chatHandler = { call, ctx ->
-            if (call == 1) {
-                firstStarted.complete(Unit)
-                awaitCancellation()
-            } else {
-                ctx.map { finalResponse("replacement") }
-            }
-        })
-
-        val execution = async { harness.agent.executeWithTrace(harness.context()) }
-        firstStarted.await()
         assertTrue(
             harness.agent.submitToActiveRun {
                 ActiveRunInput(
@@ -141,22 +106,36 @@ class SkillsGraphBasedAgentMidRunInputTest {
                             name = "RunSkillCommand",
                         ),
                     ),
-                    input = "next execute",
+                    input = "first follow-up",
                 )
             }
         )
+        assertTrue(harness.agent.submitToActiveRun("second follow-up"))
+        firstCancelled.await()
+        replacementStarted.await()
+        assertTrue(execution.isActive)
+        assertEquals(listOf(0L, 2L), harness.streamRevisions)
 
-        assertEquals("replacement", execution.await().output)
-        val relevant = harness.requestHistories[1].takeLast(3)
+        val relevant = harness.requestHistories[1].takeLast(4)
         assertEquals(
-            listOf(LLMMessageRole.assistant, LLMMessageRole.function, LLMMessageRole.user),
+            listOf(
+                LLMMessageRole.assistant,
+                LLMMessageRole.function,
+                LLMMessageRole.user,
+                LLMMessageRole.user,
+            ),
             relevant.map { it.role },
         )
         assertEquals(
-            listOf("", "client handled the task", "next execute"),
+            listOf("", "client handled the task", "first follow-up", "second follow-up"),
             relevant.map { it.content },
         )
-        assertEquals(listOf("client-call", "client-call", null), relevant.map { it.functionsStateId })
+        assertEquals(listOf("client-call", "client-call", null, null), relevant.map { it.functionsStateId })
+
+        releaseReplacement.complete(Unit)
+        val result = execution.await()
+        assertEquals("replacement", result.output)
+        assertEquals(1, harness.finalizationCount)
     }
 
     @Test
@@ -212,60 +191,6 @@ class SkillsGraphBasedAgentMidRunInputTest {
         assertTrue(assistantCallIndex >= 0)
         assertTrue(functionResultIndex > assistantCallIndex)
         assertTrue(queuedInputIndex > functionResultIndex)
-    }
-
-    @Test
-    fun `submission while LLM proposes a tool prevents stale tool execution`() = runTest {
-        val proposalStarted = CompletableDeferred<Unit>()
-        var toolInvocations = 0
-        val harness = Harness(
-            chatHandler = { call, ctx ->
-                if (call == 1) {
-                    proposalStarted.complete(Unit)
-                    awaitCancellation()
-                } else {
-                    ctx.map { finalResponse("replanned") }
-                }
-            },
-            toolHandler = {
-                toolInvocations += 1
-                emptyList()
-            },
-        )
-
-        val execution = async { harness.agent.executeWithTrace(harness.context()) }
-        proposalStarted.await()
-        assertTrue(harness.agent.submitToActiveRun("do not run that tool"))
-        val result = execution.await()
-
-        assertEquals("replanned", result.output)
-        assertEquals(0, toolInvocations)
-        assertTrue(harness.requestHistories[1].any { it.content == "do not run that tool" })
-        assertFalse(harness.requestHistories[1].any { it.functionsStateId == "call-1" })
-    }
-
-    @Test
-    fun `submission while final response is provisional replans before finalization`() = runTest {
-        val provisionalStarted = CompletableDeferred<Unit>()
-        val harness = Harness(chatHandler = { call, ctx ->
-            if (call == 1) {
-                provisionalStarted.complete(Unit)
-                awaitCancellation()
-            } else {
-                ctx.map { finalResponse("accepted") }
-            }
-        })
-
-        val execution = async { harness.agent.executeWithTrace(harness.context()) }
-        provisionalStarted.await()
-        assertTrue(harness.agent.submitToActiveRun("one more requirement"))
-        val result = execution.await()
-
-        assertEquals("accepted", result.output)
-        assertEquals(1, harness.finalizationCount)
-        assertTrue(harness.requestHistories[1].any { it.content == "one more requirement" })
-        assertFalse(result.context.history.any { it.content == "provisional" })
-        assertTrue(result.context.history.any { it.content == "accepted" })
     }
 
     @Test

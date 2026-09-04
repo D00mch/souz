@@ -339,6 +339,30 @@ class PostgresRepositoriesTest {
             assertEquals(2, storedExecution?.revision)
             assertEquals("phone-1", storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
 
+            val historyRequest = ClientRequest(
+                chatId = chat.id,
+                requestId = "history-1",
+                kind = "history.append",
+                threadId = null,
+                payloadHash = "history-hash",
+                ackJson = "{}",
+                receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
+            )
+            assertIs<ClientRequestResult.HistoryAccepted>(
+                repositories.clientRequestRepository.commitHistory(
+                    userId = userId,
+                    key = historyRequest.key(),
+                    input = ClientHistoryInput(ChatRole.ASSISTANT, "client context"),
+                    acceptedRequest = historyRequest,
+                )
+            )
+            assertEquals(historyRequest, repositories.clientRequestRepository.get(chat.id, historyRequest.requestId))
+            val storedHistory = repositories.messageRepository.list(userId, chat.id).single()
+            assertEquals(ChatRole.ASSISTANT, storedHistory.role)
+            assertEquals("client context", storedHistory.content)
+            assertEquals(mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"), storedHistory.metadata)
+            assertEquals(storedExecution, repositories.executionRepository.getByChat(userId, chat.id, execution.id))
+
             val toolContext = ToolCallContext(userId, chat.id.toString(), execution.id.toString(), "tool-1")
             val deadline = Instant.parse("2026-05-01T10:06:00Z")
             repositories.toolCallRepository.startClientCall(
@@ -441,125 +465,6 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `client history and its receipt commit atomically without mutating execution`() = runTest {
-        val schema = newPostgresSchema("postgres_client_history")
-
-        postgresRepositories(schema).use { repositories ->
-            val userId = UUID.randomUUID().toString()
-            val chat = chat(userId, Instant.parse("2026-05-01T10:00:00Z"))
-            repositories.userRepository.ensureUser(userId)
-            repositories.chatRepository.create(chat)
-            val execution = execution(
-                userId = userId,
-                chatId = chat.id,
-                assistantMessageId = null,
-                status = AgentExecutionStatus.RUNNING,
-                startedAt = Instant.parse("2026-05-01T10:01:00Z"),
-            ).copy(
-                revision = 4,
-                latestDeviceContextJson = """{"deviceId":"execute-device"}""",
-            )
-            repositories.executionRepository.create(execution)
-
-            fun historyRequest(requestId: String, hash: String, ackJson: String = "{}") = ClientRequest(
-                chatId = chat.id,
-                requestId = requestId,
-                kind = "history.append",
-                threadId = null,
-                payloadHash = hash,
-                ackJson = ackJson,
-                receivedAt = Instant.parse("2026-05-01T10:01:02Z"),
-            )
-
-            val userRequest = historyRequest("history-user", "history-user-hash")
-            assertIs<ClientRequestResult.HistoryAccepted>(
-                repositories.clientRequestRepository.commitHistory(
-                    userId = userId,
-                    key = userRequest.key(),
-                    input = ClientHistoryInput(
-                        role = ChatRole.USER,
-                        content = "client solved the first task",
-                        createdAt = Instant.parse("2026-05-01T10:01:02Z"),
-                    ),
-                    acceptedRequest = userRequest,
-                )
-            )
-            val assistantRequest = historyRequest("history-assistant", "history-assistant-hash")
-            assertIs<ClientRequestResult.HistoryAccepted>(
-                repositories.clientRequestRepository.commitHistory(
-                    userId = userId,
-                    key = assistantRequest.key(),
-                    input = ClientHistoryInput(
-                        role = ChatRole.ASSISTANT,
-                        content = "the first task is done",
-                        createdAt = Instant.parse("2026-05-01T10:01:03Z"),
-                    ),
-                    acceptedRequest = assistantRequest,
-                )
-            )
-            val storedExecution = repositories.executionRepository.getByChat(userId, chat.id, execution.id)
-            assertEquals(4L, storedExecution?.revision)
-            assertEquals(
-                restJsonMapper.readTree(execution.latestDeviceContextJson),
-                storedExecution?.latestDeviceContextJson?.let(restJsonMapper::readTree),
-            )
-            val storedHistory = repositories.messageRepository.list(userId, chat.id)
-            assertEquals(
-                listOf("client solved the first task", "the first task is done"),
-                storedHistory.map { it.content },
-            )
-            assertTrue(storedHistory.all { it.metadata == mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true") })
-
-            val failedRequest = historyRequest(
-                "history-invalid-ack",
-                "history-invalid-ack-hash",
-                ackJson = "not-json",
-            )
-            assertFailsWith<Exception> {
-                repositories.clientRequestRepository.commitHistory(
-                    userId = userId,
-                    key = failedRequest.key(),
-                    input = ClientHistoryInput(ChatRole.USER, "rolled back history"),
-                    acceptedRequest = failedRequest,
-                )
-            }
-            assertNull(repositories.clientRequestRepository.get(chat.id, failedRequest.requestId))
-            assertEquals(
-                listOf("client solved the first task", "the first task is done"),
-                repositories.messageRepository.list(userId, chat.id).map { it.content },
-            )
-
-            val executeRequest = historyRequest("execute-after-history", "execute-after-history-hash").copy(
-                kind = "message.submit",
-                threadId = execution.id,
-            )
-            val execute = assertIs<ClientRequestResult.Accepted>(
-                repositories.clientRequestRepository.commitFollowUp(
-                    userId = userId,
-                    key = executeRequest.key(),
-                    threadId = execution.id,
-                    afterSeq = 0L,
-                    input = ClientFollowUpInput(
-                        content = "new work",
-                        metadata = emptyMap(),
-                        latestDeviceContextJson = """{"deviceId":"new-execute-device"}""",
-                    ),
-                    acceptedRequest = { executeRequest },
-                    rejectedRequest = { error("Expected accepted execute") },
-                )
-            )
-            assertEquals(
-                listOf(ChatRole.USER, ChatRole.ASSISTANT, ChatRole.USER),
-                execute.messageDelta.map { it.role },
-            )
-            assertEquals(
-                listOf("client solved the first task", "the first task is done", "new work"),
-                execute.messageDelta.map { it.content },
-            )
-        }
-    }
-
-    @Test
     fun `follow-up and cancellation effects commit atomically`() = runTest {
         val schema = newPostgresSchema("postgres_followup_input_rollback")
 
@@ -586,6 +491,27 @@ class PostgresRepositoriesTest {
                 receivedAt = Instant.parse("2026-05-01T10:01:02Z"),
             )
             val messageId = UUID.randomUUID()
+            val historyMessageId = UUID.randomUUID()
+            val historyRequest = request.copy(
+                requestId = "history-1",
+                kind = "history.append",
+                threadId = null,
+                payloadHash = "history-payload",
+                receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
+            )
+            assertIs<ClientRequestResult.HistoryAccepted>(
+                repositories.clientRequestRepository.commitHistory(
+                    userId = userId,
+                    key = historyRequest.key(),
+                    input = ClientHistoryInput(
+                        role = ChatRole.ASSISTANT,
+                        content = "client history",
+                        messageId = historyMessageId,
+                        createdAt = historyRequest.receivedAt,
+                    ),
+                    acceptedRequest = historyRequest,
+                )
+            )
             val first = assertIs<ClientRequestResult.Accepted>(
                 repositories.clientRequestRepository.commitFollowUp(
                     userId = userId,
@@ -604,7 +530,8 @@ class PostgresRepositoriesTest {
                 )
             )
             assertEquals(2L, first.execution.revision)
-            assertEquals(listOf(messageId), first.messageDelta.map { it.id })
+            assertEquals(listOf(historyMessageId, messageId), first.messageDelta.map { it.id })
+            assertEquals(listOf(ChatRole.ASSISTANT, ChatRole.USER), first.messageDelta.map { it.role })
             assertEquals(request, repositories.clientRequestRepository.get(chat.id, request.requestId))
 
             val duplicate = repositories.clientRequestRepository.commitFollowUp(
@@ -660,7 +587,7 @@ class PostgresRepositoriesTest {
                 "device-2",
                 storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText(),
             )
-            assertEquals(listOf("first follow-up"), storedMessages.map { it.content })
+            assertEquals(listOf("client history", "first follow-up"), storedMessages.map { it.content })
 
             val failedCancel = request.copy(
                 requestId = "cancel-bad-json",

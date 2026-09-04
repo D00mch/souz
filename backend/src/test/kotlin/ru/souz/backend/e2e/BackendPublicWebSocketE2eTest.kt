@@ -20,6 +20,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.storage.postgres.newPostgresSchema
+import ru.souz.llms.LLMMessageRole
 
 class BackendPublicWebSocketE2eTest {
     private data class SocketNode(
@@ -237,7 +238,7 @@ class BackendPublicWebSocketE2eTest {
     }
 
     @Test
-    fun `cross instance initial submissions create one thread and reject the non owner`() {
+    fun `cross instance initial submissions reject the non owner and recover its history`() {
         val primaryLlm = E2eLlmApi().apply { pauseUntilReleased() }
         val peerLlm = E2eLlmApi().apply { pauseUntilReleased() }
         backendE2eTest("e2e_ws_initial_race", llm = primaryLlm) {
@@ -271,6 +272,31 @@ class BackendPublicWebSocketE2eTest {
                     assertTrue(duplicate["duplicate"].asBoolean())
                     assertEquals(rejected["error"], duplicate["error"])
                     assertEquals(rejected["receivedAt"], duplicate["receivedAt"])
+
+                    val owner = nodes[1 - rejectedReply.index]
+                    val nonOwner = nodes[rejectedReply.index]
+                    nonOwner.session.send(
+                        Frame.Text(historyFrame(chatId, "peer-history", "assistant", "completed by peer"))
+                    )
+                    val historyAck = nonOwner.scope.readJson(nonOwner.session)
+                    assertEquals("accepted", historyAck["status"].asText())
+                    assertFalse(historyAck.has("thread"))
+
+                    val followUp = owner.request(
+                        messageFrame(chatId, userId, "owner-follow-up", null, "owner follow up", "device-owner")
+                    ).acknowledgement
+                    assertEquals(accepted["thread"]["id"], followUp["thread"]["id"])
+                    assertFalse(followUp["thread"]["created"].asBoolean())
+                    owner.scope.llm.awaitPrompt("owner follow up")
+                    val replacement = owner.scope.llm.requests.last().messages
+                    assertEquals(
+                        listOf(LLMMessageRole.assistant, LLMMessageRole.user),
+                        replacement
+                            .filter { it.content in setOf("completed by peer", "owner follow up") }
+                            .map { it.role },
+                    )
+                    assertEquals(1, replacement.count { it.content == "completed by peer" })
+                    assertTrue(nonOwner.scope.llm.requests.isEmpty())
                 }
             } finally {
                 primaryLlm.release()
@@ -717,6 +743,9 @@ class BackendPublicWebSocketE2eTest {
     private suspend fun BackendE2eScope.threadStatus(chatId: String, threadId: String): String =
         client.get("${BackendHttpRoutes.chatThread(chatId, threadId)}?clientType=backend")
             .jsonBody()["status"].asText()
+
+    private fun historyFrame(chatId: String, requestId: String, role: String, text: String): String =
+        """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"$role","content":{"type":"text","source":"text","text":"$text"}}}"""
 
     private fun messageFrame(
         chatId: String,
