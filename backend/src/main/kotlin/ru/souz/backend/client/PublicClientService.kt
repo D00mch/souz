@@ -1,5 +1,6 @@
 package ru.souz.backend.client
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
@@ -68,7 +69,7 @@ internal class PublicClientService(
         val now = Instant.now()
         val requestId = frame.requestId.required("requestId")
         validateDevice(chat, frame.payload.device)
-        validateContent(frame.payload.content)
+        frame.payload.content.validatedText()
         val requestedThreadId = frame.threadId?.uuid("threadId")
         val key = ClientRequestKey(
             chatId = chat.id,
@@ -100,19 +101,21 @@ internal class PublicClientService(
     suspend fun handleHistory(chat: Chat, frame: HistoryAppendFrame): HandledClientFrame {
         val now = Instant.now()
         val requestId = frame.requestId.required("requestId")
-        validateContent(frame.payload.content)
         val role = frame.payload.role.takeIf { it in supportedMessageRoles }
             ?: throw ClientContractException("invalid_request", "Unsupported message role.")
+        val input = historyInput(role.toChatRole(), frame.payload.content)
         val key = ClientRequestKey(
             chatId = chat.id,
             requestId = requestId,
             kind = frame.kind,
-            payloadHash = PublicPayloadHash.ofValue(
-                linkedMapOf(
-                    "kind" to frame.kind,
-                    "role" to role,
-                    "content" to frame.payload.content,
-                )
+            payloadHash = PublicPayloadHash.ofJson(
+                mapper.valueToTree<JsonNode>(
+                    linkedMapOf(
+                        "kind" to frame.kind,
+                        "role" to role,
+                        "content" to frame.payload.content,
+                    ),
+                ),
             ),
         )
         val ack = HistoryAppendAck(
@@ -125,10 +128,7 @@ internal class PublicClientService(
         val result = clientRequestRepository.commitHistory(
             userId = chat.userId,
             key = key,
-            input = ClientHistoryInput(
-                role = role.toChatRole(),
-                content = frame.payload.content.text,
-            ),
+            input = input,
             acceptedRequest = key.request(threadId = null, response = ack, now = now),
         )
         return handledHistory(result, key, now)
@@ -502,12 +502,30 @@ internal class PublicClientService(
         }
     }
 
-    private fun validateContent(content: RecognizedTextContent) {
-        if (content.type != "text") throw ClientContractException("invalid_request", "content.type must be text.")
-        if (content.source != "voice" && content.source != "text") {
+    private fun RecognizedTextContent.validatedText(): String {
+        if (type != "text") throw ClientContractException("invalid_request", "content.type must be text.")
+        if (source != "voice" && source != "text") {
             throw ClientContractException("invalid_request", "content.source must be voice or text.")
         }
-        content.text.required("content.text")
+        return text.required("content.text")
+    }
+
+    private fun historyInput(role: ChatRole, content: HistoryAppendContent): ClientHistoryInput = when (content) {
+        is RecognizedTextContent -> ClientHistoryInput(role, content.validatedText())
+
+        is HistoryToolExchangeContent -> {
+            if (role != ChatRole.ASSISTANT) {
+                throw ClientContractException("invalid_request", "tool_exchange history requires assistant role.")
+            }
+            val name = content.name.required("content.name")
+            ClientHistoryInput(
+                role = role,
+                content = mapper.writeValueAsString(content.output),
+                toolArgumentsJson = mapper.writeValueAsString(
+                    mapOf("skillId" to name, "arguments" to content.arguments),
+                ),
+            )
+        }
     }
 
     private fun handledMessage(

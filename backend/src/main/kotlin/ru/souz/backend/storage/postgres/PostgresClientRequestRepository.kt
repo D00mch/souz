@@ -114,7 +114,7 @@ class PostgresClientRequestRepository(
             chatId = key.chatId,
             role = input.role,
             content = input.content,
-            metadata = mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"),
+            metadata = mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to (input.toolArgumentsJson ?: "true")),
             id = input.messageId,
             createdAt = input.createdAt,
         )

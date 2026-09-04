@@ -234,7 +234,14 @@ components:
           type: string
           enum: [user, assistant]
         content:
-          $ref: "#/components/schemas/RecognizedTextContent"
+          oneOf:
+            - $ref: "#/components/schemas/RecognizedTextContent"
+            - $ref: "#/components/schemas/HistoryToolExchangeContent"
+          discriminator:
+            propertyName: type
+            mapping:
+              text: "#/components/schemas/RecognizedTextContent"
+              tool_exchange: "#/components/schemas/HistoryToolExchangeContent"
     RecognizedTextContent:
       type: object
       additionalProperties: false
@@ -248,6 +255,21 @@ components:
           enum: [voice, text]
         text:
           $ref: "#/components/schemas/NonEmptyString"
+    HistoryToolExchangeContent:
+      description: Completed client tool exchange. Requires an assistant history role; name is the Skill ID passed to RunSkillCommand.
+      type: object
+      additionalProperties: false
+      required: [type, name, arguments, output]
+      properties:
+        type:
+          type: string
+          enum: [tool_exchange]
+        name:
+          $ref: "#/components/schemas/NonEmptyString"
+        arguments:
+          type: object
+        output:
+          type: object
     RequestMeta:
       type: object
       additionalProperties: false

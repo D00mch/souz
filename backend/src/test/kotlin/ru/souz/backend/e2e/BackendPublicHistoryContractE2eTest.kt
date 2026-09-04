@@ -93,6 +93,8 @@ class BackendPublicHistoryContractE2eTest {
                     historyFrame(chatId, "null-role", "user", "invalid")
                         .replace("\"role\":\"user\"", "\"role\":null"),
                     historyFrame(chatId, "unknown-role", "tool", "invalid"),
+                    toolHistoryFrame(chatId, "tool-user-role")
+                        .replace("\"role\":\"assistant\"", "\"role\":\"user\""),
                 )
                 invalidFrames.forEach { raw ->
                     session.send(Frame.Text(raw))
@@ -145,6 +147,8 @@ class BackendPublicHistoryContractE2eTest {
                     assertEquals("true", metadataJson[CLIENT_HISTORY_MESSAGE_METADATA_KEY].asText())
                 }
 
+                session.send(Frame.Text(toolHistoryFrame(chatId, "history-tool")))
+                assertEquals("accepted", readJson(session)["status"].asText())
                 session.send(
                     Frame.Text(
                         messageFrame(
@@ -161,7 +165,8 @@ class BackendPublicHistoryContractE2eTest {
                 readJson(session) // thread.status
                 readJson(session) // thread.completed
 
-                val relevantMessages = llm.requests.single().messages.filter {
+                val requestMessages = llm.requests.single().messages
+                val relevantMessages = requestMessages.filter {
                     it.content in setOf(
                         "client solved it",
                         "the client task is complete",
@@ -172,6 +177,14 @@ class BackendPublicHistoryContractE2eTest {
                     listOf(LLMMessageRole.user, LLMMessageRole.assistant, LLMMessageRole.user),
                     relevantMessages.map { it.role },
                 )
+                val toolCall = requestMessages.single { it.functionCall?.name == "RunSkillCommand" }
+                val toolResult = requestMessages.single {
+                    it.name == "RunSkillCommand" && it.functionsStateId == toolCall.functionsStateId
+                }
+                val runSkillArguments = json.readTree(checkNotNull(toolCall.functionCall).arguments)
+                assertEquals("device.volume.adjust", runSkillArguments["skillId"].asText())
+                assertEquals(-10, runSkillArguments["arguments"]["deltaPercent"].asInt())
+                assertEquals(30, json.readTree(toolResult.content)["volumePercent"].asInt())
             }
         }
 
@@ -462,6 +475,9 @@ class BackendPublicHistoryContractE2eTest {
           }
         }
         """.trimIndent()
+
+    private fun toolHistoryFrame(chatId: String, requestId: String): String =
+        """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"assistant","content":{"type":"tool_exchange","name":"device.volume.adjust","arguments":{"deltaPercent":-10},"output":{"volumePercent":30}}}}"""
 
     private fun messageFrame(
         chatId: String,

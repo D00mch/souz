@@ -24,6 +24,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.tool.skills.ToolInvokeSkill
 
 /** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
 internal class BackendConversationRuntime(
@@ -117,7 +118,7 @@ internal class BackendConversationRuntime(
                             history = result.messageDelta
                                 .asSequence()
                                 .filter { it.seq < inputMessage.seq }
-                                .mapNotNull(ChatMessage::toAgentHistoryMessage)
+                                .flatMap { it.toAgentHistoryMessages().asSequence() }
                                 .toList(),
                             input = inputMessage.content,
                         )
@@ -162,7 +163,7 @@ internal suspend fun loadInitialConversationMessages(
         for (message in page) {
             if (inputMessageSeq != null && message.seq >= inputMessageSeq) break@scan
             if (inputMessageSeq == null && message.isClientHistory) break@scan
-            message.toAgentHistoryMessage()?.let(context::add)
+            context += message.toAgentHistoryMessages()
             observedThroughSeq = message.seq
         }
         if (page.size < MessageRepository.MAX_LIMIT) break
@@ -176,22 +177,43 @@ internal suspend fun loadInitialConversationMessages(
 }
 
 private val ChatMessage.isClientHistory: Boolean
-    get() = metadata[CLIENT_HISTORY_MESSAGE_METADATA_KEY] == "true"
+    get() = CLIENT_HISTORY_MESSAGE_METADATA_KEY in metadata
 
-private fun ChatMessage.toAgentHistoryMessage(): LLMRequest.Message? = when {
-    isClientHistory -> LLMRequest.Message(
-        role = when (role) {
-            ChatRole.USER -> LLMMessageRole.user
-            ChatRole.ASSISTANT -> LLMMessageRole.assistant
-            else -> error("Client history has unsupported role ${role.value}")
-        },
-        content = content,
-    )
+private fun ChatMessage.toAgentHistoryMessages(): List<LLMRequest.Message> =
+    when (val toolArguments = metadata[CLIENT_HISTORY_MESSAGE_METADATA_KEY]) {
+        null -> if (metadata[CROSS_CHANNEL_MESSAGE_METADATA_KEY] == "true") {
+            listOf(LLMRequest.Message(role = LLMMessageRole.assistant, content = content))
+        } else {
+            emptyList()
+        }
 
-    metadata[CROSS_CHANNEL_MESSAGE_METADATA_KEY] == "true" -> LLMRequest.Message(
-        role = LLMMessageRole.assistant,
-        content = content,
-    )
+        "true" -> listOf(
+            LLMRequest.Message(
+                when (role) {
+                    ChatRole.USER -> LLMMessageRole.user
+                    ChatRole.ASSISTANT -> LLMMessageRole.assistant
+                    else -> error("Client history has unsupported role ${role.value}")
+                },
+                content,
+            )
+        )
 
-    else -> null
-}
+        else -> {
+            check(role == ChatRole.ASSISTANT) { "Client tool history must use the assistant role" }
+            val toolCallId = id.toString()
+            listOf(
+                LLMRequest.Message(
+                    LLMMessageRole.assistant,
+                    "",
+                    toolCallId,
+                    functionCall = LLMRequest.FunctionCall(ToolInvokeSkill.NAME, toolArguments),
+                ),
+                LLMRequest.Message(
+                    LLMMessageRole.function,
+                    content,
+                    toolCallId,
+                    name = ToolInvokeSkill.NAME,
+                ),
+            )
+        }
+    }

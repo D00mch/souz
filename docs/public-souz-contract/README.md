@@ -62,7 +62,7 @@ Route: `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`
 Client frames:
 
 - `message.submit`: `{kind, chatId, requestId, threadId?, payload}`. Submits user input for execution and retains explicit/implicit thread selection. Its role is inherently `user` and is not a field.
-- `history.append`: `{kind, chatId, requestId, payload}`. Requires `payload.role` (`user` or `assistant`), appends durable chat context, and supplies it only with the next accepted `message.submit`.
+- `history.append`: `{kind, chatId, requestId, payload}`. Text content accepts `user` or `assistant`; `tool_exchange` content requires `assistant` and becomes a matched assistant tool request and tool result. History is supplied only with the next accepted `message.submit`.
 - `tool.result`: `{kind, chatId, threadId, toolCallId, status, result|error}`. `status` is `succeeded`, `failed`, `cancelled`, or `timed_out`.
 - `thread.cancel`: `{kind, chatId, requestId, threadId, reason?}`.
 
@@ -83,7 +83,7 @@ The canonical schema names are in `openapi.yaml` components. All frames have `ad
 Client-to-Souz frames:
 
 - `MessageSubmit`: `{kind: "message.submit", chatId, requestId, threadId?, payload}`.
-- `HistoryAppend`: `{kind: "history.append", chatId, requestId, payload: {role, content}}`.
+- `HistoryAppend`: `{kind: "history.append", chatId, requestId, payload: {role, content: RecognizedTextContent | HistoryToolExchangeContent}}`.
 - `SucceededToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "succeeded", result}`.
 - `FailedToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "failed", error}`.
 - `CancelledToolResult`: `{kind: "tool.result", chatId, threadId, toolCallId, status: "cancelled", error}`.
@@ -133,7 +133,7 @@ Each thread has exactly one terminal event. If completion and cancellation race,
 
 History belongs to the chat and has no thread identity. It is stored with its original user or assistant role without changing an execution, input sequence, revision, cancellation state, runtime lease, or active device context. Its acknowledgement has no execution fields; no thread status or durable event follows it.
 
-History remains pending until the next accepted `message.submit`; it is not delivered to an active runtime on its own. The execute submission loads history ordered before its user-message row, preserves each stored role, and supplies the history followed by the execute input as one batch. History ordered after that execute remains pending for a later submission.
+History remains pending until the next accepted `message.submit`; it is not delivered to an active runtime on its own. The execute submission loads history ordered before its user-message row, preserves text roles, expands each tool exchange into a matched `RunSkillCommand` request and function result, and supplies that history followed by the execute input as one batch. The exchange `name` becomes the command's `skillId`. History ordered after that execute remains pending for a later submission.
 
 The internal chat-local message sequence defines execute barriers and makes concurrent history and execute ordering authoritative. Storage does not require local runtime ownership, and the runtime owner catches up from durable messages when it accepts the next execute.
 
@@ -149,7 +149,7 @@ Tool-result acknowledgements are outside the event sequence.
 
 - `chats` stores `clientType`, create `requestId`, and its normalized payload hash.
 - `agent_executions` is the thread store; the execution ID is `threadId`, with revision and latest device context.
-- Execute-message metadata stores source, device, request ID, request metadata, and `inputSeq`; history-message metadata stores only `clientHistory = true`.
+- Execute-message metadata stores source, device, request ID, request metadata, and `inputSeq`; history-message metadata distinguishes text from tool exchanges.
 - `client_requests` stores the shared message/history/cancel idempotency scope and original acknowledgement.
 - `tool_calls` stores complete client call arguments, deadline, result or error, and tool-result idempotency state.
 - `agent_events` stores replayable client tool-start, terminal, and out-of-band `message.created` (cross-channel push, `threadId = null`) events with chat-local sequence values.

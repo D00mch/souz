@@ -1,6 +1,8 @@
 package ru.souz.backend.client
 
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonSubTypes
+import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.databind.JsonNode
 
 data class CreateClientChatRequest(
@@ -30,11 +32,32 @@ data class ClientDevice(
     val platform: String? = null,
 )
 
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.NAME,
+    include = JsonTypeInfo.As.EXISTING_PROPERTY,
+    property = "type",
+    visible = true,
+)
+@JsonSubTypes(
+    JsonSubTypes.Type(value = RecognizedTextContent::class, name = "text"),
+    JsonSubTypes.Type(value = HistoryToolExchangeContent::class, name = "tool_exchange"),
+)
+sealed interface HistoryAppendContent {
+    val type: String
+}
+
 data class RecognizedTextContent(
-    val type: String,
+    override val type: String,
     val source: String,
     val text: String,
-)
+) : HistoryAppendContent
+
+data class HistoryToolExchangeContent(
+    override val type: String,
+    val name: String,
+    val arguments: Map<String, JsonNode>,
+    val output: Map<String, JsonNode>,
+) : HistoryAppendContent
 
 data class ClientRequestMeta(
     val locale: String? = null,
@@ -58,7 +81,7 @@ data class MessageSubmitFrame(
 
 data class HistoryAppendPayload(
     val role: String,
-    val content: RecognizedTextContent,
+    val content: HistoryAppendContent,
 )
 
 data class HistoryAppendFrame(
