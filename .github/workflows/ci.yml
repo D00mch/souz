@@ -195,8 +195,8 @@ jobs:
 
       - name: Build deterministic RepoWise indexes
         run: |
-          repowise init "$REPOWISE_BASE_CHECKOUT" --yes --no-prose --no-workspace
-          repowise init . --yes --no-prose --no-workspace
+          repowise init "$REPOWISE_BASE_CHECKOUT" --mode fast --yes --no-prose --no-workspace
+          repowise init . --mode fast --yes --no-prose --no-workspace
 
       - name: Generate PR-focused RepoWise reports
         shell: bash
