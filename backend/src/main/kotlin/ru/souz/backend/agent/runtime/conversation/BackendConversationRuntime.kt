@@ -99,7 +99,7 @@ internal class BackendConversationRuntime(
         commit: suspend (afterSeq: Long) -> ClientRequestResult,
     ): ClientRequestResult? {
         var committed: ClientRequestResult? = null
-        val published = executor.submitToActiveRunAfter(AgentId.SKILLS_GRAPH) {
+        val published = executor.submitToActiveRun(AgentId.SKILLS_GRAPH) {
             cursorMutex.withLock {
                 when (val result = commit(observedMessageSeq).also { committed = it }) {
                     is ClientRequestResult.Accepted -> {

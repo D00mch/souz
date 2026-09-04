@@ -17,18 +17,11 @@ internal class ActiveRunInputController(
 ) {
     private var state: State = State.Open()
 
-    /** Accepts [input] at one linearization point with closing and final sealing. */
-    suspend fun submit(input: String): Boolean = mutex.withLock {
-        val open = state as? State.Open ?: return false
-        enqueueLocked(open, ActiveRunInput(input = input))
-        true
-    }
-
     /**
      * Reserves an open mailbox, runs [build], and publishes its result at one ordering point.
      * Final sealing waits for the reservation, allowing durable state to commit before input is visible.
      */
-    suspend fun submitAfter(build: suspend () -> ActiveRunInput?): Boolean {
+    suspend fun submit(build: suspend () -> ActiveRunInput?): Boolean {
         if (!reserveInput()) return false
         var released = false
         return try {

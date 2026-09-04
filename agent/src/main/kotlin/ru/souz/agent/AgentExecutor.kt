@@ -17,21 +17,17 @@ class AgentExecutor internal constructor(
     fun sideEffects(agentId: AgentId): Flow<AgentStreamChunk> = agentById(agentId).sideEffects
 
     fun supportsActiveRunInput(agentId: AgentId): Boolean =
-        agentById(agentId).supportsActiveRunInput
+        activeRunInterruptor(agentId) != null
 
     suspend fun cancelActiveJob(agentId: AgentId) {
         agentById(agentId).cancelActiveJob()
     }
 
-    /** Returns true only when the selected agent accepts input into its current open execution. */
-    suspend fun submitToActiveRun(agentId: AgentId, input: String): Boolean =
-        agentById(agentId).submitToActiveRun(input)
-
     /** Publishes a batch only after the selected agent keeps its run open and [build] succeeds. */
-    suspend fun submitToActiveRunAfter(
+    suspend fun submitToActiveRun(
         agentId: AgentId,
         build: suspend () -> ActiveRunInput?,
-    ): Boolean = agentById(agentId).submitToActiveRunAfter(build)
+    ): Boolean = activeRunInterruptor(agentId)?.submitToActiveRun(build) ?: false
 
     suspend fun execute(
         agentId: AgentId,
@@ -65,6 +61,9 @@ class AgentExecutor internal constructor(
     }
 
     private fun agentById(agentId: AgentId): TraceableAgent = agentProvider(normalizeAgentId(agentId))
+
+    private fun activeRunInterruptor(agentId: AgentId): ActiveRunSteer? =
+        agentById(agentId) as? ActiveRunSteer
 
     private fun normalizeAgentId(agentId: AgentId): AgentId =
         if (agentId in availableAgents) agentId else availableAgents.first()

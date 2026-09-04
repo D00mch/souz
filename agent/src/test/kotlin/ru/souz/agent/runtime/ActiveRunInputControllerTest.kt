@@ -53,7 +53,7 @@ class ActiveRunInputControllerTest {
         val controller = ActiveRunInputController()
         val callbackResult = CompletableDeferred<Boolean>()
         val submission = async {
-            controller.submitAfter {
+            controller.submit {
                 ActiveRunInput(input = "durable input").takeIf { callbackResult.await() }
             }
         }
@@ -73,7 +73,7 @@ class ActiveRunInputControllerTest {
     fun `reserved submission failure releases final sealing without enqueueing input`() = runTest {
         val controller = ActiveRunInputController()
 
-        assertFalse(controller.submitAfter { null })
+        assertFalse(controller.submit { null })
         assertNull(controller.drainOrSeal())
         assertFalse(controller.submit("after close"))
     }
@@ -83,7 +83,7 @@ class ActiveRunInputControllerTest {
         val controller = ActiveRunInputController()
         val callbackResult = CompletableDeferred<Boolean>()
         val submission = async {
-            controller.submitAfter {
+            controller.submit {
                 callbackResult.await()
                 ActiveRunInput(input = "cancelled input")
             }
@@ -105,7 +105,7 @@ class ActiveRunInputControllerTest {
         val controller = ActiveRunInputController(mutex = mutex)
         val commitCompleted = CompletableDeferred<Unit>()
         val submission = async(start = CoroutineStart.UNDISPATCHED) {
-            controller.submitAfter {
+            controller.submit {
                 commitCompleted.await()
                 ActiveRunInput(input = "durable input")
             }
@@ -126,3 +126,6 @@ class ActiveRunInputControllerTest {
         assertEquals("durable input", controller.drain()?.single()?.input)
     }
 }
+
+private suspend fun ActiveRunInputController.submit(input: String): Boolean =
+    submit { ActiveRunInput(input = input) }

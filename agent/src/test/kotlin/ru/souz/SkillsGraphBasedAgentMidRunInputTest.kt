@@ -125,7 +125,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         val execution = async { harness.agent.executeWithTrace(harness.context()) }
         firstStarted.await()
         assertTrue(
-            harness.agent.submitToActiveRunAfter {
+            harness.agent.submitToActiveRun {
                 ActiveRunInput(
                     history = listOf(
                         LLMRequest.Message(LLMMessageRole.assistant, "client handled the task")
@@ -325,6 +325,9 @@ class SkillsGraphBasedAgentMidRunInputTest {
         assertEquals(0, harness.finalizationCount)
     }
 }
+
+private suspend fun SkillsGraphBasedAgent.submitToActiveRun(input: String): Boolean =
+    submitToActiveRun { ActiveRunInput(input = input) }
 
 private typealias ChatHandler = suspend (
     call: Int,

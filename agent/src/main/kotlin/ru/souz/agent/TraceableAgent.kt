@@ -7,9 +7,12 @@ import ru.souz.graph.Node
 internal typealias GraphStepCallback =
     (step: StepInfo, node: Node<Any?, Any?>, from: AgentContext<Any?>, to: AgentContext<Any?>) -> Unit
 
-internal interface TraceableAgent : Agent {
-    suspend fun submitToActiveRunAfter(build: suspend () -> ActiveRunInput?): Boolean = false
+/** Optional capability for publishing input into an open execution. */
+internal interface ActiveRunSteer {
+    suspend fun submitToActiveRun(build: suspend () -> ActiveRunInput?): Boolean
+}
 
+internal interface TraceableAgent : Agent {
     suspend fun executeWithTrace(
         ctx: AgentContext<String>,
         onActiveRunReady: suspend () -> Unit = {},

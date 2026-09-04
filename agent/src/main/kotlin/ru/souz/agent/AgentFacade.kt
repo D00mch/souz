@@ -111,7 +111,7 @@ class AgentFacade internal constructor(
 
     /** Enqueues input only for the current open run; it never starts a new turn. */
     suspend fun submitToActiveRun(input: String): Boolean =
-        executor.submitToActiveRun(_activeAgentId.value, input)
+        executor.submitToActiveRun(_activeAgentId.value) { ActiveRunInput(input = input) }
 
     suspend fun execute(
         input: String,

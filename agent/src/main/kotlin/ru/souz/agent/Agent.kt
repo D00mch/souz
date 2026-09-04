@@ -35,12 +35,9 @@ data class ActiveRunInput(
 
 interface Agent {
     val sideEffects: Flow<AgentStreamChunk>
-    val supportsActiveRunInput: Boolean
-        get() = false
 
     suspend fun execute(ctx: AgentContext<String>): String
     suspend fun cancelActiveJob()
-    suspend fun submitToActiveRun(input: String): Boolean = false
 }
 
 data class AgentExecutionResult(

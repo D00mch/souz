@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.withContext
 import ru.souz.agent.ActiveRunInput
+import ru.souz.agent.ActiveRunSteer
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
@@ -48,8 +49,7 @@ class SkillsGraphBasedAgent internal constructor(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),
-) : TraceableAgent {
-    override val supportsActiveRunInput: Boolean = true
+) : TraceableAgent, ActiveRunSteer {
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
     private val skillsCoreTools = coreTools.skillsCoreTools
@@ -97,11 +97,8 @@ class SkillsGraphBasedAgent internal constructor(
         executionDelegate.cancelActiveJob()
     }
 
-    override suspend fun submitToActiveRun(input: String): Boolean =
-        activeRun.value?.submit(input) ?: false
-
-    override suspend fun submitToActiveRunAfter(build: suspend () -> ActiveRunInput?): Boolean =
-        activeRun.value?.submitAfter(build) ?: false
+    override suspend fun submitToActiveRun(build: suspend () -> ActiveRunInput?): Boolean =
+        activeRun.value?.submit(build) ?: false
 
     override suspend fun execute(ctx: AgentContext<String>): String =
         executeWithTrace(ctx).output
