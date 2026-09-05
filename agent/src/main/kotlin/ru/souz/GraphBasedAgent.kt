@@ -23,7 +23,6 @@ import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.llms.LLMResponse
 
 class GraphBasedAgent internal constructor(
@@ -38,7 +37,7 @@ class GraphBasedAgent internal constructor(
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     private val nodesMemory: NodesMemory,
     coreTools: AgentCoreTools,
-    private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
+    private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegate(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
     ),

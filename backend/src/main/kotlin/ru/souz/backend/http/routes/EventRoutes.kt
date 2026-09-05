@@ -257,53 +257,18 @@ private fun rejectedFor(
     code: String,
     message: String,
 ): HandledClientFrame {
-    val now = Instant.now().toString()
+    val now = Instant.now()
     val error = ClientError(code, message)
-    return when (kind) {
-        "message.submit" -> HandledClientFrame(
-            MessageSubmitAck(
-                chatId = chatId.toString(),
-                requestId = node.path("requestId").asText("invalid"),
-                status = "rejected",
-                duplicate = false,
-                error = error,
-                receivedAt = now,
-            )
-        )
-        "history.append" -> HandledClientFrame(
-            HistoryAppendAck(
-                chatId = chatId.toString(),
-                requestId = node.path("requestId").asText("invalid"),
-                status = "rejected",
-                duplicate = false,
-                error = error,
-                receivedAt = now,
-            )
-        )
-        "tool.result" -> HandledClientFrame(
-            ToolResultAck(
-                chatId = chatId.toString(),
-                toolCallId = node.path("toolCallId").asText("invalid"),
-                threadId = node.path("threadId").asText("00000000-0000-0000-0000-000000000000"),
-                status = "rejected",
-                duplicate = false,
-                error = error,
-                receivedAt = now,
-            )
-        )
-        "thread.cancel" -> HandledClientFrame(
-            ThreadCancelAck(
-                chatId = chatId.toString(),
-                requestId = node.path("requestId").asText("invalid"),
-                threadId = node.path("threadId").asText("00000000-0000-0000-0000-000000000000"),
-                status = "rejected",
-                duplicate = false,
-                error = error,
-                receivedAt = now,
-            )
-        )
+    val requestId = node.path("requestId").asText("invalid")
+    val threadId = node.path("threadId").asText("00000000-0000-0000-0000-000000000000")
+    val response = when (kind) {
+        "message.submit" -> MessageSubmitAck.rejected(chatId.toString(), requestId, error, now)
+        "history.append" -> HistoryAppendAck.rejected(chatId.toString(), requestId, error, now)
+        "tool.result" -> ToolResultAck.rejected(chatId.toString(), threadId, node.path("toolCallId").asText("invalid"), error, now)
+        "thread.cancel" -> ThreadCancelAck.rejected(chatId.toString(), requestId, threadId, error, now)
         else -> throw InvalidClientFrameException("Unsupported frame kind.")
     }
+    return HandledClientFrame(response)
 }
 
 internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
