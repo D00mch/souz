@@ -4,9 +4,12 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.util.UUID
 import javax.sql.DataSource
+import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
+import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
+import ru.souz.backend.client.repository.ClientHistoryInput
 import ru.souz.backend.client.repository.ClientRequestKey
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.client.repository.ClientRequestResult
@@ -58,6 +61,7 @@ class PostgresClientRequestRepository(
         userId: String,
         key: ClientRequestKey,
         threadId: UUID,
+        afterSeq: Long,
         input: ClientFollowUpInput?,
         acceptedRequest: (Long) -> ClientRequest,
         rejectedRequest: (AgentExecution?) -> ClientRequest,
@@ -75,7 +79,7 @@ class PostgresClientRequestRepository(
                 this,
                 execution.copy(revision = revision, latestDeviceContextJson = input.latestDeviceContextJson),
             )
-            messageWriter.append(
+            val message = messageWriter.append(
                 connection = this,
                 userId = userId,
                 chatId = key.chatId,
@@ -85,9 +89,37 @@ class PostgresClientRequestRepository(
                 id = input.messageId,
                 createdAt = input.createdAt,
             )
+            val messageDelta = listMessages(
+                userId = userId,
+                chatId = key.chatId,
+                afterSeq = afterSeq,
+                throughSeq = message.seq,
+            )
             insertClientRequest(this, request)
-            ClientRequestResult.Accepted(request, updatedExecution)
+            ClientRequestResult.Accepted(request, updatedExecution, messageDelta)
         }
+    }
+
+    override suspend fun commitHistory(
+        userId: String,
+        key: ClientRequestKey,
+        input: ClientHistoryInput,
+        acceptedRequest: ClientRequest,
+    ): ClientRequestResult = serialize(userId, key) {
+        acceptedRequest.requireKey(key)
+        require(acceptedRequest.threadId == null)
+        messageWriter.append(
+            connection = this,
+            userId = userId,
+            chatId = key.chatId,
+            role = input.role,
+            content = input.content,
+            metadata = mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to (input.toolArgumentsJson ?: "true")),
+            id = input.messageId,
+            createdAt = input.createdAt,
+        )
+        insertClientRequest(this, acceptedRequest)
+        ClientRequestResult.HistoryAccepted(acceptedRequest)
     }
 
     override suspend fun cancel(
@@ -120,6 +152,31 @@ class PostgresClientRequestRepository(
     ): ClientRequestResult = dataSource.write { connection ->
         connection.lockChat(userId, key.chatId)
         connection.findClientRequest(key.chatId, key.requestId)?.replay(key) ?: connection.mutation()
+    }
+}
+
+private fun Connection.listMessages(
+    userId: String,
+    chatId: UUID,
+    afterSeq: Long,
+    throughSeq: Long,
+): List<ChatMessage> = prepareStatement(
+    """
+    select * from messages
+    where user_id = ? and chat_id = ? and seq > ? and seq <= ?
+    order by seq asc
+    """.trimIndent()
+).use { statement ->
+    statement.setString(1, userId)
+    statement.setObject(2, chatId)
+    statement.setLong(3, afterSeq)
+    statement.setLong(4, throughSeq)
+    statement.executeQuery().use { resultSet ->
+        buildList {
+            while (resultSet.next()) {
+                add(resultSet.toMessage())
+            }
+        }
     }
 }
 

@@ -25,8 +25,10 @@ import ru.souz.backend.agent.session.AgentStateConflictException
 import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
+import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
+import ru.souz.backend.client.repository.ClientHistoryInput
 import ru.souz.backend.client.repository.ClientRequestKey
 import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.options.model.Option
@@ -337,6 +339,30 @@ class PostgresRepositoriesTest {
             assertEquals(2, storedExecution?.revision)
             assertEquals("phone-1", storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
 
+            val historyRequest = ClientRequest(
+                chatId = chat.id,
+                requestId = "history-1",
+                kind = "history.append",
+                threadId = null,
+                payloadHash = "history-hash",
+                ackJson = "{}",
+                receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
+            )
+            assertIs<ClientRequestResult.HistoryAccepted>(
+                repositories.clientRequestRepository.commitHistory(
+                    userId = userId,
+                    key = historyRequest.key(),
+                    input = ClientHistoryInput(ChatRole.ASSISTANT, "client context"),
+                    acceptedRequest = historyRequest,
+                )
+            )
+            assertEquals(historyRequest, repositories.clientRequestRepository.get(chat.id, historyRequest.requestId))
+            val storedHistory = repositories.messageRepository.list(userId, chat.id).single()
+            assertEquals(ChatRole.ASSISTANT, storedHistory.role)
+            assertEquals("client context", storedHistory.content)
+            assertEquals(mapOf(CLIENT_HISTORY_MESSAGE_METADATA_KEY to "true"), storedHistory.metadata)
+            assertEquals(storedExecution, repositories.executionRepository.getByChat(userId, chat.id, execution.id))
+
             val toolContext = ToolCallContext(userId, chat.id.toString(), execution.id.toString(), "tool-1")
             val deadline = Instant.parse("2026-05-01T10:06:00Z")
             repositories.toolCallRepository.startClientCall(
@@ -465,11 +491,33 @@ class PostgresRepositoriesTest {
                 receivedAt = Instant.parse("2026-05-01T10:01:02Z"),
             )
             val messageId = UUID.randomUUID()
+            val historyMessageId = UUID.randomUUID()
+            val historyRequest = request.copy(
+                requestId = "history-1",
+                kind = "history.append",
+                threadId = null,
+                payloadHash = "history-payload",
+                receivedAt = Instant.parse("2026-05-01T10:01:01Z"),
+            )
+            assertIs<ClientRequestResult.HistoryAccepted>(
+                repositories.clientRequestRepository.commitHistory(
+                    userId = userId,
+                    key = historyRequest.key(),
+                    input = ClientHistoryInput(
+                        role = ChatRole.ASSISTANT,
+                        content = "client history",
+                        messageId = historyMessageId,
+                        createdAt = historyRequest.receivedAt,
+                    ),
+                    acceptedRequest = historyRequest,
+                )
+            )
             val first = assertIs<ClientRequestResult.Accepted>(
                 repositories.clientRequestRepository.commitFollowUp(
                     userId = userId,
                     key = request.key(),
                     threadId = execution.id,
+                    afterSeq = 0L,
                     input = ClientFollowUpInput(
                         content = "first follow-up",
                         metadata = emptyMap(),
@@ -482,12 +530,15 @@ class PostgresRepositoriesTest {
                 )
             )
             assertEquals(2L, first.execution.revision)
+            assertEquals(listOf(historyMessageId, messageId), first.messageDelta.map { it.id })
+            assertEquals(listOf(ChatRole.ASSISTANT, ChatRole.USER), first.messageDelta.map { it.role })
             assertEquals(request, repositories.clientRequestRepository.get(chat.id, request.requestId))
 
             val duplicate = repositories.clientRequestRepository.commitFollowUp(
                 userId = userId,
                 key = request.key(),
                 threadId = execution.id,
+                afterSeq = 0L,
                 input = ClientFollowUpInput("duplicate", emptyMap(), "{}"),
                 acceptedRequest = { error("Duplicate must replay") },
                 rejectedRequest = { error("Duplicate must replay") },
@@ -498,6 +549,7 @@ class PostgresRepositoriesTest {
                 userId = userId,
                 key = request.copy(payloadHash = "other-payload").key(),
                 threadId = execution.id,
+                afterSeq = 0L,
                 input = ClientFollowUpInput("conflict", emptyMap(), "{}"),
                 acceptedRequest = { error("Conflict must not append") },
                 rejectedRequest = { error("Conflict must not append") },
@@ -514,6 +566,7 @@ class PostgresRepositoriesTest {
                     userId = userId,
                     key = failedRequest.key(),
                     threadId = execution.id,
+                    afterSeq = 0L,
                     input = ClientFollowUpInput(
                         content = "duplicate-message follow-up",
                         metadata = emptyMap(),
@@ -534,7 +587,7 @@ class PostgresRepositoriesTest {
                 "device-2",
                 storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText(),
             )
-            assertEquals(listOf("first follow-up"), storedMessages.map { it.content })
+            assertEquals(listOf("client history", "first follow-up"), storedMessages.map { it.content })
 
             val failedCancel = request.copy(
                 requestId = "cancel-bad-json",

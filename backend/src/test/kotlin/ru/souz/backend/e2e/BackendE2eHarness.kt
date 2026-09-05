@@ -4,21 +4,29 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.testing.ClientProvider
 import io.ktor.server.testing.TestApplication
 import io.ktor.server.testing.testApplication
+import io.ktor.websocket.Frame
+import io.ktor.websocket.close
+import io.ktor.websocket.readText
 import java.sql.Connection
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
+import kotlin.test.assertEquals
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.kodein.di.DI
@@ -33,6 +41,7 @@ import ru.souz.backend.app.backendDiModule
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpDependencies
+import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.http.BackendOpenApiSecurity
 import ru.souz.backend.http.backendApplication
 import ru.souz.backend.storage.postgres.newPostgresSchema
@@ -48,6 +57,44 @@ import kotlin.time.Duration.Companion.milliseconds
 internal const val E2E_PROXY_TOKEN = "proxy-secret"
 internal const val E2E_TELEGRAM_TOKEN_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 internal val E2E_LOCAL_MODEL: LLMModel = LLMModel.LocalQwen3_4B_Instruct_2507
+
+internal fun historyFrame(chatId: String, requestId: String, role: String, text: String): String =
+    """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"$role","content":{"type":"text","source":"text","text":"$text"}}}"""
+
+internal fun messageFrame(
+    chatId: String,
+    userId: String,
+    requestId: String,
+    threadId: String? = null,
+    text: String = "execute this",
+    deviceId: String = "history-device",
+): String =
+    """
+    {
+      "kind": "message.submit",
+      "chatId": "$chatId",
+      "requestId": "$requestId",
+      ${threadId?.let { "\"threadId\":\"$it\"," } ?: ""}
+      "payload": {
+        "device": {
+          "userId": "$userId",
+          "deviceId": "$deviceId",
+          "deviceType": "tv_box",
+          "capabilities": ["speech", "screen", "device_tools"]
+        },
+        "content": {
+          "type": "text",
+          "source": "voice",
+          "text": "$text"
+        },
+        "meta": {
+          "model": "${E2E_LOCAL_MODEL.alias}",
+          "locale": "ru-RU",
+          "timeZone": "Europe/Moscow"
+        }
+      }
+    }
+    """.trimIndent()
 
 internal fun backendE2eTest(
     schemaPrefix: String,
@@ -86,6 +133,27 @@ internal class BackendE2eScope(
     fun webSocketClient(): HttpClient = app.createClient {
         install(WebSockets)
     }
+
+    suspend fun createPublicChat(userId: String, requestId: String = "create-1"): String {
+        val created = client.post(BackendHttpRoutes.CHATS) {
+            jsonBody("""{"userId":"$userId","requestId":"$requestId","clientType":"backend"}""")
+        }
+        assertEquals(HttpStatusCode.Created, created.status)
+        return created.jsonBody()["chat"]["id"].asText()
+    }
+
+    suspend fun readJson(session: DefaultClientWebSocketSession): JsonNode =
+        json.readTree((session.incoming.receive() as Frame.Text).readText())
+
+    suspend fun <T> withPublicSocket(chatId: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
+        webSocketClient().use { client ->
+            val session = client.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            try {
+                block(session)
+            } finally {
+                session.close()
+            }
+        }
 
     suspend fun HttpResponse.jsonBody(): JsonNode =
         json.readTree(bodyAsText())

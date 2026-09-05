@@ -1,6 +1,8 @@
 package ru.souz.backend.client
 
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonSubTypes
+import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.databind.JsonNode
 
 data class CreateClientChatRequest(
@@ -30,11 +32,32 @@ data class ClientDevice(
     val platform: String? = null,
 )
 
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.NAME,
+    include = JsonTypeInfo.As.EXISTING_PROPERTY,
+    property = "type",
+    visible = true,
+)
+@JsonSubTypes(
+    JsonSubTypes.Type(value = RecognizedTextContent::class, name = "text"),
+    JsonSubTypes.Type(value = HistoryToolExchangeContent::class, name = "tool_exchange"),
+)
+sealed interface HistoryAppendContent {
+    val type: String
+}
+
 data class RecognizedTextContent(
-    val type: String,
+    override val type: String,
     val source: String,
     val text: String,
-)
+) : HistoryAppendContent
+
+data class HistoryToolExchangeContent(
+    override val type: String,
+    val name: String,
+    val arguments: Map<String, JsonNode>,
+    val output: Map<String, JsonNode>,
+) : HistoryAppendContent
 
 data class ClientRequestMeta(
     val locale: String? = null,
@@ -54,6 +77,18 @@ data class MessageSubmitFrame(
     val requestId: String,
     val threadId: String? = null,
     val payload: MessageSubmitPayload,
+)
+
+data class HistoryAppendPayload(
+    val role: String,
+    val content: HistoryAppendContent,
+)
+
+data class HistoryAppendFrame(
+    val kind: String,
+    val chatId: String,
+    val requestId: String,
+    val payload: HistoryAppendPayload,
 )
 
 data class ToolResultFrame(
@@ -156,6 +191,17 @@ data class MessageSubmitAck(
 )
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
+data class HistoryAppendAck(
+    val kind: String = "ack",
+    val chatId: String,
+    val requestId: String,
+    val status: String,
+    val duplicate: Boolean,
+    val error: ClientError? = null,
+    val receivedAt: String,
+)
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
 data class ToolResultAck(
     val kind: String = "ack",
     val chatId: String,
@@ -180,6 +226,9 @@ data class ThreadCancelAck(
 )
 
 internal val supportedClientTypes = setOf("backend", "mobile_app")
+internal const val MESSAGE_ROLE_USER = "user"
+internal const val MESSAGE_ROLE_ASSISTANT = "assistant"
+internal val supportedMessageRoles = setOf(MESSAGE_ROLE_USER, MESSAGE_ROLE_ASSISTANT)
 internal val supportedDeviceTypes = setOf("tv_box", "smart_speaker", "smartphone", "unknown")
 internal val supportedDeviceCapabilities =
     setOf("speech", "screen", "device_tools", "user_permissions", "deep_links", "oauth")

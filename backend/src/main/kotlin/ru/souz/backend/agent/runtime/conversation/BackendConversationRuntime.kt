@@ -1,21 +1,30 @@
 package ru.souz.backend.agent.runtime.conversation
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import ru.souz.agent.ActiveRunInput
 import ru.souz.agent.AgentContextFactory
 import ru.souz.agent.AgentExecutor
 import ru.souz.agent.AgentId
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.chat.model.CROSS_CHANNEL_MESSAGE_METADATA_KEY
+import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
 import ru.souz.backend.chat.model.ChatMessage
+import ru.souz.backend.chat.model.ChatRole
+import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.tool.skills.ToolInvokeSkill
 
 /** Request-scoped backend conversation runtime rebuilt from the stored snapshot. */
 internal class BackendConversationRuntime(
@@ -26,19 +35,21 @@ internal class BackendConversationRuntime(
     private val executor: AgentExecutor,
     private val executionApi: BackendExecutionLlmChatApi,
     private val persistedSession: AgentConversationSession?,
-    private val pendingMessages: List<ChatMessage>,
+    private val initialMessages: List<LLMRequest.Message>,
+    initialObservedMessageSeq: Long,
 ) {
+    private val cursorMutex = Mutex()
+    private var observedMessageSeq = initialObservedMessageSeq
+
     internal suspend fun execute(
         request: BackendConversationTurnRequest,
         persistSession: Boolean = true,
         eventSink: AgentRuntimeEventSink? = null,
-        onActiveRunReady: suspend () -> Unit = {},
+        onRuntimeReady: suspend () -> Unit = {},
     ): BackendConversationExecution {
         val seedContext = contextFactory.create(
             agentId = AgentId.SKILLS_GRAPH,
-            history = persistedSession?.history.orEmpty() + pendingMessages
-                .filter { it.metadata[CROSS_CHANNEL_MESSAGE_METADATA_KEY] == "true" }
-                .map { LLMRequest.Message(role = LLMMessageRole.assistant, content = it.content) },
+            history = persistedSession?.history.orEmpty() + initialMessages,
             model = settingsProvider.gigaModel,
             contextSize = request.contextSize,
             temperature = settingsProvider.temperature,
@@ -56,17 +67,14 @@ internal class BackendConversationRuntime(
             context = seedContext,
             input = request.prompt,
             eventSink = eventSink,
-            onActiveRunReady = onActiveRunReady,
+            onActiveRunReady = onRuntimeReady,
         )
         val nextSession = AgentConversationSession(
             history = result.context.history,
             temperature = result.context.settings.temperature,
             locale = request.locale,
             timeZone = request.timeZone,
-            basedOnMessageSeq = pendingMessages.lastOrNull()?.seq
-                ?: request.inputMessageSeq
-                ?: persistedSession?.basedOnMessageSeq
-                ?: 0L,
+            basedOnMessageSeq = cursorMutex.withLock { observedMessageSeq },
             rowVersion = persistedSession?.rowVersion ?: 0L,
         )
 
@@ -83,9 +91,129 @@ internal class BackendConversationRuntime(
 
     internal suspend fun currentUsage(): LLMResponse.Usage = executionApi.cumulativeUsage()
 
-    internal suspend fun submitToActiveRun(input: String): Boolean =
-        executor.submitToActiveRun(AgentId.SKILLS_GRAPH, input)
+    /**
+     * Serializes the durable execute barrier and publishes the committed row plus every relevant
+     * preceding message as one active-run input.
+     */
+    internal suspend fun commitActiveRunInput(
+        commit: suspend (afterSeq: Long) -> ClientRequestResult,
+    ): ClientRequestResult? {
+        var committed: ClientRequestResult? = null
+        val published = executor.submitToActiveRun(AgentId.SKILLS_GRAPH) {
+            cursorMutex.withLock {
+                when (val result = commit(observedMessageSeq).also { committed = it }) {
+                    is ClientRequestResult.Accepted -> {
+                        val inputMessage = requireNotNull(result.messageDelta.lastOrNull()) {
+                            "An accepted active-run input must include its durable message delta"
+                        }
+                        require(inputMessage.seq > observedMessageSeq) {
+                            "Accepted active-run input must advance the durable message cursor"
+                        }
+                        require(result.messageDelta.all { message ->
+                            message.seq > observedMessageSeq && message.seq <= inputMessage.seq
+                        }) {
+                            "Active-run message delta is outside its durable cursor range"
+                        }
+                        val input = ActiveRunInput(
+                            history = result.messageDelta
+                                .asSequence()
+                                .filter { it.seq < inputMessage.seq }
+                                .flatMap { it.toAgentHistoryMessages().asSequence() }
+                                .toList(),
+                            input = inputMessage.content,
+                        )
+                        observedMessageSeq = inputMessage.seq
+                        input
+                    }
 
-    internal suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
-        executor.submitToActiveRunAfter(AgentId.SKILLS_GRAPH, input, beforePublish)
+                    else -> null
+                }
+            }
+        }
+        check(published || committed !is ClientRequestResult.Accepted) {
+            "Committed active-run input was not published"
+        }
+        return committed
+    }
 }
+
+internal data class InitialConversationMessages(
+    val messages: List<LLMRequest.Message>,
+    val observedThroughSeq: Long,
+)
+
+/** Loads the bounded durable prefix represented by one reconstructed runtime. */
+internal suspend fun loadInitialConversationMessages(
+    messageRepository: MessageRepository,
+    key: AgentConversationKey,
+    basedOnMessageSeq: Long,
+    inputMessageSeq: Long?,
+): InitialConversationMessages {
+    val context = mutableListOf<LLMRequest.Message>()
+    var observedThroughSeq = basedOnMessageSeq
+    var pageAfterSeq = basedOnMessageSeq
+    scan@ while (inputMessageSeq == null || pageAfterSeq < inputMessageSeq) {
+        val page = messageRepository.list(
+            userId = key.userId,
+            chatId = key.chatId(),
+            afterSeq = pageAfterSeq.takeIf { it > 0L },
+            limit = MessageRepository.MAX_LIMIT,
+        )
+        if (page.isEmpty()) break
+        for (message in page) {
+            if (inputMessageSeq != null && message.seq >= inputMessageSeq) break@scan
+            if (inputMessageSeq == null && message.isClientHistory) break@scan
+            context += message.toAgentHistoryMessages()
+            observedThroughSeq = message.seq
+        }
+        if (page.size < MessageRepository.MAX_LIMIT) break
+        check(page.last().seq > pageAfterSeq) { "Message pagination did not advance" }
+        pageAfterSeq = page.last().seq
+    }
+    return InitialConversationMessages(
+        messages = context,
+        observedThroughSeq = inputMessageSeq?.let { maxOf(basedOnMessageSeq, it) } ?: observedThroughSeq,
+    )
+}
+
+private val ChatMessage.isClientHistory: Boolean
+    get() = CLIENT_HISTORY_MESSAGE_METADATA_KEY in metadata
+
+private fun ChatMessage.toAgentHistoryMessages(): List<LLMRequest.Message> =
+    when (val toolArguments = metadata[CLIENT_HISTORY_MESSAGE_METADATA_KEY]) {
+        null -> if (metadata[CROSS_CHANNEL_MESSAGE_METADATA_KEY] == "true") {
+            listOf(LLMRequest.Message(role = LLMMessageRole.assistant, content = content))
+        } else {
+            emptyList()
+        }
+
+        "true" -> listOf(
+            LLMRequest.Message(
+                when (role) {
+                    ChatRole.USER -> LLMMessageRole.user
+                    ChatRole.ASSISTANT -> LLMMessageRole.assistant
+                    else -> error("Client history has unsupported role ${role.value}")
+                },
+                content,
+            )
+        )
+
+        else -> {
+            check(role == ChatRole.ASSISTANT) { "Client tool history must use the assistant role" }
+            val toolCallId = id.toString()
+            listOf(
+                LLMRequest.Message(
+                    LLMMessageRole.assistant,
+                    "",
+                    toolCallId,
+                    functionCall = LLMRequest.FunctionCall(ToolInvokeSkill.NAME, toolArguments),
+                ),
+                LLMRequest.Message(
+                    LLMMessageRole.function,
+                    content,
+                    toolCallId,
+                    name = ToolInvokeSkill.NAME,
+                ),
+            )
+        }
+    }

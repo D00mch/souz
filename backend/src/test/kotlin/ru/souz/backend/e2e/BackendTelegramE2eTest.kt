@@ -356,14 +356,6 @@ class BackendTelegramE2eTest {
         }
     }
 
-    private suspend fun BackendE2eScope.createPublicChat(userId: String, requestId: String): String {
-        val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"$requestId","clientType":"backend"}""")
-        }
-        assertEquals(HttpStatusCode.Created, created.status)
-        return created.jsonBody()["chat"]["id"].asText()
-    }
-
     private suspend fun BackendE2eScope.binding(userId: String, chatId: String) =
         assertNotNull(
             client.get(BackendHttpRoutes.chatTelegramBot(chatId)) {

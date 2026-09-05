@@ -5,7 +5,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 
 class AgentExecutor internal constructor(
-    private val agentProvider: (AgentId) -> TraceableAgent,
+    private val agentProvider: (AgentId) -> Agent,
     // Execution can be called with an agent ID persisted by a different host configuration.
     // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
     private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
@@ -17,22 +17,17 @@ class AgentExecutor internal constructor(
     fun sideEffects(agentId: AgentId): Flow<AgentStreamChunk> = agentById(agentId).sideEffects
 
     fun supportsActiveRunInput(agentId: AgentId): Boolean =
-        agentById(agentId).supportsActiveRunInput
+        activeRunInterruptor(agentId) != null
 
     suspend fun cancelActiveJob(agentId: AgentId) {
         agentById(agentId).cancelActiveJob()
     }
 
-    /** Returns true only when the selected agent accepts input into its current open execution. */
-    suspend fun submitToActiveRun(agentId: AgentId, input: String): Boolean =
-        agentById(agentId).submitToActiveRun(input)
-
-    /** Publishes input only after the selected agent keeps its run open and [beforePublish] succeeds. */
-    suspend fun submitToActiveRunAfter(
+    /** Publishes a batch only after the selected agent keeps its run open and [build] succeeds. */
+    suspend fun submitToActiveRun(
         agentId: AgentId,
-        input: String,
-        beforePublish: suspend () -> Boolean,
-    ): Boolean = agentById(agentId).submitToActiveRunAfter(input, beforePublish)
+        build: suspend () -> ActiveRunInput?,
+    ): Boolean = activeRunInterruptor(agentId)?.submitToActiveRun(build) ?: false
 
     suspend fun execute(
         agentId: AgentId,
@@ -62,10 +57,13 @@ class AgentExecutor internal constructor(
             input = input,
             runtimeEventSink = runtimeEventSink,
         )
-        return agentById(agentId).executeWithTrace(seed, onActiveRunReady, onStep)
+        return agentById(agentId).execute(seed, onActiveRunReady, onStep)
     }
 
-    private fun agentById(agentId: AgentId): TraceableAgent = agentProvider(normalizeAgentId(agentId))
+    private fun agentById(agentId: AgentId): Agent = agentProvider(normalizeAgentId(agentId))
+
+    private fun activeRunInterruptor(agentId: AgentId): ActiveRunSteer? =
+        agentById(agentId) as? ActiveRunSteer
 
     private fun normalizeAgentId(agentId: AgentId): AgentId =
         if (agentId in availableAgents) agentId else availableAgents.first()

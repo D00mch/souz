@@ -115,12 +115,4 @@ class BackendOwnershipE2eTest {
             }
             assertEquals("execution.cancelled", ownerEvents.last()["type"].asText())
         }
-
-    private suspend fun BackendE2eScope.createPublicChat(userId: String): String {
-        val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"create-1","clientType":"backend"}""")
-        }
-        assertEquals(HttpStatusCode.Created, created.status)
-        return created.jsonBody()["chat"]["id"].asText()
-    }
 }

@@ -1,6 +1,5 @@
 package ru.souz.agent.nodes
 
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import java.io.File
@@ -25,42 +24,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
-    @Test
-    fun `provisional chat leaves the assistant response out of history`() = runTest {
-        val settingsProvider = mockk<AgentSettingsProvider> {
-            every { useStreaming } returns false
-        }
-        val response = LLMResponse.Chat.Ok(
-            choices = listOf(
-                LLMResponse.Choice(
-                    message = LLMResponse.Message(
-                        content = "provisional",
-                        role = LLMMessageRole.assistant,
-                        functionsStateId = null,
-                    ),
-                    index = 0,
-                    finishReason = LLMResponse.FinishReason.stop,
-                )
-            ),
-            created = 1,
-            model = "test-model",
-            usage = LLMResponse.Usage(1, 1, 2, 0),
-        )
-        val llmApi = mockk<LLMChatAPI> {
-            coEvery { message(any()) } returns response
-        }
-        val nodes = NodesLLM(llmApi, settingsProvider)
-        val originalHistory = listOf(LLMRequest.Message(LLMMessageRole.user, "Prompt"))
-
-        val result = nodes.provisionalChat().execute(
-            ctx = context(history = originalHistory),
-            runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
-        )
-
-        assertEquals(response, result.input)
-        assertEquals(originalHistory, result.history)
-    }
-
     @Test
     fun `streaming chat emits runtime deltas and keeps side effects batching`() = runTest {
         val runtimeEvents = mutableListOf<AgentRuntimeEvent>()

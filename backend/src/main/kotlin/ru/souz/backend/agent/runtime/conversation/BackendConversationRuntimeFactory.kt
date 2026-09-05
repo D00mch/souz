@@ -9,7 +9,6 @@ import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.model.chatId
 import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
@@ -91,16 +90,12 @@ internal class BackendConversationRuntimeFactory(
         )
         settingsProvider.applyRequest(request = request, temperature = temperature)
         val basedOnMessageSeq = persistedSession?.basedOnMessageSeq ?: 0L
-        val pendingMessages = if (request.inputMessageSeq == basedOnMessageSeq + 1L) {
-            emptyList()
-        } else {
-            messageRepository.list(
-                userId = key.userId,
-                chatId = key.chatId(),
-                afterSeq = basedOnMessageSeq.takeIf { it > 0L },
-                limit = MessageRepository.MAX_LIMIT,
-            )
-        }
+        val initialMessages = loadInitialConversationMessages(
+            messageRepository = messageRepository,
+            key = key,
+            basedOnMessageSeq = basedOnMessageSeq,
+            inputMessageSeq = request.inputMessageSeq,
+        )
 
         val testApi = testLlmApiFactory?.invoke(settingsProvider)
         val executionApi = BackendExecutionLlmChatApi(
@@ -203,7 +198,8 @@ internal class BackendConversationRuntimeFactory(
             executor = kernel.executor,
             executionApi = executionApi,
             persistedSession = persistedSession,
-            pendingMessages = pendingMessages,
+            initialMessages = initialMessages.messages,
+            initialObservedMessageSeq = initialMessages.observedThroughSeq,
         )
     }
 }

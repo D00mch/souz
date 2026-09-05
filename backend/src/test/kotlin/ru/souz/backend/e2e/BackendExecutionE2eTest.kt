@@ -204,15 +204,4 @@ class BackendExecutionE2eTest {
             assertEquals("true", delivered["metadata"]["crossChannel"].asText())
         }
     }
-
-    private suspend fun BackendE2eScope.createPublicChat(
-        userId: String,
-        requestId: String = "create-1",
-    ): String {
-        val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"$requestId","clientType":"backend"}""")
-        }
-        assertEquals(HttpStatusCode.Created, created.status)
-        return created.jsonBody()["chat"]["id"].asText()
-    }
 }

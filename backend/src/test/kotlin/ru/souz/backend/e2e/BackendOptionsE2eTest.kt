@@ -114,14 +114,6 @@ class BackendOptionsE2eTest {
             assertEquals(HttpStatusCode.NotFound, response.status)
             assertEquals("feature_disabled", response.jsonBody()["error"]["code"].asText())
         }
-
-    private suspend fun BackendE2eScope.createPublicChat(userId: String): String {
-        val created = client.post(BackendHttpRoutes.CHATS) {
-            jsonBody("""{"userId":"$userId","requestId":"create-1","clientType":"backend"}""")
-        }
-        assertEquals(HttpStatusCode.Created, created.status)
-        return created.jsonBody()["chat"]["id"].asText()
-    }
 }
 
 private class ScriptedOptionTurnRunner : BackendConversationTurnRunner {

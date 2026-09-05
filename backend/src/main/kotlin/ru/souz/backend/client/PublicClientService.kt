@@ -1,6 +1,8 @@
 package ru.souz.backend.client
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import java.time.Instant
@@ -12,10 +14,12 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
+import ru.souz.backend.client.repository.ClientHistoryInput
 import ru.souz.backend.client.repository.ClientRequestKey
 import ru.souz.backend.client.repository.ClientRequestRepository
 import ru.souz.backend.client.repository.ClientRequestResult
@@ -36,8 +40,11 @@ import kotlin.time.Duration.Companion.milliseconds
 
 internal data class HandledClientFrame(
     val response: Any,
+    val statusFeedback: ThreadStatusFeedback? = null,
     val afterSend: suspend () -> Unit = {},
 )
+
+internal data class ThreadStatusFeedback(val threadId: UUID, val requestId: String)
 
 internal class PublicClientService(
     private val chatRepository: ChatRepository,
@@ -66,7 +73,7 @@ internal class PublicClientService(
         val now = Instant.now()
         val requestId = frame.requestId.required("requestId")
         validateDevice(chat, frame.payload.device)
-        validateContent(frame.payload.content)
+        frame.payload.content.validatedText()
         val requestedThreadId = frame.threadId?.uuid("threadId")
         val key = ClientRequestKey(
             chatId = chat.id,
@@ -91,8 +98,44 @@ internal class PublicClientService(
         return when (result) {
             is ClientRequestResult.Continue -> continueThread(chat, frame, key, result.execution, now)
             ClientRequestResult.CreateThread -> startThread(chat, frame, key, now)
-            else -> handledMessage(result, key, now)
+            else -> handledReceipt(result, key, now)
         }
+    }
+
+    suspend fun handleHistory(chat: Chat, frame: HistoryAppendFrame): HandledClientFrame {
+        val now = Instant.now()
+        val requestId = frame.requestId.required("requestId")
+        val role = frame.payload.role.takeIf { it in supportedMessageRoles }
+            ?: throw ClientContractException("invalid_request", "Unsupported message role.")
+        val input = historyInput(role.toChatRole(), frame.payload.content)
+        val key = ClientRequestKey(
+            chatId = chat.id,
+            requestId = requestId,
+            kind = frame.kind,
+            payloadHash = PublicPayloadHash.ofJson(
+                mapper.valueToTree<JsonNode>(
+                    linkedMapOf(
+                        "kind" to frame.kind,
+                        "role" to role,
+                        "content" to frame.payload.content,
+                    ),
+                ),
+            ),
+        )
+        val ack = HistoryAppendAck(
+            chatId = chat.id.toString(),
+            requestId = requestId,
+            status = "accepted",
+            duplicate = false,
+            receivedAt = now.toString(),
+        )
+        val result = clientRequestRepository.commitHistory(
+            userId = chat.userId,
+            key = key,
+            input = input,
+            acceptedRequest = key.request(threadId = null, response = ack, now = now),
+        )
+        return handledReceipt(result, key, now)
     }
 
     suspend fun handleToolResult(chat: Chat, frame: ToolResultFrame): HandledClientFrame {
@@ -205,7 +248,7 @@ internal class PublicClientService(
                 executionService.propagateCancellation(accepted.execution)
             },
         )
-        return handledCancel(result, key, threadId, now)
+        return handledReceipt(result, key, now, threadId)
     }
 
     private suspend fun startThread(
@@ -249,7 +292,7 @@ internal class PublicClientService(
             return if (result is ClientRequestResult.Continue) {
                 continueThread(chat, frame, key, result.execution, now)
             } else {
-                handledMessage(result, key, now)
+                handledReceipt(result, key, now)
             }
         }
         val startupFailure = runCatching {
@@ -261,7 +304,7 @@ internal class PublicClientService(
             }
             if (failure is CancellationException) throw failure
         }
-        return handledMessage(result, key, now)
+        return handledReceipt(result, key, now)
     }
 
     private suspend fun continueThread(
@@ -277,10 +320,11 @@ internal class PublicClientService(
             metadata = inputMetadata(frame),
             latestDeviceContextJson = mapper.writeValueAsString(frame.payload.device),
         )
-        suspend fun commit(input: ClientFollowUpInput?) = clientRequestRepository.commitFollowUp(
+        suspend fun commit(afterSeq: Long, input: ClientFollowUpInput?) = clientRequestRepository.commitFollowUp(
             userId = chat.userId,
             key = key,
             threadId = threadId,
+            afterSeq = afterSeq,
             input = input,
             acceptedRequest = { revision ->
                 key.request(
@@ -299,13 +343,12 @@ internal class PublicClientService(
                 threadId = threadId,
                 requestId = key.requestId,
                 device = frame.payload.device,
-                input = frame.payload.content.text,
-                commit = { commit(input) },
+                commit = { afterSeq -> commit(afterSeq, input) },
             )
         } else {
             null
-        } ?: commit(null)
-        return handledMessage(result, key, now)
+        } ?: commit(afterSeq = 0L, input = null)
+        return handledReceipt(result, key, now)
     }
 
     private fun acceptedMessage(
@@ -463,48 +506,55 @@ internal class PublicClientService(
         }
     }
 
-    private fun validateContent(content: RecognizedTextContent) {
-        if (content.type != "text") throw ClientContractException("invalid_request", "content.type must be text.")
-        if (content.source != "voice" && content.source != "text") {
+    private fun RecognizedTextContent.validatedText(): String {
+        if (type != "text") throw ClientContractException("invalid_request", "content.type must be text.")
+        if (source != "voice" && source != "text") {
             throw ClientContractException("invalid_request", "content.source must be voice or text.")
         }
-        content.text.required("content.text")
+        return text.required("content.text")
     }
 
-    private fun handledMessage(
+    private fun historyInput(role: ChatRole, content: HistoryAppendContent): ClientHistoryInput = when (content) {
+        is RecognizedTextContent -> ClientHistoryInput(role, content.validatedText())
+
+        is HistoryToolExchangeContent -> {
+            if (role != ChatRole.ASSISTANT) {
+                throw ClientContractException("invalid_request", "tool_exchange history requires assistant role.")
+            }
+            val name = content.name.required("content.name")
+            ClientHistoryInput(
+                role = role,
+                content = mapper.writeValueAsString(content.output),
+                toolArgumentsJson = mapper.writeValueAsString(
+                    mapOf("skillId" to name, "arguments" to content.arguments),
+                ),
+            )
+        }
+    }
+
+    private fun handledReceipt(
         result: ClientRequestResult,
         key: ClientRequestKey,
         now: Instant,
+        threadId: UUID? = null,
     ): HandledClientFrame {
         if (result is ClientRequestResult.Conflict) {
-            return rejectedMessage(
-                key.chatId, key.requestId, "idempotency_conflict",
-                "requestId was used with a different payload.", now,
-            )
+            val code = "idempotency_conflict"
+            val message = "requestId was used with a different payload."
+            return when (key.kind) {
+                "message.submit" -> rejectedMessage(key.chatId, key.requestId, code, message, now)
+                "history.append" -> rejectedHistory(key.chatId, key.requestId, code, message, now)
+                "thread.cancel" -> rejectedCancel(key.chatId, key.requestId, requireNotNull(threadId), code, message, now)
+                else -> error("Unsupported receipt kind: ${key.kind}")
+            }
         }
         val request = result.storedRequest()
-        val original = mapper.readValue(request.ackJson, MessageSubmitAck::class.java)
-        return HandledClientFrame(original.copy(duplicate = result is ClientRequestResult.Duplicate)) {
-            if (original.status == "accepted") request.threadId?.let { registry.ackSent(it, request.requestId) }
-        }
-    }
-
-    private fun handledCancel(
-        result: ClientRequestResult,
-        key: ClientRequestKey,
-        threadId: UUID,
-        now: Instant,
-    ): HandledClientFrame {
-        if (result is ClientRequestResult.Conflict) {
-            return rejectedCancel(
-                key.chatId, key.requestId, threadId, "idempotency_conflict",
-                "requestId was used with a different payload.", now,
-            )
-        }
-        val request = result.storedRequest()
-        val original = mapper.readValue(request.ackJson, ThreadCancelAck::class.java)
-        return HandledClientFrame(original.copy(duplicate = result is ClientRequestResult.Duplicate)) {
-            if (original.status == "accepted") registry.ackSent(threadId, request.requestId)
+        val response = (mapper.readTree(request.ackJson) as ObjectNode)
+            .put("duplicate", result is ClientRequestResult.Duplicate)
+        val feedback = request.threadId?.takeIf { response["status"].asText() == "accepted" }
+            ?.let { ThreadStatusFeedback(it, request.requestId) }
+        return HandledClientFrame(response, statusFeedback = feedback) {
+            feedback?.let { registry.ackSent(it.threadId, it.requestId) }
         }
     }
 
@@ -567,6 +617,19 @@ internal class PublicClientService(
             )
         )
 
+    private fun rejectedHistory(
+        chatId: UUID,
+        requestId: String,
+        code: String,
+        message: String,
+        now: Instant,
+    ) = HandledClientFrame(
+        HistoryAppendAck(
+            chatId = chatId.toString(), requestId = requestId, status = "rejected", duplicate = false,
+            error = ClientError(code, message), receivedAt = now.toString(),
+        )
+    )
+
     private fun acceptedTool(chatId: UUID, threadId: UUID, toolCallId: String, duplicate: Boolean, now: Instant) =
         ToolResultAck(
             chatId = chatId.toString(), toolCallId = toolCallId, threadId = threadId.toString(),
@@ -593,6 +656,7 @@ internal class PublicClientService(
 
 private fun ClientRequestResult.storedRequest(): ClientRequest = when (this) {
     is ClientRequestResult.Accepted -> request
+    is ClientRequestResult.HistoryAccepted -> request
     is ClientRequestResult.Duplicate -> request
     is ClientRequestResult.Rejected -> request
     else -> error("Request has no stored transport result: $this")
@@ -615,6 +679,12 @@ private fun String.toToolCallStatus(): ToolCallStatus = when (this) {
     "cancelled" -> ToolCallStatus.CANCELLED
     "timed_out" -> ToolCallStatus.TIMED_OUT
     else -> error("Unsupported tool status: $this")
+}
+
+private fun String.toChatRole(): ChatRole = when (this) {
+    MESSAGE_ROLE_USER -> ChatRole.USER
+    MESSAGE_ROLE_ASSISTANT -> ChatRole.ASSISTANT
+    else -> error("Unsupported message role: $this")
 }
 
 private fun String.toPublicClientErrorCode(): String =

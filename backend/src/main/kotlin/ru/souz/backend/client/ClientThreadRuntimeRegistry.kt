@@ -114,21 +114,20 @@ internal class ClientThreadRuntimeRegistry(
         threadId: UUID,
         requestId: String,
         device: ClientDevice,
-        input: String,
-        commit: suspend () -> ClientRequestResult,
+        commit: suspend (afterSeq: Long) -> ClientRequestResult,
     ): ClientRequestResult? = mutex.withLock {
         val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock null
         val runtime = state.runtime ?: return@withLock null
-        var committed: ClientRequestResult? = null
-        val published = runtime.submitToActiveRunAfter(input) {
-            withContext(NonCancellable) { commit() }.let { result ->
-                committed = result
-                (result is ClientRequestResult.Accepted).also { accepted ->
-                    if (accepted) state.pendingAcks[requestId] = CompletableDeferred()
+        val committed = runtime.commitActiveRunInput { afterSeq ->
+            withContext(NonCancellable) {
+                commit(afterSeq).also { result ->
+                    if (result is ClientRequestResult.Accepted) {
+                        state.pendingAcks[requestId] = CompletableDeferred()
+                        state.latestDevice = device
+                    }
                 }
             }
         }
-        if (published) state.latestDevice = device
         committed
     }
 

@@ -134,7 +134,7 @@ class GraphBasedAgentTest {
         val executed = mutableListOf<String>()
         var historyAtClassification: List<LLMRequest.Message>? = null
 
-        val result = agent.executeWithTrace(context) { _, node, from, _ ->
+        val result = agent.execute(context) { _, node, from, _ ->
             val nodeName = node.name.removePrefix("Node ").substringBefore(';')
             if (nodeName in expectedRun) executed += nodeName
             if (nodeName == CLASSIFY_NODE_NAME) historyAtClassification = from.history
@@ -146,7 +146,6 @@ class GraphBasedAgentTest {
         assertFalse(classifierHistory.any { it.content.contains("Previous memory") })
         assertTrue(classifierHistory.any { it.content.contains("Fresh memory") })
         assertEquals(1, classifierHistory.count(LLMRequest.Message::isInjectedMemoryContextMessage))
-        assertFalse(agent.submitToActiveRun("classic graph follow-up"))
     }
 
     private fun passthroughStringNode(name: String): Node<String, String> = Node(name) { it }

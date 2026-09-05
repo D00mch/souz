@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
-import ru.souz.agent.TraceableAgent
+import ru.souz.agent.Agent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
@@ -42,7 +42,7 @@ class GraphBasedAgent internal constructor(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
     ),
-) : TraceableAgent {
+) : Agent {
 
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.graphAlwaysInlineResultTools
@@ -93,10 +93,7 @@ class GraphBasedAgent internal constructor(
         executionDelegate.cancelActiveJob()
     }
 
-    override suspend fun execute(ctx: AgentContext<String>): String =
-        executeWithTrace(ctx).output
-
-    override suspend fun executeWithTrace(
+    override suspend fun execute(
         ctx: AgentContext<String>,
         onActiveRunReady: suspend () -> Unit,
         onStep: GraphStepCallback?,

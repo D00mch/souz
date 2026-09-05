@@ -6,10 +6,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.withContext
+import ru.souz.agent.ActiveRunInput
+import ru.souz.agent.ActiveRunSteer
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
-import ru.souz.agent.TraceableAgent
+import ru.souz.agent.Agent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
@@ -22,7 +24,7 @@ import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
-import ru.souz.agent.nodes.SteerableChat
+import ru.souz.agent.nodes.SteerableChatNode
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.runtime.GraphExecutionDelegateImpl
@@ -47,8 +49,7 @@ class SkillsGraphBasedAgent internal constructor(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),
-) : TraceableAgent {
-    override val supportsActiveRunInput: Boolean = true
+) : Agent, ActiveRunSteer {
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
     private val skillsCoreTools = coreTools.skillsCoreTools
@@ -62,7 +63,7 @@ class SkillsGraphBasedAgent internal constructor(
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
-        val chat = SteerableChat(nodesLLM, controller)
+        val chat = SteerableChatNode(nodesLLM, controller)
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
         }
@@ -96,16 +97,10 @@ class SkillsGraphBasedAgent internal constructor(
         executionDelegate.cancelActiveJob()
     }
 
-    override suspend fun submitToActiveRun(input: String): Boolean =
-        activeRun.value?.submit(input) ?: false
+    override suspend fun submitToActiveRun(build: suspend () -> ActiveRunInput?): Boolean =
+        activeRun.value?.submit(build) ?: false
 
-    override suspend fun submitToActiveRunAfter(input: String, beforePublish: suspend () -> Boolean): Boolean =
-        activeRun.value?.submitAfter(input, beforePublish) ?: false
-
-    override suspend fun execute(ctx: AgentContext<String>): String =
-        executeWithTrace(ctx).output
-
-    override suspend fun executeWithTrace(
+    override suspend fun execute(
         ctx: AgentContext<String>,
         onActiveRunReady: suspend () -> Unit,
         onStep: GraphStepCallback?,
