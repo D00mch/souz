@@ -5,6 +5,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -16,24 +17,34 @@ internal class ActiveRunInputController(
     private val mutex: Mutex = Mutex(),
 ) {
     private var state: State = State.Open()
+    private var pendingSubmissions = 0
+    private var submissionsFinished: CompletableDeferred<Unit>? = null
 
     /**
-     * Reserves an open mailbox, runs [build], and publishes its result at one ordering point.
-     * Final sealing waits for the reservation, allowing durable state to commit before input is visible.
+     * Reserves an open mailbox while [build] runs outside its mutex, then publishes atomically.
+     * Closure waits for all submissions; draining can observe each input as soon as it is published.
      */
     suspend fun submit(build: suspend () -> ActiveRunInput?): Boolean {
-        if (!reserveInput()) return false
-        var released = false
-        return try {
-            val input = build()
-            val published = withContext(NonCancellable) {
-                releaseReservation(input).also { released = true }
-            }
-            currentCoroutineContext().ensureActive()
-            published
-        } finally {
-            if (!released) withContext(NonCancellable) { releaseReservation(input = null) }
+        mutex.withLock {
+            if (state !is State.Open) return false
+            if (pendingSubmissions++ == 0) submissionsFinished = CompletableDeferred()
         }
+        var input: ActiveRunInput? = null
+        try {
+            input = build()
+        } finally {
+            withContext(NonCancellable) {
+                mutex.withLock {
+                    input?.let { enqueueLocked(openState(), it) }
+                    if (--pendingSubmissions == 0) {
+                        submissionsFinished?.complete(Unit)
+                        submissionsFinished = null
+                    }
+                }
+            }
+        }
+        currentCoroutineContext().ensureActive()
+        return input != null
     }
 
     /** Returns queued input or the revision and notification for the next LLM attempt. */
@@ -55,34 +66,33 @@ internal class ActiveRunInputController(
     /** Atomically drains pending input or closes an empty mailbox around a final response. */
     suspend fun drainOrSeal(): List<ActiveRunInput>? {
         while (true) {
-            val pendingReservation = mutex.withLock {
+            val (finished, inputAvailable) = mutex.withLock {
                 val open = openState()
-                when {
-                    open.queuedInputs.isNotEmpty() -> return drainLocked(open)
-                    open.pendingReservations > 0 -> open.reservationChanged
-                    else -> {
-                        closeLocked(open)
-                        return null
-                    }
+                if (open.queuedInputs.isNotEmpty()) return drainLocked(open)
+                val finished = submissionsFinished ?: run {
+                    closeLocked(open)
+                    return null
                 }
+                finished to open.inputAvailable
             }
-            pendingReservation.await()
+            select<Unit> {
+                finished.onAwait { }
+                inputAvailable.onAwait { }
+            }
         }
     }
 
     /** Stops accepting submissions in the same state machine as enqueueing and draining. */
     suspend fun close() {
         while (true) {
-            val pendingReservation = mutex.withLock {
+            val pending = mutex.withLock {
                 val open = state as? State.Open ?: return
-                if (open.pendingReservations > 0) {
-                    open.reservationChanged
-                } else {
+                submissionsFinished ?: run {
                     closeLocked(open)
                     return
                 }
             }
-            pendingReservation.await()
+            pending.await()
         }
     }
 
@@ -92,37 +102,13 @@ internal class ActiveRunInputController(
     private fun drainLocked(open: State.Open): List<ActiveRunInput> {
         check(open.queuedInputs.isNotEmpty()) { "Queued input is required" }
         val messages = open.queuedInputs.toList()
-        state = State.Open(
-            streamRevision = open.streamRevision,
-            pendingReservations = open.pendingReservations,
-            reservationChanged = open.reservationChanged,
-        )
+        state = State.Open(streamRevision = open.streamRevision)
         return messages
     }
 
     private fun closeLocked(open: State.Open) {
         state = State.Closed
         open.inputAvailable.complete(Unit)
-        open.reservationChanged.complete(Unit)
-    }
-
-    private suspend fun reserveInput(): Boolean = mutex.withLock {
-        val open = state as? State.Open ?: return false
-        state = open.copy(pendingReservations = open.pendingReservations + 1)
-        true
-    }
-
-    private suspend fun releaseReservation(input: ActiveRunInput?): Boolean = mutex.withLock {
-        val open = state as? State.Open ?: return false
-        check(open.pendingReservations > 0) { "No pending input reservation to release" }
-        state = open.copy(
-            pendingReservations = open.pendingReservations - 1,
-            reservationChanged = CompletableDeferred(),
-        )
-        val updated = state as State.Open
-        if (input != null) enqueueLocked(updated, input)
-        open.reservationChanged.complete(Unit)
-        input != null
     }
 
     private fun enqueueLocked(open: State.Open, input: ActiveRunInput) {
@@ -145,8 +131,6 @@ internal class ActiveRunInputController(
             val queuedInputs: ArrayDeque<ActiveRunInput> = ArrayDeque(),
             val streamRevision: Long = 0L,
             val inputAvailable: CompletableDeferred<Unit> = CompletableDeferred(),
-            val pendingReservations: Int = 0,
-            val reservationChanged: CompletableDeferred<Unit> = CompletableDeferred(),
         ) : State
 
         data object Closed : State
