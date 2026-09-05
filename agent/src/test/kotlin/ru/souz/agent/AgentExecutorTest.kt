@@ -72,15 +72,13 @@ class AgentExecutorTest {
         systemPrompt = "Base system prompt",
     )
 
-    private open class CapturingAgent : TraceableAgent {
+    private open class CapturingAgent : Agent {
         val executedContexts = mutableListOf<AgentContext<String>>()
         var receivedCallback: GraphStepCallback? = null
 
         override val sideEffects: Flow<AgentStreamChunk> = emptyFlow()
 
-        override suspend fun execute(ctx: AgentContext<String>): String = executeWithTrace(ctx).output
-
-        override suspend fun executeWithTrace(
+        override suspend fun execute(
             ctx: AgentContext<String>,
             onActiveRunReady: suspend () -> Unit,
             onStep: GraphStepCallback?,

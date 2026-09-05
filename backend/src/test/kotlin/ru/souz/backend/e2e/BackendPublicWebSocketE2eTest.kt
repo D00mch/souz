@@ -78,56 +78,53 @@ class BackendPublicWebSocketE2eTest {
         backendE2eTest("e2e_ws_second_input", llm = E2eLlmApi().apply { pauseUntilReleased() }) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "first", "device-1")))
+                val firstAck = readJson(session)
+                val firstStatus = readJson(session)
+                val threadId = firstAck["thread"]["id"].asText()
+                assertEquals(threadId, firstStatus["threadId"].asText())
+                assertTrue(firstAck["thread"]["created"].asBoolean())
+                llm.awaitPrompt("first")
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "first", "device-1")))
-            val firstAck = readJson(session)
-            val firstStatus = readJson(session)
-            val threadId = firstAck["thread"]["id"].asText()
-            assertEquals(threadId, firstStatus["threadId"].asText())
-            assertTrue(firstAck["thread"]["created"].asBoolean())
-            llm.awaitPrompt("first")
-
-            session.send(
-                Frame.Text(
-                    messageFrame(chatId, userId, "wrong-thread", UUID.randomUUID().toString(), "wrong", "device-1")
+                session.send(
+                    Frame.Text(
+                        messageFrame(chatId, userId, "wrong-thread", UUID.randomUUID().toString(), "wrong", "device-1")
+                    )
                 )
-            )
-            assertEquals("thread_not_found", readJson(session)["error"]["code"].asText())
+                assertEquals("thread_not_found", readJson(session)["error"]["code"].asText())
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-2", threadId, "second", "device-2")))
-            val secondAck = readJson(session)
-            val secondStatus = readJson(session)
-            assertEquals(threadId, secondAck["thread"]["id"].asText())
-            assertEquals(2, secondAck["submission"]["inputSeq"].asInt())
-            assertEquals(2, secondAck["thread"]["revision"].asInt())
-            assertFalse(secondAck["thread"]["created"].asBoolean())
-            assertEquals(2, secondStatus["revision"].asInt())
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-2", threadId, "second", "device-2")))
+                val secondAck = readJson(session)
+                val secondStatus = readJson(session)
+                assertEquals(threadId, secondAck["thread"]["id"].asText())
+                assertEquals(2, secondAck["submission"]["inputSeq"].asInt())
+                assertEquals(2, secondAck["thread"]["revision"].asInt())
+                assertFalse(secondAck["thread"]["created"].asBoolean())
+                assertEquals(2, secondStatus["revision"].asInt())
 
-            val implicitFollowUp = messageFrame(chatId, userId, "message-3", null, "third", "device-3")
-            session.send(Frame.Text(implicitFollowUp))
-            val thirdAck = readJson(session)
-            val thirdStatus = readJson(session)
-            assertEquals(threadId, thirdAck["thread"]["id"].asText())
-            assertEquals(3, thirdAck["submission"]["inputSeq"].asInt())
-            assertEquals(3, thirdAck["thread"]["revision"].asInt())
-            assertFalse(thirdAck["thread"]["created"].asBoolean())
-            assertEquals(3, thirdStatus["revision"].asInt())
+                val implicitFollowUp = messageFrame(chatId, userId, "message-3", null, "third", "device-3")
+                session.send(Frame.Text(implicitFollowUp))
+                val thirdAck = readJson(session)
+                val thirdStatus = readJson(session)
+                assertEquals(threadId, thirdAck["thread"]["id"].asText())
+                assertEquals(3, thirdAck["submission"]["inputSeq"].asInt())
+                assertEquals(3, thirdAck["thread"]["revision"].asInt())
+                assertFalse(thirdAck["thread"]["created"].asBoolean())
+                assertEquals(3, thirdStatus["revision"].asInt())
 
-            llm.release()
-            val terminal = readJson(session)
-            assertEquals("thread.completed", terminal["type"].asText())
+                llm.release()
+                val terminal = readJson(session)
+                assertEquals("thread.completed", terminal["type"].asText())
 
-            val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
-                trusted(userId)
-            }.jsonBody()["items"]
-            assertEquals(
-                listOf("first", "second", "third"),
-                messages.filter { it["role"].asText() == "user" }.map { it["content"].asText() },
-            )
-            session.close()
-            wsClient.close()
+                val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
+                    trusted(userId)
+                }.jsonBody()["items"]
+                assertEquals(
+                    listOf("first", "second", "third"),
+                    messages.filter { it["role"].asText() == "user" }.map { it["content"].asText() },
+                )
+            }
         }
 
     @Test
@@ -136,59 +133,56 @@ class BackendPublicWebSocketE2eTest {
         backendE2eTest("e2e_ws_cancel", llm = llm) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                try {
+                    coroutineScope {
+                        val reader = async {
+                            session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "cancel socket", "device-1")))
+                            val messageAck = readJson(session)
+                            val messageStatus = readJson(session)
+                            messageAck to messageStatus
+                        }
+                        llm.awaitPrompt("cancel socket")
+                        val (messageAck, messageStatus) = reader.await()
+                        val threadId = messageAck["thread"]["id"].asText()
+                        assertEquals(threadId, messageStatus["threadId"].asText())
 
-            try {
-                coroutineScope {
-                    val reader = async {
-                        session.send(Frame.Text(messageFrame(chatId, userId, "message-1", null, "cancel socket", "device-1")))
-                        val messageAck = readJson(session)
-                        val messageStatus = readJson(session)
-                        messageAck to messageStatus
+                        val cancelFrame =
+                            """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-1","threadId":"$threadId","reason":"user_requested"}"""
+                        session.send(Frame.Text(cancelFrame))
+                        val cancelAck = readJson(session)
+                        val cancelStatus = readJson(session)
+                        assertEquals("accepted", cancelAck["status"].asText())
+                        assertEquals("cancel-1", cancelAck["requestId"].asText())
+                        assertEquals(threadId, cancelStatus["threadId"].asText())
+
+                        session.send(Frame.Text(cancelFrame))
+                        assertEquals(cancelAck.deepCopy<ObjectNode>().put("duplicate", true), readJson(session))
+                        val duplicateStatus = readJson(session)
+                        assertEquals("thread.status", duplicateStatus["type"].asText())
+                        assertEquals("cancel-1", duplicateStatus["requestId"].asText())
+                        assertEquals(threadId, duplicateStatus["threadId"].asText())
+
+                        session.send(Frame.Text(messageFrame(chatId, userId, "message-2", null, "do not replace", "device-2")))
+                        val rejected = readJson(session)
+                        assertEquals("message_rejected", rejected["error"]["code"].asText())
+                        assertTrue(rejected["thread"].isNull)
+                        assertFalse(rejected.has("submission"))
+
+                        val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
+                            trusted(userId)
+                        }.jsonBody()["items"]
+                        assertEquals(
+                            listOf("cancel socket"),
+                            messages.filter { it["role"].asText() == "user" }.map { it["content"].asText() },
+                        )
+
+                        llm.releaseCancellation()
+                        assertEquals("thread.cancelled", readJson(session)["type"].asText())
                     }
-                    llm.awaitPrompt("cancel socket")
-                    val (messageAck, messageStatus) = reader.await()
-                    val threadId = messageAck["thread"]["id"].asText()
-                    assertEquals(threadId, messageStatus["threadId"].asText())
-
-                    val cancelFrame =
-                        """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-1","threadId":"$threadId","reason":"user_requested"}"""
-                    session.send(Frame.Text(cancelFrame))
-                    val cancelAck = readJson(session)
-                    val cancelStatus = readJson(session)
-                    assertEquals("accepted", cancelAck["status"].asText())
-                    assertEquals("cancel-1", cancelAck["requestId"].asText())
-                    assertEquals(threadId, cancelStatus["threadId"].asText())
-
-                    session.send(Frame.Text(cancelFrame))
-                    assertEquals(cancelAck.deepCopy<ObjectNode>().put("duplicate", true), readJson(session))
-                    val duplicateStatus = readJson(session)
-                    assertEquals("thread.status", duplicateStatus["type"].asText())
-                    assertEquals("cancel-1", duplicateStatus["requestId"].asText())
-                    assertEquals(threadId, duplicateStatus["threadId"].asText())
-
-                    session.send(Frame.Text(messageFrame(chatId, userId, "message-2", null, "do not replace", "device-2")))
-                    val rejected = readJson(session)
-                    assertEquals("message_rejected", rejected["error"]["code"].asText())
-                    assertTrue(rejected["thread"].isNull)
-                    assertFalse(rejected.has("submission"))
-
-                    val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) {
-                        trusted(userId)
-                    }.jsonBody()["items"]
-                    assertEquals(
-                        listOf("cancel socket"),
-                        messages.filter { it["role"].asText() == "user" }.map { it["content"].asText() },
-                    )
-
+                } finally {
                     llm.releaseCancellation()
-                    assertEquals("thread.cancelled", readJson(session)["type"].asText())
                 }
-            } finally {
-                llm.releaseCancellation()
-                session.close()
-                wsClient.close()
             }
         }
     }
@@ -373,46 +367,42 @@ class BackendPublicWebSocketE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-tool", null, "ask me", "device-tool")))
+                val messageAck = readJson(session)
+                readJson(session)
+                val started = readJson(session)
+                val threadId = messageAck["thread"]["id"].asText()
+                val toolCallId = started["payload"]["toolCallId"].asText()
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-tool", null, "ask me", "device-tool")))
-            val messageAck = readJson(session)
-            readJson(session)
-            val started = readJson(session)
-            val threadId = messageAck["thread"]["id"].asText()
-            val toolCallId = started["payload"]["toolCallId"].asText()
+                assertEquals("tool.call.started", started["type"].asText())
+                assertEquals("user.ask", started["payload"]["name"].asText())
+                assertEquals("device-tool", started["payload"]["deviceId"].asText())
+                assertEquals("Which genre?", started["payload"]["arguments"]["question"].asText())
 
-            assertEquals("tool.call.started", started["type"].asText())
-            assertEquals("user.ask", started["payload"]["name"].asText())
-            assertEquals("device-tool", started["payload"]["deviceId"].asText())
-            assertEquals("Which genre?", started["payload"]["arguments"]["question"].asText())
+                val resultFrame =
+                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Horror"}}"""
+                session.send(Frame.Text(resultFrame))
+                val accepted = readJson(session)
+                val terminal = readJson(session)
+                assertEquals("accepted", accepted["status"].asText())
+                assertFalse(accepted["duplicate"].asBoolean())
+                assertEquals("thread.completed", terminal["type"].asText())
 
-            val resultFrame =
-                """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Horror"}}"""
-            session.send(Frame.Text(resultFrame))
-            val accepted = readJson(session)
-            val terminal = readJson(session)
-            assertEquals("accepted", accepted["status"].asText())
-            assertFalse(accepted["duplicate"].asBoolean())
-            assertEquals("thread.completed", terminal["type"].asText())
+                session.send(Frame.Text(resultFrame))
+                val duplicate = readJson(session)
+                assertEquals("accepted", duplicate["status"].asText())
+                assertTrue(duplicate["duplicate"].asBoolean())
 
-            session.send(Frame.Text(resultFrame))
-            val duplicate = readJson(session)
-            assertEquals("accepted", duplicate["status"].asText())
-            assertTrue(duplicate["duplicate"].asBoolean())
-
-            session.send(
-                Frame.Text(
-                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Comedy"}}"""
+                session.send(
+                    Frame.Text(
+                        """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Comedy"}}"""
+                    )
                 )
-            )
-            val conflict = readJson(session)
-            assertEquals("rejected", conflict["status"].asText())
-            assertEquals("idempotency_conflict", conflict["error"]["code"].asText())
-
-            session.close()
-            wsClient.close()
+                val conflict = readJson(session)
+                assertEquals("rejected", conflict["status"].asText())
+                assertEquals("idempotency_conflict", conflict["error"]["code"].asText())
+            }
         }
 
     @Test
@@ -425,32 +415,28 @@ class BackendPublicWebSocketE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-timeout", null, "ask with timeout", "device-timeout")))
+                val messageAck = readJson(session)
+                readJson(session)
+                val started = readJson(session)
+                val threadId = messageAck["thread"]["id"].asText()
+                val toolCallId = started["payload"]["toolCallId"].asText()
+                val timeoutFrame =
+                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"timed_out","error":{"code":"client_tool_timed_out","message":"Device deadline expired."}}"""
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-timeout", null, "ask with timeout", "device-timeout")))
-            val messageAck = readJson(session)
-            readJson(session)
-            val started = readJson(session)
-            val threadId = messageAck["thread"]["id"].asText()
-            val toolCallId = started["payload"]["toolCallId"].asText()
-            val timeoutFrame =
-                """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"timed_out","error":{"code":"client_tool_timed_out","message":"Device deadline expired."}}"""
+                session.send(Frame.Text(timeoutFrame))
+                val accepted = readJson(session)
+                val terminal = readJson(session)
+                assertEquals("accepted", accepted["status"].asText())
+                assertFalse(accepted["duplicate"].asBoolean())
+                assertEquals("thread.completed", terminal["type"].asText())
 
-            session.send(Frame.Text(timeoutFrame))
-            val accepted = readJson(session)
-            val terminal = readJson(session)
-            assertEquals("accepted", accepted["status"].asText())
-            assertFalse(accepted["duplicate"].asBoolean())
-            assertEquals("thread.completed", terminal["type"].asText())
-
-            session.send(Frame.Text(timeoutFrame))
-            val duplicate = readJson(session)
-            assertEquals("accepted", duplicate["status"].asText())
-            assertTrue(duplicate["duplicate"].asBoolean())
-
-            session.close()
-            wsClient.close()
+                session.send(Frame.Text(timeoutFrame))
+                val duplicate = readJson(session)
+                assertEquals("accepted", duplicate["status"].asText())
+                assertTrue(duplicate["duplicate"].asBoolean())
+            }
         }
 
     @Test
@@ -463,33 +449,29 @@ class BackendPublicWebSocketE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-devices", null, "list mcp devices", "device-mcp")))
+                val messageAck = readJson(session)
+                readJson(session)
+                val started = readJson(session)
+                val threadId = messageAck["thread"]["id"].asText()
+                val toolCallId = started["payload"]["toolCallId"].asText()
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-devices", null, "list mcp devices", "device-mcp")))
-            val messageAck = readJson(session)
-            readJson(session)
-            val started = readJson(session)
-            val threadId = messageAck["thread"]["id"].asText()
-            val toolCallId = started["payload"]["toolCallId"].asText()
+                assertEquals("tool.call.started", started["type"].asText())
+                assertEquals("device.mcp.list_devices", started["payload"]["name"].asText())
+                assertEquals("device-mcp", started["payload"]["deviceId"].asText())
+                assertTrue(started["payload"]["arguments"].isEmpty)
 
-            assertEquals("tool.call.started", started["type"].asText())
-            assertEquals("device.mcp.list_devices", started["payload"]["name"].asText())
-            assertEquals("device-mcp", started["payload"]["deviceId"].asText())
-            assertTrue(started["payload"]["arguments"].isEmpty)
-
-            val resultFrame = """
-                {"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId",
-                 "status":"succeeded","result":{"devices":[{"id":"device-4471","name":"Кухонная станция","self":true}]}}
-            """.trimIndent()
-            session.send(Frame.Text(resultFrame))
-            val accepted = readJson(session)
-            val terminal = readJson(session)
-            assertEquals("accepted", accepted["status"].asText())
-            assertEquals("thread.completed", terminal["type"].asText())
-
-            session.close()
-            wsClient.close()
+                val resultFrame = """
+                    {"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId",
+                     "status":"succeeded","result":{"devices":[{"id":"device-4471","name":"Кухонная станция","self":true}]}}
+                """.trimIndent()
+                session.send(Frame.Text(resultFrame))
+                val accepted = readJson(session)
+                val terminal = readJson(session)
+                assertEquals("accepted", accepted["status"].asText())
+                assertEquals("thread.completed", terminal["type"].asText())
+            }
         }
 
     @Test
@@ -502,30 +484,26 @@ class BackendPublicWebSocketE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call", null, "set the volume", "device-mcp")))
+                val messageAck = readJson(session)
+                readJson(session)
+                val started = readJson(session)
+                val threadId = messageAck["thread"]["id"].asText()
+                val toolCallId = started["payload"]["toolCallId"].asText()
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call", null, "set the volume", "device-mcp")))
-            val messageAck = readJson(session)
-            readJson(session)
-            val started = readJson(session)
-            val threadId = messageAck["thread"]["id"].asText()
-            val toolCallId = started["payload"]["toolCallId"].asText()
+                assertEquals("device.mcp.call_tool", started["payload"]["name"].asText())
+                assertEquals("set_volume", started["payload"]["arguments"]["name"].asText())
+                assertEquals(7, started["payload"]["arguments"]["arguments"]["level"].asInt())
 
-            assertEquals("device.mcp.call_tool", started["payload"]["name"].asText())
-            assertEquals("set_volume", started["payload"]["arguments"]["name"].asText())
-            assertEquals(7, started["payload"]["arguments"]["arguments"]["level"].asInt())
-
-            val resultFrame =
-                """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"Volume set to 7"}],"isError":false}}"""
-            session.send(Frame.Text(resultFrame))
-            val accepted = readJson(session)
-            val terminal = readJson(session)
-            assertEquals("accepted", accepted["status"].asText())
-            assertEquals("thread.completed", terminal["type"].asText())
-
-            session.close()
-            wsClient.close()
+                val resultFrame =
+                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"Volume set to 7"}],"isError":false}}"""
+                session.send(Frame.Text(resultFrame))
+                val accepted = readJson(session)
+                val terminal = readJson(session)
+                assertEquals("accepted", accepted["status"].asText())
+                assertEquals("thread.completed", terminal["type"].asText())
+            }
         }
 
     @Test
@@ -538,26 +516,22 @@ class BackendPublicWebSocketE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call-error", null, "set an invalid volume", "device-mcp")))
+                val messageAck = readJson(session)
+                readJson(session)
+                val started = readJson(session)
+                val threadId = messageAck["thread"]["id"].asText()
+                val toolCallId = started["payload"]["toolCallId"].asText()
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call-error", null, "set an invalid volume", "device-mcp")))
-            val messageAck = readJson(session)
-            readJson(session)
-            val started = readJson(session)
-            val threadId = messageAck["thread"]["id"].asText()
-            val toolCallId = started["payload"]["toolCallId"].asText()
-
-            val resultFrame =
-                """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}}"""
-            session.send(Frame.Text(resultFrame))
-            val accepted = readJson(session)
-            val terminal = readJson(session)
-            assertEquals("accepted", accepted["status"].asText())
-            assertEquals("thread.completed", terminal["type"].asText())
-
-            session.close()
-            wsClient.close()
+                val resultFrame =
+                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}}"""
+                session.send(Frame.Text(resultFrame))
+                val accepted = readJson(session)
+                val terminal = readJson(session)
+                assertEquals("accepted", accepted["status"].asText())
+                assertEquals("thread.completed", terminal["type"].asText())
+            }
         }
 
     @Test
@@ -570,39 +544,35 @@ class BackendPublicWebSocketE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-cancel-tool", null, "cancel pending tool", "device-cancel")))
+                val messageAck = readJson(session)
+                readJson(session)
+                val started = readJson(session)
+                val threadId = messageAck["thread"]["id"].asText()
+                val toolCallId = started["payload"]["toolCallId"].asText()
 
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-cancel-tool", null, "cancel pending tool", "device-cancel")))
-            val messageAck = readJson(session)
-            readJson(session)
-            val started = readJson(session)
-            val threadId = messageAck["thread"]["id"].asText()
-            val toolCallId = started["payload"]["toolCallId"].asText()
-
-            session.send(
-                Frame.Text(
-                    """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-tool","threadId":"$threadId","reason":"user_requested"}"""
+                session.send(
+                    Frame.Text(
+                        """{"kind":"thread.cancel","chatId":"$chatId","requestId":"cancel-tool","threadId":"$threadId","reason":"user_requested"}"""
+                    )
                 )
-            )
-            val cancelAck = readJson(session)
-            val cancelStatus = readJson(session)
-            val terminal = readJson(session)
-            assertEquals("accepted", cancelAck["status"].asText())
-            assertTrue(cancelStatus["status"].asText() in setOf("cancelling", "cancelled"))
-            assertEquals("thread.cancelled", terminal["type"].asText())
+                val cancelAck = readJson(session)
+                val cancelStatus = readJson(session)
+                val terminal = readJson(session)
+                assertEquals("accepted", cancelAck["status"].asText())
+                assertTrue(cancelStatus["status"].asText() in setOf("cancelling", "cancelled"))
+                assertEquals("thread.cancelled", terminal["type"].asText())
 
-            session.send(
-                Frame.Text(
-                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"too late"}}"""
+                session.send(
+                    Frame.Text(
+                        """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"too late"}}"""
+                    )
                 )
-            )
-            val rejected = readJson(session)
-            assertEquals("rejected", rejected["status"].asText())
-            assertEquals("idempotency_conflict", rejected["error"]["code"].asText())
-
-            session.close()
-            wsClient.close()
+                val rejected = readJson(session)
+                assertEquals("rejected", rejected["status"].asText())
+                assertEquals("idempotency_conflict", rejected["error"]["code"].asText())
+            }
         }
 
     @Test
@@ -618,15 +588,13 @@ class BackendPublicWebSocketE2eTest {
             llm = E2eLlmApi().apply { hangUntilCancelled() },
         ) {
             chatId = createPublicChat(userId)
-            val wsClient = webSocketClient()
-            val session = wsClient.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
-            session.send(Frame.Text(messageFrame(chatId, userId, "message-crash", null, "crash me", "device-crash")))
-            val acknowledgement = readJson(session)
-            readJson(session)
-            threadId = acknowledgement["thread"]["id"].asText()
-            llm.awaitPrompt("crash me")
-            session.close()
-            wsClient.close()
+            withPublicSocket(chatId) { session ->
+                session.send(Frame.Text(messageFrame(chatId, userId, "message-crash", null, "crash me", "device-crash")))
+                val acknowledgement = readJson(session)
+                readJson(session)
+                threadId = acknowledgement["thread"]["id"].asText()
+                llm.awaitPrompt("crash me")
+            }
         }
 
         backendE2eTest(

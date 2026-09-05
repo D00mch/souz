@@ -11,7 +11,7 @@ import ru.souz.agent.ActiveRunSteer
 import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.GraphStepCallback
-import ru.souz.agent.TraceableAgent
+import ru.souz.agent.Agent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.graph.Graph
 import ru.souz.agent.graph.Node
@@ -49,7 +49,7 @@ class SkillsGraphBasedAgent internal constructor(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),
-) : TraceableAgent, ActiveRunSteer {
+) : Agent, ActiveRunSteer {
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
     private val skillsCoreTools = coreTools.skillsCoreTools
@@ -100,10 +100,7 @@ class SkillsGraphBasedAgent internal constructor(
     override suspend fun submitToActiveRun(build: suspend () -> ActiveRunInput?): Boolean =
         activeRun.value?.submit(build) ?: false
 
-    override suspend fun execute(ctx: AgentContext<String>): String =
-        executeWithTrace(ctx).output
-
-    override suspend fun executeWithTrace(
+    override suspend fun execute(
         ctx: AgentContext<String>,
         onActiveRunReady: suspend () -> Unit,
         onStep: GraphStepCallback?,

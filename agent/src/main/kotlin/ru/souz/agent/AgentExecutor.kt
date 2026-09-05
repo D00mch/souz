@@ -5,7 +5,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 
 class AgentExecutor internal constructor(
-    private val agentProvider: (AgentId) -> TraceableAgent,
+    private val agentProvider: (AgentId) -> Agent,
     // Execution can be called with an agent ID persisted by a different host configuration.
     // Keep the supported IDs here so provider lookup falls back instead of requesting an unavailable agent.
     private val availableAgents: List<AgentId> = listOf(AgentId.GRAPH, AgentId.SKILLS_GRAPH),
@@ -57,10 +57,10 @@ class AgentExecutor internal constructor(
             input = input,
             runtimeEventSink = runtimeEventSink,
         )
-        return agentById(agentId).executeWithTrace(seed, onActiveRunReady, onStep)
+        return agentById(agentId).execute(seed, onActiveRunReady, onStep)
     }
 
-    private fun agentById(agentId: AgentId): TraceableAgent = agentProvider(normalizeAgentId(agentId))
+    private fun agentById(agentId: AgentId): Agent = agentProvider(normalizeAgentId(agentId))
 
     private fun activeRunInterruptor(agentId: AgentId): ActiveRunSteer? =
         agentById(agentId) as? ActiveRunSteer

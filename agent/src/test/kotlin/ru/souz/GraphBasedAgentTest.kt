@@ -134,7 +134,7 @@ class GraphBasedAgentTest {
         val executed = mutableListOf<String>()
         var historyAtClassification: List<LLMRequest.Message>? = null
 
-        val result = agent.executeWithTrace(context) { _, node, from, _ ->
+        val result = agent.execute(context) { _, node, from, _ ->
             val nodeName = node.name.removePrefix("Node ").substringBefore(';')
             if (nodeName in expectedRun) executed += nodeName
             if (nodeName == CLASSIFY_NODE_NAME) historyAtClassification = from.history

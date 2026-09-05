@@ -48,7 +48,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         })
 
         val execution = async {
-            harness.agent.executeWithTrace(
+            harness.agent.execute(
                 ctx = harness.context(),
                 onActiveRunReady = { ready.complete(Unit) },
             )
@@ -87,7 +87,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
             }
         })
 
-        val execution = async { harness.agent.executeWithTrace(harness.context()) }
+        val execution = async { harness.agent.execute(harness.context()) }
         firstStarted.await()
 
         assertTrue(
@@ -155,7 +155,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
                 toolHandler = { error("Discarded tool call must not execute") },
             )
 
-            val result = harness.agent.executeWithTrace(harness.context())
+            val result = harness.agent.execute(harness.context())
 
             assertEquals(2, harness.chatCallCount)
             assertEquals(
@@ -197,7 +197,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
             },
         )
 
-        val execution = async { harness.agent.executeWithTrace(harness.context()) }
+        val execution = async { harness.agent.execute(harness.context()) }
         toolStarted.await()
         assertTrue(harness.agent.submitToActiveRun("use the result differently"))
         assertFalse(toolCancelled)
@@ -234,7 +234,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
             },
         )
 
-        val execution = async { harness.agent.executeWithTrace(harness.context()) }
+        val execution = async { harness.agent.execute(harness.context()) }
         finalizationStarted.await()
 
         assertFalse(harness.agent.submitToActiveRun("too late"))
@@ -262,7 +262,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
             }
         })
 
-        val firstExecution = async { harness.agent.executeWithTrace(harness.context("first run")) }
+        val firstExecution = async { harness.agent.execute(harness.context("first run")) }
         firstStarted.await()
         assertTrue(harness.agent.submitToActiveRun("old queued input"))
         harness.agent.cancelActiveJob()
@@ -271,7 +271,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         firstCancelled.await()
         assertFalse(harness.agent.submitToActiveRun("after cancellation"))
 
-        val secondResult = harness.agent.executeWithTrace(harness.context("second run"))
+        val secondResult = harness.agent.execute(harness.context("second run"))
         assertEquals("new run", secondResult.output)
         assertFalse(harness.requestHistories.last().any { it.content.contains("old queued input") })
         assertTrue(harness.requestHistories.last().any { it.content == "second run" })
@@ -282,7 +282,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         val harness = Harness(chatHandler = { _, _ -> throw CancellationException("provider cancelled") })
 
         assertFailsWith<CancellationException> {
-            harness.agent.executeWithTrace(harness.context())
+            harness.agent.execute(harness.context())
         }
         assertEquals(1, harness.chatCallCount)
         assertFalse(harness.agent.submitToActiveRun("not accepted"))
