@@ -3,7 +3,9 @@ package ru.souz.backend.client
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.fasterxml.jackson.annotation.JsonUnwrapped
 import com.fasterxml.jackson.databind.JsonNode
+import java.time.Instant
 
 data class CreateClientChatRequest(
     val userId: String,
@@ -144,37 +146,15 @@ data class PublicThreadStatusResponse(
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ThreadStatusFrame(
+    @field:JsonUnwrapped
+    val threadStatus: PublicThreadStatusResponse,
     val kind: String = "status",
     val type: String = "thread.status",
-    val chatId: String,
-    val threadId: String,
     val requestId: String? = null,
-    val status: String,
-    val alive: Boolean,
-    val acceptsInput: Boolean,
-    val revision: Long,
-    val startedAt: String,
-    val finishedAt: String? = null,
-    val runtimeLeaseExpiresAt: String? = null,
-    val error: ClientError? = null,
-    val observedAt: String,
 )
 
 internal fun PublicThreadStatusResponse.toStatusFrame(requestId: String? = null): ThreadStatusFrame =
-    ThreadStatusFrame(
-        chatId = chatId,
-        threadId = threadId,
-        requestId = requestId,
-        status = status,
-        alive = alive,
-        acceptsInput = acceptsInput,
-        revision = revision,
-        startedAt = startedAt,
-        finishedAt = finishedAt,
-        runtimeLeaseExpiresAt = runtimeLeaseExpiresAt,
-        error = error,
-        observedAt = observedAt,
-    )
+    ThreadStatusFrame(threadStatus = this, requestId = requestId)
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class MessageSubmitAck(
@@ -188,7 +168,15 @@ data class MessageSubmitAck(
     val thread: ThreadAck? = null,
     val error: ClientError? = null,
     val receivedAt: String,
-)
+) {
+    companion object {
+        internal fun rejected(chatId: String, requestId: String, error: ClientError, now: Instant) =
+            MessageSubmitAck(
+                chatId = chatId, requestId = requestId, status = "rejected", duplicate = false,
+                error = error, receivedAt = now.toString(),
+            )
+    }
+}
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class HistoryAppendAck(
@@ -199,7 +187,15 @@ data class HistoryAppendAck(
     val duplicate: Boolean,
     val error: ClientError? = null,
     val receivedAt: String,
-)
+) {
+    companion object {
+        internal fun rejected(chatId: String, requestId: String, error: ClientError, now: Instant) =
+            HistoryAppendAck(
+                chatId = chatId, requestId = requestId, status = "rejected", duplicate = false,
+                error = error, receivedAt = now.toString(),
+            )
+    }
+}
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ToolResultAck(
@@ -211,7 +207,15 @@ data class ToolResultAck(
     val duplicate: Boolean,
     val error: ClientError?,
     val receivedAt: String,
-)
+) {
+    companion object {
+        internal fun rejected(chatId: String, threadId: String, toolCallId: String, error: ClientError, now: Instant) =
+            ToolResultAck(
+                chatId = chatId, threadId = threadId, toolCallId = toolCallId, status = "rejected", duplicate = false,
+                error = error, receivedAt = now.toString(),
+            )
+    }
+}
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ThreadCancelAck(
@@ -223,7 +227,15 @@ data class ThreadCancelAck(
     val duplicate: Boolean,
     val error: ClientError?,
     val receivedAt: String,
-)
+) {
+    companion object {
+        internal fun rejected(chatId: String, requestId: String, threadId: String, error: ClientError, now: Instant) =
+            ThreadCancelAck(
+                chatId = chatId, requestId = requestId, threadId = threadId, status = "rejected", duplicate = false,
+                error = error, receivedAt = now.toString(),
+            )
+    }
+}
 
 internal val supportedClientTypes = setOf("backend", "mobile_app")
 internal const val MESSAGE_ROLE_USER = "user"

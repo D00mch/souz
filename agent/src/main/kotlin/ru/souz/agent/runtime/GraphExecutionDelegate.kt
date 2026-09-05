@@ -15,31 +15,21 @@ import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
 
-internal interface GraphExecutionDelegate {
-    fun cancelActiveJob()
+internal class GraphExecutionDelegate(
+    private val logObjectMapper: ObjectMapper,
+    loggerClass: Class<*>,
+) {
+    private val logger = LoggerFactory.getLogger(loggerClass)
+    private val runningJob = AtomicReference<Deferred<*>?>(null)
+
+    fun cancelActiveJob() {
+        runningJob.load()?.cancel(CancellationException("Cancelled by facade"))
+    }
 
     suspend fun executeWithTrace(
         graph: Graph<String, String>,
         ctx: AgentContext<String>,
         onStep: GraphStepCallback? = null,
-    ): AgentExecutionResult
-}
-
-internal class GraphExecutionDelegateImpl(
-    private val logObjectMapper: ObjectMapper,
-    loggerClass: Class<*>,
-) : GraphExecutionDelegate {
-    private val logger = LoggerFactory.getLogger(loggerClass)
-    private val runningJob = AtomicReference<Deferred<*>?>(null)
-
-    override fun cancelActiveJob() {
-        runningJob.load()?.cancel(CancellationException("Cancelled by facade"))
-    }
-
-    override suspend fun executeWithTrace(
-        graph: Graph<String, String>,
-        ctx: AgentContext<String>,
-        onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()
         val newContext = coroutineScope {

@@ -19,6 +19,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 ## Safe-change guidance
 
 - Keep strict JSON decoding and reject unknown fields.
+- Keep HTTP and WebSocket thread status fields identical; the WebSocket frame flattens the shared status payload and adds its envelope. Preserve explicit nulls and correlation identifiers in status and rejection frames.
 - Validate and serialize initial input before registering live thread state. Propagate startup cancellation instead of converting it to a rejected acknowledgement.
 - Lock the chat row and recheck `client_requests` before every submit or cancel mutation. Initial selection or creation, follow-up message/revision/device updates, cancellation state, and their receipts must commit atomically. Hash the client-supplied nullable thread ID rather than the selected thread, and return the stored receipt on retries even after execution completion.
 - Commit history and its receipt under the chat lock without reading or mutating execution or registry state.

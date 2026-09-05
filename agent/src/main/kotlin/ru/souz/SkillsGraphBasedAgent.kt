@@ -27,7 +27,6 @@ import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.nodes.SteerableChatNode
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
-import ru.souz.agent.runtime.GraphExecutionDelegateImpl
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
 
@@ -45,7 +44,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     coreTools: AgentCoreTools,
-    private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegateImpl(
+    private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegate(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
     ),

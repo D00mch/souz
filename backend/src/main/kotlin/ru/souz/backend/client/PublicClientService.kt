@@ -426,15 +426,7 @@ internal class PublicClientService(
             receivedAt = now,
         )
         return HandledClientFrame(
-            response = ToolResultAck(
-                chatId = chatId.toString(),
-                toolCallId = toolCallId,
-                threadId = threadId.toString(),
-                status = "rejected",
-                duplicate = false,
-                error = error,
-                receivedAt = now.toString(),
-            ),
+            response = ToolResultAck.rejected(chatId.toString(), threadId.toString(), toolCallId, error, now),
             afterSend = {
                 if (completed != null) registry.finishTool(threadId, toolCallId, outcome)
             },
@@ -569,11 +561,7 @@ internal class PublicClientService(
         }
         key.request(
             execution?.id,
-            MessageSubmitAck(
-                chatId = key.chatId.toString(), requestId = key.requestId,
-                status = "rejected", duplicate = false, error = ClientError(code, message),
-                receivedAt = now.toString(),
-            ),
+            MessageSubmitAck.rejected(key.chatId.toString(), key.requestId, ClientError(code, message), now),
             now,
         )
     }
@@ -590,11 +578,7 @@ internal class PublicClientService(
         }
         key.request(
             execution?.id,
-            ThreadCancelAck(
-                chatId = key.chatId.toString(), requestId = key.requestId, threadId = threadId.toString(),
-                status = "rejected", duplicate = false, error = ClientError(code, message),
-                receivedAt = now.toString(),
-            ),
+            ThreadCancelAck.rejected(key.chatId.toString(), key.requestId, threadId.toString(), ClientError(code, message), now),
             now,
         )
     }
@@ -610,12 +594,7 @@ internal class PublicClientService(
     )
 
     private fun rejectedMessage(chatId: UUID, requestId: String, code: String, message: String, now: Instant) =
-        HandledClientFrame(
-            MessageSubmitAck(
-                chatId = chatId.toString(), requestId = requestId, status = "rejected", duplicate = false,
-                error = ClientError(code, message), receivedAt = now.toString(),
-            )
-        )
+        HandledClientFrame(MessageSubmitAck.rejected(chatId.toString(), requestId, ClientError(code, message), now))
 
     private fun rejectedHistory(
         chatId: UUID,
@@ -623,12 +602,7 @@ internal class PublicClientService(
         code: String,
         message: String,
         now: Instant,
-    ) = HandledClientFrame(
-        HistoryAppendAck(
-            chatId = chatId.toString(), requestId = requestId, status = "rejected", duplicate = false,
-            error = ClientError(code, message), receivedAt = now.toString(),
-        )
-    )
+    ) = HandledClientFrame(HistoryAppendAck.rejected(chatId.toString(), requestId, ClientError(code, message), now))
 
     private fun acceptedTool(chatId: UUID, threadId: UUID, toolCallId: String, duplicate: Boolean, now: Instant) =
         ToolResultAck(
@@ -638,19 +612,13 @@ internal class PublicClientService(
 
     private fun rejectedTool(chatId: UUID, threadId: UUID, toolCallId: String, code: String, message: String, now: Instant) =
         HandledClientFrame(
-            ToolResultAck(
-                chatId = chatId.toString(), toolCallId = toolCallId, threadId = threadId.toString(),
-                status = "rejected", duplicate = false, error = ClientError(code, message), receivedAt = now.toString(),
-            )
+            ToolResultAck.rejected(chatId.toString(), threadId.toString(), toolCallId, ClientError(code, message), now)
         )
 
     private fun rejectedCancel(
         chatId: UUID, requestId: String, threadId: UUID, code: String, message: String, now: Instant,
     ) = HandledClientFrame(
-        ThreadCancelAck(
-            chatId = chatId.toString(), requestId = requestId, threadId = threadId.toString(),
-            status = "rejected", duplicate = false, error = ClientError(code, message), receivedAt = now.toString(),
-        )
+        ThreadCancelAck.rejected(chatId.toString(), requestId, threadId.toString(), ClientError(code, message), now)
     )
 }
 

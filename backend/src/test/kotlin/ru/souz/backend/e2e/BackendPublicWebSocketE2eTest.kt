@@ -87,6 +87,17 @@ class BackendPublicWebSocketE2eTest {
                 assertTrue(firstAck["thread"]["created"].asBoolean())
                 llm.awaitPrompt("first")
 
+                val httpStatus = client.get("${BackendHttpRoutes.chatThread(chatId, threadId)}?clientType=backend").jsonBody()
+                assertEquals(
+                    httpStatus.fieldNames().asSequence().toSet() + setOf("kind", "type", "requestId"),
+                    firstStatus.fieldNames().asSequence().toSet(),
+                )
+                httpStatus.fields().forEach { (field, value) ->
+                    if (field != "observedAt") assertEquals(value, firstStatus[field], field)
+                }
+                assertTrue(firstStatus["finishedAt"].isNull)
+                assertTrue(firstStatus["error"].isNull)
+
                 session.send(
                     Frame.Text(
                         messageFrame(chatId, userId, "wrong-thread", UUID.randomUUID().toString(), "wrong", "device-1")
@@ -124,6 +135,37 @@ class BackendPublicWebSocketE2eTest {
                     listOf("first", "second", "third"),
                     messages.filter { it["role"].asText() == "user" }.map { it["content"].asText() },
                 )
+            }
+        }
+
+    @Test
+    fun `malformed frames preserve available correlation identifiers in rejection acknowledgements`() =
+        backendE2eTest("e2e_ws_rejected_identifiers") {
+            val chatId = createPublicChat(UUID.randomUUID().toString())
+            withPublicSocket(chatId) { session ->
+                for (kind in listOf("message.submit", "history.append", "tool.result", "thread.cancel")) {
+                    for (identifier in listOf(null, "not-a-uuid")) {
+                        val frame = json.createObjectNode().put("kind", kind).put("chatId", chatId)
+                        identifier?.let {
+                            frame.put("requestId", it).put("threadId", it).put("toolCallId", it)
+                        }
+                        session.send(Frame.Text(frame.toString()))
+                        val rejected = readJson(session)
+                        assertEquals("ack", rejected["kind"].asText())
+                        assertEquals(chatId, rejected["chatId"].asText())
+                        assertEquals("rejected", rejected["status"].asText())
+                        assertFalse(rejected["duplicate"].asBoolean())
+                        assertEquals("invalid_request", rejected["error"]["code"].asText())
+                        val correlationField = if (kind == "tool.result") "toolCallId" else "requestId"
+                        assertEquals(identifier ?: "invalid", rejected[correlationField].asText())
+                        if (kind == "tool.result" || kind == "thread.cancel") {
+                            assertEquals(
+                                identifier ?: "00000000-0000-0000-0000-000000000000",
+                                rejected["threadId"].asText(),
+                            )
+                        }
+                    }
+                }
             }
         }
 
