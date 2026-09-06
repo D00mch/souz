@@ -24,7 +24,6 @@ import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.service.audio.ActiveSoundRecorderImpl
 import ru.souz.service.audio.ActiveRecorderPcmAudioFrameSource
@@ -257,7 +256,6 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     bindSingleton { TelegramChatSelectionBroker() }
     bindSingleton { TelegramService() }
     bindSingleton<TelegramUiService> { instance<TelegramService>() }
-    bindSingleton<DefaultBrowserProvider> { DefaultBrowserProviderImpl }
 
     // Tools
     bindSingleton { ToolRunBashCommand }

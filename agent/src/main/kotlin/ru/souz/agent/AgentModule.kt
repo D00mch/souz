@@ -22,7 +22,6 @@ import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.session.GraphSessionRepository
 import ru.souz.agent.session.GraphSessionService
@@ -54,7 +53,6 @@ fun agentDiModule(
             desktopInfoRepository = instance(),
             settingsProvider = instance(),
             agentToolExecutor = instance(),
-            defaultBrowserProvider = instance(),
             runtimeEnvironment = instance(),
         )
     }
@@ -96,17 +94,6 @@ fun agentDiModule(
     }
     bindSingleton { SystemPromptResolver() }
     bindSingleton<AgentRuntimeEnvironment> { SystemAgentRuntimeEnvironment }
-    bindSingleton {
-        AgentCoreTools(
-            getSkillByName = instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL),
-            getSkillsByCategory = instance(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL),
-            getSkillsNamesByCategory = instance(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL),
-            getKnowledge = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            searchKnowledge = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
-            searchMemory = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
-            runtimeCommand = instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL),
-        )
-    }
     bindSingleton { AgentContextFactory(instance(), instance(), instance()) }
     bindSingleton {
         GraphBasedAgent(

@@ -15,7 +15,6 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
@@ -235,7 +234,6 @@ class NodesToolUseWithKnowledgeTest {
                 every { defaultCalendar } returns null
             },
             agentToolExecutor = AgentToolExecutor(),
-            defaultBrowserProvider = DefaultBrowserProvider { null },
             runtimeEnvironment = object : AgentRuntimeEnvironment {
                 override val locale: Locale = Locale.US
                 override val zoneId: ZoneId = ZoneId.of("UTC")

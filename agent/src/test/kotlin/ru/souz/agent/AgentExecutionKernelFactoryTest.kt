@@ -10,7 +10,6 @@ import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -32,15 +31,16 @@ class AgentExecutionKernelFactoryTest {
             toolCatalog = EmptyToolCatalog,
             toolsFilter = PassThroughToolsFilter,
             skillBundleProvider = mockk<SkillBundleProvider>(relaxed = true),
-            defaultBrowserProvider = mockk<DefaultBrowserProvider>(relaxed = true),
             runtimeEnvironment = mockk<AgentRuntimeEnvironment>(relaxed = true),
-            getSkillByNameTool = coreTool("GetSkillByName"),
-            getSkillsByCategoryTool = coreTool("GetSkillsByCategory"),
-            getSkillsNamesByCategoryTool = coreTool("GetSkillsNamesByCategory"),
-            getKnowledgeTool = coreTool("GetKnowledge"),
-            searchKnowledgeTool = coreTool("SearchKnowledge"),
-            searchMemoryTool = coreTool("SearchMemory"),
-            runtimeCommandTool = coreTool("RunSkillCommand"),
+            coreTools = AgentCoreTools(
+                getSkillByName = coreTool("GetSkillByName"),
+                getSkillsByCategory = coreTool("GetSkillsByCategory"),
+                getSkillsNamesByCategory = coreTool("GetSkillsNamesByCategory"),
+                getKnowledge = coreTool("GetKnowledge"),
+                searchKnowledge = coreTool("SearchKnowledge"),
+                searchMemory = coreTool("SearchMemory"),
+                runtimeCommand = coreTool("RunSkillCommand"),
+            ),
             knowledgeStore = null,
             telemetry = AgentTelemetry.NONE,
             errorMessages = mockk<AgentErrorMessages>(relaxed = true),
