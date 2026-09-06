@@ -5,6 +5,7 @@ import ru.souz.tool.LLM_BACKED_TOOL_NAMES
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.composeToolCatalogs
 import ru.souz.tool.immutableToolCatalogSnapshot
+import ru.souz.tool.web.ToolInternetSearch
 import ru.souz.tool.web.ToolWebImageSearch
 
 /**
@@ -39,14 +40,18 @@ object BackendToolCapabilityPolicy {
 
     /**
      * Compiled tools one execution may call: the hostable process tools plus the execution-bound
-     * LLM tools, narrowed to [enabledToolNames] when the user pinned a selection.
+     * LLM tools, narrowed to [enabledToolNames]; client search replaces compiled short search.
      */
     fun selectExecutionTools(
         processToolCatalog: AgentToolCatalog,
         executionLlmToolCatalog: AgentToolCatalog,
         enabledToolNames: Set<String>?,
+        clientSearchEnabled: Boolean = false,
     ): AgentToolCatalog {
-        val isEnabled = { toolName: String -> enabledToolNames == null || toolName in enabledToolNames }
+        val isEnabled = { toolName: String ->
+            (enabledToolNames == null || toolName in enabledToolNames) &&
+                (!clientSearchEnabled || toolName != ToolInternetSearch.NAME)
+        }
         return composeToolCatalogs(
             hostableTools(processToolCatalog, isEnabled),
             hostableTools(executionLlmToolCatalog) { it in executionBoundToolNames && isEnabled(it) },

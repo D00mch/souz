@@ -33,6 +33,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 - Keep active-thread WebSocket routing sticky to the runtime owner. Do not report a local registry miss as terminal while the durable execution is still running.
 - Use the latest accepted device for a new client tool call. Capabilities remain metadata and do not gate client operations.
 - Keep built-in client Skills in their relevant request-scoped catalog categories. Define operation IDs, instructions, categories, argument examples, and timeouts in indexed backend `SKILL.md` resources.
+- Client `web.search` replaces compiled `InternetSearch` through the execution policy, including when the compiled search is explicitly enabled. Preserve global advertising and non-client search execution. The proxy normalizes Search API output into documents; the shared transport forwards those results as source data without adopting upstream prompt roles.
 - Do not allow user or runtime Skills to select the client WebSocket transport. Only reviewed classpath resources may create those adapters.
 - Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
 

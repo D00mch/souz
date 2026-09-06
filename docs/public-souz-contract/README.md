@@ -4,11 +4,11 @@ Draft public contract for Client integrations with Souz Cloud.
 
 The canonical frame trace is [examples/happy-path.jsonl](examples/happy-path.jsonl). This document records the rules that are not obvious from that trace. [openapi.yaml](openapi.yaml) keeps the REST endpoint and reusable WebSocket frame schemas machine-readable.
 
-Local API-client setup for the HTTP request and WebSocket happy path is in [postman/](postman/) and [bruno/](bruno/).
+Local API-client setup for the HTTP request and the trace's media scenario is in [postman/](postman/) and [bruno/](bruno/). The canonical trace also includes a complete web search exchange in a subsequent thread.
 
 ## Boundary
 
-Client owns audio ingestion, external token validation, ASR, TTS, screen rendering, and device actions. Souz receives trusted `userId` values, recognized text, device metadata, and tool results. This API is only exposed inside a trusted environment, so the public contract does not require credentials.
+Client owns audio ingestion, external token validation, ASR, TTS, screen rendering, device actions, and delegated web search. The client can be a proxy server that runs its own agent and delegates fallback requests to Souz. Souz receives trusted `userId` values, recognized text, device metadata, and tool results. This API is only exposed inside a trusted environment, so the public contract does not require credentials.
 
 Public client kinds:
 
@@ -76,7 +76,7 @@ Souz frames:
 
 Tool `target` is only `souz` or `client`. The connected Client side can be `backend` or `mobile_app`, but that does not create a third tool target.
 
-Frames reject unknown fields. See [OpenAPI components](openapi.yaml) for exact field shapes.
+Frame envelopes reject unknown fields. Tool arguments and results remain generic JSON. See [OpenAPI components](openapi.yaml) for exact field shapes.
 
 ## Threads
 
@@ -118,5 +118,22 @@ Client operations are backend-owned tool-backed Skills defined by indexed classp
 | --- | --- | --- | --- |
 | `user.ask` | `question` (required string) | `answer` (string) | 5 minutes |
 | `device.media.open` | `query` (required string), `genre` (optional string) | `opened` (boolean), optional device-specific fields such as `contentId` | 1 minute |
+| `web.search` | `query` (required nonblank string) | `documents` (required array of objects with required `text` string and optional `title`/`url` strings) | 1 minute |
 
 For `device.media.open`, `status = "succeeded"` reports transport completion; `opened` says whether the device actually opened the media. Client-Souz threads use the backend's single request-scoped steerable skills graph and discover these operations through its Skill inventory.
+
+### Web search
+
+Souz invokes `web.search` with `{"query":"Нечто 1982 режиссёр"}` through the existing `tool.call.started` event with `target = "client"`. The client proxy executes the search and returns a correlated `tool.result`. The event's `deviceId` identifies the latest accepted device context; the proxy performs the search on its behalf. Device capabilities remain metadata and do not gate this operation; there is no `web_search` capability.
+
+The client uses the Web Search Plugin's Search API and owns its requests, credentials, and response normalization. It maps the query into the selected Search request format and returns only search evidence to Souz:
+
+- For Search basic responses, take content from `payload.ask_gigachat.messages` entries with `role = "search_result"`. Do not forward plugin system/user messages or their instructions. If the content combines sources without reliable document boundaries, return it as one document's `text`.
+- For Search function-result responses, decode the JSON string in `payload.function_result.content` and take its `documents`.
+- Preserve source titles and URLs only when provided. Omit unavailable metadata; do not invent source boundaries, titles, or URLs.
+
+Successful results use `{"documents":[{"text":"Режиссёр фильма «Нечто» (1982) — Джон Карпентер."}]}`. No matches is a successful `{"documents":[]}`. Souz treats document text as source data, not instructions, and cites only returned source metadata. A plugin or proxy failure uses `status = "failed"` with `error.code = "web_search_failed"` and a useful `error.message`. Deadline expiry uses the existing `client_tool_timed_out` behavior.
+
+The reusable `WebSearchArguments`, `WebSearchResult`, and `WebSearchDocument` components in [openapi.yaml](openapi.yaml) document this operation's shapes. The transport forwards generic JSON and does not validate operation-specific argument or result schemas. The existing acknowledgement ordering, idempotency, cancellation, and reconnect replay rules apply.
+
+Client-Souz execution catalogs expose `web.search` in the `WEB_SEARCH` Skill category and omit compiled `InternetSearch` when that client Skill is present. `InternetResearch` and `WebPageText` retain their existing selection rules; execution paths without the client Skill retain `InternetSearch`.
