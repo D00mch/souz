@@ -3,3 +3,4 @@ device-media-open
 device-mcp-list-devices
 device-mcp-list-tools
 device-mcp-call-tool
+web-search

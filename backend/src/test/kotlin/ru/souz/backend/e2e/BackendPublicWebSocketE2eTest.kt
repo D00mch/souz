@@ -9,6 +9,8 @@ import io.ktor.client.request.get
 import io.ktor.http.HttpStatusCode
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -446,6 +448,53 @@ class BackendPublicWebSocketE2eTest {
         }
 
     @Test
+    fun `client web search replaces short search and returns documents without device capabilities`() =
+        backendE2eTest("e2e_ws_web_search", llm = E2eLlmApi().apply {
+            requestSkill("web.search", mapOf("query" to "Когда открывается музей?"))
+        }) {
+            val userId = UUID.randomUUID().toString()
+            val chatId = createPublicChat(userId)
+            withPublicSocket(chatId) { session ->
+                val submit = json.readTree(messageFrame(chatId, userId, "search", deviceId = "search-device"))
+                (submit["payload"]["device"] as ObjectNode).putArray("capabilities")
+                session.send(Frame.Text(submit.toString()))
+                val ack = readJson(session)
+                assertEquals("accepted", ack["status"].asText())
+                assertEquals("thread.status", readJson(session)["type"].asText())
+                val started = readJson(session)
+                val payload = started["payload"]
+                assertEquals("tool.call.started", started["type"].asText())
+                assertEquals(ack["thread"]["id"], started["threadId"])
+                assertEquals("web.search", payload["name"].asText())
+                assertEquals("client", payload["target"].asText())
+                assertEquals("search-device", payload["deviceId"].asText())
+                assertEquals(json.readTree("""{"query":"Когда открывается музей?"}"""), payload["arguments"])
+                val remaining = Duration.between(
+                    Instant.parse(started["createdAt"].asText()), Instant.parse(payload["deadlineAt"].asText()),
+                )
+                assertTrue(remaining > Duration.ZERO && remaining <= Duration.ofMinutes(1))
+
+                val result = """{"documents":[{"text":"Музей открывается в 10:00.","title":"Часы работы","url":"https://museum.example/hours"},{"text":"В понедельник музей закрыт."}]}"""
+                session.send(Frame.Text(
+                    """{"kind":"tool.result","chatId":"$chatId","threadId":${started["threadId"]},"toolCallId":${payload["toolCallId"]},"status":"succeeded","result":$result}"""
+                ))
+                val resultAck = readJson(session)
+                assertEquals("accepted", resultAck["status"].asText())
+                assertEquals(payload["toolCallId"], resultAck["toolCallId"])
+                assertEquals("thread.completed", readJson(session)["type"].asText())
+
+                val inventory = llm.requests.first().messages.first { it.role == LLMMessageRole.system }.content
+                assertTrue(inventory.contains("web.search"))
+                assertFalse(inventory.contains("InternetSearch"))
+                assertTrue(inventory.contains("InternetResearch") && inventory.contains("WebPageText"))
+                val results = llm.requests.last().messages.filter { it.role == LLMMessageRole.function }
+                val discovered = json.readTree(results.single { it.name == "GetSkillByName" }.content)
+                assertEquals("web.search", discovered["skill"]["skillId"].asText())
+                assertEquals(json.readTree(result), json.readTree(results.single { it.name == "RunSkillCommand" }.content))
+            }
+        }
+
+    @Test
     fun `client reported tool timeout completes once and accepts the same retry`() =
         backendE2eTest(
             schemaPrefix = "e2e_ws_client_tool_timeout",
@@ -515,64 +564,40 @@ class BackendPublicWebSocketE2eTest {
         }
 
     @Test
-    fun `device mcp call_tool forwards the target tool name and arguments to the device`() =
-        backendE2eTest(
-            schemaPrefix = "e2e_ws_device_mcp_call_tool_success",
-            llm = E2eLlmApi().apply {
-                requestSkill("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to 7)))
-            },
-        ) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            withPublicSocket(chatId) { session ->
-                session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call", null, "set the volume", "device-mcp")))
-                val messageAck = readJson(session)
-                readJson(session)
-                val started = readJson(session)
-                val threadId = messageAck["thread"]["id"].asText()
-                val toolCallId = started["payload"]["toolCallId"].asText()
+    fun `device mcp call_tool preserves successful and error results`() {
+        listOf(
+            7 to """{"content":[{"type":"text","text":"Volume set to 7"}],"isError":false}""",
+            500 to """{"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}""",
+        ).forEach { (level, result) ->
+            backendE2eTest("e2e_ws_mcp_call_$level", llm = E2eLlmApi().apply {
+                requestSkill("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to level)))
+            }) {
+                val userId = UUID.randomUUID().toString()
+                val chatId = createPublicChat(userId)
+                withPublicSocket(chatId) { session ->
+                    session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call", deviceId = "device-mcp")))
+                    val messageAck = readJson(session)
+                    readJson(session)
+                    val started = readJson(session)
+                    val threadId = messageAck["thread"]["id"].asText()
+                    val toolCallId = started["payload"]["toolCallId"].asText()
+                    assertEquals("device.mcp.call_tool", started["payload"]["name"].asText())
+                    assertEquals("set_volume", started["payload"]["arguments"]["name"].asText())
+                    assertEquals(level, started["payload"]["arguments"]["arguments"]["level"].asInt())
 
-                assertEquals("device.mcp.call_tool", started["payload"]["name"].asText())
-                assertEquals("set_volume", started["payload"]["arguments"]["name"].asText())
-                assertEquals(7, started["payload"]["arguments"]["arguments"]["level"].asInt())
-
-                val resultFrame =
-                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"Volume set to 7"}],"isError":false}}"""
-                session.send(Frame.Text(resultFrame))
-                val accepted = readJson(session)
-                val terminal = readJson(session)
-                assertEquals("accepted", accepted["status"].asText())
-                assertEquals("thread.completed", terminal["type"].asText())
+                    session.send(Frame.Text(
+                        """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":$result}"""
+                    ))
+                    assertEquals("accepted", readJson(session)["status"].asText())
+                    assertEquals("thread.completed", readJson(session)["type"].asText())
+                    val returned = llm.requests.last().messages.single {
+                        it.name == "RunSkillCommand" && it.role == LLMMessageRole.function
+                    }
+                    assertEquals(json.readTree(result), json.readTree(returned.content), "level=$level")
+                }
             }
         }
-
-    @Test
-    fun `device mcp call_tool completes normally when the MCP tool itself reports isError`() =
-        backendE2eTest(
-            schemaPrefix = "e2e_ws_device_mcp_call_tool_is_error",
-            llm = E2eLlmApi().apply {
-                requestSkill("device.mcp.call_tool", mapOf("name" to "set_volume", "arguments" to mapOf("level" to 500)))
-            },
-        ) {
-            val userId = UUID.randomUUID().toString()
-            val chatId = createPublicChat(userId)
-            withPublicSocket(chatId) { session ->
-                session.send(Frame.Text(messageFrame(chatId, userId, "message-mcp-call-error", null, "set an invalid volume", "device-mcp")))
-                val messageAck = readJson(session)
-                readJson(session)
-                val started = readJson(session)
-                val threadId = messageAck["thread"]["id"].asText()
-                val toolCallId = started["payload"]["toolCallId"].asText()
-
-                val resultFrame =
-                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"content":[{"type":"text","text":"level must be between 0 and 10"}],"isError":true}}"""
-                session.send(Frame.Text(resultFrame))
-                val accepted = readJson(session)
-                val terminal = readJson(session)
-                assertEquals("accepted", accepted["status"].asText())
-                assertEquals("thread.completed", terminal["type"].asText())
-            }
-        }
+    }
 
     @Test
     fun `thread cancellation cancels a pending client tool and rejects a later result`() =

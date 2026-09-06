@@ -11,34 +11,16 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendToolCapabilityPolicyTest {
     @Test
-    fun `advertised names combine safe process tools and execution-bound LLM tools`() {
+    fun `advertised names exclude unsafe tools and match default execution selection`() {
         val names = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
 
+        assertTrue(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
         assertEquals(
             setOf("ReadFile", "WebPageText", "ListActiveChannels", "SendMessageToChannel") +
                 LLM_BACKED_TOOL_NAMES,
             names,
         )
-    }
-
-    @Test
-    fun `desktop-only categories and denied names reach neither capabilities nor executions`() {
-        assertTrue(ToolCategory.WEB_SEARCH in BackendToolCapabilityPolicy.safeCategories)
-        val excluded = setOf("ControlBrowser", ToolWebImageSearch.NAME)
-
-        val advertised = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
-        val selected = executionToolNames(enabledToolNames = null)
-
-        assertEquals(emptySet(), advertised intersect excluded)
-        assertEquals(emptySet(), selected intersect excluded)
-    }
-
-    @Test
-    fun `execution selection without an enabled snapshot matches advertised names`() {
-        assertEquals(
-            BackendToolCapabilityPolicy.advertisedToolNames(processCatalog()),
-            executionToolNames(enabledToolNames = null),
-        )
+        assertEquals(names, executionToolNames(enabledToolNames = null))
     }
 
     @Test
@@ -52,13 +34,31 @@ class BackendToolCapabilityPolicyTest {
         assertEquals(setOf("ReadFile", executionBoundTool), selected)
     }
 
-    private fun executionToolNames(enabledToolNames: Set<String>?): Set<String> =
+    @Test
+    fun `client search replaces InternetSearch with default and explicit selections`() {
+        val advertised = BackendToolCapabilityPolicy.advertisedToolNames(processCatalog())
+        val webTools = setOf("InternetSearch", "InternetResearch", "WebPageText")
+        listOf(null to advertised, webTools to webTools, emptySet<String>() to emptySet()).forEach { (enabled, expected) ->
+            assertEquals(expected, executionToolNames(enabledToolNames = enabled), "enabled=$enabled")
+            assertEquals(
+                expected - "InternetSearch",
+                executionToolNames(enabledToolNames = enabled, clientSearchEnabled = true),
+                "client search with enabled=$enabled",
+            )
+        }
+    }
+
+    private fun executionToolNames(
+        enabledToolNames: Set<String>?,
+        clientSearchEnabled: Boolean = false,
+    ): Set<String> =
         BackendToolCapabilityPolicy.selectExecutionTools(
             processToolCatalog = processCatalog(),
             executionLlmToolCatalog = TestToolCatalog(
                 ToolCategory.WEB_SEARCH to BackendToolCapabilityPolicy.executionBoundToolNames.toList(),
             ),
             enabledToolNames = enabledToolNames,
+            clientSearchEnabled = clientSearchEnabled,
         ).toolNames()
 
     private fun processCatalog(): AgentToolCatalog = TestToolCatalog(

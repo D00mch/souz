@@ -16,7 +16,7 @@ class BackendExecutionToolCatalogTest {
     fun `execution catalog selects compiled tools through the backend capability policy`() {
         val executionTools = toolNames(executionCatalog(enabledCompiledToolNames = null))
 
-        assertEquals(setOf("ReadFile", "ClientAsk") + LLM_BACKED_TOOL_NAMES, executionTools)
+        assertEquals(setOf("ReadFile", "WebPageText", "ClientAsk") + LLM_BACKED_TOOL_NAMES, executionTools)
     }
 
     @Test
@@ -77,7 +77,7 @@ class BackendExecutionToolCatalogTest {
         backendExecutionToolCatalog(
             compiledToolCatalog = TestToolCatalog(
                 ToolCategory.FILES to listOf("ReadFile"),
-                ToolCategory.WEB_SEARCH to listOf(ToolWebImageSearch.NAME),
+                ToolCategory.WEB_SEARCH to listOf("WebPageText", ToolWebImageSearch.NAME),
                 ToolCategory.BROWSER to listOf("ControlBrowser"),
             ),
             executionLlmToolCatalog = TestToolCatalog(

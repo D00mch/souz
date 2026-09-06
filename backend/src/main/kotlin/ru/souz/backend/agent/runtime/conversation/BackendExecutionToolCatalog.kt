@@ -18,6 +18,7 @@ internal fun backendExecutionToolCatalog(
         processToolCatalog = compiledToolCatalog,
         executionLlmToolCatalog = executionLlmToolCatalog,
         enabledToolNames = enabledCompiledToolNames,
+        clientSearchEnabled = clientToolCatalog.toolsByCategory.values.any { "web.search" in it },
     )
 
     // Client tools intentionally win name collisions because the live client owns their execution boundary.
