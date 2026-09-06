@@ -4,12 +4,12 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
@@ -130,13 +130,9 @@ fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRun
         SkillCommandExecutor(sandboxResolver = instance())
     }
     bindSingleton { KnowledgeRetriever(instance()) }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL) {
-        ToolGetKnowledge(retriever = instance())
-    }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL) {
-        ToolSearchKnowledge(retriever = instance())
-    }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL) {
+    bindSingleton { ToolGetKnowledge(retriever = instance()) }
+    bindSingleton { ToolSearchKnowledge(retriever = instance()) }
+    bindSingleton {
         ToolSearchMemory(instanceOrNull<ConversationMemoryRuntime>() ?: NoopConversationMemoryRuntime)
     }
 }
@@ -151,26 +147,17 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL) {
-        instance<ToolGetSkillByName>()
-    }
     bindSingleton {
         ToolGetSkillsNamesByCategory(
             toolCatalog = instance(),
             toolsFilter = instance(),
         )
     }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL) {
-        instance<ToolGetSkillsNamesByCategory>()
-    }
     bindSingleton {
         ToolGetSkillsByCategory(
             getSkillByName = instance(),
             getSkillsNamesByCategory = instance(),
         )
-    }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL) {
-        instance<ToolGetSkillsByCategory>()
     }
     bindSingleton {
         ToolInvokeSkill(
@@ -181,8 +168,16 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
     }
-    bindSingleton<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL) {
-        instance<ToolInvokeSkill>()
+    bindSingleton {
+        AgentCoreTools(
+            getSkillByName = instance<ToolGetSkillByName>(),
+            getSkillsByCategory = instance<ToolGetSkillsByCategory>(),
+            getSkillsNamesByCategory = instance<ToolGetSkillsNamesByCategory>(),
+            getKnowledge = instance<ToolGetKnowledge>(),
+            searchKnowledge = instance<ToolSearchKnowledge>(),
+            searchMemory = instance<ToolSearchMemory>(),
+            runtimeCommand = instance<ToolInvokeSkill>(),
+        )
     }
 }
 

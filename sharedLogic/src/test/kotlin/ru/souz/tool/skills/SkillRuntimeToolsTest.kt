@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -23,7 +24,6 @@ import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -376,7 +376,7 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `portable composition exposes tagged runtime tools outside the catalog`() {
+    fun `portable composition exposes core runtime tools outside the catalog`() {
         val home = createTempDirectory("skill-di-home-")
         val stateRoot = home.resolve("state").createDirectories()
         val repository = repository()
@@ -391,36 +391,24 @@ class SkillRuntimeToolsTest {
             import(portableSkillToolsDiModule())
         }
 
-        val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
-        val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
-        val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
-        val getSkillByName = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL)
-        val getSkillsByCategory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_BY_CATEGORY_TOOL)
-        val getSkillsNamesByCategory =
-            direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL)
-        val runtimeCommand = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL)
-        val concreteRuntimeCommand = direct.instance<ToolInvokeSkill>()
-        val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
-
-        assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)
-        assertEquals(ToolSearchKnowledge.NAME, searchKnowledge.fn.name)
-        assertEquals(ToolSearchMemory.NAME, searchMemory.fn.name)
-        assertEquals(ToolGetSkillByName.NAME, getSkillByName.fn.name)
-        assertEquals(ToolGetSkillsByCategory.NAME, getSkillsByCategory.fn.name)
-        assertEquals(ToolGetSkillsNamesByCategory.NAME, getSkillsNamesByCategory.fn.name)
-        assertEquals(ToolInvokeSkill.NAME, runtimeCommand.fn.name)
-        assertSame(concreteRuntimeCommand, runtimeCommand)
-        assertTrue(knowledgeStore is SandboxConversationKnowledgeStore)
+        val coreTools = direct.instance<AgentCoreTools>().skillsCoreTools
+        val coreToolNames = coreTools.map { it.fn.name }
+        assertEquals(
+            listOf(
+                ToolGetSkillByName.NAME,
+                ToolGetSkillsByCategory.NAME,
+                ToolGetSkillsNamesByCategory.NAME,
+                ToolGetKnowledge.NAME,
+                ToolSearchKnowledge.NAME,
+                ToolSearchMemory.NAME,
+                ToolInvokeSkill.NAME,
+            ),
+            coreToolNames,
+        )
+        assertSame(direct.instance<ToolInvokeSkill>(), coreTools.last())
+        assertTrue(direct.instance<ConversationKnowledgeStore>() is SandboxConversationKnowledgeStore)
         assertFalse(
-            catalog.toolsByCategory.values.any {
-                ToolGetKnowledge.NAME in it ||
-                    ToolSearchKnowledge.NAME in it ||
-                    ToolSearchMemory.NAME in it ||
-                    ToolGetSkillByName.NAME in it ||
-                    ToolGetSkillsByCategory.NAME in it ||
-                    ToolGetSkillsNamesByCategory.NAME in it ||
-                    ToolInvokeSkill.NAME in it
-            }
+            catalog.toolsByCategory.values.any { tools -> tools.keys.any { it in coreToolNames } }
         )
     }
 
@@ -435,9 +423,9 @@ class SkillRuntimeToolsTest {
             import(portableSkillRuntimeToolsDiModule())
         }
 
-        val getKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
-        val searchKnowledge = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
-        val searchMemory = direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
+        val getKnowledge = direct.instance<ToolGetKnowledge>()
+        val searchKnowledge = direct.instance<ToolSearchKnowledge>()
+        val searchMemory = direct.instance<ToolSearchMemory>()
         val knowledgeStore = direct.instance<ConversationKnowledgeStore>()
 
         assertEquals(ToolGetKnowledge.NAME, getKnowledge.fn.name)

@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
+import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
@@ -13,7 +14,6 @@ import ru.souz.backend.agent.runtime.BackendAgentErrorMessages
 import ru.souz.backend.agent.runtime.BackendConversationSettingsProvider
 import ru.souz.backend.agent.runtime.BackendNoopAgentDesktopInfoRepository
 import ru.souz.backend.agent.runtime.BackendNoopAgentToolCatalog
-import ru.souz.backend.agent.runtime.BackendNoopDefaultBrowserProvider
 import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
@@ -171,18 +171,19 @@ internal class BackendConversationRuntimeFactory(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
-            defaultBrowserProvider = BackendNoopDefaultBrowserProvider,
             runtimeEnvironment = BackendRequestRuntimeEnvironment(
                 localeTag = request.locale,
                 timeZone = request.timeZone,
             ),
-            getSkillByNameTool = getSkillByNameTool,
-            getSkillsByCategoryTool = getSkillsByCategoryTool,
-            getSkillsNamesByCategoryTool = getSkillsNamesByCategoryTool,
-            getKnowledgeTool = getKnowledgeTool,
-            searchKnowledgeTool = searchKnowledgeTool,
-            searchMemoryTool = searchMemoryTool,
-            runtimeCommandTool = runtimeCommandTool,
+            coreTools = AgentCoreTools(
+                getSkillByName = getSkillByNameTool,
+                getSkillsByCategory = getSkillsByCategoryTool,
+                getSkillsNamesByCategory = getSkillsNamesByCategoryTool,
+                getKnowledge = getKnowledgeTool,
+                searchKnowledge = searchKnowledgeTool,
+                searchMemory = searchMemoryTool,
+                runtimeCommand = runtimeCommandTool,
+            ),
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,

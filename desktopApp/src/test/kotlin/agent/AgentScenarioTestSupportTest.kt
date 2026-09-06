@@ -8,9 +8,8 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.McpToolProvider
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
@@ -23,6 +22,9 @@ import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.NoopConversationMemoryRuntime
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -115,9 +117,7 @@ class AgentScenarioTestSupportTest {
             contextFactory.create(AgentId.GRAPH).settings.tools.byName.keys,
         )
 
-        val getSkillsNamesByCategory: LLMToolSetup = di.direct.instance(
-            tag = SkillToolBindingTags.GET_SKILLS_NAMES_BY_CATEGORY_TOOL,
-        )
+        val getSkillsNamesByCategory = di.direct.instance<ToolGetSkillsNamesByCategory>()
         val meta = ToolInvocationMeta(userId = "scenario-test")
         val getSkillsNamesResult = getSkillsNamesByCategory.invoke(
             LLMResponse.FunctionCall(
@@ -131,7 +131,7 @@ class AgentScenarioTestSupportTest {
             .map { it.asText() }
         assertEquals(listOf("FindFilesByName"), skillIds)
 
-        val getSkillByName: LLMToolSetup = di.direct.instance(tag = SkillToolBindingTags.GET_SKILL_BY_NAME_TOOL)
+        val getSkillByName = di.direct.instance<ToolGetSkillByName>()
         val getSkillResult = getSkillByName.invoke(
             LLMResponse.FunctionCall(
                 name = getSkillByName.fn.name,
@@ -144,7 +144,7 @@ class AgentScenarioTestSupportTest {
             restJsonMapper.readTree(getSkillResult.content).path("skill").path("skillId").asText(),
         )
 
-        val runSkill: LLMToolSetup = di.direct.instance(tag = SkillToolBindingTags.RUNTIME_COMMAND_TOOL)
+        val runSkill = di.direct.instance<ToolInvokeSkill>()
         val runSkillResult = runSkill.invoke(
             LLMResponse.FunctionCall(
                 name = runSkill.fn.name,
@@ -163,7 +163,7 @@ class AgentScenarioTestSupportTest {
         assertNull(repository.loadSkillBundle(meta.userId, SkillId("installed-browser-skill")))
         assertTrue(di.direct.instance<McpToolProvider>().tools().isEmpty())
         assertSame(NoopConversationMemoryRuntime, di.direct.instance<ConversationMemoryRuntime>())
-        assertNull(di.direct.instance<DefaultBrowserProvider>().defaultBrowserDisplayName())
+        assertNull(di.direct.instance<AgentRuntimeEnvironment>().defaultBrowserDisplayName)
 
         val toolsFilter: AgentToolsFilter = di.direct.instance()
         assertSame(RuntimePassThroughToolsFilter, toolsFilter)

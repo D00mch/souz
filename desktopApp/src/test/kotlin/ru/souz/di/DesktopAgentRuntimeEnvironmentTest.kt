@@ -1,11 +1,34 @@
 package ru.souz.di
 
+import io.mockk.every
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import ru.souz.tool.ToolRunBashCommand
+import ru.souz.tool.browser.BrowserType
+import ru.souz.tool.browser.detectDefaultBrowser
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class DesktopAgentRuntimeEnvironmentTest {
+    @Test
+    fun `browser follows system preference changes and tolerates detection failure`() {
+        mockkStatic("ru.souz.tool.browser.DefaultBrowserKt")
+        try {
+            every { ToolRunBashCommand.detectDefaultBrowser() } returnsMany listOf(BrowserType.SAFARI, BrowserType.CHROME)
+            val environment = DesktopAgentRuntimeEnvironment(Locale.US)
+
+            assertEquals("Safari", environment.defaultBrowserDisplayName)
+            assertEquals("Google Chrome", environment.defaultBrowserDisplayName)
+            every { ToolRunBashCommand.detectDefaultBrowser() } throws IllegalStateException("unavailable")
+            assertNull(environment.defaultBrowserDisplayName)
+        } finally {
+            unmockkStatic("ru.souz.tool.browser.DefaultBrowserKt")
+        }
+    }
+
     @Test
     fun `runtime keeps startup locale and follows system time zone changes`() {
         val originalLocale = Locale.forLanguageTag("ru-RU")

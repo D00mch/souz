@@ -16,7 +16,8 @@ import ru.souz.agent.AgentId
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.spi.DefaultBrowserProvider
+import ru.souz.agent.spi.AgentRuntimeEnvironment
+import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.spi.McpToolProvider
 import ru.souz.db.ConfigStore
 import ru.souz.db.DesktopInfoRepository
@@ -102,7 +103,7 @@ class AgentScenarioTestSupport(
             bindSingleton<SkillRegistryRepository>(overrides = true) { emptySkillRegistryRepository() }
             bindSingleton<McpToolProvider>(overrides = true) { EmptyMcpToolProvider }
             bindSingleton<ConversationMemoryRuntime>(overrides = true) { NoopConversationMemoryRuntime }
-            bindSingleton<DefaultBrowserProvider>(overrides = true) { DefaultBrowserProvider { null } }
+            bindSingleton<AgentRuntimeEnvironment>(overrides = true) { SystemAgentRuntimeEnvironment }
             bindSingleton<ProviderHttpClients>(overrides = true) {
                 ProviderHttpClients().also { clients ->
                     instrument(clients.standard)

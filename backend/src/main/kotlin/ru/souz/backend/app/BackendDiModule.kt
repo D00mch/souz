@@ -13,7 +13,6 @@ import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.agent.runtime.BackendConversationRuntimeTurnRunner
@@ -102,6 +101,9 @@ import ru.souz.tool.RuntimeToolsFactory
 import ru.souz.tool.composeToolCatalogs
 import ru.souz.tool.runtimeToolsDiModule
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.web.internal.WebResearchClient
 
@@ -275,9 +277,9 @@ fun backendDiModule(
             commandExecutor = instance<SkillCommandExecutor>(),
             filesToolUtil = instance<FilesToolUtil>(),
             webResearchClient = instance<WebResearchClient>(),
-            getKnowledgeTool = instance(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL),
-            searchKnowledgeTool = instance(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL),
-            searchMemoryTool = instance(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL),
+            getKnowledgeTool = instance<ToolGetKnowledge>(),
+            searchKnowledgeTool = instance<ToolSearchKnowledge>(),
+            searchMemoryTool = instance<ToolSearchMemory>(),
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
             memoryRuntime = instance<ConversationMemoryRuntime>(),

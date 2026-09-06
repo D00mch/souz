@@ -6,13 +6,13 @@ Every classic `GraphBasedAgent` turn runs direct-tool classification, Skill inve
 
 `GetSkillByName` and generic `RunSkillCommand` are the only paths that load full file-backed bundle content for model use. Hosts may pass `SkillApprovalGate` to require cached or fresh approval before returning `SKILL.md` or executing bundled commands; without a gate, both tools use the loaded bundle directly. The backend intentionally passes no gate for classpath- and sandbox-backed Skills. When enabled, validation cache identity is the user, canonical skill ID, canonical bundle hash, and policy version. A changed bundle gets a different cache key. Changing validation rules requires a new policy version.
 
-Separately tagged `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` tools remain outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all seven. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` in addition to classified direct tools. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
+Hosts supply `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` through `AgentCoreTools`, outside `AgentToolCatalog`. `SkillsGraphBasedAgent` exposes all seven. `GraphBasedAgent` always exposes `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` in addition to classified direct tools. Enabled compiled tools take precedence over stored bundles with the same ID; disabled tools do not hide a stored bundle.
 
 ## Why this is fragile
 
 Loading bundles into the inventory would expand the prompt and trust surface. For hosts that enable approval, reusing it across users, hashes, or policies can return or execute content that was never approved.
 
-The separately tagged tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before using the concrete command executor.
+The core tools merge compiled tools and stored bundles into one ID namespace. Category discovery covers filtered compiled-tool categories only; bundle detail and execution load the current bundle by exact Skill ID. Generic bundle execution must bind the current bundle identity internally before using the concrete command executor.
 
 ## Safe changes
 
@@ -22,10 +22,10 @@ The separately tagged tools merge compiled tools and stored bundles into one ID 
 - When approval is enabled, treat a per-skill rejection as local to that skill lookup or invocation. Do not return `SKILL.md` or execute commands for rejected bundles.
 - Rethrow coroutine cancellation from every phase.
 - Keep supporting-file content out of inventory; load it only as part of bounded validation and execution paths.
-- Keep the separately tagged core tools out of `AgentToolCatalog`; graph nodes install them explicitly.
+- Keep `AgentCoreTools` out of `AgentToolCatalog`; graph nodes install them explicitly.
 - Preserve compiled-tool precedence consistently in summary, detail, and execution paths. Load a stored bundle only after enabled-tool lookup fails.
 - Never expose `activeSkills`, bundle hashes, storage paths, or supporting-file content through skill discovery. Generic execution binds those values internally.
 
 ## Verification
 
-Run `./gradlew :agent:test` for graph and approval changes. For separately tagged runtime-tool changes, also run `./gradlew :sharedLogic:jvmTest`.
+Run `./gradlew :agent:test` for graph and approval changes. For core-tool changes, also run `./gradlew :sharedLogic:jvmTest`.

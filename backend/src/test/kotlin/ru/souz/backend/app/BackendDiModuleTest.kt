@@ -15,7 +15,6 @@ import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
-import ru.souz.agent.spi.SkillToolBindingTags
 import ru.souz.backend.client.BackendClientSkills
 import ru.souz.backend.agent.session.AgentStateRepository
 import ru.souz.backend.chat.repository.ChatRepository
@@ -50,9 +49,11 @@ import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.user.repository.UserRepository
-import ru.souz.llms.LLMToolSetup
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendDiModuleTest {
@@ -192,15 +193,9 @@ class BackendDiModuleTest {
             assertIs<BackendClientSkills>(di.direct.instance<BackendClientSkills>())
             assertIs<SkillCommandExecutor>(di.direct.instance<SkillCommandExecutor>())
             assertNotNull(di.direct.instance<ConversationKnowledgeStore>())
-            assertNotNull(
-                di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.GET_KNOWLEDGE_TOOL)
-            )
-            assertNotNull(
-                di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_KNOWLEDGE_TOOL)
-            )
-            assertNotNull(
-                di.direct.instance<LLMToolSetup>(tag = SkillToolBindingTags.SEARCH_MEMORY_TOOL)
-            )
+            assertNotNull(di.direct.instance<ToolGetKnowledge>())
+            assertNotNull(di.direct.instance<ToolSearchKnowledge>())
+            assertNotNull(di.direct.instance<ToolSearchMemory>())
         } finally {
             dataSource.close()
         }

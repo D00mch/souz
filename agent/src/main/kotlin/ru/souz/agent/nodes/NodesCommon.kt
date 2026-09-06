@@ -9,7 +9,6 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
@@ -36,7 +35,6 @@ internal class NodesCommon(
     private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val settingsProvider: AgentSettingsProvider,
     private val agentToolExecutor: AgentToolExecutor,
-    private val defaultBrowserProvider: DefaultBrowserProvider,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
@@ -205,7 +203,7 @@ internal class NodesCommon(
         } catch (e: Exception) {
             l.error("Error searching desktop info: ${e.message}")
         }
-        defaultBrowserProvider.defaultBrowserDisplayName()?.let {
+        runtimeEnvironment.defaultBrowserDisplayName?.let {
             add(StorredData(it, StorredType.DEFAULT_BROWSER))
         }
         settingsProvider.defaultCalendar

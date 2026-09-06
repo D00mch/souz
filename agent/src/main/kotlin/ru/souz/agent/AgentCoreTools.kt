@@ -2,7 +2,7 @@ package ru.souz.agent
 
 import ru.souz.llms.LLMToolSetup
 
-internal class AgentCoreTools(
+class AgentCoreTools(
     getSkillByName: LLMToolSetup,
     getSkillsByCategory: LLMToolSetup,
     getSkillsNamesByCategory: LLMToolSetup,

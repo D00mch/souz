@@ -10,8 +10,8 @@ import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentDesktopInfoRepository
+import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.agent.spi.DefaultBrowserProvider
 import ru.souz.agent.spi.SystemAgentRuntimeEnvironment
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -25,17 +25,21 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NodesCommonTest {
     @Test
-    fun `local model includes desktop search in additional context`() = runTest {
+    fun `local model includes desktop search and refreshes browser context`() = runTest {
         val desktopInfoRepository = mockk<AgentDesktopInfoRepository>()
         coEvery { desktopInfoRepository.search(any(), any()) } returns listOf(
             StorredData("Найден локальный факт", StorredType.GENERAL_FACT)
         )
-        val nodesCommon = nodesCommon(desktopInfoRepository, calendar = "Work")
+        val environment = object : AgentRuntimeEnvironment by SystemAgentRuntimeEnvironment {
+            override var defaultBrowserDisplayName: String? = "Safari"
+        }
+        val nodesCommon = nodesCommon(desktopInfoRepository, calendar = "Work", environment = environment)
         val context = stringContext(
             input = "Проверь Telegram",
             model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
@@ -47,7 +51,18 @@ class NodesCommonTest {
         assertTrue(injectedContext.content.contains("Найден локальный факт"))
         assertTrue(injectedContext.content.contains("Календарь по умолчанию: Work"))
         assertTrue(injectedContext.content.contains("Текущие дата и время:"))
+        assertTrue(injectedContext.content.contains("- [Default browser]: Safari"))
         coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
+
+        var nextContext = result
+        for (browser in listOf("Google Chrome", null)) {
+            environment.defaultBrowserDisplayName = browser
+            nextContext = nodesCommon.nodeAppendAdditionalData().execute(nextContext, graphRuntime())
+            val refreshed = nextContext.history.single { it.isInjectedContextMessage() }.content
+            assertFalse(refreshed.contains("Safari"))
+            if (browser == null) assertFalse(refreshed.contains("[Default browser]"))
+            else assertTrue(refreshed.contains("- [Default browser]: $browser"))
+        }
     }
 
     @Test
@@ -63,6 +78,7 @@ class NodesCommonTest {
         val injectedContext = assertNotNull(result.history.firstOrNull { it.isInjectedContextMessage() })
 
         assertTrue(injectedContext.content.contains("Найден локальный факт"))
+        assertFalse(injectedContext.content.contains("[Default browser]"))
         coVerify(exactly = 1) { desktopInfoRepository.search(any(), any()) }
     }
 
@@ -118,7 +134,6 @@ class NodesCommonTest {
             desktopInfoRepository = mockk(relaxed = true),
             settingsProvider = mockk { every { defaultCalendar } returns null },
             agentToolExecutor = agentToolExecutor,
-            defaultBrowserProvider = mockk { every { defaultBrowserDisplayName() } returns null },
             runtimeEnvironment = SystemAgentRuntimeEnvironment,
         )
         val context = AgentContext(
@@ -157,12 +172,12 @@ class NodesCommonTest {
     private fun nodesCommon(
         desktopInfoRepository: AgentDesktopInfoRepository,
         calendar: String? = null,
+        environment: AgentRuntimeEnvironment = SystemAgentRuntimeEnvironment,
     ): NodesCommon = NodesCommon(
         desktopInfoRepository = desktopInfoRepository,
         settingsProvider = mockk<AgentSettingsProvider> { every { defaultCalendar } returns calendar },
         agentToolExecutor = mockk(relaxed = true),
-        defaultBrowserProvider = mockk<DefaultBrowserProvider> { every { defaultBrowserDisplayName() } returns null },
-        runtimeEnvironment = SystemAgentRuntimeEnvironment,
+        runtimeEnvironment = environment,
     )
 
     private fun stringContext(input: String, model: String): AgentContext<String> = AgentContext(
