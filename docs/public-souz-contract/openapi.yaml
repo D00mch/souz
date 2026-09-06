@@ -402,7 +402,7 @@ components:
     AcceptedMessageSubmitAck:
       type: object
       additionalProperties: false
-      required: [kind, chatId, requestId, status, duplicate, submission, thread, error, receivedAt]
+      required: [kind, chatId, requestId, status, duplicate, thread, error, receivedAt]
       properties:
         kind:
           type: string
@@ -416,8 +416,6 @@ components:
           enum: [accepted]
         duplicate:
           type: boolean
-        submission:
-          $ref: "#/components/schemas/AcknowledgedSubmission"
         thread:
           $ref: "#/components/schemas/AcknowledgedThread"
         error:
@@ -490,19 +488,10 @@ components:
           $ref: "#/components/schemas/Error"
         receivedAt:
           $ref: "#/components/schemas/DateTime"
-    AcknowledgedSubmission:
-      type: object
-      additionalProperties: false
-      required: [inputSeq]
-      properties:
-        inputSeq:
-          type: integer
-          format: int64
-          minimum: 1
     AcknowledgedThread:
       type: object
       additionalProperties: false
-      required: [id, created, status, revision]
+      required: [id, created, status]
       properties:
         id:
           $ref: "#/components/schemas/UUID"
@@ -512,10 +501,6 @@ components:
         status:
           type: string
           enum: [running]
-        revision:
-          type: integer
-          format: int64
-          minimum: 1
     AcceptedToolResultAck:
       type: object
       additionalProperties: false
@@ -620,7 +605,6 @@ components:
         - status
         - alive
         - acceptsInput
-        - revision
         - startedAt
         - finishedAt
         - runtimeLeaseExpiresAt
@@ -639,10 +623,6 @@ components:
         acceptsInput:
           type: boolean
           description: True when the thread can accept `message.submit` follow-up input.
-        revision:
-          type: integer
-          format: int64
-          minimum: 1
         startedAt:
           $ref: "#/components/schemas/DateTime"
         finishedAt:
@@ -671,7 +651,6 @@ components:
         - status
         - alive
         - acceptsInput
-        - revision
         - startedAt
         - finishedAt
         - runtimeLeaseExpiresAt
@@ -696,10 +675,6 @@ components:
           type: boolean
         acceptsInput:
           type: boolean
-        revision:
-          type: integer
-          format: int64
-          minimum: 1
         startedAt:
           $ref: "#/components/schemas/DateTime"
         finishedAt:

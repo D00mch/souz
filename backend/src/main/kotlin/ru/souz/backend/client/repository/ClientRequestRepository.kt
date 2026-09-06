@@ -63,7 +63,7 @@ interface ClientRequestRepository {
         threadId: UUID,
         afterSeq: Long,
         input: ClientFollowUpInput?,
-        acceptedRequest: (Long) -> ClientRequest,
+        acceptedRequest: ClientRequest,
         rejectedRequest: (AgentExecution?) -> ClientRequest,
     ): ClientRequestResult
 

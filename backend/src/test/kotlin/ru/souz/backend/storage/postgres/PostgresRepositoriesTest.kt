@@ -331,12 +331,10 @@ class PostgresRepositoriesTest {
                 status = AgentExecutionStatus.RUNNING,
                 startedAt = Instant.parse("2026-05-01T10:01:00Z"),
             ).copy(
-                revision = 2,
                 latestDeviceContextJson = """{"deviceId":"phone-1"}""",
             )
             repositories.executionRepository.create(execution)
             val storedExecution = repositories.executionRepository.getByChat(userId, chat.id, execution.id)
-            assertEquals(2, storedExecution?.revision)
             assertEquals("phone-1", storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText())
 
             val historyRequest = ClientRequest(
@@ -525,11 +523,10 @@ class PostgresRepositoriesTest {
                         messageId = messageId,
                         createdAt = Instant.parse("2026-05-01T10:01:02Z"),
                     ),
-                    acceptedRequest = { request },
+                    acceptedRequest = request,
                     rejectedRequest = { error("Expected accepted input") },
                 )
             )
-            assertEquals(2L, first.execution.revision)
             assertEquals(listOf(historyMessageId, messageId), first.messageDelta.map { it.id })
             assertEquals(listOf(ChatRole.ASSISTANT, ChatRole.USER), first.messageDelta.map { it.role })
             assertEquals(request, repositories.clientRequestRepository.get(chat.id, request.requestId))
@@ -540,7 +537,7 @@ class PostgresRepositoriesTest {
                 threadId = execution.id,
                 afterSeq = 0L,
                 input = ClientFollowUpInput("duplicate", emptyMap(), "{}"),
-                acceptedRequest = { error("Duplicate must replay") },
+                acceptedRequest = request,
                 rejectedRequest = { error("Duplicate must replay") },
             )
             assertEquals(request, assertIs<ClientRequestResult.Duplicate>(duplicate).request)
@@ -551,7 +548,7 @@ class PostgresRepositoriesTest {
                 threadId = execution.id,
                 afterSeq = 0L,
                 input = ClientFollowUpInput("conflict", emptyMap(), "{}"),
-                acceptedRequest = { error("Conflict must not append") },
+                acceptedRequest = request,
                 rejectedRequest = { error("Conflict must not append") },
             )
             assertIs<ClientRequestResult.Conflict>(conflict)
@@ -574,7 +571,7 @@ class PostgresRepositoriesTest {
                         messageId = messageId,
                         createdAt = Instant.parse("2026-05-01T10:01:03Z"),
                     ),
-                    acceptedRequest = { failedRequest },
+                    acceptedRequest = failedRequest,
                     rejectedRequest = { error("Expected accepted input") },
                 )
             }
@@ -582,7 +579,6 @@ class PostgresRepositoriesTest {
 
             val storedExecution = repositories.executionRepository.getByChat(userId, chat.id, execution.id)
             val storedMessages = repositories.messageRepository.list(userId, chat.id)
-            assertEquals(2L, storedExecution?.revision)
             assertEquals(
                 "device-2",
                 storedExecution?.latestDeviceContextJson?.let { restJsonMapper.readTree(it) }?.path("deviceId")?.asText(),
