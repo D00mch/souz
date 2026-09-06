@@ -14,6 +14,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.AgentCoreTools
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -25,6 +26,8 @@ import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -43,6 +46,7 @@ import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.portableSkillToolsDiModule
+import ru.souz.tool.subagent.ToolSpawnSubagent
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -376,12 +380,30 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `portable composition exposes core runtime tools outside the catalog`() {
+    fun `portable composition exposes core runtime tools outside the catalog`() = runTest {
         val home = createTempDirectory("skill-di-home-")
         val stateRoot = home.resolve("state").createDirectories()
         val repository = repository()
         val catalog = catalog(ToolCategory.FILES to listOf(RecordingTool("ordinary")))
+        val settings = mockk<SettingsProvider> {
+            every { gigaModel } returns LLMModel.Max
+            every { useStreaming } returns false
+        }
+        val llm = mockk<LLMChatAPI> {
+            coEvery { message(any()) } returns LLMResponse.Chat.Ok(
+                choices = listOf(LLMResponse.Choice(
+                    message = LLMResponse.Message("delegated result", LLMMessageRole.assistant, functionsStateId = null),
+                    index = 0,
+                    finishReason = LLMResponse.FinishReason.stop,
+                )),
+                created = 0,
+                model = LLMModel.Pro.alias,
+                usage = LLMResponse.Usage(1, 1, 2, 0),
+            )
+        }
         val direct = DI.direct {
+            bindSingleton<SettingsProvider> { settings }
+            bindSingleton<LLMChatAPI> { llm }
             bindSingleton<ToolInvocationRuntimeSandboxResolver> {
                 ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot))
             }
@@ -410,6 +432,16 @@ class SkillRuntimeToolsTest {
         assertFalse(
             catalog.toolsByCategory.values.any { tools -> tools.keys.any { it in coreToolNames } }
         )
+        val executionSettings = AgentSettings(LLMModel.Pro.alias, 0.3f, catalog.toolsByCategory, 4096)
+        val spawn = direct.instance<AgentCoreTools>().skillsTools(executionSettings).last()
+        assertEquals(ToolSpawnSubagent.NAME, spawn.fn.name)
+        assertEquals("delegated result", spawn.call(mapOf("task" to "Isolated task"))["result"].asText())
+        coVerify(exactly = 1) {
+            llm.message(match {
+                it.model == LLMModel.Pro.alias && it.temperature == 0.3f && it.maxTokens == 4096 &&
+                    it.functions.isEmpty() && it.messages.last().content == "Isolated task"
+            })
+        }
     }
 
     @Test

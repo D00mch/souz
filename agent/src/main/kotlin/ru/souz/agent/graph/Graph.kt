@@ -5,6 +5,7 @@ import ru.souz.graph.Graph as CoreGraph
 import ru.souz.graph.GraphBuilder as CoreGraphBuilder
 import ru.souz.graph.Node as CoreNode
 import ru.souz.llms.LLMException
+import ru.souz.llms.LLMResponse
 import kotlin.properties.ReadOnlyProperty
 
 internal typealias Graph<IN, OUT> = CoreGraph<AgentContext<IN>, AgentContext<OUT>>
@@ -16,7 +17,11 @@ internal typealias StepInfo = ru.souz.graph.StepInfo
 
 private val defaultRetryPolicy = RetryPolicy(
     maxAttempts = 2,
-    shouldRetry = { error, _, _, _ -> error is LLMException }
+    shouldRetry = { error, ctx, _, _ ->
+        // A completed tool earlier in the same batch may already have produced side effects.
+        val response = (ctx as? AgentContext<*>)?.input as? LLMResponse.Chat.Ok
+        error is LLMException && response?.choices.orEmpty().none { it.message.functionCall != null }
+    },
 )
 
 internal fun <IN, OUT> Node(

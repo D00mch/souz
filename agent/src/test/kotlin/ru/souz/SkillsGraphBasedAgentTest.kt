@@ -286,14 +286,18 @@ class SkillsGraphBasedAgentTest {
     }
 }
 
-internal fun testCoreTools(): AgentCoreTools = AgentCoreTools(
+internal fun testCoreTools(
+    runtimeCommand: LLMToolSetup = testTool("RunSkillCommand"),
+    spawnSubagent: ((AgentSettings) -> LLMToolSetup)? = null,
+): AgentCoreTools = AgentCoreTools(
     getSkillByName = testTool("GetSkillByName"),
     getSkillsByCategory = testTool("GetSkillsByCategory"),
     getSkillsNamesByCategory = testTool("GetSkillsNamesByCategory"),
     getKnowledge = testTool("GetKnowledge"),
     searchKnowledge = testTool("SearchKnowledge"),
     searchMemory = testTool("SearchMemory"),
-    runtimeCommand = testTool("RunSkillCommand"),
+    runtimeCommand = runtimeCommand,
+    spawnSubagent = spawnSubagent,
 )
 
 internal fun testTool(name: String): LLMToolSetup = object : LLMToolSetup {

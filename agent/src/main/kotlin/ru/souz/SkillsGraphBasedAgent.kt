@@ -43,7 +43,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesMemory: NodesMemory,
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
-    coreTools: AgentCoreTools,
+    private val coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegate(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
@@ -51,7 +51,6 @@ class SkillsGraphBasedAgent internal constructor(
 ) : Agent, ActiveRunSteer {
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
-    private val skillsCoreTools = coreTools.skillsCoreTools
     private val activeRun = MutableStateFlow<ActiveRunInputController?>(null)
 
     private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
@@ -105,7 +104,7 @@ class SkillsGraphBasedAgent internal constructor(
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()
-        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, skillsCoreTools)
+        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, coreTools.skillsTools(ctx.settings))
         val controller = ActiveRunInputController()
         val executionGraph = graph(controller)
         activeRun.value = controller

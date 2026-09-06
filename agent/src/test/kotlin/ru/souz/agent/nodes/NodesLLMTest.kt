@@ -5,6 +5,7 @@ import io.mockk.mockk
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -46,7 +47,7 @@ class NodesLLMTest {
             },
         )
 
-        val sideEffect = async { nodes.sideEffects.first() }
+        val sideEffect = async(start = CoroutineStart.UNDISPATCHED) { nodes.sideEffects.first() }
         val result = nodes.chat(streamRevision = 7L).execute(
             ctx = context,
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),

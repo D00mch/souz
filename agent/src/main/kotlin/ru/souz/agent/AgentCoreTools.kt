@@ -1,5 +1,6 @@
 package ru.souz.agent
 
+import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMToolSetup
 
 class AgentCoreTools(
@@ -10,6 +11,7 @@ class AgentCoreTools(
     searchKnowledge: LLMToolSetup,
     searchMemory: LLMToolSetup,
     runtimeCommand: LLMToolSetup,
+    private val spawnSubagent: ((AgentSettings) -> LLMToolSetup)? = null,
 ) {
     val graphAlwaysInlineResultTools: List<LLMToolSetup> = listOf(
         getSkillByName,
@@ -26,4 +28,10 @@ class AgentCoreTools(
         searchKnowledge,
     )
     val skillsCoreTools: List<LLMToolSetup> = skillsAlwaysInlineResultTools + searchMemory + runtimeCommand
+
+    fun graphTools(settings: AgentSettings): List<LLMToolSetup> =
+        graphCoreTools + listOfNotNull(spawnSubagent?.invoke(settings))
+
+    fun skillsTools(settings: AgentSettings): List<LLMToolSetup> =
+        skillsCoreTools + listOfNotNull(spawnSubagent?.invoke(settings))
 }

@@ -24,6 +24,7 @@ import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
 
 class GraphBasedAgent internal constructor(
     logObjectMapper: ObjectMapper,
@@ -36,7 +37,7 @@ class GraphBasedAgent internal constructor(
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
     private val nodesMemory: NodesMemory,
-    coreTools: AgentCoreTools,
+    private val coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegate(
         logObjectMapper = logObjectMapper,
         loggerClass = GraphBasedAgent::class.java,
@@ -45,9 +46,8 @@ class GraphBasedAgent internal constructor(
 
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.graphAlwaysInlineResultTools
-    private val graphCoreTools = coreTools.graphCoreTools
 
-    private val graph: Graph<String, String> = buildGraph(name = "Agent") {
+    private fun graph(graphCoreTools: List<LLMToolSetup>): Graph<String, String> = buildGraph(name = "Agent") {
         val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("LLM")
         val chatOk: Node<LLMResponse.Chat, LLMResponse.Chat.Ok> = Node("Chat.Ok") { ctx ->
             ctx.map { ctx.input as LLMResponse.Chat.Ok }
@@ -96,7 +96,11 @@ class GraphBasedAgent internal constructor(
         ctx: AgentContext<String>,
         onActiveRunReady: suspend () -> Unit,
         onStep: GraphStepCallback?,
-    ): AgentExecutionResult = executionDelegate.executeWithTrace(graph = graph, ctx = ctx, onStep = onStep)
+    ): AgentExecutionResult = executionDelegate.executeWithTrace(
+        graph = graph(coreTools.graphTools(ctx.settings)),
+        ctx = ctx,
+        onStep = onStep,
+    )
 
     private val LLMResponse.Chat.Ok.isToolUse get() = choices.any { it.message.functionCall != null }
 }

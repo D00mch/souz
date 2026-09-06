@@ -16,6 +16,7 @@ Before changing this module, read its [pain-point index](docs/pain-points.md) an
 - Memory recall removes structurally marked memory from the previous turn and inserts fresh memory before other turn setup. Completed-turn memory capture belongs to graph finalization: snapshot the turn before optional history summarization and schedule capture only after finalization succeeds; capture remains asynchronous and failure-isolated.
 - Skill discovery uses compact user-scoped inventory data: enabled tool-backed Skill IDs and escaped file-backed Skill IDs only. `GetSkillByName` and generic `RunSkillCommand` load full file-backed bundles on demand. Hosts that require validation pass `SkillApprovalGate`; its validation identity is user-, skill-, bundle-, and policy-scoped.
 - Propagate coroutine cancellation. Error handling may degrade optional integrations, but must not convert cancellation into a normal result.
+- `SubagentRunner` constructs a fresh context and lightweight graph per invocation with explicitly selected tools, executing in the caller's coroutine. Bind the parent's spawn tool to its execution settings; share host APIs and invocation identity, not graph nodes, history, or event streams. See [subagent execution](docs/pain-points/subagents.md).
 
 ## Verification
 

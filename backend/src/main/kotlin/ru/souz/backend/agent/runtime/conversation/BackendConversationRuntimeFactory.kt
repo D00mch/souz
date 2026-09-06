@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
+import ru.souz.agent.SubagentRunner
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentTelemetry
@@ -18,6 +19,7 @@ import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.db.SettingsProvider
@@ -25,6 +27,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
+import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
@@ -42,6 +45,7 @@ import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.subagent.SubagentToolFactory
 import ru.souz.tool.web.internal.WebResearchClient
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
@@ -51,6 +55,7 @@ internal class BackendConversationRuntimeFactory(
     private val retryPolicy: BackendProviderRetryPolicy,
     private val providerHttpClients: ProviderHttpClients,
     private val localChatApi: LocalChatAPI,
+    private val localModelAvailability: LocalModelAvailability,
     private val codexOAuthService: CodexOAuthService,
     private val sessionRepository: AgentSessionRepository,
     private val messageRepository: MessageRepository,
@@ -164,6 +169,19 @@ internal class BackendConversationRuntimeFactory(
             commandExecutor = commandExecutor,
             approvalGate = null,
         )
+        val subagentTools = SubagentToolFactory(
+            runner = SubagentRunner(executionApi, settingsProvider, logObjectMapper = logObjectMapper),
+            settingsProvider = settingsProvider,
+            toolCatalog = executionToolCatalog,
+            toolsFilter = requestToolsFilter,
+            skillBundleProvider = skillBundleProvider,
+            commandExecutor = commandExecutor,
+            availableModels = {
+                BackendLlmSupport.chatModels.filter {
+                    it.provider != LlmProvider.LOCAL || it in localModelAvailability.availableGigaModels()
+                }
+            },
+        )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
@@ -183,6 +201,7 @@ internal class BackendConversationRuntimeFactory(
                 searchKnowledge = searchKnowledgeTool,
                 searchMemory = searchMemoryTool,
                 runtimeCommand = runtimeCommandTool,
+                spawnSubagent = subagentTools::create,
             ),
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,

@@ -23,7 +23,9 @@ import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.llms.local.LocalProviderAvailability
 import ru.souz.llms.local.LocalProviderStatus
 
-internal class E2eLlmApi : LLMChatAPI {
+internal class E2eLlmApi(
+    private val response: (suspend (LLMRequest.Chat) -> LLMResponse.Chat)? = null,
+) : LLMChatAPI {
     val requests = CopyOnWriteArrayList<LLMRequest.Chat>()
     val streamedChunks = CopyOnWriteArrayList<String>()
     private val gates = LinkedHashMap<String, CompletableDeferred<Unit>>()
@@ -104,7 +106,8 @@ internal class E2eLlmApi : LLMChatAPI {
         }
         releaseGate?.await()
         promptReleaseGates[prompt]?.await()
-        return (promptSkills[prompt] ?: skill)?.let { scriptedSkillReply(body, it) }
+        return response?.invoke(body)
+            ?: (promptSkills[prompt] ?: skill)?.let { scriptedSkillReply(body, it) }
             ?: reply(body, "assistant reply to $prompt")
     }
 
@@ -115,6 +118,14 @@ internal class E2eLlmApi : LLMChatAPI {
         failMessage?.let { error(it) }
         releaseGate?.await()
         promptReleaseGates[prompt]?.await()
+        response?.let {
+            val reply = it(body)
+            if (reply is LLMResponse.Chat.Ok) {
+                streamedChunks += reply.choices.map { choice -> choice.message.content }.filter(String::isNotEmpty)
+            }
+            emit(reply)
+            return@flow
+        }
         (promptSkills[prompt] ?: skill)?.let {
             emit(scriptedSkillReply(body, it))
             return@flow
@@ -183,7 +194,7 @@ private fun scriptedSkillReply(
     }
 }
 
-private fun toolCallReply(
+internal fun toolCallReply(
     body: LLMRequest.Chat,
     name: String,
     arguments: Map<String, Any>,
