@@ -258,20 +258,19 @@ internal class PublicClientService(
         now: Instant,
     ): HandledClientFrame {
         val deviceJson = mapper.writeValueAsString(frame.payload.device)
-        val metadata = inputMetadata(frame, inputSeq = 1)
+        val metadata = inputMetadata(frame)
         val prepared = executionService.prepareChatTurn(
             userId = chat.userId,
             chatId = chat.id,
             content = frame.payload.content.text,
             clientMessageId = key.requestId,
             requestOverrides = requestOverrides(frame.payload.meta),
-            revision = 1,
             latestDeviceContextJson = deviceJson,
             userMessageMetadata = metadata,
             clientToolsEnabled = true,
         )
         val threadId = prepared.execution.id
-        val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, revision = 1, now = now)
+        val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, now = now)
         val result = withContext(NonCancellable) {
             registry.register(threadId, frame.payload.device, key.requestId)
             var resolution: ClientRequestResult? = null
@@ -326,13 +325,11 @@ internal class PublicClientService(
             threadId = threadId,
             afterSeq = afterSeq,
             input = input,
-            acceptedRequest = { revision ->
-                key.request(
-                    threadId,
-                    acceptedMessage(chat.id, key.requestId, threadId, created = false, revision = revision, now = now),
-                    now,
-                )
-            },
+            acceptedRequest = key.request(
+                threadId,
+                acceptedMessage(chat.id, key.requestId, threadId, created = false, now = now),
+                now,
+            ),
             rejectedRequest = rejectedMessageRequest(key, now),
         )
         val runtimeAvailable = withTimeoutOrNull(5_000.milliseconds) {
@@ -356,20 +353,17 @@ internal class PublicClientService(
         requestId: String,
         threadId: UUID,
         created: Boolean,
-        revision: Long,
         now: Instant,
     ) = MessageSubmitAck(
         chatId = chatId.toString(),
         requestId = requestId,
         status = "accepted",
         duplicate = false,
-        submission = SubmissionAck(revision),
-        thread = ThreadAck(threadId.toString(), created = created, revision = revision),
+        thread = ThreadAck(threadId.toString(), created = created),
         receivedAt = now.toString(),
     )
 
-    private fun inputMetadata(frame: MessageSubmitFrame, inputSeq: Long? = null): Map<String, String> = buildMap {
-        inputSeq?.let { put("inputSeq", it.toString()) }
+    private fun inputMetadata(frame: MessageSubmitFrame): Map<String, String> = buildMap {
         put("source", frame.payload.content.source)
         put("device", mapper.writeValueAsString(frame.payload.device))
         put("requestId", frame.requestId)
@@ -453,7 +447,6 @@ internal class PublicClientService(
             status = status.value,
             alive = alive,
             acceptsInput = status.acceptsInput() && alive,
-            revision = revision,
             startedAt = startedAt.toString(),
             finishedAt = finishedAt?.toString(),
             runtimeLeaseExpiresAt = runtimeLeaseUntil?.toString(),

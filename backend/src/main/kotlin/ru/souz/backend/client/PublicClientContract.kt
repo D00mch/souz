@@ -118,15 +118,10 @@ data class ClientError(
     val details: JsonNode? = null,
 )
 
-data class SubmissionAck(
-    val inputSeq: Long,
-)
-
 data class ThreadAck(
     val id: String,
     val created: Boolean,
     val status: String = "running",
-    val revision: Long,
 )
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -136,7 +131,6 @@ data class PublicThreadStatusResponse(
     val status: String,
     val alive: Boolean,
     val acceptsInput: Boolean,
-    val revision: Long,
     val startedAt: String,
     val finishedAt: String? = null,
     val runtimeLeaseExpiresAt: String? = null,
@@ -163,8 +157,6 @@ data class MessageSubmitAck(
     val requestId: String,
     val status: String,
     val duplicate: Boolean,
-    @field:JsonInclude(JsonInclude.Include.NON_NULL)
-    val submission: SubmissionAck? = null,
     val thread: ThreadAck? = null,
     val error: ClientError? = null,
     val receivedAt: String,

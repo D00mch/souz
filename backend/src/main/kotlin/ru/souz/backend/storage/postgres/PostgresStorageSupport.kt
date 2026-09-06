@@ -282,7 +282,6 @@ internal fun ResultSet.toExecution(): AgentExecution =
             }
         },
         metadata = postgresStorageMapper.readValue<Map<String, String>>(getString("metadata")),
-        revision = getLong("revision"),
         latestDeviceContextJson = getString("latest_device_context"),
         runtimeOwner = getString("runtime_owner"),
         runtimeLeaseUntil = getObject("runtime_lease_until", OffsetDateTime::class.java)?.toInstant(),

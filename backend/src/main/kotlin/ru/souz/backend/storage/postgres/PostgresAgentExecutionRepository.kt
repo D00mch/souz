@@ -39,12 +39,11 @@ class PostgresAgentExecutionRepository(
                     error_message,
                     usage_json,
                     metadata,
-                    revision,
                     latest_device_context,
                     runtime_owner,
                     runtime_lease_until
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             ).use { statement ->
                 bindExecution(statement, execution)
@@ -82,7 +81,6 @@ class PostgresAgentExecutionRepository(
                     error_message = ?,
                     usage_json = ?,
                     metadata = ?,
-                    revision = ?,
                     latest_device_context = ?,
                     runtime_owner = ?,
                     runtime_lease_until = ?
@@ -313,10 +311,9 @@ class PostgresAgentExecutionRepository(
         statement.setString(15, execution.errorMessage)
         statement.setJson(16, execution.usage?.toUsageJson())
         statement.setJson(17, postgresStorageMapper.writeValueAsString(execution.metadata))
-        statement.setLong(18, execution.revision)
-        statement.setJson(19, execution.latestDeviceContextJson)
-        statement.setString(20, execution.runtimeOwner)
-        statement.setInstant(21, execution.runtimeLeaseUntil)
+        statement.setJson(18, execution.latestDeviceContextJson)
+        statement.setString(19, execution.runtimeOwner)
+        statement.setInstant(20, execution.runtimeLeaseUntil)
     }
 
     private fun bindExecutionUpdate(statement: java.sql.PreparedStatement, execution: AgentExecution) {
@@ -334,11 +331,10 @@ class PostgresAgentExecutionRepository(
         statement.setString(12, execution.errorMessage)
         statement.setJson(13, execution.usage?.toUsageJson())
         statement.setJson(14, postgresStorageMapper.writeValueAsString(execution.metadata))
-        statement.setLong(15, execution.revision)
-        statement.setJson(16, execution.latestDeviceContextJson)
-        statement.setString(17, execution.runtimeOwner)
-        statement.setInstant(18, execution.runtimeLeaseUntil)
-        statement.setString(19, execution.userId)
-        statement.setObject(20, execution.id)
+        statement.setJson(15, execution.latestDeviceContextJson)
+        statement.setString(16, execution.runtimeOwner)
+        statement.setInstant(17, execution.runtimeLeaseUntil)
+        statement.setString(18, execution.userId)
+        statement.setObject(19, execution.id)
     }
 }

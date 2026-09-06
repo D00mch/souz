@@ -49,7 +49,7 @@ Success response:
 
 Create-chat idempotency is scoped by `(userId, requestId)`, where `userId` comes from the JSON body. The normalized payload includes `clientType` and `title`. Same key and payload returns the same chat with `duplicate = true`; same key with different payload returns `409 idempotency_conflict`.
 
-`GET /v1/chats/{chatId}/threads/{threadId}?clientType=...` returns the current durable status for a public thread. Use it as a liveness probe when a socket is disconnected, when no event has arrived within the client's expected window, or when an idempotent retry returns a stored acknowledgement. The response includes `status`, `alive`, `acceptsInput`, `revision`, timestamps, runtime lease expiry, and terminal `error` when present.
+`GET /v1/chats/{chatId}/threads/{threadId}?clientType=...` returns the current durable status for a public thread. Use it as a liveness probe when a socket is disconnected, when no event has arrived within the client's expected window, or when an idempotent retry returns a stored acknowledgement. The response includes `status`, `alive`, `acceptsInput`, timestamps, runtime lease expiry, and terminal `error` when present.
 
 ## WebSocket
 
@@ -86,11 +86,9 @@ An explicit `message.submit.threadId` continues that thread. When `threadId` is 
 
 The acknowledgement returns:
 
-- `submission.inputSeq`: thread-local sequence of accepted user input.
 - `thread.id`.
 - `thread.created`: `true` when the originally acknowledged request created the thread, `false` for a continuation.
 - `thread.status = running`.
-- `thread.revision`: latest accepted input sequence.
 
 Additional accepted submissions to a running thread append to its input log. The agent must observe every committed input before terminal state. A public `thread.started` event is not emitted because an ack with `thread.created = true` carries that state; live `thread.status` frames provide immediate non-replayable feedback.
 
@@ -98,7 +96,7 @@ Each thread has exactly one terminal event. If completion and cancellation race,
 
 ## History
 
-History belongs to the chat and has no thread identity. It is stored with its original user or assistant role without changing an execution, input sequence, revision, cancellation state, runtime lease, or active device context. Its acknowledgement has no execution fields; no thread status or durable event follows it.
+History belongs to the chat and has no thread identity. It is stored with its original user or assistant role without changing an execution, cancellation state, runtime lease, or active device context. Its acknowledgement has no execution fields; no thread status or durable event follows it.
 
 History remains pending until the next accepted `message.submit`; it is not delivered to an active runtime on its own. The execute submission loads history ordered before its user-message row, preserves text roles, expands each tool exchange into a matched `RunSkillCommand` request and function result, and supplies that history followed by the execute input as one batch. The exchange `name` becomes the command's `skillId`. History ordered after that execute remains pending for a later submission.
 

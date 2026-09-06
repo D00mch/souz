@@ -149,7 +149,6 @@ items:
                   expect(body.status).to.be.a("string");
                   expect(body.alive).to.be.a("boolean");
                   expect(body.acceptsInput).to.be.a("boolean");
-                  expect(body.revision).to.be.a("number");
                 });
         settings:
           encodeUrl: true

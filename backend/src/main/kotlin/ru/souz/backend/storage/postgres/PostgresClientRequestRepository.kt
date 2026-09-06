@@ -63,21 +63,18 @@ class PostgresClientRequestRepository(
         threadId: UUID,
         afterSeq: Long,
         input: ClientFollowUpInput?,
-        acceptedRequest: (Long) -> ClientRequest,
+        acceptedRequest: ClientRequest,
         rejectedRequest: (AgentExecution?) -> ClientRequest,
     ): ClientRequestResult = serialize(userId, key) {
         val execution = findExecution(userId, key.chatId, threadId)
         if (execution == null || !execution.status.acceptsInput() || input == null) {
             reject(key, execution, rejectedRequest)
         } else {
-            val revision = execution.revision + 1
-            val request = acceptedRequest(revision).also {
-                it.requireKey(key)
-                require(it.threadId == threadId)
-            }
+            acceptedRequest.requireKey(key)
+            require(acceptedRequest.threadId == threadId)
             val updatedExecution = executionWriter.update(
                 this,
-                execution.copy(revision = revision, latestDeviceContextJson = input.latestDeviceContextJson),
+                execution.copy(latestDeviceContextJson = input.latestDeviceContextJson),
             )
             val message = messageWriter.append(
                 connection = this,
@@ -85,7 +82,7 @@ class PostgresClientRequestRepository(
                 chatId = key.chatId,
                 role = ChatRole.USER,
                 content = input.content,
-                metadata = input.metadata + ("inputSeq" to revision.toString()),
+                metadata = input.metadata,
                 id = input.messageId,
                 createdAt = input.createdAt,
             )
@@ -95,8 +92,8 @@ class PostgresClientRequestRepository(
                 afterSeq = afterSeq,
                 throughSeq = message.seq,
             )
-            insertClientRequest(this, request)
-            ClientRequestResult.Accepted(request, updatedExecution, messageDelta)
+            insertClientRequest(this, acceptedRequest)
+            ClientRequestResult.Accepted(acceptedRequest, updatedExecution, messageDelta)
         }
     }
 
