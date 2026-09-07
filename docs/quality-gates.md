@@ -29,8 +29,8 @@ Fast checks have `local-safe` authority. The three coroutine checks are
 advisory and produce warnings; the other fast checks are blocking. Duplicate
 code is blocking with `ci-exact-checkout` authority. An unexpected checker
 failure is reported as `error`, not as a pass or policy failure.
-The RepoWise ratchet is blocking only in pull-request CI and compares the base
-with the squash-equivalent PR head.
+RepoWise pull-request quality is advisory and compares the base with the
+squash-equivalent PR head.
 
 Project dependencies declared in an unclassified configuration fail closed.
 Test-only edges should use a standard test source-set configuration so the
@@ -136,18 +136,17 @@ that its parents match the event's base and head, then grafts it onto the base a
 one commit. The merge tree includes base changes missing from a stale PR branch,
 while intermediate PR commits do not affect RepoWise health scores.
 
-The blocking ratchet requires the head to keep every RepoWise repository KPI at
-or above its base value: average and hotspot defect health, worst-performer
-health, average and hotspot maintainability, and average and hotspot
-performance. Equal and improved values pass; any decrease, analysis failure, or
-missing report fails. The comparison uses the PR base directly, so each merged
-improvement becomes the baseline for following pull requests.
+The advisory comparison reports base-to-head changes in average and hotspot
+defect health, worst-performer health, average and hotspot maintainability,
+and average and hotspot performance. KPI regressions appear in the job summary
+and uploaded artifacts but do not fail CI. Only execution errors, invalid
+reports, or missing or empty artifacts fail the RepoWise job.
 
 The same job runs `repowise risk` over the grafted base-to-merge revision range
 and publishes the PR's change-risk classification, percentile, size, spread,
-and main risk drivers. Change risk is advisory; only a code-health regression
-is blocking. The risk model keeps a 200-commit baseline. Global refactoring
-targets are intentionally excluded from PR runs.
+and main risk drivers. Change risk is advisory. The risk model keeps a
+200-commit baseline. Global refactoring targets are intentionally excluded
+from PR runs.
 
 ## Qodana advisory analysis
 
