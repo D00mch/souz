@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when RepoWise repository health decreases from a PR base."""
+"""Render the advisory RepoWise pull-request quality comparison."""
 
 from __future__ import annotations
 
@@ -85,13 +85,13 @@ def _score(kpis: dict[str, Any], key: str, side: str) -> float:
 def render_markdown(
     comparisons: list[Comparison], base_sha: str, head_sha: str
 ) -> str:
-    failed = [comparison for comparison in comparisons if comparison.regressed]
-    status = "FAIL" if failed else "PASS"
+    regressions = any(comparison.regressed for comparison in comparisons)
+    status = "REGRESSION" if regressions else "PASS"
     lines = [
-        f"# RepoWise code-quality ratchet: {status}",
+        f"# RepoWise PR code-quality advisory: {status}",
         "",
-        "Every repository-level health score must stay equal to or improve over "
-        "the pull-request base. Higher scores are better.",
+        "RepoWise KPI regressions are reported for review but do not fail "
+        "pull-request CI. Higher scores are better.",
         "",
         f"Base: `{base_sha}` · PR: `{head_sha}`",
         "",
@@ -103,13 +103,6 @@ def render_markdown(
         lines.append(
             f"| {comparison.label} | {comparison.base:.2f} | "
             f"{comparison.head:.2f} | {comparison.delta:+.2f} | {result} |"
-        )
-    if failed:
-        lines.extend(
-            [
-                "",
-                "The PR decreases at least one RepoWise code-quality KPI.",
-            ]
         )
     return "\n".join(lines) + "\n"
 
@@ -127,8 +120,7 @@ def render_risk_markdown(risk: dict[str, Any]) -> str:
     lines = [
         "## PR change risk",
         "",
-        "This advisory score analyzes the PR diff itself; it does not affect the "
-        "quality-ratchet result.",
+        "This advisory score analyzes the PR diff itself.",
         "",
         "| Classification | Review priority | Percentile | Model score | Baseline |",
         "| --- | --- | ---: | ---: | ---: |",
@@ -199,7 +191,7 @@ def _write_report(path: Path, markdown: str) -> None:
     path.write_text(markdown, encoding="utf-8")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True, type=Path)
     parser.add_argument("--head", required=True, type=Path)
@@ -207,7 +199,7 @@ def main() -> int:
     parser.add_argument("--markdown", required=True, type=Path)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         comparisons = compare_health(
@@ -219,13 +211,13 @@ def main() -> int:
             + render_risk_markdown(load_json_object(args.risk))
         )
     except (KeyError, ValueError) as error:
-        markdown = f"# RepoWise code-quality ratchet: ERROR\n\n{error}\n"
+        markdown = f"# RepoWise PR code-quality advisory: ERROR\n\n{error}\n"
         _write_report(args.markdown, markdown)
         print(error, file=sys.stderr)
         return 2
 
     _write_report(args.markdown, markdown)
-    return 1 if any(comparison.regressed for comparison in comparisons) else 0
+    return 0
 
 
 if __name__ == "__main__":

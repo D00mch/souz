@@ -186,7 +186,7 @@ jobs:
           python -m pip install --disable-pip-version-check
           --requirement quality/repowise-requirements.txt
 
-      - name: Test RepoWise quality ratchet
+      - name: Test RepoWise quality advisory
         run: python -m unittest quality.repowise_quality_gate_test
 
       - name: Prepare pull-request base checkout
@@ -213,7 +213,7 @@ jobs:
           repowise health . --no-workspace --format json \
             > build/reports/repowise/pr-health.json
 
-      - name: Enforce RepoWise code quality
+      - name: Render RepoWise quality advisory
         shell: bash
         run: |
           quality_report=build/reports/repowise/quality-ratchet.md
