@@ -122,7 +122,7 @@ Gradle modules included by the build:
 Module docs:
 
 - [`sharedLogic/README.md`](sharedLogic/README.md) covers the shared JVM runtime layer, sandbox modes, tools, and Docker sandbox image setup.
-- [`docs/quality-gates.md`](docs/quality-gates.md) covers repository checks, evidence, and remediation.
+- [`docs/quality-gates.md`](docs/quality-gates.md) covers repository checks, advisory analysis, evidence, and remediation.
 
 ## Architecture (module structure)
 

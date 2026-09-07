@@ -1,0 +1,51 @@
+name: Qodana
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: qodana-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qodana:
+    name: Qodana Community
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+          cache: gradle
+
+      - name: Run Qodana
+        uses: JetBrains/qodana-action@v2026.2
+        with:
+          args: >-
+            --config quality/qodana.yaml
+            --linter qodana-jvm-community
+            --within-docker false
+          pr-mode: true
+          use-annotations: true
+          post-pr-comment: true
+          upload-result: true
+          artifact-name: qodana-report-${{ github.run_id }}
+          cache-default-branch-only: true
