@@ -29,8 +29,8 @@ Fast checks have `local-safe` authority. The three coroutine checks are
 advisory and produce warnings; the other fast checks are blocking. Duplicate
 code is blocking with `ci-exact-checkout` authority. An unexpected checker
 failure is reported as `error`, not as a pass or policy failure.
-The RepoWise ratchet is blocking only in pull-request CI and compares the base
-with the squash-equivalent PR head.
+RepoWise pull-request quality is advisory and compares the base with the
+squash-equivalent PR head.
 
 Project dependencies declared in an unclassified configuration fail closed.
 Test-only edges should use a standard test source-set configuration so the
@@ -136,18 +136,43 @@ that its parents match the event's base and head, then grafts it onto the base a
 one commit. The merge tree includes base changes missing from a stale PR branch,
 while intermediate PR commits do not affect RepoWise health scores.
 
-The blocking ratchet requires the head to keep every RepoWise repository KPI at
-or above its base value: average and hotspot defect health, worst-performer
-health, average and hotspot maintainability, and average and hotspot
-performance. Equal and improved values pass; any decrease, analysis failure, or
-missing report fails. The comparison uses the PR base directly, so each merged
-improvement becomes the baseline for following pull requests.
+The advisory comparison reports base-to-head changes in average and hotspot
+defect health, worst-performer health, average and hotspot maintainability,
+and average and hotspot performance. KPI regressions appear in the job summary
+and uploaded artifacts but do not fail CI. Only execution errors, invalid
+reports, or missing or empty artifacts fail the RepoWise job.
 
 The same job runs `repowise risk` over the grafted base-to-merge revision range
 and publishes the PR's change-risk classification, percentile, size, spread,
-and main risk drivers. Change risk is advisory; only a code-health regression
-is blocking. The risk model keeps a 200-commit baseline. Global refactoring
-targets are intentionally excluded from PR runs.
+and main risk drivers. Change risk is advisory. The risk model keeps a
+200-commit baseline. Global refactoring targets are intentionally excluded
+from PR runs.
+
+## Qodana advisory analysis
+
+Qodana Community provides an independent advisory analyzer alongside the
+repository's blocking quality gates. Its configuration lives at
+[`quality/qodana.yaml`](../quality/qodana.yaml), and GitHub Actions runs it
+through the reusable [`Qodana`](../.github/workflows/qodana.yml) workflow.
+
+[`CI-Tests`](../.github/workflows/ci.yml) calls Qodana for pull requests, placing
+its built-in summary and full report artifact on the same Actions run page.
+Qodana also runs on pushes to `main` and manual dispatch. It uses the JVM
+Community linter with JDK 21, pull-request mode, `--config quality/qodana.yaml`,
+and GitHub caches. Comments and API annotations are disabled; reporting uses
+read-only repository permissions and supports fork PRs after any required
+workflow approval.
+
+Qodana findings are advisory. The configuration has no baseline,
+`failureConditions`, fail threshold, or aggregate quality-score gate. Analyzer
+failures, invalid configuration, infrastructure failures, and missing or empty
+SARIF reports still fail the workflow. Missing reports are noted in the run
+summary. The workflow does not apply or push automatic fixes.
+
+Qodana does not require a `QODANA_TOKEN`, Qodana Cloud account, or paid
+features. It relies on the repository `.gitignore` for generated and ignored
+files; add Qodana exclusions only for tracked generated or vendored paths that
+the analyzer must skip.
 
 ## RepoWise maintenance guidance
 
