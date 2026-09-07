@@ -15,3 +15,5 @@ implemented in Gradle build logic and documented in
 - `gate-summary-v1.schema.json` defines the shared JSON summary contract.
 - `repowise_*.py` and `repowise-requirements.txt` support pull-request and
   maintenance RepoWise reports.
+- `qodana.yaml` configures advisory Qodana analysis; behavior is documented in
+  [`docs/quality-gates.md`](../docs/quality-gates.md).

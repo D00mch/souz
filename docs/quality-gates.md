@@ -153,13 +153,14 @@ targets are intentionally excluded from PR runs.
 
 Qodana Community provides an independent advisory analyzer alongside the
 repository's blocking quality gates. Its configuration lives at
-[`qodana.yaml`](../qodana.yaml), and GitHub Actions runs it through
-[`Qodana`](../.github/workflows/qodana.yml).
+[`quality/qodana.yaml`](../quality/qodana.yaml), and GitHub Actions runs it
+through [`Qodana`](../.github/workflows/qodana.yml).
 
 The workflow runs on pull requests, pushes to `main`, and manual dispatch. It
 uses the Qodana JVM Community linter with JDK 21, enables pull-request mode,
 publishes GitHub annotations and a pull-request summary, uploads the full
-Qodana result artifact, and uses GitHub cache support.
+Qodana result artifact, passes the non-root configuration with `--config`, and
+uses GitHub cache support.
 
 Qodana findings are advisory. The configuration has no baseline,
 `failureConditions`, fail threshold, or aggregate quality-score gate. Analyzer
