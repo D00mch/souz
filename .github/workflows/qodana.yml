@@ -29,9 +29,17 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+          cache: gradle
+
       - name: Run Qodana
         uses: JetBrains/qodana-action@v2026.2
         with:
+          args: --linter qodana-jvm-community --within-docker false
           pr-mode: true
           use-annotations: true
           post-pr-comment: true
