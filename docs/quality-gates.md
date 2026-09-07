@@ -154,18 +154,21 @@ targets are intentionally excluded from PR runs.
 Qodana Community provides an independent advisory analyzer alongside the
 repository's blocking quality gates. Its configuration lives at
 [`quality/qodana.yaml`](../quality/qodana.yaml), and GitHub Actions runs it
-through [`Qodana`](../.github/workflows/qodana.yml).
+through the reusable [`Qodana`](../.github/workflows/qodana.yml) workflow.
 
-The workflow runs on pull requests, pushes to `main`, and manual dispatch. It
-uses the Qodana JVM Community linter with JDK 21, enables pull-request mode,
-publishes GitHub annotations and a pull-request summary, uploads the full
-Qodana result artifact, passes the non-root configuration with `--config`, and
-uses GitHub cache support.
+[`CI-Tests`](../.github/workflows/ci.yml) calls Qodana for pull requests, placing
+its built-in summary and full report artifact on the same Actions run page.
+Qodana also runs on pushes to `main` and manual dispatch. It uses the JVM
+Community linter with JDK 21, pull-request mode, `--config quality/qodana.yaml`,
+and GitHub caches. Comments and API annotations are disabled; reporting uses
+read-only repository permissions and supports fork PRs after any required
+workflow approval.
 
 Qodana findings are advisory. The configuration has no baseline,
 `failureConditions`, fail threshold, or aggregate quality-score gate. Analyzer
-failures, invalid configuration, and infrastructure failures still fail the
-workflow. The workflow does not apply or push automatic fixes.
+failures, invalid configuration, infrastructure failures, and missing or empty
+SARIF reports still fail the workflow. Missing reports are noted in the run
+summary. The workflow does not apply or push automatic fixes.
 
 Qodana does not require a `QODANA_TOKEN`, Qodana Cloud account, or paid
 features. It relies on the repository `.gitignore` for generated and ignored

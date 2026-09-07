@@ -1,7 +1,7 @@
 name: Qodana
 
 on:
-  pull_request:
+  workflow_call:
   push:
     branches:
       - main
@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 concurrency:
   group: qodana-${{ github.workflow }}-${{ github.ref }}
@@ -44,8 +42,18 @@ jobs:
             --linter qodana-jvm-community
             --within-docker false
           pr-mode: true
-          use-annotations: true
-          post-pr-comment: true
+          use-annotations: false
+          post-pr-comment: false
           upload-result: true
           artifact-name: qodana-report-${{ github.run_id }}
           cache-default-branch-only: true
+
+      - name: Verify Qodana report
+        if: always()
+        shell: bash
+        run: |
+          if [[ ! -s "$RUNNER_TEMP/qodana/results/qodana.sarif.json" ]]; then
+            echo '### Qodana report missing' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Analysis did not produce a nonempty SARIF report. See the Qodana step logs.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
