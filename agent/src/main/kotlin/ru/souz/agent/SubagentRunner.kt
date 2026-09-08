@@ -43,9 +43,7 @@ class SubagentRunner(
         toolInvocationMeta: ToolInvocationMeta,
         maxTurns: Int = 32,
     ): AgentExecutionResult {
-        require(maxTurns in 1..128) { "Subagent maxTurns must be between 1 and 128." }
         val selectedTools = tools.associateBy { it.fn.name }
-        require(selectedTools.size == tools.size) { "Subagent tool names must be unique." }
         val childContext = AgentContext(
             input = task,
             settings = settings.copy(tools = AgentTools(
