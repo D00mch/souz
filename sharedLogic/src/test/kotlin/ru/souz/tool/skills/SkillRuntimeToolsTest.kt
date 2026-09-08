@@ -46,7 +46,7 @@ import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.portableSkillToolsDiModule
-import ru.souz.tool.subagent.ToolSpawnSubagent
+import ru.souz.agent.SubagentTool
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -434,7 +434,7 @@ class SkillRuntimeToolsTest {
         )
         val executionSettings = AgentSettings(LLMModel.Pro.alias, 0.3f, catalog.toolsByCategory, 4096)
         val spawn = direct.instance<AgentCoreTools>().skillsTools(executionSettings).last()
-        assertEquals(ToolSpawnSubagent.NAME, spawn.fn.name)
+        assertEquals(SubagentTool.NAME, spawn.fn.name)
         assertEquals("delegated result", spawn.call(mapOf("task" to "Isolated task"))["result"].asText())
         coVerify(exactly = 1) {
             llm.message(match {

@@ -6,8 +6,6 @@ import io.mockk.every
 import io.mockk.mockk
 import java.nio.file.Files
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.AgentExecutionResult
-import ru.souz.agent.SubagentRunner
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -15,9 +13,11 @@ import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.sandbox.SandboxScope
@@ -58,32 +58,46 @@ class SubagentSkillExecutionTest {
                     SkillApprovalGate.Result.Approved(bundle, SkillBundleHasher.hash(bundle), null)
                 }
             }
-            var childTools = emptyList<LLMToolSetup>()
-            val runner = mockk<SubagentRunner> {
-                coEvery { execute(any(), any(), any(), any(), any(), any()) } answers {
-                    childTools = thirdArg()
-                    AgentExecutionResult("ready", mockk())
-                }
-            }
-            val meta = ToolInvocationMeta("owner", "conversation", attributes = mapOf("client" to "session"))
-            val spawn = SubagentToolFactory(
-                runner, mockk<AgentSettingsProvider>(), catalog, filter, registry, commands, approval,
-            ).create(AgentSettings(LLMModel.Max.alias, 0.5f, AgentTools(emptyMap())))
-            spawn.invoke(LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Run the skill", "skillIds" to listOf("loose"))), meta)
-
-            fileSystem.writeText(fileSystem.resolvePath("$root/run.sh"), "#!/bin/sh\nprintf edited > report.txt\ncat report.txt")
             val arguments = mapOf<String, Any>(
                 "skillId" to "loose",
                 "arguments" to mapOf("runtime" to "PROCESS", "command" to listOf("./run.sh")),
             )
-            val childResult = childTools.single().invoke(LLMResponse.FunctionCall(ToolInvokeSkill.NAME, arguments), meta)
-            assertEquals("edited", restJsonMapper.readTree(childResult.content)["stdout"].asText())
-
             val readReport = LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
                 "skillId" to "loose", "arguments" to mapOf("script" to "cat report.txt"),
             ))
-            val nextResult = childTools.single().invoke(readReport, meta)
-            assertEquals("edited", restJsonMapper.readTree(nextResult.content)["stdout"].asText())
+            var requests = 0
+            val api = mockk<LLMChatAPI> {
+                coEvery { message(any()) } answers {
+                    val request = firstArg<LLMRequest.Chat>()
+                    val call = when (++requests) {
+                        1 -> {
+                            assertEquals(listOf(ToolInvokeSkill.NAME), request.functions.map { it.name })
+                            fileSystem.writeText(fileSystem.resolvePath("$root/run.sh"), "#!/bin/sh\nprintf edited > report.txt\ncat report.txt")
+                            LLMResponse.FunctionCall(ToolInvokeSkill.NAME, arguments)
+                        }
+                        else -> {
+                            assertEquals("edited", restJsonMapper.readTree(request.messages.last().content)["stdout"].asText())
+                            readReport.takeIf { requests == 2 }
+                        }
+                    }
+                    LLMResponse.Chat.Ok(
+                        choices = listOf(LLMResponse.Choice(
+                            LLMResponse.Message("ready", LLMMessageRole.assistant, functionCall = call, functionsStateId = "call-$requests"),
+                            index = 0, finishReason = if (call == null) LLMResponse.FinishReason.stop else LLMResponse.FinishReason.function_call,
+                        )),
+                        created = 1, model = request.model, usage = LLMResponse.Usage(1, 1, 2, 0),
+                    )
+                }
+            }
+            val meta = ToolInvocationMeta("owner", "conversation", attributes = mapOf("client" to "session"))
+            val spawn = SubagentToolFactory(
+                api, mockk<AgentSettingsProvider> { every { useStreaming } returns false }, catalog, filter, registry, commands, approval,
+            ).create(AgentSettings(LLMModel.Max.alias, 0.5f, AgentTools(emptyMap())))
+            val result = spawn.invoke(
+                LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Run the skill", "skillIds" to listOf("loose"))), meta,
+            )
+            assertEquals("ready", restJsonMapper.readTree(result.content)["result"].asText())
+            assertEquals(3, requests)
             coVerify(exactly = 1) { approval.ensureApproved(any()) }
 
             val generic = ToolInvokeSkill(catalog, filter, registry, commands, approval)

@@ -12,8 +12,9 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
-import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
+import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
@@ -22,6 +23,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -31,27 +33,23 @@ import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-class SubagentRunnerTest {
+class SubagentToolTest {
     @Test
-    fun `each execution starts with only its task and selected tools`() = runTest {
+    fun `each tool invocation starts with only its task and selected tools`() = runTest {
         val requests = mutableListOf<LLMRequest.Chat>()
-        val runner = runner { request ->
-            requests += request
-            response("done")
-        }
         val selected = tool("Selected")
         val parentSettings = settings()
+        val subagent = subagent(prepare = { input, _ ->
+            setup(parentSettings, if (input.task == "first") listOf(selected) else emptyList())
+        }) { request -> requests += request; response("done") }
 
-        val first = runner.run("first", listOf(selected), settings = parentSettings)
-        val second = runner.run("second", emptyList(), settings = first.context.settings)
+        assertEquals("done", subagent.call("first")["result"].asText())
+        assertEquals("done", subagent.call("second")["result"].asText())
 
         assertEquals(listOf("child instructions", "first"), requests[0].messages.map { it.content })
         assertEquals(listOf("child instructions", "second"), requests[1].messages.map { it.content })
         assertEquals(listOf("Selected"), requests[0].functions.map { it.name })
-        assertEquals(listOf("Selected"), first.context.settings.tools.byName.keys.toList())
-        assertEquals(listOf(selected.fn), first.context.activeTools)
         assertTrue(requests[1].functions.isEmpty())
-        assertTrue(second.context.settings.tools.byName.isEmpty())
         requests.forEach {
             assertEquals(parentSettings.model, it.model)
             assertEquals(parentSettings.temperature, it.temperature)
@@ -61,11 +59,11 @@ class SubagentRunnerTest {
     }
 
     @Test
-    fun `fabricated call cannot reach a tool inherited from parent context`() = runTest {
+    fun `fabricated call cannot reach an unselected tool in parent settings`() = runTest {
         var forbiddenCalls = 0
         var requests = 0
         val forbidden = tool("Forbidden") { forbiddenCalls += 1; "secret" }
-        val runner = runner { request ->
+        val subagent = subagent(prepare = { _, _ -> setup(settings(forbidden)) }) { request ->
             assertTrue(request.functions.isEmpty())
             if (++requests == 1) response(toolName = "Forbidden") else {
                 assertContains(request.messages.last().content, "no such function Forbidden")
@@ -73,31 +71,29 @@ class SubagentRunnerTest {
             }
         }
 
-        val result = runner.run("task", emptyList(), settings = settings(forbidden))
-
-        assertEquals("denied", result.output)
+        assertEquals("denied", subagent.call()["result"].asText())
         assertEquals(0, forbiddenCalls)
-        assertTrue(result.context.settings.tools.byName.isEmpty())
     }
 
     @Test
-    fun `selected tools preserve full invocation metadata and child events stay private`() = runTest {
+    fun `selected tools preserve metadata and telemetry with streaming`() = runTest {
         val meta = ToolInvocationMeta(
-            userId = "user",
-            conversationId = "conversation",
-            requestId = "request",
-            locale = "en",
-            timeZone = "Europe/Moscow",
+            userId = "user", conversationId = "conversation", requestId = "request",
+            locale = "en", timeZone = "Europe/Moscow",
             attributes = mapOf("clientSessionId" to "client-session", "connectionId" to "connection"),
         )
         var toolCalls = 0
-        val selected = tool("Selected") {
-            assertSame(meta, it)
-            toolCalls += 1
-            "tool result"
-        }
+        val selected = tool("Selected") { assertSame(meta, it); toolCalls += 1; "tool result" }
         var requests = 0
-        val runner = runner(streaming = true) { request ->
+        val categories = mutableListOf<String?>()
+        val subagent = subagent(
+            streaming = true,
+            telemetry = AgentTelemetry { categories += it.toolCategory },
+            prepare = { _, actualMeta ->
+                assertSame(meta, actualMeta)
+                setup(settings(selected), listOf(selected))
+            },
+        ) { request ->
             assertTrue(request.stream == true)
             if (++requests == 1) response(toolName = "Selected") else {
                 val result = request.messages.last()
@@ -109,24 +105,19 @@ class SubagentRunnerTest {
             }
         }
 
-        val result = runner.run("task", listOf(selected), settings = settings(selected), meta = meta)
-
-        assertEquals("child answer", result.output)
+        assertEquals("child answer", subagent.call(meta = meta)["result"].asText())
         assertEquals(1, toolCalls)
-        assertSame(meta, result.context.toolInvocationMeta)
-        assertSame(AgentRuntimeEventSink.NONE, result.context.runtimeEventSink)
-        assertEquals(mapOf("Selected" to ToolCategory.FILES), result.context.settings.tools.categoryByName)
+        assertEquals(ToolCategory.FILES.name, categories.single())
     }
 
     @Test
     fun `final answer on last allowed turn succeeds`() = runTest {
         for (limit in listOf(1, 2, 128)) {
             var requests = 0
-            val runner = runner {
+            val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(tool("Selected"))) }) {
                 if (++requests < limit) response(toolName = "Selected") else response("done")
             }
-
-            assertEquals("done", runner.run("task", listOf(tool("Selected")), limit).output)
+            assertEquals("done", subagent.call(maxTurns = limit)["result"].asText())
             assertEquals(limit, requests)
         }
     }
@@ -136,15 +127,13 @@ class SubagentRunnerTest {
         for (limit in listOf(1, 32, 128)) {
             var requests = 0
             var toolCalls = 0
-            val runner = runner { requests += 1; response(toolName = "Selected") }
-            val tools = listOf(tool("Selected") { toolCalls += 1; "result" })
-
-            val error = assertFailsWith<SubagentTurnLimitException> {
-                if (limit == 32) runner.execute("task", settings(), tools, "child instructions", ToolInvocationMeta.localDefault())
-                else runner.run("task", tools, limit)
+            val selected = tool("Selected") { toolCalls += 1; "result" }
+            val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(selected)) }) {
+                requests += 1; response(toolName = "Selected")
             }
-
-            assertEquals(limit, error.maxTurns)
+            val error = subagent.call(maxTurns = limit.takeUnless { it == 32 })["error"]
+            assertEquals("subagent_turn_limit", error["code"].asText())
+            assertContains(error["message"].asText(), "$limit model turns")
             assertEquals(limit, requests)
             assertEquals(limit, toolCalls)
         }
@@ -152,33 +141,30 @@ class SubagentRunnerTest {
 
     @Test
     fun `invalid turn limits or duplicate tool names fail before calling provider`() = runTest {
-        val runner = runner { error("Provider must not be called") }
+        val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(tool("Duplicate"), tool("Duplicate"))) }) {
+            error("Provider must not be called")
+        }
         for (limit in listOf(-1, 0, 129)) {
-            assertFailsWith<IllegalArgumentException> { runner.run("task", emptyList(), limit) }
+            assertEquals("invalid_subagent_input", subagent.call(maxTurns = limit)["error"]["code"].asText())
         }
-        assertFailsWith<IllegalArgumentException> {
-            runner.run("task", listOf(tool("Duplicate"), tool("Duplicate")))
-        }
+        assertContains(subagent.call()["error"]["message"].asText(), "tool names must be unique")
     }
 
     @Test
-    fun `provider error is an explicit failure`() = runTest {
-        val runner = runner { LLMResponse.Chat.Error(503, "provider unavailable") }
-
-        val failure = assertFailsWith<IllegalStateException> { runner.run("task", emptyList()) }
-
-        assertContains(failure.message.orEmpty(), "503")
-        assertContains(failure.message.orEmpty(), "provider unavailable")
+    fun `provider error becomes a structured tool failure`() = runTest {
+        val subagent = subagent { LLMResponse.Chat.Error(503, "provider unavailable") }
+        val failure = subagent.call()["error"]
+        assertEquals("subagent_failed", failure["code"].asText())
+        assertContains(failure["message"].asText(), "503")
+        assertContains(failure["message"].asText(), "provider unavailable")
     }
 
     @Test
-    fun `failed tool is propagated without graph retries`() = runTest {
+    fun `failed child tool returns a failure without graph retries`() = runTest {
         var toolCalls = 0
-        val failure = LLMException(LLMResponse.Chat.Error(500, "failed tool"))
-        val runner = runner { response(toolName = "Selected") }
-        val selected = tool("Selected") { toolCalls += 1; throw failure }
-
-        assertSame(failure, assertFailsWith<LLMException> { runner.run("task", listOf(selected)) })
+        val selected = tool("Selected") { toolCalls += 1; throw LLMException(LLMResponse.Chat.Error(500, "failed tool")) }
+        val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(selected)) }) { response(toolName = "Selected") }
+        assertEquals("subagent_failed", subagent.call()["error"]["code"].asText())
         assertEquals(1, toolCalls)
     }
 
@@ -189,19 +175,15 @@ class SubagentRunnerTest {
             val stopped = CompletableDeferred<Unit>()
             val waitForCancellation: suspend () -> Nothing = {
                 started.complete(Unit)
-                try {
-                    awaitCancellation()
-                } finally {
-                    stopped.complete(Unit)
-                }
+                try { awaitCancellation() } finally { stopped.complete(Unit) }
             }
-            val runner = runner { if (duringTool) response(toolName = "Selected") else waitForCancellation() }
             val selected = tool("Selected") { waitForCancellation() }
-            val execution = async { runner.run("task", listOf(selected)) }
-
+            val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(selected)) }) {
+                if (duringTool) response(toolName = "Selected") else waitForCancellation()
+            }
+            val execution = async { subagent.call() }
             started.await()
             execution.cancelAndJoin()
-
             assertTrue(stopped.isCompleted)
             assertFailsWith<CancellationException> { execution.await() }
         }
@@ -209,62 +191,64 @@ class SubagentRunnerTest {
 
     @Test
     fun `cancellation immediately before graph completion cannot return a result`() = runTest {
-        val runner = runner { response(toolName = "Selected") }
-        val selected = tool("Selected") {
+        val subagent = subagent {
             currentCoroutineContext().cancel()
-            "discarded"
+            response("discarded")
         }
         var returned = false
-        val execution = async {
-            runner.run("task", listOf(selected))
-            returned = true
-        }
-
+        val execution = async { subagent.call(); returned = true }
         assertFailsWith<CancellationException> { execution.await() }
         assertFalse(returned)
     }
 
     @Test
-    fun `concurrent children do not cancel or share state with each other`() = runTest {
+    fun `parent tool executor awaits result and overlapping invocations have separate graph state`() = runTest {
         val firstStarted = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
-        val runner = runner { request ->
+        val subagent = subagent { request ->
             val task = request.messages.last().content
-            if (task == "first") {
-                firstStarted.complete(Unit)
-                releaseFirst.await()
-            }
+            if (task == "first") { firstStarted.complete(Unit); releaseFirst.await() }
             response(task)
         }
-        val first = async { runner.run("first", emptyList(), maxTurns = 1) }
+        val first = async {
+            AgentToolExecutor().execute(settings(subagent), LLMResponse.FunctionCall(subagent.fn.name,
+                mapOf("task" to "first", "maxTurns" to 1)))
+        }
         firstStarted.await()
-
-        assertEquals("second", runner.run("second", emptyList(), maxTurns = 1).output)
+        assertEquals("second", subagent.call("second", maxTurns = 1)["result"].asText())
         assertFalse(first.isCompleted)
         releaseFirst.complete(Unit)
-        assertEquals("first", first.await().output)
+        val result = first.await()
+        assertEquals(LLMMessageRole.function, result.role)
+        assertEquals(SubagentTool.NAME, result.name)
+        assertEquals("first", restJsonMapper.readTree(result.content)["result"].asText())
     }
 
-    private fun runner(
+    private fun subagent(
         streaming: Boolean = false,
+        telemetry: AgentTelemetry = AgentTelemetry.NONE,
+        prepare: suspend (SubagentTool.Input, ToolInvocationMeta) -> SubagentTool.Setup = { _, _ -> setup() },
         respond: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
-    ): SubagentRunner {
+    ): LLMToolSetup {
         val api = mockk<LLMChatAPI>()
         coEvery { api.message(any()) } coAnswers { respond(firstArg()) }
         coEvery { api.messageStream(any()) } coAnswers {
             val request = firstArg<LLMRequest.Chat>()
             flow { emit(respond(request)) }
         }
-        return SubagentRunner(api, mockk<AgentSettingsProvider> { every { useStreaming } returns streaming })
+        return SubagentTool(api, mockk<AgentSettingsProvider> { every { useStreaming } returns streaming }, telemetry,
+            prepare = prepare)
     }
 
-    private suspend fun SubagentRunner.run(
-        task: String,
-        tools: List<LLMToolSetup>,
-        maxTurns: Int = 32,
-        settings: AgentSettings = settings(),
-        meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
-    ) = execute(task, settings, tools, "child instructions", meta, maxTurns)
+    private suspend fun LLMToolSetup.call(
+        task: String = "task", maxTurns: Int? = null, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
+    ) = restJsonMapper.readTree(invoke(LLMResponse.FunctionCall(fn.name, buildMap {
+        put("task", task)
+        maxTurns?.let { put("maxTurns", it) }
+    }), meta).content)
+
+    private fun setup(settings: AgentSettings = settings(), tools: List<LLMToolSetup> = emptyList()) =
+        SubagentTool.Setup(settings, tools, "child instructions")
 
     private fun settings(parentTool: LLMToolSetup = tool("ParentTool")) = AgentSettings(
         model = "child-model",

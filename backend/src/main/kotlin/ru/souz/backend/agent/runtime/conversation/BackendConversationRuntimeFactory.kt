@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
-import ru.souz.agent.SubagentRunner
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentTelemetry
@@ -170,7 +169,8 @@ internal class BackendConversationRuntimeFactory(
             approvalGate = null,
         )
         val subagentTools = SubagentToolFactory(
-            runner = SubagentRunner(executionApi, settingsProvider, logObjectMapper = logObjectMapper),
+            llmApi = executionApi,
+            logObjectMapper = logObjectMapper,
             settingsProvider = settingsProvider,
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,

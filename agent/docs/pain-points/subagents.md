@@ -2,7 +2,7 @@
 
 ## Invariant
 
-The parent awaits each `SpawnSubagent` call in its current coroutine. `SubagentRunner` constructs the child context once and directly runs fresh graph nodes and a tool executor, without an `Agent` lifecycle or active-job tracking. Its explicitly selected tools replace both advertised schemas and executable lookup. Children have no spawn capability or parent turn-setup nodes. Parent cancellation propagates through the child; queued parent input follows the completed tool result.
+The parent receives `SubagentTool` as an ordinary `LLMToolSetup` and awaits each `SpawnSubagent` invocation in its current coroutine. The tool prepares an isolated child context and directly runs fresh graph nodes and a tool executor, without an `Agent` lifecycle or active-job tracking. Its explicitly selected tools replace both advertised schemas and executable lookup. Children have no spawn capability or parent turn-setup nodes. Parent cancellation propagates through the child; queued parent input follows the completed tool result.
 
 The host supplies the same LLM API and complete invocation metadata. Child text and graph tool events use an isolated stream and `AgentRuntimeEventSink.NONE`; required interactions emitted by host tools retain their existing owners. The parent records the enclosing spawn tool call and its result.
 
@@ -12,7 +12,7 @@ Reusing a parent agent cancels its active job. Reusing its LLM nodes or tool exe
 
 ## Safe changes
 
-- Bind spawning to the initial parent execution settings before graph setup can restrict or classify tools.
+- Bind spawning to the initial parent execution settings before graph setup can restrict or classify tools. `SubagentToolFactory` in `:sharedLogic` resolves settings, selected tools, and instructions into `SubagentTool.Setup`. The tool in `:agent` constructs the only child context, deriving both tool tables from the selected list, and owns validation, execution, and structured results.
 - Keep child model, tool tables, turn counter, and graph lifecycle private to each invocation. Share plain node helpers rather than adding parent setup flags.
 - Keep provider retries in the host API. Neither child graphs nor parent tool-call batches are graph-retried: a later failing tool must not replay an earlier child's side effects. Child failures become structured spawn results; cancellation remains exceptional. Check the model-turn limit before each LLM request and accept final output on the last allowed turn.
 - Reuse `ToolInvokeSkill` with a provider restricted to the bundles selected and approved at spawn. Do not repeat approval inside the child or change the shared executor's stored/loose directory behavior. Never pass an unrestricted catalog or registry into the child command helper.

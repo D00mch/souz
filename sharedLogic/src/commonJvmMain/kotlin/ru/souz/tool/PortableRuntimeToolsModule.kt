@@ -5,7 +5,6 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.AgentCoreTools
-import ru.souz.agent.SubagentRunner
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
@@ -148,11 +147,8 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     bindSingleton {
         val buildProfile = instanceOrNull<LlmBuildProfile>()
         SubagentToolFactory(
-            runner = SubagentRunner(
-                llmApi = instance(),
-                settingsProvider = instance<SettingsProvider>(),
-                telemetry = instanceOrNull<AgentTelemetry>() ?: AgentTelemetry.NONE,
-            ),
+            llmApi = instance(),
+            telemetry = instanceOrNull<AgentTelemetry>() ?: AgentTelemetry.NONE,
             settingsProvider = instance<SettingsProvider>(),
             toolCatalog = instance(),
             toolsFilter = instance(),
