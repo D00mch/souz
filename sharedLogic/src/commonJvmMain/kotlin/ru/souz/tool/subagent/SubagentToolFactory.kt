@@ -1,6 +1,6 @@
 package ru.souz.tool.subagent
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import ru.souz.agent.Agent
 import ru.souz.agent.SubagentTool
 import ru.souz.agent.SubagentInputException
 import ru.souz.agent.skills.SkillId
@@ -9,12 +9,10 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
-import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -34,7 +32,7 @@ import ru.souz.tool.skills.sandboxCommandResultSchema
 
 /** Creates the core spawn tool with the parent's actual execution settings. */
 class SubagentToolFactory(
-    private val llmApi: LLMChatAPI,
+    private val createAgent: (maxTurns: Int) -> Agent,
     private val settingsProvider: AgentSettingsProvider,
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
@@ -42,11 +40,9 @@ class SubagentToolFactory(
     private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
     private val availableModels: () -> List<LLMModel> = { LLMModel.entries },
-    private val telemetry: AgentTelemetry = AgentTelemetry.NONE,
-    private val logObjectMapper: ObjectMapper = restJsonMapper,
 ) {
     fun create(parentSettings: AgentSettings): LLMToolSetup =
-        SubagentTool(llmApi, settingsProvider, telemetry, logObjectMapper) { input, meta ->
+        SubagentTool(createAgent) { input, meta ->
             prepare(input, parentSettings, meta)
         }
 

@@ -6,6 +6,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.SubagentTool
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -236,7 +237,10 @@ class SubagentToolFactoryTest {
         fun factory(
             approvalGate: SkillApprovalGate? = null,
             availableModels: () -> List<LLMModel> = { LLMModel.entries },
-        ) = SubagentToolFactory(api, settings, catalog, filter, bundles, commands, approvalGate, availableModels)
+        ) = SubagentToolFactory(
+            { maxTurns -> ToolLoopGraphBasedAgent(api, settings, maxTurns) },
+            settings, catalog, filter, bundles, commands, approvalGate, availableModels,
+        )
     }
 }
 

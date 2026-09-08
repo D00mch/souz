@@ -1,26 +1,12 @@
 package ru.souz.agent
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import org.slf4j.LoggerFactory
-import ru.souz.agent.graph.Graph
-import ru.souz.agent.graph.Node
-import ru.souz.agent.graph.RetryPolicy
-import ru.souz.agent.graph.buildGraph
-import ru.souz.agent.nodes.NodesLLM
-import ru.souz.agent.nodes.inputToHistoryNode
-import ru.souz.agent.nodes.responseToStringNode
-import ru.souz.agent.nodes.toolUseNode
 import ru.souz.agent.runtime.AgentRuntimeEventSink
-import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.spi.AgentSettingsProvider
-import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
-import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -29,16 +15,11 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 
-/** A tool that builds and awaits a fresh child graph from host-prepared settings and capabilities. */
+/** Prepares an isolated context and awaits a fresh agent from the host-supplied factory. */
 class SubagentTool(
-    private val llmApi: LLMChatAPI,
-    private val settingsProvider: AgentSettingsProvider,
-    private val telemetry: AgentTelemetry = AgentTelemetry.NONE,
-    private val logObjectMapper: ObjectMapper = restJsonMapper,
+    private val createAgent: (maxTurns: Int) -> Agent,
     private val prepare: suspend (Input, ToolInvocationMeta) -> Setup,
 ) : LLMToolSetup {
-    private val logger = LoggerFactory.getLogger(SubagentTool::class.java)
-
     data class Input(
         val task: String,
         val skillIds: List<String> = emptyList(),
@@ -102,19 +83,15 @@ class SubagentTool(
                 toolInvocationMeta = meta,
                 runtimeEventSink = AgentRuntimeEventSink.NONE,
             )
-            val result = executionGraph(input.maxTurns).start(childContext) { step, node, from, _ ->
-                val nodeInput = (from as AgentContext<*>).input
-                val prettyInput = runCatching { logObjectMapper.writeValueAsString(nodeInput) }.getOrElse { nodeInput.toString() }
-                logger.debug("Step: {}, node: {}, input: {}", step.index, node.name, prettyInput)
-            }
+            val result = createAgent(input.maxTurns).execute(childContext)
             currentCoroutineContext().ensureActive()
-            mapOf("result" to result.input)
+            mapOf("result" to result.output)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             val code = when (error) {
                 is SubagentInputException -> error.code
-                is SubagentTurnLimitException -> "subagent_turn_limit"
+                is AgentTurnLimitException -> "subagent_turn_limit"
                 else -> "subagent_failed"
             }
             mapOf("error" to mapOf("code" to code, "message" to (error.message ?: "Subagent execution failed.")))
@@ -126,46 +103,9 @@ class SubagentTool(
         )
     }
 
-    // Provider retries remain in the supplied API; graph retries must not replay tools.
-    private fun executionGraph(maxTurns: Int): Graph<String, String> = buildGraph(name = "Subagent", retryPolicy = RetryPolicy()) {
-        var turns = 0
-        val inputToHistory = inputToHistoryNode()
-        val turnLimit = Node<String, String>("Check turn limit") { ctx ->
-            if (turns >= maxTurns) throw SubagentTurnLimitException(maxTurns)
-            turns += 1
-            ctx
-        }
-        val chat = NodesLLM(llmApi, settingsProvider).chat("LLM")
-        val chatOk = Node<LLMResponse.Chat, LLMResponse.Chat.Ok>("Chat.Ok") { ctx ->
-            ctx.map {
-                when (val response = ctx.input) {
-                    is LLMResponse.Chat.Ok -> response
-                    is LLMResponse.Chat.Error -> error(
-                        "Subagent model request failed (${response.status}): ${response.message}",
-                    )
-                }
-            }
-        }
-        val toolUse = toolUseNode(AgentToolExecutor(telemetry))
-        val finalAnswer = responseToStringNode()
-
-        nodeInput.edgeTo(inputToHistory)
-        inputToHistory.edgeTo(turnLimit)
-        turnLimit.edgeTo(chat)
-        chat.edgeTo(chatOk)
-        chatOk.edgeTo { ctx ->
-            if (ctx.input.choices.any { it.message.functionCall != null }) toolUse else finalAnswer
-        }
-        toolUse.edgeTo(turnLimit)
-        finalAnswer.edgeTo(nodeFinish)
-    }
-
     companion object {
         const val NAME = "SpawnSubagent"
     }
 }
 
 class SubagentInputException(val code: String, message: String) : IllegalArgumentException(message)
-
-private class SubagentTurnLimitException(maxTurns: Int) :
-    IllegalStateException("Subagent reached its limit of $maxTurns model turns without a final answer.")

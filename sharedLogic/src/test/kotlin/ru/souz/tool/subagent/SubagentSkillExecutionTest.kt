@@ -6,6 +6,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.nio.file.Files
 import kotlinx.coroutines.test.runTest
+import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -90,8 +91,10 @@ class SubagentSkillExecutionTest {
                 }
             }
             val meta = ToolInvocationMeta("owner", "conversation", attributes = mapOf("client" to "session"))
+            val settings = mockk<AgentSettingsProvider> { every { useStreaming } returns false }
             val spawn = SubagentToolFactory(
-                api, mockk<AgentSettingsProvider> { every { useStreaming } returns false }, catalog, filter, registry, commands, approval,
+                { maxTurns -> ToolLoopGraphBasedAgent(api, settings, maxTurns) },
+                settings, catalog, filter, registry, commands, approval,
             ).create(AgentSettings(LLMModel.Max.alias, 0.5f, AgentTools(emptyMap())))
             val result = spawn.invoke(
                 LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Run the skill", "skillIds" to listOf("loose"))), meta,

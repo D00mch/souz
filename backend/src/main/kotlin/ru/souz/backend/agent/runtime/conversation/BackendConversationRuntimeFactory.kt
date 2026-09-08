@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
+import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
@@ -169,8 +170,9 @@ internal class BackendConversationRuntimeFactory(
             approvalGate = null,
         )
         val subagentTools = SubagentToolFactory(
-            llmApi = executionApi,
-            logObjectMapper = logObjectMapper,
+            createAgent = { maxTurns ->
+                ToolLoopGraphBasedAgent(executionApi, settingsProvider, maxTurns = maxTurns, logObjectMapper = logObjectMapper)
+            },
             settingsProvider = settingsProvider,
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,

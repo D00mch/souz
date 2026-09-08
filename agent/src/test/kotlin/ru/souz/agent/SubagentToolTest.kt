@@ -12,9 +12,11 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
@@ -190,11 +192,37 @@ class SubagentToolTest {
     }
 
     @Test
-    fun `cancellation immediately before graph completion cannot return a result`() = runTest {
-        val subagent = subagent {
-            currentCoroutineContext().cancel()
-            response("discarded")
+    fun `agent cancellation or replacement stops execution and resets the turn budget`() = runTest {
+        for (replace in listOf(false, true)) {
+            val started = CompletableDeferred<Unit>()
+            val agent = agent(maxTurns = 1) { request ->
+                if (request.messages.last().content == "wait") {
+                    started.complete(Unit)
+                    awaitCancellation()
+                }
+                response("done")
+            }
+            val context = AgentContext("wait", settings(), emptyList(), emptyList(), "instructions")
+            val execution = async { agent.execute(context) }
+            started.await()
+
+            if (!replace) {
+                agent.cancelActiveJob()
+                execution.join()
+            }
+            assertEquals("done", agent.execute(context.copy(input = "next")).output)
+            assertFailsWith<CancellationException> { execution.await() }
         }
+    }
+
+    @Test
+    fun `cancellation immediately before any implementation returns cannot return a result`() = runTest {
+        val implementation = mockk<Agent>()
+        coEvery { implementation.execute(any(), any(), any()) } coAnswers {
+            currentCoroutineContext().cancel()
+            AgentExecutionResult("discarded", firstArg())
+        }
+        val subagent = SubagentTool({ implementation }) { _, _ -> setup() }
         var returned = false
         val execution = async { subagent.call(); returned = true }
         assertFailsWith<CancellationException> { execution.await() }
@@ -229,15 +257,22 @@ class SubagentToolTest {
         telemetry: AgentTelemetry = AgentTelemetry.NONE,
         prepare: suspend (SubagentTool.Input, ToolInvocationMeta) -> SubagentTool.Setup = { _, _ -> setup() },
         respond: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
-    ): LLMToolSetup {
+    ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, prepare)
+
+    private fun agent(
+        streaming: Boolean = false,
+        telemetry: AgentTelemetry = AgentTelemetry.NONE,
+        maxTurns: Int = 32,
+        respond: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
+    ): Agent {
         val api = mockk<LLMChatAPI>()
         coEvery { api.message(any()) } coAnswers { respond(firstArg()) }
         coEvery { api.messageStream(any()) } coAnswers {
             val request = firstArg<LLMRequest.Chat>()
             flow { emit(respond(request)) }
         }
-        return SubagentTool(api, mockk<AgentSettingsProvider> { every { useStreaming } returns streaming }, telemetry,
-            prepare = prepare)
+        val settings = mockk<AgentSettingsProvider> { every { useStreaming } returns streaming }
+        return ToolLoopGraphBasedAgent(api, settings, maxTurns, telemetry)
     }
 
     private suspend fun LLMToolSetup.call(
