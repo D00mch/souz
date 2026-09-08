@@ -24,6 +24,7 @@ import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
+import ru.souz.agent.nodes.NodesPlain
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -217,7 +218,7 @@ private class ParentHarness(
     init {
         val settingsProvider = mockk<AgentSettingsProvider>(relaxed = true)
         val nodesCommon = NodesCommon(
-            mockk(relaxed = true), settingsProvider, AgentToolExecutor(), SystemAgentRuntimeEnvironment,
+            mockk(relaxed = true), settingsProvider, SystemAgentRuntimeEnvironment,
         )
         val nodesLLM = mockk<NodesLLM>()
         every { nodesLLM.sideEffects } returns emptyFlow()
@@ -237,10 +238,10 @@ private class ParentHarness(
             }
         }
         val nodesSummarization = mockk<NodesSummarization>()
-        every { nodesSummarization.summarize() } returns nodesCommon.responseToString()
+        every { nodesSummarization.summarize() } returns NodesPlain().responseToString()
         val nodesMemory = NodesMemory(NoopConversationMemoryRuntime, captureScope)
         val nodesErrorHandling = NodesErrorHandling(mockk(relaxed = true))
-        val nodesToolUse = NodesToolUseWithKnowledge(nodesCommon, knowledgeStore = null)
+        val nodesToolUse = NodesToolUseWithKnowledge(AgentToolExecutor(), knowledgeStore = null)
         val catalog = mockk<AgentToolCatalog> { every { toolsByCategory } returns catalogTools }
         val filter = mockk<AgentToolsFilter> { every { applyFilter(any()) } answers { firstArg() } }
         val bundles = mockk<SkillBundleProvider> { coEvery { listSkillInventoryIds(any()) } returns emptyList() }

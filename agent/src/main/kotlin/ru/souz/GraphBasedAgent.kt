@@ -21,6 +21,7 @@ import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
+import ru.souz.agent.nodes.NodesPlain
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMResponse
@@ -46,6 +47,7 @@ class GraphBasedAgent internal constructor(
 
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.graphAlwaysInlineResultTools
+    private val nodesPlain = NodesPlain()
 
     private fun graph(graphCoreTools: List<LLMToolSetup>): Graph<String, String> = buildGraph(name = "Agent") {
         val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("LLM")
@@ -61,7 +63,7 @@ class GraphBasedAgent internal constructor(
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
-        val inputToHistory: Node<String, String> = nodesCommon.inputToHistory()
+        val inputToHistory: Node<String, String> = nodesPlain.inputToHistory()
         val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesToolUseWithKnowledge.node(
             alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )

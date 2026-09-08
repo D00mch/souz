@@ -78,9 +78,6 @@ class GraphBasedAgentTest {
         )
 
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesCommon.inputToHistory() } returns Node("Input->History") { ctx ->
-            ctx.map(history = ctx.history + LLMRequest.Message(LLMMessageRole.user, ctx.input))
-        }
         every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
         every {
             nodesSkillInventory.node(

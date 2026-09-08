@@ -14,6 +14,7 @@ import ru.souz.agent.nodes.NodesLLM
 import ru.souz.agent.nodes.NodesMemory
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -39,16 +40,16 @@ class SkillsGraphBasedAgentTest {
         val nodesErrorHandling = mockk<NodesErrorHandling>()
         val nodesSummarization = mockk<NodesSummarization>()
         val nodesMemory = mockk<NodesMemory>()
+        val agentToolExecutor = mockk<AgentToolExecutor>()
         val executed = mutableListOf<String>()
         var chatCount = 0
 
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesCommon.inputToHistory() } returns coreToolsPassthrough(
-            name = "Input->History",
+        every { nodesMemory.recall() } returns coreToolsPassthrough(
+            name = "Memory recall",
             executed = executed,
             expectedToolNames = SKILLS_CORE_TOOL_NAMES,
         )
-        every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
         every { nodesLLM.chat("LLM request", any()) } returns Node("LLM request") { ctx ->
             executed += "LLM"
@@ -56,9 +57,9 @@ class SkillsGraphBasedAgentTest {
             val response = if (chatCount <= 2) toolCallResponse() else finalResponse()
             ctx.map(history = ctx.history + response.choices.mapNotNull { it.toMessage() }) { response }
         }
-        coEvery { nodesCommon.executeFunctionCalls(any()) } answers {
+        coEvery { agentToolExecutor.execute(any(), any(), any(), any(), any()) } answers {
             executed += "toolUse"
-            emptyList()
+            LLMRequest.Message(LLMMessageRole.function, "{}", name = secondArg<LLMResponse.FunctionCall>().name)
         }
         every { nodesSummarization.summarize() } returns Node("Summary") { ctx ->
             executed += "Summary"
@@ -76,13 +77,13 @@ class SkillsGraphBasedAgentTest {
             nodesErrorHandling,
             nodesSummarization,
             nodesMemory,
+            agentToolExecutor,
         )
         val result = skillsAgent.execute(baseContext())
 
         assertEquals("final", result.output)
         assertEquals(
             listOf(
-                "Input->History",
                 "Memory recall",
                 "appendActualInformation",
                 "LLM",
@@ -109,7 +110,6 @@ class SkillsGraphBasedAgentTest {
         val executed = mutableListOf<String>()
 
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesCommon.inputToHistory() } returns passthrough("Input->History", executed)
         every { nodesMemory.recall() } returns passthrough("Memory recall", executed)
         every { nodesCommon.nodeAppendAdditionalData() } returns passthrough("appendActualInformation", executed)
         every { nodesLLM.chat("LLM request", any()) } returns Node("LLM request") { ctx ->
@@ -131,7 +131,6 @@ class SkillsGraphBasedAgentTest {
         assertEquals("friendly error", result.output)
         assertEquals(
             listOf(
-                "Input->History",
                 "Memory recall",
                 "appendActualInformation",
                 "LLM",
@@ -147,6 +146,7 @@ class SkillsGraphBasedAgentTest {
         nodesErrorHandling: NodesErrorHandling,
         nodesSummarization: NodesSummarization,
         nodesMemory: NodesMemory,
+        agentToolExecutor: AgentToolExecutor = AgentToolExecutor(),
     ) = SkillsGraphBasedAgent(
         logObjectMapper = restJsonMapper,
         nodesLLM = nodesLLM,
@@ -160,7 +160,7 @@ class SkillsGraphBasedAgentTest {
             skillBundleProvider = emptySkillRegistry(),
         ),
         nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
-            nodesCommon = nodesCommon,
+            agentToolExecutor = agentToolExecutor,
             knowledgeStore = null,
         ),
         coreTools = testCoreTools(),
@@ -182,9 +182,10 @@ class SkillsGraphBasedAgentTest {
         assertEquals(emptyMap(), ctx.settings.tools.byCategory)
         assertEquals(emptyMap(), ctx.settings.tools.categoryByName)
         assertEquals(PROVIDED_SYSTEM_PROMPT, ctx.systemPrompt)
-        if (ctx.history.isNotEmpty()) {
-            assertContains(ctx.history.first().content, "<skill_inventory>")
-        }
+        assertEquals(LLMMessageRole.user, ctx.history.last().role)
+        assertEquals(ctx.input, ctx.history.last().content)
+        if (ctx.history.size == 2) assertEquals(PROVIDED_SYSTEM_PROMPT, ctx.history.first().content)
+        else assertContains(ctx.history.first().content, "<skill_inventory>")
         ctx
     }
 

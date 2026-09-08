@@ -13,7 +13,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.ActiveRunInput
 import ru.souz.agent.graph.Node
-import ru.souz.agent.nodes.ExecutedToolCall
 import ru.souz.agent.nodes.NodesCommon
 import ru.souz.agent.nodes.NodesErrorHandling
 import ru.souz.agent.nodes.NodesLLM
@@ -22,6 +21,7 @@ import ru.souz.agent.nodes.NodesSkillInventory
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
@@ -183,16 +183,10 @@ class SkillsGraphBasedAgentMidRunInputTest {
                 } finally {
                     toolCancelled = !currentCoroutineContext().isActive
                 }
-                listOf(
-                    ExecutedToolCall(
-                        functionCall = functionCall(),
-                        message = LLMRequest.Message(
-                            role = LLMMessageRole.function,
-                            content = "tool-result",
-                            name = "TestTool",
-                            functionsStateId = "call-1",
-                        ),
-                    )
+                LLMRequest.Message(
+                    role = LLMMessageRole.function,
+                    content = "tool-result",
+                    name = "TestTool",
                 )
             },
         )
@@ -298,13 +292,9 @@ private typealias ChatHandler = suspend (
     context: AgentContext<String>,
 ) -> AgentContext<LLMResponse.Chat>
 
-private typealias ToolHandler = suspend (
-    context: AgentContext<LLMResponse.Chat.Ok>,
-) -> List<ExecutedToolCall>
-
 private class Harness(
     chatHandler: ChatHandler,
-    toolHandler: ToolHandler = { emptyList() },
+    toolHandler: suspend () -> LLMRequest.Message = { error("Unexpected tool call") },
     onFinalize: suspend () -> Unit = {},
 ) {
     private val nodesLLM = mockk<NodesLLM>()
@@ -313,6 +303,7 @@ private class Harness(
     private val nodesSummarization = mockk<NodesSummarization>()
     private val nodesMemory = mockk<NodesMemory>()
     private val nodesSkillInventory = mockk<NodesSkillInventory>()
+    private val agentToolExecutor = mockk<AgentToolExecutor>()
 
     val requestHistories = mutableListOf<List<LLMRequest.Message>>()
     val streamRevisions = mutableListOf<Long>()
@@ -325,13 +316,6 @@ private class Harness(
 
     init {
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesCommon.inputToHistory() } returns Node("Input->History") { ctx ->
-            val history = ArrayList(ctx.history).apply {
-                if (isEmpty()) add(LLMRequest.Message(LLMMessageRole.system, ctx.systemPrompt))
-                add(LLMRequest.Message(LLMMessageRole.user, ctx.input))
-            }
-            ctx.map(history = history)
-        }
         every { nodesMemory.recall() } returns Node("Memory recall") { it }
         every { nodesSkillInventory.restrictToTools(any(), any()) } answers { firstArg() }
         every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME) } returns
@@ -347,8 +331,8 @@ private class Harness(
                 result.copy(history = result.history + choices.mapNotNull { it.toMessage() })
             }
         }
-        coEvery { nodesCommon.executeFunctionCalls(any()) } coAnswers {
-            toolHandler(firstArg())
+        coEvery { agentToolExecutor.execute(any(), any(), any(), any(), any()) } coAnswers {
+            toolHandler()
         }
         every { nodesSummarization.summarize() } returns Node("Summary") { ctx ->
             ctx.map { responseContent(ctx.input) }
@@ -362,7 +346,7 @@ private class Harness(
             ctx.map { "error" }
         }
 
-        val nodesToolUse = NodesToolUseWithKnowledge(nodesCommon, knowledgeStore = null)
+        val nodesToolUse = NodesToolUseWithKnowledge(agentToolExecutor, knowledgeStore = null)
         agent = SkillsGraphBasedAgent(
             logObjectMapper = restJsonMapper,
             nodesLLM = nodesLLM,

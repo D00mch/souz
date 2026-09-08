@@ -2,7 +2,6 @@ package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
-import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
@@ -11,7 +10,6 @@ import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -23,25 +21,13 @@ internal fun LLMRequest.Message.isInjectedContextMessage(): Boolean =
         content.startsWith(INJECTED_CONTEXT_PREFIX) &&
         content.endsWith(INJECTED_CONTEXT_SUFFIX)
 
-/**
- * Nodes related to local data manipulation.
- * The nodes may update [AgentContext.input] or [AgentContext.history].
- */
+/** Enriches conversation history with host-provided context. */
 internal class NodesCommon(
     private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val settingsProvider: AgentSettingsProvider,
-    private val agentToolExecutor: AgentToolExecutor,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
-
-    fun inputToHistory(name: String = "Input->History"): Node<String, String> = inputToHistoryNode(name)
-
-    fun responseToString(name: String = "Response -> String"): Node<LLMResponse.Chat.Ok, String> =
-        responseToStringNode(name)
-
-    fun toolUse(name: String = "toolUse"): Node<LLMResponse.Chat.Ok, String> =
-        toolUseNode(agentToolExecutor, name)
 
     /**
      * Makes sure we have Additional Data (AD) in the [AgentContext.history]. Implementation details:
@@ -114,9 +100,6 @@ internal class NodesCommon(
         l.warn("Error collecting geo location hints: {}", e.message)
         null
     }
-
-    internal suspend fun executeFunctionCalls(ctx: AgentContext<LLMResponse.Chat.Ok>): List<ExecutedToolCall> =
-        executeFunctionCalls(ctx, agentToolExecutor)
 
     private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
         try {
