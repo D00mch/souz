@@ -30,6 +30,7 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.immutableToolCatalogFromLists
 import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -128,8 +129,12 @@ class SubagentToolFactoryTest {
         )
         assertTrue(setup.systemPrompt.contains("Approved task instructions."))
         assertTrue(setup.systemPrompt.contains("Fallback bundle."))
-        assertTrue(setup.systemPrompt.contains("inputSchema"))
-        assertTrue(setup.systemPrompt.contains("scriptPath"))
+        val discovery = ToolGetSkillByName(fixture.catalog, fixture.filter, fixture.bundles)
+            .call(mapOf("skillId" to "selected"), meta)
+        val promptPayloads = setup.systemPrompt.lineSequence().filter { it.startsWith("{") }
+            .map { restJsonMapper.readTree(it) }.toList()
+        assertEquals(discovery["executionSchema"], promptPayloads[0])
+        assertEquals(discovery["skill"], promptPayloads[1])
         assertEquals(listOf(ToolInvokeSkill.NAME), setup.tools.map { it.fn.name })
         coVerify(exactly = 2) { approval.ensureApproved(any()) }
 

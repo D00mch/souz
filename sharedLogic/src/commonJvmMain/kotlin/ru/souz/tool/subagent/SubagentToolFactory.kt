@@ -18,7 +18,6 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ModelResolution
 import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.giga.toolInputParameters
 import ru.souz.llms.resolveChatModel
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
@@ -28,7 +27,8 @@ import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
-import ru.souz.tool.skills.sandboxCommandResultSchema
+import ru.souz.tool.skills.fileSkillExecutionSchema
+import ru.souz.tool.skills.toDetail
 
 /** Creates the core spawn tool with the parent's actual execution settings. */
 class SubagentToolFactory(
@@ -138,19 +138,10 @@ class SubagentToolFactory(
         if (bundles.isNotEmpty()) {
             append("\nSelected file-backed Skills follow. Invoke their commands with RunSkillCommand, ")
             append("using skillId and arguments matching this shared execution schema:\n")
-            append(restJsonMapper.writeValueAsString(mapOf(
-                "inputSchema" to toolInputParameters<SkillCommandExecutor.Args>(),
-                "returnSchema" to sandboxCommandResultSchema(),
-            )))
+            append(restJsonMapper.writeValueAsString(fileSkillExecutionSchema()))
             bundles.forEach { bundle ->
                 append("\n\n")
-                append(restJsonMapper.writeValueAsString(mapOf(
-                    "skillId" to bundle.skillId.value,
-                    "name" to bundle.manifest.name,
-                    "description" to bundle.manifest.description,
-                    "skillMarkdownBody" to bundle.skillMarkdownBody,
-                    "supportingFiles" to bundle.files.map { it.normalizedPath }.filterNot { it == "SKILL.md" },
-                )))
+                append(restJsonMapper.writeValueAsString(bundle.toDetail()))
             }
         }
     }
