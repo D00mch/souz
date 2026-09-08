@@ -189,7 +189,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
         ToolInvokeSkill(
             toolCatalog = instance(),
             toolsFilter = instance(),
-            skillBundleProvider = instance<SkillRegistryRepository>(),
+            loadBundle = instance<SkillRegistryRepository>()::loadSkillBundle,
             commandExecutor = instance(),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )

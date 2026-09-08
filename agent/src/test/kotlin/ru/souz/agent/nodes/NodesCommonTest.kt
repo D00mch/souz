@@ -148,7 +148,7 @@ class NodesCommonTest {
             runtimeEventSink = eventSink,
         )
 
-        val result = NodesPlain().toolUse(agentToolExecutor).execute(context, graphRuntime())
+        val result = NodesPlain.toolUse(agentToolExecutor).execute(context, graphRuntime())
 
         coVerify(exactly = 1) {
             agentToolExecutor.execute(

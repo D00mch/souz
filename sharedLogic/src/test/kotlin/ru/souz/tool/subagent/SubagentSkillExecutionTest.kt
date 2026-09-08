@@ -103,7 +103,7 @@ class SubagentSkillExecutionTest {
             assertEquals(3, requests)
             coVerify(exactly = 1) { approval.ensureApproved(any()) }
 
-            val generic = ToolInvokeSkill(catalog, filter, registry, commands, approval)
+            val generic = ToolInvokeSkill(catalog, filter, registry::loadSkillBundle, commands, approval)
             val genericResult = generic.invoke(readReport, meta)
             assertEquals("edited", restJsonMapper.readTree(genericResult.content)["stdout"].asText())
             assertEquals("edited", fileSystem.readText(fileSystem.resolveExistingFile("$root/report.txt")))

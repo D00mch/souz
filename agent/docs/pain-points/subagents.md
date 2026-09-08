@@ -16,7 +16,7 @@ Reusing a parent agent cancels its active job. Reusing its LLM nodes or tool exe
 - Factories return a fresh agent that respects the supplied context, capabilities, and turn budget. Budget exhaustion throws `AgentTurnLimitException`, which the tool maps to `subagent_turn_limit`. Do not reuse a parent or singleton agent: starting an execution cancels its previous job.
 - Keep child model, tool tables, turn counter, and graph lifecycle private to each invocation. Share plain node helpers rather than adding parent setup flags.
 - Keep provider retries in the host API. Neither child graphs nor parent tool-call batches are graph-retried: a later failing tool must not replay an earlier child's side effects. Child failures become structured spawn results; cancellation remains exceptional. Check the model-turn limit before each LLM request and accept final output on the last allowed turn.
-- Reuse `ToolInvokeSkill` with a provider restricted to the bundles selected and approved at spawn. Do not repeat approval inside the child or change the shared executor's stored/loose directory behavior. Never pass an unrestricted catalog or registry into the child command helper.
+- Reuse `ToolInvokeSkill` with a bundle loader restricted to the owner and bundles selected and approved at spawn. Do not repeat approval inside the child or change the shared executor's stored/loose directory behavior. Never pass an unrestricted catalog or bundle loader into the child command helper.
 - Keep durable backend child records and recovery separate from the shared execution model.
 
 ## Verification

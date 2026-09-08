@@ -6,7 +6,6 @@ import ru.souz.agent.SubagentInputException
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.registry.SkillBundleProvider
-import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
@@ -113,11 +112,8 @@ class SubagentToolFactory(
                 override fun applyFilter(toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>) =
                     toolsByCategory
             },
-            skillBundleProvider = object : SkillBundleProvider {
-                override suspend fun listSkills(userId: String): List<StoredSkill> = emptyList()
-
-                override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? =
-                    bundles[skillId].takeIf { userId == ownerId }
+            loadBundle = { userId, skillId ->
+                bundles[skillId].takeIf { userId == ownerId }
             },
             commandExecutor = commandExecutor,
             approvalGate = null, // Selected bundles passed the host's approval policy before spawning.

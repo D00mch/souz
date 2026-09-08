@@ -165,7 +165,7 @@ internal class BackendConversationRuntimeFactory(
         val runtimeCommandTool = ToolInvokeSkill(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
-            skillBundleProvider = skillBundleProvider,
+            loadBundle = skillBundleProvider::loadSkillBundle,
             commandExecutor = commandExecutor,
             approvalGate = null,
         )

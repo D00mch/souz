@@ -238,7 +238,7 @@ private class ParentHarness(
             }
         }
         val nodesSummarization = mockk<NodesSummarization>()
-        every { nodesSummarization.summarize() } returns NodesPlain().responseToString()
+        every { nodesSummarization.summarize() } returns NodesPlain.responseToString()
         val nodesMemory = NodesMemory(NoopConversationMemoryRuntime, captureScope)
         val nodesErrorHandling = NodesErrorHandling(mockk(relaxed = true))
         val nodesToolUse = NodesToolUseWithKnowledge(AgentToolExecutor(), knowledgeStore = null)

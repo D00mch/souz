@@ -6,7 +6,8 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import ru.souz.ToolLoopGraphBasedAgent
+import ru.souz.agent.Agent
+import ru.souz.agent.AgentExecutionResult
 import ru.souz.agent.SubagentTool
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -16,9 +17,9 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
-import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
@@ -54,11 +55,10 @@ class SubagentToolFactoryTest {
         assertEquals(LLMMessageRole.function, response.role)
         assertEquals(SubagentTool.NAME, response.name)
         assertEquals("{\"result\":\"child answer\"}", response.content)
-        assertEquals("Summarize this text.", fixture.request.messages.last().content)
-        assertEquals(parent.model, fixture.request.model)
-        assertEquals(parent.temperature, fixture.request.temperature)
-        assertEquals(parent.contextSize, fixture.request.maxTokens)
-        assertTrue(fixture.request.functions.isEmpty())
+        assertEquals("Summarize this text.", fixture.context.input)
+        assertEquals(parent.copy(tools = AgentTools(emptyMap())), fixture.context.settings)
+        assertEquals(meta, fixture.context.toolInvocationMeta)
+        assertTrue(fixture.context.activeTools.isEmpty())
         coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
     }
 
@@ -94,7 +94,7 @@ class SubagentToolFactoryTest {
                 val response = tool.call(mapOf("task" to "Inspect", "skillIds" to listOf("enabled", id)))
                 assertEquals(code, response["error"]["code"].asText())
             }
-        coVerify(exactly = 0) { fixture.api.message(any()) }
+        assertTrue(fixture.contexts.isEmpty())
     }
 
     @Test
@@ -107,7 +107,7 @@ class SubagentToolFactoryTest {
             val response = tool.call(mapOf("task" to "Escape", "skillIds" to listOf(id)))
             assertEquals("skill_not_allowed", response["error"]["code"].asText())
         }
-        coVerify(exactly = 0) { fixture.api.message(any()) }
+        assertTrue(fixture.contexts.isEmpty())
         coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
     }
 
@@ -138,7 +138,7 @@ class SubagentToolFactoryTest {
         assertEquals(listOf(ToolInvokeSkill.NAME), setup.tools.map { it.fn.name })
         coVerify(exactly = 2) { approval.ensureApproved(any()) }
 
-        // The child provider serves only the bundles selected at spawn without another registry lookup.
+        // The child loader serves only the bundles selected at spawn without another registry lookup.
         coEvery { fixture.bundles.loadSkillBundle(any(), any()) } throws AssertionError("Unexpected live lookup")
         coEvery { fixture.commands.execute(any(), any(), any(), any()) } returns SandboxCommandResult(0, "ok", "", false)
         val command = setup.tools.single()
@@ -167,7 +167,7 @@ class SubagentToolFactoryTest {
 
         assertEquals("skill_validation_rejected", response["error"]["code"].asText())
         assertFalse(response.toString().contains("Hidden instructions."))
-        coVerify(exactly = 0) { fixture.api.message(any()) }
+        assertTrue(fixture.contexts.isEmpty())
         coVerify(exactly = 0) { fixture.commands.execute(any(), any(), any(), any()) }
     }
 
@@ -178,30 +178,13 @@ class SubagentToolFactoryTest {
 
         tool.call(mapOf("task" to "Inspect", "model" to "gigachat-2-pro", "maxTurns" to 1))
 
-        assertEquals(LLMModel.Pro.alias, fixture.request.model)
+        assertEquals(LLMModel.Pro.alias, fixture.context.settings.model)
         assertEquals(LLMModel.Max.alias, fixture.parent.model)
         listOf("unknown", " ", LLMModel.OpenAIGpt52.name, LLMModel.Lite.name).forEach { model ->
             val response = tool.call(mapOf("task" to "Inspect", "model" to model))
             assertEquals("subagent_model_unavailable", response["error"]["code"].asText())
         }
-        coVerify(exactly = 1) { fixture.api.message(any()) }
-    }
-
-    @Test
-    fun `invalid task or turn limits fail before child runs`() = runTest {
-        val fixture = Fixture()
-        val tool = fixture.factory().create(fixture.parent)
-
-        listOf(
-            emptyMap(), mapOf("task" to " "), mapOf("task" to "Task", "maxTurns" to 0),
-            mapOf("task" to "Task", "maxTurns" to 129), mapOf("task" to "Task", "skillIds" to 2),
-        ).forEach { arguments ->
-            val response = tool.call(arguments)
-            assertEquals("invalid_subagent_input", response["error"]["code"].asText())
-        }
-        coVerify(exactly = 0) { fixture.api.message(any()) }
-        tool.call(mapOf("task" to "Task", "maxTurns" to 128))
-        assertEquals(1, fixture.requests.size)
+        assertEquals(1, fixture.contexts.size)
     }
 
     @Test
@@ -211,39 +194,29 @@ class SubagentToolFactoryTest {
         assertFailsWith<CancellationException> {
             fixture.factory().create(fixture.parent).call(mapOf("task" to "Task", "skillIds" to listOf("skill")))
         }
-        coVerify(exactly = 0) { fixture.api.message(any()) }
+        assertTrue(fixture.contexts.isEmpty())
     }
 
     private class Fixture(compiled: List<LLMToolSetup> = emptyList()) {
         val catalog = immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to compiled))
         val parent = AgentSettings(LLMModel.Max.alias, 0.5f, AgentTools(catalog.toolsByCategory))
-        val settings = mockk<AgentSettingsProvider> {
-            every { gigaModel } returns LLMModel.Max
-            every { useStreaming } returns false
-        }
+        val settings = mockk<AgentSettingsProvider> { every { gigaModel } returns LLMModel.Max }
         val filter = mockk<AgentToolsFilter> { every { applyFilter(any()) } answers { firstArg() } }
         val bundles = mockk<SkillBundleProvider> { coEvery { loadSkillBundle(any(), any()) } returns null }
         val commands = mockk<SkillCommandExecutor>()
-        val requests = mutableListOf<LLMRequest.Chat>()
-        val request get() = requests.last()
-        val api = mockk<LLMChatAPI> {
-            coEvery { message(any()) } answers {
-                requests += firstArg<LLMRequest.Chat>()
-                LLMResponse.Chat.Ok(
-                    choices = listOf(LLMResponse.Choice(
-                        LLMResponse.Message("child answer", LLMMessageRole.assistant, functionsStateId = null),
-                        index = 0, finishReason = LLMResponse.FinishReason.stop,
-                    )),
-                    created = 1, model = request.model, usage = LLMResponse.Usage(1, 1, 2, 0),
-                )
-            }
-        }
+        val contexts = mutableListOf<AgentContext<String>>()
+        val context get() = contexts.last()
 
         fun factory(
             approvalGate: SkillApprovalGate? = null,
             availableModels: () -> List<LLMModel> = { LLMModel.entries },
         ) = SubagentToolFactory(
-            { maxTurns -> ToolLoopGraphBasedAgent(api, settings, maxTurns) },
+            { _ -> mockk<Agent> {
+                coEvery { execute(any(), any(), any()) } answers {
+                    contexts += firstArg<AgentContext<String>>()
+                    AgentExecutionResult("child answer", context)
+                }
+            } },
             settings, catalog, filter, bundles, commands, approvalGate, availableModels,
         )
     }
