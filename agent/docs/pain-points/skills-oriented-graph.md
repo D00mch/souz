@@ -6,7 +6,7 @@
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
-`NodesSkillInventory` owns Skill inventory prompt augmentation and core-tool restriction. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesCommon` enriches history with host context. `NodesPlain` is a stateless class providing history, response, and tool-execution helpers through instance methods. `NodesToolUseWithKnowledge` composes tool execution with Knowledge-aware result handling.
+`NodesSkillInventory` owns Skill inventory prompt augmentation. `AgentContext.withOnlyTools` replaces advertised and executable tools at skills-graph and child execution boundaries, rejecting duplicate names and retaining only explicitly supplied categories. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesCommon` enriches history with host context. `NodesPlain` is a stateless class providing history, response, and tool-execution helpers through instance methods. `NodesToolUseWithKnowledge` composes tool execution with Knowledge-aware result handling.
 
 Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. `SearchMemory` has no always-inline exemption and a large result may be offloaded. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 

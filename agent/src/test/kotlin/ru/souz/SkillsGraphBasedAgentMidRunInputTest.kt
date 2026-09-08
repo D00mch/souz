@@ -317,7 +317,6 @@ private class Harness(
     init {
         every { nodesLLM.sideEffects } returns emptyFlow()
         every { nodesMemory.recall() } returns Node("Memory recall") { it }
-        every { nodesSkillInventory.restrictToTools(any(), any()) } answers { firstArg() }
         every { nodesSkillInventory.node(any(), SKILL_INVENTORY_NODE_NAME) } returns
             Node(SKILL_INVENTORY_NODE_NAME) { it }
         every { nodesCommon.nodeAppendAdditionalData() } returns Node("appendActualInformation") { it }

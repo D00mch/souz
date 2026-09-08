@@ -106,7 +106,7 @@ class SkillsGraphBasedAgent internal constructor(
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()
-        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, coreTools.skillsTools(ctx.settings))
+        val restrictedContext = ctx.withOnlyTools(coreTools.skillsTools(ctx.settings))
         val controller = ActiveRunInputController()
         val executionGraph = graph(controller)
         activeRun.value = controller

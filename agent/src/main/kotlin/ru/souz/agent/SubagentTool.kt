@@ -6,7 +6,6 @@ import kotlinx.coroutines.ensureActive
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
-import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -68,21 +67,17 @@ class SubagentTool(
                 throw SubagentInputException("invalid_subagent_input", "task must be nonblank and maxTurns must be between 1 and 128.")
             }
             val setup = prepare(input, meta)
-            val selectedTools = setup.tools.associateBy { it.fn.name }
-            require(selectedTools.size == setup.tools.size) { "Subagent tool names must be unique." }
             val childContext = AgentContext(
                 input = input.task,
-                settings = setup.settings.copy(tools = AgentTools(
-                    byCategory = emptyMap(),
-                    byName = selectedTools,
-                    categoryByName = selectedTools.keys.associateWith { setup.settings.tools.categoryByName[it] ?: ToolCategory.CHAT },
-                )),
+                settings = setup.settings,
                 history = emptyList(),
-                activeTools = selectedTools.values.map { it.fn },
+                activeTools = emptyList(),
                 systemPrompt = setup.systemPrompt,
                 toolInvocationMeta = meta,
                 runtimeEventSink = AgentRuntimeEventSink.NONE,
-            )
+            ).withOnlyTools(setup.tools, setup.tools.associate {
+                it.fn.name to (setup.settings.tools.categoryByName[it.fn.name] ?: ToolCategory.CHAT)
+            })
             val result = createAgent(input.maxTurns).execute(childContext)
             currentCoroutineContext().ensureActive()
             mapOf("result" to result.output)
