@@ -25,6 +25,42 @@ data class ClientChatDto(
     val title: String?,
 )
 
+data class ChatCreatePayload(val userId: String, val title: String? = null)
+
+data class ChatCreateFrame(val kind: String, val requestId: String, val payload: ChatCreatePayload)
+
+data class ChatSubscribeFrame(
+    val kind: String,
+    val chatId: String,
+    val requestId: String,
+    val afterSeq: Long = 0,
+)
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class ChatCreateAck(
+    val kind: String = "ack",
+    val type: String = "chat.create",
+    val userId: String?,
+    val requestId: String,
+    val chatId: String?,
+    val status: String,
+    val duplicate: Boolean,
+    val error: ClientError? = null,
+    val receivedAt: String,
+)
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class ChatSubscribeAck(
+    val kind: String = "ack",
+    val type: String = "chat.subscribe",
+    val chatId: String,
+    val requestId: String,
+    val status: String,
+    val duplicate: Boolean,
+    val error: ClientError? = null,
+    val receivedAt: String,
+)
+
 data class ClientDevice(
     val userId: String,
     val deviceId: String,

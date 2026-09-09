@@ -83,6 +83,19 @@ class PostgresAgentEventRepository(
         }
     }
 
+    override suspend fun latestSeq(userId: String, chatId: UUID): Long = dataSource.read { connection ->
+        connection.prepareStatement(
+            "select coalesce(max(seq), 0) from agent_events where user_id = ? and chat_id = ?"
+        ).use { statement ->
+            statement.setString(1, userId)
+            statement.setObject(2, chatId)
+            statement.executeQuery().use { resultSet ->
+                check(resultSet.next())
+                resultSet.getLong(1)
+            }
+        }
+    }
+
     override suspend fun listByChat(
         userId: String,
         chatId: UUID,

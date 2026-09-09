@@ -1,0 +1,306 @@
+package ru.souz.backend.http.routes
+
+import com.fasterxml.jackson.core.JsonProcessingException
+import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
+import io.ktor.server.routing.openapi.hide
+import io.ktor.server.websocket.DefaultWebSocketServerSession
+import io.ktor.server.websocket.webSocket
+import io.ktor.utils.io.ExperimentalKtorApi
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.Frame
+import io.ktor.websocket.close
+import io.ktor.websocket.readText
+import java.time.Instant
+import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import ru.souz.backend.chat.model.Chat
+import ru.souz.backend.client.ChatCreateAck
+import ru.souz.backend.client.ChatCreateFrame
+import ru.souz.backend.client.ChatSubscribeAck
+import ru.souz.backend.client.ChatSubscribeFrame
+import ru.souz.backend.client.ClientContractException
+import ru.souz.backend.client.ClientError
+import ru.souz.backend.client.CreateClientChatRequest
+import ru.souz.backend.client.HandledClientFrame
+import ru.souz.backend.client.HistoryAppendAck
+import ru.souz.backend.client.HistoryAppendFrame
+import ru.souz.backend.client.MessageSubmitAck
+import ru.souz.backend.client.MessageSubmitFrame
+import ru.souz.backend.client.PublicClientService
+import ru.souz.backend.client.ThreadCancelAck
+import ru.souz.backend.client.ThreadCancelFrame
+import ru.souz.backend.client.ToolResultAck
+import ru.souz.backend.client.ToolResultFrame
+import ru.souz.backend.client.supportedClientTypes
+import ru.souz.backend.client.toStatusFrame
+import ru.souz.backend.events.bus.AgentEventStream
+import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.http.BackendHttpDependencies
+import ru.souz.backend.http.BackendV1Exception
+import ru.souz.backend.http.queryNonNegativeLong
+import ru.souz.backend.http.requireChatId
+import ru.souz.backend.http.toPublicDto
+
+@OptIn(ExperimentalKtorApi::class)
+internal fun Route.publicClientSocket(path: String, deps: BackendHttpDependencies, singleChat: Boolean) {
+    get(path) { call.respond(HttpStatusCode.BadRequest) }.hide()
+    webSocket(path) {
+        if (!deps.featureFlags.wsEvents) {
+            close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "WebSocket feature is disabled."))
+            return@webSocket
+        }
+        val clientType = call.request.queryParameters["clientType"]
+        val allowedTypes = if (singleChat) supportedClientTypes else setOf("backend")
+        if (clientType !in allowedTypes) {
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "clientType must be ${allowedTypes.joinToString(" or ")}."))
+            return@webSocket
+        }
+        val chat = try {
+            if (singleChat) deps.publicClientService.requireChat(call.requireChatId(), requireNotNull(clientType)) else null
+        } catch (error: ClientContractException) {
+            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message))
+            return@webSocket
+        }
+        val afterSeq = if (singleChat) call.queryNonNegativeLong("afterSeq") ?: 0L else 0L
+        runClientSocket(deps, requireNotNull(clientType), chat, afterSeq)
+    }.hide()
+}
+
+private suspend fun DefaultWebSocketServerSession.runClientSocket(
+    deps: BackendHttpDependencies,
+    clientType: String,
+    boundChat: Chat?,
+    afterSeq: Long,
+) = coroutineScope {
+    val service = deps.publicClientService
+    val subscriptions = mutableMapOf<UUID, Job>()
+    val sendMutex = Mutex()
+    suspend fun writeJson(value: Any) = send(Frame.Text(publicWebSocketMapper.writeValueAsString(value)))
+    suspend fun sendHandled(chat: Chat?, handled: HandledClientFrame) {
+        sendMutex.withLock {
+            writeJson(handled.response)
+            handled.afterSend()
+            handled.statusFeedback?.let { feedback ->
+                writeJson(service.threadStatus(requireNotNull(chat), feedback.threadId).toStatusFrame(feedback.requestId))
+            }
+        }
+    }
+    fun subscribe(chat: Chat, stream: AgentEventStream): CompletableDeferred<Unit> {
+        val replayDone = CompletableDeferred<Unit>()
+        // Enter the cleanup block even if the connection is cancelled before the first dispatch.
+        subscriptions[chat.id] = launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                stream.forwardPublicEvents(replayDone) { event ->
+                    sendMutex.withLock { writeJson(event.toPublicDto()) }
+                }
+            } finally {
+                withContext(NonCancellable) { stream.close() }
+            }
+        }
+        return replayDone
+    }
+    suspend fun prepare(chat: Chat, cursor: Long?): AgentEventStream? =
+        if (chat.id in subscriptions) null else deps.eventService.openPublicStream(chat.userId, chat.id, cursor)
+
+    try {
+        boundChat?.let { subscribe(it, requireNotNull(prepare(it, afterSeq))).await() }
+        for (frame in incoming) {
+            if (frame !is Frame.Text) continue
+            var pendingStream: AgentEventStream? = null
+            try {
+                val node = parseClientFrame(frame.readText())
+                val kind = node.path("kind").asText()
+                if (kind !in clientFrameKinds || (boundChat != null && kind.startsWith("chat."))) {
+                    throw InvalidClientFrameException("Unsupported frame kind.")
+                }
+                var chat = boundChat
+                var activate = false
+                val handled = try {
+                    when (kind) {
+                        "chat.create" -> {
+                            val create = decodeClientFrame(node, ChatCreateFrame::class.java)
+                            val result = deps.createClientChat(
+                                CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
+                            )
+                            // Read database timestamp precision on first creation as well as on retries.
+                            val created = service.requireChat(result.chat.id, clientType)
+                            chat = created
+                            pendingStream = prepare(created, null)
+                            activate = true
+                            HandledClientFrame(ChatCreateAck(
+                                userId = created.userId, requestId = created.requestId, chatId = created.id.toString(),
+                                status = "accepted", duplicate = result.duplicate, receivedAt = created.createdAt.toString(),
+                            ))
+                        }
+                        "chat.subscribe" -> {
+                            val subscribe = decodeClientFrame(node, ChatSubscribeFrame::class.java)
+                            requireSubscribeCursor(node)
+                            val requestId = subscribe.requestId.trim().takeIf { it.isNotEmpty() }
+                                ?: throw ClientContractException("invalid_request", "requestId must not be empty.")
+                            val target = service.resolveFrameChat(node, clientType, boundChat)
+                            chat = target
+                            pendingStream = if (node.has("afterSeq")) {
+                                deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
+                            } else prepare(target, subscribe.afterSeq)
+                            // Prepare first to cover concurrent events; stop the old sender before the replay ack.
+                            if (pendingStream != null) subscriptions.remove(target.id)?.cancelAndJoin()
+                            activate = true
+                            HandledClientFrame(ChatSubscribeAck(
+                                chatId = target.id.toString(), requestId = requestId, status = "accepted",
+                                duplicate = pendingStream == null, receivedAt = Instant.now().toString(),
+                            ))
+                        }
+                        else -> {
+                            val target = service.resolveFrameChat(node, clientType, boundChat)
+                            chat = target
+                            if (kind == "message.submit") pendingStream = prepare(target, null)
+                            handleChatFrame(service, target, node, kind).also {
+                                activate = kind == "message.submit" && it.statusFeedback != null
+                            }
+                        }
+                    }
+                } catch (error: ClientContractException) {
+                    rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
+                } catch (error: BackendV1Exception) {
+                    rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
+                }
+                sendHandled(chat, handled)
+                if (activate) pendingStream?.let { stream ->
+                    subscribe(requireNotNull(chat), stream)
+                    pendingStream = null
+                }
+            } catch (error: InvalidClientFrameException) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message ?: "Invalid frame."))
+                break
+            } finally {
+                withContext(NonCancellable) { pendingStream?.close?.invoke() }
+            }
+        }
+    } finally {
+        withContext(NonCancellable) {
+            subscriptions.values.forEach { it.cancel() }
+            subscriptions.values.toList().joinAll()
+        }
+    }
+}
+
+private suspend fun AgentEventStream.forwardPublicEvents(
+    replayDone: CompletableDeferred<Unit>,
+    send: suspend (AgentEvent) -> Unit,
+) {
+    var lastSeq = initialSeq
+    suspend fun sendDurableEvents(events: Iterable<AgentEvent>) {
+        events.forEach { event ->
+            if (event.seq > lastSeq) {
+                lastSeq = event.seq
+                if (event.isPublicClientEvent()) send(event)
+            }
+        }
+    }
+    try {
+        sendDurableEvents(replay)
+        sendDurableEvents(replayAfter(lastSeq))
+    } finally {
+        replayDone.complete(Unit)
+    }
+    for (event in liveEvents) {
+        val seq = event.seq
+        if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
+    }
+}
+
+private suspend fun PublicClientService.resolveFrameChat(node: JsonNode, clientType: String, boundChat: Chat?): Chat {
+    val id = runCatching { UUID.fromString(node.path("chatId").asText()) }.getOrNull()
+        ?: throw ClientContractException("invalid_request", "chatId must be a UUID.")
+    if (boundChat != null) {
+        if (boundChat.id != id) throw ClientContractException("invalid_request", "Frame chatId does not match the socket.")
+        return boundChat
+    }
+    return requireChat(id, clientType)
+}
+
+private suspend fun handleChatFrame(service: PublicClientService, chat: Chat, node: JsonNode, kind: String) =
+    when (kind) {
+        "message.submit" -> decodeClientFrame(node, MessageSubmitFrame::class.java).also {
+            val capabilities = node.path("payload").path("device").path("capabilities")
+            if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
+                throw ClientContractException("invalid_request", "device.capabilities must be unique.")
+            }
+        }.let { service.handleMessage(chat, it) }
+        "history.append" -> service.handleHistory(chat, decodeClientFrame(node, HistoryAppendFrame::class.java))
+        "tool.result" -> service.handleToolResult(chat, decodeClientFrame(node, ToolResultFrame::class.java))
+        "thread.cancel" -> service.handleCancel(chat, decodeClientFrame(node, ThreadCancelFrame::class.java))
+        else -> throw InvalidClientFrameException("Unsupported frame kind.")
+    }
+
+private fun parseClientFrame(raw: String): JsonNode {
+    val node = try {
+        publicWebSocketMapper.readTree(raw) ?: throw InvalidClientFrameException("Frame must be valid JSON.")
+    } catch (_: JsonProcessingException) {
+        throw InvalidClientFrameException("Frame must be valid JSON.")
+    }
+    if (!node.isObject) throw InvalidClientFrameException("Frame must be a JSON object.")
+    return node
+}
+
+private fun <T> decodeClientFrame(node: JsonNode, type: Class<T>): T = try {
+    publicWebSocketMapper.treeToValue(node, type)
+} catch (_: JsonProcessingException) {
+    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
+} catch (_: IllegalArgumentException) {
+    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
+}
+
+private fun requireSubscribeCursor(node: JsonNode) {
+    node.get("afterSeq")?.let { cursor ->
+        if (!cursor.isIntegralNumber || !cursor.canConvertToLong() || cursor.asLong() < 0) {
+            throw ClientContractException("invalid_request", "afterSeq must be a non-negative integer.")
+        }
+    }
+}
+
+private fun rejectedFor(node: JsonNode, boundChatId: String?, kind: String, code: String, message: String): HandledClientFrame {
+    val now = Instant.now()
+    val error = ClientError(code, message)
+    val chatId = boundChatId ?: node.path("chatId").asText("")
+    val requestId = node.path("requestId").asText("invalid")
+    val threadId = node.path("threadId").asText("00000000-0000-0000-0000-000000000000")
+    val response = when (kind) {
+        "chat.create" -> ChatCreateAck(
+            userId = node.path("payload").path("userId").takeIf { it.isTextual }?.asText(),
+            requestId = requestId, chatId = null, status = "rejected", duplicate = false,
+            error = error, receivedAt = now.toString(),
+        )
+        "chat.subscribe" -> ChatSubscribeAck(
+            chatId = chatId, requestId = requestId, status = "rejected", duplicate = false,
+            error = error, receivedAt = now.toString(),
+        )
+        "message.submit" -> MessageSubmitAck.rejected(chatId, requestId, error, now)
+        "history.append" -> HistoryAppendAck.rejected(chatId, requestId, error, now)
+        "tool.result" -> ToolResultAck.rejected(chatId, threadId, node.path("toolCallId").asText("invalid"), error, now)
+        "thread.cancel" -> ThreadCancelAck.rejected(chatId, requestId, threadId, error, now)
+        else -> throw InvalidClientFrameException("Unsupported frame kind.")
+    }
+    return HandledClientFrame(response)
+}
+
+private class InvalidClientFrameException(message: String) : RuntimeException(message)
+
+private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "message.submit", "history.append", "tool.result", "thread.cancel")
+private val publicWebSocketMapper = jacksonObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)

@@ -16,6 +16,8 @@ import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.http.BackendV1Exception
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 class AgentEventService(
     private val chatRepository: ChatRepository,
@@ -150,20 +152,23 @@ class AgentEventService(
     suspend fun openPublicStream(
         userId: String,
         chatId: UUID,
-        afterSeq: Long = 0,
+        afterSeq: Long? = 0,
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
         val subscription = eventBus.subscribe(userId, chatId)
+        var opened = false
         try {
+            // A null cursor starts at the durable tail, after live signal registration.
+            val initialSeq = afterSeq ?: eventRepository.latestSeq(userId, chatId)
             return AgentEventStream(
-                replay = listPublicStreamReplay(userId, chatId, afterSeq),
+                replay = if (afterSeq == null) emptyList() else listPublicStreamReplay(userId, chatId, afterSeq),
                 liveEvents = subscription.events,
                 close = { subscription.close() },
                 replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
-            )
-        } catch (error: Throwable) {
-            subscription.close()
-            throw error
+                initialSeq = initialSeq,
+            ).also { opened = true }
+        } finally {
+            if (!opened) withContext(NonCancellable) { subscription.close() }
         }
     }
 

@@ -1,44 +1,9 @@
 package ru.souz.backend.http.routes
 
-import com.fasterxml.jackson.core.JsonProcessingException
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
-import io.ktor.server.routing.openapi.hide
-import io.ktor.server.websocket.webSocket
-import io.ktor.utils.io.ExperimentalKtorApi
-import io.ktor.websocket.CloseReason
-import io.ktor.websocket.Frame
-import io.ktor.websocket.close
-import io.ktor.websocket.readText
-import java.time.Instant
-import java.util.UUID
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import ru.souz.backend.client.ClientContractException
-import ru.souz.backend.client.ClientError
-import ru.souz.backend.client.HandledClientFrame
-import ru.souz.backend.client.HistoryAppendAck
-import ru.souz.backend.client.HistoryAppendFrame
-import ru.souz.backend.client.MessageSubmitAck
-import ru.souz.backend.client.MessageSubmitFrame
-import ru.souz.backend.client.PublicClientService
-import ru.souz.backend.client.ThreadCancelAck
-import ru.souz.backend.client.ThreadCancelFrame
-import ru.souz.backend.client.ToolResultAck
-import ru.souz.backend.client.ToolResultFrame
-import ru.souz.backend.client.supportedClientTypes
-import ru.souz.backend.client.toStatusFrame
-import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
@@ -59,11 +24,9 @@ import ru.souz.backend.http.requireChatId
 import ru.souz.backend.http.requireUserIdFromTrustedProxy
 import ru.souz.backend.http.requireWsEventsEnabled
 import ru.souz.backend.http.toDto
-import ru.souz.backend.http.toPublicDto
 import ru.souz.backend.http.uuidPathParameter
 import ru.souz.backend.http.v1ErrorResponses
 
-@OptIn(ExperimentalKtorApi::class)
 internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.CHAT_EVENTS_PATTERN) {
         requireWsEventsEnabled(deps.featureFlags)
@@ -103,172 +66,8 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
         }
     }
 
-    get(BackendHttpRoutes.CHAT_WS_PATTERN) {
-        call.respond(HttpStatusCode.BadRequest)
-    }.hide()
-
-    webSocket(BackendHttpRoutes.CHAT_WS_PATTERN) {
-        if (!deps.featureFlags.wsEvents) {
-            close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "WebSocket feature is disabled."))
-            return@webSocket
-        }
-        val clientService = deps.publicClientService
-        val eventService = deps.eventService
-        val chatId = call.requireChatId()
-        val clientType = call.request.queryParameters["clientType"]
-        if (clientType !in supportedClientTypes) {
-            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "clientType must be backend or mobile_app."))
-            return@webSocket
-        }
-        val afterSeq = call.queryNonNegativeLong("afterSeq") ?: 0L
-        val chat = try {
-            clientService.requireChat(chatId, requireNotNull(clientType))
-        } catch (error: ClientContractException) {
-            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message))
-            return@webSocket
-        }
-        val stream = eventService.openPublicStream(chat.userId, chat.id, afterSeq)
-        val sendMutex = Mutex()
-        suspend fun writeJson(value: Any) {
-            send(Frame.Text(publicWebSocketMapper.writeValueAsString(value)))
-        }
-        suspend fun sendJson(value: Any) {
-            sendMutex.withLock { writeJson(value) }
-        }
-        suspend fun sendHandledFrame(handled: HandledClientFrame) {
-            sendMutex.withLock {
-                writeJson(handled.response)
-                handled.afterSend()
-                handled.statusFeedback?.let { feedback ->
-                    writeJson(clientService.threadStatus(chat, feedback.threadId).toStatusFrame(feedback.requestId))
-                }
-            }
-        }
-
-        try {
-            coroutineScope {
-                val replayDone = CompletableDeferred<Unit>()
-                val sender = launch {
-                    var lastSeq = afterSeq
-                    suspend fun sendDurableEvents(events: Iterable<AgentEvent>) {
-                        events.forEach { event ->
-                            lastSeq = maxOf(lastSeq, event.seq)
-                            if (event.isPublicClientEvent()) sendJson(event.toPublicDto())
-                        }
-                    }
-                    try {
-                        sendDurableEvents(stream.replay)
-                        sendDurableEvents(stream.replayAfter(lastSeq))
-                    } finally {
-                        replayDone.complete(Unit)
-                    }
-                    for (event in stream.liveEvents) {
-                        val seq = event.seq
-                        if (seq == null || seq > lastSeq) {
-                            sendDurableEvents(stream.replayAfter(lastSeq))
-                        }
-                    }
-                }
-                try {
-                    replayDone.await()
-                    for (frame in incoming) {
-                        if (frame !is Frame.Text) continue
-                        val handled = try {
-                            handleClientFrame(clientService, chat, frame.readText())
-                        } catch (error: InvalidClientFrameException) {
-                            close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message ?: "Invalid frame."))
-                            break
-                        }
-                        sendHandledFrame(handled)
-                    }
-                } finally {
-                    sender.cancelAndJoin()
-                }
-            }
-        } finally {
-            stream.close()
-        }
-    }.hide()
-}
-
-private suspend fun handleClientFrame(
-    service: PublicClientService,
-    chat: ru.souz.backend.chat.model.Chat,
-    raw: String,
-): HandledClientFrame {
-    val node = try {
-        publicWebSocketMapper.readTree(raw) ?: throw InvalidClientFrameException("Frame must be valid JSON.")
-    } catch (_: JsonProcessingException) {
-        throw InvalidClientFrameException("Frame must be valid JSON.")
-    }
-    if (!node.isObject) throw InvalidClientFrameException("Frame must be a JSON object.")
-    val kind = node.path("kind").asText()
-    return try {
-        when (kind) {
-            "message.submit" -> decodeClientFrame(node, MessageSubmitFrame::class.java).also {
-                requireFrameChat(chat.id, it.chatId)
-                requireUniqueCapabilities(node)
-            }.let { service.handleMessage(chat, it) }
-
-            "history.append" -> decodeClientFrame(node, HistoryAppendFrame::class.java).also {
-                requireFrameChat(chat.id, it.chatId)
-            }.let { service.handleHistory(chat, it) }
-
-            "tool.result" -> decodeClientFrame(node, ToolResultFrame::class.java).also {
-                requireFrameChat(chat.id, it.chatId)
-            }.let { service.handleToolResult(chat, it) }
-
-            "thread.cancel" -> decodeClientFrame(node, ThreadCancelFrame::class.java).also {
-                requireFrameChat(chat.id, it.chatId)
-            }.let { service.handleCancel(chat, it) }
-
-            else -> throw InvalidClientFrameException("Unsupported frame kind.")
-        }
-    } catch (error: ClientContractException) {
-        rejectedFor(node, chat.id, kind, error.code, error.message)
-    }
-}
-
-private fun <T> decodeClientFrame(node: JsonNode, type: Class<T>): T = try {
-    publicWebSocketMapper.treeToValue(node, type)
-} catch (_: JsonProcessingException) {
-    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
-} catch (_: IllegalArgumentException) {
-    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
-}
-
-private fun requireFrameChat(expected: UUID, raw: String) {
-    if (runCatching { UUID.fromString(raw) }.getOrNull() != expected) {
-        throw ClientContractException("invalid_request", "Frame chatId does not match the socket.")
-    }
-}
-
-private fun requireUniqueCapabilities(node: JsonNode) {
-    val capabilities = node.path("payload").path("device").path("capabilities")
-    if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
-        throw ClientContractException("invalid_request", "device.capabilities must be unique.")
-    }
-}
-
-private fun rejectedFor(
-    node: JsonNode,
-    chatId: UUID,
-    kind: String,
-    code: String,
-    message: String,
-): HandledClientFrame {
-    val now = Instant.now()
-    val error = ClientError(code, message)
-    val requestId = node.path("requestId").asText("invalid")
-    val threadId = node.path("threadId").asText("00000000-0000-0000-0000-000000000000")
-    val response = when (kind) {
-        "message.submit" -> MessageSubmitAck.rejected(chatId.toString(), requestId, error, now)
-        "history.append" -> HistoryAppendAck.rejected(chatId.toString(), requestId, error, now)
-        "tool.result" -> ToolResultAck.rejected(chatId.toString(), threadId, node.path("toolCallId").asText("invalid"), error, now)
-        "thread.cancel" -> ThreadCancelAck.rejected(chatId.toString(), requestId, threadId, error, now)
-        else -> throw InvalidClientFrameException("Unsupported frame kind.")
-    }
-    return HandledClientFrame(response)
+    publicClientSocket(BackendHttpRoutes.CHAT_WS_PATTERN, deps, singleChat = true)
+    publicClientSocket(BackendHttpRoutes.WS, deps, singleChat = false)
 }
 
 internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
@@ -283,9 +82,3 @@ internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
         AgentEventType.MESSAGE_CREATED -> executionId == null
         else -> false
     }
-
-private class InvalidClientFrameException(message: String) : RuntimeException(message)
-
-private val publicWebSocketMapper = jacksonObjectMapper()
-    .registerKotlinModule()
-    .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
