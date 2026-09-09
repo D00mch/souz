@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Client-Souz REST API
   version: 1.0.0-draft
-  description: Minimal REST contract for creating a durable chat, checking thread status, and connecting to its WebSocket.
+  description: REST operations and reusable frame schemas for single-chat and multi-chat WebSockets. The multi-chat endpoint is /v1/ws?clientType=backend; WebSocket upgrade routes are excluded from REST paths.
 servers:
   - url: https://souz.example.ru
 paths:
@@ -11,7 +11,7 @@ paths:
       operationId: createClientChat
       tags: [Client Chats]
       summary: Create a chat
-      description: Creates a user-owned Souz chat before the client opens `/v1/chats/{chatId}/ws?clientType=...`. The request is idempotent by `(userId, requestId)`, with `userId` supplied in the JSON body. This API is only exposed inside a trusted environment, so credentials are not required.
+      description: Creates a user-owned Souz chat for either WebSocket endpoint. Shares creation idempotency with `chat.create` on `/v1/ws?clientType=backend`. The request is idempotent by `(userId, requestId)`, with `userId` supplied in the JSON body. This API is only exposed inside a trusted environment, so credentials are not required.
       requestBody:
         required: true
         content:
@@ -204,8 +204,10 @@ components:
         platform:
           type: string
     ClientMessage:
-      description: Client-to-Souz WebSocket frame.
+      description: Client-to-Souz frame. ChatCreate and ChatSubscribe are accepted only on /v1/ws?clientType=backend.
       oneOf:
+        - $ref: "#/components/schemas/ChatCreate"
+        - $ref: "#/components/schemas/ChatSubscribe"
         - $ref: "#/components/schemas/MessageSubmit"
         - $ref: "#/components/schemas/HistoryAppend"
         - $ref: "#/components/schemas/SucceededToolResult"
@@ -213,6 +215,45 @@ components:
         - $ref: "#/components/schemas/CancelledToolResult"
         - $ref: "#/components/schemas/TimedOutToolResult"
         - $ref: "#/components/schemas/ThreadCancel"
+    ChatCreate:
+      description: Shares HTTP creation normalization and (userId, requestId) idempotency. Inherits clientType from the socket and automatically subscribes to live events after acknowledgement.
+      type: object
+      additionalProperties: false
+      required: [kind, requestId, payload]
+      properties:
+        kind:
+          type: string
+          enum: [chat.create]
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        payload:
+          type: object
+          additionalProperties: false
+          required: [userId]
+          properties:
+            userId:
+              $ref: "#/components/schemas/UUID"
+            title:
+              type: [string, "null"]
+    ChatSubscribe:
+      description: Acknowledges before replay and live delivery. Explicit afterSeq replaces this chat subscription on the same socket and returns duplicate=false. Without afterSeq, an existing subscription is kept with duplicate=true. Does not execute input; requestId is for correlation only.
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId]
+      properties:
+        kind:
+          type: string
+          enum: [chat.subscribe]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        afterSeq:
+          description: Exclusive chat-local cursor. When present, restarts replay even for an existing subscription. When omitted, keeps an existing subscription or replays from zero for a new subscription.
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 9223372036854775807
     MessageSubmit:
       description: Submits user input and selects, continues, or creates an execution thread.
       type: object
@@ -427,6 +468,10 @@ components:
         - $ref: "#/components/schemas/SouzServerEvent"
     SouzAck:
       oneOf:
+        - $ref: "#/components/schemas/AcceptedChatCreateAck"
+        - $ref: "#/components/schemas/RejectedChatCreateAck"
+        - $ref: "#/components/schemas/AcceptedChatSubscribeAck"
+        - $ref: "#/components/schemas/RejectedChatSubscribeAck"
         - $ref: "#/components/schemas/AcceptedMessageSubmitAck"
         - $ref: "#/components/schemas/RejectedMessageSubmitAck"
         - $ref: "#/components/schemas/AcceptedHistoryAppendAck"
@@ -435,6 +480,109 @@ components:
         - $ref: "#/components/schemas/RejectedToolResultAck"
         - $ref: "#/components/schemas/AcceptedThreadCancelAck"
         - $ref: "#/components/schemas/RejectedThreadCancelAck"
+    AcceptedChatCreateAck:
+      type: object
+      additionalProperties: false
+      required: [kind, type, userId, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        type:
+          type: string
+          enum: [chat.create]
+        userId:
+          $ref: "#/components/schemas/UUID"
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [accepted]
+        duplicate:
+          type: boolean
+        error:
+          type: "null"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    RejectedChatCreateAck:
+      type: object
+      additionalProperties: false
+      required: [kind, type, userId, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        type:
+          type: string
+          enum: [chat.create]
+        userId:
+          type: [string, "null"]
+        chatId:
+          type: "null"
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [rejected]
+        duplicate:
+          type: boolean
+          const: false
+        error:
+          $ref: "#/components/schemas/Error"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    AcceptedChatSubscribeAck:
+      type: object
+      additionalProperties: false
+      required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        type:
+          type: string
+          enum: [chat.subscribe]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [accepted]
+        duplicate:
+          description: True only when afterSeq was omitted and the existing subscription was kept.
+          type: boolean
+        error:
+          type: "null"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    RejectedChatSubscribeAck:
+      type: object
+      additionalProperties: false
+      required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        type:
+          type: string
+          enum: [chat.subscribe]
+        chatId:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [rejected]
+        duplicate:
+          type: boolean
+          const: false
+        error:
+          $ref: "#/components/schemas/Error"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
     AcceptedMessageSubmitAck:
       type: object
       additionalProperties: false
@@ -467,9 +615,9 @@ components:
           type: string
           enum: [ack]
         chatId:
-          $ref: "#/components/schemas/UUID"
+          type: string
         requestId:
-          $ref: "#/components/schemas/NonEmptyString"
+          type: string
         status:
           type: string
           enum: [rejected]
@@ -512,9 +660,9 @@ components:
           type: string
           enum: [ack]
         chatId:
-          $ref: "#/components/schemas/UUID"
+          type: string
         requestId:
-          $ref: "#/components/schemas/NonEmptyString"
+          type: string
         status:
           type: string
           enum: [rejected]
@@ -569,11 +717,11 @@ components:
           type: string
           enum: [ack]
         chatId:
-          $ref: "#/components/schemas/UUID"
+          type: string
         toolCallId:
-          $ref: "#/components/schemas/NonEmptyString"
+          type: string
         threadId:
-          $ref: "#/components/schemas/UUID"
+          type: string
         status:
           type: string
           enum: [rejected]
@@ -615,11 +763,11 @@ components:
           type: string
           enum: [ack]
         chatId:
-          $ref: "#/components/schemas/UUID"
+          type: string
         requestId:
-          $ref: "#/components/schemas/NonEmptyString"
+          type: string
         threadId:
-          $ref: "#/components/schemas/UUID"
+          type: string
         status:
           type: string
           enum: [rejected]

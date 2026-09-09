@@ -146,8 +146,14 @@ internal class BackendE2eScope(
         json.readTree((session.incoming.receive() as Frame.Text).readText())
 
     suspend fun <T> withPublicSocket(chatId: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
+        withSocket("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend", block)
+
+    suspend fun <T> withMultiChatSocket(block: suspend (DefaultClientWebSocketSession) -> T): T =
+        withSocket("${BackendHttpRoutes.WS}?clientType=backend", block)
+
+    private suspend fun <T> withSocket(url: String, block: suspend (DefaultClientWebSocketSession) -> T): T =
         webSocketClient().use { client ->
-            val session = client.webSocketSession("${BackendHttpRoutes.chatWebSocket(chatId)}?clientType=backend")
+            val session = client.webSocketSession(url)
             try {
                 block(session)
             } finally {

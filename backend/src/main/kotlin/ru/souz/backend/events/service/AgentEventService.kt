@@ -16,6 +16,8 @@ import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.http.BackendV1Exception
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 class AgentEventService(
     private val chatRepository: ChatRepository,
@@ -120,49 +122,26 @@ class AgentEventService(
         )
     }
 
-    suspend fun openStream(
-        userId: String,
-        chatId: UUID,
-        afterSeq: Long? = null,
-        limit: Int = AgentEventLimits.DEFAULT_REPLAY_LIMIT,
-    ): AgentEventStream {
-        requireOwnedChat(userId, chatId)
-        val subscription = eventBus.subscribe(userId, chatId)
-        try {
-            val normalizedLimit = normalizePositiveLimit(limit, AgentEventLimits.MAX_REPLAY_LIMIT)
-            val replay = eventRepository.listByChat(
-                userId = userId,
-                chatId = chatId,
-                afterSeq = afterSeq,
-                limit = normalizedLimit,
-            )
-            return AgentEventStream(
-                replay = replay,
-                liveEvents = subscription.events,
-                close = { subscription.close() },
-            )
-        } catch (e: Throwable) {
-            subscription.close()
-            throw e
-        }
-    }
-
     suspend fun openPublicStream(
         userId: String,
         chatId: UUID,
-        afterSeq: Long = 0,
+        afterSeq: Long? = 0,
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
         val subscription = eventBus.subscribe(userId, chatId)
+        // Close the subscription before rethrowing cancellation.
         try {
+            // A null cursor starts at the durable tail, after live signal registration.
+            val initialSeq = afterSeq ?: eventRepository.latestSeq(userId, chatId)
             return AgentEventStream(
-                replay = listPublicStreamReplay(userId, chatId, afterSeq),
+                replay = if (afterSeq == null) emptyList() else listPublicStreamReplay(userId, chatId, afterSeq),
                 liveEvents = subscription.events,
                 close = { subscription.close() },
                 replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
+                initialSeq = initialSeq,
             )
         } catch (error: Throwable) {
-            subscription.close()
+            withContext(NonCancellable) { subscription.close() }
             throw error
         }
     }

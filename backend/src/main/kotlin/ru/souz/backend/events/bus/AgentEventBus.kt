@@ -35,10 +35,8 @@ class AgentEventBus {
 
     suspend fun publish(event: AgentEventEnvelope) {
         val key = AgentEventStreamKey(userId = event.userId, chatId = event.chatId)
-        val targets = subscribers[key]?.toList().orEmpty()
-        if (targets.isEmpty()) {
-            return
-        }
+        // Iterate the concurrent set directly; toList's size-based fast path races with disconnect.
+        val targets = subscribers[key] ?: return
         val closedTargets = ArrayList<Channel<AgentEventEnvelope>>()
         targets.forEach { channel ->
             if (channel.trySend(event).isFailure) {

@@ -437,6 +437,7 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 | `DELETE /v1/chats/{chatId}/telegram-bot` | Remove the Telegram bot binding from an owned chat |
 | `GET /v1/chats/{chatId}/events` | Replay durable chat events |
 | `WS /v1/chats/{chatId}/ws` | Replay and subscribe to live chat events |
+| `WS /v1/ws` | Create chats, replay and subscribe across chats (`clientType=backend`) |
 | `POST /v1/options/{optionId}/answer` | Resume execution after a pending option is answered |
 | `POST /v1/chats/{chatId}/cancel-active` | Cancel active execution |
 | `POST /v1/chats/{chatId}/executions/{executionId}/cancel` | Cancel a specific execution |
@@ -447,7 +448,8 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
   - `X-User-Id`
   - `X-Souz-Proxy-Auth`
 - `X-User-Id` is treated as opaque and provisioned through `UserRepository.ensureUser(userId)`.
-- `POST /v1/chats`, `GET /v1/chats/{chatId}/ws`, and `GET /v1/chats/{chatId}/threads/{threadId}` are credential-free Client-Souz exceptions for trusted environments. Chat creation accepts trusted UUID `userId` from the body, and WebSocket `message.submit.payload.device.userId` must match the stored chat owner.
+- `POST /v1/chats`, `GET /v1/ws`, `GET /v1/chats/{chatId}/ws`, and `GET /v1/chats/{chatId}/threads/{threadId}` are credential-free Client-Souz exceptions for trusted environments.
+- HTTP chat creation accepts trusted UUID `userId` from the body; WebSocket `chat.create` accepts `payload.userId`. WebSocket `message.submit.payload.device.userId` must match the stored chat owner.
 - Other request bodies are never trusted for user identity.
 - Each chat, execution, option, and setting is scoped to the trusted user.
 - Backend host adapters replace desktop-only services with no-op implementations.
