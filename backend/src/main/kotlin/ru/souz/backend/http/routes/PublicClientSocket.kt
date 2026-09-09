@@ -135,17 +135,15 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                     when (kind) {
                         "chat.create" -> {
                             val create = decodeClientFrame(node, ChatCreateFrame::class.java)
-                            val result = deps.createClientChat(
+                            val (created, duplicate) = deps.createClientChat(
                                 CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
                             )
-                            // Read database timestamp precision on first creation as well as on retries.
-                            val created = service.requireChat(result.chat.id, clientType)
                             chat = created
                             pendingStream = prepare(created, null)
                             activate = true
                             HandledClientFrame(ChatCreateAck(
                                 userId = created.userId, requestId = created.requestId, chatId = created.id.toString(),
-                                status = "accepted", duplicate = result.duplicate, receivedAt = created.createdAt.toString(),
+                                status = "accepted", duplicate = duplicate, receivedAt = created.createdAt.toString(),
                             ))
                         }
                         "chat.subscribe" -> {

@@ -19,6 +19,7 @@ class PostgresChatRepository(
                   title, archived, created_at, updated_at
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                returning *
                 """.trimIndent()
             ).use { statement ->
                 statement.setObject(1, chat.id)
@@ -30,7 +31,10 @@ class PostgresChatRepository(
                 statement.setBoolean(7, chat.archived)
                 statement.setInstant(8, chat.createdAt)
                 statement.setInstant(9, chat.updatedAt)
-                statement.executeUpdate()
+                statement.executeQuery().use { resultSet ->
+                    check(resultSet.next())
+                    resultSet.toChat()
+                }
             }
         } catch (error: java.sql.SQLException) {
             if (error.isConstraintViolation(CHAT_REQUEST_CONSTRAINT)) {
@@ -38,7 +42,6 @@ class PostgresChatRepository(
             }
             throw error
         }
-        chat
     }
 
     override suspend fun get(userId: String, chatId: UUID): Chat? = dataSource.read { connection ->
