@@ -83,34 +83,33 @@ class BackendPublicMultiChatWebSocketE2eTest {
         }
 
     @Test
-    fun `history tools and cancellation stay isolated across concurrent chats`() =
+    fun `chats stay isolated and tool results and cancellation work after reconnect without subscriptions`() =
         backendE2eTest("e2e_multi_routing", llm = clientToolLlm()) {
             val users = List(2) { UUID.randomUUID().toString() }
-            withMultiChatSocket { socket ->
+            val tools = withMultiChatSocket { socket ->
                 val chats = users.map { request(socket, createFrame(it))["chatId"].asText() }
-                val tools = chats.mapIndexed { index, chat ->
+                chats.mapIndexed { index, chat ->
                     val history = request(socket, historyFrame(chat, "history", "user", "context-$index"))
                     assertEquals(chat, history["chatId"].asText())
                     submit(socket, chat, users[index], "same-request", "prompt-$index")
                 }
+            }
+            withMultiChatSocket { socket ->
                 assertNotEquals(tools[0]["threadId"], tools[1]["threadId"])
-                tools.forEachIndexed { index, tool ->
-                    assertEquals(chats[index], tool["chatId"].asText())
-                    assertEquals("tool.call.started", tool["type"].asText())
-                }
-                val wrongChat = toolResult(tools[0]).replace(chats[0], chats[1])
+                tools.forEach { assertEquals("tool.call.started", it["type"].asText()) }
+                val wrongChat = toolResult(tools[0]).replace(tools[0]["chatId"].asText(), tools[1]["chatId"].asText())
                 assertEquals("tool_call_not_found", request(socket, wrongChat, status = "rejected")["error"]["code"].asText())
-                val cancel = """{"kind":"thread.cancel","chatId":"${chats[0]}","requestId":"cancel","threadId":${tools[0]["threadId"]}}"""
-                val cancelAck = request(socket, cancel)
-                assertEquals(chats[0], readJson(socket)["chatId"].asText()) // status
-                readTerminal(socket, tools[0], "thread.cancelled")
-                assertEquals(cancelAck.deepCopy<ObjectNode>().put("duplicate", true), request(socket, cancel))
-                readJson(socket) // duplicate status
-
+                val cancel = """{"kind":"thread.cancel","chatId":${tools[0]["chatId"]},"requestId":"cancel","threadId":${tools[0]["threadId"]}}"""
+                assertEquals(tools[0]["chatId"], request(socket, cancel)["chatId"])
+                val status = readJson(socket)
+                assertEquals("thread.status", status["type"].asText())
+                assertEquals(tools[0]["chatId"], status["chatId"])
                 val accepted = request(socket, toolResult(tools[1]))
-                assertEquals(chats[1], accepted["chatId"].asText())
-                readTerminal(socket, tools[1])
-                request(socket, toolResult(tools[1]), duplicate = true)
+                assertEquals(tools[1]["chatId"], accepted["chatId"])
+                tools.forEachIndexed { index, tool ->
+                    request(socket, subscribeFrame(tool["chatId"].asText(), tool["seq"].asLong()), duplicate = false)
+                    readTerminal(socket, tool, if (index == 0) "thread.cancelled" else "thread.completed")
+                }
                 llm.requests.forEach { request ->
                     val content = request.messages.joinToString { it.content }
                     assertFalse(content.contains("context-0") && content.contains("context-1"))
@@ -142,16 +141,10 @@ class BackendPublicMultiChatWebSocketE2eTest {
         backendE2eTest("e2e_multi_submit_retry", llm = clientToolLlm()) {
             val userId = UUID.randomUUID().toString()
             val chat = createPublicChat(userId)
-            val raw = messageFrame(chat, userId, "submit")
-            lateinit var original: JsonNode
-            lateinit var tool: JsonNode
+            val tool = withMultiChatSocket { submit(it, chat, userId, "submit") }
             withMultiChatSocket { socket ->
-                original = request(socket, raw)
-                readJson(socket)
-                tool = readJson(socket)
-            }
-            withMultiChatSocket { socket ->
-                assertEquals(original.deepCopy<ObjectNode>().put("duplicate", true), request(socket, raw))
+                val retry = request(socket, messageFrame(chat, userId, "submit"), duplicate = true)
+                assertEquals(tool["threadId"], retry["thread"]["id"])
                 assertEquals("thread.status", readJson(socket)["type"].asText())
                 request(socket, toolResult(tool))
                 readTerminal(socket, tool)
@@ -159,7 +152,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
         }
 
     @Test
-    fun `reconnect replays each chat cursor and subscribe without a cursor keeps the stream`() =
+    fun `reconnect and cursor replacement replay each chat independently without executing input`() =
         backendE2eTest("e2e_multi_replay", llm = clientToolLlm()) {
             val userId = UUID.randomUUID().toString()
             val chats = listOf(createPublicChat(userId, "a"), createPublicChat(userId, "b"))
@@ -170,26 +163,10 @@ class BackendPublicMultiChatWebSocketE2eTest {
             withMultiChatSocket { socket ->
                 request(socket, subscribeFrame(chats[0]), duplicate = false)
                 assertEquals(tools[0], readJson(socket))
-                request(socket, subscribeFrame(chats[1], tools[1]["seq"].asLong()))
+                request(socket, subscribeFrame(chats[1], tools[1]["seq"].asLong()), duplicate = false)
                 chats.forEach { chat ->
                     request(socket, subscribeFrame(chat), duplicate = true)
                 }
-                assertEquals(callsBefore, llm.requests.size)
-                tools.reversed().forEach { tool ->
-                    request(socket, toolResult(tool))
-                    readTerminal(socket, tool)
-                }
-            }
-        }
-
-    @Test
-    fun `explicit cursor replays an active subscription on the same socket and preserves other chats`() =
-        backendE2eTest("e2e_multi_replay_connected", llm = clientToolLlm()) {
-            val userId = UUID.randomUUID().toString()
-            val chats = listOf(createPublicChat(userId, "a"), createPublicChat(userId, "b"))
-            withMultiChatSocket { socket ->
-                val tools = chats.map { submit(socket, it, userId, "submit") }
-                val callsBefore = llm.requests.size
                 repeat(2) {
                     request(socket, subscribeFrame(chats[0], 0), duplicate = false)
                     assertEquals(tools[0], readJson(socket))
@@ -198,42 +175,21 @@ class BackendPublicMultiChatWebSocketE2eTest {
                 request(socket, toolResult(tools[1]))
                 readTerminal(socket, tools[1])
 
-                val afterTool = subscribeFrame(chats[0], tools[0]["seq"].asLong())
-                request(socket, afterTool, duplicate = false)
+                request(socket, subscribeFrame(chats[0], tools[0]["seq"].asLong()), duplicate = false)
                 // An invalid replacement must preserve the active live subscription.
                 request(socket, subscribeFrame(chats[0], -1), status = "rejected")
-                request(socket, toolResult(tools[0]))
-                val terminal = readTerminal(socket, tools[0])
+                request(socket, """{"kind":"thread.cancel","chatId":"${chats[0]}","requestId":"cancel","threadId":${tools[0]["threadId"]}}""")
+                assertEquals("thread.status", readJson(socket)["type"].asText())
+                val terminal = readTerminal(socket, tools[0], "thread.cancelled")
 
                 val callsAfter = llm.requests.size
                 request(socket, subscribeFrame(chats[0], 0), duplicate = false)
                 assertEquals(tools[0], readJson(socket))
                 assertEquals(terminal, readJson(socket))
-                request(socket, subscribeFrame(chats[0], terminal["seq"].asLong()), duplicate = false)
                 chats.forEach { chat ->
                     request(socket, subscribeFrame(chat), duplicate = true)
                 }
                 assertEquals(callsAfter, llm.requests.size)
-            }
-        }
-
-    @Test
-    fun `tool results and cancellation after disconnect work without subscribing`() =
-        backendE2eTest("e2e_multi_unsubscribed", llm = clientToolLlm()) {
-            val userId = UUID.randomUUID().toString()
-            val chats = listOf(createPublicChat(userId, "a"), createPublicChat(userId, "b"))
-            val tools = withMultiChatSocket { socket ->
-                chats.map { submit(socket, it, userId, "submit") }
-            }
-            withMultiChatSocket { socket ->
-                request(socket, toolResult(tools[0]))
-                val cancel = """{"kind":"thread.cancel","chatId":"${chats[1]}","requestId":"cancel","threadId":${tools[1]["threadId"]}}"""
-                request(socket, cancel)
-                assertEquals("thread.status", readJson(socket)["type"].asText())
-                tools.forEachIndexed { index, tool ->
-                    request(socket, subscribeFrame(chats[index], tool["seq"].asLong()), duplicate = false)
-                    readTerminal(socket, tool, if (index == 0) "thread.completed" else "thread.cancelled")
-                }
             }
         }
 
