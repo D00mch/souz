@@ -17,20 +17,24 @@ config:
           value: device-tv-456
         - name: createChatRequestId
           value: client-create-chat-003
-        - name: messageRequestId1
-          value: request-003
-        - name: messageRequestId2
-          value: request-004
         - name: chatId
-          value: 31befd1c-ca6e-4ba1-ac96-a27bda36caa1
+          value: ''
         - name: threadId
           value: ''
         - name: toolCallIdAsk
           value: ''
         - name: toolCallIdOpenMedia
           value: ''
-        - name: wsUrl
-          value: ws://127.0.0.1:8080/v1/chats/31befd1c-ca6e-4ba1-ac96-a27bda36caa1/ws?clientType=backend
+        - name: afterSeq
+          value: '0'
+        - name: userIdB
+          value: 550e8400-e29b-41d4-a716-446655440001
+        - name: chatIdB
+          value: ''
+        - name: threadIdB
+          value: ''
+        - name: afterSeqB
+          value: '0'
 items:
   - info:
       name: http
@@ -75,10 +79,7 @@ items:
                   expect(body.duplicate).to.be.a("boolean");
                 });
 
-                const wsBaseUrl = bru.getEnvVar("wsBaseUrl");
-                const clientType = bru.getEnvVar("clientType");
-                bru.setEnvVar("chatId", body.chat.id, { persist: true });
-                bru.setEnvVar("wsUrl", `${wsBaseUrl}/v1/chats/${body.chat.id}/ws?clientType=${clientType}`, { persist: true });
+                bru.setEnvVar("chatId", body.chat.id);
         settings:
           encodeUrl: true
           timeout: 0
@@ -164,7 +165,7 @@ items:
           type: websocket
           seq: 1
         websocket:
-          url: '{{wsUrl}}'
+          url: '{{wsBaseUrl}}/v1/chats/{{chatId}}/ws?clientType={{clientType}}'
           message:
             - title: 01 message.submit initial
               message:
@@ -173,7 +174,7 @@ items:
                   {
                     "kind": "message.submit",
                     "chatId": "{{chatId}}",
-                    "requestId": "{{messageRequestId1}}",
+                    "requestId": "{{$randomUUID}}",
                     "payload": {
                       "device": {
                         "userId": "{{userId}}",
@@ -217,7 +218,7 @@ items:
                   {
                     "kind": "message.submit",
                     "chatId": "{{chatId}}",
-                    "requestId": "{{messageRequestId2}}",
+                    "requestId": "{{$randomUUID}}",
                     "threadId": "{{threadId}}",
                     "payload": {
                       "device": {
@@ -258,20 +259,44 @@ items:
                   }
           auth: inherit
       - info:
-          name: Client-Souz WebSocket Live
+          name: Client-Souz multi-chat WebSocket
           type: websocket
           seq: 2
         websocket:
-          url: '{{wsUrl}}'
+          url: '{{wsBaseUrl}}/v1/ws?clientType={{clientType}}'
           message:
-            - title: message 1
+            - title: 01 chat.create A
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "chat.create",
+                    "requestId": "{{createChatRequestId}}",
+                    "payload": {
+                      "userId": "{{userId}}",
+                      "title": null
+                    }
+                  }
+            - title: 02 chat.create B
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "chat.create",
+                    "requestId": "{{createChatRequestId}}",
+                    "payload": {
+                      "userId": "{{userIdB}}",
+                      "title": null
+                    }
+                  }
+            - title: 03 message.submit A
               message:
                 type: json
                 data: |-
                   {
                     "kind": "message.submit",
                     "chatId": "{{chatId}}",
-                    "requestId": "{{messageRequestId1}}",
+                    "requestId": "{{$randomUUID}}",
                     "payload": {
                       "device": {
                         "userId": "{{userId}}",
@@ -294,7 +319,37 @@ items:
                       }
                     }
                   }
-            - title: message 2
+            - title: 04 message.submit B
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "message.submit",
+                    "chatId": "{{chatIdB}}",
+                    "requestId": "{{$randomUUID}}",
+                    "payload": {
+                      "device": {
+                        "userId": "{{userIdB}}",
+                        "deviceId": "{{deviceId}}",
+                        "deviceType": "tv_box",
+                        "capabilities": [
+                          "speech",
+                          "screen",
+                          "device_tools"
+                        ]
+                      },
+                      "content": {
+                        "type": "text",
+                        "source": "voice",
+                        "text": "Поздоровайся со мной"
+                      },
+                      "meta": {
+                        "locale": "ru-RU",
+                        "timeZone": "Europe/Moscow"
+                      }
+                    }
+                  }
+            - title: 05 tool.result A user.ask
               message:
                 type: json
                 data: |-
@@ -308,38 +363,7 @@ items:
                       "answer": "Мне нравятся фантастика и триллеры."
                     }
                   }
-            - title: message 3
-              message:
-                type: json
-                data: |-
-                  {
-                    "kind": "message.submit",
-                    "chatId": "{{chatId}}",
-                    "requestId": "{{messageRequestId2}}",
-                    "threadId": "{{threadId}}",
-                    "payload": {
-                      "device": {
-                        "userId": "{{userId}}",
-                        "deviceId": "{{deviceId}}",
-                        "deviceType": "tv_box",
-                        "capabilities": [
-                          "speech",
-                          "screen",
-                          "device_tools"
-                        ]
-                      },
-                      "content": {
-                        "type": "text",
-                        "source": "voice",
-                        "text": "А лучше всё-таки включи фильм ужасов"
-                      },
-                      "meta": {
-                        "locale": "ru-RU",
-                        "timeZone": "Europe/Moscow"
-                      }
-                    }
-                  }
-            - title: message 4
+            - title: 06 tool.result A device.media.open
               message:
                 type: json
                 data: |-
@@ -353,6 +377,26 @@ items:
                       "opened": true,
                       "contentId": "the-thing-1982"
                     }
+                  }
+            - title: 07 chat.subscribe A reconnect
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "chat.subscribe",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{$randomUUID}}",
+                    "afterSeq": {{afterSeq}}
+                  }
+            - title: 08 chat.subscribe B reconnect
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "chat.subscribe",
+                    "chatId": "{{chatIdB}}",
+                    "requestId": "{{$randomUUID}}",
+                    "afterSeq": {{afterSeqB}}
                   }
           auth: inherit
 bundled: true
