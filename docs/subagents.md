@@ -37,3 +37,18 @@ the failure or complete the calculation using an available tool.
 Pass every needed detail in `task`: children do not inherit the parent's conversation, memory, or environment enrichment. Include all required tools and file-backed Skills explicitly; a Skill's instructions do not grant additional capabilities.
 
 The existing tool activity indicates delegation. Child intermediate text and graph events do not become parent chat output. Tools retain the host's normal permission and client-interaction behavior. Backend recovery and durable child execution records are outside this execution model.
+
+## Desktop manual test
+
+[folder-brief](skills/folder-brief/SKILL.md) delegates a local notes brief to one child with only `ListFiles` and `ReadFile`, capped at eight model turns. Enable both tools in desktop settings.
+
+For the default local sandbox, install the Skill from the repository root:
+
+```sh
+mkdir -p ~/.local/state/souz/skills/folder-brief
+cp -n docs/skills/folder-brief/SKILL.md ~/.local/state/souz/skills/folder-brief/SKILL.md
+```
+
+Start a fresh desktop turn and ask: "Use the folder-brief Skill to brief REPO/docs/skills/folder-brief/sample-notes. Focus on open actions and conflicting dates." Replace `REPO` with the absolute checkout path. The [sample notes](skills/folder-brief/sample-notes/01-meeting.md) and [handoff](skills/folder-brief/sample-notes/02-handoff.md) contain three actions (Mia, Anton, Lina) and conflicting launch dates (September 18 and 21, 2026); approved budget is not an open action.
+
+Check that the parent invokes `SpawnSubagent` with exactly those two Skill IDs and resumes with a brief citing both files. For trace-level verification, child requests must advertise only those two tools; the final text alone does not prove delegation. Disabling `ReadFile` and repeating in a fresh turn should produce `skill_disabled` without the parent doing the reading itself. Restore the setting after this check.
