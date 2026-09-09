@@ -130,7 +130,6 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                     throw InvalidClientFrameException("Unsupported frame kind.")
                 }
                 var chat = boundChat
-                var activate = false
                 val handled = try {
                     when (kind) {
                         "chat.create" -> {
@@ -140,7 +139,6 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                             )
                             chat = created
                             pendingStream = prepare(created, null)
-                            activate = true
                             HandledClientFrame(ChatCreateAck(
                                 userId = created.userId, requestId = created.requestId, chatId = created.id.toString(),
                                 status = "accepted", duplicate = duplicate, receivedAt = created.createdAt.toString(),
@@ -158,7 +156,6 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                             } else prepare(target, subscribe.afterSeq)
                             // Prepare first to cover concurrent events; stop the old sender before the replay ack.
                             if (pendingStream != null) subscriptions.remove(target.id)?.cancelAndJoin()
-                            activate = true
                             HandledClientFrame(ChatSubscribeAck(
                                 chatId = target.id.toString(), requestId = requestId, status = "accepted",
                                 duplicate = pendingStream == null, receivedAt = Instant.now().toString(),
@@ -168,9 +165,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                             val target = service.resolveFrameChat(node, clientType, boundChat)
                             chat = target
                             if (kind == "message.submit") pendingStream = prepare(target, null)
-                            handleChatFrame(service, target, node, kind).also {
-                                activate = kind == "message.submit" && it.statusFeedback != null
-                            }
+                            handleChatFrame(service, target, node, kind)
                         }
                     }
                 } catch (error: ClientContractException) {
@@ -179,7 +174,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                     rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
                 }
                 sendHandled(chat, handled)
-                if (activate) pendingStream?.let { stream ->
+                if (kind != "message.submit" || handled.statusFeedback != null) pendingStream?.let { stream ->
                     subscribe(requireNotNull(chat), stream)
                     pendingStream = null
                 }

@@ -129,7 +129,7 @@ class AgentEventService(
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
         val subscription = eventBus.subscribe(userId, chatId)
-        var opened = false
+        // Close the subscription before rethrowing cancellation.
         try {
             // A null cursor starts at the durable tail, after live signal registration.
             val initialSeq = afterSeq ?: eventRepository.latestSeq(userId, chatId)
@@ -139,9 +139,10 @@ class AgentEventService(
                 close = { subscription.close() },
                 replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
                 initialSeq = initialSeq,
-            ).also { opened = true }
-        } finally {
-            if (!opened) withContext(NonCancellable) { subscription.close() }
+            )
+        } catch (error: Throwable) {
+            withContext(NonCancellable) { subscription.close() }
+            throw error
         }
     }
 
