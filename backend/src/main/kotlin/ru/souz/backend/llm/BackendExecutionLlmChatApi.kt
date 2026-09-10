@@ -24,6 +24,7 @@ import ru.souz.llms.resolveEmbeddingsModel
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
+import ru.souz.llms.runtime.resolveLegacyChatModel
 
 /** Execution-scoped LLM routing, credentials, retries, and usage over process-owned transports. */
 internal class BackendExecutionLlmChatApi(
@@ -54,7 +55,6 @@ internal class BackendExecutionLlmChatApi(
                 client = httpClients.openAi,
                 apiKey = settingsProvider.openaiSummarizationApiKey ?: credentialFor(LlmProvider.OPENAI),
                 baseUrl = settingsProvider.openaiSummarizationBaseUrl,
-                modelOverride = summarizationModel,
                 requestParameters = settingsProvider.openaiSummarizationParameters,
             )
             val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
@@ -125,7 +125,8 @@ internal class BackendExecutionLlmChatApi(
             preferredModel = settingsProvider.gigaModel,
         )) {
             is ModelResolution.Resolved -> ChatRoute.Ready(
-                resolution.value.provider, body.copy(model = resolution.value.alias),
+                resolution.value.provider,
+                body.copy(model = settingsProvider.resolveLegacyChatModel(resolution.value.provider, resolution.value.alias)),
             )
             else -> rejectChatRoute(resolution)
         }

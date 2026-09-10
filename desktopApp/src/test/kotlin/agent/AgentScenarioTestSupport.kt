@@ -41,6 +41,7 @@ import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.anthropic.AnthropicChatAPI
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
+import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalLlamaRuntime
 import ru.souz.service.keys.Keys
@@ -147,10 +148,11 @@ class AgentScenarioTestSupport(
                     LlmProvider.LOCAL -> instance<LocalChatAPI>()
                     LlmProvider.CODEX -> error("Codex OAuth provider is not supported in integration tests.")
                 }
+                val router = SettingsRoutingLlmChatApi(instance(), mapOf(selectedModel.provider to selectedApi))
                 if (selectedModel.provider == LlmProvider.LOCAL) {
-                    selectedApi
+                    router
                 } else {
-                    TokenLoggingChatApi(selectedApi, logger)
+                    TokenLoggingChatApi(router, logger)
                 }
             }
             bindSingleton<DesktopInfoRepository>(overrides = true) {

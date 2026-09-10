@@ -95,14 +95,41 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `legacy custom selector retains adapter fallback while a raw ID is never rewritten`() = runTest {
+    fun `legacy custom selector retains host fallback while a raw ID is never rewritten`() = runTest {
         val requests = mutableListOf<CapturedRequest>()
         val settings = LlmSettingsStub().apply { gigaModel = LLMModel.OpenAIGpt52 }
         facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
             val request = chat(LLMModel.OpenAICompatibleCustom.alias)
             fixture.api.message(request)
             fixture.api.message(request.copy(provider = LlmProvider.OPENAI))
-            assertEquals(listOf(LLMModel.OpenAIGpt52.alias, request.model), requests.map { it.body["model"].asText() })
+            settings.openaiModel = " Deployment/ID "
+            fixture.api.message(request)
+            assertEquals(
+                listOf(LLMModel.OpenAIGpt52.alias, request.model, "Deployment/ID"),
+                requests.map { it.body["model"].asText() },
+            )
+        }
+    }
+
+    @Test
+    fun `dedicated summarization resolves its model endpoint and credentials before dispatch`() = runTest {
+        val requests = mutableListOf<CapturedRequest>()
+        val settings = LlmSettingsStub().apply {
+            openaiSummarizationModel = "Summary/Deployment"
+            openaiSummarizationBaseUrl = "https://summary.test/v1"
+            openaiSummarizationApiKey = "summary-key"
+            openaiSummarizationParameters = """{"model":"ignored","max_completion_tokens":512}"""
+        }
+        facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+            val request = chat("Parent/Deployment").copy(provider = LlmProvider.ANTHROPIC, isSummarization = true)
+            assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+            val outbound = requests.single()
+            assertEquals("https://summary.test/v1/chat/completions", outbound.url)
+            assertEquals("Bearer summary-key", outbound.authorization)
+            assertEquals("Summary/Deployment", outbound.body["model"].asText())
+            assertEquals(512, outbound.body["max_completion_tokens"].asInt())
+            assertEquals(0, fixture.credentialResolver.calls.get())
+            assertEquals(usage(1, 1, 2, 0), fixture.api.cumulativeUsage())
         }
     }
 
@@ -115,7 +142,11 @@ class BackendExecutionLlmChatApiTest {
                 message = { body ->
                     providerCalls += provider
                     ok(model = body.model)
-                }
+                },
+                stream = { body ->
+                    providerCalls += provider
+                    flowOf(ok(model = body.model))
+                },
             )
         }
         facadeFixture(
@@ -135,7 +166,9 @@ class BackendExecutionLlmChatApiTest {
 
             models.forEach { model ->
                 assertIs<LLMResponse.Chat.Ok>(fixture.api.message(chat(model.alias)))
-                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(chat(model.alias)))
+                assertIs<LLMResponse.Chat.Ok>(fixture.api.messageStream(chat(model.name)).toList().single()).also {
+                    assertEquals(model.alias, it.model)
+                }
             }
 
             assertEquals(models.map { it.provider }.flatMap { listOf(it, it) }, providerCalls)

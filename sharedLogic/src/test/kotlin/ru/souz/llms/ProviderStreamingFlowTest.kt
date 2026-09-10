@@ -34,8 +34,61 @@ import ru.souz.tool.subagent.SubagentToolFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 
 class ProviderStreamingFlowTest {
+    @Test
+    fun `routers resolve legacy models while adapters forward supplied IDs in both modes`() = runTest {
+        val tunnelDefault = System.getenv("AITUNNEL_MODEL") ?: System.getProperty("AITUNNEL_MODEL") ?: "gpt-4o-mini"
+        val qwenDefault = System.getenv("QWEN_MODEL") ?: System.getProperty("QWEN_MODEL") ?: "qwen-flash"
+        val cases = listOf(
+            Triple(LLMModel.OpenAIGpt52, LLMModel.OpenAIGpt5Mini.name, LLMModel.OpenAIGpt5Mini.alias),
+            Triple(LLMModel.OpenAIGpt52, " openai-compatible-custom ", "Deployment/ID"),
+            Triple(LLMModel.OpenAIGpt52, LLMModel.OpenAICompatibleCustom.name, "Deployment/ID"),
+            Triple(LLMModel.OpenAIGpt52, "GigaChat-2", LLMModel.OpenAIGpt52.alias),
+            Triple(LLMModel.OpenAIGpt52, " GPT-Custom/Case ", "GPT-Custom/Case"),
+            Triple(LLMModel.AnthropicOpus45, LLMModel.AnthropicHaiku45.name, LLMModel.AnthropicHaiku45.alias),
+            Triple(LLMModel.AnthropicOpus45, "GigaChat-2", LLMModel.AnthropicOpus45.alias),
+            Triple(LLMModel.AnthropicOpus45, " ClAuDe-Custom/Case ", "ClAuDe-Custom/Case"),
+            Triple(LLMModel.AiTunnelGpt54Mini, "ai-tunnel", tunnelDefault),
+            Triple(LLMModel.AiTunnelGpt54Mini, "GigaChat-2", tunnelDefault),
+            Triple(LLMModel.QwenMax, "GigaChat-2", qwenDefault),
+            Triple(LLMModel.QwenMax, " Raw/ID ", " Raw/ID "),
+        )
+        cases.forEach { (selected, input, resolved) ->
+            val settings = settings().also {
+                every { it.gigaModel } returns selected
+                every { it.openaiModel } returns " Deployment/ID "
+            }
+            val anthropic = selected.provider == LlmProvider.ANTHROPIC
+            listOf(false, true).forEach { streaming ->
+                val content = when {
+                    !streaming -> if (anthropic) ANTHROPIC_REPLY else COMPATIBLE_REPLY
+                    anthropic -> ANTHROPIC_STREAM
+                    else -> "data: $COMPATIBLE_REPLY\n\ndata: [DONE]\n\n"
+                }
+                listOf(false, true).forEach { routed ->
+                    var requests = 0
+                    streamClient(content, if (streaming) ContentType.Text.EventStream else ContentType.Application.Json) {
+                        requests++
+                        val payload = restJsonMapper.readTree(it.body.toByteArray())
+                        assertEquals(if (routed) resolved else input, payload["model"].asText())
+                        assertEquals(streaming, payload["stream"].asBoolean())
+                        assertFalse(payload.has("provider"))
+                    }.use { client ->
+                        val adapter = if (anthropic) AnthropicChatAPI(settings, client, "test-key")
+                        else OpenAICompatibleChatAPI(selected.provider, settings, client, "test-key")
+                        val api = if (routed) SettingsRoutingLlmChatApi(settings, mapOf(selected.provider to adapter)) else adapter
+                        val request = chatRequest(input)
+                        val response = if (streaming) api.messageStream(request).toList().last() else api.message(request)
+                        assertIs<LLMResponse.Chat.Ok>(response)
+                        assertEquals(1, requests)
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     fun `desktop children reach configured providers with exact model IDs in both modes`() = runTest {
         listOf(false, true).forEach { streaming ->
@@ -52,7 +105,7 @@ class ProviderStreamingFlowTest {
                 val anthropic = provider == LlmProvider.ANTHROPIC
                 val content = if (streaming) {
                     if (anthropic) ANTHROPIC_STREAM else "data: $COMPATIBLE_REPLY\n\ndata: [DONE]\n\n"
-                } else if (anthropic) """{"content":[{"type":"text","text":"Hi"}],"stop_reason":"end_turn","usage":{"input_tokens":7,"output_tokens":3}}"""
+                } else if (anthropic) ANTHROPIC_REPLY
                 else COMPATIBLE_REPLY
                 var requests = 0
                 streamClient(content, if (streaming) ContentType.Text.EventStream else ContentType.Application.Json) { request ->
@@ -172,6 +225,7 @@ class ProviderStreamingFlowTest {
     )
 
     private companion object {
+        const val ANTHROPIC_REPLY = """{"content":[{"type":"text","text":"Hi"}],"stop_reason":"end_turn","usage":{"input_tokens":7,"output_tokens":3}}"""
         const val COMPATIBLE_REPLY = """{"choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"delta":{"role":"assistant","content":"Hi"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"""
         val COMPATIBLE_STREAM = """
             data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}],"created":1,"model":"gpt-test","usage":null}

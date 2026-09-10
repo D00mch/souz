@@ -77,11 +77,10 @@ class AnthropicChatAPICacheTest {
         val method = AnthropicChatAPI::class.java.getDeclaredMethod(
             "buildChatRequest",
             LLMRequest.Chat::class.java,
-            String::class.java,
             Boolean::class.javaPrimitiveType,
         )
         method.isAccessible = true
-        return method.invoke(api, body, LLMModel.AnthropicHaiku45.alias, false) as Map<String, Any>
+        return method.invoke(api, body, false) as Map<String, Any>
     }
 
     private fun function(name: String): LLMRequest.Function = LLMRequest.Function(
