@@ -1,5 +1,8 @@
 package ru.souz.backend.e2e
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -8,6 +11,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.encodeURLParameter
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -19,10 +23,48 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 
 class BackendPublicMultiChatWebSocketE2eTest {
+    @Test
+    fun `socket logs neutralize Unicode controls and separators in client identifiers`() {
+        val unsafe = "\u0000\t\n\r\u001b\u007f\u0085\u200b\u2028\u2029\u202e\u2066"
+        val identifier = "до${unsafe}после-🛰"
+        val sanitized = "до____________после-🛰"
+        val fields = listOf("kind", "requestId", "chatId", "threadId", "toolCallId")
+        val logger = LoggerFactory.getLogger("SouzClientWebSocket") as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        logger.addAppender(appender)
+        try {
+            backendE2eTest("e2e_multi_log_identifiers") {
+                webSocketClient().use { client ->
+                    val socket = client.webSocketSession("${BackendHttpRoutes.WS}?clientType=${identifier.encodeURLParameter()}")
+                    assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, socket.closeReason.await()?.code)
+                    socket.close()
+                }
+                withMultiChatSocket { socket ->
+                    val frame = json.createObjectNode().apply {
+                        fields.forEach { put(it, identifier) }
+                        putObject("payload").put("title", "private-chat-title")
+                    }
+                    socket.send(Frame.Text(frame.toString()))
+                    assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, socket.closeReason.await()?.code)
+                }
+            }
+            val messages = appender.list.map { it.formattedMessage }
+            (fields + "clientType").forEach { field ->
+                assertTrue(messages.any { "$field=$sanitized" in it }, "Missing sanitized $field")
+            }
+            assertTrue(messages.none { message -> unsafe.any { it in message } })
+            assertTrue(messages.none { "private-chat-title" in it })
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
+        }
+    }
+
     @Test
     fun `creation shares HTTP idempotency and distinguishes users on one connection`() =
         backendE2eTest("e2e_multi_create") {

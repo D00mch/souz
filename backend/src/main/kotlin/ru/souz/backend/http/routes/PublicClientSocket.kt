@@ -370,6 +370,6 @@ private class InvalidClientFrameException(message: String) : RuntimeException(me
 private fun String?.logValue(): String = this?.take(128)?.replace(logControlCharacters, "_") ?: "-"
 
 private val socketLogger = LoggerFactory.getLogger("SouzClientWebSocket")
-private val logControlCharacters = Regex("[\\p{Cntrl}]")
+private val logControlCharacters = Regex("[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]")
 private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "message.submit", "history.append", "tool.result", "thread.cancel")
 private val publicWebSocketMapper = jacksonObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
