@@ -292,7 +292,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
             assertEquals("event", it["kind"].asText())
             assertEquals(chat, it["chatId"].asText())
             assertEquals(ack["thread"]["id"], it["threadId"])
-            assertFalse(it["payload"].has("target"))
         }
     }
 

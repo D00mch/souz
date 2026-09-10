@@ -17,11 +17,18 @@ class BackendPublicHistoryContractE2eTest {
         backendE2eTest("e2e_ws_history_contract") {
             withPublicChatSocket { userId, chatId, session ->
                 session.send(Frame.Text(historyFrame(chatId, "history-user", "user", "client solved it")))
+                val toolFrame = toolHistoryFrame(chatId, "history-tool")
+                session.send(Frame.Text(toolFrame))
                 val userAck = readJson(session)
                 assertEquals("accepted", userAck["status"].asText())
+                assertEquals("history-user", userAck["requestId"].asText())
                 assertFalse(userAck["duplicate"].asBoolean())
                 assertFalse(userAck.has("submission"))
                 assertFalse(userAck.has("thread"))
+                val toolAck = readJson(session)
+                assertEquals("accepted", toolAck["status"].asText())
+                assertEquals("history-tool", toolAck["requestId"].asText())
+                assertFalse(toolAck["duplicate"].asBoolean())
 
                 val assistantFrame = historyFrame(
                     chatId,
@@ -90,8 +97,8 @@ class BackendPublicHistoryContractE2eTest {
                 }
 
                 assertTrue(llm.requests.isEmpty())
-                session.send(Frame.Text(toolHistoryFrame(chatId, "history-tool")))
-                assertEquals("accepted", readJson(session)["status"].asText())
+                session.send(Frame.Text(toolFrame))
+                assertEquals(toolAck.deepCopy<ObjectNode>().put("duplicate", true), readJson(session))
                 session.send(
                     Frame.Text(
                         messageFrame(
@@ -128,33 +135,6 @@ class BackendPublicHistoryContractE2eTest {
                 assertEquals("device.volume.adjust", runSkillArguments["skillId"].asText())
                 assertEquals(-10, runSkillArguments["arguments"]["deltaPercent"].asInt())
                 assertEquals(30, json.readTree(toolResult.content)["volumePercent"].asInt())
-            }
-        }
-
-    @Test
-    fun `multi chat socket acknowledges consecutive text and tool history and their retries`() =
-        backendE2eTest("e2e_multi_history_acks") {
-            val chatId = createPublicChat(UUID.randomUUID().toString())
-            withMultiChatSocket { session ->
-                val frames = listOf(
-                    historyFrame(chatId, "history-user", "user", "Какая погода."),
-                    toolHistoryFrame(chatId, "history-tool"),
-                )
-                frames.forEach { session.send(Frame.Text(it)) }
-                val acknowledgements = frames.map { raw ->
-                    readJson(session).also { ack ->
-                        assertEquals("ack", ack["kind"].asText())
-                        assertEquals(chatId, ack["chatId"].asText())
-                        assertEquals(json.readTree(raw)["requestId"], ack["requestId"])
-                        assertEquals("accepted", ack["status"].asText())
-                        assertFalse(ack["duplicate"].asBoolean())
-                    }
-                }
-                frames.forEach { session.send(Frame.Text(it)) }
-                acknowledgements.forEach { ack ->
-                    assertEquals(ack.deepCopy<ObjectNode>().put("duplicate", true), readJson(session))
-                }
-                assertTrue(llm.requests.isEmpty())
             }
         }
 

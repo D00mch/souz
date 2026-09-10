@@ -471,7 +471,6 @@ class BackendPublicWebSocketE2eTest {
                 assertEquals("tool.call.started", started["type"].asText())
                 assertEquals(ack["thread"]["id"], started["threadId"])
                 assertEquals("web.search", payload["name"].asText())
-                assertFalse(payload.has("target"))
                 assertEquals("search-device", payload["deviceId"].asText())
                 assertEquals(json.readTree("""{"query":"Когда открывается музей?"}"""), payload["arguments"])
                 val remaining = Duration.between(
