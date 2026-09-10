@@ -16,7 +16,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.ToolCategory
+import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.immutableToolCatalogSnapshot
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
@@ -93,10 +93,7 @@ class SubagentToolFactory(
     private fun bundleCommandTool(bundles: Map<SkillId, SkillBundle>, ownerId: String): LLMToolSetup {
         val command = ToolInvokeSkill(
             toolCatalog = immutableToolCatalogSnapshot(emptyMap()),
-            toolsFilter = object : AgentToolsFilter {
-                override fun applyFilter(toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>) =
-                    toolsByCategory
-            },
+            toolsFilter = RuntimePassThroughToolsFilter,
             loadBundle = { userId, skillId ->
                 bundles[skillId].takeIf { userId == ownerId }
             },
