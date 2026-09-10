@@ -161,7 +161,7 @@ items:
       type: folder
     items:
       - info:
-          name: Client-Souz WebSocket
+          name: Client-Souz single-chat WebSocket (existing chat)
           type: websocket
           seq: 1
         websocket:
@@ -397,6 +397,45 @@ items:
                     "chatId": "{{chatIdB}}",
                     "requestId": "{{$randomUUID}}",
                     "afterSeq": {{afterSeqB}}
+                  }
+            - title: 09 history.append A text
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "history.append",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{$randomUUID}}",
+                    "payload": {
+                      "role": "user",
+                      "content": {
+                        "type": "text",
+                        "source": "text",
+                        "text": "Мне нравятся фантастика и триллеры."
+                      }
+                    }
+                  }
+            - title: 10 history.append A tool_call
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "history.append",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{$randomUUID}}",
+                    "payload": {
+                      "role": "assistant",
+                      "content": {
+                        "type": "tool_call",
+                        "name": "device.brightness.adjust",
+                        "arguments": {
+                          "deltaPercent": 10
+                        },
+                        "result": {
+                          "brightnessPercent": 60
+                        }
+                      }
+                    }
                   }
           auth: inherit
 bundled: true
