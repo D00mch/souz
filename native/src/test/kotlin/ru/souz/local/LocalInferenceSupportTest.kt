@@ -38,6 +38,7 @@ import ru.souz.llms.EmbeddingInputKind
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.local.LocalBridgeLoader
@@ -1091,6 +1092,11 @@ class LocalInferenceSupportTest {
             "Local model Local Qwen3 4B Instruct 2507 does not support image input.",
             error.message,
         )
+        val unknown = LLMRequest.Chat(model = "unknown-deployment", provider = LlmProvider.LOCAL, messages = emptyList())
+        val ordinary = assertIs<LLMResponse.Chat.Error>(runtime.chat(unknown))
+        val streamed = assertIs<LLMResponse.Chat.Error>(runtime.chatStream(unknown).toList().single())
+        assertEquals("Unknown local model: unknown-deployment.", ordinary.message)
+        assertEquals(ordinary, streamed)
     }
 
     @Test

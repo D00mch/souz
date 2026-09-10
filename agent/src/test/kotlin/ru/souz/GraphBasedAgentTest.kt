@@ -23,6 +23,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 import ru.souz.memory.CompletedTurnMemoryInput
@@ -184,6 +185,7 @@ class GraphBasedAgentTest {
         input = "Hello",
         settings = AgentSettings(
             model = "gpt-5-mini",
+            provider = LlmProvider.OPENAI,
             temperature = 0.1f,
             toolsByCategory = emptyMap(),
         ),

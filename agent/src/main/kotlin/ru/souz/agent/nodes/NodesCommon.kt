@@ -140,6 +140,7 @@ internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>
     val ctx = this
     return LLMRequest.Chat(
         model = ctx.settings.model,
+        provider = ctx.settings.provider,
         messages = history,
         functions = ctx.activeTools,
         temperature = ctx.settings.temperature,

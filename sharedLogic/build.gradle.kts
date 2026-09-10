@@ -76,6 +76,7 @@ kotlin {
             kotlin.srcDir("src/test/kotlin")
             resources.srcDir("src/test/resources")
             dependencies {
+                implementation(projects.graphEngine)
                 implementation(libs.kotlin.test)
                 implementation(libs.kotlin.testJunit5)
                 implementation(libs.kotlinx.coroutinesTest)

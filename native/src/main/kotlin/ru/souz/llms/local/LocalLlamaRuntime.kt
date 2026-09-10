@@ -176,6 +176,9 @@ class LocalLlamaRuntime(
         }
 
         val requestedProfile = LocalModelProfiles.forAlias(body.model)
+        if (body.provider != null && requestedProfile == null) {
+            return NativeGenerationResult.error("Unknown local model: ${body.model}.")
+        }
         if (requestedProfile != null && requestedProfile.gigaModel !in availabilityStatus.availableModels) {
             return NativeGenerationResult.error(
                 "Local model ${requestedProfile.displayName} is unsupported on this host.",

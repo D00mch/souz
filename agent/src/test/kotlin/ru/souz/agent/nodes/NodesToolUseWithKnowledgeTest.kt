@@ -15,6 +15,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -130,6 +131,7 @@ class NodesToolUseWithKnowledgeTest {
             input = base.input.copy(choices = choices),
             settings = AgentSettings(
                 model = "test",
+                provider = LlmProvider.OPENAI,
                 temperature = 0f,
                 tools = AgentTools(emptyMap(), toolsByName, emptyMap()),
             ),
@@ -206,6 +208,7 @@ class NodesToolUseWithKnowledgeTest {
             ),
             settings = AgentSettings(
                 model = "test",
+                provider = LlmProvider.OPENAI,
                 temperature = 0f,
                 tools = AgentTools(emptyMap(), mapOf(tool.fn.name to tool), emptyMap()),
             ),

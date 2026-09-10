@@ -33,7 +33,6 @@ class ToolLoopGraphBasedAgent(
     }
 
     private val nodesLLM = NodesLLM(llmApi, settingsProvider)
-    private val nodesPlain = NodesPlain()
     private val toolExecutor = AgentToolExecutor(telemetry)
     private val executionDelegate = GraphExecutionDelegate(logObjectMapper, ToolLoopGraphBasedAgent::class.java)
     override val sideEffects = nodesLLM.sideEffects
@@ -53,7 +52,7 @@ class ToolLoopGraphBasedAgent(
     // Provider retries remain in the supplied API; graph retries must not replay tools.
     private fun executionGraph(): Graph<String, String> = buildGraph(name = "Tool loop", retryPolicy = RetryPolicy()) {
         var turns = 0
-        val inputToHistory = nodesPlain.inputToHistory()
+        val inputToHistory = NodesPlain.inputToHistory()
         val turnLimit = Node<String, String>("Check turn limit") { ctx ->
             if (turns >= maxTurns) throw AgentTurnLimitException(maxTurns)
             turns += 1
@@ -70,8 +69,8 @@ class ToolLoopGraphBasedAgent(
                 }
             }
         }
-        val toolUse = nodesPlain.toolUse(toolExecutor)
-        val finalAnswer = nodesPlain.responseToString()
+        val toolUse = NodesPlain.toolUse(toolExecutor)
+        val finalAnswer = NodesPlain.responseToString()
 
         nodeInput.edgeTo(inputToHistory)
         inputToHistory.edgeTo(turnLimit)

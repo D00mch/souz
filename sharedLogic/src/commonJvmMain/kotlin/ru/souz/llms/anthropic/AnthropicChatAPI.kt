@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
@@ -38,7 +37,6 @@ import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
-private const val DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 private val EPHEMERAL_CACHE_CONTROL = mapOf("type" to "ephemeral")
 
 private data class ToolUseBlock(
@@ -67,24 +65,18 @@ class AnthropicChatAPI(
             ?: System.getenv("ANTHROPIC_API_KEY")
             ?: System.getProperty("ANTHROPIC_API_KEY")
 
-    private val defaultChatModel: String
-        get() = System.getenv("ANTHROPIC_MODEL")
-            ?: System.getProperty("ANTHROPIC_MODEL")
-            ?: DEFAULT_ANTHROPIC_MODEL
-
     private val fileTypes = ConcurrentHashMap<String, String>()
     private val fileTypeInsertionOrder = ConcurrentLinkedQueue<String>()
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val model = resolveChatModel(body.model)
         val response = client.post(MESSAGES_URL) {
             applyRequestDefaults()
             header("anthropic-beta", FILES_API_BETA)
-            setBody(buildChatRequest(body, model, stream = false))
+            setBody(buildChatRequest(body, stream = false))
         }
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
-            parseMessageResponse(text, model)
+            parseMessageResponse(text, body.model)
         } else {
             LLMResponse.Chat.Error(response.status.value, text)
         }
@@ -99,10 +91,9 @@ class AnthropicChatAPI(
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
-        val model = resolveChatModel(body.model)
         val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
         val streamUsage = AnthropicStreamUsage()
-        var streamModel = model
+        var streamModel = body.model
 
         try {
             client.sse(
@@ -111,7 +102,7 @@ class AnthropicChatAPI(
                     applyRequestDefaults()
                     method = HttpMethod.Post
                     header("anthropic-beta", FILES_API_BETA)
-                    setBody(buildChatRequest(body, model, stream = true))
+                    setBody(buildChatRequest(body, stream = true))
                 },
             ) {
                 incoming.collect { event ->
@@ -285,13 +276,12 @@ class AnthropicChatAPI(
 
     private fun buildChatRequest(
         body: LLMRequest.Chat,
-        model: String,
         stream: Boolean,
     ): MutableMap<String, Any> {
         val messages = buildMessages(body.messages)
 
         val request = mutableMapOf<String, Any>(
-            "model" to model,
+            "model" to body.model,
             "max_tokens" to body.maxTokens,
             "messages" to messages,
             "stream" to stream,
@@ -614,36 +604,6 @@ class AnthropicChatAPI(
                 l.warn("Failed to parse Anthropic tool arguments: $argsText", it)
                 emptyMap()
             }
-    }
-
-    private fun resolveChatModel(model: String): String {
-        findAnthropicModelAlias(model)?.let { return it }
-
-        val settingsModel = settingsProvider.gigaModel
-        if (settingsModel.provider == LlmProvider.ANTHROPIC) {
-            return settingsModel.alias
-        }
-
-        if (defaultChatModel.startsWith("claude", ignoreCase = true)) {
-            return defaultChatModel
-        }
-
-        return DEFAULT_ANTHROPIC_MODEL
-    }
-
-    private fun findAnthropicModelAlias(value: String): String? {
-        val normalized = value.trim()
-        if (normalized.isEmpty()) return null
-        if (normalized.startsWith("claude", ignoreCase = true)) {
-            return normalized
-        }
-        val model = LLMModel.entries.firstOrNull {
-            it.alias.equals(normalized, ignoreCase = true) || it.name.equals(normalized, ignoreCase = true)
-        } ?: return null
-        if (model.provider == LlmProvider.ANTHROPIC) {
-            return model.alias
-        }
-        return null
     }
 
     private fun toTextChunk(

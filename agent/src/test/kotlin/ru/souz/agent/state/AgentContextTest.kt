@@ -3,6 +3,7 @@ package ru.souz.agent.state
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.ToolInvocationMeta
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,6 +22,7 @@ class AgentContextTest {
             input = "input",
             settings = AgentSettings(
                 model = "gpt-5-mini",
+                provider = LlmProvider.OPENAI,
                 temperature = 0.2f,
                 toolsByCategory = emptyMap(),
             ),

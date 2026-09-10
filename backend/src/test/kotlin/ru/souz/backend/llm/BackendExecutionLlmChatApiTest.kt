@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.llms.EmbeddingsModel
@@ -45,6 +46,94 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class BackendExecutionLlmChatApiTest {
     @Test
+    fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
+        val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
+        facadeFixture(
+            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+            providerApiOverride = { provider ->
+                var attempts = 0
+                StubChatApi(
+                    message = { body ->
+                        requests += provider to body
+                        if (attempts++ == 0) LLMResponse.Chat.Error(429, "retry") else ok(body.model, usage(2, 3, 5, 0))
+                    },
+                    stream = { body ->
+                        requests += provider to body
+                        flowOf(ok(body.model, usage(2, 0, 2, 0)), ok(body.model, usage(2, 3, 5, 0)))
+                    },
+                )
+            },
+        ).use { fixture ->
+            listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.CODEX).forEach { provider ->
+                val request = chat("Custom/Deployment").copy(provider = provider)
+                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                assertEquals(2, fixture.api.messageStream(request).toList().size)
+                assertEquals(List(3) { provider to request }, requests.takeLast(3))
+            }
+            assertEquals(usage(12, 18, 30, 0), fixture.api.cumulativeUsage())
+            val rejected = chat("Custom/Deployment").copy(provider = LlmProvider.GIGA)
+            assertIs<LLMResponse.Chat.Error>(fixture.api.message(rejected))
+            assertIs<LLMResponse.Chat.Error>(fixture.api.messageStream(rejected).toList().single())
+            assertEquals(9, requests.size)
+        }
+    }
+
+    @Test
+    fun `raw OpenAI deployment uses execution credentials instead of default model`() = runTest {
+        val requests = mutableListOf<CapturedRequest>()
+        val credentials = CountingCredentialResolver("execution-key")
+        facadeFixture(
+            credentialResolver = credentials,
+            providerApiOverride = null,
+            client = recordingClient(requests),
+        ).use { fixture ->
+            fixture.api.message(chat("My-Deployment/v2").copy(provider = LlmProvider.OPENAI))
+            assertEquals("My-Deployment/v2", requests.single().body["model"].asText())
+            assertEquals("Bearer execution-key", requests.single().authorization)
+            assertEquals(1, credentials.calls.get())
+        }
+    }
+
+    @Test
+    fun `legacy custom selector retains host fallback while a raw ID is never rewritten`() = runTest {
+        val requests = mutableListOf<CapturedRequest>()
+        val settings = LlmSettingsStub().apply { gigaModel = LLMModel.OpenAIGpt52 }
+        facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+            val request = chat(LLMModel.OpenAICompatibleCustom.alias)
+            fixture.api.message(request)
+            fixture.api.message(request.copy(provider = LlmProvider.OPENAI))
+            settings.openaiModel = " Deployment/ID "
+            fixture.api.message(request)
+            assertEquals(
+                listOf(LLMModel.OpenAIGpt52.alias, request.model, "Deployment/ID"),
+                requests.map { it.body["model"].asText() },
+            )
+        }
+    }
+
+    @Test
+    fun `dedicated summarization resolves its model endpoint and credentials before dispatch`() = runTest {
+        val requests = mutableListOf<CapturedRequest>()
+        val settings = LlmSettingsStub().apply {
+            openaiSummarizationModel = "Summary/Deployment"
+            openaiSummarizationBaseUrl = "https://summary.test/v1"
+            openaiSummarizationApiKey = "summary-key"
+            openaiSummarizationParameters = """{"model":"ignored","max_completion_tokens":512}"""
+        }
+        facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+            val request = chat("Parent/Deployment").copy(provider = LlmProvider.ANTHROPIC, isSummarization = true)
+            assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+            val outbound = requests.single()
+            assertEquals("https://summary.test/v1/chat/completions", outbound.url)
+            assertEquals("Bearer summary-key", outbound.authorization)
+            assertEquals("Summary/Deployment", outbound.body["model"].asText())
+            assertEquals(512, outbound.body["max_completion_tokens"].asInt())
+            assertEquals(0, fixture.credentialResolver.calls.get())
+            assertEquals(usage(1, 1, 2, 0), fixture.api.cumulativeUsage())
+        }
+    }
+
+    @Test
     fun `routes every supported chat provider and caches each adapter`() = runTest {
         val providerCalls = mutableListOf<LlmProvider>()
         val adapterCreations = mutableMapOf<LlmProvider, Int>()
@@ -53,7 +142,11 @@ class BackendExecutionLlmChatApiTest {
                 message = { body ->
                     providerCalls += provider
                     ok(model = body.model)
-                }
+                },
+                stream = { body ->
+                    providerCalls += provider
+                    flowOf(ok(model = body.model))
+                },
             )
         }
         facadeFixture(
@@ -73,7 +166,9 @@ class BackendExecutionLlmChatApiTest {
 
             models.forEach { model ->
                 assertIs<LLMResponse.Chat.Ok>(fixture.api.message(chat(model.alias)))
-                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(chat(model.alias)))
+                assertIs<LLMResponse.Chat.Ok>(fixture.api.messageStream(chat(model.name)).toList().single()).also {
+                    assertEquals(model.alias, it.model)
+                }
             }
 
             assertEquals(models.map { it.provider }.flatMap { listOf(it, it) }, providerCalls)
@@ -83,7 +178,7 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `rejects Giga and unknown chat models before creating an adapter`() = runTest {
+    fun `rejects unavailable chat routes with the same unary and streaming errors before creating an adapter`() = runTest {
         val overrideCalls = AtomicInteger()
         facadeFixture(
             providerApiOverride = {
@@ -91,16 +186,18 @@ class BackendExecutionLlmChatApiTest {
                 StubChatApi()
             }
         ).use { fixture ->
-            val giga = assertIs<LLMResponse.Chat.Error>(
-                fixture.api.message(chat(LLMModel.Max.alias))
-            )
-            val unknown = assertIs<LLMResponse.Chat.Error>(
-                fixture.api.message(chat("not-a-model"))
-            )
-
-            assertTrue(giga.message.contains("Unsupported backend chat model"))
-            assertTrue(unknown.message.contains("Unsupported backend chat model"))
+            listOf(
+                chat(LLMModel.Max.alias) to "provider GIGA is unsupported",
+                chat("Custom/Deployment").copy(provider = LlmProvider.GIGA) to "provider GIGA is unsupported",
+                chat(" not-a-model ") to "not-a-model",
+                chat("   ") to "",
+            ).forEach { (request, description) ->
+                val expected = LLMResponse.Chat.Error(-1, "Unsupported backend chat model: $description.")
+                assertEquals(expected, fixture.api.message(request))
+                assertEquals(listOf(expected), fixture.api.messageStream(request).toList())
+            }
             assertEquals(0, overrideCalls.get())
+            assertEquals(0, fixture.credentialResolver.calls.get())
         }
     }
 

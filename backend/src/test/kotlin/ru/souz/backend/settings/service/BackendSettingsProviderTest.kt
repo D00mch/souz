@@ -3,6 +3,7 @@ package ru.souz.backend.settings.service
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import ru.souz.backend.config.BackendConfigSource
@@ -11,8 +12,23 @@ import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LocalModelAvailability
+import ru.souz.db.SUBAGENT_MODELS_JSON
 
 class BackendSettingsProviderTest {
+    @Test
+    fun `subagent configuration uses deploy precedence and rejects unsupported or invalid values`() {
+        val property = mapOf(SUBAGENT_MODELS_JSON to """{"ANTHROPIC":["property-model"]}""")
+        assertTrue(provider().subagentModels.isEmpty())
+        assertEquals(mapOf("property-model" to LlmProvider.ANTHROPIC), provider(properties = property).subagentModels)
+        assertEquals(
+            mapOf("env-model" to LlmProvider.OPENAI),
+            provider(env = mapOf(SUBAGENT_MODELS_JSON to """{"OPENAI":["env-model"]}"""), properties = property).subagentModels,
+        )
+        listOf("broken", " ", """{"GIGA":["model"]}""", """{"OPENAI":["x"],"ANTHROPIC":["x"]}""").forEach {
+            assertFailsWith<IllegalArgumentException> { provider(env = mapOf(SUBAGENT_MODELS_JSON to it)) }
+        }
+    }
+
     @Test
     fun `codex oauth values use postgres store before deploy config`() {
         val store = MapBackendServerPreferenceStore()

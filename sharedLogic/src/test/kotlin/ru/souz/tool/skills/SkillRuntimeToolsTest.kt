@@ -314,7 +314,7 @@ class SkillRuntimeToolsTest {
         val runner = ToolInvokeSkill(
             toolCatalog = catalog(),
             toolsFilter = TestToolsFilter(),
-            skillBundleProvider = repository,
+            loadBundle = repository::loadSkillBundle,
             commandExecutor = commandExecutor,
         )
         val largeOutput = "x".repeat(25_050)
@@ -386,6 +386,7 @@ class SkillRuntimeToolsTest {
         val repository = repository()
         val catalog = catalog(ToolCategory.FILES to listOf(RecordingTool("ordinary")))
         val settings = mockk<SettingsProvider> {
+            every { subagentModels } returns emptyMap()
             every { gigaModel } returns LLMModel.Max
             every { useStreaming } returns false
         }
@@ -432,7 +433,7 @@ class SkillRuntimeToolsTest {
         assertFalse(
             catalog.toolsByCategory.values.any { tools -> tools.keys.any { it in coreToolNames } }
         )
-        val executionSettings = AgentSettings(LLMModel.Pro.alias, 0.3f, catalog.toolsByCategory, 4096)
+        val executionSettings = AgentSettings(LLMModel.Pro.alias, LLMModel.Pro.provider, 0.3f, catalog.toolsByCategory, 4096)
         val spawn = direct.instance<AgentCoreTools>().skillsTools(executionSettings).last()
         assertEquals(SubagentTool.NAME, spawn.fn.name)
         assertEquals("delegated result", spawn.call(mapOf("task" to "Isolated task"))["result"].asText())
@@ -503,7 +504,7 @@ class SkillRuntimeToolsTest {
     ): ToolInvokeSkill = ToolInvokeSkill(
         toolCatalog = catalog,
         toolsFilter = filter,
-        skillBundleProvider = repository,
+        loadBundle = repository::loadSkillBundle,
         commandExecutor = SkillCommandExecutor(mockk(relaxed = true)),
         approvalGate = approvalGate,
     )

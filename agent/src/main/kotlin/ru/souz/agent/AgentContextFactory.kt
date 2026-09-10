@@ -54,7 +54,8 @@ class AgentContextFactory(
     ): AgentContext<String> {
         val normalizedAgentId = normalizeAgentId(agentId)
         val settings = AgentSettings(
-            model = model.alias,
+            model = settingsProvider.executionModelId(model),
+            provider = model.provider,
             temperature = temperature,
             toolsByCategory = toolCatalog.toolsByCategory,
             contextSize = contextSize,
