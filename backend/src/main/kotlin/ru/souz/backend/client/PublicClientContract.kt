@@ -78,7 +78,7 @@ data class ClientDevice(
 )
 @JsonSubTypes(
     JsonSubTypes.Type(value = RecognizedTextContent::class, name = "text"),
-    JsonSubTypes.Type(value = HistoryToolExchangeContent::class, name = "tool_exchange"),
+    JsonSubTypes.Type(value = HistoryToolCallContent::class, name = "tool_call"),
 )
 sealed interface HistoryAppendContent {
     val type: String
@@ -90,11 +90,11 @@ data class RecognizedTextContent(
     val text: String,
 ) : HistoryAppendContent
 
-data class HistoryToolExchangeContent(
+data class HistoryToolCallContent(
     override val type: String,
     val name: String,
     val arguments: Map<String, JsonNode>,
-    val output: Map<String, JsonNode>,
+    val result: Map<String, JsonNode>,
 ) : HistoryAppendContent
 
 data class ClientRequestMeta(

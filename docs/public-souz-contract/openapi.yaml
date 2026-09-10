@@ -309,7 +309,7 @@ components:
           content:
             properties:
               type:
-                const: tool_exchange
+                const: tool_call
       then:
         properties:
           role:
@@ -322,12 +322,12 @@ components:
         content:
           oneOf:
             - $ref: "#/components/schemas/RecognizedTextContent"
-            - $ref: "#/components/schemas/HistoryToolExchangeContent"
+            - $ref: "#/components/schemas/HistoryToolCallContent"
           discriminator:
             propertyName: type
             mapping:
               text: "#/components/schemas/RecognizedTextContent"
-              tool_exchange: "#/components/schemas/HistoryToolExchangeContent"
+              tool_call: "#/components/schemas/HistoryToolCallContent"
     RecognizedTextContent:
       type: object
       additionalProperties: false
@@ -341,20 +341,20 @@ components:
           enum: [voice, text]
         text:
           $ref: "#/components/schemas/NonEmptyString"
-    HistoryToolExchangeContent:
-      description: Completed client tool exchange. Requires an assistant history role; name is the Skill ID passed to RunSkillCommand.
+    HistoryToolCallContent:
+      description: Completed client tool call with its result. Requires an assistant history role; name is the Skill ID passed to RunSkillCommand.
       type: object
       additionalProperties: false
-      required: [type, name, arguments, output]
+      required: [type, name, arguments, result]
       properties:
         type:
           type: string
-          enum: [tool_exchange]
+          enum: [tool_call]
         name:
           $ref: "#/components/schemas/NonEmptyString"
         arguments:
           type: object
-        output:
+        result:
           type: object
     RequestMeta:
       type: object
@@ -907,20 +907,15 @@ components:
           $ref: "#/components/schemas/ToolCallStartedPayload"
         createdAt:
           $ref: "#/components/schemas/DateTime"
-    ToolTarget:
-      type: string
-      enum: [souz, client]
     ToolCallStartedPayload:
       type: object
       additionalProperties: false
-      required: [toolCallId, name, target, arguments]
+      required: [toolCallId, name, arguments]
       properties:
         toolCallId:
           $ref: "#/components/schemas/NonEmptyString"
         name:
           $ref: "#/components/schemas/NonEmptyString"
-        target:
-          $ref: "#/components/schemas/ToolTarget"
         deviceId:
           type: [string, "null"]
         arguments:

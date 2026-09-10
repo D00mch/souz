@@ -17,11 +17,18 @@ class BackendPublicHistoryContractE2eTest {
         backendE2eTest("e2e_ws_history_contract") {
             withPublicChatSocket { userId, chatId, session ->
                 session.send(Frame.Text(historyFrame(chatId, "history-user", "user", "client solved it")))
+                val toolFrame = toolHistoryFrame(chatId, "history-tool")
+                session.send(Frame.Text(toolFrame))
                 val userAck = readJson(session)
                 assertEquals("accepted", userAck["status"].asText())
+                assertEquals("history-user", userAck["requestId"].asText())
                 assertFalse(userAck["duplicate"].asBoolean())
                 assertFalse(userAck.has("submission"))
                 assertFalse(userAck.has("thread"))
+                val toolAck = readJson(session)
+                assertEquals("accepted", toolAck["status"].asText())
+                assertEquals("history-tool", toolAck["requestId"].asText())
+                assertFalse(toolAck["duplicate"].asBoolean())
 
                 val assistantFrame = historyFrame(
                     chatId,
@@ -72,17 +79,26 @@ class BackendPublicHistoryContractE2eTest {
                     historyFrame(chatId, "unknown-role", "tool", "invalid"),
                     toolHistoryFrame(chatId, "tool-user-role")
                         .replace("\"role\":\"assistant\"", "\"role\":\"user\""),
+                    toolHistoryFrame(chatId, "old-tool-type").replace("tool_call", "tool_exchange"),
+                    toolHistoryFrame(chatId, "old-tool-result").replace("\"result\":", "\"output\":"),
+                    toolHistoryFrame(chatId, "tool-call-id")
+                        .replace("\"name\":", "\"toolCallId\":\"client-call\",\"name\":"),
+                    toolHistoryFrame(chatId, "tool-target")
+                        .replace("\"name\":", "\"target\":\"server\",\"name\":"),
+                    toolHistoryFrame(chatId, "missing-result").replace(",\"result\":{\"volumePercent\":30}", ""),
                 )
                 invalidFrames.forEach { raw ->
                     session.send(Frame.Text(raw))
                     val rejected = readJson(session)
+                    assertEquals("ack", rejected["kind"].asText())
+                    assertEquals(json.readTree(raw)["requestId"], rejected["requestId"])
                     assertEquals("rejected", rejected["status"].asText())
                     assertEquals("invalid_request", rejected["error"]["code"].asText())
                 }
 
                 assertTrue(llm.requests.isEmpty())
-                session.send(Frame.Text(toolHistoryFrame(chatId, "history-tool")))
-                assertEquals("accepted", readJson(session)["status"].asText())
+                session.send(Frame.Text(toolFrame))
+                assertEquals(toolAck.deepCopy<ObjectNode>().put("duplicate", true), readJson(session))
                 session.send(
                     Frame.Text(
                         messageFrame(
@@ -204,6 +220,6 @@ class BackendPublicHistoryContractE2eTest {
     }
 
     private fun toolHistoryFrame(chatId: String, requestId: String): String =
-        """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"assistant","content":{"type":"tool_exchange","name":"device.volume.adjust","arguments":{"deltaPercent":-10},"output":{"volumePercent":30}}}}"""
+        """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"assistant","content":{"type":"tool_call","name":"device.volume.adjust","arguments":{"deltaPercent":-10},"result":{"volumePercent":30}}}}"""
 
 }
