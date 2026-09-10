@@ -45,6 +45,12 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 - Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
 - Iterate the event bus's concurrent subscriber set directly during publication; Kotlin collection-size fast paths can race with disconnect and throw while copying it.
 
+## Diagnostics
+
+`SouzClientWebSocket` logs connection lifecycle, frame receipt, persisted chat identity, prepared subscriptions and sent acknowledgements at INFO. Correlate entries by `socketId`, `requestId` and `chatId`; frame failures include the processing stage and elapsed time, and the socket failure includes the stack trace. Policy closes and contract rejections include their codes. Cancellation propagates immediately; cleanup logs interrupted frames when the scope is inactive. The final close code is included only when already available, alongside coroutine activity; logging must not wait for the close handshake.
+
+Log envelope identifiers rather than complete frames, prompts, titles, tool arguments or results. Bound client-provided log identifiers and remove control characters. Keep the acknowledgement gate release immediately after the socket write, before logging or status feedback. A logged acknowledgement confirms the server write completed; it does not confirm client receipt.
+
 ## Verification
 
 Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendPublic*WebSocketE2eTest' --tests 'ru.souz.backend.storage.postgres.PostgresRepositoriesTest'` and `./gradlew :agent:test`. Cover cross-instance initial, retry, execute/history ordering, submit/cancel races, strict frames, role-preserving history at the next execute, acknowledgement ordering, tool result duplicates/conflicts, cancellation, and reconnect replay.
