@@ -60,19 +60,17 @@ internal class BackendExecutionLlmChatApi(
             val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
             return retryChat { api.message(request) }.also { recordUsage(it) }
         }
-        val (provider, request) = when (val resolution = chatRoute(body)) {
-            is ModelResolution.Resolved -> resolution.value
-            else -> return unsupportedChatModel(resolution)
+        val (provider, request) = when (val route = chatRoute(body)) {
+            is ChatRoute.Ready -> route
+            is ChatRoute.Rejected -> return route.error
         }
-        val response = retryChat { apiFor(provider).message(request) }
-        recordUsage(response)
-        return response
+        return retryChat { apiFor(provider).message(request) }.also { recordUsage(it) }
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
-        val (provider, request) = when (val resolution = chatRoute(body)) {
-            is ModelResolution.Resolved -> resolution.value
-            else -> return flow { emit(unsupportedChatModel(resolution)) }
+        val (provider, request) = when (val route = chatRoute(body)) {
+            is ChatRoute.Ready -> route
+            is ChatRoute.Rejected -> return flow { emit(route.error) }
         }
         val api = apiFor(provider)
         return retryingStream(api, request)
@@ -116,24 +114,20 @@ internal class BackendExecutionLlmChatApi(
 
     private fun currentProvider(): LlmProvider = settingsProvider.gigaModel.provider
 
-    private fun chatRoute(body: LLMRequest.Chat): ModelResolution<Pair<LlmProvider, LLMRequest.Chat>> {
+    private fun chatRoute(body: LLMRequest.Chat): ChatRoute {
         body.provider?.let { provider ->
-            return if (provider in BackendLlmSupport.chatProviders) ModelResolution.Resolved(provider to body)
-            else ModelResolution.UnsupportedProvider(provider to body, provider)
+            return if (provider in BackendLlmSupport.chatProviders) ChatRoute.Ready(provider, body)
+            else rejectChatRoute(ModelResolution.UnsupportedProvider(body, provider))
         }
         return when (val resolution = resolveChatModel(
             rawModel = body.model,
             supportedProviders = BackendLlmSupport.chatProviders,
             preferredModel = settingsProvider.gigaModel,
         )) {
-            is ModelResolution.Resolved -> ModelResolution.Resolved(
-                resolution.value.provider to body.copy(model = resolution.value.alias),
+            is ModelResolution.Resolved -> ChatRoute.Ready(
+                resolution.value.provider, body.copy(model = resolution.value.alias),
             )
-            is ModelResolution.Unknown -> resolution
-            is ModelResolution.Ambiguous -> ModelResolution.Ambiguous(
-                resolution.normalizedInput, resolution.candidates.map { it.provider to body.copy(model = it.alias) },
-            )
-            is ModelResolution.UnsupportedProvider -> ModelResolution.UnsupportedProvider(resolution.provider to body, resolution.provider)
+            else -> rejectChatRoute(resolution)
         }
     }
 
@@ -251,8 +245,8 @@ internal class BackendExecutionLlmChatApi(
         return min(retryPolicy.backoffBaseMs * (attempt + 1), retryPolicy.backoffMaxMs)
     }
 
-    private fun unsupportedChatModel(resolution: ModelResolution<*>): LLMResponse.Chat.Error =
-        LLMResponse.Chat.Error(-1, "Unsupported backend chat model: ${resolution.description()}.")
+    private fun rejectChatRoute(resolution: ModelResolution<*>): ChatRoute.Rejected =
+        ChatRoute.Rejected(LLMResponse.Chat.Error(-1, "Unsupported backend chat model: ${resolution.description()}."))
 
     private fun unsupportedEmbeddingModel(resolution: ModelResolution<*>): LLMResponse.Embeddings.Error =
         LLMResponse.Embeddings.Error(-1, "Unsupported backend embeddings model: ${resolution.description()}.")
@@ -262,6 +256,11 @@ internal class BackendExecutionLlmChatApi(
         val RETRY_AFTER = Regex("""retry-after=(\d+)""", RegexOption.IGNORE_CASE)
         val ZERO_USAGE = LLMResponse.Usage(0, 0, 0, 0)
     }
+}
+
+private sealed interface ChatRoute {
+    data class Ready(val provider: LlmProvider, val request: LLMRequest.Chat) : ChatRoute
+    data class Rejected(val error: LLMResponse.Chat.Error) : ChatRoute
 }
 
 private class RetryFirstStreaming429(val error: LLMResponse.Chat.Error) : Exception("retry", null, false, false)

@@ -145,7 +145,7 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `rejects Giga and unknown chat models before creating an adapter`() = runTest {
+    fun `rejects unavailable chat routes with the same unary and streaming errors before creating an adapter`() = runTest {
         val overrideCalls = AtomicInteger()
         facadeFixture(
             providerApiOverride = {
@@ -153,16 +153,18 @@ class BackendExecutionLlmChatApiTest {
                 StubChatApi()
             }
         ).use { fixture ->
-            val giga = assertIs<LLMResponse.Chat.Error>(
-                fixture.api.message(chat(LLMModel.Max.alias))
-            )
-            val unknown = assertIs<LLMResponse.Chat.Error>(
-                fixture.api.message(chat("not-a-model"))
-            )
-
-            assertTrue(giga.message.contains("Unsupported backend chat model"))
-            assertTrue(unknown.message.contains("Unsupported backend chat model"))
+            listOf(
+                chat(LLMModel.Max.alias) to "provider GIGA is unsupported",
+                chat("Custom/Deployment").copy(provider = LlmProvider.GIGA) to "provider GIGA is unsupported",
+                chat(" not-a-model ") to "not-a-model",
+                chat("   ") to "",
+            ).forEach { (request, description) ->
+                val expected = LLMResponse.Chat.Error(-1, "Unsupported backend chat model: $description.")
+                assertEquals(expected, fixture.api.message(request))
+                assertEquals(listOf(expected), fixture.api.messageStream(request).toList())
+            }
             assertEquals(0, overrideCalls.get())
+            assertEquals(0, fixture.credentialResolver.calls.get())
         }
     }
 
