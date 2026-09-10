@@ -21,7 +21,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 ## Safe-change guidance
 
 - Keep strict JSON decoding and reject unknown fields.
-- Completed assistant tool history uses `tool_call` with `arguments` and `result` objects, without `toolCallId` or `target`. Public tool-start frames omit `target`; retain the stored event's `target` discriminator so replay recognizes client tool starts before projecting them to transport JSON.
+- Completed assistant tool history uses `tool_call` with `arguments` and `result` objects, without `toolCallId` or `target`. Public WebSocket tool-start frames omit `target`; proxy HTTP event DTOs preserve it. Retain the stored event's `target` discriminator so replay recognizes client tool starts before projecting them to transport JSON.
 - Keep HTTP and WebSocket thread status fields identical; the WebSocket frame flattens the shared status payload and adds its envelope. Preserve explicit nulls and correlation identifiers in status and rejection frames.
 - Validate and serialize initial input before registering live thread state. Propagate startup cancellation instead of converting it to a rejected acknowledgement.
 - Lock the chat row and recheck `client_requests` before every submit or cancel mutation. Initial selection or creation, follow-up message/device updates, cancellation state, and their receipts must commit atomically. Hash the client-supplied nullable thread ID rather than the selected thread, and return the stored receipt on retries even after execution completion.

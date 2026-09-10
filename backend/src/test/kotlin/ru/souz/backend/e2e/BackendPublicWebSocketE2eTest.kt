@@ -427,6 +427,11 @@ class BackendPublicWebSocketE2eTest {
                     assertEquals(started, readJson(replay))
                 }
 
+                val httpEvent = client.get(BackendHttpRoutes.chatEvents(chatId)) {
+                    trusted(userId)
+                }.jsonBody()["items"].single { it["seq"] == started["seq"] }
+                assertEquals("client", httpEvent["payload"]["target"]?.asText())
+
                 val resultFrame =
                     """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Horror"}}"""
                 session.send(Frame.Text(resultFrame))
