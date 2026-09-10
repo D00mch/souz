@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.llms.EmbeddingsModel
@@ -44,6 +45,67 @@ import ru.souz.llms.restJsonMapper
 import kotlin.time.Duration.Companion.milliseconds
 
 class BackendExecutionLlmChatApiTest {
+    @Test
+    fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
+        val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
+        facadeFixture(
+            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+            providerApiOverride = { provider ->
+                var attempts = 0
+                StubChatApi(
+                    message = { body ->
+                        requests += provider to body
+                        if (attempts++ == 0) LLMResponse.Chat.Error(429, "retry") else ok(body.model, usage(2, 3, 5, 0))
+                    },
+                    stream = { body ->
+                        requests += provider to body
+                        flowOf(ok(body.model, usage(2, 0, 2, 0)), ok(body.model, usage(2, 3, 5, 0)))
+                    },
+                )
+            },
+        ).use { fixture ->
+            listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.CODEX).forEach { provider ->
+                val request = chat("Custom/Deployment").copy(provider = provider)
+                assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                assertEquals(2, fixture.api.messageStream(request).toList().size)
+                assertEquals(List(3) { provider to request }, requests.takeLast(3))
+            }
+            assertEquals(usage(12, 18, 30, 0), fixture.api.cumulativeUsage())
+            val rejected = chat("Custom/Deployment").copy(provider = LlmProvider.GIGA)
+            assertIs<LLMResponse.Chat.Error>(fixture.api.message(rejected))
+            assertIs<LLMResponse.Chat.Error>(fixture.api.messageStream(rejected).toList().single())
+            assertEquals(9, requests.size)
+        }
+    }
+
+    @Test
+    fun `raw OpenAI deployment uses execution credentials instead of default model`() = runTest {
+        val requests = mutableListOf<CapturedRequest>()
+        val credentials = CountingCredentialResolver("execution-key")
+        facadeFixture(
+            credentialResolver = credentials,
+            providerApiOverride = null,
+            client = recordingClient(requests),
+        ).use { fixture ->
+            fixture.api.message(chat("My-Deployment/v2").copy(provider = LlmProvider.OPENAI))
+            assertEquals("My-Deployment/v2", requests.single().body["model"].asText())
+            assertEquals("Bearer execution-key", requests.single().authorization)
+            assertEquals(1, credentials.calls.get())
+        }
+    }
+
+    @Test
+    fun `legacy custom selector retains adapter fallback while a raw ID is never rewritten`() = runTest {
+        val requests = mutableListOf<CapturedRequest>()
+        val settings = LlmSettingsStub().apply { gigaModel = LLMModel.OpenAIGpt52 }
+        facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
+            val request = chat(LLMModel.OpenAICompatibleCustom.alias)
+            fixture.api.message(request)
+            fixture.api.message(request.copy(provider = LlmProvider.OPENAI))
+            assertEquals(listOf(LLMModel.OpenAIGpt52.alias, request.model), requests.map { it.body["model"].asText() })
+        }
+    }
+
     @Test
     fun `routes every supported chat provider and caches each adapter`() = runTest {
         val providerCalls = mutableListOf<LlmProvider>()

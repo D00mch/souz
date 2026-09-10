@@ -22,6 +22,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -265,7 +266,7 @@ class SubagentToolTest {
         telemetry: AgentTelemetry = AgentTelemetry.NONE,
         prepare: suspend (SubagentTool.Input, ToolInvocationMeta) -> SubagentTool.Setup = { _, _ -> setup() },
         respond: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
-    ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, prepare)
+    ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, prepare = prepare)
 
     private fun agent(
         streaming: Boolean = false,
@@ -295,6 +296,7 @@ class SubagentToolTest {
 
     private fun settings(parentTool: LLMToolSetup = tool("ParentTool")) = AgentSettings(
         model = "child-model",
+        provider = LlmProvider.OPENAI,
         temperature = 0.3f,
         contextSize = 4096,
         toolsByCategory = mapOf(ToolCategory.FILES to mapOf(parentTool.fn.name to parentTool)),

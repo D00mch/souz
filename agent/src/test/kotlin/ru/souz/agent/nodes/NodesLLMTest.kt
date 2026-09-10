@@ -22,6 +22,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
@@ -74,6 +75,7 @@ class NodesLLMTest {
         input = "ignored",
         settings = AgentSettings(
             model = "test-model",
+            provider = LlmProvider.OPENAI,
             temperature = 0.2f,
             toolsByCategory = emptyMap(),
         ),

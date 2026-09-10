@@ -12,7 +12,6 @@ import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModelSelection
 import ru.souz.llms.LLMChatAPI
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
@@ -58,25 +57,25 @@ internal class BackendExecutionLlmChatApi(
                 modelOverride = summarizationModel,
                 requestParameters = settingsProvider.openaiSummarizationParameters,
             )
-            val request = body.copy(model = summarizationModel, maxTokens = 0)
+            val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
             return retryChat { api.message(request) }.also { recordUsage(it) }
         }
-        val model = when (val resolution = chatModel(body.model)) {
+        val (provider, request) = when (val resolution = chatRoute(body)) {
             is ModelResolution.Resolved -> resolution.value
             else -> return unsupportedChatModel(resolution)
         }
-        val response = retryChat { apiFor(model.provider).message(body.copy(model = model.alias)) }
+        val response = retryChat { apiFor(provider).message(request) }
         recordUsage(response)
         return response
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
-        val model = when (val resolution = chatModel(body.model)) {
+        val (provider, request) = when (val resolution = chatRoute(body)) {
             is ModelResolution.Resolved -> resolution.value
             else -> return flow { emit(unsupportedChatModel(resolution)) }
         }
-        val api = apiFor(model.provider)
-        return retryingStream(api, body.copy(model = model.alias))
+        val api = apiFor(provider)
+        return retryingStream(api, request)
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
@@ -117,12 +116,26 @@ internal class BackendExecutionLlmChatApi(
 
     private fun currentProvider(): LlmProvider = settingsProvider.gigaModel.provider
 
-    private fun chatModel(model: String): ModelResolution<LLMModel> =
-        resolveChatModel(
-            rawModel = model,
+    private fun chatRoute(body: LLMRequest.Chat): ModelResolution<Pair<LlmProvider, LLMRequest.Chat>> {
+        body.provider?.let { provider ->
+            return if (provider in BackendLlmSupport.chatProviders) ModelResolution.Resolved(provider to body)
+            else ModelResolution.UnsupportedProvider(provider to body, provider)
+        }
+        return when (val resolution = resolveChatModel(
+            rawModel = body.model,
             supportedProviders = BackendLlmSupport.chatProviders,
             preferredModel = settingsProvider.gigaModel,
-        )
+        )) {
+            is ModelResolution.Resolved -> ModelResolution.Resolved(
+                resolution.value.provider to body.copy(model = resolution.value.alias),
+            )
+            is ModelResolution.Unknown -> resolution
+            is ModelResolution.Ambiguous -> ModelResolution.Ambiguous(
+                resolution.normalizedInput, resolution.candidates.map { it.provider to body.copy(model = it.alias) },
+            )
+            is ModelResolution.UnsupportedProvider -> ModelResolution.UnsupportedProvider(resolution.provider to body, resolution.provider)
+        }
+    }
 
     private suspend fun apiFor(provider: LlmProvider): LLMChatAPI {
         if (provider == LlmProvider.GIGA) error(BackendLlmSupport.GIGA_UNSUPPORTED_MESSAGE)

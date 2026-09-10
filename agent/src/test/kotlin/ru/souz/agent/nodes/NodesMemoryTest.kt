@@ -23,6 +23,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toMessage
@@ -462,6 +463,7 @@ class NodesMemoryTest {
 
     private fun settings(): AgentSettings = AgentSettings(
         model = "model",
+        provider = LlmProvider.OPENAI,
         temperature = 0f,
         toolsByCategory = emptyMap(),
     )

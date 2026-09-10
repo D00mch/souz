@@ -76,7 +76,7 @@ class AnthropicChatAPI(
     private val fileTypeInsertionOrder = ConcurrentLinkedQueue<String>()
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = try {
-        val model = resolveChatModel(body.model)
+        val model = if (body.provider != null) body.model else resolveChatModel(body.model)
         val response = client.post(MESSAGES_URL) {
             applyRequestDefaults()
             header("anthropic-beta", FILES_API_BETA)
@@ -99,7 +99,7 @@ class AnthropicChatAPI(
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = channelFlow {
-        val model = resolveChatModel(body.model)
+        val model = if (body.provider != null) body.model else resolveChatModel(body.model)
         val toolBlocks = mutableMapOf<Int, ToolUseBlock>()
         val streamUsage = AnthropicStreamUsage()
         var streamModel = model

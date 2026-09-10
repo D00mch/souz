@@ -100,7 +100,7 @@ class OpenAICompatibleChatAPI(
         }
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
-            val responseModel = if (provider == LlmProvider.QWEN) resolveChatModel(body.model) else body.model
+            val responseModel = if (provider == LlmProvider.QWEN && body.provider == null) resolveChatModel(body.model) else body.model
             parseCompletionsResponse(text, responseModel).also {
                 l.info("Model: ${body.model}. Response received")
             }
@@ -210,7 +210,7 @@ class OpenAICompatibleChatAPI(
         val tools = buildTools(body.functions)
         return buildMap {
             requestParameters?.let { putAll(restJsonMapper.readValue<Map<String, Any>>(it)) }
-            put("model", modelOverride ?: resolveChatModel(body.model))
+            put("model", modelOverride ?: if (body.provider != null) body.model else resolveChatModel(body.model))
             put("messages", buildMessages(body.messages))
             put("stream", stream)
             body.reasoningEffort?.takeIf { provider == LlmProvider.OPENAI }?.let { put("reasoning_effort", it) }

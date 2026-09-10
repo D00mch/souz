@@ -17,6 +17,7 @@ EmbeddingGemma query and document inputs use different prefixes; losing that dis
 ## Safe changes
 
 - Add or remove linked assets through profile metadata and keep download, availability, and model-selection UI consumers aligned.
+- Explicitly routed chat requests must reject unknown local model IDs instead of falling back to the selected profile.
 - Preserve the shared `storageId` for projectors and update candidate aliases only when runtime resolution and tests change together.
 - Preserve embedding query/document formatting and the embedding profile's own context cap.
 - Apply settings-driven context size only within model limits. Leave room for at least one completion token and retain context-expansion retry bounds.

@@ -20,6 +20,7 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
@@ -186,6 +187,7 @@ class NodesCommonTest {
 
     private fun settings(model: String): AgentSettings = AgentSettings(
         model = model,
+        provider = LlmProvider.OPENAI,
         temperature = 0.2f,
         toolsByCategory = emptyMap(),
     )

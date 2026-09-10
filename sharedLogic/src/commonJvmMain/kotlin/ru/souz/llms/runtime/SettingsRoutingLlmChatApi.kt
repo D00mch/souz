@@ -25,10 +25,10 @@ class SettingsRoutingLlmChatApi(
         apisByProvider[provider] ?: UnsupportedProviderApi(provider)
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
-        currentChatApi().message(body)
+        apiFor(body.provider ?: settingsProvider.gigaModel.provider).message(body)
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
-        currentChatApi().messageStream(body)
+        apiFor(body.provider ?: settingsProvider.gigaModel.provider).messageStream(body)
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
         val normalizedModel = body.model.trim()

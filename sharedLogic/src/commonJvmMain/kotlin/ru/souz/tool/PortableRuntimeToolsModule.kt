@@ -13,8 +13,6 @@ import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.db.SettingsProvider
-import ru.souz.llms.LLMModel
-import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
@@ -146,7 +144,6 @@ fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRun
 fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     import(portableSkillRuntimeToolsDiModule())
     bindSingleton {
-        val buildProfile = instanceOrNull<LlmBuildProfile>()
         SubagentToolFactory(
             createAgent = { maxTurns ->
                 ToolLoopGraphBasedAgent(
@@ -156,13 +153,12 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
                     telemetry = instanceOrNull<AgentTelemetry>() ?: AgentTelemetry.NONE,
                 )
             },
-            settingsProvider = instance<SettingsProvider>(),
             toolCatalog = instance(),
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
             commandExecutor = instance(),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
-            availableModels = { buildProfile?.availableModels ?: LLMModel.entries },
+            configuredModels = instance<SettingsProvider>().subagentModels,
         )
     }
     bindSingleton {

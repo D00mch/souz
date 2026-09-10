@@ -29,6 +29,9 @@ interface AgentSettingsProvider {
     /** Currently selected chat model for the agent. */
     var gigaModel: LLMModel
 
+    /** Host-resolved provider request ID, including custom deployment selections. */
+    fun executionModelId(model: LLMModel): String = model.alias
+
     /** Whether the host prefers streaming LLM responses. */
     var useStreaming: Boolean
 

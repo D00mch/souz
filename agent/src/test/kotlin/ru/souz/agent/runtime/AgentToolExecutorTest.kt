@@ -7,6 +7,7 @@ import ru.souz.agent.spi.AgentToolExecutionEvent
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -106,6 +107,7 @@ class AgentToolExecutorTest {
             executor.execute(
                 settings = AgentSettings(
                     model = "test-model",
+                    provider = LlmProvider.OPENAI,
                     temperature = 0f,
                     toolsByCategory = emptyMap(),
                 ),
@@ -240,6 +242,7 @@ class AgentToolExecutorTest {
         },
     ): AgentSettings = AgentSettings(
         model = "test-model",
+        provider = LlmProvider.OPENAI,
         temperature = 0f,
         toolsByCategory = mapOf(
             ToolCategory.FILES to mapOf(

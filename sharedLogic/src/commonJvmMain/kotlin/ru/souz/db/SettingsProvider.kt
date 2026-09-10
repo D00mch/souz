@@ -13,6 +13,13 @@ const val REGION_EN = "en"
 const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 400_000L
 
 interface SettingsProvider : AgentSettingsProvider, LlmBuildProfileSettings {
+    val subagentModels: Map<String, LlmProvider> get() = emptyMap()
+
+    override fun executionModelId(model: LLMModel): String =
+        if (model == LLMModel.OpenAICompatibleCustom) {
+            openaiModel?.trim()?.takeIf(String::isNotEmpty) ?: model.alias
+        } else model.alias
+
     var gigaChatKey: String?
     var qwenChatKey: String?
     var aiTunnelKey: String?

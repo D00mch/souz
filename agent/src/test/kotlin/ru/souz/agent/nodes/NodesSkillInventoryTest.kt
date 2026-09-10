@@ -17,6 +17,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
@@ -168,6 +169,7 @@ class NodesSkillInventoryTest {
         input = "hello",
         settings = AgentSettings(
             model = "test",
+            provider = LlmProvider.OPENAI,
             temperature = 0f,
             tools = AgentTools(catalog(*tools).toolsByCategory),
         ),

@@ -36,6 +36,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -281,7 +282,7 @@ private class ParentHarness(
 
     fun context(model: String = "parent-model") = AgentContext(
         input = "delegate this task",
-        settings = AgentSettings(model = model, temperature = 0.7f, toolsByCategory = catalogTools, contextSize = 4096),
+        settings = AgentSettings(model = model, provider = LlmProvider.OPENAI, temperature = 0.7f, toolsByCategory = catalogTools, contextSize = 4096),
         history = emptyList(),
         activeTools = catalogTools.values.flatMap { tools -> tools.values.map { it.fn } },
         systemPrompt = "parent instructions",

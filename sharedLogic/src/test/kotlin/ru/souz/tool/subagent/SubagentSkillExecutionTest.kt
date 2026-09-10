@@ -94,8 +94,8 @@ class SubagentSkillExecutionTest {
             val settings = mockk<AgentSettingsProvider> { every { useStreaming } returns false }
             val spawn = SubagentToolFactory(
                 { maxTurns -> ToolLoopGraphBasedAgent(api, settings, maxTurns) },
-                settings, catalog, filter, registry, commands, approval,
-            ).create(AgentSettings(LLMModel.Max.alias, 0.5f, AgentTools(emptyMap())))
+                catalog, filter, registry, commands, approval,
+            ).create(AgentSettings(LLMModel.Max.alias, LLMModel.Max.provider, 0.5f, AgentTools(emptyMap())))
             val result = spawn.invoke(
                 LLMResponse.FunctionCall(spawn.fn.name, mapOf("task" to "Run the skill", "skillIds" to listOf("loose"))), meta,
             )

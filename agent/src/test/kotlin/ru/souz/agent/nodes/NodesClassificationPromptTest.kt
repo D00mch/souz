@@ -142,6 +142,7 @@ class NodesClassificationPromptTest {
                     input = "Прочитай файл",
                     settings = AgentSettings(
                         model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
+                        provider = LLMModel.LocalQwen3_4B_Instruct_2507.provider,
                         temperature = 0.2f,
                         toolsByCategory = localTools,
                     ),
@@ -382,6 +383,7 @@ class NodesClassificationPromptTest {
                     input = input,
                     settings = AgentSettings(
                         model = LLMModel.Max.alias,
+                        provider = LLMModel.Max.provider,
                         temperature = 0.2f,
                         toolsByCategory = tools,
                     ),
