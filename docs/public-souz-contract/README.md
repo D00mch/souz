@@ -21,9 +21,11 @@ A **chat** stores history; a **thread** is a task inside it. A **subscription** 
 | `tool.result` | Resolve a call by `chatId`, `threadId` and `toolCallId`. |
 | `thread.cancel` | Cancel a thread. |
 
-History, tool results and cancellation neither require nor initiate subscriptions. History preserves roles and tool exchanges; it does not reach a running task until another submit. A thread that cannot accept input rejects submissions; each thread has one terminal event.
+History, tool results and cancellation neither require nor initiate subscriptions. History preserves roles and completed tool calls; it does not reach a running task until another submit. A thread that cannot accept input rejects submissions; each thread has one terminal event.
 
-Return `tool.result` for client-targeted calls, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
+Assistant tool history uses `content: {"type":"tool_call","name":"weather","arguments":{},"result":{"temperature_c":25.1}}`. Both `arguments` and `result` are required JSON objects; history content has no `toolCallId` or `target`.
+
+Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 

@@ -72,10 +72,19 @@ class BackendPublicHistoryContractE2eTest {
                     historyFrame(chatId, "unknown-role", "tool", "invalid"),
                     toolHistoryFrame(chatId, "tool-user-role")
                         .replace("\"role\":\"assistant\"", "\"role\":\"user\""),
+                    toolHistoryFrame(chatId, "old-tool-type").replace("tool_call", "tool_exchange"),
+                    toolHistoryFrame(chatId, "old-tool-result").replace("\"result\":", "\"output\":"),
+                    toolHistoryFrame(chatId, "tool-call-id")
+                        .replace("\"name\":", "\"toolCallId\":\"client-call\",\"name\":"),
+                    toolHistoryFrame(chatId, "tool-target")
+                        .replace("\"name\":", "\"target\":\"server\",\"name\":"),
+                    toolHistoryFrame(chatId, "missing-result").replace(",\"result\":{\"volumePercent\":30}", ""),
                 )
                 invalidFrames.forEach { raw ->
                     session.send(Frame.Text(raw))
                     val rejected = readJson(session)
+                    assertEquals("ack", rejected["kind"].asText())
+                    assertEquals(json.readTree(raw)["requestId"], rejected["requestId"])
                     assertEquals("rejected", rejected["status"].asText())
                     assertEquals("invalid_request", rejected["error"]["code"].asText())
                 }
@@ -119,6 +128,33 @@ class BackendPublicHistoryContractE2eTest {
                 assertEquals("device.volume.adjust", runSkillArguments["skillId"].asText())
                 assertEquals(-10, runSkillArguments["arguments"]["deltaPercent"].asInt())
                 assertEquals(30, json.readTree(toolResult.content)["volumePercent"].asInt())
+            }
+        }
+
+    @Test
+    fun `multi chat socket acknowledges consecutive text and tool history and their retries`() =
+        backendE2eTest("e2e_multi_history_acks") {
+            val chatId = createPublicChat(UUID.randomUUID().toString())
+            withMultiChatSocket { session ->
+                val frames = listOf(
+                    historyFrame(chatId, "history-user", "user", "Какая погода."),
+                    toolHistoryFrame(chatId, "history-tool"),
+                )
+                frames.forEach { session.send(Frame.Text(it)) }
+                val acknowledgements = frames.map { raw ->
+                    readJson(session).also { ack ->
+                        assertEquals("ack", ack["kind"].asText())
+                        assertEquals(chatId, ack["chatId"].asText())
+                        assertEquals(json.readTree(raw)["requestId"], ack["requestId"])
+                        assertEquals("accepted", ack["status"].asText())
+                        assertFalse(ack["duplicate"].asBoolean())
+                    }
+                }
+                frames.forEach { session.send(Frame.Text(it)) }
+                acknowledgements.forEach { ack ->
+                    assertEquals(ack.deepCopy<ObjectNode>().put("duplicate", true), readJson(session))
+                }
+                assertTrue(llm.requests.isEmpty())
             }
         }
 
@@ -204,6 +240,6 @@ class BackendPublicHistoryContractE2eTest {
     }
 
     private fun toolHistoryFrame(chatId: String, requestId: String): String =
-        """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"assistant","content":{"type":"tool_exchange","name":"device.volume.adjust","arguments":{"deltaPercent":-10},"output":{"volumePercent":30}}}}"""
+        """{"kind":"history.append","chatId":"$chatId","requestId":"$requestId","payload":{"role":"assistant","content":{"type":"tool_call","name":"device.volume.adjust","arguments":{"deltaPercent":-10},"result":{"volumePercent":30}}}}"""
 
 }

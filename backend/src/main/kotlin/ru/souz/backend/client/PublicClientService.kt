@@ -502,14 +502,14 @@ internal class PublicClientService(
     private fun historyInput(role: ChatRole, content: HistoryAppendContent): ClientHistoryInput = when (content) {
         is RecognizedTextContent -> ClientHistoryInput(role, content.validatedText())
 
-        is HistoryToolExchangeContent -> {
+        is HistoryToolCallContent -> {
             if (role != ChatRole.ASSISTANT) {
-                throw ClientContractException("invalid_request", "tool_exchange history requires assistant role.")
+                throw ClientContractException("invalid_request", "tool_call history requires assistant role.")
             }
             val name = content.name.required("content.name")
             ClientHistoryInput(
                 role = role,
-                content = mapper.writeValueAsString(content.output),
+                content = mapper.writeValueAsString(content.result),
                 toolArgumentsJson = mapper.writeValueAsString(
                     mapOf("skillId" to name, "arguments" to content.arguments),
                 ),

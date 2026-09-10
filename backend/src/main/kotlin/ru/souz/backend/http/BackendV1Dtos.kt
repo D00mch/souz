@@ -395,7 +395,6 @@ private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<Stri
         is PublicToolCallStartedPayload -> linkedMapOf<String, Any?>(
             "toolCallId" to toolCallId,
             "name" to name,
-            "target" to target,
             "deviceId" to deviceId,
             "arguments" to arguments,
             "deadlineAt" to deadlineAt,
