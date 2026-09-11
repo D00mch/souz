@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.slf4j.MDC
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -25,6 +26,7 @@ import ru.souz.llms.local.LocalProviderStatus
 
 internal class E2eLlmApi : LLMChatAPI {
     val requests = CopyOnWriteArrayList<LLMRequest.Chat>()
+    val requestLogContexts = CopyOnWriteArrayList<Map<String, String>>()
     val streamedChunks = CopyOnWriteArrayList<String>()
     private val gates = LinkedHashMap<String, CompletableDeferred<Unit>>()
     private val mutex = Mutex()
@@ -91,6 +93,7 @@ internal class E2eLlmApi : LLMChatAPI {
     }
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
+        requestLogContexts += MDC.getCopyOfContextMap().orEmpty()
         requests += body
         val prompt = body.conversationPrompt()
         signal(prompt).complete(Unit)
@@ -109,6 +112,7 @@ internal class E2eLlmApi : LLMChatAPI {
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
+        requestLogContexts += MDC.getCopyOfContextMap().orEmpty()
         requests += body
         val prompt = body.conversationPrompt()
         signal(prompt).complete(Unit)

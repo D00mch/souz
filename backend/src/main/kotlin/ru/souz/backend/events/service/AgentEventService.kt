@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.bus.AgentEventLimits
@@ -67,14 +68,13 @@ class AgentEventService(
         )
         val shouldPublish = event.id == id
         if (event.isPublicClientDiagnosticEvent()) {
-            logger.info(
-                "Public client event stored chatId={} threadId={} seq={} type={} published={}",
-                event.chatId,
-                event.executionId,
-                event.seq,
-                event.type.value,
-                shouldPublish,
-            )
+            withContext(NonCancellable + backendLogContext(
+                "userId" to event.userId, "chatId" to event.chatId, "threadId" to event.executionId,
+                "seq" to event.seq, "type" to event.type.value,
+                "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
+            )) {
+                logger.info("Public client event stored published={}", shouldPublish)
+            }
         }
         if (shouldPublish) eventBus.publish(event)
         return event
@@ -143,7 +143,7 @@ class AgentEventService(
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
         val subscription = eventBus.subscribe(userId, chatId)
-        // Close the subscription before rethrowing cancellation.
+        var opened = false
         try {
             // A null cursor starts at the durable tail, after live signal registration.
             val initialSeq = afterSeq ?: eventRepository.latestSeq(userId, chatId)
@@ -153,10 +153,9 @@ class AgentEventService(
                 close = { subscription.close() },
                 replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
                 initialSeq = initialSeq,
-            )
-        } catch (error: Throwable) {
-            withContext(NonCancellable) { subscription.close() }
-            throw error
+            ).also { opened = true }
+        } finally {
+            if (!opened) withContext(NonCancellable) { subscription.close() }
         }
     }
 

@@ -1,23 +1,15 @@
 package ru.souz.backend.execution.service
 
-import java.time.Duration
-import java.time.Instant
-import java.util.UUID
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
+import kotlinx.coroutines.time.delay
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
+import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import java.time.Duration
+import java.time.Instant
+import java.util.*
 
 internal class AgentExecutionLauncher(
     private val executionScope: CoroutineScope,
@@ -33,8 +25,14 @@ internal class AgentExecutionLauncher(
     ): Job {
         val startSignal = CompletableDeferred<Unit>()
         val lifecycleReady = CompletableDeferred<Unit>()
+        val logContext = backendLogContext(
+            "userId" to execution.userId,
+            "chatId" to execution.chatId,
+            "threadId" to execution.id,
+            "initialClientRequestId" to execution.clientMessageId?.takeIf { execution.runtimeOwner != null },
+        )
         lateinit var executionJob: Job
-        executionJob = executionScope.launch(start = CoroutineStart.LAZY) {
+        executionJob = executionScope.launch(logContext, start = CoroutineStart.LAZY) {
             lifecycleReady.complete(Unit)
             var leaseJob: Job? = null
             try {
@@ -54,7 +52,7 @@ internal class AgentExecutionLauncher(
                 }
             }
         }
-        withContext(NonCancellable) {
+        withContext(NonCancellable + logContext) {
             activeJobs.registerAndStart(execution.id, executionJob)
             executionJob.invokeOnCompletion { lifecycleReady.complete(Unit) }
             lifecycleReady.await()
@@ -84,7 +82,7 @@ internal class AgentExecutionLauncher(
         val registry = clientThreadRegistry ?: return null
         if (!registry.contains(execution.id)) return null
         val owner = registry.runtimeOwner
-        val refreshDelayMillis = leaseRefreshInterval.toMillis()
+        val refreshDelayMillis = leaseRefreshInterval
         return owningScope.launch {
             var leaseExpiresAt = execution.runtimeLeaseUntil ?: ClientThreadRuntimeRegistry.leaseUntil()
             while (isActive) {
