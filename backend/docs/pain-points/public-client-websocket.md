@@ -55,6 +55,8 @@ In Loki, select the backend stream and filter JSON fields, for example `{app="so
 
 Log envelope identifiers rather than complete frames, prompts, titles, tool arguments or results. Bound client-provided log identifiers and replace Unicode control/format characters and line/paragraph separators with underscores. Keep the acknowledgement gate release immediately after the socket write, before logging or status feedback. A logged acknowledgement confirms the server write completed; it does not confirm client receipt.
 
+JSON contract decoding failures use `stage=decode_frame` and share structured diagnostics between rejection logs and `ack.error.details`: a JSON Pointer `path`, a `reason`, and, where available, `actual` and `expected`. Echo only bounded, sanitized field names and type discriminators; describe ordinary values by JSON type. Do not include raw Jackson messages, class names, or payload values. An empty path denotes the frame root.
+
 ## Verification
 
 Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendPublic*WebSocketE2eTest' --tests 'ru.souz.backend.storage.postgres.PostgresRepositoriesTest'` and `./gradlew :agent:test`. Cover cross-instance initial, retry, execute/history ordering, submit/cancel races, strict frames, role-preserving history at the next execute, acknowledgement ordering, tool result duplicates/conflicts, cancellation, and reconnect replay.

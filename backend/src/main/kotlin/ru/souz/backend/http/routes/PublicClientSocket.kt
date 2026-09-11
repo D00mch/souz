@@ -248,10 +248,17 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                             }
                         }
                     } catch (error: ClientContractException) {
-                        withContext(context()) { socketLogger.warn("WebSocket frame rejected stage={} code={}", stage, error.code) }
-                        rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
+                        if (error.details != null) stage = "decode_frame"
+                        withContext(context()) {
+                            socketLogger.error(
+                                "WebSocket frame rejected stage={} code={} details={}",
+                                stage, error.code, error.details)
+                        }
+                        rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message, error.details)
                     } catch (error: BackendV1Exception) {
-                        withContext(context()) { socketLogger.warn("WebSocket frame rejected stage={} code={}", stage, error.code) }
+                        withContext(context()) {
+                            socketLogger.error("WebSocket frame rejected stage={} code={}", stage, error.code)
+                        }
                         rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
                     }
                     resolvedThreadId = handled.statusFeedback?.threadId
@@ -265,7 +272,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                             writeJson(handled.response)
                             stage = "after_ack"
                             handled.afterSend()
-                            socketLogger.info("WebSocket acknowledgement sent elapsedMs={}", started.elapsedNow().inWholeMilliseconds)
+                            socketLogger.info("WebSocket ack sent elapsedMs={}", started.elapsedNow().inWholeMilliseconds)
                             handled.statusFeedback?.let { feedback ->
                                 stage = "send_status"
                                 writeJson(service.threadStatus(requireNotNull(chat), feedback.threadId).toStatusFrame(feedback.requestId))
@@ -366,8 +373,8 @@ private fun parseClientFrame(raw: String): JsonNode {
 
 private fun <T> decodeClientFrame(node: JsonNode, type: Class<T>): T = try {
     publicWebSocketMapper.treeToValue(node, type)
-} catch (_: JsonProcessingException) {
-    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
+} catch (error: JsonProcessingException) {
+    throw clientFrameDecodeError(node, error)
 } catch (_: IllegalArgumentException) {
     throw ClientContractException("invalid_request", "Frame does not match the public contract.")
 }
@@ -380,9 +387,11 @@ private fun requireSubscribeCursor(node: JsonNode) {
     }
 }
 
-private fun rejectedFor(node: JsonNode, boundChatId: String?, kind: String, code: String, message: String): HandledClientFrame {
+private fun rejectedFor(
+    node: JsonNode, boundChatId: String?, kind: String, code: String, message: String, details: JsonNode? = null,
+): HandledClientFrame {
     val now = Instant.now()
-    val error = ClientError(code, message)
+    val error = ClientError(code, message, details)
     val chatId = boundChatId ?: node.path("chatId").asText("")
     val requestId = node.path("requestId").asText("invalid")
     val threadId = node.path("threadId").asText("00000000-0000-0000-0000-000000000000")

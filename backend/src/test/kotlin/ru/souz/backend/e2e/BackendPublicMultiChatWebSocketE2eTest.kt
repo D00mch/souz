@@ -55,7 +55,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
 
                     val owners = chats.zip(users).toMap()
                     val threadChats = terminals.associate { it["threadId"].asText() to it["chatId"].asText() }
-                    val acknowledgements = logs.filter { (message, _) -> message.startsWith("WebSocket acknowledgement sent") }
+                    val acknowledgements = logs.filter { (message, _) -> message.startsWith("WebSocket ack sent") }
                     terminals.forEachIndexed { index, event ->
                         val requestId = if (index == 2) "next" else "submit"
                         val fields = acknowledgements.single { (_, fields) ->

@@ -1,17 +1,82 @@
 package ru.souz.backend.e2e
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.AppenderBase
 import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.websocket.Frame
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
+import org.slf4j.LoggerFactory
 import ru.souz.llms.LLMMessageRole
 
 class BackendPublicHistoryContractE2eTest {
+    @Test
+    fun `JSON rejection explains the field in ACK and logs without exposing payload values`() =
+        backendE2eTest("e2e_ws_json_diagnostics") {
+            val rejections = ConcurrentLinkedQueue<String>()
+            val logger = LoggerFactory.getLogger("SouzClientWebSocket") as Logger
+            val appender = object : AppenderBase<ILoggingEvent>() {
+                override fun append(event: ILoggingEvent) {
+                    if (event.formattedMessage.startsWith("WebSocket frame rejected")) rejections.add(event.formattedMessage)
+                }
+            }.apply { start() }
+            logger.addAppender(appender)
+            try {
+                withPublicChatSocket { _, chatId, session ->
+                    val secret = "private-result-value"
+                    val frame = toolHistoryFrame(chatId, "diagnostics")
+                    val cases = listOf(
+                        Triple(frame.replace("tool_call", "tool_exchange"), "/payload/content/type", "unknown_type"),
+                        Triple(frame.replace("tool_call", "bad\\n\\u2028" + "x".repeat(200)), "/payload/content/type", "unknown_type"),
+                        Triple(frame.replace("\"type\":\"tool_call\",", ""), "/payload/content/type", "missing_field"),
+                        Triple(frame.replace("\"role\":\"assistant\",", ""), "/payload/role", "missing_field"),
+                        Triple(frame.replace("\"role\":\"assistant\"", "\"role\":null"), "/payload/role", "null_not_allowed"),
+                        Triple(frame.replace("\"role\":\"assistant\"", "\"role\":[\"$secret\"]"), "/payload/role", "type_mismatch"),
+                        Triple(frame.replace("\"volumePercent\":30", "\"password\":\"$secret\"")
+                            .replace("\"name\":", "\"unexpected\":\"$secret\",\"name\":"), "/payload/content/unexpected", "unknown_field"),
+                        Triple(frame.replace("{\"volumePercent\":30}", "\"$secret\""), "/payload/content/result", "type_mismatch"),
+                    )
+                    cases.forEachIndexed { index, (raw, path, reason) ->
+                        session.send(Frame.Text(raw))
+                        val ack = readJson(session)
+                        assertEquals("rejected", ack["status"].asText())
+                        assertEquals("diagnostics", ack["requestId"].asText())
+                        assertEquals("invalid_request", ack["error"]["code"].asText())
+                        val details = ack["error"]["details"]
+                        assertEquals(path, details["path"].asText())
+                        assertEquals(reason, details["reason"].asText())
+                        assertTrue(ack["error"]["message"].asText().contains(path))
+                        if (index < 2) {
+                            assertEquals(listOf("text", "tool_call"), details["expected"].map { it.asText() })
+                            assertEquals(if (index == 0) "tool_exchange" else ("bad__" + "x".repeat(123)), details["actual"].asText())
+                        }
+                        if (index == 5 || index == 7) {
+                            assertEquals(listOf(if (index == 5) "string" else "object"), details["expected"].map { it.asText() })
+                        }
+                        val log = rejections.remove()
+                        assertTrue(log.contains("stage=decode_frame code=invalid_request"))
+                        assertTrue(log.contains(details.toString()))
+                        assertFalse(log.contains(secret))
+                        assertFalse(ack.toString().contains(secret))
+                        assertFalse(log.contains("device.volume.adjust"))
+                    }
+                    session.send(Frame.Text(frame))
+                    assertEquals("accepted", readJson(session)["status"].asText())
+                    assertTrue(llm.requests.isEmpty())
+                }
+            } finally {
+                logger.detachAppender(appender)
+                appender.stop()
+            }
+        }
+
     @Test
     fun `history contract is strict durable and thread independent`() =
         backendE2eTest("e2e_ws_history_contract") {
