@@ -30,8 +30,11 @@ private fun sanitizedMdcMap(fields: Array<out Pair<String, Any?>>): Map<String, 
 
 private fun MutableMap<String, String>.putSanitized(fields: Array<out Pair<String, Any?>>) {
     for ((key, value) in fields) {
-        if (value == null) continue
-        put(key, value.toString().take(128).replace(logControlCharacters, "_"))
+        if (value == null) {
+            remove(key)
+        } else {
+            put(key, value.toString().take(128).replace(logControlCharacters, "_"))
+        }
     }
 }
 
