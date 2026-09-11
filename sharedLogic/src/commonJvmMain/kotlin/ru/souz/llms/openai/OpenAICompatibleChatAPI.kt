@@ -28,6 +28,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
+import ru.souz.llms.toJsonSchemaMap
 import java.io.File
 
 class OpenAICompatibleChatAPI(
@@ -208,8 +209,9 @@ class OpenAICompatibleChatAPI(
 
     private fun buildChatRequest(body: LLMRequest.Chat, stream: Boolean): Map<String, Any> {
         val tools = buildTools(body.functions)
-        return buildMap {
-            requestParameters?.let { putAll(restJsonMapper.readValue<Map<String, Any>>(it)) }
+        val extraParameters = requestParameters?.let { restJsonMapper.readValue<Map<String, Any>>(it) }
+        return buildMap((extraParameters?.size ?: 0) + CHAT_REQUEST_FIELD_CAPACITY) {
+            extraParameters?.let { putAll(it) }
             put("model", modelOverride ?: resolveChatModel(body.model))
             put("messages", buildMessages(body.messages))
             put("stream", stream)
@@ -241,7 +243,7 @@ class OpenAICompatibleChatAPI(
         }
     }
 
-    private fun buildEmbeddingsRequest(body: LLMRequest.Embeddings): Map<String, Any> = buildMap {
+    private fun buildEmbeddingsRequest(body: LLMRequest.Embeddings): Map<String, Any> = buildMap(3) {
         put("model", resolveEmbeddingsModel(body.model))
         if (body.input.size == 1) {
             put("input", body.input.first())
@@ -315,10 +317,10 @@ class OpenAICompatibleChatAPI(
                         remainingToolResultNames[requestFunctionCall.name] = nameBudget - 1
                     }
                     pendingToolCallIdsByName.getOrPut(requestFunctionCall.name) { ArrayDeque() }.addLast(functionsStateId)
-                    buildMap {
+                    buildMap(3) {
                         put("id", functionsStateId)
                         put("type", "function")
-                        put("function", buildMap {
+                        put("function", buildMap(2) {
                             put("name", requestFunctionCall.name)
                             put("arguments", requestFunctionCall.arguments)
                         })
@@ -430,27 +432,21 @@ class OpenAICompatibleChatAPI(
     private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {
         return functions.map { fn ->
             val properties = fn.parameters.properties.mapValues { (_, prop) ->
-                buildMap {
-                    put("type", prop.type)
-                    prop.description?.let { put("description", it) }
-                    prop.enum?.let { put("enum", it) }
-                    if (prop.type == "array") {
-                        // OpenAI tool schemas require `items` for every array type.
-                        // Keep items unconstrained so existing tools can pass arrays of strings, objects, or mixed payloads.
-                        put("items", emptyMap<String, Any>())
-                    }
-                }
+                // OpenAI tool schemas require `items` for every array type.
+                // Keep items unconstrained so existing tools can pass arrays of strings, objects, or mixed payloads.
+                prop.toJsonSchemaMap(unconstrainedArrayItems = true)
             }
-            buildMap {
+            val parametersCapacity = 2 + if (fn.parameters.required.isNotEmpty()) 1 else 0
+            buildMap(2) {
                 put("type", "function")
                 put(
                     "function",
-                    buildMap {
+                    buildMap(3) {
                         put("name", fn.name)
                         put("description", fn.description)
                         put(
                             "parameters",
-                            buildMap {
+                            buildMap(parametersCapacity) {
                                 put("type", fn.parameters.type)
                                 put("properties", properties)
                                 if (fn.parameters.required.isNotEmpty()) {
@@ -762,6 +758,8 @@ class OpenAICompatibleChatAPI(
         private const val EMBEDDINGS_PATH = "embeddings"
         private const val AI_TUNNEL_BASE_URL = "https://api.aitunnel.ru/v1"
         private const val QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        // model, messages, stream, plus optional reasoning/stream/temperature/max/parallel/tools/choice
+        private const val CHAT_REQUEST_FIELD_CAPACITY = 10
     }
 
     private val chatCompletionsUrl: String

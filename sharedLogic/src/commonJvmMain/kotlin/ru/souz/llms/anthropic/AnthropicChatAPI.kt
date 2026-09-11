@@ -32,6 +32,7 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toFinishReason
+import ru.souz.llms.toJsonSchemaMap
 import ru.souz.llms.toSystemPromptMessage
 import java.io.File
 import java.nio.file.Files
@@ -497,11 +498,7 @@ class AnthropicChatAPI(
     private fun buildTools(functions: List<LLMRequest.Function>): List<Map<String, Any>> {
         return functions.map { fn ->
             val properties = fn.parameters.properties.mapValues { (_, prop) ->
-                buildMap {
-                    put("type", prop.type)
-                    prop.description?.let { put("description", it) }
-                    prop.enum?.let { put("enum", it) }
-                }
+                prop.toJsonSchemaMap()
             }
 
             val inputSchema = mutableMapOf<String, Any>(

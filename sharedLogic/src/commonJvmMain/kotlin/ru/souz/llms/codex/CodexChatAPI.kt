@@ -25,6 +25,7 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
+import ru.souz.llms.toJsonSchemaMap
 import java.io.File
 
 class CodexChatAPI(
@@ -171,21 +172,14 @@ class CodexChatAPI(
                 "parameters" to mapOf(
                     "type" to fn.parameters.type,
                     "properties" to fn.parameters.properties.mapValues { (_, prop) ->
-                        buildMap {
-                            put("type", prop.type)
-                            if (!prop.description.isNullOrBlank()) put("description", prop.description)
-                            if (!prop.enum.isNullOrEmpty()) put("enum", prop.enum)
-                            if (prop.type == "array") {
-                                put("items", emptyMap<String, Any>())
-                            }
-                        }
+                        prop.toJsonSchemaMap(unconstrainedArrayItems = true)
                     },
                     "required" to fn.parameters.required,
                 )
             )
         }
 
-        return buildMap {
+        return buildMap(6) {
             put("model", body.model)
             put("input", inputItems)
             if (!instructions.isNullOrBlank()) put("instructions", instructions)
