@@ -18,6 +18,7 @@ import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.db.SettingsProvider
@@ -189,7 +190,13 @@ internal class BackendConversationRuntimeFactory(
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
             memoryRuntime = memoryRuntime,
-            captureScope = agentBackgroundScope,
+            captureScope = CoroutineScope(
+                agentBackgroundScope.coroutineContext + backendLogContext(
+                    "userId" to key.userId,
+                    "chatId" to key.conversationId,
+                    "threadId" to request.executionId,
+                )
+            ),
         ).create()
         return BackendConversationRuntime(
             key = key,

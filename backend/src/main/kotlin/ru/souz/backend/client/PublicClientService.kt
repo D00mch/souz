@@ -17,6 +17,7 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.common.withBackendLogContext
 import ru.souz.backend.client.model.ClientRequest
 import ru.souz.backend.client.repository.ClientFollowUpInput
 import ru.souz.backend.client.repository.ClientHistoryInput
@@ -270,40 +271,42 @@ internal class PublicClientService(
             clientToolsEnabled = true,
         )
         val threadId = prepared.execution.id
-        val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, now = now)
-        val result = withContext(NonCancellable) {
-            registry.register(threadId, frame.payload.device, key.requestId)
-            var resolution: ClientRequestResult? = null
-            try {
-                clientRequestRepository.resolveMessage(
-                    userId = chat.userId,
-                    key = key,
-                    requestedThreadId = null,
-                    newExecution = prepared.execution,
-                    acceptedRequest = key.request(threadId, ack, now),
-                    rejectedRequest = rejectedMessageRequest(key, now),
-                ).also { resolution = it }
-            } finally {
-                if (resolution !is ClientRequestResult.Accepted) registry.discard(threadId)
+        return withBackendLogContext("threadId" to threadId) {
+            val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, now = now)
+            val result = withContext(NonCancellable) {
+                registry.register(threadId, frame.payload.device, key.requestId)
+                var resolution: ClientRequestResult? = null
+                try {
+                    clientRequestRepository.resolveMessage(
+                        userId = chat.userId,
+                        key = key,
+                        requestedThreadId = null,
+                        newExecution = prepared.execution,
+                        acceptedRequest = key.request(threadId, ack, now),
+                        rejectedRequest = rejectedMessageRequest(key, now),
+                    ).also { resolution = it }
+                } finally {
+                    if (resolution !is ClientRequestResult.Accepted) registry.discard(threadId)
+                }
             }
-        }
-        if (result !is ClientRequestResult.Accepted) {
-            return if (result is ClientRequestResult.Continue) {
-                continueThread(chat, frame, key, result.execution, now)
-            } else {
-                handledReceipt(result, key, now)
+            if (result !is ClientRequestResult.Accepted) {
+                return@withBackendLogContext if (result is ClientRequestResult.Continue) {
+                    continueThread(chat, frame, key, result.execution, now)
+                } else {
+                    handledReceipt(result, key, now)
+                }
             }
-        }
-        val startupFailure = runCatching {
-            withContext(NonCancellable) { executionService.startPreparedChatTurn(prepared) }
-        }.exceptionOrNull()
-        startupFailure?.let { failure ->
-            withContext(NonCancellable) {
-                executionService.failStartup(prepared.execution)
+            val startupFailure = runCatching {
+                withContext(NonCancellable) { executionService.startPreparedChatTurn(prepared) }
+            }.exceptionOrNull()
+            startupFailure?.let { failure ->
+                withContext(NonCancellable) {
+                    executionService.failStartup(prepared.execution)
+                }
+                if (failure is CancellationException) throw failure
             }
-            if (failure is CancellationException) throw failure
+            handledReceipt(result, key, now)
         }
-        return handledReceipt(result, key, now)
     }
 
     private suspend fun continueThread(
@@ -312,7 +315,7 @@ internal class PublicClientService(
         key: ClientRequestKey,
         execution: AgentExecution,
         now: Instant,
-    ): HandledClientFrame {
+    ): HandledClientFrame = withBackendLogContext("threadId" to execution.id) {
         val threadId = execution.id
         val input = ClientFollowUpInput(
             content = frame.payload.content.text,
@@ -345,7 +348,7 @@ internal class PublicClientService(
         } else {
             null
         } ?: commit(afterSeq = 0L, input = null)
-        return handledReceipt(result, key, now)
+        handledReceipt(result, key, now)
     }
 
     private fun acceptedMessage(

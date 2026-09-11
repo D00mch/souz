@@ -54,8 +54,11 @@ import ru.souz.backend.client.ToolResultAck
 import ru.souz.backend.client.ToolResultFrame
 import ru.souz.backend.client.supportedClientTypes
 import ru.souz.backend.client.toStatusFrame
+import ru.souz.backend.common.backendLogContext
+import ru.souz.backend.common.withBackendLogContext
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.queryNonNegativeLong
@@ -68,36 +71,38 @@ internal fun Route.publicClientSocket(path: String, deps: BackendHttpDependencie
     webSocket(path) {
         val socketId = UUID.randomUUID().toString()
         val clientType = call.request.queryParameters["clientType"]
-        socketLogger.info("WebSocket connected socketId={} route={} clientType={}", socketId, path, clientType.logValue())
-        try {
-            if (!deps.featureFlags.wsEvents) {
-                socketLogger.warn("WebSocket rejected socketId={} closeCode=1013 reason=feature_disabled", socketId)
-                close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "WebSocket feature is disabled."))
-                return@webSocket
+        withContext(backendLogContext("socketId" to socketId, "clientType" to clientType)) {
+            socketLogger.info("WebSocket connected route={}", path)
+            try {
+                if (!deps.featureFlags.wsEvents) {
+                    socketLogger.warn("WebSocket rejected closeCode=1013 reason=feature_disabled")
+                    close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "WebSocket feature is disabled."))
+                    return@withContext
+                }
+                val allowedTypes = if (singleChat) supportedClientTypes else setOf("backend")
+                if (clientType !in allowedTypes) {
+                    socketLogger.warn("WebSocket rejected closeCode=1008 reason=invalid_client_type")
+                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "clientType must be ${allowedTypes.joinToString(" or ")}."))
+                    return@withContext
+                }
+                val chat = try {
+                    if (singleChat) deps.publicClientService.requireChat(call.requireChatId(), requireNotNull(clientType)) else null
+                } catch (error: ClientContractException) {
+                    socketLogger.warn("WebSocket rejected closeCode=1008 reason={}", error.code)
+                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message))
+                    return@withContext
+                }
+                val afterSeq = if (singleChat) call.queryNonNegativeLong("afterSeq") ?: 0L else 0L
+                runClientSocket(deps, requireNotNull(clientType), chat, afterSeq, socketId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                socketLogger.error("WebSocket failed route=$path", failure)
+                throw failure
+            } finally {
+                val reason = if (closeReason.isCompleted) runCatching { closeReason.getCompleted() }.getOrNull() else null
+                socketLogger.info("WebSocket ended closeCode={} active={}", reason?.code, isActive)
             }
-            val allowedTypes = if (singleChat) supportedClientTypes else setOf("backend")
-            if (clientType !in allowedTypes) {
-                socketLogger.warn("WebSocket rejected socketId={} closeCode=1008 reason=invalid_client_type", socketId)
-                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "clientType must be ${allowedTypes.joinToString(" or ")}."))
-                return@webSocket
-            }
-            val chat = try {
-                if (singleChat) deps.publicClientService.requireChat(call.requireChatId(), requireNotNull(clientType)) else null
-            } catch (error: ClientContractException) {
-                socketLogger.warn("WebSocket rejected socketId={} closeCode=1008 reason={}", socketId, error.code)
-                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message))
-                return@webSocket
-            }
-            val afterSeq = if (singleChat) call.queryNonNegativeLong("afterSeq") ?: 0L else 0L
-            runClientSocket(deps, requireNotNull(clientType), chat, afterSeq, socketId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Throwable) {
-            socketLogger.error("WebSocket failed socketId=$socketId route=$path", failure)
-            throw failure
-        } finally {
-            val reason = if (closeReason.isCompleted) runCatching { closeReason.getCompleted() }.getOrNull() else null
-            socketLogger.info("WebSocket ended socketId={} closeCode={} active={}", socketId, reason?.code, isActive)
         }
     }.hide()
 }
@@ -116,28 +121,35 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
     fun subscribe(chat: Chat, stream: AgentEventStream): CompletableDeferred<Unit> {
         val replayDone = CompletableDeferred<Unit>()
         // Enter the cleanup block even if the connection is cancelled before the first dispatch.
-        subscriptions[chat.id] = launch(start = CoroutineStart.UNDISPATCHED) {
+        subscriptions[chat.id] = launch(
+            backendLogContext("socketId" to socketId, "userId" to chat.userId, "chatId" to chat.id),
+            start = CoroutineStart.UNDISPATCHED,
+        ) {
             try {
                 stream.forwardPublicEvents(replayDone) { event ->
-                    sendMutex.withLock { writeJson(event.toPublicDto()) }
-                    socketLogger.info(
-                        "WebSocket event sent socketId={} chatId={} threadId={} seq={} type={}",
-                        socketId,
-                        event.chatId,
-                        event.executionId,
-                        event.seq,
-                        event.type.value,
-                    )
+                    withBackendLogContext(
+                        "threadId" to event.executionId, "seq" to event.seq, "type" to event.type.value,
+                        "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
+                    ) {
+                        try {
+                            sendMutex.withLock { writeJson(event.toPublicDto()) }
+                            socketLogger.info("WebSocket event sent")
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Throwable) {
+                            socketLogger.error("WebSocket event send failed", failure)
+                            throw failure
+                        }
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                socketLogger.error("WebSocket event stream failed socketId={} chatId={} errorType={}",
-                    socketId, chat.id, failure.javaClass.simpleName)
+                socketLogger.error("WebSocket event stream failed", failure)
                 throw failure
             } finally {
                 withContext(NonCancellable) { stream.close() }
-                socketLogger.info("WebSocket subscription closed socketId={} chatId={}", socketId, chat.id)
+                socketLogger.info("WebSocket subscription closed")
             }
         }
         return replayDone
@@ -147,123 +159,142 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
 
     try {
         boundChat?.let {
-            socketLogger.info("WebSocket initial replay starting socketId={} chatId={} afterSeq={}", socketId, it.id, afterSeq)
-            subscribe(it, requireNotNull(prepare(it, afterSeq))).await()
-            socketLogger.info("WebSocket initial replay finished socketId={} chatId={}", socketId, it.id)
+            withBackendLogContext("userId" to it.userId, "chatId" to it.id) {
+                socketLogger.info("WebSocket initial replay starting afterSeq={}", afterSeq)
+                subscribe(it, requireNotNull(prepare(it, afterSeq))).await()
+                socketLogger.info("WebSocket initial replay finished")
+            }
         }
         for (frame in incoming) {
             if (frame !is Frame.Text) {
-                socketLogger.warn("WebSocket frame ignored socketId={} frameType={}", socketId, frame.frameType)
+                socketLogger.warn("WebSocket frame ignored frameType={}", frame.frameType)
                 continue
             }
             val started = TimeSource.Monotonic.markNow()
             var stage = "decode"
             var logNode: JsonNode? = null
             var chat = boundChat
-            fun context(): String = "socketId=$socketId kind=${logNode?.get("kind")?.asText().logValue()} " +
-                "requestId=${logNode?.get("requestId")?.asText().logValue()} " +
-                "chatId=${chat?.id ?: logNode?.get("chatId")?.asText().logValue()} " +
-                "threadId=${logNode?.get("threadId")?.asText().logValue()} " +
-                "toolCallId=${logNode?.get("toolCallId")?.asText().logValue()}"
+            var resolvedThreadId: UUID? = null
+            fun context() = backendLogContext(
+                "socketId" to socketId, "kind" to logNode?.get("kind")?.asText(),
+                "clientRequestId" to logNode?.get("requestId")?.asText(),
+                "userId" to chat?.userId,
+                "chatId" to (chat?.id ?: logNode?.get("chatId")?.asText()),
+                "threadId" to (resolvedThreadId ?: logNode?.get("threadId")?.asText()),
+                "toolCallId" to logNode?.get("toolCallId")?.asText(),
+            )
             var pendingStream: AgentEventStream? = null
             try {
                 val node = parseClientFrame(frame.readText())
                 logNode = node
-                val kind = node.path("kind").asText()
-                socketLogger.info("WebSocket frame received {} bytes={}", context(), frame.data.size)
-                stage = "validate_kind"
-                if (kind !in clientFrameKinds || (boundChat != null && kind.startsWith("chat."))) {
-                    throw InvalidClientFrameException("Unsupported frame kind.")
-                }
-                val handled = try {
-                    when (kind) {
-                        "chat.create" -> {
-                            stage = "create_chat"
-                            val create = decodeClientFrame(node, ChatCreateFrame::class.java)
-                            val (created, duplicate) = deps.createClientChat(
-                                CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
-                            )
-                            chat = created
-                            socketLogger.info("WebSocket chat ready {} userId={} duplicate={}", context(), created.userId, duplicate)
-                            stage = "prepare_subscription"
-                            pendingStream = prepare(created, null)
-                            HandledClientFrame(ChatCreateAck(
-                                userId = created.userId, requestId = created.requestId, chatId = created.id.toString(),
-                                status = "accepted", duplicate = duplicate, receivedAt = created.createdAt.toString(),
-                            ))
+                withContext(context()) {
+                    val kind = node.path("kind").asText()
+                    socketLogger.info("WebSocket frame received bytes={}", frame.data.size)
+                    stage = "validate_kind"
+                    if (kind !in clientFrameKinds || (boundChat != null && kind.startsWith("chat."))) {
+                        throw InvalidClientFrameException("Unsupported frame kind.")
+                    }
+                    val handled = try {
+                        when (kind) {
+                            "chat.create" -> {
+                                stage = "create_chat"
+                                val create = decodeClientFrame(node, ChatCreateFrame::class.java)
+                                val (created, duplicate) = deps.createClientChat(
+                                    CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
+                                )
+                                chat = created
+                                withContext(context()) {
+                                    socketLogger.info("WebSocket chat ready duplicate={}", duplicate)
+                                    stage = "prepare_subscription"
+                                    pendingStream = prepare(created, null)
+                                    HandledClientFrame(ChatCreateAck(
+                                        userId = created.userId, requestId = created.requestId, chatId = created.id.toString(),
+                                        status = "accepted", duplicate = duplicate, receivedAt = created.createdAt.toString(),
+                                    ))
+                                }
+                            }
+                            "chat.subscribe" -> {
+                                stage = "resolve_chat"
+                                val subscribe = decodeClientFrame(node, ChatSubscribeFrame::class.java)
+                                requireSubscribeCursor(node)
+                                val requestId = subscribe.requestId.trim().takeIf { it.isNotEmpty() }
+                                    ?: throw ClientContractException("invalid_request", "requestId must not be empty.")
+                                val target = service.resolveFrameChat(node, clientType, boundChat)
+                                chat = target
+                                withContext(context()) {
+                                    stage = "prepare_subscription"
+                                    pendingStream = if (node.has("afterSeq")) {
+                                        deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
+                                    } else prepare(target, subscribe.afterSeq)
+                                    // Prepare first to cover concurrent events; stop the old sender before the replay ack.
+                                    stage = "replace_subscription"
+                                    if (pendingStream != null) subscriptions.remove(target.id)?.cancelAndJoin()
+                                    HandledClientFrame(ChatSubscribeAck(
+                                        chatId = target.id.toString(), requestId = requestId, status = "accepted",
+                                        duplicate = pendingStream == null, receivedAt = Instant.now().toString(),
+                                    ))
+                                }
+                            }
+                            else -> {
+                                stage = "resolve_chat"
+                                val target = service.resolveFrameChat(node, clientType, boundChat)
+                                chat = target
+                                withContext(context()) {
+                                    stage = "prepare_subscription"
+                                    if (kind == "message.submit") pendingStream = prepare(target, null)
+                                    stage = "handle_frame"
+                                    handleChatFrame(service, target, node, kind)
+                                }
+                            }
                         }
-                        "chat.subscribe" -> {
-                            stage = "resolve_chat"
-                            val subscribe = decodeClientFrame(node, ChatSubscribeFrame::class.java)
-                            requireSubscribeCursor(node)
-                            val requestId = subscribe.requestId.trim().takeIf { it.isNotEmpty() }
-                                ?: throw ClientContractException("invalid_request", "requestId must not be empty.")
-                            val target = service.resolveFrameChat(node, clientType, boundChat)
-                            chat = target
-                            stage = "prepare_subscription"
-                            pendingStream = if (node.has("afterSeq")) {
-                                deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
-                            } else prepare(target, subscribe.afterSeq)
-                            // Prepare first to cover concurrent events; stop the old sender before the replay ack.
-                            stage = "replace_subscription"
-                            if (pendingStream != null) subscriptions.remove(target.id)?.cancelAndJoin()
-                            HandledClientFrame(ChatSubscribeAck(
-                                chatId = target.id.toString(), requestId = requestId, status = "accepted",
-                                duplicate = pendingStream == null, receivedAt = Instant.now().toString(),
-                            ))
+                    } catch (error: ClientContractException) {
+                        withContext(context()) { socketLogger.warn("WebSocket frame rejected stage={} code={}", stage, error.code) }
+                        rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
+                    } catch (error: BackendV1Exception) {
+                        withContext(context()) { socketLogger.warn("WebSocket frame rejected stage={} code={}", stage, error.code) }
+                        rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
+                    }
+                    resolvedThreadId = handled.statusFeedback?.threadId
+                    withContext(context()) {
+                        pendingStream?.let {
+                            socketLogger.info("WebSocket subscription prepared initialSeq={}", it.initialSeq)
                         }
-                        else -> {
-                            stage = "resolve_chat"
-                            val target = service.resolveFrameChat(node, clientType, boundChat)
-                            chat = target
-                            stage = "prepare_subscription"
-                            if (kind == "message.submit") pendingStream = prepare(target, null)
-                            stage = "handle_frame"
-                            handleChatFrame(service, target, node, kind)
+                        stage = "wait_for_ack"
+                        sendMutex.withLock {
+                            stage = "send_ack"
+                            writeJson(handled.response)
+                            stage = "after_ack"
+                            handled.afterSend()
+                            socketLogger.info("WebSocket acknowledgement sent elapsedMs={}", started.elapsedNow().inWholeMilliseconds)
+                            handled.statusFeedback?.let { feedback ->
+                                stage = "send_status"
+                                writeJson(service.threadStatus(requireNotNull(chat), feedback.threadId).toStatusFrame(feedback.requestId))
+                            }
+                        }
+                        stage = "start_subscription"
+                        if (kind != "message.submit" || handled.statusFeedback != null) pendingStream?.let { stream ->
+                            subscribe(requireNotNull(chat), stream)
+                            pendingStream = null
                         }
                     }
-                } catch (error: ClientContractException) {
-                    socketLogger.warn("WebSocket frame rejected {} stage={} code={}", context(), stage, error.code)
-                    rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
-                } catch (error: BackendV1Exception) {
-                    socketLogger.warn("WebSocket frame rejected {} stage={} code={}", context(), stage, error.code)
-                    rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
-                }
-                pendingStream?.let {
-                    socketLogger.info("WebSocket subscription prepared {} initialSeq={}", context(), it.initialSeq)
-                }
-                stage = "wait_for_ack"
-                sendMutex.withLock {
-                    stage = "send_ack"
-                    writeJson(handled.response)
-                    stage = "after_ack"
-                    handled.afterSend()
-                    socketLogger.info("WebSocket acknowledgement sent {} elapsedMs={}", context(), started.elapsedNow().inWholeMilliseconds)
-                    handled.statusFeedback?.let { feedback ->
-                        stage = "send_status"
-                        writeJson(service.threadStatus(requireNotNull(chat), feedback.threadId).toStatusFrame(feedback.requestId))
-                    }
-                }
-                stage = "start_subscription"
-                if (kind != "message.submit" || handled.statusFeedback != null) pendingStream?.let { stream ->
-                    subscribe(requireNotNull(chat), stream)
-                    pendingStream = null
                 }
             } catch (error: InvalidClientFrameException) {
-                socketLogger.warn("WebSocket policy close {} stage={} closeCode=1008 reason={}", context(), stage, error.message)
+                withContext(context()) { socketLogger.warn("WebSocket policy close stage={} closeCode=1008 reason={}", stage, error.message) }
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message ?: "Invalid frame."))
                 break
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                socketLogger.error("WebSocket frame failed {} stage={} elapsedMs={} errorType={}",
-                    context(), stage, started.elapsedNow().inWholeMilliseconds, failure.javaClass.simpleName)
+                withContext(NonCancellable + context()) {
+                    socketLogger.error("WebSocket frame failed stage=$stage elapsedMs=${started.elapsedNow().inWholeMilliseconds}", failure)
+                }
                 throw failure
             } finally {
-                if (!isActive) {
-                    socketLogger.info("WebSocket frame interrupted {} stage={} elapsedMs={}", context(), stage, started.elapsedNow().inWholeMilliseconds)
+                val interrupted = !isActive
+                withContext(NonCancellable + context()) {
+                    if (interrupted) socketLogger.info("WebSocket frame interrupted stage={} elapsedMs={}", stage, started.elapsedNow().inWholeMilliseconds)
+                    pendingStream?.close?.invoke()
                 }
-                withContext(NonCancellable) { pendingStream?.close?.invoke() }
             }
         }
     } finally {
@@ -376,9 +407,6 @@ private fun rejectedFor(node: JsonNode, boundChatId: String?, kind: String, code
 
 private class InvalidClientFrameException(message: String) : RuntimeException(message)
 
-private fun String?.logValue(): String = this?.take(128)?.replace(logControlCharacters, "_") ?: "-"
-
 private val socketLogger = LoggerFactory.getLogger("SouzClientWebSocket")
-private val logControlCharacters = Regex("[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]")
 private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "message.submit", "history.append", "tool.result", "thread.cancel")
 private val publicWebSocketMapper = jacksonObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)

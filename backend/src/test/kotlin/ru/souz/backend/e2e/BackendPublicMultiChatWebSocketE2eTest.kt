@@ -1,5 +1,8 @@
 package ru.souz.backend.e2e
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.AppenderBase
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
@@ -12,6 +15,7 @@ import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -19,10 +23,71 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 
 class BackendPublicMultiChatWebSocketE2eTest {
+    @Test
+    fun `MDC correlates resolved threads and provider work without leaking across frames or replay`() =
+        backendE2eTest("e2e_multi_mdc") {
+            val logs = CopyOnWriteArrayList<Pair<String, Map<String, String>>>()
+            val logger = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as Logger
+            val appender = object : AppenderBase<ILoggingEvent>() {
+                override fun append(event: ILoggingEvent) {
+                    logs += event.formattedMessage to event.mdcPropertyMap.toMap()
+                }
+            }.apply { start() }
+            logger.addAppender(appender)
+            try {
+                val users = List(2) { UUID.randomUUID().toString() }
+                withMultiChatSocket { socket ->
+                    val chats = users.map { request(socket, createFrame(it))["chatId"].asText() }
+                    val terminals = chats.mapIndexed { index, chat -> submit(socket, chat, users[index], "submit") } +
+                        listOf(submit(socket, chats[0], users[0], "next"))
+                    request(socket, historyFrame(chats[0], "history", "user", "threadless history"))
+                    request(socket, subscribeFrame(chats[0], 0), duplicate = false)
+                    assertEquals(terminals[0], readJson(socket))
+                    assertEquals(terminals[2], readJson(socket))
+                    eventually("live and replay event logs") {
+                        logs.count { (message, _) -> message == "WebSocket event sent" }.takeIf { it == 5 }
+                    }
+
+                    val owners = chats.zip(users).toMap()
+                    val threadChats = terminals.associate { it["threadId"].asText() to it["chatId"].asText() }
+                    val acknowledgements = logs.filter { (message, _) -> message.startsWith("WebSocket acknowledgement sent") }
+                    terminals.forEachIndexed { index, event ->
+                        val requestId = if (index == 2) "next" else "submit"
+                        val fields = acknowledgements.single { (_, fields) ->
+                            fields["chatId"] == event["chatId"].asText() && fields["clientRequestId"] == requestId
+                        }.second
+                        assertEquals(event["threadId"].asText(), fields["threadId"])
+                        assertEquals(owners[fields["chatId"]], fields["userId"])
+                    }
+                    acknowledgements.filter { (_, fields) -> fields["clientRequestId"] in setOf("create", "history", "subscribe") }
+                        .forEach { (_, fields) -> assertFalse(fields.containsKey("threadId")) }
+                    logs.filter { (message, _) -> message == "WebSocket event sent" || message.startsWith("Public client event stored") }
+                        .forEach { (_, fields) ->
+                            assertEquals(threadChats[fields["threadId"]], fields["chatId"])
+                            assertEquals(owners[fields["chatId"]], fields["userId"])
+                            assertFalse(fields.containsKey("clientRequestId"))
+                        }
+                    assertTrue(llm.requestLogContexts.isNotEmpty())
+                    assertEquals(threadChats.keys, llm.requestLogContexts.map { it["threadId"] }.toSet())
+                    llm.requestLogContexts.forEach { fields ->
+                        assertEquals(threadChats[fields["threadId"]], fields["chatId"])
+                        assertEquals(owners[fields["chatId"]], fields["userId"])
+                        assertEquals(if (fields["threadId"] == terminals[2]["threadId"].asText()) "next" else "submit", fields["initialClientRequestId"])
+                        assertFalse(fields.containsKey("clientRequestId"))
+                        assertFalse(fields.containsKey("socketId"))
+                    }
+                }
+            } finally {
+                logger.detachAppender(appender)
+                appender.stop()
+            }
+        }
+
     @Test
     fun `creation shares HTTP idempotency and distinguishes users on one connection`() =
         backendE2eTest("e2e_multi_create") {
