@@ -1,9 +1,6 @@
 package ru.souz.backend.http.routes
 
-import com.fasterxml.jackson.core.JsonProcessingException
-import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -15,7 +12,6 @@ import io.ktor.utils.io.ExperimentalKtorApi
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
-import io.ktor.websocket.readText
 import java.time.Instant
 import java.util.UUID
 import kotlin.time.TimeSource
@@ -61,8 +57,12 @@ import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendV1Exception
+import ru.souz.backend.http.InvalidClientFrameException
+import ru.souz.backend.http.decodeClientFrame
+import ru.souz.backend.http.parseClient
 import ru.souz.backend.http.queryNonNegativeLong
 import ru.souz.backend.http.requireChatId
+import ru.souz.backend.http.sendClient
 import ru.souz.backend.http.toPublicDto
 
 @OptIn(ExperimentalKtorApi::class, ExperimentalCoroutinesApi::class)
@@ -117,7 +117,6 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
     val service = deps.publicClientService
     val subscriptions = mutableMapOf<UUID, Job>()
     val sendMutex = Mutex()
-    suspend fun writeJson(value: Any) = send(Frame.Text(publicWebSocketMapper.writeValueAsString(value)))
     fun subscribe(chat: Chat, stream: AgentEventStream): CompletableDeferred<Unit> {
         val replayDone = CompletableDeferred<Unit>()
         // Enter the cleanup block even if the connection is cancelled before the first dispatch.
@@ -132,7 +131,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                         "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
                     ) {
                         try {
-                            sendMutex.withLock { writeJson(event.toPublicDto()) }
+                            sendMutex.withLock { sendClient(event.toPublicDto()) }
                             socketLogger.info("WebSocket event sent")
                         } catch (cancelled: CancellationException) {
                             throw cancelled
@@ -185,7 +184,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
             )
             var pendingStream: AgentEventStream? = null
             try {
-                val node = parseClientFrame(frame.readText())
+                val node = frame.parseClient()
                 logNode = node
                 withContext(context()) {
                     val kind = node.path("kind").asText()
@@ -198,7 +197,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                         when (kind) {
                             "chat.create" -> {
                                 stage = "create_chat"
-                                val create = decodeClientFrame(node, ChatCreateFrame::class.java)
+                                val create = node.decodeClientFrame(ChatCreateFrame::class.java)
                                 val (created, duplicate) = deps.createClientChat(
                                     CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
                                 )
@@ -215,7 +214,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                             }
                             "chat.subscribe" -> {
                                 stage = "resolve_chat"
-                                val subscribe = decodeClientFrame(node, ChatSubscribeFrame::class.java)
+                                val subscribe = node.decodeClientFrame(ChatSubscribeFrame::class.java)
                                 requireSubscribeCursor(node)
                                 val requestId = subscribe.requestId.trim().takeIf { it.isNotEmpty() }
                                     ?: throw ClientContractException("invalid_request", "requestId must not be empty.")
@@ -269,13 +268,13 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                         stage = "wait_for_ack"
                         sendMutex.withLock {
                             stage = "send_ack"
-                            writeJson(handled.response)
+                            sendClient(handled.response)
                             stage = "after_ack"
                             handled.afterSend()
                             socketLogger.info("WebSocket ack sent elapsedMs={}", started.elapsedNow().inWholeMilliseconds)
                             handled.statusFeedback?.let { feedback ->
                                 stage = "send_status"
-                                writeJson(service.threadStatus(requireNotNull(chat), feedback.threadId).toStatusFrame(feedback.requestId))
+                                sendClient(service.threadStatus(requireNotNull(chat), feedback.threadId).toStatusFrame(feedback.requestId))
                             }
                         }
                         stage = "start_subscription"
@@ -349,35 +348,17 @@ private suspend fun PublicClientService.resolveFrameChat(node: JsonNode, clientT
 
 private suspend fun handleChatFrame(service: PublicClientService, chat: Chat, node: JsonNode, kind: String) =
     when (kind) {
-        "message.submit" -> decodeClientFrame(node, MessageSubmitFrame::class.java).also {
+        "message.submit" -> node.decodeClientFrame(MessageSubmitFrame::class.java).also {
             val capabilities = node.path("payload").path("device").path("capabilities")
             if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
                 throw ClientContractException("invalid_request", "device.capabilities must be unique.")
             }
         }.let { service.handleMessage(chat, it) }
-        "history.append" -> service.handleHistory(chat, decodeClientFrame(node, HistoryAppendFrame::class.java))
-        "tool.result" -> service.handleToolResult(chat, decodeClientFrame(node, ToolResultFrame::class.java))
-        "thread.cancel" -> service.handleCancel(chat, decodeClientFrame(node, ThreadCancelFrame::class.java))
+        "history.append" -> service.handleHistory(chat, node.decodeClientFrame(HistoryAppendFrame::class.java))
+        "tool.result" -> service.handleToolResult(chat, node.decodeClientFrame(ToolResultFrame::class.java))
+        "thread.cancel" -> service.handleCancel(chat, node.decodeClientFrame(ThreadCancelFrame::class.java))
         else -> throw InvalidClientFrameException("Unsupported frame kind.")
     }
-
-private fun parseClientFrame(raw: String): JsonNode {
-    val node = try {
-        publicWebSocketMapper.readTree(raw) ?: throw InvalidClientFrameException("Frame must be valid JSON.")
-    } catch (_: JsonProcessingException) {
-        throw InvalidClientFrameException("Frame must be valid JSON.")
-    }
-    if (!node.isObject) throw InvalidClientFrameException("Frame must be a JSON object.")
-    return node
-}
-
-private fun <T> decodeClientFrame(node: JsonNode, type: Class<T>): T = try {
-    publicWebSocketMapper.treeToValue(node, type)
-} catch (error: JsonProcessingException) {
-    throw clientFrameDecodeError(node, error)
-} catch (_: IllegalArgumentException) {
-    throw ClientContractException("invalid_request", "Frame does not match the public contract.")
-}
 
 private fun requireSubscribeCursor(node: JsonNode) {
     node.get("afterSeq")?.let { cursor ->
@@ -414,8 +395,5 @@ private fun rejectedFor(
     return HandledClientFrame(response)
 }
 
-private class InvalidClientFrameException(message: String) : RuntimeException(message)
-
 private val socketLogger = LoggerFactory.getLogger("SouzClientWebSocket")
 private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "message.submit", "history.append", "tool.result", "thread.cancel")
-private val publicWebSocketMapper = jacksonObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
