@@ -174,7 +174,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
             var logNode: JsonNode? = null
             var chat = boundChat
             var resolvedThreadId: UUID? = null
-            fun context() = backendLogContext(
+            fun mdcContext() = backendLogContext(
                 "socketId" to socketId, "kind" to logNode?.get("kind")?.asText(),
                 "clientRequestId" to logNode?.get("requestId")?.asText(),
                 "userId" to chat?.userId,
@@ -186,7 +186,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
             try {
                 val node = frame.parseClient()
                 logNode = node
-                withContext(context()) {
+                withContext(mdcContext()) {
                     val kind = node.path("kind").asText()
                     socketLogger.info("WebSocket frame received bytes={}", frame.data.size)
                     stage = "validate_kind"
@@ -202,7 +202,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                                     CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
                                 )
                                 chat = created
-                                withContext(context()) {
+                                withContext(mdcContext()) {
                                     socketLogger.info("WebSocket chat ready duplicate={}", duplicate)
                                     stage = "prepare_subscription"
                                     pendingStream = prepare(created, null)
@@ -220,7 +220,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                                     ?: throw ClientContractException("invalid_request", "requestId must not be empty.")
                                 val target = service.resolveFrameChat(node, clientType, boundChat)
                                 chat = target
-                                withContext(context()) {
+                                withContext(mdcContext()) {
                                     stage = "prepare_subscription"
                                     pendingStream = if (node.has("afterSeq")) {
                                         deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
@@ -238,7 +238,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                                 stage = "resolve_chat"
                                 val target = service.resolveFrameChat(node, clientType, boundChat)
                                 chat = target
-                                withContext(context()) {
+                                withContext(mdcContext()) {
                                     stage = "prepare_subscription"
                                     if (kind == "message.submit") pendingStream = prepare(target, null)
                                     stage = "handle_frame"
@@ -248,20 +248,20 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                         }
                     } catch (error: ClientContractException) {
                         if (error.details != null) stage = "decode_frame"
-                        withContext(context()) {
+                        withContext(mdcContext()) {
                             socketLogger.error(
                                 "WebSocket frame rejected stage={} code={} details={}",
                                 stage, error.code, error.details)
                         }
                         rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message, error.details)
                     } catch (error: BackendV1Exception) {
-                        withContext(context()) {
+                        withContext(mdcContext()) {
                             socketLogger.error("WebSocket frame rejected stage={} code={}", stage, error.code)
                         }
                         rejectedFor(node, boundChat?.id?.toString(), kind, error.code, error.message)
                     }
                     resolvedThreadId = handled.statusFeedback?.threadId
-                    withContext(context()) {
+                    withContext(mdcContext()) {
                         pendingStream?.let {
                             socketLogger.info("WebSocket subscription prepared initialSeq={}", it.initialSeq)
                         }
@@ -285,19 +285,19 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                     }
                 }
             } catch (error: InvalidClientFrameException) {
-                withContext(context()) { socketLogger.warn("WebSocket policy close stage={} closeCode=1008 reason={}", stage, error.message) }
+                withContext(mdcContext()) { socketLogger.warn("WebSocket policy close stage={} closeCode=1008 reason={}", stage, error.message) }
                 close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message ?: "Invalid frame."))
                 break
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {
-                withContext(NonCancellable + context()) {
+                withContext(NonCancellable + mdcContext()) {
                     socketLogger.error("WebSocket frame failed stage=$stage elapsedMs=${started.elapsedNow().inWholeMilliseconds}", failure)
                 }
                 throw failure
             } finally {
                 val interrupted = !isActive
-                withContext(NonCancellable + context()) {
+                withContext(NonCancellable + mdcContext()) {
                     if (interrupted) socketLogger.info("WebSocket frame interrupted stage={} elapsedMs={}", stage, started.elapsedNow().inWholeMilliseconds)
                     pendingStream?.close?.invoke()
                 }
