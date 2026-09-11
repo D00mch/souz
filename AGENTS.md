@@ -24,7 +24,7 @@ Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over 
 
 - `:graph-engine` — framework-free typed graph execution.
 - `:llms` — provider-agnostic LLM contracts and model identities.
-- `:agent` — graph-based agent behavior, sessions, skills, and host SPIs.
+- `:agent` — graph-based agent and subagent execution, sessions, skills, and host SPIs.
 - `:native` — local llama.cpp runtime and native bridge.
 - `:ambientAgent` — ambient transcription semantics and local task analysis.
 - `:sharedLogic` — shared JVM runtime logic, providers, tools, skills, memory, and sandboxes.

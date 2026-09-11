@@ -1,8 +1,6 @@
 package ru.souz.agent.nodes
 
 import com.fasterxml.jackson.databind.JsonNode
-import io.mockk.every
-import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.graph.GraphRuntime
@@ -12,9 +10,6 @@ import ru.souz.agent.knowledge.KnowledgeContent
 import ru.souz.agent.knowledge.KnowledgeEntry
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.agent.runtime.AgentToolExecutor
-import ru.souz.agent.spi.AgentDesktopInfoRepository
-import ru.souz.agent.spi.AgentRuntimeEnvironment
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
@@ -24,8 +19,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import java.time.ZoneId
-import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -227,23 +220,8 @@ class NodesToolUseWithKnowledgeTest {
         )
     }
 
-    private fun nodes(knowledgeStore: ConversationKnowledgeStore?): NodesToolUseWithKnowledge {
-        val nodesCommon = NodesCommon(
-            desktopInfoRepository = mockk<AgentDesktopInfoRepository>(relaxed = true),
-            settingsProvider = mockk<AgentSettingsProvider>(relaxed = true) {
-                every { defaultCalendar } returns null
-            },
-            agentToolExecutor = AgentToolExecutor(),
-            runtimeEnvironment = object : AgentRuntimeEnvironment {
-                override val locale: Locale = Locale.US
-                override val zoneId: ZoneId = ZoneId.of("UTC")
-            },
-        )
-        return NodesToolUseWithKnowledge(
-            nodesCommon = nodesCommon,
-            knowledgeStore = knowledgeStore,
-        )
-    }
+    private fun nodes(knowledgeStore: ConversationKnowledgeStore?) =
+        NodesToolUseWithKnowledge(AgentToolExecutor(), knowledgeStore)
 
     private fun runtime() = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10)
 

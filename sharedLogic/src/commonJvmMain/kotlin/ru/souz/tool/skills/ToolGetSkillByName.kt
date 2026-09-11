@@ -27,8 +27,6 @@ class ToolGetSkillByName(
     private val skillBundleProvider: SkillBundleProvider,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
-    private val fileSkillInputSchema = toolInputParameters<SkillCommandExecutor.Args>()
-
     data class Input(
         val skillId: String = "",
     )
@@ -183,26 +181,25 @@ class ToolGetSkillByName(
         fewShotExamples = fn.fewShotExamples.orEmpty(),
     )
 
-    private fun fileSkillExecutionSchema(): SkillExecutionSchema = SkillExecutionSchema(
-        inputSchema = fileSkillInputSchema,
-        returnSchema = sandboxCommandResultSchema(),
-    )
-
-    private fun SkillBundle.toDetail(): BundleSkillDetail = BundleSkillDetail(
-        skillId = skillId.value,
-        name = manifest.name,
-        description = manifest.description,
-        skillMarkdownBody = skillMarkdownBody,
-        supportingFiles = files
-            .map { it.normalizedPath }
-            .filterNot { it == SKILL_MARKDOWN_PATH },
-    )
-
     companion object {
         const val NAME = "GetSkillByName"
-        private const val SKILL_MARKDOWN_PATH = "SKILL.md"
     }
 }
+
+private val fileSkillInputSchema = toolInputParameters<SkillCommandExecutor.Args>()
+
+internal fun fileSkillExecutionSchema(): SkillExecutionSchema = SkillExecutionSchema(
+    inputSchema = fileSkillInputSchema,
+    returnSchema = sandboxCommandResultSchema(),
+)
+
+internal fun SkillBundle.toDetail(): SkillDetail = BundleSkillDetail(
+    skillId = skillId.value,
+    name = manifest.name,
+    description = manifest.description,
+    skillMarkdownBody = skillMarkdownBody,
+    supportingFiles = files.map { it.normalizedPath }.filterNot { it == "SKILL.md" },
+)
 
 internal data class SkillLookupResponse(
     val skill: SkillDetail? = null,

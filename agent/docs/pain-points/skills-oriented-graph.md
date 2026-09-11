@@ -2,11 +2,11 @@
 
 ## Invariant
 
-`SkillsGraphBasedAgent` exposes exactly `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. The skills graph execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains compact Skill inventory data filtered by the active tool policy and user-scoped registry: enabled tool-backed Skill IDs and escaped file-backed Skill IDs only. `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification or MCP injection.
+`SkillsGraphBasedAgent` exposes `GetSkillByName`, `GetSkillsByCategory`, `GetSkillsNamesByCategory`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand`. `GraphBasedAgent` exposes the universal core subset `GetSkillByName`, `GetKnowledge`, `SearchKnowledge`, `SearchMemory`, and generic `RunSkillCommand` independently of classification. Both install the host's execution-bound `SpawnSubagent` when supplied through `AgentCoreTools`. The skills graph execution boundary replaces both the functions advertised to the model and the executable tool lookup before the graph starts. The effective system message contains compact Skill inventory data filtered by the active tool policy and user-scoped registry: enabled tool-backed Skill IDs and escaped file-backed Skill IDs only. `AgentContext.systemPrompt` remains equal to the caller-provided prompt. It does not run classification or MCP injection.
 
 Continuation ordering, reserved publication, response acceptance, and stream revisions follow [Execution lifecycle](execution-lifecycle.md).
 
-`NodesSkillInventory` owns Skill inventory prompt augmentation and core-tool restriction. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesToolUseWithKnowledge` owns Knowledge-aware tool-result handling. `NodesCommon` owns generic tool-call execution and the inline-only tool-use node.
+`NodesSkillInventory` owns Skill inventory prompt augmentation. `AgentContext.withOnlyTools` replaces advertised and executable tools at skills-graph and child execution boundaries, rejecting duplicate names and retaining only explicitly supplied categories. `SteerableChatNode` owns execution-scoped continuation boundaries. `NodesCommon` enriches history with host context. `NodesPlain` is a stateless class providing history, response, and tool-execution helpers through instance methods. `NodesToolUseWithKnowledge` composes tool execution with Knowledge-aware result handling.
 
 Tool results larger than 8,192 UTF-8 bytes are stored in conversation-scoped Knowledge and replaced with a compact JSON reference. A result of exactly 8,192 bytes stays inline. Skill-discovery, `GetKnowledge`, and `SearchKnowledge` results are always returned inline. `SearchMemory` has no always-inline exemption and a large result may be offloaded. Storage unavailability and persistence failures keep the original result inline; coroutine cancellation propagates.
 
@@ -22,7 +22,7 @@ Advertising a small tool list without replacing executable lookup would let a fa
 - Keep `AgentContext.systemPrompt` equal to the configured prompt. Let `NodesSkillInventory` capture filtered tool-backed Skill IDs and escaped file-backed Skill IDs per turn and append them only to the effective system message in history.
 - Keep memory recall after history input and before context enrichment. Run it only once per user turn.
 - Keep completed-turn memory capture in the graph's finalization node so failed finalization does not schedule capture.
-- Keep large-result processing in `NodesToolUseWithKnowledge`; `NodesCommon.toolUse()` remains inline-only.
+- Keep large-result processing in `NodesToolUseWithKnowledge`; `NodesPlain.toolUse()` remains inline-only.
 - Preserve function-result role, name, attachments, and call ID when replacing only its content.
 - Keep Knowledge cleanup tied to destructive or local conversation-close lifecycles. Backend archive is non-destructive and does not clear Knowledge.
 

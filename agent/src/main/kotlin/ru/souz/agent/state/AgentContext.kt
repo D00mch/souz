@@ -16,6 +16,25 @@ data class AgentContext<I>(
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
 ) {
+    /** Replaces advertised and executable tools, retaining only explicitly supplied categories. */
+    internal fun withOnlyTools(
+        tools: List<LLMToolSetup>,
+        categoryByName: Map<String, ToolCategory> = emptyMap(),
+    ): AgentContext<I> {
+        val byName = tools.associateBy { it.fn.name }
+        require(byName.size == tools.size) { "Selected tool names must be unique." }
+        return copy(
+            settings = settings.copy(
+                tools = AgentTools(
+                    byCategory = emptyMap(),
+                    byName = byName,
+                    categoryByName = categoryByName.filterKeys { it in byName },
+                )
+            ),
+            activeTools = tools.map { it.fn },
+        )
+    }
+
     inline fun <reified O> map(
         settings: AgentSettings = this.settings,
         history: List<LLMRequest.Message> = this.history,

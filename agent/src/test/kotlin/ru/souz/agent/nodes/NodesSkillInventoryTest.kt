@@ -66,7 +66,7 @@ class NodesSkillInventoryTest {
         val catalogTool = FixedTool("CatalogTool")
         val context = contextWithCatalog(catalogTool)
 
-        val result = node(catalog = catalog(catalogTool)).restrictToTools(context, listOf(coreTool))
+        val result = context.withOnlyTools(listOf(coreTool))
 
         assertEquals(listOf(coreTool.fn), result.activeTools)
         assertEquals(mapOf(coreTool.fn.name to coreTool), result.settings.tools.byName)

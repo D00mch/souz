@@ -20,10 +20,10 @@ import ru.souz.llms.toSystemPromptMessage
  */
 internal class NodesSummarization(
     private val llmApi: LLMChatAPI,
-    private val nodesCommon: NodesCommon,
     private val settingsProvider: AgentSettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)
+    private val nodesPlain = NodesPlain()
 
     /**
      * Summarizes the current history when it grows too large.
@@ -35,7 +35,7 @@ internal class NodesSummarization(
         // nodes
         val summarize: Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> = nodeSummarize()
         val summaryToHistory: Node<LLMResponse.Chat.Ok, String> = summaryToHistory()
-        val respToString: Node<LLMResponse.Chat.Ok, String> = nodesCommon.responseToString()
+        val respToString: Node<LLMResponse.Chat.Ok, String> = nodesPlain.responseToString()
 
         // graph
         nodeInput.edgeTo { ctx ->

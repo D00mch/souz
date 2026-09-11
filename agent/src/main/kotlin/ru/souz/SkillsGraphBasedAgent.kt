@@ -25,6 +25,7 @@ import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.nodes.SteerableChatNode
+import ru.souz.agent.nodes.NodesPlain
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.GraphExecutionDelegate
 import ru.souz.agent.state.AgentContext
@@ -43,7 +44,7 @@ class SkillsGraphBasedAgent internal constructor(
     private val nodesMemory: NodesMemory,
     private val nodesSkillInventory: NodesSkillInventory,
     private val nodesToolUseWithKnowledge: NodesToolUseWithKnowledge,
-    coreTools: AgentCoreTools,
+    private val coreTools: AgentCoreTools,
     private val executionDelegate: GraphExecutionDelegate = GraphExecutionDelegate(
         logObjectMapper = logObjectMapper,
         loggerClass = SkillsGraphBasedAgent::class.java,
@@ -51,11 +52,11 @@ class SkillsGraphBasedAgent internal constructor(
 ) : Agent, ActiveRunSteer {
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
-    private val skillsCoreTools = coreTools.skillsCoreTools
     private val activeRun = MutableStateFlow<ActiveRunInputController?>(null)
+    private val nodesPlain = NodesPlain()
 
     private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
-        val inputToHistory = nodesCommon.inputToHistory()
+        val inputToHistory = nodesPlain.inputToHistory()
         val memoryRecall = nodesMemory.recall()
         val skillInventory = nodesSkillInventory.node(
             skillTools = emptyList(),
@@ -105,7 +106,7 @@ class SkillsGraphBasedAgent internal constructor(
         onStep: GraphStepCallback?,
     ): AgentExecutionResult {
         cancelActiveJob()
-        val restrictedContext = nodesSkillInventory.restrictToTools(ctx, skillsCoreTools)
+        val restrictedContext = ctx.withOnlyTools(coreTools.skillsTools(ctx.settings))
         val controller = ActiveRunInputController()
         val executionGraph = graph(controller)
         activeRun.value = controller

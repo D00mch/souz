@@ -2,10 +2,7 @@ package ru.souz.agent.nodes
 
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
-import ru.souz.agent.runtime.AgentRuntimeEventSink
-import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentSettingsProvider
@@ -13,9 +10,6 @@ import ru.souz.db.StorredData
 import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.LLMResponse
-import ru.souz.llms.ToolInvocationMeta
-import ru.souz.llms.toSystemPromptMessage
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -27,68 +21,13 @@ internal fun LLMRequest.Message.isInjectedContextMessage(): Boolean =
         content.startsWith(INJECTED_CONTEXT_PREFIX) &&
         content.endsWith(INJECTED_CONTEXT_SUFFIX)
 
-/**
- * Nodes related to local data manipulation.
- * The nodes may update [AgentContext.input] or [AgentContext.history].
- */
+/** Enriches conversation history with host-provided context. */
 internal class NodesCommon(
     private val desktopInfoRepository: AgentDesktopInfoRepository,
     private val settingsProvider: AgentSettingsProvider,
-    private val agentToolExecutor: AgentToolExecutor,
     private val runtimeEnvironment: AgentRuntimeEnvironment,
 ) {
     private val l = LoggerFactory.getLogger(NodesCommon::class.java)
-
-    /**
-     * Ensures proper history with user input as a message.
-     *
-     * Modifies [AgentContext.history] while preserving [AgentContext.input].
-     */
-    fun inputToHistory(name: String = "Input->History"): Node<String, String> =
-        Node(name) { ctx ->
-            val usrMsg = LLMRequest.Message(LLMMessageRole.user, ctx.input)
-            val history = ArrayList(ctx.history).apply {
-                if (isEmpty()) add(ctx.systemPrompt.toSystemPromptMessage())
-                add(usrMsg)
-            }
-            ctx.map(history = history) { ctx.input }
-        }
-
-    /**
-     * Converts LLM's [LLMResponse.Chat.Ok] into text suitable for the user to see.
-     *
-     * Modifies [AgentContext.input] by replacing the response with the final message content.
-     */
-    fun responseToString(
-        name: String = "Response -> String"
-    ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val content = ctx.input.choices
-            .asReversed()
-            .firstOrNull { it.message.content.isNotBlank() }
-            ?.message
-            ?.content
-            ?: ctx.input.choices.lastOrNull()?.message?.content
-            ?: run {
-                l.warn(
-                    "LLM returned no choices; using empty response. model={}, created={}",
-                    ctx.input.model,
-                    ctx.input.created
-                )
-                ""
-            }
-        ctx.map { content }
-    }
-
-    /**
-     * Executes all the [LLMResponse.FunctionCall] from history synchronously.
-     *
-     * Updates [AgentContext.history] and [AgentContext.input] with tool call results.
-     */
-    fun toolUse(name: String = "toolUse"): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = executeFunctionCalls(ctx).map { it.message }
-        val history = ArrayList(ctx.history).apply { addAll(fnCallMessages) }
-        ctx.map(history = history) { ctx.history.last().content }
-    }
 
     /**
      * Makes sure we have Additional Data (AD) in the [AgentContext.history]. Implementation details:
@@ -162,41 +101,6 @@ internal class NodesCommon(
         null
     }
 
-    internal suspend fun executeFunctionCalls(
-        ctx: AgentContext<LLMResponse.Chat.Ok>,
-    ): List<ExecutedToolCall> =
-        ctx.input.choices.mapNotNull { choice ->
-            val msg = choice.message
-            val functionCall = msg.functionCall
-            val functionsStateId = msg.functionsStateId
-            if (functionCall != null && functionsStateId != null) {
-                ExecutedToolCall(
-                    functionCall = functionCall,
-                    message = executeTool(
-                        settings = ctx.settings,
-                        functionCall = functionCall,
-                        meta = ctx.toolInvocationMeta,
-                        toolCallId = functionsStateId,
-                        eventSink = ctx.runtimeEventSink,
-                    ).copy(functionsStateId = functionsStateId),
-                )
-            } else null
-        }
-
-    private suspend fun executeTool(
-        settings: AgentSettings,
-        functionCall: LLMResponse.FunctionCall,
-        meta: ToolInvocationMeta,
-        toolCallId: String? = null,
-        eventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
-    ): LLMRequest.Message = agentToolExecutor.execute(
-        settings = settings,
-        functionCall = functionCall,
-        meta = meta,
-        toolCallId = toolCallId,
-        eventSink = eventSink,
-    )
-
     private suspend fun loadAdditionalData(userText: String): List<StorredData> = buildList {
         try {
             addAll(desktopInfoRepository.search(userText))
@@ -231,11 +135,6 @@ internal class NodesCommon(
     private fun StorredData.readableType(): String =
         type.toString().replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }
 }
-
-internal data class ExecutedToolCall(
-    val functionCall: LLMResponse.FunctionCall,
-    val message: LLMRequest.Message,
-)
 
 internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>): LLMRequest.Chat {
     val ctx = this

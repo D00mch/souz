@@ -4,12 +4,17 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmBuildProfile
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
@@ -43,6 +48,7 @@ import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolConnectOAuthProvider
 import ru.souz.tool.skills.ToolSafeApiCall
+import ru.souz.tool.subagent.SubagentToolFactory
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebResearchClient
 
@@ -140,6 +146,26 @@ fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRun
 fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     import(portableSkillRuntimeToolsDiModule())
     bindSingleton {
+        val buildProfile = instanceOrNull<LlmBuildProfile>()
+        SubagentToolFactory(
+            createAgent = { maxTurns ->
+                ToolLoopGraphBasedAgent(
+                    llmApi = instance(),
+                    settingsProvider = instance<SettingsProvider>(),
+                    maxTurns = maxTurns,
+                    telemetry = instanceOrNull<AgentTelemetry>() ?: AgentTelemetry.NONE,
+                )
+            },
+            settingsProvider = instance<SettingsProvider>(),
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
+            commandExecutor = instance(),
+            approvalGate = instanceOrNull<SkillApprovalGate>(),
+            availableModels = { buildProfile?.availableModels ?: LLMModel.entries },
+        )
+    }
+    bindSingleton {
         ToolGetSkillByName(
             toolCatalog = instance(),
             toolsFilter = instance(),
@@ -177,6 +203,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
             searchKnowledge = instance<ToolSearchKnowledge>(),
             searchMemory = instance<ToolSearchMemory>(),
             runtimeCommand = instance<ToolInvokeSkill>(),
+            spawnSubagent = { settings -> instance<SubagentToolFactory>().create(settings) },
         )
     }
 }

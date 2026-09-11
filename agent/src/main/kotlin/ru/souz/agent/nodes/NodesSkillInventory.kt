@@ -6,8 +6,6 @@ import ru.souz.agent.graph.Node
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.state.AgentContext
-import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -53,25 +51,6 @@ internal class NodesSkillInventory(
             activeTools = updatedActiveTools,
             history = promptAugmenter.augment(ctx.systemPrompt, ctx.history, inventory),
         ) { it }
-    }
-
-    /**
-     * Replaces the context's advertised and executable tools with [tools].
-     */
-    fun restrictToTools(
-        ctx: AgentContext<String>,
-        tools: List<LLMToolSetup>,
-    ): AgentContext<String> {
-        val byName = tools.associateBy { it.fn.name }
-        return ctx.copy(
-            settings = ctx.settings.copy(
-                tools = AgentTools(
-                    byCategory = emptyMap(),
-                    byName = byName,
-                )
-            ),
-            activeTools = tools.map { it.fn },
-        )
     }
 
     /**

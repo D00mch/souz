@@ -5,6 +5,7 @@ Read the topic files relevant to the code you plan to change in :agent. These no
 ## Topics
 
 - [Execution lifecycle](pain-points/execution-lifecycle.md) — stateful facade execution, cancellation, session ownership, and request-scoped kernels.
+- [Subagent execution](pain-points/subagents.md) — parent suspension, capability isolation, and child lifecycle.
 - [Skill activation](pain-points/skill-activation.md) — turn ordering, bundle loading, validation caching, and command exposure.
 - [Skills-oriented graph](pain-points/skills-oriented-graph.md) — core-tool isolation, large-result offloading, and Knowledge lifetime.
 
