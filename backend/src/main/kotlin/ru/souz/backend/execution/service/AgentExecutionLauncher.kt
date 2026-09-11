@@ -52,14 +52,14 @@ internal class AgentExecutionLauncher(
                 }
             }
         }
-        withContext(NonCancellable) {
+        withContext(NonCancellable + logContext) {
             activeJobs.registerAndStart(execution.id, executionJob)
             executionJob.invokeOnCompletion { lifecycleReady.complete(Unit) }
             lifecycleReady.await()
             if (executionJob.isCompleted && activeJobs.contains(execution.id)) {
                 try {
                     // A leased client's lifecycle event must follow its ack, so lease recovery finalizes it.
-                    if (executionJob.isCancelled && execution.runtimeOwner == null) withContext(logContext) { onCancelled() }
+                    if (executionJob.isCancelled && execution.runtimeOwner == null) onCancelled()
                 } finally {
                     activeJobs.unregister(execution.id, executionJob)
                 }
