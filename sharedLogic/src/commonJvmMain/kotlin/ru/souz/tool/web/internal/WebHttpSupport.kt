@@ -242,8 +242,8 @@ private fun oversizeBinaryBodyError(url: String, maxBytes: Int): BadInputExcepti
 }
 
 private fun Headers.toMap(): Map<String, List<String>> =
-    buildMap(names().size) {
-        names().forEach { name -> put(name, getAll(name).orEmpty()) }
+    buildMap(this@toMap.names().size) {
+        this@toMap.forEach { name, values -> put(name, values) }
     }
 
 private fun exponentialRetryDelayMillis(retry: Int): Long {
