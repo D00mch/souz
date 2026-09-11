@@ -3,21 +3,23 @@ package ru.souz.backend.events.service
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
-import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AgentLiveEvent
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.http.BackendV1Exception
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 
 class AgentEventService(
     private val chatRepository: ChatRepository,
@@ -25,6 +27,7 @@ class AgentEventService(
     private val eventBus: AgentEventBus,
 ) {
     private val terminalMutex = Mutex()
+    private val logger = LoggerFactory.getLogger(AgentEventService::class.java)
 
     suspend fun appendDurable(
         userId: String,
@@ -62,7 +65,18 @@ class AgentEventService(
             id = id,
             createdAt = createdAt,
         )
-        event.takeIf { it.id == id }?.let { eventBus.publish(it) }
+        val shouldPublish = event.id == id
+        if (event.isPublicClientDiagnosticEvent()) {
+            logger.info(
+                "Public client event stored chatId={} threadId={} seq={} type={} published={}",
+                event.chatId,
+                event.executionId,
+                event.seq,
+                event.type.value,
+                shouldPublish,
+            )
+        }
+        if (shouldPublish) eventBus.publish(event)
         return event
     }
 
@@ -173,3 +187,10 @@ private fun AgentEventType.isPublicTerminal(): Boolean =
     this == AgentEventType.THREAD_COMPLETED ||
         this == AgentEventType.THREAD_FAILED ||
         this == AgentEventType.THREAD_CANCELLED
+
+private fun AgentEvent.isPublicClientDiagnosticEvent(): Boolean = when (type) {
+    AgentEventType.THREAD_COMPLETED, AgentEventType.THREAD_FAILED, AgentEventType.THREAD_CANCELLED -> true
+    AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
+    AgentEventType.MESSAGE_CREATED -> executionId == null
+    else -> false
+}

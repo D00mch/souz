@@ -120,6 +120,14 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
             try {
                 stream.forwardPublicEvents(replayDone) { event ->
                     sendMutex.withLock { writeJson(event.toPublicDto()) }
+                    socketLogger.info(
+                        "WebSocket event sent socketId={} chatId={} threadId={} seq={} type={}",
+                        socketId,
+                        event.chatId,
+                        event.executionId,
+                        event.seq,
+                        event.type.value,
+                    )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -129,6 +137,7 @@ private suspend fun DefaultWebSocketServerSession.runClientSocket(
                 throw failure
             } finally {
                 withContext(NonCancellable) { stream.close() }
+                socketLogger.info("WebSocket subscription closed socketId={} chatId={}", socketId, chat.id)
             }
         }
         return replayDone
