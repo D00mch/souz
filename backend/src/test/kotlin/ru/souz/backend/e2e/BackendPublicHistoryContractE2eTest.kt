@@ -33,33 +33,37 @@ class BackendPublicHistoryContractE2eTest {
                     val secret = "private-result-value"
                     val frame = toolHistoryFrame(chatId, "diagnostics")
                     val cases = listOf(
-                        Triple(frame.replace("tool_call", "tool_exchange"), "/payload/content/type", "unknown_type"),
-                        Triple(frame.replace("tool_call", "bad\\n\\u2028" + "x".repeat(200)), "/payload/content/type", "unknown_type"),
-                        Triple(frame.replace("\"type\":\"tool_call\",", ""), "/payload/content/type", "missing_field"),
-                        Triple(frame.replace("\"role\":\"assistant\",", ""), "/payload/role", "missing_field"),
-                        Triple(frame.replace("\"role\":\"assistant\"", "\"role\":null"), "/payload/role", "null_not_allowed"),
-                        Triple(frame.replace("\"role\":\"assistant\"", "\"role\":[\"$secret\"]"), "/payload/role", "type_mismatch"),
-                        Triple(frame.replace("\"volumePercent\":30", "\"password\":\"$secret\"")
-                            .replace("\"name\":", "\"unexpected\":\"$secret\",\"name\":"), "/payload/content/unexpected", "unknown_field"),
-                        Triple(frame.replace("{\"volumePercent\":30}", "\"$secret\""), "/payload/content/result", "type_mismatch"),
+                        frame.replace("tool_call", "tool_exchange") to
+                            """{"path":"/payload/content/type","reason":"unknown_type","actual":"tool_exchange","expected":["text","tool_call"]}""",
+                        frame.replace("tool_call", "bad\\n\\u2028" + "x".repeat(200)) to
+                            """{"path":"/payload/content/type","reason":"unknown_type","actual":"bad__${"x".repeat(123)}","expected":["text","tool_call"]}""",
+                        frame.replace("\"type\":\"tool_call\",", "") to
+                            """{"path":"/payload/content/type","reason":"missing_field","actual":"missing","expected":["text","tool_call"]}""",
+                        frame.replace("\"type\":\"tool_call\"", "\"type\":null") to
+                            """{"path":"/payload/content/type","reason":"null_not_allowed","actual":"null","expected":["text","tool_call"]}""",
+                        frame.replace("\"role\":\"assistant\",", "") to
+                            """{"path":"/payload/role","reason":"missing_field","actual":"missing"}""",
+                        frame.replace("\"role\":\"assistant\"", "\"role\":null") to
+                            """{"path":"/payload/role","reason":"null_not_allowed","actual":"null"}""",
+                        frame.replace("\"role\":\"assistant\"", "\"role\":[\"$secret\"]") to
+                            """{"path":"/payload/role","reason":"type_mismatch","actual":"array","expected":["string"]}""",
+                        frame.replace("\"volumePercent\":30", "\"password\":\"$secret\"")
+                            .replace("\"name\":", "\"unexpected\":\"$secret\",\"name\":") to
+                            """{"path":"/payload/content/unexpected","reason":"unknown_field"}""",
+                        frame.replace("\"name\":", "\"unexpected~/\":null,\"name\":") to
+                            """{"path":"/payload/content/unexpected~0~1","reason":"unknown_field"}""",
+                        frame.replace("{\"volumePercent\":30}", "\"$secret\"") to
+                            """{"path":"/payload/content/result","reason":"type_mismatch","actual":"string","expected":["object"]}""",
                     )
-                    cases.forEachIndexed { index, (raw, path, reason) ->
+                    cases.forEach { (raw, expectedDetails) ->
                         session.send(Frame.Text(raw))
                         val ack = readJson(session)
                         assertEquals("rejected", ack["status"].asText())
                         assertEquals("diagnostics", ack["requestId"].asText())
                         assertEquals("invalid_request", ack["error"]["code"].asText())
                         val details = ack["error"]["details"]
-                        assertEquals(path, details["path"].asText())
-                        assertEquals(reason, details["reason"].asText())
-                        assertTrue(ack["error"]["message"].asText().contains(path))
-                        if (index < 2) {
-                            assertEquals(listOf("text", "tool_call"), details["expected"].map { it.asText() })
-                            assertEquals(if (index == 0) "tool_exchange" else ("bad__" + "x".repeat(123)), details["actual"].asText())
-                        }
-                        if (index == 5 || index == 7) {
-                            assertEquals(listOf(if (index == 5) "string" else "object"), details["expected"].map { it.asText() })
-                        }
+                        assertEquals(json.readTree(expectedDetails), details)
+                        assertTrue(ack["error"]["message"].asText().contains(details["path"].asText()))
                         val log = rejections.remove()
                         assertTrue(log.contains("stage=decode_frame code=invalid_request"))
                         assertTrue(log.contains(details.toString()))

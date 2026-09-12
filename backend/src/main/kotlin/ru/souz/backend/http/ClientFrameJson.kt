@@ -39,58 +39,53 @@ private fun encodeClientFrame(value: Any): String = clientFrameMapper.writeValue
 
 private fun JsonProcessingException.toClientContractException(frame: JsonNode): ClientContractException {
     var value = frame
-    var path = (this as? JsonMappingException)?.path.orEmpty().joinToString("") { reference ->
+    val path = StringBuilder()
+    for (reference in (this as? JsonMappingException)?.path.orEmpty()) {
         val field = reference.fieldName
         value = if (field != null) value.path(field) else value.path(reference.index)
-        "/" + (field ?: reference.index.toString()).replace("~", "~0").replace("/", "~1")
+        path.append('/').append((field ?: reference.index.toString()).replace("~", "~0").replace("/", "~1"))
+    }
+    if (this is InvalidTypeIdException) {
+        baseType.rawClass.getAnnotation(JsonTypeInfo::class.java)?.property?.let { discriminator ->
+            path.append('/').append(discriminator)
+            value = value.path(discriminator)
+        }
+    }
+    val reason = when {
+        this is UnrecognizedPropertyException -> "unknown_field"
+        value.isMissingNode -> "missing_field"
+        value.isNull -> "null_not_allowed"
+        this is InvalidTypeIdException -> "unknown_type"
+        this is MismatchedInputException -> "type_mismatch"
+        else -> "invalid_value"
     }
     val details = clientFrameMapper.createObjectNode()
-    val reason = when (this) {
-        is InvalidTypeIdException -> {
-            val discriminator = baseType.rawClass.getAnnotation(JsonTypeInfo::class.java)?.property
-            if (discriminator != null) {
-                path += "/$discriminator"
-                value = value.path(discriminator)
-            }
-            baseType.rawClass.getAnnotation(JsonSubTypes::class.java)?.value?.let { subtypes ->
-                details.putArray("expected").also { expected -> subtypes.forEach { expected.add(it.name) } }
-            }
-            // Only a bounded type discriminator is echoed; ordinary field values stay private.
-            details.put("actual", typeId?.diagnosticIdentifier() ?: value.nodeType.name.lowercase())
-            when {
-                value.isMissingNode -> "missing_field"
-                value.isNull -> "null_not_allowed"
-                else -> "unknown_type"
-            }
+    if (this !is UnrecognizedPropertyException) {
+        // Only a bounded type discriminator is echoed; ordinary field values stay private.
+        val typeId = (this as? InvalidTypeIdException)?.typeId?.diagnosticIdentifier()
+        details.put("actual", typeId ?: value.nodeType.name.lowercase())
+    }
+    when {
+        this is InvalidTypeIdException -> baseType.rawClass.getAnnotation(JsonSubTypes::class.java)?.value?.let { subtypes ->
+            details.putArray("expected").also { expected -> subtypes.forEach { expected.add(it.name) } }
         }
-        is UnrecognizedPropertyException -> "unknown_field"
-        else -> {
-            details.put("actual", value.nodeType.name.lowercase())
-            when {
-                value.isMissingNode -> "missing_field"
-                value.isNull -> "null_not_allowed"
-                this is MismatchedInputException -> {
-                    targetType?.let { target ->
-                        val expected = when {
-                            target == String::class.java -> "string"
-                            target == Boolean::class.java || target == Boolean::class.javaObjectType -> "boolean"
-                            target.isPrimitive || Number::class.java.isAssignableFrom(target) -> "number"
-                            target.isArray || Collection::class.java.isAssignableFrom(target) -> "array"
-                            else -> "object"
-                        }
-                        details.putArray("expected").add(expected)
-                    }
-                    "type_mismatch"
-                }
-                else -> "invalid_value"
-            }
+        this is MismatchedInputException && reason == "type_mismatch" -> targetType?.let { target ->
+            details.putArray("expected").add(target.jsonTypeName())
         }
     }
-    val safePath = path.diagnosticIdentifier()
+    val safePath = path.toString().diagnosticIdentifier()
     details.put("path", safePath).put("reason", reason)
     return ClientContractException(
         "invalid_request", "Invalid JSON field at ${safePath.ifEmpty { "<root>" }}: $reason.", details,
     )
+}
+
+private fun Class<*>.jsonTypeName(): String = when {
+    this == String::class.java -> "string"
+    this == Boolean::class.java || this == Boolean::class.javaObjectType -> "boolean"
+    isPrimitive || Number::class.java.isAssignableFrom(this) -> "number"
+    isArray || Collection::class.java.isAssignableFrom(this) -> "array"
+    else -> "object"
 }
 
 internal class InvalidClientFrameException(message: String) : RuntimeException(message)
