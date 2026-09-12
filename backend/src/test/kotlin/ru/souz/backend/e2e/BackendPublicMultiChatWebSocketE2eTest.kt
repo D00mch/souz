@@ -81,6 +81,30 @@ class BackendPublicMultiChatWebSocketE2eTest {
                         assertFalse(fields.containsKey("clientRequestId"))
                         assertFalse(fields.containsKey("socketId"))
                     }
+                    val decodingFailures = listOf(
+                        createFrame(users[0]),
+                        subscribeFrame(chats[0]),
+                        messageFrame(chats[0], users[0], "decode-message"),
+                        historyFrame(chats[0], "decode-history", "user", "history"),
+                        """{"kind":"tool.result","chatId":"${chats[0]}","threadId":"${threadChats.keys.first()}","toolCallId":"tool","status":"succeeded","result":{}}""",
+                        """{"kind":"thread.cancel","chatId":"${chats[0]}","threadId":"${threadChats.keys.first()}","requestId":"decode-cancel"}""",
+                    ).map { raw -> json.readTree(raw).deepCopy<ObjectNode>().put("unexpected", true).toString() to "decode_frame" }
+                    val rejections = decodingFailures + listOf(
+                        createFrame("not-a-uuid") to "create_chat",
+                        subscribeFrame(chats[0]).replace("\"requestId\":\"subscribe\"", "\"requestId\":\" \"") to "resolve_chat",
+                        messageFrame(chats[0], users[1], "wrong-owner") to "handle_frame",
+                        historyFrame(chats[0], "wrong-role", "system", "history") to "handle_frame",
+                    )
+                    rejections.forEach { (raw, stage) ->
+                        val before = logs.size
+                        val ack = request(socket, raw, status = "rejected")
+                        val (message, fields) = logs.drop(before).single { it.first.startsWith("WebSocket frame rejected") }
+                        assertEquals("invalid_request", ack["error"]["code"].asText())
+                        assertTrue(message.contains("stage=$stage code=invalid_request"), message)
+                        assertTrue(message.contains("details=${ack["error"].path("details").takeUnless { it.isMissingNode }}"), message)
+                        assertEquals(json.readTree(raw)["kind"].asText(), fields["kind"])
+                        assertEquals(stage == "decode_frame", ack["error"].has("details"))
+                    }
                 }
             } finally {
                 logger.detachAppender(appender)
