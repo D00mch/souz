@@ -118,6 +118,7 @@ internal class PublicClientConnection(
                 if (kind !in clientFrameKinds || (boundChat != null && kind.startsWith("chat."))) {
                     throw InvalidClientFrameException("Unsupported frame kind.")
                 }
+                @Suppress("SuspendFunSwallowedCancellation") // The error translation rethrows every other exception.
                 val handled = try {
                     when (kind) {
                         "chat.create" -> {
@@ -177,13 +178,11 @@ internal class PublicClientConnection(
                             }
                         }
                     }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
                 } catch (failure: Exception) {
                     val error = when (failure) {
                         is ClientContractException -> ClientError(failure.code, failure.message, failure.details)
                         is BackendV1Exception -> ClientError(failure.code, failure.message)
-                        else -> throw failure
+                        else -> throw failure // cancellation will be rethrowed here
                     }
                     withContext(mdcContext()) {
                         socketLogger.error(
