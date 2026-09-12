@@ -14,6 +14,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
 import io.ktor.websocket.readText
 import ru.souz.backend.client.ClientContractException
+import ru.souz.backend.common.sanitizedIdentifier
 
 internal fun Frame.Text.parseClient(): JsonNode = parseClientFrame(readText())
 
@@ -62,7 +63,7 @@ private fun JsonProcessingException.toClientContractException(frame: JsonNode): 
     val details = clientFrameMapper.createObjectNode()
     if (this !is UnrecognizedPropertyException) {
         // Only a bounded type discriminator is echoed; ordinary field values stay private.
-        val typeId = (this as? InvalidTypeIdException)?.typeId?.diagnosticIdentifier()
+        val typeId = (this as? InvalidTypeIdException)?.typeId?.sanitizedIdentifier()
         details.put("actual", typeId ?: value.nodeType.name.lowercase())
     }
     when {
@@ -73,7 +74,7 @@ private fun JsonProcessingException.toClientContractException(frame: JsonNode): 
             details.putArray("expected").add(target.jsonTypeName())
         }
     }
-    val safePath = path.toString().diagnosticIdentifier()
+    val safePath = path.toString().sanitizedIdentifier()
     details.put("path", safePath).put("reason", reason)
     return ClientContractException(
         "invalid_request", "Invalid JSON field at ${safePath.ifEmpty { "<root>" }}: $reason.", details,
@@ -90,7 +91,4 @@ private fun Class<*>.jsonTypeName(): String = when {
 
 internal class InvalidClientFrameException(message: String) : RuntimeException(message)
 
-private fun String.diagnosticIdentifier(): String = take(128).replace(diagnosticControlCharacters, "_")
-
 private val clientFrameMapper = jacksonObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-private val diagnosticControlCharacters = Regex("[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]")

@@ -33,9 +33,7 @@ private fun MutableMap<String, String>.putSanitized(fields: Array<out Pair<Strin
         if (value == null) {
             remove(key)
         } else {
-            put(key, value.toString().take(128).replace(logControlCharacters, "_"))
+            put(key, value.toString().sanitizedIdentifier())
         }
     }
 }
-
-private val logControlCharacters = Regex("[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]")
