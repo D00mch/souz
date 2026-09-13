@@ -37,20 +37,20 @@ internal fun Route.publicClientSocket(path: String, deps: BackendHttpDependencie
                     return@withContext
                 }
                 val allowedTypes = if (singleChat) supportedClientTypes else setOf("backend")
-                if (clientType !in allowedTypes) {
+                if (clientType == null || clientType !in allowedTypes) {
                     socketLogger.warn("WebSocket rejected closeCode=1008 reason=invalid_client_type")
                     close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "clientType must be ${allowedTypes.joinToString(" or ")}."))
                     return@withContext
                 }
                 val chat = try {
-                    if (singleChat) deps.publicClientService.requireChat(call.requireChatId(), clientType!!) else null
+                    if (singleChat) deps.publicClientService.requireChat(call.requireChatId(), clientType) else null
                 } catch (error: ClientContractException) {
                     socketLogger.warn("WebSocket rejected closeCode=1008 reason={}", error.code)
                     close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, error.message))
                     return@withContext
                 }
                 val afterSeq = if (singleChat) call.queryNonNegativeLong("afterSeq") ?: 0L else 0L
-                PublicClientConnection(this@webSocket, deps, clientType!!, chat, socketId).run(afterSeq)
+                PublicClientConnection(this@webSocket, deps, clientType, chat, socketId).run(afterSeq)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Throwable) {

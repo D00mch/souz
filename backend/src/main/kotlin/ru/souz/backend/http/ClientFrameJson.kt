@@ -18,7 +18,7 @@ import ru.souz.backend.common.sanitizedIdentifier
 
 internal fun Frame.Text.parseClient(): JsonNode = parseClientFrame(readText())
 
-internal suspend fun WebSocketSession.sendClient(value: Any) = send(Frame.Text(encodeClientFrame(value)))
+internal suspend fun WebSocketSession.sendClient(value: Any) = send(Frame.Text(clientFrameMapper.writeValueAsString(value)))
 
 internal fun <T> JsonNode.decodeClientFrame(type: Class<T>): T = try {
     clientFrameMapper.treeToValue(this, type)
@@ -35,8 +35,6 @@ private fun parseClientFrame(raw: String): JsonNode = try {
 } catch (_: JsonProcessingException) {
     throw InvalidClientFrameException("Frame must be valid JSON.")
 }
-
-private fun encodeClientFrame(value: Any): String = clientFrameMapper.writeValueAsString(value)
 
 private fun JsonProcessingException.toClientContractException(frame: JsonNode): ClientContractException {
     var value = frame
