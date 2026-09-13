@@ -41,7 +41,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 - Keep creation validation/provisioning shared with HTTP. Return the persisted chat from the repository and build creation acknowledgements from its immutable fields, including database timestamp precision, so only `duplicate` changes on retries.
 - Prepare an automatic submit stream before accepting input: subscribe to the bus, then read the durable tail. Start forwarding only after the accepted acknowledgement and status; close prepared streams on rejection, cancellation, or failed writes.
 - Prepare an explicit cursor replacement before cancelling and joining the old sender, then acknowledge and start forwarding. Validation or preparation failure must leave the existing subscription intact.
-- Keep one sender per chat and serialize socket writes across acknowledgement, `afterSend`, and status. Never join a sender while holding the writer mutex. Close stream resources on disconnect without cancelling runtime work.
+- `PublicClientConnection.run` owns the connection coroutine scope, subscription jobs, and writer mutex. Launch subscriptions in that scope, including when sending an acknowledgement inside a nested logging context. Keep one sender per chat and serialize socket writes across acknowledgement, `afterSend`, and status. Never join a sender while holding the writer mutex. Close stream resources on disconnect without cancelling runtime work.
 - Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
 - Iterate the event bus's concurrent subscriber set directly during publication; Kotlin collection-size fast paths can race with disconnect and throw while copying it.
 
@@ -54,6 +54,8 @@ Use `MDCContext` at coroutine boundaries. A socket carries only connection ident
 In Loki, select the backend stream and filter JSON fields, for example `{app="souz-backend"} | json | mdc_chatId="..." | mdc_threadId="..."` (use the deployment's actual stream labels). Connection failures before chat resolution have only `socketId`.
 
 Log envelope identifiers rather than complete frames, prompts, titles, tool arguments or results. Bound client-provided log identifiers and replace Unicode control/format characters and line/paragraph separators with underscores. Keep the acknowledgement gate release immediately after the socket write, before logging or status feedback. A logged acknowledgement confirms the server write completed; it does not confirm client receipt.
+
+JSON contract decoding failures use `stage=decode_frame` and share structured diagnostics between rejection logs and `ack.error.details`: a JSON Pointer `path`, a `reason`, and, where available, `actual` and `expected`. Set the decoding stage at the decoder call and switch to the operation stage after successful decoding; error details do not determine the stage. Echo only bounded, sanitized field names and type discriminators; describe ordinary values by JSON type. Do not include raw Jackson messages, class names, or payload values. An empty path denotes the frame root.
 
 ## Verification
 

@@ -72,6 +72,8 @@ The same key, operation and normalized payload return the original result with `
 
 Frame envelopes reject unknown fields; tool arguments/results are generic JSON. Malformed JSON and unsupported kinds close the socket; recoverable errors receive correlated rejection ACKs.
 
+JSON decoding rejection ACKs include `error.details` with a JSON Pointer `path` (empty for the root), `reason`, and optional `actual` and `expected`. Reasons distinguish unknown fields/types, missing fields, forbidden nulls, type mismatches, and invalid values. For example, an unsupported history content type produces `{"path":"/payload/content/type","reason":"unknown_type","actual":"tool_exchange","expected":["text","tool_call"]}`. Field names and type discriminators are bounded and sanitized; other submitted values are represented only by JSON type.
+
 ## Other endpoints
 
 - `POST /v1/chats`: HTTP creation for `backend` or `mobile_app`, sharing WebSocket creation idempotency.
