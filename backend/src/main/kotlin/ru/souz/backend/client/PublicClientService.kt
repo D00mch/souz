@@ -623,7 +623,11 @@ private fun ClientRequestResult.storedRequest(): ClientRequest = when (this) {
     else -> error("Request has no stored transport result: $this")
 }
 
-internal class ClientContractException(val code: String, override val message: String) : RuntimeException(message)
+internal class ClientContractException(
+    val code: String,
+    override val message: String,
+    val details: JsonNode? = null,
+) : RuntimeException(message)
 
 private fun String.required(field: String): String = trim().takeIf { it.isNotEmpty() }
     ?: throw ClientContractException("invalid_request", "$field must not be empty.")
