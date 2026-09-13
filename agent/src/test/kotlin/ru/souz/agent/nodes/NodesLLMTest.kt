@@ -1,10 +1,13 @@
 package ru.souz.agent.nodes
 
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -14,17 +17,44 @@ import kotlinx.coroutines.test.runTest
 import ru.souz.agent.AgentStreamChunk
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.RetryPolicy
+import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
+    @Test
+    fun `chat retries only LLM exceptions and respects the attempt limit`() = runTest {
+        val failures = listOf(
+            LLMException(LLMResponse.Chat.Error(503, "Provider failure")) to 2,
+            IllegalStateException("Unexpected failure") to 1,
+            CancellationException("Provider cancelled") to 1,
+        )
+        for ((failure, expectedAttempts) in failures) {
+            var attempts = 0
+            val api = mockk<LLMChatAPI> {
+                coEvery { message(any()) } answers { attempts += 1; throw failure }
+            }
+            val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
+            val graph = buildGraph<String, LLMResponse.Chat> {
+                nodeInput.edgeTo(nodes.chat()).edgeTo(nodeFinish)
+            }
+
+            val thrown = assertFailsWith(failure::class) { graph.start(context(emptyList())) }
+            if (failure !is CancellationException) {
+                assertEquals(failure.message, thrown.message)
+            }
+            assertEquals(expectedAttempts, attempts)
+        }
+    }
+
     @Test
     fun `streaming chat emits runtime deltas and keeps side effects batching`() = runTest {
         val runtimeEvents = mutableListOf<AgentRuntimeEvent>()

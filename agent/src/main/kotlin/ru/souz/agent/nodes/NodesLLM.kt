@@ -45,7 +45,7 @@ internal class NodesLLM(
         name: String = "LLM Chat",
         streamRevision: Long = 0L,
     ): Node<String, LLMResponse.Chat> =
-        Node(name) { ctx: AgentContext<String> ->
+        Node(name, retryable = true) { ctx: AgentContext<String> ->
             val response = request(ctx, streamRevision)
             val history = ArrayList(ctx.history).apply {
                 if (response is LLMResponse.Chat.Ok) {

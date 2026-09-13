@@ -20,6 +20,7 @@ The facade owns mutable context, execution state, active-agent routing, and sess
 
 ## Safe changes
 
+- Agent graph retries require `Node(retryable = true)` and an `LLMException`; opt in only provider operations. Tool execution and enclosing coordination nodes must remain non-retryable. Steerable requests run through a nested graph with the active runtime so retries retain consumed input without restarting the mailbox loop. Summarization retries belong to the provider node, not memory finalization.
 - Keep `executeForResult` cancellation, generation capture, session start, and session finish as one lifecycle.
 - Route mid-run input through the active controller owned by the steerable agent; do not reinterpret `executeForResult` as enqueueing.
 - Keep continuation state execution-scoped. Reserve and publish under the mailbox mutex, but run producer callbacks and wait for notifications outside it. Release every reservation even when its producer fails or is cancelled. Hosts must protect accepted durable commits from cancellation until their input is returned; publication and reservation release must also finish before cancellation propagates.

@@ -25,6 +25,7 @@ import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMException
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
@@ -36,6 +37,30 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SkillsGraphBasedAgentMidRunInputTest {
+    @Test
+    fun `provider retries retain consumed steering input`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val harness = Harness(chatHandler = { call, ctx ->
+            when (call) {
+                1 -> {
+                    started.complete(Unit)
+                    awaitCancellation()
+                }
+                2 -> throw LLMException(LLMResponse.Chat.Error(503, "Provider failure"))
+                else -> ctx.map { finalResponse("done") }
+            }
+        })
+        val execution = async { harness.agent.execute(harness.context()) }
+        started.await()
+        assertTrue(harness.agent.submitToActiveRun("follow-up"))
+
+        assertEquals("done", execution.await().output)
+        assertEquals(3, harness.chatCallCount)
+        assertEquals(harness.requestHistories[1], harness.requestHistories[2])
+        assertEquals("follow-up", harness.requestHistories[2].last().content)
+        assertEquals(1, harness.finalizationCount)
+    }
+
     @Test
     fun `active run readiness callback fires after mailbox opens`() = runTest {
         val ready = CompletableDeferred<Unit>()
@@ -322,7 +347,7 @@ private class Harness(
         every { nodesCommon.nodeAppendAdditionalData() } returns Node("appendActualInformation") { it }
         every { nodesLLM.chat("LLM request", any()) } answers {
             streamRevisions += secondArg<Long>()
-            Node("LLM request") { ctx ->
+            Node("LLM request", retryable = true) { ctx ->
                 chatCallCount += 1
                 requestHistories += ctx.history.toList()
                 val result = chatHandler(chatCallCount, ctx)

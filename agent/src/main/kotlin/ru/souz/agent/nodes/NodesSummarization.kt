@@ -48,7 +48,7 @@ internal class NodesSummarization(
 
     /** Updates [AgentContext.input] based on [AgentContext.history]. */
     private fun nodeSummarize(name: String = "llmSummarize"): Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> =
-        Node(name) { ctx ->
+        Node(name, retryable = true) { ctx ->
             val summaryResponse: LLMResponse.Chat = withContext(Dispatchers.IO) {
                 val conversation = ctx.history + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT)
                 val request = ctx.toGigaRequest(conversation).copy(functions = emptyList(), isSummarization = true)

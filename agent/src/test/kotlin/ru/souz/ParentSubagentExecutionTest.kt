@@ -131,21 +131,23 @@ class ParentSubagentExecutionTest {
     }
 
     @Test
-    fun `graph retries provider failures for request and finalization inputs`() = runTest {
+    fun `graph retries require opt-in regardless of input shape`() = runTest {
         val context = ParentHarness(AgentId.GRAPH, backgroundScope) { _, _ -> "" }.context()
-        for (input in listOf("model request or classification", parentResponse(spawn = false))) {
-            var attempts = 0
-            val graph = buildGraph<Any, String> {
-                val operation = Node<Any, String>("Provider operation") { ctx ->
-                    if (++attempts == 1) throw LLMException(LLMResponse.Chat.Error(503, "Retryable provider failure"))
-                    ctx.map { "completed" }
+        for (input in listOf("a different tool input", parentResponse(spawn = false), parentResponse(spawn = true))) {
+            for (retryable in listOf(false, true)) {
+                var attempts = 0
+                val failure = LLMException(LLMResponse.Chat.Error(503, "Provider failure"))
+                val graph = buildGraph<Any, String> {
+                    val operation = Node<Any, String>("toolUse", retryable = retryable) {
+                        attempts++
+                        throw failure
+                    }
+                    nodeInput.edgeTo(operation).edgeTo(nodeFinish)
                 }
-                nodeInput.edgeTo(operation)
-                operation.edgeTo(nodeFinish)
-            }
 
-            assertEquals("completed", graph.start(context.map<Any> { input }).input)
-            assertEquals(2, attempts)
+                assertSame(failure, assertFailsWith<LLMException> { graph.start(context.map<Any> { input }) })
+                assertEquals(if (retryable) 2 else 1, attempts)
+            }
         }
     }
 
