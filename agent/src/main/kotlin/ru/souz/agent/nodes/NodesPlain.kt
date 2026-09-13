@@ -9,7 +9,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.toSystemPromptMessage
 
-internal class NodesPlain {
+internal object NodesPlain {
     fun inputToHistory(name: String = "Input->History"): Node<String, String> = Node(name) { ctx ->
         val history = ArrayList(ctx.history).apply {
             if (isEmpty()) add(ctx.systemPrompt.toSystemPromptMessage())

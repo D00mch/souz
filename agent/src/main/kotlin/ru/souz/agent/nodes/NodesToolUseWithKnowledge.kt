@@ -23,14 +23,13 @@ internal class NodesToolUseWithKnowledge(
     private val knowledgeStore: ConversationKnowledgeStore?,
 ) {
     private val logger = LoggerFactory.getLogger(NodesToolUseWithKnowledge::class.java)
-    private val nodesPlain = NodesPlain()
 
     /** Keeps exempt results unchanged and replaces other oversized results with Knowledge references. */
     fun node(
         alwaysInlineToolNames: Set<String>,
         name: String = "toolUse",
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = nodesPlain.executeFunctionCalls(ctx, agentToolExecutor).map { (functionCall, message) ->
+        val fnCallMessages = NodesPlain.executeFunctionCalls(ctx, agentToolExecutor).map { (functionCall, message) ->
             if (
                 functionCall.name in alwaysInlineToolNames ||
                 message.content.toByteArray(Charsets.UTF_8).size <= KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES

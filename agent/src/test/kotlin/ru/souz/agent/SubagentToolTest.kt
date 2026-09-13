@@ -22,6 +22,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -142,13 +143,21 @@ class SubagentToolTest {
     }
 
     @Test
-    fun `invalid turn limits or duplicate tool names fail before calling provider`() = runTest {
-        val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(tool("Duplicate"), tool("Duplicate"))) }) {
+    fun `invalid inputs fail before preparation and duplicate tool names fail before calling provider`() = runTest {
+        var preparations = 0
+        val subagent = subagent(prepare = { _, _ ->
+            preparations += 1
+            setup(tools = listOf(tool("Duplicate"), tool("Duplicate")))
+        }) {
             error("Provider must not be called")
         }
-        for (limit in listOf(-1, 0, 129)) {
-            assertEquals("invalid_subagent_input", subagent.call(maxTurns = limit)["error"]["code"].asText())
+        val invalidInputs = listOf(emptyMap(), mapOf("task" to " "), mapOf("task" to "Task", "skillIds" to 2)) +
+            listOf(-1, 0, 129).map { mapOf("task" to "Task", "maxTurns" to it) }
+        for (arguments in invalidInputs) {
+            val response = subagent.invoke(LLMResponse.FunctionCall(subagent.fn.name, arguments))
+            assertEquals("invalid_subagent_input", restJsonMapper.readTree(response.content)["error"]["code"].asText())
         }
+        assertEquals(0, preparations)
         assertContains(subagent.call()["error"]["message"].asText(), "tool names must be unique")
     }
 
@@ -257,7 +266,7 @@ class SubagentToolTest {
         telemetry: AgentTelemetry = AgentTelemetry.NONE,
         prepare: suspend (SubagentTool.Input, ToolInvocationMeta) -> SubagentTool.Setup = { _, _ -> setup() },
         respond: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
-    ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, prepare)
+    ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, prepare = prepare)
 
     private fun agent(
         streaming: Boolean = false,
@@ -287,6 +296,7 @@ class SubagentToolTest {
 
     private fun settings(parentTool: LLMToolSetup = tool("ParentTool")) = AgentSettings(
         model = "child-model",
+        provider = LlmProvider.OPENAI,
         temperature = 0.3f,
         contextSize = 4096,
         toolsByCategory = mapOf(ToolCategory.FILES to mapOf(parentTool.fn.name to parentTool)),

@@ -4,6 +4,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 
@@ -65,14 +66,16 @@ data class AgentTools(
 
 data class AgentSettings(
     val model: String,
+    val provider: LlmProvider,
     val temperature: Float,
     val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
 ) {
     constructor(
         model: String,
+        provider: LlmProvider,
         temperature: Float,
         toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
         contextSize: Int = DEFAULT_MAX_TOKENS,
-    ): this(model, temperature, AgentTools(toolsByCategory), contextSize)
+    ): this(model, provider, temperature, AgentTools(toolsByCategory), contextSize)
 }

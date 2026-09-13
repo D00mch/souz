@@ -58,12 +58,11 @@ class OpenAICompatibleChatAPIRequestTest {
     fun `request overrides preserve configured output limit and structural fields`() {
         val request = invokeBuildChatRequest(
             api = createApi(
-                modelOverride = "provider-summary-model",
                 requestParameters =
                     """{"model":"ignored","messages":[],"stream":true,"max_completion_tokens":512,"reasoning_effort":"low"}""",
             ),
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Mini.alias,
+                model = "provider-summary-model",
                 messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
                 maxTokens = 0,
             ),
@@ -80,7 +79,7 @@ class OpenAICompatibleChatAPIRequestTest {
     @Test
     fun `zero max tokens omits generated output limit`() {
         val request = invokeBuildChatRequest(
-            api = createApi(modelOverride = "provider-summary-model"),
+            api = createApi(),
             body = LLMRequest.Chat(
                 model = LLMModel.OpenAIGpt5Mini.alias,
                 messages = listOf(LLMRequest.Message(LLMMessageRole.user, "hello")),
@@ -114,12 +113,12 @@ class OpenAICompatibleChatAPIRequestTest {
     }
 
     @Test
-    fun `buildChatRequest resolves OpenAI model by enum name and includes tool choice`() {
+    fun `buildChatRequest includes tool choice`() {
         val api = createApi()
         val request = invokeBuildChatRequest(
             api = api,
             body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Mini.name,
+                model = LLMModel.OpenAIGpt5Mini.alias,
                 maxTokens = 256,
                 messages = listOf(
                     LLMRequest.Message(role = LLMMessageRole.user, content = "Get horoscope"),
@@ -134,42 +133,6 @@ class OpenAICompatibleChatAPIRequestTest {
         assertEquals("auto", request["tool_choice"])
         val tools = request["tools"] as List<*>
         assertEquals(1, tools.size)
-    }
-
-    @Test
-    fun `buildChatRequest keeps selected OpenAI model when custom compatible model is configured`() {
-        val api = createApi(openaiModel = "provider-chat-model")
-        val request = invokeBuildChatRequest(
-            api = api,
-            body = LLMRequest.Chat(
-                model = LLMModel.OpenAIGpt5Mini.name,
-                maxTokens = 256,
-                messages = listOf(
-                    LLMRequest.Message(role = LLMMessageRole.user, content = "Hello"),
-                ),
-            ),
-            stream = false,
-        )
-
-        assertEquals(LLMModel.OpenAIGpt5Mini.alias, request["model"])
-    }
-
-    @Test
-    fun `buildChatRequest uses configured OpenAI-compatible model for custom model option`() {
-        val api = createApi(openaiModel = "provider-chat-model")
-        val request = invokeBuildChatRequest(
-            api = api,
-            body = LLMRequest.Chat(
-                model = LLMModel.OpenAICompatibleCustom.alias,
-                maxTokens = 256,
-                messages = listOf(
-                    LLMRequest.Message(role = LLMMessageRole.user, content = "Hello"),
-                ),
-            ),
-            stream = false,
-        )
-
-        assertEquals("provider-chat-model", request["model"])
     }
 
     @Test
@@ -683,10 +646,8 @@ class OpenAICompatibleChatAPIRequestTest {
 
     private fun createApi(
         provider: LlmProvider = LlmProvider.OPENAI,
-        openaiModel: String? = null,
         openaiBaseUrl: String? = null,
         baseUrl: String? = null,
-        modelOverride: String? = null,
         requestParameters: String? = null,
     ): OpenAICompatibleChatAPI {
         val settingsProvider = mockk<SettingsProvider>(relaxed = true)
@@ -694,7 +655,6 @@ class OpenAICompatibleChatAPIRequestTest {
         every { settingsProvider.aiTunnelKey } returns "test-key"
         every { settingsProvider.qwenChatKey } returns "test-key"
         every { settingsProvider.openaiBaseUrl } returns openaiBaseUrl
-        every { settingsProvider.openaiModel } returns openaiModel
         every { settingsProvider.requestTimeoutMillis } returns 1_000L
         every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
 
@@ -703,7 +663,6 @@ class OpenAICompatibleChatAPIRequestTest {
             settingsProvider = settingsProvider,
             client = mockk<HttpClient>(),
             baseUrl = baseUrl,
-            modelOverride = modelOverride,
             requestParameters = requestParameters,
         )
     }

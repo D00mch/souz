@@ -81,7 +81,9 @@ class AgentFacade internal constructor(
     fun setModel(model: LLMModel): String {
         settingsProvider.gigaModel = model
         val prompt = contextFactory.systemPromptFor(_activeAgentId.value, model)
-        val newSettings = _currentContext.value.settings.copy(model = model.alias)
+        val newSettings = _currentContext.value.settings.copy(
+            model = settingsProvider.executionModelId(model), provider = model.provider,
+        )
         _currentContext.tryEmit(
             _currentContext.value.copy(settings = newSettings, systemPrompt = prompt)
         )

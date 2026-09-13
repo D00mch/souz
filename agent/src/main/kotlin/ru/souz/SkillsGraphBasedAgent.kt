@@ -53,10 +53,9 @@ class SkillsGraphBasedAgent internal constructor(
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.skillsAlwaysInlineResultTools
     private val activeRun = MutableStateFlow<ActiveRunInputController?>(null)
-    private val nodesPlain = NodesPlain()
 
     private fun graph(controller: ActiveRunInputController): Graph<String, String> = buildGraph(name = "Skills Agent") {
-        val inputToHistory = nodesPlain.inputToHistory()
+        val inputToHistory = NodesPlain.inputToHistory()
         val memoryRecall = nodesMemory.recall()
         val skillInventory = nodesSkillInventory.node(
             skillTools = emptyList(),

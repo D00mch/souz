@@ -3,11 +3,14 @@ package ru.souz.backend.settings.service
 import ru.souz.agent.AgentId
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.SystemBackendConfigSource
+import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.db.DEFAULT_REQUEST_TIMEOUT_MILLIS
 import ru.souz.db.REGION_EN
 import ru.souz.db.REGION_RU
 import ru.souz.db.SettingsProvider
+import ru.souz.db.SUBAGENT_MODELS_JSON
+import ru.souz.db.parseSubagentModels
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
@@ -24,6 +27,11 @@ class BackendSettingsProvider(
     private val localProviderAvailability: LocalModelAvailability,
     private val source: BackendConfigSource = SystemBackendConfigSource,
 ) : SettingsProvider {
+    override val subagentModels: Map<String, LlmProvider> = parseSubagentModels(
+        source.value(SUBAGENT_MODELS_JSON, SUBAGENT_MODELS_JSON),
+        BackendLlmSupport.chatProviders,
+    )
+
     private val promptOverrides = mutableMapOf<Pair<AgentId, LLMModel>, String>()
     private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
 

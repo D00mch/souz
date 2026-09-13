@@ -250,6 +250,10 @@ object LLMRequest {
         @get:JsonIgnore
         @field:JsonIgnore
         val localOutputFormat: LocalOutputFormat = LocalOutputFormat.ENVELOPE,
+        /** Host-resolved route: when present, [model] is already the exact provider request ID. */
+        @get:JsonIgnore
+        @field:JsonIgnore
+        val provider: LlmProvider? = null,
     ) {
         /**
          * OpenAI-compatible providers expect function results to provide call IDs, but Giga does not.

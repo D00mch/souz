@@ -266,7 +266,6 @@ fun backendDiModule(
             retryPolicy = appConfig.providerRetryPolicy,
             providerHttpClients = instance(),
             localChatApi = instance<LocalChatAPI>(),
-            localModelAvailability = instance<LocalProviderAvailability>(),
             codexOAuthService = instance<CodexOAuthService>(),
             sessionRepository = instance(),
             messageRepository = instance(),

@@ -17,6 +17,7 @@ import ru.souz.tool.ToolCategory
 /** Prepares an isolated context and awaits a fresh agent from the host-supplied factory. */
 class SubagentTool(
     private val createAgent: (maxTurns: Int) -> Agent,
+    modelChoices: List<String>? = null,
     private val prepare: suspend (Input, ToolInvocationMeta) -> Setup,
 ) : LLMToolSetup {
     data class Input(
@@ -45,7 +46,7 @@ class SubagentTool(
                     "array", "Exact enabled compiled-tool names or file-backed Skill IDs. Defaults to no tools.",
                     items = LLMRequest.Property("string"),
                 ),
-                "model" to LLMRequest.Property("string", "Optional available model in the parent's provider. Defaults to the parent's model."),
+                "model" to LLMRequest.Property("string", "Optional exact model ID from the advertised choices. Defaults to the parent's model.", enum = modelChoices),
                 "maxTurns" to LLMRequest.Property("integer", "Maximum child LLM calls, from 1 to 128. Defaults to 32."),
             ),
             required = listOf("task"),

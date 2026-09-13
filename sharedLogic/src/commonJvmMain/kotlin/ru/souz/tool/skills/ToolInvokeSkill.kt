@@ -2,8 +2,8 @@ package ru.souz.tool.skills
 
 import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
@@ -26,7 +26,7 @@ import kotlin.jvm.java
 class ToolInvokeSkill(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
-    private val skillBundleProvider: SkillBundleProvider,
+    private val loadBundle: suspend (userId: String, skillId: SkillId) -> SkillBundle?,
     private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
@@ -95,7 +95,7 @@ class ToolInvokeSkill(
             ).copy(name = outerFunctionName)
         }
 
-        val bundle = skillBundleProvider.loadSkillBundle(meta.userId, SkillId(skillId))
+        val bundle = loadBundle(meta.userId, SkillId(skillId))
         if (bundle != null) {
             val approval = approvalGate?.ensureApproved(
                 SkillApprovalGate.Input(

@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
-import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
@@ -36,7 +35,6 @@ class OpenAICompatibleChatAPI(
     private val client: HttpClient,
     apiKey: String? = null,
     private val baseUrl: String? = null,
-    private val modelOverride: String? = null,
     private val requestParameters: String? = null,
 ) : LLMChatAPI {
     init {
@@ -65,20 +63,6 @@ class OpenAICompatibleChatAPI(
             else -> error("Unsupported provider: $provider")
         }
 
-    private val defaultChatModel: String
-        get() = when (provider) {
-            LlmProvider.OPENAI -> System.getenv("OPENAI_MODEL")
-                ?: System.getProperty("OPENAI_MODEL")
-                ?: "gpt-5-mini"
-            LlmProvider.AI_TUNNEL -> System.getenv("AITUNNEL_MODEL")
-                ?: System.getProperty("AITUNNEL_MODEL")
-                ?: "gpt-4o-mini"
-            LlmProvider.QWEN -> System.getenv("QWEN_MODEL")
-                ?: System.getProperty("QWEN_MODEL")
-                ?: "qwen-flash"
-            else -> error("Unsupported provider: $provider")
-        }
-
     private val defaultEmbeddingsModel: String
         get() = when (provider) {
             LlmProvider.OPENAI -> System.getenv("OPENAI_EMBEDDINGS_MODEL")
@@ -100,8 +84,7 @@ class OpenAICompatibleChatAPI(
         }
         val text = response.bodyAsText()
         if (response.status.isSuccess()) {
-            val responseModel = if (provider == LlmProvider.QWEN) resolveChatModel(body.model) else body.model
-            parseCompletionsResponse(text, responseModel).also {
+            parseCompletionsResponse(text, body.model).also {
                 l.info("Model: ${body.model}. Response received")
             }
         } else {
@@ -210,7 +193,7 @@ class OpenAICompatibleChatAPI(
         val tools = buildTools(body.functions)
         return buildMap {
             requestParameters?.let { putAll(restJsonMapper.readValue<Map<String, Any>>(it)) }
-            put("model", modelOverride ?: resolveChatModel(body.model))
+            put("model", body.model)
             put("messages", buildMessages(body.messages))
             put("stream", stream)
             body.reasoningEffort?.takeIf { provider == LlmProvider.OPENAI }?.let { put("reasoning_effort", it) }
@@ -704,57 +687,12 @@ class OpenAICompatibleChatAPI(
         }.getOrDefault("")
     }
 
-    private fun resolveChatModel(model: String): String = when (provider) {
-        LlmProvider.OPENAI -> resolveOpenAiChatModel(model)
-        LlmProvider.AI_TUNNEL -> when {
-            model.equals("ai-tunnel", ignoreCase = true) -> defaultChatModel
-            model.startsWith("GigaChat", ignoreCase = true) -> defaultChatModel
-            else -> model
-        }
-        LlmProvider.QWEN -> if (model.startsWith("GigaChat", ignoreCase = true)) defaultChatModel else model
-        else -> error("Unsupported provider: $provider")
-    }
-
-    private fun resolveOpenAiChatModel(model: String): String {
-        if (model.isOpenAiCompatibleCustomModel()) {
-            settingsProvider.openaiModel?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-        }
-
-        findOpenAiModelAlias(model)?.let { return it }
-
-        val settingsModel = settingsProvider.gigaModel
-        if (settingsModel.provider == LlmProvider.OPENAI) {
-            return settingsModel.alias
-        }
-
-        if (defaultChatModel.startsWith("gpt-", ignoreCase = true)) {
-            return defaultChatModel
-        }
-
-        return "gpt-5-mini"
-    }
-
     private fun resolveEmbeddingsModel(model: String): String {
         val normalized = model.trim()
         if (normalized.equals(ru.souz.llms.DEFAULT_EMBEDDINGS_MODEL, ignoreCase = true)) {
             return defaultEmbeddingsModel
         }
         return normalized
-    }
-
-    private fun findOpenAiModelAlias(value: String): String? {
-        val normalized = value.trim()
-        if (normalized.isEmpty()) return null
-        if (normalized.startsWith("gpt-", ignoreCase = true)) {
-            return normalized
-        }
-        val model = LLMModel.entries.firstOrNull {
-            it.alias.equals(normalized, ignoreCase = true) || it.name.equals(normalized, ignoreCase = true)
-        } ?: return null
-        if (model.provider == LlmProvider.OPENAI && model != LLMModel.OpenAICompatibleCustom) {
-            return model.alias
-        }
-        return null
     }
 
     companion object {
@@ -785,12 +723,6 @@ class OpenAICompatibleChatAPI(
         else -> error("Unsupported provider: $provider")
     }
 }
-
-private fun String.isOpenAiCompatibleCustomModel(): Boolean =
-    trim().let { normalized ->
-        normalized.equals(LLMModel.OpenAICompatibleCustom.alias, ignoreCase = true) ||
-            normalized.equals(LLMModel.OpenAICompatibleCustom.name, ignoreCase = true)
-    }
 
 private fun String.toNormalizedAssistantContent(): String? {
     if (this.isBlank()) return null

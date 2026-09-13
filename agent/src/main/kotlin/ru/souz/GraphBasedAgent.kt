@@ -47,7 +47,6 @@ class GraphBasedAgent internal constructor(
 
     override val sideEffects: Flow<AgentStreamChunk> = nodesLLM.sideEffects
     private val alwaysInlineResultTools = coreTools.graphAlwaysInlineResultTools
-    private val nodesPlain = NodesPlain()
 
     private fun graph(graphCoreTools: List<LLMToolSetup>): Graph<String, String> = buildGraph(name = "Agent") {
         val chatSubgraph: Node<String, LLMResponse.Chat> = nodesLLM.chat("LLM")
@@ -63,7 +62,7 @@ class GraphBasedAgent internal constructor(
             name = SKILL_INVENTORY_NODE_NAME,
         )
         val nodeMcp: Node<String, String> = nodesMCP.nodeProvideMcpTools("MCP Node")
-        val inputToHistory: Node<String, String> = nodesPlain.inputToHistory()
+        val inputToHistory: Node<String, String> = NodesPlain.inputToHistory()
         val toolUse: Node<LLMResponse.Chat.Ok, String> = nodesToolUseWithKnowledge.node(
             alwaysInlineToolNames = alwaysInlineResultTools.mapTo(mutableSetOf()) { it.fn.name },
         )
