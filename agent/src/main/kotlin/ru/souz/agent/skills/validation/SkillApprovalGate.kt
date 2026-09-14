@@ -197,10 +197,12 @@ class SkillApprovalGate private constructor(
         ): SkillApprovalGate = SkillApprovalGate(
             validationStore = validationStore,
             validatorsProvider = {
+                val model = settingsProvider.gigaModel
                 defaultValidators(
                     LlmSkillValidator(
                         llmApi = llmApi,
-                        model = settingsProvider.gigaModel.alias,
+                        model = settingsProvider.executionModelId(model),
+                        provider = model.provider,
                         jsonUtils = jsonUtils,
                     )
                 )

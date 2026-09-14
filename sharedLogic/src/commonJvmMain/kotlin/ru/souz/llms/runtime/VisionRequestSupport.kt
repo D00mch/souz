@@ -11,15 +11,19 @@ internal suspend fun requestVisionText(
     attachment: String,
     failurePrefix: String,
     chatRequest: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
-): String = chatRequest(
-    LLMRequest.Chat(
-        model = settingsProvider.gigaModel.alias,
-        messages = listOf(
-            LLMRequest.Message(
-                role = LLMMessageRole.user,
-                content = input.question,
-                attachments = listOf(attachment),
-            )
+): String {
+    val model = settingsProvider.gigaModel
+    return chatRequest(
+        LLMRequest.Chat(
+            model = settingsProvider.executionModelId(model),
+            provider = model.provider,
+            messages = listOf(
+                LLMRequest.Message(
+                    role = LLMMessageRole.user,
+                    content = input.question,
+                    attachments = listOf(attachment),
+                )
+            ),
         ),
-    )
-).requireAssistantText(failurePrefix)
+    ).requireAssistantText(failurePrefix)
+}

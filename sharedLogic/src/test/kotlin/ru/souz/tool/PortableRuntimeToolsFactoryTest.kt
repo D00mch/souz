@@ -15,6 +15,7 @@ import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
+import ru.souz.tool.files.ToolReadFile
 import ru.souz.tool.files.ToolReadPdfPages
 import ru.souz.skilloauth.SkillOAuthGateway
 import ru.souz.tool.math.ToolCalculator
@@ -36,6 +37,7 @@ class PortableRuntimeToolsFactoryTest {
         val tools = factory.toolsByCategory
 
         assertTrue("ListFiles" in tools.getValue(ToolCategory.FILES))
+        assertTrue("ReadFile" in tools.getValue(ToolCategory.FILES))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.IMAGE))
         assertEquals(emptyMap(), tools.getValue(ToolCategory.IMAGE_GENERATION))
         assertEquals(setOf("WebPageText"), tools.getValue(ToolCategory.WEB_SEARCH).keys)
@@ -71,6 +73,7 @@ class PortableRuntimeToolsFactoryTest {
         val tools = factory.toolsByCategory
 
         assertTrue("ListFiles" in tools.getValue(ToolCategory.FILES))
+        assertTrue("ReadFile" in tools.getValue(ToolCategory.FILES))
         assertTrue("ExtractTextFromFile" in tools.getValue(ToolCategory.FILES))
         assertTrue("ReadPdfPages" in tools.getValue(ToolCategory.FILES))
         assertTrue("WebImageSearch" in tools.getValue(ToolCategory.WEB_SEARCH))
@@ -86,6 +89,7 @@ class PortableRuntimeToolsFactoryTest {
 
         return PortableRuntimeToolsFactory(
             toolListFiles = ToolListFiles(filesToolUtil),
+            toolReadFile = ToolReadFile(filesToolUtil),
             toolFindInFiles = ToolFindInFiles(filesToolUtil),
             toolNewFile = ToolNewFile(filesToolUtil),
             toolDeleteFile = ToolDeleteFile(filesToolUtil),

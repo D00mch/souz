@@ -1,15 +1,14 @@
 package ru.souz.agent.nodes
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.unmockkAll
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
@@ -21,16 +20,54 @@ import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.restJsonMapper
+import ru.souz.llms.LlmProvider
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.UserMessageClassifier
 import kotlin.collections.minus
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class NodesClassificationPromptTest {
+    @Test
+    fun `classification cancellation is not retried`() {
+        var requests = 0
+        assertFailsWith<CancellationException> {
+            executeClassification(
+                input = "Read the file", history = emptyList(),
+                localClassifier = UserMessageClassifier { UserMessageClassifier.Reply(emptyList(), 0.0) },
+                apiClassifier = UserMessageClassifier { requests++; throw CancellationException("Cancelled") },
+            )
+        }
+        assertEquals(1, requests)
+    }
+
+    @Test
+    fun `classification preserves the execution route through both classifiers and retries`() {
+        val requests = mutableListOf<LLMRequest.Chat>()
+        val reply = UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 90.0)
+        val local = CapturingClassifier(reply)
+        executeClassification(
+            input = "Read the file", history = emptyList(),
+            model = " Custom/Deployment ", provider = LlmProvider.OPENAI,
+            localClassifier = local,
+            apiClassifier = UserMessageClassifier { request ->
+                requests += request
+                if (requests.size == 1) error("Temporary provider failure")
+                reply
+            },
+        )
+        assertEquals(2, requests.size)
+        requests.forEach {
+            assertSame(local.requireBody(), it)
+            assertEquals(" Custom/Deployment ", it.model)
+            assertEquals(LlmProvider.OPENAI, it.provider)
+        }
+    }
+
     private val defaultTools: Map<ToolCategory, Map<String, LLMToolSetup>> = mapOf(
         ToolCategory.FILES to mapOf("Read" to dummySetup("Read")),
         ToolCategory.BROWSER to mapOf("Open" to dummySetup("Open")),
@@ -109,49 +146,20 @@ class NodesClassificationPromptTest {
 
     @Test
     fun `local classifier still keeps api verification path for local models`() {
-        val localTools = mapOf(ToolCategory.FILES to mapOf("Read" to dummySetup("Read")))
-        val settingsProvider = mockk<AgentSettingsProvider> {
-            every { gigaModel } returns LLMModel.LocalQwen3_4B_Instruct_2507
-        }
+        val model = LLMModel.LocalQwen3_4B_Instruct_2507
+        val reply = UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 90.0)
         val apiClassifier = mockk<UserMessageClassifier>()
-        val localClassifier = mockk<UserMessageClassifier>()
-        coEvery { localClassifier.classify(any()) } returns UserMessageClassifier.Reply(
-            categories = listOf(ToolCategory.FILES),
-            confidence = 90.0,
-        )
-        coEvery { apiClassifier.classify(any()) } returns UserMessageClassifier.Reply(
-            categories = listOf(ToolCategory.FILES),
-            confidence = 90.0,
-        )
-        val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns localTools }
-        val toolsSettings = mockk<AgentToolsFilter> {
-            every { applyFilter(any()) } answers { firstArg() }
-        }
-        val classification = NodesClassification(
-            settingsProvider = settingsProvider,
-            logObjectMapper = ObjectMapper(),
-            apiClassifier = apiClassifier,
-            localClassifier = localClassifier,
-            toolCatalog = toolsFactory,
-            toolsFilter = toolsSettings,
-        )
+        coEvery { apiClassifier.classify(any()) } returns reply
 
-        val result = runBlocking {
-            classification.node().execute(
-                ctx = AgentContext(
-                    input = "Прочитай файл",
-                    settings = AgentSettings(
-                        model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
-                        temperature = 0.2f,
-                        toolsByCategory = localTools,
-                    ),
-                    history = emptyList(),
-                    activeTools = emptyList(),
-                    systemPrompt = "",
-                ),
-                runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
-            )
-        }
+        val result = executeClassification(
+            input = "Прочитай файл",
+            history = emptyList(),
+            model = model.alias,
+            provider = model.provider,
+            tools = mapOf(ToolCategory.FILES to defaultTools.getValue(ToolCategory.FILES)),
+            localClassifier = CapturingClassifier(reply),
+            apiClassifier = apiClassifier,
+        )
 
         assertEquals(listOf("Read"), result.activeTools.map { it.name })
         coVerify(exactly = 1) { apiClassifier.classify(any()) }
@@ -186,7 +194,7 @@ class NodesClassificationPromptTest {
             apiClassifier = apiClassifier,
         )
 
-        val body: LLMRequest.Chat = restJsonMapper.readValue(localClassifier.requireBody())
+        val body: LLMRequest.Chat = localClassifier.requireBody()
         val historyMessage = body.messages[1].content
 
         assertFalse(historyMessage.contains("Old request about telegram"))
@@ -242,7 +250,7 @@ class NodesClassificationPromptTest {
             apiClassifier = apiClassifier,
         )
 
-        val body: LLMRequest.Chat = restJsonMapper.readValue(localClassifier.requireBody())
+        val body: LLMRequest.Chat = localClassifier.requireBody()
         val historyMessage = body.messages[1].content
 
         assertTrue(historyMessage.contains("USER: Please fix typos in `/tmp/article.md`"))
@@ -279,7 +287,7 @@ class NodesClassificationPromptTest {
             apiClassifier = apiClassifier,
         )
 
-        val body: LLMRequest.Chat = restJsonMapper.readValue(localClassifier.requireBody())
+        val body: LLMRequest.Chat = localClassifier.requireBody()
         val prompt = body.messages.first().content
 
         assertTrue(prompt.contains("- FILES:"))
@@ -338,11 +346,7 @@ class NodesClassificationPromptTest {
     }
 
     private fun buildPromptWith(filteredTools: Map<ToolCategory, Map<String, LLMToolSetup>>): String {
-        val settingsProvider = mockk<AgentSettingsProvider>()
-        every { settingsProvider.gigaModel } returns LLMModel.Max
-
         val classification = NodesClassification(
-            settingsProvider = settingsProvider,
             logObjectMapper = ObjectMapper(),
             apiClassifier = mockk(relaxed = true),
             localClassifier = mockk(relaxed = true),
@@ -356,19 +360,17 @@ class NodesClassificationPromptTest {
     private fun executeClassification(
         input: String,
         history: List<LLMRequest.Message>,
+        model: String = LLMModel.Max.alias,
+        provider: LlmProvider = LLMModel.Max.provider,
         tools: Map<ToolCategory, Map<String, LLMToolSetup>> = defaultTools,
         localClassifier: UserMessageClassifier,
         apiClassifier: UserMessageClassifier,
     ): AgentContext<String> {
-        val settingsProvider = mockk<AgentSettingsProvider> {
-            every { gigaModel } returns LLMModel.Max
-        }
         val toolsFactory = mockk<AgentToolCatalog> { every { toolsByCategory } returns tools }
         val toolsSettings = mockk<AgentToolsFilter> {
             every { applyFilter(any()) } answers { firstArg() }
         }
         val classification = NodesClassification(
-            settingsProvider = settingsProvider,
             logObjectMapper = ObjectMapper(),
             apiClassifier = apiClassifier,
             localClassifier = localClassifier,
@@ -381,7 +383,8 @@ class NodesClassificationPromptTest {
                 ctx = AgentContext(
                     input = input,
                     settings = AgentSettings(
-                        model = LLMModel.Max.alias,
+                        model = model,
+                        provider = provider,
                         temperature = 0.2f,
                         toolsByCategory = tools,
                     ),
@@ -410,13 +413,13 @@ class NodesClassificationPromptTest {
     private class CapturingClassifier(
         private val reply: UserMessageClassifier.Reply,
     ) : UserMessageClassifier {
-        private var body: String? = null
+        private var body: LLMRequest.Chat? = null
 
-        override suspend fun classify(body: String): UserMessageClassifier.Reply {
+        override suspend fun classify(body: LLMRequest.Chat): UserMessageClassifier.Reply {
             this.body = body
             return reply
         }
 
-        fun requireBody(): String = checkNotNull(body) { "Classifier was not invoked" }
+        fun requireBody(): LLMRequest.Chat = checkNotNull(body) { "Classifier was not invoked" }
     }
 }

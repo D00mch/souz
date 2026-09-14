@@ -7,12 +7,14 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
 
 class LlmSkillValidator(
     private val llmApi: LLMChatAPI,
     private val model: String,
+    private val provider: LlmProvider,
     private val jsonUtils: JsonUtils,
 ) : SkillValidator {
     private val logger = LoggerFactory.getLogger(LlmSkillValidator::class.java)
@@ -21,6 +23,7 @@ class LlmSkillValidator(
         val response = llmApi.message(
             LLMRequest.Chat(
                 model = model,
+                provider = provider,
                 temperature = 0.0f,
                 messages = listOf(
                     LLMRequest.Message(

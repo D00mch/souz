@@ -17,6 +17,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.tool.ToolCategory
@@ -66,7 +67,7 @@ class NodesSkillInventoryTest {
         val catalogTool = FixedTool("CatalogTool")
         val context = contextWithCatalog(catalogTool)
 
-        val result = node(catalog = catalog(catalogTool)).restrictToTools(context, listOf(coreTool))
+        val result = context.withOnlyTools(listOf(coreTool))
 
         assertEquals(listOf(coreTool.fn), result.activeTools)
         assertEquals(mapOf(coreTool.fn.name to coreTool), result.settings.tools.byName)
@@ -168,6 +169,7 @@ class NodesSkillInventoryTest {
         input = "hello",
         settings = AgentSettings(
             model = "test",
+            provider = LlmProvider.OPENAI,
             temperature = 0f,
             tools = AgentTools(catalog(*tools).toolsByCategory),
         ),

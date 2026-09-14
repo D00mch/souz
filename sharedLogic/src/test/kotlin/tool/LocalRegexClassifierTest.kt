@@ -1,185 +1,65 @@
 package tool
 
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.DynamicTest.dynamicTest
+import org.junit.jupiter.api.TestFactory
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.restJsonMapper
 import ru.souz.tool.LocalRegexClassifier
-import ru.souz.tool.ToolCategory
-import kotlinx.coroutines.runBlocking
-import kotlin.test.Test
+import ru.souz.tool.ToolCategory.*
 import kotlin.test.assertEquals
 
 class LocalRegexClassifierTest {
-    private fun body(text: String): String {
-        val messages = ArrayDeque<LLMRequest.Message>().apply {
-            add(LLMRequest.Message(LLMMessageRole.system, ""))
-            add(LLMRequest.Message(LLMMessageRole.user, "History:\n"))
-            add(LLMRequest.Message(LLMMessageRole.user, "New message:\n$text"))
-        }
-        val chat = LLMRequest.Chat(
-            model = "m",
-            messages = messages,
-            functions = emptyList(),
-        )
-        return restJsonMapper.writeValueAsString(chat)
-    }
+    private fun body(text: String) = LLMRequest.Chat(
+        model = "m",
+        messages = listOf(
+            LLMRequest.Message(LLMMessageRole.system, ""),
+            LLMRequest.Message(LLMMessageRole.user, "History:\n"),
+            LLMRequest.Message(LLMMessageRole.user, "New message:\n$text"),
+        ),
+    )
 
-    @Test
-    fun `classifies coder creation`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Поправь файл ридми")).categories
-        assertEquals(listOf(ToolCategory.FILES), categories)
-    }
-
-    @Test
-    fun `classifies coder read`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Можешь поправить текст в zsh"))
-            .categories
-        assertEquals(listOf(ToolCategory.FILES), categories)
-    }
-
-    @Test
-    fun `classifies local image analysis as image`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(
-            body("Посмотри изображение /Users/user/Pictures/cat.png и опиши что на нем")
-        ).categories
-        assertEquals(listOf(ToolCategory.IMAGE), categories)
-    }
-
-    @Test
-    fun `classifies browser url`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("открой http://example.com"))
-            .categories
-        assertEquals(listOf(ToolCategory.BROWSER, ToolCategory.APPLICATIONS), categories)
-    }
-
-    @Test
-    fun `classifies browser tabs`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Открой только что закрытую вкладку"))
-            .categories
-        assertEquals(listOf(ToolCategory.BROWSER, ToolCategory.APPLICATIONS), categories)
-    }
-
-    @Test
-    fun `classifies config volume and instruction`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories =
-            classifier.classify(body("Запомни инструкцию: когда я говорю «Ускорь», ускорь скорость речь на 40 слов в минуту"))
-                .categories
-        assertEquals(listOf(ToolCategory.CONFIG), categories)
-    }
-
-    @Test
-    fun `classifies config speed`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Замедли скорость речи"))
-            .categories
-        assertEquals(listOf(ToolCategory.CONFIG), categories)
-    }
-
-    @Test
-    fun `classifies desktop window`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Какие приложения сейчас запущены"))
-            .categories
-        assertEquals(listOf(ToolCategory.APPLICATIONS), categories)
-    }
-
-    @Test
-    fun `returns null on tie`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("прочитай readme и открой example.com"))
-            .categories
-        assertEquals(listOf(ToolCategory.FILES, ToolCategory.APPLICATIONS, ToolCategory.MAIL), categories)
-    }
-    
-    @Test
-    fun `classifies provided phrases`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val cases = listOf(
-            "Открой приложение Интеллиджи Айдеа" to ToolCategory.APPLICATIONS,
-            "Открой браузер" to ToolCategory.BROWSER,
-            "Открой сайт сбера" to ToolCategory.BROWSER,
-            "Найди в закладках и открой страницу с обзором фондового рынка" to ToolCategory.BROWSER,
-            "Расскажи кратко о чем рассказано на текущей странице" to ToolCategory.BROWSER,
-            "Открой папку семья" to ToolCategory.FILES,
-            "Открой папку отчеты" to ToolCategory.FILES,
-            "Построй график дохода по клиенту из файла сейлз репорт" to ToolCategory.DATA_ANALYTICS,
-            "Добавь заметку - купить пивка" to ToolCategory.NOTES,
-            "Открой заметку демо" to ToolCategory.NOTES,
-        )
-
-        for ((text, expected) in cases) {
-            val categories = classifier.classify(body(text))
-                .categories
-            assertEquals(expected, categories.first(), text)
+    @TestFactory
+    fun `classifies exact category lists`() = listOf(
+        "Поправь файл ридми" to listOf(FILES),
+        "Можешь поправить текст в zsh" to listOf(FILES),
+        "Посмотри изображение /Users/user/Pictures/cat.png и опиши что на нем" to listOf(IMAGE),
+        "открой http://example.com" to listOf(BROWSER, APPLICATIONS),
+        "Открой только что закрытую вкладку" to listOf(BROWSER, APPLICATIONS),
+        "Запомни инструкцию: когда я говорю «Ускорь», ускорь скорость речь на 40 слов в минуту" to listOf(CONFIG),
+        "Замедли скорость речи" to listOf(CONFIG),
+        "Какие приложения сейчас запущены" to listOf(APPLICATIONS),
+        "прочитай readme и открой example.com" to listOf(FILES, APPLICATIONS, MAIL),
+    ).map { (text, expected) ->
+        dynamicTest(text) {
+            runBlocking { assertEquals(expected, LocalRegexClassifier.classify(body(text)).categories) }
         }
     }
 
-    @Test
-    fun `classifies help what can you do`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Что ты умеешь?")).categories
-        assertEquals(ToolCategory.HELP, categories.first())
-    }
-
-    @Test
-    fun `classifies help capabilities`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Какие у тебя есть возможности?")).categories
-        assertEquals(ToolCategory.HELP, categories.first())
-    }
-
-    @Test
-    fun `classifies help command`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("help")).categories
-        assertEquals(ToolCategory.HELP, categories.first())
-    }
-
-    @Test
-    fun `classifies help english what can you do`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("What can you do?")).categories
-        assertEquals(ToolCategory.HELP, categories.first())
-    }
-
-    @Test
-    fun `classifies weather question as web search`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Какая погода в Таллине")).categories
-        assertEquals(ToolCategory.WEB_SEARCH, categories.first())
-    }
-
-    @Test
-    fun `classifies library selection as web search`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Нужно найти подходящую библиотеку для создания презентаций")).categories
-        assertEquals(ToolCategory.WEB_SEARCH, categories.first())
-    }
-
-    @Test
-    fun `classifies forwarding a message to another channel`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Перешли это в другой канал")).categories
-        assertEquals(ToolCategory.CHANNEL_MESSAGING, categories.first())
-    }
-
-    @Test
-    fun `classifies asking for available channels`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Какие у меня есть каналы для пересылки сообщений")).categories
-        assertEquals(ToolCategory.CHANNEL_MESSAGING, categories.first())
-    }
-
-    @Test
-    fun `classifies forwarding to telegram as channel messaging, not telegram`() = runBlocking {
-        val classifier = LocalRegexClassifier
-        val categories = classifier.classify(body("Перешли это в телеграм")).categories
-        assertEquals(ToolCategory.CHANNEL_MESSAGING, categories.first())
+    @TestFactory
+    fun `classifies primary categories`() = listOf(
+        "Открой приложение Интеллиджи Айдеа" to APPLICATIONS,
+        "Открой браузер" to BROWSER,
+        "Открой сайт сбера" to BROWSER,
+        "Найди в закладках и открой страницу с обзором фондового рынка" to BROWSER,
+        "Расскажи кратко о чем рассказано на текущей странице" to BROWSER,
+        "Открой папку семья" to FILES,
+        "Открой папку отчеты" to FILES,
+        "Построй график дохода по клиенту из файла сейлз репорт" to DATA_ANALYTICS,
+        "Добавь заметку - купить пивка" to NOTES,
+        "Открой заметку демо" to NOTES,
+        "Что ты умеешь?" to HELP,
+        "Какие у тебя есть возможности?" to HELP,
+        "help" to HELP,
+        "What can you do?" to HELP,
+        "Какая погода в Таллине" to WEB_SEARCH,
+        "Нужно найти подходящую библиотеку для создания презентаций" to WEB_SEARCH,
+        "Перешли это в другой канал" to CHANNEL_MESSAGING,
+        "Какие у меня есть каналы для пересылки сообщений" to CHANNEL_MESSAGING,
+        "Перешли это в телеграм" to CHANNEL_MESSAGING,
+    ).map { (text, expected) ->
+        dynamicTest(text) {
+            runBlocking { assertEquals(expected, LocalRegexClassifier.classify(body(text)).categories.first()) }
+        }
     }
 }

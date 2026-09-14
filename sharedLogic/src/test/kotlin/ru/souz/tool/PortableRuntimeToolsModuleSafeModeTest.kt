@@ -12,7 +12,11 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
@@ -42,6 +46,24 @@ class PortableRuntimeToolsModuleSafeModeTest {
             runCatching { path.toFile().deleteRecursively() }
         }
         createdPaths.clear()
+    }
+
+    @Test
+    fun `ReadFile from portable DI catalog reads absolute and home-relative paths`() = runTest {
+        val home = createTempDirectory("portable-read-home-")
+        val stateRoot = createTempDirectory("portable-read-state-")
+        val file = home.resolve("notes.md").apply { writeText("Meeting notes") }
+        val directDI = createDirectDI(home, stateRoot, safeModeEnabled = true, bindBrokers = false)
+        val tool = directDI.instance<AgentToolCatalog>().toolsByCategory
+            .getValue(ToolCategory.FILES).getValue("ReadFile")
+
+        for (path in listOf(file.toString(), "~/notes.md")) {
+            val response = tool.invoke(
+                LLMResponse.FunctionCall("ReadFile", mapOf("path" to path)),
+                ToolInvocationMeta("reader", "conversation"),
+            )
+            assertEquals("Meeting notes", restJsonMapper.readTree(response.content)["result"].asText())
+        }
     }
 
     @Test

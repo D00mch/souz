@@ -20,6 +20,7 @@ Each Ktor client owns an engine, connection pool, plugins, and coroutine lifecyc
 - Use coroutine synchronization for token refresh and credential caches. Propagate cancellation and avoid JVM thread-local or monitor state.
 - Keep token accounting at the `LLMChatAPI` boundary, where normalized usage is available, rather than in HTTP middleware or provider adapters.
 - Keep custom OpenAI-compatible behavior explicit. Do not retry a rejected request with a different payload.
+- Resolve internal model selections with `executionModelId` when constructing requests and include their explicit provider. The desktop router and remote adapters forward exact IDs in streaming and ordinary calls; they do not guess models from prefixes or replace them with settings defaults. Classifiers pass typed requests to preserve routing metadata.
 
 ## Verification
 

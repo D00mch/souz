@@ -1,22 +1,20 @@
 package ru.souz.agent.nodes
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.state.AgentContext
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
-import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.ToolCategory.*
 import ru.souz.tool.UserMessageClassifier
 
 internal class NodesClassification(
-    private val settingsProvider: AgentSettingsProvider,
     private val logObjectMapper: ObjectMapper,
     private val apiClassifier: UserMessageClassifier,
     private val localClassifier: UserMessageClassifier,
@@ -38,11 +36,12 @@ internal class NodesClassification(
      *
      * Modifies [AgentContext.activeTools] based on the classification algorithm and [AgentToolCatalog].
      */
-    fun node(name: String = "select categories"): Node<String, String> = Node(name) { ctx: AgentContext<String> ->
+    fun node(name: String = "select categories"): Node<String, String> = Node(name, retryable = true) { ctx: AgentContext<String> ->
         val categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>> =
             toolsFilter.applyFilter(toolCatalog.toolsByCategory)
                 .filterValues { it.isNotEmpty() }
-        val categories: List<ToolCategory> = classify(ctx.input, ctx.history, categoryStates)
+        val body = buildClassifierBody(ctx, categoryStates)
+        val categories: List<ToolCategory> = classify(body)
 
         val categoriesToChoseFrom = if (categories.isEmpty() || categories.contains(HELP)) {
             categoryStates
@@ -54,49 +53,47 @@ internal class NodesClassification(
     }
 
     private suspend fun classify(
-        userText: String,
-        history: List<LLMRequest.Message>,
-        categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>>,
+        body: LLMRequest.Chat,
         retriesCount: Int = 2
     ): List<ToolCategory> {
-        val body = buildClassifierBody(userText, history, categoryStates)
-        val bodyJson = restJsonMapper.writeValueAsString(body)
-        l.debug("Classifying user message: {}, \nbody: \n{}", userText, logObjectMapper.writeValueAsString(body))
+        l.debug("Classifying user message, body: \n{}", logObjectMapper.writeValueAsString(body))
         try {
-            val localResult: UserMessageClassifier.Reply = localClassifier.classify(bodyJson)
+            val localResult: UserMessageClassifier.Reply = localClassifier.classify(body)
             if (retriesCount <= 0) {
                 return localResult.categories
             }
 
-            val apiResult: UserMessageClassifier.Reply = apiClassifier.classify(bodyJson)
+            val apiResult: UserMessageClassifier.Reply = apiClassifier.classify(body)
             if (apiResult.confidence > 50 || apiResult.categories.firstOrNull() == localResult.categories.firstOrNull()) {
                 return apiResult.categories
             } else {
                 l.info("Categories mismatch: Local: ${localResult}, API: ${apiResult}.")
                 return emptyList()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             l.error("Error in apiClassifier: {}", e.message)
-            return classify(userText, history, categoryStates, retriesCount.dec())
+            return classify(body, retriesCount.dec())
         }
     }
 
     private fun buildClassifierBody(
-        userText: String,
-        history: List<LLMRequest.Message>,
+        ctx: AgentContext<String>,
         categoryStates: Map<ToolCategory, Map<String, LLMToolSetup>>
     ): LLMRequest.Chat {
-        val formattedHistory = historyForClassification(userText, history)
+        val formattedHistory = historyForClassification(ctx.input, ctx.history)
             .joinToString(separator = "\n\n") { message ->
                 "${message.role.name.uppercase()}: ${message.content.trim()}"
             }
         val messages = listOf(
             LLMRequest.Message(LLMMessageRole.system, buildPrompt(categoryStates)),
             LLMRequest.Message(LLMMessageRole.user, "History:\n$formattedHistory\n"),
-            LLMRequest.Message(LLMMessageRole.user, "New message:\n$userText"),
+            LLMRequest.Message(LLMMessageRole.user, "New message:\n${ctx.input}"),
         )
         return LLMRequest.Chat(
-            model = settingsProvider.gigaModel.alias,
+            model = ctx.settings.model,
+            provider = ctx.settings.provider,
             messages = messages,
             functions = emptyList(),
         )

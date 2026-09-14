@@ -4,6 +4,7 @@ import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.llms.DEFAULT_MAX_TOKENS
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.tool.ToolCategory
 
@@ -16,6 +17,15 @@ data class AgentContext<I>(
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
 ) {
+    /** Replaces advertised and executable tools without inheriting catalog categories. */
+    internal fun withOnlyTools(tools: List<LLMToolSetup>): AgentContext<I> {
+        val selected = AgentTools(tools)
+        return copy(
+            settings = settings.copy(tools = selected),
+            activeTools = selected.byName.values.map { it.fn },
+        )
+    }
+
     inline fun <reified O> map(
         settings: AgentSettings = this.settings,
         history: List<LLMRequest.Message> = this.history,
@@ -44,16 +54,28 @@ data class AgentTools(
     }
 )
 
+/** Rejects duplicate function names and retains only categories belonging to selected tools. */
+fun AgentTools(
+    tools: List<LLMToolSetup>,
+    categoryByName: Map<String, ToolCategory> = emptyMap(),
+): AgentTools {
+    val byName = tools.associateBy { it.fn.name }
+    require(byName.size == tools.size) { "Selected tool names must be unique." }
+    return AgentTools(emptyMap(), byName, categoryByName.filterKeys { it in byName })
+}
+
 data class AgentSettings(
     val model: String,
+    val provider: LlmProvider,
     val temperature: Float,
     val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
 ) {
     constructor(
         model: String,
+        provider: LlmProvider,
         temperature: Float,
         toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
         contextSize: Int = DEFAULT_MAX_TOKENS,
-    ): this(model, temperature, AgentTools(toolsByCategory), contextSize)
+    ): this(model, provider, temperature, AgentTools(toolsByCategory), contextSize)
 }

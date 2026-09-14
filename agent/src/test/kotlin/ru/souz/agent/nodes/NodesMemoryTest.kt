@@ -2,6 +2,9 @@
 
 package ru.souz.agent.nodes
 
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -17,12 +20,17 @@ import ru.souz.agent.agentDiModule
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.RetryPolicy
+import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMException
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toMessage
@@ -248,6 +256,34 @@ class NodesMemoryTest {
     }
 
     @Test
+    fun `summarization retries stay inside finalization and capture only after success`() = runTest {
+        for (succeeds in listOf(false, true)) {
+            var attempts = 0
+            val memoryRuntime = RecordingMemoryRuntime()
+            val api = mockk<LLMChatAPI> {
+                coEvery { message(any()) } answers {
+                    if (++attempts == 2 && succeeds) okResponse("summary")
+                    else LLMResponse.Chat.Error(503, "Provider failure")
+                }
+            }
+            val settings = mockk<AgentSettingsProvider> { every { summarizationContextSize } returns 1 }
+            val summary = NodesSummarization(api, settings).summarize()
+            val graph = buildGraph<LLMResponse.Chat.Ok, String> {
+                nodeInput.edgeTo(NodesMemory(memoryRuntime, backgroundScope).finalizeTurn(summary)).edgeTo(nodeFinish)
+            }
+
+            if (succeeds) {
+                assertEquals("answer", graph.start(completedContext("hello", "answer")).input)
+            } else {
+                assertFailsWith<LLMException> { graph.start(completedContext("hello", "answer")) }
+            }
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(if (succeeds) 1 else 0, memoryRuntime.capturedTurns.size)
+        }
+    }
+
+    @Test
     fun `finalization executes summarization with the active graph runtime`() = runTest {
         val nodesMemory = NodesMemory(NoopConversationMemoryRuntime, backgroundScope)
         val runtime = graphRuntime()
@@ -430,7 +466,7 @@ class NodesMemoryTest {
         block: (AgentContext<LLMResponse.Chat.Ok>) -> AgentContext<String> = { ctx ->
             ctx.map { ctx.input.choices.single().message.content }
         },
-    ): Node<LLMResponse.Chat.Ok, String> = Node("Summary", block)
+    ): Node<LLMResponse.Chat.Ok, String> = Node("Summary", op = block)
 
     private fun okResponse(content: String): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
         choices = listOf(
@@ -462,6 +498,7 @@ class NodesMemoryTest {
 
     private fun settings(): AgentSettings = AgentSettings(
         model = "model",
+        provider = LlmProvider.OPENAI,
         temperature = 0f,
         toolsByCategory = emptyMap(),
     )

@@ -20,7 +20,6 @@ import ru.souz.llms.toSystemPromptMessage
  */
 internal class NodesSummarization(
     private val llmApi: LLMChatAPI,
-    private val nodesCommon: NodesCommon,
     private val settingsProvider: AgentSettingsProvider,
 ) {
     private val l = LoggerFactory.getLogger(NodesSummarization::class.java)
@@ -35,7 +34,7 @@ internal class NodesSummarization(
         // nodes
         val summarize: Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> = nodeSummarize()
         val summaryToHistory: Node<LLMResponse.Chat.Ok, String> = summaryToHistory()
-        val respToString: Node<LLMResponse.Chat.Ok, String> = nodesCommon.responseToString()
+        val respToString: Node<LLMResponse.Chat.Ok, String> = NodesPlain.responseToString()
 
         // graph
         nodeInput.edgeTo { ctx ->
@@ -49,7 +48,7 @@ internal class NodesSummarization(
 
     /** Updates [AgentContext.input] based on [AgentContext.history]. */
     private fun nodeSummarize(name: String = "llmSummarize"): Node<LLMResponse.Chat.Ok, LLMResponse.Chat.Ok> =
-        Node(name) { ctx ->
+        Node(name, retryable = true) { ctx ->
             val summaryResponse: LLMResponse.Chat = withContext(Dispatchers.IO) {
                 val conversation = ctx.history + LLMRequest.Message(LLMMessageRole.user, SUMMARIZATION_PROMPT)
                 val request = ctx.toGigaRequest(conversation).copy(functions = emptyList(), isSummarization = true)

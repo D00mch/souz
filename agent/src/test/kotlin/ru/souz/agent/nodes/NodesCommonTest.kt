@@ -20,6 +20,7 @@ import ru.souz.db.StorredType
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.toSystemPromptMessage
@@ -130,12 +131,6 @@ class NodesCommonTest {
             content = """{"ok":true}""",
             name = functionCall.name,
         )
-        val nodesCommon = NodesCommon(
-            desktopInfoRepository = mockk(relaxed = true),
-            settingsProvider = mockk { every { defaultCalendar } returns null },
-            agentToolExecutor = agentToolExecutor,
-            runtimeEnvironment = SystemAgentRuntimeEnvironment,
-        )
         val context = AgentContext(
             input = okResponse(
                 content = "",
@@ -154,7 +149,7 @@ class NodesCommonTest {
             runtimeEventSink = eventSink,
         )
 
-        val result = nodesCommon.toolUse().execute(context, graphRuntime())
+        val result = NodesPlain.toolUse(agentToolExecutor).execute(context, graphRuntime())
 
         coVerify(exactly = 1) {
             agentToolExecutor.execute(
@@ -176,7 +171,6 @@ class NodesCommonTest {
     ): NodesCommon = NodesCommon(
         desktopInfoRepository = desktopInfoRepository,
         settingsProvider = mockk<AgentSettingsProvider> { every { defaultCalendar } returns calendar },
-        agentToolExecutor = mockk(relaxed = true),
         runtimeEnvironment = environment,
     )
 
@@ -193,6 +187,7 @@ class NodesCommonTest {
 
     private fun settings(model: String): AgentSettings = AgentSettings(
         model = model,
+        provider = LlmProvider.OPENAI,
         temperature = 0.2f,
         toolsByCategory = emptyMap(),
     )

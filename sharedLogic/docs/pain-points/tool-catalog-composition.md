@@ -8,6 +8,7 @@ Backend execution merges compiled and execution-bound LLM tools before applying 
 
 ## Safe changes
 
+- Bind portable tools in DI and include them in `PortableRuntimeToolsFactory` together. Desktop maintains separate file-tool bindings in its composition root; verify invocation through host DI catalogs.
 - Add an LLM-dependent tool to the canonical name set and concrete catalog together.
 - Use explicit later-source precedence only where the owning host defines why the later source wins.
 - Apply request filtering and function transformations to a copied execution snapshot.

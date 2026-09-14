@@ -2,12 +2,10 @@ package ru.souz.tool.skills
 
 import kotlinx.coroutines.CancellationException
 import ru.souz.agent.skills.SkillId
-import ru.souz.agent.skills.bundle.SkillBundleHasher
-import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -26,7 +24,7 @@ import kotlin.jvm.java
 class ToolInvokeSkill(
     private val toolCatalog: AgentToolCatalog,
     private val toolsFilter: AgentToolsFilter,
-    private val skillBundleProvider: SkillBundleProvider,
+    private val loadBundle: suspend (userId: String, skillId: SkillId) -> SkillBundle?,
     private val commandExecutor: SkillCommandExecutor,
     private val approvalGate: SkillApprovalGate? = null,
 ) : LLMToolSetup {
@@ -54,110 +52,44 @@ class ToolInvokeSkill(
     override suspend fun invoke(
         functionCall: LLMResponse.FunctionCall,
         meta: ToolInvocationMeta,
-    ): LLMRequest.Message = try {
-        val input = restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
-        invokeSkill(input, functionCall.name, meta)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (error: Exception) {
-        errorMessage(
-            functionName = functionCall.name,
-            code = "skill_invocation_failed",
-            message = error.message ?: "Skill invocation failed.",
-        )
+    ): LLMRequest.Message {
+        return try {
+            val input = restJsonMapper.convertValue(functionCall.arguments, Input::class.java)
+            val skillId = input.skillId.trim()
+            if (skillId.isEmpty()) {
+                return errorMessage(functionCall.name, "invalid_skill_id", "Skill ID must not be blank.")
+            }
+            when (val resolved = resolver().resolve(SkillId(skillId), meta.userId)) {
+                is SkillResolution.Compiled -> resolved.tool.invoke(
+                    LLMResponse.FunctionCall(resolved.tool.fn.name, input.arguments),
+                    meta = meta,
+                ).copy(name = functionCall.name)
+                is SkillResolution.Bundle -> {
+                    val arguments = restJsonMapper.convertValue(input.arguments, SkillCommandExecutor.Args::class.java)
+                    val result = commandExecutor.execute(resolved.bundle, resolved.bundleHash, arguments, meta)
+                    resultMessage(functionCall.name, result)
+                }
+                is SkillResolution.Error -> errorMessage(functionCall.name, resolved.code, resolved.message)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            errorMessage(functionCall.name, "skill_invocation_failed", error.message ?: "Skill invocation failed.")
+        }
     }
 
     /** Returns the enabled compiled tool delegated to by this Skill ID without loading Skill storage. */
     fun delegatedToolName(skillId: String): String? =
-        skillId.trim().takeIf { it.isNotEmpty() }?.let { enabledTools()[it]?.fn?.name }
+        skillId.trim().takeIf { it.isNotEmpty() }?.let { resolver().enabledTools.byName[it]?.fn?.name }
 
-    private suspend fun invokeSkill(
-        input: Input,
-        outerFunctionName: String,
-        meta: ToolInvocationMeta,
-    ): LLMRequest.Message {
-        val skillId = input.skillId.trim()
-        if (skillId.isEmpty()) {
-            return errorMessage(outerFunctionName, "invalid_skill_id", "Skill ID must not be blank.")
-        }
+    private fun resolver() = SkillResolver(toolCatalog, toolsFilter, loadBundle, approvalGate)
 
-        val unfilteredTools = unfilteredTools()
-        val enabledTools = enabledTools()
+    private fun errorMessage(functionName: String, code: String, message: String) =
+        resultMessage(functionName, mapOf("error" to mapOf("code" to code, "message" to message)))
 
-        val enabledTool = enabledTools[skillId]
-        if (enabledTool != null) {
-            return enabledTool.invoke(
-                LLMResponse.FunctionCall(
-                    name = enabledTool.fn.name,
-                    arguments = input.arguments,
-                ),
-                meta,
-            ).copy(name = outerFunctionName)
-        }
-
-        val bundle = skillBundleProvider.loadSkillBundle(meta.userId, SkillId(skillId))
-        if (bundle != null) {
-            val approval = approvalGate?.ensureApproved(
-                SkillApprovalGate.Input(
-                    userId = meta.userId,
-                    skillId = SkillId(skillId),
-                    bundle = bundle,
-                )
-            )
-            if (approval is SkillApprovalGate.Result.Rejected) {
-                return errorMessage(
-                    outerFunctionName,
-                    "skill_validation_rejected",
-                    approval.reason,
-                )
-            }
-            val executableBundle = when (approval) {
-                is SkillApprovalGate.Result.Approved -> approval.bundle
-                null -> bundle
-            }
-            val bundleHash = when (approval) {
-                is SkillApprovalGate.Result.Approved -> approval.bundleHash
-                null -> SkillBundleHasher.hash(bundle)
-            }
-            val arguments = restJsonMapper.convertValue(input.arguments, SkillCommandExecutor.Args::class.java)
-            val result = commandExecutor.execute(
-                bundle = executableBundle,
-                bundleHash = bundleHash,
-                arguments = arguments,
-                meta = meta,
-            )
-            return LLMRequest.Message(
-                role = LLMMessageRole.function,
-                content = restJsonMapper.writeValueAsString(result),
-                name = outerFunctionName,
-            )
-        }
-
-        if (skillId in unfilteredTools) {
-            return errorMessage(
-                outerFunctionName,
-                "skill_disabled",
-                "Tool-backed Skill is disabled: $skillId",
-            )
-        }
-        return errorMessage(outerFunctionName, "skill_not_found", "Skill is unavailable: $skillId")
-    }
-
-    private fun unfilteredTools(): Map<String, LLMToolSetup> =
-        AgentTools(toolCatalog.toolsByCategory).byName
-
-    private fun enabledTools(): Map<String, LLMToolSetup> =
-        AgentTools(toolsFilter.applyFilter(toolCatalog.toolsByCategory)).byName
-
-    private fun errorMessage(
-        functionName: String,
-        code: String,
-        message: String,
-    ): LLMRequest.Message = LLMRequest.Message(
+    private fun resultMessage(functionName: String, result: Any) = LLMRequest.Message(
         role = LLMMessageRole.function,
-        content = restJsonMapper.writeValueAsString(
-            mapOf("error" to mapOf("code" to code, "message" to message))
-        ),
+        content = restJsonMapper.writeValueAsString(result),
         name = functionName,
     )
 

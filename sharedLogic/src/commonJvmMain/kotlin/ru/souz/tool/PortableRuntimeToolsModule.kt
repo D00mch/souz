@@ -4,12 +4,15 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
+import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.spi.AgentTelemetry
+import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.giga.toGiga
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
@@ -31,6 +34,7 @@ import ru.souz.tool.files.ToolListFiles
 import ru.souz.tool.files.ToolModifyFile
 import ru.souz.tool.files.ToolMoveFile
 import ru.souz.tool.files.ToolNewFile
+import ru.souz.tool.files.ToolReadFile
 import ru.souz.tool.math.ToolCalculator
 import ru.souz.tool.knowledge.KnowledgeRetriever
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -43,6 +47,7 @@ import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolConnectOAuthProvider
 import ru.souz.tool.skills.ToolSafeApiCall
+import ru.souz.tool.subagent.SubagentToolFactory
 import ru.souz.tool.web.ToolWebPageText
 import ru.souz.tool.web.internal.WebResearchClient
 
@@ -60,6 +65,7 @@ fun portableRuntimeToolsDiModule(
     bindSingleton { FilesToolUtil(instance<ToolInvocationRuntimeSandboxResolver>()) }
 
     bindSingleton { ToolListFiles(instance()) }
+    bindSingleton { ToolReadFile(instance()) }
     bindSingleton { ToolFindInFiles(instance()) }
     bindSingleton { ToolNewFile(instance()) }
     bindSingleton { ToolDeleteFile(instance(), instanceOrNull<ToolPermissionBroker>()) }
@@ -90,6 +96,7 @@ fun DI.Builder.bindPortableRuntimeToolsFactory(
         val gateway = if (includeSkillOAuthTools) instanceOrNull<SkillOAuthGateway>() else null
         PortableRuntimeToolsFactory(
             toolListFiles = instance(),
+            toolReadFile = instance(),
             toolFindInFiles = instance(),
             toolNewFile = instance(),
             toolDeleteFile = instance(),
@@ -140,6 +147,24 @@ fun portableSkillRuntimeToolsDiModule(): DI.Module = DI.Module("portableSkillRun
 fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
     import(portableSkillRuntimeToolsDiModule())
     bindSingleton {
+        SubagentToolFactory(
+            createAgent = { maxTurns ->
+                ToolLoopGraphBasedAgent(
+                    llmApi = instance(),
+                    settingsProvider = instance<SettingsProvider>(),
+                    maxTurns = maxTurns,
+                    telemetry = instanceOrNull<AgentTelemetry>() ?: AgentTelemetry.NONE,
+                )
+            },
+            toolCatalog = instance(),
+            toolsFilter = instance(),
+            skillBundleProvider = instance<SkillRegistryRepository>(),
+            commandExecutor = instance(),
+            approvalGate = instanceOrNull<SkillApprovalGate>(),
+            configuredModels = instance<SettingsProvider>().subagentModels,
+        )
+    }
+    bindSingleton {
         ToolGetSkillByName(
             toolCatalog = instance(),
             toolsFilter = instance(),
@@ -163,7 +188,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
         ToolInvokeSkill(
             toolCatalog = instance(),
             toolsFilter = instance(),
-            skillBundleProvider = instance<SkillRegistryRepository>(),
+            loadBundle = instance<SkillRegistryRepository>()::loadSkillBundle,
             commandExecutor = instance(),
             approvalGate = instanceOrNull<SkillApprovalGate>(),
         )
@@ -177,6 +202,7 @@ fun portableSkillToolsDiModule(): DI.Module = DI.Module("portableSkillTools") {
             searchKnowledge = instance<ToolSearchKnowledge>(),
             searchMemory = instance<ToolSearchMemory>(),
             runtimeCommand = instance<ToolInvokeSkill>(),
+            spawnSubagent = { settings -> instance<SubagentToolFactory>().create(settings) },
         )
     }
 }
@@ -197,6 +223,7 @@ object RuntimePassThroughToolsFilter : AgentToolsFilter {
 
 class PortableRuntimeToolsFactory(
     private val toolListFiles: ToolListFiles,
+    private val toolReadFile: ToolReadFile,
     private val toolFindInFiles: ToolFindInFiles,
     private val toolNewFile: ToolNewFile,
     private val toolDeleteFile: ToolDeleteFile,
@@ -214,6 +241,7 @@ class PortableRuntimeToolsFactory(
             mapOf(
                 ToolCategory.FILES to listOf(
                     toolListFiles.toGiga(),
+                    toolReadFile.toGiga(),
                     toolFindInFiles.toGiga(),
                     toolNewFile.toGiga(),
                     toolDeleteFile.toGiga(),

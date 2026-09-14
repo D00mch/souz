@@ -5,20 +5,21 @@ import org.slf4j.LoggerFactory
 import ru.souz.agent.graph.Node
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.knowledge.KnowledgeWriteResult
+import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 
 /**
- * Executes tool calls through [NodesCommon] while keeping large results out of the LLM history.
+ * Executes tool calls through [AgentToolExecutor] while keeping large results out of the LLM history.
  *
  * Non-exempt results larger than [KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES] UTF-8 bytes are stored in
  * conversation-scoped [ConversationKnowledgeStore] and replaced with a compact reference. Results
  * stay inline when Knowledge storage or conversation scope is unavailable.
  */
 internal class NodesToolUseWithKnowledge(
-    private val nodesCommon: NodesCommon,
+    private val agentToolExecutor: AgentToolExecutor,
     private val knowledgeStore: ConversationKnowledgeStore?,
 ) {
     private val logger = LoggerFactory.getLogger(NodesToolUseWithKnowledge::class.java)
@@ -28,7 +29,7 @@ internal class NodesToolUseWithKnowledge(
         alwaysInlineToolNames: Set<String>,
         name: String = "toolUse",
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
-        val fnCallMessages = nodesCommon.executeFunctionCalls(ctx).map { (functionCall, message) ->
+        val fnCallMessages = NodesPlain.executeFunctionCalls(ctx, agentToolExecutor).map { (functionCall, message) ->
             if (
                 functionCall.name in alwaysInlineToolNames ||
                 message.content.toByteArray(Charsets.UTF_8).size <= KNOWLEDGE_OFFLOAD_THRESHOLD_BYTES

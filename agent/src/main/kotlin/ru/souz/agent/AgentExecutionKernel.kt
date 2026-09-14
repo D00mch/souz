@@ -50,7 +50,6 @@ class AgentExecutionKernelFactory(
         val nodesCommon = NodesCommon(
             desktopInfoRepository = desktopInfoRepository,
             settingsProvider = settingsProvider,
-            agentToolExecutor = agentToolExecutor,
             runtimeEnvironment = runtimeEnvironment,
         )
         val nodesSkillInventory = NodesSkillInventory(
@@ -59,7 +58,7 @@ class AgentExecutionKernelFactory(
             skillBundleProvider = skillBundleProvider,
         )
         val nodesToolUseWithKnowledge = NodesToolUseWithKnowledge(
-            nodesCommon = nodesCommon,
+            agentToolExecutor = agentToolExecutor,
             knowledgeStore = knowledgeStore,
         )
         val nodesMemory = NodesMemory(memoryRuntime = memoryRuntime, captureScope = captureScope)
@@ -67,7 +66,6 @@ class AgentExecutionKernelFactory(
         val nodesErrorHandling = NodesErrorHandling(errorMessages)
         val nodesSummarization = NodesSummarization(
             llmApi = llmApi,
-            nodesCommon = nodesCommon,
             settingsProvider = settingsProvider,
         )
         val availableAgents = listOf(AgentId.SKILLS_GRAPH)

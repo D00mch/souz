@@ -14,6 +14,7 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import ru.souz.agent.AgentCoreTools
+import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -25,6 +26,8 @@ import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.db.SettingsProvider
+import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -33,6 +36,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
+import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.runtime.sandbox.local.LocalRuntimeSandbox
@@ -43,6 +47,7 @@ import ru.souz.tool.knowledge.ToolSearchKnowledge
 import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.portableSkillRuntimeToolsDiModule
 import ru.souz.tool.portableSkillToolsDiModule
+import ru.souz.agent.SubagentTool
 import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -233,15 +238,58 @@ class SkillRuntimeToolsTest {
 
     @Test
     fun `discovery and invocation propagate cancellation`() = runTest {
-        val repository = mockk<SkillRegistryRepository>()
-        coEvery { repository.loadSkillBundle(any(), any()) } throws CancellationException("stop")
+        val bundle = bundle("cancelled")
+        val repository = repository(bundle)
+        val gate = mockk<SkillApprovalGate> {
+            coEvery { ensureApproved(any()) } throws CancellationException("stop approval")
+        }
+        for (approval in listOf(null, gate)) {
+            coEvery { repository.loadSkillBundle(any(), any()) } answers {
+                if (approval == null) throw CancellationException("stop loading") else bundle
+            }
+            for (tool in listOf(
+                getSkillByNameTool(repository, approvalGate = approval),
+                invokeSkillTool(repository, approvalGate = approval),
+            )) {
+                assertFailsWith<CancellationException> { tool.call(mapOf("skillId" to "cancelled")) }
+            }
+        }
+    }
 
-        assertFailsWith<CancellationException> {
-            getSkillByNameTool(repository).call(mapOf("skillId" to "cancelled"))
+    @Test
+    fun `discovery and invocation refresh enabled tools and use the approved bundle identity`() = runTest {
+        val loaded = bundle("switch", "Loaded instructions.")
+        val approved = bundle("switch", "Approved instructions.")
+        val approvedHash = SkillBundleHasher.hash(approved)
+        val repository = repository(loaded)
+        val compiled = RecordingTool("switch")
+        val catalog = catalog(ToolCategory.FILES to listOf(compiled))
+        var enabled = true
+        val filter = TestToolsFilter { if (enabled) it else emptyMap() }
+        val approval = mockk<SkillApprovalGate> {
+            coEvery { ensureApproved(any()) } returns SkillApprovalGate.Result.Approved(approved, approvedHash, null)
         }
-        assertFailsWith<CancellationException> {
-            invokeSkillTool(repository).call(mapOf("skillId" to "cancelled"))
+        val commands = mockk<SkillCommandExecutor> {
+            coEvery { execute(any(), any(), any(), any()) } returns SandboxCommandResult(0, "done", "", false)
         }
+        val discovery = getSkillByNameTool(repository, catalog, filter, approval)
+        val runner = ToolInvokeSkill(catalog, filter, repository::loadSkillBundle, commands, approval)
+        val meta = ToolInvocationMeta(USER_ID, "conversation")
+        val lookup = mapOf("skillId" to " switch ")
+        val arguments = lookup + ("arguments" to mapOf("script" to "pwd"))
+
+        assertEquals("description for switch", discovery.call(lookup, meta)["skill"]["description"].asText())
+        assertEquals("delegated-content", runner.invoke(LLMResponse.FunctionCall(runner.fn.name, arguments), meta).content)
+        coVerify(exactly = 0) { repository.loadSkillBundle(any(), any()) }
+        coVerify(exactly = 0) { approval.ensureApproved(any()) }
+
+        enabled = false
+        val detail = discovery.call(lookup, meta)
+        assertEquals("Approved instructions.", detail["skill"]["skillMarkdownBody"].asText())
+        assertFalse(detail.toString().contains(approvedHash))
+        assertEquals("done", runner.call(arguments, meta)["stdout"].asText())
+        coVerify(exactly = 2) { approval.ensureApproved(SkillApprovalGate.Input(USER_ID, loaded.skillId, loaded)) }
+        coVerify(exactly = 1) { commands.execute(approved, approvedHash, SkillCommandExecutor.Args(script = "pwd"), meta) }
     }
 
     @Test
@@ -310,7 +358,7 @@ class SkillRuntimeToolsTest {
         val runner = ToolInvokeSkill(
             toolCatalog = catalog(),
             toolsFilter = TestToolsFilter(),
-            skillBundleProvider = repository,
+            loadBundle = repository::loadSkillBundle,
             commandExecutor = commandExecutor,
         )
         val largeOutput = "x".repeat(25_050)
@@ -376,12 +424,31 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
-    fun `portable composition exposes core runtime tools outside the catalog`() {
+    fun `portable composition exposes core runtime tools outside the catalog`() = runTest {
         val home = createTempDirectory("skill-di-home-")
         val stateRoot = home.resolve("state").createDirectories()
         val repository = repository()
         val catalog = catalog(ToolCategory.FILES to listOf(RecordingTool("ordinary")))
+        val settings = mockk<SettingsProvider> {
+            every { subagentModels } returns emptyMap()
+            every { gigaModel } returns LLMModel.Max
+            every { useStreaming } returns false
+        }
+        val llm = mockk<LLMChatAPI> {
+            coEvery { message(any()) } returns LLMResponse.Chat.Ok(
+                choices = listOf(LLMResponse.Choice(
+                    message = LLMResponse.Message("delegated result", LLMMessageRole.assistant, functionsStateId = null),
+                    index = 0,
+                    finishReason = LLMResponse.FinishReason.stop,
+                )),
+                created = 0,
+                model = LLMModel.Pro.alias,
+                usage = LLMResponse.Usage(1, 1, 2, 0),
+            )
+        }
         val direct = DI.direct {
+            bindSingleton<SettingsProvider> { settings }
+            bindSingleton<LLMChatAPI> { llm }
             bindSingleton<ToolInvocationRuntimeSandboxResolver> {
                 ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot))
             }
@@ -410,6 +477,16 @@ class SkillRuntimeToolsTest {
         assertFalse(
             catalog.toolsByCategory.values.any { tools -> tools.keys.any { it in coreToolNames } }
         )
+        val executionSettings = AgentSettings(LLMModel.Pro.alias, LLMModel.Pro.provider, 0.3f, catalog.toolsByCategory, 4096)
+        val spawn = direct.instance<AgentCoreTools>().skillsTools(executionSettings).last()
+        assertEquals(SubagentTool.NAME, spawn.fn.name)
+        assertEquals("delegated result", spawn.call(mapOf("task" to "Isolated task"))["result"].asText())
+        coVerify(exactly = 1) {
+            llm.message(match {
+                it.model == LLMModel.Pro.alias && it.temperature == 0.3f && it.maxTokens == 4096 &&
+                    it.functions.isEmpty() && it.messages.last().content == "Isolated task"
+            })
+        }
     }
 
     @Test
@@ -471,7 +548,7 @@ class SkillRuntimeToolsTest {
     ): ToolInvokeSkill = ToolInvokeSkill(
         toolCatalog = catalog,
         toolsFilter = filter,
-        skillBundleProvider = repository,
+        loadBundle = repository::loadSkillBundle,
         commandExecutor = SkillCommandExecutor(mockk(relaxed = true)),
         approvalGate = approvalGate,
     )

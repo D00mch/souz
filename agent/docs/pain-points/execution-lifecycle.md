@@ -4,6 +4,8 @@
 
 `AgentFacade` is the long-lived, stateful entry point for one conversation and one active execution. Starting a turn or changing its agent/context cancels the previous graph job. `GraphSessionService` is thread-safe for callbacks but records only one task at a time.
 
+`ToolLoopGraphBasedAgent` implements the same `Agent` contract with a bounded model/tool loop. It preserves the caller's context and exposes streaming, step callbacks, and cancellation through the shared execution delegate. Its turn counter resets per execution; concurrent executions require separate agent instances. Delegation and context isolation belong to `SubagentTool`.
+
 `submitToActiveRun` is an explicit continuation path for an open agent execution. It does not start a second facade task or alter the existing new-turn cancellation behavior. The steerable agent owns its execution-scoped `ActiveRunInputController`; direct UI input remains a string, while a host can reserve the controller and publish a role-preserving history-plus-execute batch after durable commit. Submission returns `false` when no run is open or the run has sealed before finalization.
 
 The continuation controller guards its mailbox and pending-submission count with one coroutine mutex. Producers prepare or commit input outside that mutex, allowing queued input and LLM/tool boundaries to progress. Each group of pending submissions shares one completion signal that gates closure. An empty final boundary waits for either published input or completion of the group, then rechecks the mailbox. Publication and reservation release are non-cancellable; caller cancellation propagates afterward. `SteerableChatNode` separately owns the active LLM child: it selects between child completion and execute notification, cancels only that child when execute wins, and lets parent or provider cancellation propagate. Started tools remain non-interruptible, so queued batches follow their results. Queued work returns directly to the main LLM without repeating turn setup. Explicit agent cancellation closes the controller before cancelling the graph job.
@@ -18,6 +20,7 @@ The facade owns mutable context, execution state, active-agent routing, and sess
 
 ## Safe changes
 
+- Agent graph retries require `Node(retryable = true)` and an `LLMException`; opt in only provider operations. Tool execution and enclosing coordination nodes must remain non-retryable. Steerable requests run through a nested graph with the active runtime so retries retain consumed input without restarting the mailbox loop. Summarization retries belong to the provider node, not memory finalization.
 - Keep `executeForResult` cancellation, generation capture, session start, and session finish as one lifecycle.
 - Route mid-run input through the active controller owned by the steerable agent; do not reinterpret `executeForResult` as enqueueing.
 - Keep continuation state execution-scoped. Reserve and publish under the mailbox mutex, but run producer callbacks and wait for notifications outside it. Release every reservation even when its producer fails or is cancelled. Hosts must protect accepted durable commits from cancellation until their input is returned; publication and reservation release must also finish before cancellation propagates.

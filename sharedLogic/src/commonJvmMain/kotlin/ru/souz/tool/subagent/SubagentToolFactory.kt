@@ -1,0 +1,130 @@
+package ru.souz.tool.subagent
+
+import ru.souz.agent.Agent
+import ru.souz.agent.SubagentTool
+import ru.souz.agent.SubagentInputException
+import ru.souz.agent.skills.SkillId
+import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.validation.SkillApprovalGate
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
+import ru.souz.agent.state.AgentSettings
+import ru.souz.agent.state.AgentTools
+import ru.souz.llms.LLMRequest
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.LlmProvider
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.restJsonMapper
+import ru.souz.tool.RuntimePassThroughToolsFilter
+import ru.souz.tool.ToolCategory
+import ru.souz.tool.immutableToolCatalogSnapshot
+import ru.souz.tool.skills.SkillCommandExecutor
+import ru.souz.tool.skills.SkillResolution
+import ru.souz.tool.skills.SkillResolver
+import ru.souz.tool.skills.ToolGetSkillByName
+import ru.souz.tool.skills.ToolGetSkillsByCategory
+import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.skills.fileSkillExecutionSchema
+import ru.souz.tool.skills.toDetail
+
+/** Creates the core spawn tool with the parent's actual execution settings. */
+class SubagentToolFactory(
+    private val createAgent: (maxTurns: Int) -> Agent,
+    private val toolCatalog: AgentToolCatalog,
+    private val toolsFilter: AgentToolsFilter,
+    private val skillBundleProvider: SkillBundleProvider,
+    private val commandExecutor: SkillCommandExecutor,
+    private val approvalGate: SkillApprovalGate? = null,
+    private val configuredModels: Map<String, LlmProvider> = emptyMap(),
+) {
+    fun create(parentSettings: AgentSettings): LLMToolSetup {
+        val models = configuredModels + (parentSettings.model to parentSettings.provider)
+        return SubagentTool(createAgent, models.keys.toList()) { input, meta ->
+            val model = input.model ?: parentSettings.model
+            val provider = models[model]
+                ?: fail("subagent_model_unavailable", "Choose an advertised model ID: $model is unavailable.")
+            prepare(input, parentSettings.copy(model = model, provider = provider), meta)
+        }
+    }
+
+    private suspend fun prepare(
+        input: SubagentTool.Input,
+        parentSettings: AgentSettings,
+        meta: ToolInvocationMeta,
+    ): SubagentTool.Setup {
+        val resolver = SkillResolver(toolCatalog, toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
+        val tools = mutableListOf<LLMToolSetup>()
+        val bundles = linkedMapOf<SkillId, SkillBundle>()
+        input.skillIds.map(String::trim).distinct().forEach { id ->
+            if (id.isBlank()) fail("invalid_skill_id", "Skill ID must not be blank.")
+            if (id in RESTRICTED_TOOLS) fail("skill_not_allowed", "This core tool cannot be delegated: $id")
+            val skillId = SkillId(id)
+            when (val resolved = resolver.resolve(skillId, meta.userId)) {
+                is SkillResolution.Compiled -> {
+                    // Check the function too: a filter must not alias a restricted helper.
+                    if (resolved.tool.fn.name in RESTRICTED_TOOLS) {
+                        fail("skill_not_allowed", "This core tool cannot be delegated: $id")
+                    }
+                    tools += resolved.tool
+                }
+                is SkillResolution.Bundle -> bundles[skillId] = resolved.bundle
+                is SkillResolution.Error -> fail(resolved.code, resolved.message)
+            }
+        }
+        if (bundles.isNotEmpty()) tools += bundleCommandTool(bundles.toMap(), meta.userId)
+        return SubagentTool.Setup(
+            settings = parentSettings.copy(tools = AgentTools(tools, tools.associate {
+                it.fn.name to (resolver.enabledTools.categoryByName[it.fn.name] ?: ToolCategory.CHAT)
+            })),
+            systemPrompt = systemPrompt(bundles.values),
+        )
+    }
+
+    private fun bundleCommandTool(bundles: Map<SkillId, SkillBundle>, ownerId: String): LLMToolSetup {
+        val command = ToolInvokeSkill(
+            toolCatalog = immutableToolCatalogSnapshot(emptyMap()),
+            toolsFilter = RuntimePassThroughToolsFilter,
+            loadBundle = { userId, skillId ->
+                bundles[skillId].takeIf { userId == ownerId }
+            },
+            commandExecutor = commandExecutor,
+            approvalGate = null, // Selected bundles passed the host's approval policy before spawning.
+        )
+        return object : LLMToolSetup by command {
+            override val fn = command.fn.copy(
+                description = "Run a command for a selected file-backed Skill using its instructions and execution schema in the system prompt.",
+                parameters = command.fn.parameters.copy(properties = command.fn.parameters.properties + (
+                    "skillId" to LLMRequest.Property("string", "Selected Skill ID.", enum = bundles.keys.map { it.value })
+                )),
+            )
+        }
+    }
+
+    private fun systemPrompt(bundles: Collection<SkillBundle>): String = buildString {
+        append("Complete the delegated task using only the supplied context and selected tools. ")
+        append("Return a final answer to the parent agent. You cannot delegate to another agent.")
+        if (bundles.isNotEmpty()) {
+            append("\nSelected file-backed Skills follow. Invoke their commands with RunSkillCommand, ")
+            append("using skillId and arguments matching this shared execution schema:\n")
+            append(restJsonMapper.writeValueAsString(fileSkillExecutionSchema()))
+            bundles.forEach { bundle ->
+                append("\n\n")
+                append(restJsonMapper.writeValueAsString(bundle.toDetail()))
+            }
+        }
+    }
+
+    private fun fail(code: String, message: String): Nothing = throw SubagentInputException(code, message)
+
+    private companion object {
+        val RESTRICTED_TOOLS = setOf(
+            SubagentTool.NAME,
+            ToolInvokeSkill.NAME,
+            ToolGetSkillByName.NAME,
+            ToolGetSkillsByCategory.NAME,
+            ToolGetSkillsNamesByCategory.NAME,
+        )
+    }
+}

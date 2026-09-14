@@ -16,13 +16,20 @@ internal typealias StepInfo = ru.souz.graph.StepInfo
 
 private val defaultRetryPolicy = RetryPolicy(
     maxAttempts = 2,
-    shouldRetry = { error, _, _, _ -> error is LLMException }
+    shouldRetry = { error, _, node, _ -> error is LLMException && node is RetryableNode<*, *> },
 )
 
+/** Opt in only for provider operations whose retry cannot replay tools or surrounding coordination. */
 internal fun <IN, OUT> Node(
     name: String,
+    retryable: Boolean = false,
     op: suspend (AgentContext<IN>) -> AgentContext<OUT>,
-): Node<IN, OUT> = ru.souz.graph.Node(name, op)
+): Node<IN, OUT> {
+    val node = ru.souz.graph.Node(name, op)
+    return if (retryable) RetryableNode(node) else node
+}
+
+private class RetryableNode<IN, OUT>(node: Node<IN, OUT>) : Node<IN, OUT> by node
 
 internal fun <I, O> buildGraph(
     name: String = "Graph",

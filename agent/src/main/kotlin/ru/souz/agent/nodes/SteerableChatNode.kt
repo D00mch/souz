@@ -7,6 +7,7 @@ import kotlinx.coroutines.supervisorScope
 import ru.souz.agent.ActiveRunInput
 import ru.souz.agent.graph.GraphRuntime
 import ru.souz.agent.graph.Node
+import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.ActiveRunInputController.NextLlmStep
 import ru.souz.agent.state.AgentContext
@@ -63,7 +64,10 @@ internal class SteerableChatNode(
         if (request.inputAvailable.isCompleted) return@supervisorScope null
 
         val llm = async {
-            nodesLLM.chat("LLM request", request.streamRevision).execute(context, runtime)
+            // Retry the provider request with its current input, never the mailbox coordination.
+            buildGraph<String, LLMResponse.Chat>("Steerable request") {
+                nodeInput.edgeTo(nodesLLM.chat("LLM request", request.streamRevision)).edgeTo(nodeFinish)
+            }.execute(context, runtime)
         }
 
         select<AgentContext<LLMResponse.Chat>?> {

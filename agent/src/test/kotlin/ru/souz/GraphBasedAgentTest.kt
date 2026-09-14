@@ -23,6 +23,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 import ru.souz.memory.CompletedTurnMemoryInput
@@ -78,9 +79,6 @@ class GraphBasedAgentTest {
         )
 
         every { nodesLLM.sideEffects } returns emptyFlow()
-        every { nodesCommon.inputToHistory() } returns Node("Input->History") { ctx ->
-            ctx.map(history = ctx.history + LLMRequest.Message(LLMMessageRole.user, ctx.input))
-        }
         every { nodesClassify.node(CLASSIFY_NODE_NAME) } returns passthroughStringNode(CLASSIFY_NODE_NAME)
         every {
             nodesSkillInventory.node(
@@ -187,6 +185,7 @@ class GraphBasedAgentTest {
         input = "Hello",
         settings = AgentSettings(
             model = "gpt-5-mini",
+            provider = LlmProvider.OPENAI,
             temperature = 0.1f,
             toolsByCategory = emptyMap(),
         ),

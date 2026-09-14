@@ -3,6 +3,7 @@ package ru.souz.backend.agent.runtime.conversation
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.plus
+import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
@@ -44,6 +45,7 @@ import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolGetSkillsByCategory
 import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
 import ru.souz.tool.skills.ToolInvokeSkill
+import ru.souz.tool.subagent.SubagentToolFactory
 import ru.souz.tool.web.internal.WebResearchClient
 
 /** Builds a request-scoped backend runtime on top of the shared agent kernel. */
@@ -162,9 +164,19 @@ internal class BackendConversationRuntimeFactory(
         val runtimeCommandTool = ToolInvokeSkill(
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
-            skillBundleProvider = skillBundleProvider,
+            loadBundle = skillBundleProvider::loadSkillBundle,
             commandExecutor = commandExecutor,
             approvalGate = null,
+        )
+        val subagentTools = SubagentToolFactory(
+            createAgent = { maxTurns ->
+                ToolLoopGraphBasedAgent(executionApi, settingsProvider, maxTurns = maxTurns, logObjectMapper = logObjectMapper)
+            },
+            toolCatalog = executionToolCatalog,
+            toolsFilter = requestToolsFilter,
+            skillBundleProvider = skillBundleProvider,
+            commandExecutor = commandExecutor,
+            configuredModels = settingsProvider.subagentModels,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,
@@ -185,6 +197,7 @@ internal class BackendConversationRuntimeFactory(
                 searchKnowledge = searchKnowledgeTool,
                 searchMemory = searchMemoryTool,
                 runtimeCommand = runtimeCommandTool,
+                spawnSubagent = subagentTools::create,
             ),
             knowledgeStore = knowledgeStore,
             telemetry = AgentTelemetry.NONE,

@@ -10,7 +10,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 
-/** Routes interactive-host calls using the providers currently selected in mutable settings. */
+/** Dispatches exact model IDs; requests without a provider use the host's selected provider. */
 class SettingsRoutingLlmChatApi(
     private val settingsProvider: SettingsProvider,
     private val apisByProvider: Map<LlmProvider, LLMChatAPI>,
@@ -25,10 +25,10 @@ class SettingsRoutingLlmChatApi(
         apisByProvider[provider] ?: UnsupportedProviderApi(provider)
 
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
-        currentChatApi().message(body)
+        apiFor(body.provider ?: settingsProvider.gigaModel.provider).message(body)
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
-        currentChatApi().messageStream(body)
+        apiFor(body.provider ?: settingsProvider.gigaModel.provider).messageStream(body)
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
         val normalizedModel = body.model.trim()

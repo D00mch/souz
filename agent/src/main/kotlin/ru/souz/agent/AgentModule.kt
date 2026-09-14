@@ -52,13 +52,12 @@ fun agentDiModule(
         NodesCommon(
             desktopInfoRepository = instance(),
             settingsProvider = instance(),
-            agentToolExecutor = instance(),
             runtimeEnvironment = instance(),
         )
     }
     bindSingleton {
         NodesToolUseWithKnowledge(
-            nodesCommon = instance(),
+            agentToolExecutor = instance(),
             knowledgeStore = instanceOrNull<ConversationKnowledgeStore>(),
         )
     }
@@ -73,10 +72,9 @@ fun agentDiModule(
     bindSingleton { NodesLLM(instance(), instance()) }
     bindSingleton { NodesMCP(instance()) }
     bindSingleton { JsonUtils(restJsonMapper) }
-    bindSingleton { NodesSummarization(instance(), instance(), instance()) }
+    bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
         NodesClassification(
-            settingsProvider = instance(),
             logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
             apiClassifier = instance<UserMessageClassifier>(tag = apiClassifierTag),
             localClassifier = instance<UserMessageClassifier>(tag = localClassifierTag),
