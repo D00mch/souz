@@ -22,10 +22,7 @@ internal object NodesPlain {
         name: String = "Response -> String",
     ): Node<LLMResponse.Chat.Ok, String> = Node(name) { ctx ->
         val content = ctx.input.choices
-            .asReversed()
-            .firstOrNull { it.message.content.isNotBlank() }
-            ?.message
-            ?.content
+            .lastOrNull { it.message.content.isNotBlank() }?.message?.content
             ?: ctx.input.choices.lastOrNull()?.message?.content
             ?: run {
                 LoggerFactory.getLogger(NodesPlain::class.java).warn(
