@@ -8,7 +8,6 @@ import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
-import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
@@ -67,13 +66,7 @@ class ToolGetSkillByName(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            SkillLookupResponse(
-                error = SkillDiscoveryError(
-                    skillId = null,
-                    code = "skills_unavailable",
-                    message = error.message ?: "Skills are unavailable.",
-                )
-            )
+            lookupError(null, "skills_unavailable", error.message ?: "Skills are unavailable.")
         }
         return LLMRequest.Message(
             role = LLMMessageRole.function,
@@ -88,89 +81,28 @@ class ToolGetSkillByName(
     ): SkillLookupResponse {
         val skillId = requestedId.trim()
         if (skillId.isBlank()) {
-            return SkillLookupResponse(
-                error = SkillDiscoveryError(skillId, "invalid_skill_id", "Skill ID must not be blank.")
-            )
+            return lookupError(skillId, "invalid_skill_id", "Skill ID must not be blank.")
         }
 
         return try {
-            val unfilteredTools = AgentTools(toolCatalog.toolsByCategory).byName
-            val enabledTools = AgentTools(toolsFilter.applyFilter(toolCatalog.toolsByCategory)).byName
-            when {
-                skillId in enabledTools -> SkillLookupResponse(skill = enabledTools.getValue(skillId).toDetail())
-                else -> {
-                    val parsedSkillId = SkillId(skillId)
-                    val bundle = skillBundleProvider.loadSkillBundle(meta.userId, parsedSkillId)
-                    when {
-                        bundle != null -> approvedBundleResponse(
-                            userId = meta.userId,
-                            skillId = parsedSkillId,
-                            bundle = bundle,
-                        )
-                        skillId in unfilteredTools -> SkillLookupResponse(
-                            error = SkillDiscoveryError(
-                                skillId,
-                                "skill_disabled",
-                                "Tool-backed Skill is disabled: $skillId",
-                            )
-                        )
-                        else -> SkillLookupResponse(
-                            error = SkillDiscoveryError(
-                                skillId,
-                                "skill_not_found",
-                                "Skill is unavailable: $skillId",
-                            )
-                        )
-                    }
-                }
+            val resolver = SkillResolver(toolCatalog, toolsFilter, skillBundleProvider::loadSkillBundle, approvalGate)
+            when (val resolved = resolver.resolve(SkillId(skillId), meta.userId)) {
+                is SkillResolution.Compiled -> SkillLookupResponse(skill = resolved.tool.toDetail())
+                is SkillResolution.Bundle -> SkillLookupResponse(
+                    skill = resolved.bundle.toDetail(),
+                    executionSchema = fileSkillExecutionSchema(),
+                )
+                is SkillResolution.Error -> lookupError(skillId, resolved.code, resolved.message)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            SkillLookupResponse(
-                error = SkillDiscoveryError(
-                    skillId = skillId,
-                    code = "skill_unavailable",
-                    message = error.message ?: "Skill is unavailable: $skillId",
-                )
-            )
+            lookupError(skillId, "skill_unavailable", error.message ?: "Skill is unavailable: $skillId")
         }
     }
 
-    private suspend fun approvedBundleResponse(
-        userId: String,
-        skillId: SkillId,
-        bundle: SkillBundle,
-    ): SkillLookupResponse {
-        val gate = approvalGate
-            ?: return SkillLookupResponse(
-                skill = bundle.toDetail(),
-                executionSchema = fileSkillExecutionSchema(),
-            )
-
-        return when (
-            val approval = gate.ensureApproved(
-                SkillApprovalGate.Input(
-                    userId = userId,
-                    skillId = skillId,
-                    bundle = bundle,
-                )
-            )
-        ) {
-            is SkillApprovalGate.Result.Approved -> SkillLookupResponse(
-                skill = approval.bundle.toDetail(),
-                executionSchema = fileSkillExecutionSchema(),
-            )
-
-            is SkillApprovalGate.Result.Rejected -> SkillLookupResponse(
-                error = SkillDiscoveryError(
-                    skillId = skillId.value,
-                    code = "skill_validation_rejected",
-                    message = approval.reason,
-                )
-            )
-        }
-    }
+    private fun lookupError(skillId: String?, code: String, message: String) =
+        SkillLookupResponse(error = SkillDiscoveryError(skillId, code, message))
 
     private fun LLMToolSetup.toDetail(): ToolSkillDetail = ToolSkillDetail(
         skillId = fn.name,

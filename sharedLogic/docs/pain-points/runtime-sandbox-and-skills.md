@@ -20,7 +20,7 @@
 
 The same contracts back local and Docker runtimes. JVM hosts select local or Docker mode. A bundle-layout mismatch makes an installed skill visible to activation but unavailable to command execution.
 
-Skill discovery applies `AgentToolsFilter` on every discovery and invocation. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. Category discovery lists filtered compiled tools only. Compact graph inventory calls `SkillBundleProvider.listSkillInventoryIds`, which must not read loose `SKILL.md`, read supporting files, or hash loose bundles. Detail and execution load stored bundles by exact Skill ID.
+`SkillResolver` shares exact-ID lookup and approval across detail, invocation, and subagent selection, using one filtered catalog snapshot per lookup or spawn selection. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. The resolver returns the loaded or approved bundle and its hash; callers retain their response formatting and spawn restrictions. Category discovery lists filtered compiled tools only. Compact graph inventory calls `SkillBundleProvider.listSkillInventoryIds`, which must not read loose `SKILL.md`, read supporting files, or hash loose bundles.
 
 Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
 
