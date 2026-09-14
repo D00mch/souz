@@ -89,7 +89,10 @@ class SubagentTool(
                 is AgentTurnLimitException -> "subagent_turn_limit"
                 else -> "subagent_failed"
             }
-            mapOf("error" to mapOf("code" to code, "message" to (error.message ?: "Subagent execution failed.")))
+            val progress = if (error is AgentTurnLimitException) {
+                mapOf("status" to "incomplete", "progress" to turnLimitProgress(error))
+            } else emptyMap()
+            mapOf("error" to mapOf("code" to code, "message" to (error.message ?: "Subagent execution failed."))) + progress
         }
         return LLMRequest.Message(
             role = LLMMessageRole.function,
@@ -98,8 +101,27 @@ class SubagentTool(
         )
     }
 
+    private fun turnLimitProgress(error: AgentTurnLimitException): Map<String, Any> = mapOf(
+        "modelTurns" to error.maxTurns,
+        "sideEffectsMayHaveOccurred" to true,
+        "completedToolCallCount" to error.toolResults.size,
+        "omittedToolCallCount" to (error.toolResults.size - MAX_REPORTED_TOOL_CALLS).coerceAtLeast(0),
+        "completedToolCalls" to error.toolResults.takeLast(MAX_REPORTED_TOOL_CALLS).map { result ->
+            val fields = mapOf(
+                "toolCallId" to result.functionsStateId, "name" to result.name, "result" to result.content,
+            )
+            val bounded = fields.mapValues { (key, value) ->
+                value?.take(if (key == "result") MAX_TOOL_RESULT_CHARS else MAX_TOOL_ID_CHARS)
+            }
+            bounded + ("truncated" to (bounded != fields))
+        },
+    )
+
     companion object {
         const val NAME = "SpawnSubagent"
+        private const val MAX_REPORTED_TOOL_CALLS = 8
+        private const val MAX_TOOL_RESULT_CHARS = 1024
+        private const val MAX_TOOL_ID_CHARS = 256
     }
 }
 

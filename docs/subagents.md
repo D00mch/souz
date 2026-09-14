@@ -16,7 +16,9 @@ File-backed Skills use the same command execution as the parent, with approval a
 
 The optional `model` selects an available model within the parent's provider; omission inherits the parent model. Temperature and context size are inherited. `maxTurns` defaults to 32 and accepts 1–128 model turns. Existing provider retries and timeouts still apply.
 
-The parent receives `{"result":"..."}` or `{"error":{"code":"...","message":"..."}}`. Reaching the model-turn limit returns `subagent_turn_limit`. The parent can recover from failures. Cancelling the parent cancels the child; queued parent input waits for the current child to finish.
+The parent receives `{"result":"..."}` or `{"error":{"code":"...","message":"..."}}`. Turn exhaustion keeps the `subagent_turn_limit` error and adds `status: "incomplete"` and `progress`: `modelTurns`, `sideEffectsMayHaveOccurred`, `completedToolCallCount`, `omittedToolCallCount`, and bounded recent `completedToolCalls`. Each reported call contains `toolCallId`, `name`, `result`, and a `truncated` flag; attachments and child reasoning are omitted. Counts describe returned tool messages, which can include tool-level errors, rather than successful operations.
+
+Tools requested on the last allowed model turn still execute. Exhaustion does not undo their effects, and the warning remains conservative even when no results are available. Inspect the reported results and current state before retrying to avoid repeating completed work. Cancelling the parent cancels the child; queued parent input waits for the current child to finish.
 
 ## Delegating from a Skill
 

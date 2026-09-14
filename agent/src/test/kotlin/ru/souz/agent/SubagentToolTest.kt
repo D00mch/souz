@@ -133,11 +133,91 @@ class SubagentToolTest {
             val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(selected)) }) {
                 requests += 1; response(toolName = "Selected")
             }
-            val error = subagent.call(maxTurns = limit.takeUnless { it == 32 })["error"]
+            val result = subagent.call(maxTurns = limit.takeUnless { it == 32 })
+            val error = result["error"]
             assertEquals("subagent_turn_limit", error["code"].asText())
             assertContains(error["message"].asText(), "$limit model turns")
+            assertContains(error["message"].asText(), "side effects")
+            assertEquals("incomplete", result["status"].asText())
+            assertFalse(result.has("result"))
+            val progress = result["progress"]
+            assertEquals(limit, progress["modelTurns"].asInt())
+            assertTrue(progress["sideEffectsMayHaveOccurred"].asBoolean())
+            assertEquals(limit, progress["completedToolCallCount"].asInt())
+            assertEquals(limit.coerceAtMost(8), progress["completedToolCalls"].size())
+            assertEquals((limit - 8).coerceAtLeast(0), progress["omittedToolCallCount"].asInt())
             assertEquals(limit, requests)
             assertEquals(limit, toolCalls)
+        }
+    }
+
+    @Test
+    fun `last turn reports every returned tool result including errors and preserves completed work`() = runTest {
+        val writes = mutableListOf<String>()
+        val selected = listOf(
+            tool("WriteFile") { writes += "report.md"; "Wrote report.md" },
+            tool("CheckFile") { """{"error":"validation failed"}""" },
+        )
+        val subagent = subagent(prepare = { _, _ -> setup(tools = selected) }) {
+            response().copy(choices = selected.mapIndexed { index, tool ->
+                val choice = response("private child text", tool.fn.name).choices.single()
+                choice.copy(index = index, message = choice.message.copy(functionsStateId = "call-$index"))
+            })
+        }
+
+        val result = subagent.call(maxTurns = 1)
+        val calls = result["progress"]["completedToolCalls"]
+        assertEquals(listOf("report.md"), writes)
+        assertEquals(listOf("WriteFile", "CheckFile"), calls.map { it["name"].asText() })
+        assertEquals(listOf("call-0", "call-1"), calls.map { it["toolCallId"].asText() })
+        assertEquals(listOf("Wrote report.md", """{"error":"validation failed"}"""), calls.map { it["result"].asText() })
+        assertTrue(calls.none { it["truncated"].asBoolean() })
+        assertFalse(result.toString().contains("private child text"))
+    }
+
+    @Test
+    fun `exhaustion reports are bounded and warn even without tool results`() = runTest {
+        for (count in listOf(0, 10)) {
+            val large = "x".repeat(2048)
+            val results = List(count) { index ->
+                LLMRequest.Message(LLMMessageRole.function, "$index:$large",
+                    functionsStateId = "id".repeat(200), name = "Tool".repeat(100), attachments = listOf("private attachment"))
+            }
+            val implementation = mockk<Agent>()
+            coEvery { implementation.execute(any(), any(), any()) } throws AgentTurnLimitException(1, results)
+            val result = SubagentTool({ implementation }) { _, _ -> setup() }.call(maxTurns = 1)
+            val progress = result["progress"]
+            val calls = progress["completedToolCalls"]
+            assertEquals("incomplete", result["status"].asText())
+            assertTrue(progress["sideEffectsMayHaveOccurred"].asBoolean())
+            assertEquals(count, progress["completedToolCallCount"].asInt())
+            assertEquals(if (count == 0) 0 else 2, progress["omittedToolCallCount"].asInt())
+            assertEquals(if (count == 0) emptyList() else (2..9).map(Int::toString),
+                calls.map { it["result"].asText().substringBefore(':') })
+            calls.forEach {
+                assertEquals("Tool".repeat(64), it["name"].asText())
+                assertEquals("id".repeat(128), it["toolCallId"].asText())
+                assertEquals(1024, it["result"].asText().length)
+                assertTrue(it["truncated"].asBoolean())
+            }
+            assertFalse(result.toString().contains("private attachment"))
+            assertTrue(result.toString().length < 15_000)
+        }
+    }
+
+    @Test
+    fun `exhaustion reports only this execution's tool results when an agent is reused`() = runTest {
+        var calls = 0
+        val selected = tool("Selected") { "result ${++calls}" }
+        val agent = agent(maxTurns = 1) { response(toolName = "Selected") }
+        val context = AgentContext(
+            "task", settings(selected),
+            listOf(LLMRequest.Message(LLMMessageRole.function, "previous execution", name = "OtherTool")),
+            listOf(selected.fn), "instructions",
+        )
+        repeat(2) { index ->
+            val error = assertFailsWith<AgentTurnLimitException> { agent.execute(context) }
+            assertEquals(listOf("result ${index + 1}"), error.toolResults.map { it.content })
         }
     }
 

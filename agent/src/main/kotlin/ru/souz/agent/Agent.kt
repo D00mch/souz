@@ -54,5 +54,11 @@ interface Agent {
     ): AgentExecutionResult
 }
 
-class AgentTurnLimitException(maxTurns: Int) :
-    IllegalStateException("Agent reached its limit of $maxTurns model turns without a final answer.")
+class AgentTurnLimitException(
+    val maxTurns: Int,
+    /** Tool results from this execution, including tool-level errors; these do not imply task success. */
+    val toolResults: List<LLMRequest.Message> = emptyList(),
+) : IllegalStateException(
+    "Agent reached its limit of $maxTurns model turns without a final answer. " +
+        "Execution is incomplete; tool side effects are not rolled back. Inspect tool results and current state before retrying.",
+)

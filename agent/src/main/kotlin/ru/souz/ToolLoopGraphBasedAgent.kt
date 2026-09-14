@@ -17,6 +17,7 @@ import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMChatAPI
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 
@@ -46,15 +47,18 @@ class ToolLoopGraphBasedAgent(
     ): AgentExecutionResult {
         cancelActiveJob()
         onActiveRunReady()
-        return executionDelegate.executeWithTrace(executionGraph(), ctx, onStep)
+        return executionDelegate.executeWithTrace(executionGraph(ctx.history.size), ctx, onStep)
     }
 
     // Provider retries remain in the supplied API; graph retries must not replay tools.
-    private fun executionGraph(): Graph<String, String> = buildGraph(name = "Tool loop", retryPolicy = RetryPolicy()) {
+    private fun executionGraph(initialHistorySize: Int): Graph<String, String> = buildGraph(name = "Tool loop", retryPolicy = RetryPolicy()) {
         var turns = 0
         val inputToHistory = NodesPlain.inputToHistory()
         val turnLimit = Node<String, String>("Check turn limit") { ctx ->
-            if (turns >= maxTurns) throw AgentTurnLimitException(maxTurns)
+            if (turns >= maxTurns) throw AgentTurnLimitException(
+                maxTurns,
+                ctx.history.drop(initialHistorySize).filter { it.role == LLMMessageRole.function },
+            )
             turns += 1
             ctx
         }
