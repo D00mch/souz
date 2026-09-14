@@ -3,19 +3,24 @@ package ru.souz.backend.events.service
 import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
-import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AgentLiveEvent
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.http.BackendV1Exception
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 class AgentEventService(
     private val chatRepository: ChatRepository,
@@ -23,6 +28,7 @@ class AgentEventService(
     private val eventBus: AgentEventBus,
 ) {
     private val terminalMutex = Mutex()
+    private val logger = LoggerFactory.getLogger(AgentEventService::class.java)
 
     suspend fun appendDurable(
         userId: String,
@@ -60,7 +66,17 @@ class AgentEventService(
             id = id,
             createdAt = createdAt,
         )
-        event.takeIf { it.id == id }?.let { eventBus.publish(it) }
+        val shouldPublish = event.id == id
+        if (event.isPublicClientDiagnosticEvent()) {
+            withContext(NonCancellable + backendLogContext(
+                "userId" to event.userId, "chatId" to event.chatId, "threadId" to event.executionId,
+                "seq" to event.seq, "type" to event.type.value,
+                "toolCallId" to (event.payload as? PublicToolCallStartedPayload)?.toolCallId,
+            )) {
+                logger.info("Public client event stored published={}", shouldPublish)
+            }
+        }
+        if (shouldPublish) eventBus.publish(event)
         return event
     }
 
@@ -120,50 +136,26 @@ class AgentEventService(
         )
     }
 
-    suspend fun openStream(
-        userId: String,
-        chatId: UUID,
-        afterSeq: Long? = null,
-        limit: Int = AgentEventLimits.DEFAULT_REPLAY_LIMIT,
-    ): AgentEventStream {
-        requireOwnedChat(userId, chatId)
-        val subscription = eventBus.subscribe(userId, chatId)
-        try {
-            val normalizedLimit = normalizePositiveLimit(limit, AgentEventLimits.MAX_REPLAY_LIMIT)
-            val replay = eventRepository.listByChat(
-                userId = userId,
-                chatId = chatId,
-                afterSeq = afterSeq,
-                limit = normalizedLimit,
-            )
-            return AgentEventStream(
-                replay = replay,
-                liveEvents = subscription.events,
-                close = { subscription.close() },
-            )
-        } catch (e: Throwable) {
-            subscription.close()
-            throw e
-        }
-    }
-
     suspend fun openPublicStream(
         userId: String,
         chatId: UUID,
-        afterSeq: Long = 0,
+        afterSeq: Long? = 0,
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
         val subscription = eventBus.subscribe(userId, chatId)
+        var opened = false
         try {
+            // A null cursor starts at the durable tail, after live signal registration.
+            val initialSeq = afterSeq ?: eventRepository.latestSeq(userId, chatId)
             return AgentEventStream(
-                replay = listPublicStreamReplay(userId, chatId, afterSeq),
+                replay = if (afterSeq == null) emptyList() else listPublicStreamReplay(userId, chatId, afterSeq),
                 liveEvents = subscription.events,
                 close = { subscription.close() },
                 replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
-            )
-        } catch (error: Throwable) {
-            subscription.close()
-            throw error
+                initialSeq = initialSeq,
+            ).also { opened = true }
+        } finally {
+            if (!opened) withContext(NonCancellable) { subscription.close() }
         }
     }
 
@@ -194,3 +186,10 @@ private fun AgentEventType.isPublicTerminal(): Boolean =
     this == AgentEventType.THREAD_COMPLETED ||
         this == AgentEventType.THREAD_FAILED ||
         this == AgentEventType.THREAD_CANCELLED
+
+private fun AgentEvent.isPublicClientDiagnosticEvent(): Boolean = when (type) {
+    AgentEventType.THREAD_COMPLETED, AgentEventType.THREAD_FAILED, AgentEventType.THREAD_CANCELLED -> true
+    AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
+    AgentEventType.MESSAGE_CREATED -> executionId == null
+    else -> false
+}

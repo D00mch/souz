@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":skill-oauth-impl"))
     implementation(kotlin("stdlib"))
     implementation(libs.kotlinx.coroutines)
+    implementation(libs.kotlinx.coroutinesSlf4j)
     implementation(libs.jackson)
     implementation(libs.flyway.core)
     implementation(libs.flyway.database.postgresql)

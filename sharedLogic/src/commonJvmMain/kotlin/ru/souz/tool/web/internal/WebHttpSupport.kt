@@ -241,7 +241,10 @@ private fun oversizeBinaryBodyError(url: String, maxBytes: Int): BadInputExcepti
     return BadInputException("HTTP response body is larger than ${maxMegabytes}MB for $url")
 }
 
-private fun Headers.toMap(): Map<String, List<String>> = entries().associate { it.key to it.value }
+private fun Headers.toMap(): Map<String, List<String>> =
+    buildMap(this@toMap.names().size) {
+        this@toMap.forEach { name, values -> put(name, values) }
+    }
 
 private fun exponentialRetryDelayMillis(retry: Int): Long {
     val factor = 1L shl retry.coerceAtLeast(0)

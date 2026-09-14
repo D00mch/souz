@@ -5,7 +5,9 @@ WORKDIR /src
 
 COPY . .
 
-RUN ./gradlew :backend:installDist --no-daemon
+# Keep temporary JVM perfdata files out of Kaniko's post-build snapshot.
+RUN JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -XX:-UsePerfData" \
+    ./gradlew :backend:installDist --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

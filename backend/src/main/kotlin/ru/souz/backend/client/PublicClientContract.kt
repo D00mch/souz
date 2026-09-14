@@ -25,6 +25,42 @@ data class ClientChatDto(
     val title: String?,
 )
 
+data class ChatCreatePayload(val userId: String, val title: String? = null)
+
+data class ChatCreateFrame(val kind: String, val requestId: String, val payload: ChatCreatePayload)
+
+data class ChatSubscribeFrame(
+    val kind: String,
+    val chatId: String,
+    val requestId: String,
+    val afterSeq: Long = 0,
+)
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class ChatCreateAck(
+    val kind: String = "ack",
+    val type: String = "chat.create",
+    val userId: String?,
+    val requestId: String,
+    val chatId: String?,
+    val status: String,
+    val duplicate: Boolean,
+    val error: ClientError? = null,
+    val receivedAt: String,
+)
+
+@JsonInclude(JsonInclude.Include.ALWAYS)
+data class ChatSubscribeAck(
+    val kind: String = "ack",
+    val type: String = "chat.subscribe",
+    val chatId: String,
+    val requestId: String,
+    val status: String,
+    val duplicate: Boolean,
+    val error: ClientError? = null,
+    val receivedAt: String,
+)
+
 data class ClientDevice(
     val userId: String,
     val deviceId: String,
@@ -42,7 +78,7 @@ data class ClientDevice(
 )
 @JsonSubTypes(
     JsonSubTypes.Type(value = RecognizedTextContent::class, name = "text"),
-    JsonSubTypes.Type(value = HistoryToolExchangeContent::class, name = "tool_exchange"),
+    JsonSubTypes.Type(value = HistoryToolCallContent::class, name = "tool_call"),
 )
 sealed interface HistoryAppendContent {
     val type: String
@@ -54,11 +90,11 @@ data class RecognizedTextContent(
     val text: String,
 ) : HistoryAppendContent
 
-data class HistoryToolExchangeContent(
+data class HistoryToolCallContent(
     override val type: String,
     val name: String,
     val arguments: Map<String, JsonNode>,
-    val output: Map<String, JsonNode>,
+    val result: Map<String, JsonNode>,
 ) : HistoryAppendContent
 
 data class ClientRequestMeta(

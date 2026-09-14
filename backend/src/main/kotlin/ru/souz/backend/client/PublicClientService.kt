@@ -502,14 +502,14 @@ internal class PublicClientService(
     private fun historyInput(role: ChatRole, content: HistoryAppendContent): ClientHistoryInput = when (content) {
         is RecognizedTextContent -> ClientHistoryInput(role, content.validatedText())
 
-        is HistoryToolExchangeContent -> {
+        is HistoryToolCallContent -> {
             if (role != ChatRole.ASSISTANT) {
-                throw ClientContractException("invalid_request", "tool_exchange history requires assistant role.")
+                throw ClientContractException("invalid_request", "tool_call history requires assistant role.")
             }
             val name = content.name.required("content.name")
             ClientHistoryInput(
                 role = role,
-                content = mapper.writeValueAsString(content.output),
+                content = mapper.writeValueAsString(content.result),
                 toolArgumentsJson = mapper.writeValueAsString(
                     mapOf("skillId" to name, "arguments" to content.arguments),
                 ),
@@ -623,7 +623,11 @@ private fun ClientRequestResult.storedRequest(): ClientRequest = when (this) {
     else -> error("Request has no stored transport result: $this")
 }
 
-internal class ClientContractException(val code: String, override val message: String) : RuntimeException(message)
+internal class ClientContractException(
+    val code: String,
+    override val message: String,
+    val details: JsonNode? = null,
+) : RuntimeException(message)
 
 private fun String.required(field: String): String = trim().takeIf { it.isNotEmpty() }
     ?: throw ClientContractException("invalid_request", "$field must not be empty.")

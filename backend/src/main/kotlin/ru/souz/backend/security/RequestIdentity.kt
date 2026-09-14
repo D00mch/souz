@@ -41,6 +41,7 @@ val RequestIdentityPlugin = createApplicationPlugin(
 private fun ApplicationCall.isPublicClientContractRequest(): Boolean {
     val path = request.path()
     if (request.httpMethod == HttpMethod.Post && path == "/v1/chats") return true
+    if (request.httpMethod == HttpMethod.Get && path == "/v1/ws") return true
     if (request.httpMethod != HttpMethod.Get || !path.startsWith("/v1/chats/")) return false
     val suffix = path.removePrefix("/v1/chats/")
     if (suffix.endsWith("/ws") && '/' !in suffix.removeSuffix("/ws")) return true

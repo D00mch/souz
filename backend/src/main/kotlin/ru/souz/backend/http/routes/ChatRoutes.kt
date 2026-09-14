@@ -47,6 +47,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import java.util.UUID
+import ru.souz.backend.chat.service.CreateClientChatResult
 
 internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
     get(BackendHttpRoutes.CHATS) {
@@ -95,23 +96,11 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
         } catch (_: Exception) {
             throw ru.souz.backend.http.invalidV1Request("Request body does not match CreateChatRequest.")
         }
-        val userId = request.userId.requireUuid("userId")
-        val requestId = request.requestId.trim().takeIf { it.isNotEmpty() }
-            ?: throw ru.souz.backend.http.invalidV1Request("requestId must not be empty.")
-        if (request.clientType !in supportedClientTypes) {
-            throw ru.souz.backend.http.invalidV1Request("clientType must be backend or mobile_app.")
-        }
-        deps.ensureTrustedUser(userId)
-        val result = deps.chatService.createClient(
-            userId = userId,
-            requestId = requestId,
-            clientType = request.clientType,
-            title = request.title,
-        )
+        val result = deps.createClientChat(request)
         call.respond(
             if (result.duplicate) HttpStatusCode.OK else HttpStatusCode.Created,
             CreateClientChatResponse(
-                requestId = requestId,
+                requestId = result.chat.requestId,
                 duplicate = result.duplicate,
                 chat = ClientChatDto(
                     id = result.chat.id.toString(),
@@ -291,6 +280,24 @@ internal fun Route.chatRoutes(deps: BackendHttpDependencies) {
             v1ErrorResponses(HttpStatusCode.BadRequest, HttpStatusCode.NotFound)
         }
     }
+}
+
+internal suspend fun BackendHttpDependencies.createClientChat(
+    request: CreateClientChatRequest,
+): CreateClientChatResult {
+    val userId = request.userId.requireUuid("userId")
+    val requestId = request.requestId.trim().takeIf { it.isNotEmpty() }
+        ?: throw ru.souz.backend.http.invalidV1Request("requestId must not be empty.")
+    if (request.clientType !in supportedClientTypes) {
+        throw ru.souz.backend.http.invalidV1Request("clientType must be backend or mobile_app.")
+    }
+    ensureTrustedUser(userId)
+    return chatService.createClient(
+        userId = userId,
+        requestId = requestId,
+        clientType = request.clientType,
+        title = request.title,
+    )
 }
 
 private fun String.requireUuid(field: String): String = try {

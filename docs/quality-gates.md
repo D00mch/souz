@@ -131,10 +131,11 @@ Pull-request CI installs the version of RepoWise pinned in
 checks out full Git history, and builds deterministic indexes for the PR base
 and head without an LLM, saved credentials, editor integration, or telemetry.
 
-Pull requests are squash-merged. CI checks out GitHub's PR merge commit, verifies
-that its parents match the event's base and head, then grafts it onto the base as
-one commit. The merge tree includes base changes missing from a stale PR branch,
-while intermediate PR commits do not affect RepoWise health scores.
+Pull requests are squash-merged. CI checks out GitHub's PR merge commit, uses its
+first parent as the base, verifies its second parent against the event's PR head,
+then grafts it onto the base as one commit. The merge tree includes base changes
+missing from a stale PR branch, while intermediate PR commits do not affect
+RepoWise health scores.
 
 The advisory comparison reports base-to-head changes in average and hotspot
 defect health, worst-performer health, average and hotspot maintainability,

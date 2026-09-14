@@ -44,22 +44,8 @@
       "secret": false
     },
     {
-      "name": "messageRequestId1",
-      "value": "request-003",
-      "type": "text",
-      "enabled": true,
-      "secret": false
-    },
-    {
-      "name": "messageRequestId2",
-      "value": "request-004",
-      "type": "text",
-      "enabled": true,
-      "secret": false
-    },
-    {
       "name": "chatId",
-      "value": "31befd1c-ca6e-4ba1-ac96-a27bda36caa1",
+      "value": "",
       "type": "text",
       "enabled": true,
       "secret": false
@@ -86,8 +72,36 @@
       "secret": false
     },
     {
-      "name": "wsUrl",
-      "value": "ws://127.0.0.1:8080/v1/chats/31befd1c-ca6e-4ba1-ac96-a27bda36caa1/ws?clientType=backend",
+      "name": "afterSeq",
+      "value": "0",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "userIdB",
+      "value": "550e8400-e29b-41d4-a716-446655440001",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "chatIdB",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "threadIdB",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "afterSeqB",
+      "value": "0",
       "type": "text",
       "enabled": true,
       "secret": false

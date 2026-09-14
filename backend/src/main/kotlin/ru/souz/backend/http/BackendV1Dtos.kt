@@ -386,7 +386,7 @@ internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
         // emits e.g. THREAD_COMPLETED with no executionId must fail fast, not silently ship threadId:
         // null onto the wire for a schema that still declares it required and non-nullable.
         threadId = if (type == AgentEventType.MESSAGE_CREATED) executionId?.toString() else requireNotNull(executionId).toString(),
-        payload = payload.toTransportPayload(type),
+        payload = payload.toTransportPayload(type) - "target",
         createdAt = createdAt.toString(),
     )
 

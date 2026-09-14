@@ -15,17 +15,20 @@ internal fun movePath(
     replaceExisting: Boolean,
     logger: Logger?,
 ) {
-    val atomicOptions = buildList {
-        add(StandardCopyOption.ATOMIC_MOVE)
-        if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
-    }.toTypedArray()
-    val fallbackOptions = buildList {
-        if (replaceExisting) add(StandardCopyOption.REPLACE_EXISTING)
-    }.toTypedArray()
+    val atomicOptions = if (replaceExisting) {
+        arrayOf(StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    } else {
+        arrayOf(StandardCopyOption.ATOMIC_MOVE)
+    }
     try {
         Files.move(sourcePath, destinationPath, *atomicOptions)
     } catch (exception: AtomicMoveNotSupportedException) {
         logger?.warn("Failed to make an atomic move", exception)
+        val fallbackOptions = if (replaceExisting) {
+            arrayOf(StandardCopyOption.REPLACE_EXISTING)
+        } else {
+            emptyArray()
+        }
         Files.move(sourcePath, destinationPath, *fallbackOptions)
     }
 }

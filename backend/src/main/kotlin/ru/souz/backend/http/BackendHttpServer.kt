@@ -228,4 +228,5 @@ private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
         add("POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}")
         add("POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}")
         add("WS ${BackendHttpRoutes.CHAT_WS_PATTERN}")
+        add("WS ${BackendHttpRoutes.WS}")
     }

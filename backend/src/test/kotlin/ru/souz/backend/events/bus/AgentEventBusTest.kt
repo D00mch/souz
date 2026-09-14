@@ -78,6 +78,25 @@ class AgentEventBusTest {
         }
     }
 
+    @Test
+    fun `publication tolerates concurrent subscription and disconnect`() = runTest {
+        val bus = AgentEventBus()
+        val event = durableEvent("user-churn", UUID.randomUUID(), 1L)
+        withContext(Dispatchers.Default) {
+            listOf(
+                async { repeat(20_000) { bus.subscribe(event.userId, event.chatId).close() } },
+                async { repeat(20_000) { bus.publish(event) } },
+            ).awaitAll()
+        }
+        val remaining = bus.subscribe(event.userId, event.chatId)
+        try {
+            bus.publish(event)
+            assertEquals(event, withTimeout(1_000) { remaining.events.receive() })
+        } finally {
+            remaining.close()
+        }
+    }
+
     private fun durableEvent(
         userId: String,
         chatId: UUID,

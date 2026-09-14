@@ -2,6 +2,7 @@ package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.plus
 import ru.souz.ToolLoopGraphBasedAgent
 import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
@@ -19,6 +20,7 @@ import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
+import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.db.SettingsProvider
@@ -202,7 +204,11 @@ internal class BackendConversationRuntimeFactory(
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
             memoryRuntime = memoryRuntime,
-            captureScope = agentBackgroundScope,
+            captureScope = agentBackgroundScope + backendLogContext(
+                "userId" to key.userId,
+                "chatId" to key.conversationId,
+                "threadId" to request.executionId,
+            ),
         ).create()
         return BackendConversationRuntime(
             key = key,

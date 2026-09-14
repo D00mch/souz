@@ -336,6 +336,7 @@ class BackendCompositionE2eTest {
                 assertTrue(docs.bodyAsText().contains("url: '/docs/openapi.json'"))
                 assertEquals(expected, actual)
                 assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
+                assertFalse(actual.containsKey(BackendHttpRoutes.WS))
                 assertEquals(
                     setOf("souzProxyAuth", "souzUserIdentity"),
                     document["components"]["securitySchemes"].fieldNames().asSequence().toSet(),

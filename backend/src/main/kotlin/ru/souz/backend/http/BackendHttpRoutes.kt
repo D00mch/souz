@@ -12,6 +12,7 @@ internal object BackendHttpRoutes {
     const val SETTINGS = "$V1/me/settings"
     const val PROVIDER_KEYS = "$V1/me/provider-keys"
     const val CHATS = "$V1/chats"
+    const val WS = "$V1/ws"
     const val OPTIONS = "$V1/options"
 
     // Outside /v1/ on purpose — the OAuth provider's redirect never carries our trusted-proxy

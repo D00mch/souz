@@ -4,11 +4,13 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -21,11 +23,62 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
+import org.slf4j.MDC
+import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import kotlin.time.Duration.Companion.milliseconds
 
 class AgentExecutionLauncherTest {
+    @Test
+    fun `execution MDC survives suspension and cancellation without inheriting caller or sibling IDs`() = runBlocking {
+        launcherFixture().use { fixture ->
+            val release = CompletableDeferred<Unit>()
+            val executions = List(2) { index ->
+                fixture.execution.copy(
+                    id = UUID.randomUUID(), chatId = UUID.randomUUID(), userId = "user-$index",
+                    runtimeOwner = "owner", clientMessageId = "initial-$index",
+                )
+            }
+            val started = List(2) { CompletableDeferred<Map<String, String>>() }
+            val resumed = List(2) { CompletableDeferred<Map<String, String>>() }
+            val cancelled = List(2) { CompletableDeferred<Map<String, String>>() }
+            val callerFields = mapOf("socketId" to "caller-socket", "clientRequestId" to "later-input")
+            withContext(backendLogContext(*callerFields.toList().toTypedArray())) {
+                val jobs = executions.mapIndexed { index, execution ->
+                    fixture.launcher.launchRegistered(execution, onCancelled = {
+                        yield()
+                        cancelled[index].complete(MDC.getCopyOfContextMap())
+                    }) {
+                        started[index].complete(MDC.getCopyOfContextMap())
+                        release.await()
+                        withContext(Dispatchers.IO) {
+                            yield()
+                            resumed[index].complete(MDC.getCopyOfContextMap())
+                        }
+                        awaitCancellation()
+                    }
+                }
+                withTimeout(5_000) {
+                    started.forEach { it.await() }
+                    release.complete(Unit)
+                    resumed.forEach { it.await() }
+                    jobs.forEach { it.cancelAndJoin() }
+                    executions.forEachIndexed { index, execution ->
+                        val expected = mapOf(
+                            "userId" to execution.userId, "chatId" to execution.chatId.toString(),
+                            "threadId" to execution.id.toString(), "initialClientRequestId" to "initial-$index",
+                        )
+                        listOf(started, resumed, cancelled).forEach { assertEquals(expected, it[index].await()) }
+                    }
+                }
+                assertEquals(callerFields, MDC.getCopyOfContextMap())
+            }
+        }
+    }
+
     @Test
     fun `registered background execution can be cancelled through registry`() = runBlocking {
         launcherFixture().use { fixture ->

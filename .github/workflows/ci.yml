@@ -157,7 +157,6 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       REPOWISE_NO_SAVE_KEY: "1"
       REPOWISE_SKIP_EDITOR_SETUP: "1"
-      SOUZ_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       SOUZ_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
     steps:
@@ -169,7 +168,8 @@ jobs:
       - name: Treat PR merge as one commit
         shell: bash
         run: |
-          test "$(git rev-parse HEAD^1)" = "$SOUZ_PR_BASE_SHA"
+          SOUZ_PR_BASE_SHA="$(git rev-parse HEAD^1)"
+          echo "SOUZ_PR_BASE_SHA=$SOUZ_PR_BASE_SHA" >> "$GITHUB_ENV"
           test "$(git rev-parse HEAD^2)" = "$SOUZ_PR_HEAD_SHA"
           git replace --graft HEAD "$SOUZ_PR_BASE_SHA"
           test "$(git rev-list --count "$SOUZ_PR_BASE_SHA..HEAD")" = "1"

@@ -419,8 +419,18 @@ class BackendPublicWebSocketE2eTest {
 
                 assertEquals("tool.call.started", started["type"].asText())
                 assertEquals("user.ask", started["payload"]["name"].asText())
+                assertFalse(started["payload"].has("target"))
                 assertEquals("device-tool", started["payload"]["deviceId"].asText())
                 assertEquals("Which genre?", started["payload"]["arguments"]["question"].asText())
+
+                withPublicSocket(chatId) { replay ->
+                    assertEquals(started, readJson(replay))
+                }
+
+                val httpEvent = client.get(BackendHttpRoutes.chatEvents(chatId)) {
+                    trusted(userId)
+                }.jsonBody()["items"].single { it["seq"] == started["seq"] }
+                assertEquals("client", httpEvent["payload"]["target"]?.asText())
 
                 val resultFrame =
                     """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":"$toolCallId","status":"succeeded","result":{"answer":"Horror"}}"""
@@ -466,7 +476,6 @@ class BackendPublicWebSocketE2eTest {
                 assertEquals("tool.call.started", started["type"].asText())
                 assertEquals(ack["thread"]["id"], started["threadId"])
                 assertEquals("web.search", payload["name"].asText())
-                assertEquals("client", payload["target"].asText())
                 assertEquals("search-device", payload["deviceId"].asText())
                 assertEquals(json.readTree("""{"query":"Когда открывается музей?"}"""), payload["arguments"])
                 val remaining = Duration.between(

@@ -990,7 +990,7 @@ class PostgresRepositoriesTest {
                 eventBus = AgentEventBus(),
             )
 
-            val stream = service.openStream(userId = userId, chatId = chat.id, afterSeq = 1L)
+            val stream = service.openPublicStream(userId = userId, chatId = chat.id, afterSeq = 1L)
             try {
                 assertEquals(
                     listOf("message.completed"),
