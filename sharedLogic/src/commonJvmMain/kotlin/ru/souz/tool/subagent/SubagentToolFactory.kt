@@ -11,6 +11,7 @@ import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentSettings
+import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMToolSetup
@@ -19,6 +20,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.resolveChatModel
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.RuntimePassThroughToolsFilter
+import ru.souz.tool.ToolCategory
 import ru.souz.tool.immutableToolCatalogSnapshot
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.SkillResolution
@@ -73,8 +75,9 @@ class SubagentToolFactory(
         }
         if (bundles.isNotEmpty()) tools += bundleCommandTool(bundles.toMap(), meta.userId)
         return SubagentTool.Setup(
-            settings = parentSettings.copy(model = model, tools = resolver.enabledTools),
-            tools = tools.toList(),
+            settings = parentSettings.copy(model = model, tools = AgentTools(tools, tools.associate {
+                it.fn.name to (resolver.enabledTools.categoryByName[it.fn.name] ?: ToolCategory.CHAT)
+            })),
             systemPrompt = systemPrompt(bundles.values),
         )
     }

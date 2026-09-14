@@ -12,7 +12,6 @@ import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
-import ru.souz.tool.ToolCategory
 
 /** Prepares an isolated context and awaits a fresh agent from the host-supplied factory. */
 class SubagentTool(
@@ -26,9 +25,9 @@ class SubagentTool(
         val maxTurns: Int = 32,
     )
 
+    /** [settings] must contain only the child's selected tools; schemas are derived from that lookup. */
     data class Setup(
         val settings: AgentSettings,
-        val tools: List<LLMToolSetup>,
         val systemPrompt: String,
     )
 
@@ -71,13 +70,11 @@ class SubagentTool(
                 input = input.task,
                 settings = setup.settings,
                 history = emptyList(),
-                activeTools = emptyList(),
+                activeTools = setup.settings.tools.byName.values.map { it.fn },
                 systemPrompt = setup.systemPrompt,
                 toolInvocationMeta = meta,
                 runtimeEventSink = AgentRuntimeEventSink.NONE,
-            ).withOnlyTools(setup.tools, setup.tools.associate {
-                it.fn.name to (setup.settings.tools.categoryByName[it.fn.name] ?: ToolCategory.CHAT)
-            })
+            )
             val result = createAgent(input.maxTurns).execute(childContext)
             currentCoroutineContext().ensureActive()
             mapOf("result" to result.output)

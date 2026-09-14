@@ -34,6 +34,7 @@ import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.ToolGetSkillByName
 import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -42,7 +43,7 @@ import kotlin.test.assertTrue
 class SubagentToolFactoryTest {
     @Test
     fun `empty selection binds parent settings and returns a tool result`() = runTest {
-        val fixture = Fixture()
+        val fixture = Fixture(listOf(namedTool("unselected")))
         val parent = fixture.parent.copy(temperature = 0.27f, contextSize = 42_000)
         val tool = fixture.factory().create(parent)
         val meta = ToolInvocationMeta(
@@ -67,18 +68,36 @@ class SubagentToolFactoryTest {
         val selected = namedTool("selected")
         val other = namedTool("other")
         val fixture = Fixture(listOf(selected, other))
-        val filtered = object : LLMToolSetup by selected {
-            override val fn = selected.fn.copy(description = "host customized")
-        }
-        every { fixture.filter.applyFilter(any()) } returns mapOf(ToolCategory.FILES to mapOf("selected" to filtered))
-
-        val setup = fixture.factory().prepare(
-            SubagentTool.Input("Inspect", skillIds = listOf("selected", "selected")), fixture.parent, ToolInvocationMeta("owner"),
+        val filtered = namedTool("selected", "host customized")
+        every { fixture.filter.applyFilter(any()) } returns mapOf(
+            ToolCategory.FILES to mapOf("selected" to filtered),
+            ToolCategory.BROWSER to mapOf("other" to other),
         )
 
-        assertEquals(listOf(filtered), setup.tools)
-        assertEquals(ToolCategory.FILES, setup.settings.tools.categoryByName["selected"])
+        fixture.factory().create(fixture.parent)
+            .call(mapOf("task" to "Inspect", "skillIds" to listOf("selected", "selected")))
+        val context = fixture.context
+
+        assertEquals(mapOf("selected" to filtered), context.settings.tools.byName)
+        assertEquals(mapOf("selected" to ToolCategory.FILES), context.settings.tools.categoryByName)
+        assertTrue(context.settings.tools.byCategory.isEmpty())
+        assertEquals(listOf(filtered.fn), context.activeTools)
         coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
+    }
+
+    @Test
+    fun `selected aliases cannot silently collapse duplicate function names`() = runTest {
+        val fixture = Fixture(listOf(namedTool("first"), namedTool("second")))
+        val duplicate = namedTool("Duplicate")
+        every { fixture.filter.applyFilter(any()) } returns mapOf(
+            ToolCategory.FILES to mapOf("first" to duplicate, "second" to duplicate),
+        )
+
+        val result = fixture.factory().create(fixture.parent)
+            .call(mapOf("task" to "Inspect", "skillIds" to listOf("first", "second")))
+
+        assertContains(result["error"]["message"].asText(), "Selected tool names must be unique.")
+        assertTrue(fixture.contexts.isEmpty())
     }
 
     @Test
@@ -135,13 +154,14 @@ class SubagentToolFactoryTest {
             .map { restJsonMapper.readTree(it) }.toList()
         assertEquals(discovery["executionSchema"], promptPayloads[0])
         assertEquals(discovery["skill"], promptPayloads[1])
-        assertEquals(listOf(ToolInvokeSkill.NAME), setup.tools.map { it.fn.name })
+        assertEquals(setOf(ToolInvokeSkill.NAME), setup.settings.tools.byName.keys)
+        assertEquals(mapOf(ToolInvokeSkill.NAME to ToolCategory.CHAT), setup.settings.tools.categoryByName)
         coVerify(exactly = 2) { approval.ensureApproved(any()) }
 
         // The child loader serves only the bundles selected at spawn without another registry lookup.
         coEvery { fixture.bundles.loadSkillBundle(any(), any()) } throws AssertionError("Unexpected live lookup")
         coEvery { fixture.commands.execute(any(), any(), any(), any()) } returns SandboxCommandResult(0, "ok", "", false)
-        val command = setup.tools.single()
+        val command = setup.settings.tools.byName.getValue(ToolInvokeSkill.NAME)
         assertEquals(listOf("selected", "disabled"), command.fn.parameters.properties.getValue("skillId").enum)
         assertFalse(command.fn.description.contains("GetSkillByName"))
         val success = command.call(mapOf("skillId" to "selected", "arguments" to mapOf("script" to "pwd")), meta)
@@ -222,8 +242,8 @@ class SubagentToolFactoryTest {
     }
 }
 
-private fun namedTool(name: String): LLMToolSetup = mockk {
-    every { fn } returns LLMRequest.Function(name, "Description $name", LLMRequest.Parameters("object"))
+private fun namedTool(name: String, description: String = "Description $name"): LLMToolSetup = mockk {
+    every { fn } returns LLMRequest.Function(name, description, LLMRequest.Parameters("object"))
 }
 
 private fun bundle(id: String, instructions: String): SkillBundle = SkillBundle.fromFiles(

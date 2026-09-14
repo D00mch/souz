@@ -16,22 +16,12 @@ data class AgentContext<I>(
     val toolInvocationMeta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
     val runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
 ) {
-    /** Replaces advertised and executable tools, retaining only explicitly supplied categories. */
-    internal fun withOnlyTools(
-        tools: List<LLMToolSetup>,
-        categoryByName: Map<String, ToolCategory> = emptyMap(),
-    ): AgentContext<I> {
-        val byName = tools.associateBy { it.fn.name }
-        require(byName.size == tools.size) { "Selected tool names must be unique." }
+    /** Replaces advertised and executable tools without inheriting catalog categories. */
+    internal fun withOnlyTools(tools: List<LLMToolSetup>): AgentContext<I> {
+        val selected = AgentTools(tools)
         return copy(
-            settings = settings.copy(
-                tools = AgentTools(
-                    byCategory = emptyMap(),
-                    byName = byName,
-                    categoryByName = categoryByName.filterKeys { it in byName },
-                )
-            ),
-            activeTools = tools.map { it.fn },
+            settings = settings.copy(tools = selected),
+            activeTools = selected.byName.values.map { it.fn },
         )
     }
 
@@ -62,6 +52,16 @@ data class AgentTools(
         }
     }
 )
+
+/** Rejects duplicate function names and retains only categories belonging to selected tools. */
+fun AgentTools(
+    tools: List<LLMToolSetup>,
+    categoryByName: Map<String, ToolCategory> = emptyMap(),
+): AgentTools {
+    val byName = tools.associateBy { it.fn.name }
+    require(byName.size == tools.size) { "Selected tool names must be unique." }
+    return AgentTools(emptyMap(), byName, categoryByName.filterKeys { it in byName })
+}
 
 data class AgentSettings(
     val model: String,

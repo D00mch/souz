@@ -18,6 +18,7 @@ import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
+import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMMessageRole
@@ -116,7 +117,7 @@ class SubagentToolTest {
     fun `final answer on last allowed turn succeeds`() = runTest {
         for (limit in listOf(1, 2, 128)) {
             var requests = 0
-            val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(tool("Selected"))) }) {
+            val subagent = subagent(tools = listOf(tool("Selected"))) {
                 if (++requests < limit) response(toolName = "Selected") else response("done")
             }
             assertEquals("done", subagent.call(maxTurns = limit)["result"].asText())
@@ -130,7 +131,7 @@ class SubagentToolTest {
             var requests = 0
             var toolCalls = 0
             val selected = tool("Selected") { toolCalls += 1; "result" }
-            val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(selected)) }) {
+            val subagent = subagent(tools = listOf(selected)) {
                 requests += 1; response(toolName = "Selected")
             }
             val result = subagent.call(maxTurns = limit.takeUnless { it == 32 })
@@ -158,7 +159,7 @@ class SubagentToolTest {
             tool("WriteFile") { writes += "report.md"; "Wrote report.md" },
             tool("CheckFile") { """{"error":"validation failed"}""" },
         )
-        val subagent = subagent(prepare = { _, _ -> setup(tools = selected) }) {
+        val subagent = subagent(tools = selected) {
             response().copy(choices = selected.mapIndexed { index, tool ->
                 val choice = response("private child text", tool.fn.name).choices.single()
                 choice.copy(index = index, message = choice.message.copy(functionsStateId = "call-$index"))
@@ -253,7 +254,7 @@ class SubagentToolTest {
     fun `failed child tool returns a failure without graph retries`() = runTest {
         var toolCalls = 0
         val selected = tool("Selected") { toolCalls += 1; throw LLMException(LLMResponse.Chat.Error(500, "failed tool")) }
-        val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(selected)) }) { response(toolName = "Selected") }
+        val subagent = subagent(tools = listOf(selected)) { response(toolName = "Selected") }
         assertEquals("subagent_failed", subagent.call()["error"]["code"].asText())
         assertEquals(1, toolCalls)
     }
@@ -268,7 +269,7 @@ class SubagentToolTest {
                 try { awaitCancellation() } finally { stopped.complete(Unit) }
             }
             val selected = tool("Selected") { waitForCancellation() }
-            val subagent = subagent(prepare = { _, _ -> setup(tools = listOf(selected)) }) {
+            val subagent = subagent(tools = listOf(selected)) {
                 if (duringTool) response(toolName = "Selected") else waitForCancellation()
             }
             val execution = async { subagent.call() }
@@ -343,7 +344,8 @@ class SubagentToolTest {
     private fun subagent(
         streaming: Boolean = false,
         telemetry: AgentTelemetry = AgentTelemetry.NONE,
-        prepare: suspend (SubagentTool.Input, ToolInvocationMeta) -> SubagentTool.Setup = { _, _ -> setup() },
+        tools: List<LLMToolSetup> = emptyList(),
+        prepare: suspend (SubagentTool.Input, ToolInvocationMeta) -> SubagentTool.Setup = { _, _ -> setup(tools = tools) },
         respond: suspend (LLMRequest.Chat) -> LLMResponse.Chat,
     ): LLMToolSetup = SubagentTool({ maxTurns -> agent(streaming, telemetry, maxTurns, respond) }, prepare)
 
@@ -371,7 +373,7 @@ class SubagentToolTest {
     }), meta).content)
 
     private fun setup(settings: AgentSettings = settings(), tools: List<LLMToolSetup> = emptyList()) =
-        SubagentTool.Setup(settings, tools, "child instructions")
+        SubagentTool.Setup(settings.copy(tools = AgentTools(tools, settings.tools.categoryByName)), "child instructions")
 
     private fun settings(parentTool: LLMToolSetup = tool("ParentTool")) = AgentSettings(
         model = "child-model",
