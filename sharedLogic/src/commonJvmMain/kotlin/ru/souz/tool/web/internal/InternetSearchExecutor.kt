@@ -243,10 +243,12 @@ class InternetSearchExecutor(
         temperature: Float,
         maxTokens: Int,
     ): String? {
+        val model = settingsProvider.gigaModel
         val response = try {
             api.message(
                 LLMRequest.Chat(
-                    model = settingsProvider.gigaModel.alias,
+                    model = settingsProvider.executionModelId(model),
+                    provider = model.provider,
                     messages = listOf(
                         LLMRequest.Message(role = LLMMessageRole.system, content = systemPrompt),
                         LLMRequest.Message(role = LLMMessageRole.user, content = userPrompt),

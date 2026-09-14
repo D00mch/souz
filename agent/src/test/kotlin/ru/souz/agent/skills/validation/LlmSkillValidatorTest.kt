@@ -11,6 +11,7 @@ import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
@@ -63,6 +64,7 @@ class LlmSkillValidatorTest {
             val validator = LlmSkillValidator(
                 llmApi = FixedResponseChatApi(rawResponse),
                 model = "validator-model",
+                provider = LlmProvider.OPENAI,
                 jsonUtils = JsonUtils(restJsonMapper),
             )
 

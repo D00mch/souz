@@ -24,7 +24,6 @@ import ru.souz.llms.resolveEmbeddingsModel
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.local.LocalChatAPI
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
-import ru.souz.llms.runtime.resolveLegacyChatModel
 
 /** Execution-scoped LLM routing, credentials, retries, and usage over process-owned transports. */
 internal class BackendExecutionLlmChatApi(
@@ -126,7 +125,7 @@ internal class BackendExecutionLlmChatApi(
         )) {
             is ModelResolution.Resolved -> ChatRoute.Ready(
                 resolution.value.provider,
-                body.copy(model = settingsProvider.resolveLegacyChatModel(resolution.value.provider, resolution.value.alias)),
+                body.copy(model = settingsProvider.executionModelId(resolution.value), provider = resolution.value.provider),
             )
             else -> rejectChatRoute(resolution)
         }

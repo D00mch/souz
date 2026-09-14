@@ -75,7 +75,6 @@ fun agentDiModule(
     bindSingleton { NodesSummarization(instance(), instance()) }
     bindSingleton {
         NodesClassification(
-            settingsProvider = instance(),
             logObjectMapper = instance<ObjectMapper>(tag = logObjectMapperTag),
             apiClassifier = instance<UserMessageClassifier>(tag = apiClassifierTag),
             localClassifier = instance<UserMessageClassifier>(tag = localClassifierTag),

@@ -2,12 +2,10 @@ package ru.souz.llms.runtime
 
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import org.slf4j.LoggerFactory
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
-import ru.souz.llms.restJsonMapper
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.UserMessageClassifier
 
@@ -21,10 +19,9 @@ class ApiClassifier(
     private val noiceRegex = Regex("[<>'`“”«»\"]")
     private val spaceRegex = Regex("\\s+")
 
-    override suspend fun classify(body: String): UserMessageClassifier.Reply {
-        val req: LLMRequest.Chat = restJsonMapper.readValue(body)
-        l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(req))
-        return when (val resp = api.message(req)) {
+    override suspend fun classify(body: LLMRequest.Chat): UserMessageClassifier.Reply {
+        l.debug("Classifying via API, body:\n{}", logObjectMapper.writeValueAsString(body))
+        return when (val resp = api.message(body)) {
             is LLMResponse.Chat.Error -> {
                 l.error("Classification error: {}", resp.message)
                 unknown

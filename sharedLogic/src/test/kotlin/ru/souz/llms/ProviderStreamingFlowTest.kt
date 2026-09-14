@@ -38,28 +38,15 @@ import kotlin.test.assertIs
 
 class ProviderStreamingFlowTest {
     @Test
-    fun `routers resolve legacy models while adapters forward supplied IDs in both modes`() = runTest {
-        val tunnelDefault = System.getenv("AITUNNEL_MODEL") ?: System.getProperty("AITUNNEL_MODEL") ?: "gpt-4o-mini"
-        val qwenDefault = System.getenv("QWEN_MODEL") ?: System.getProperty("QWEN_MODEL") ?: "qwen-flash"
+    fun `routers and adapters forward exact model IDs in both modes`() = runTest {
         val cases = listOf(
-            Triple(LLMModel.OpenAIGpt52, LLMModel.OpenAIGpt5Mini.name, LLMModel.OpenAIGpt5Mini.alias),
-            Triple(LLMModel.OpenAIGpt52, " openai-compatible-custom ", "Deployment/ID"),
-            Triple(LLMModel.OpenAIGpt52, LLMModel.OpenAICompatibleCustom.name, "Deployment/ID"),
-            Triple(LLMModel.OpenAIGpt52, "GigaChat-2", LLMModel.OpenAIGpt52.alias),
-            Triple(LLMModel.OpenAIGpt52, " GPT-Custom/Case ", "GPT-Custom/Case"),
-            Triple(LLMModel.AnthropicOpus45, LLMModel.AnthropicHaiku45.name, LLMModel.AnthropicHaiku45.alias),
-            Triple(LLMModel.AnthropicOpus45, "GigaChat-2", LLMModel.AnthropicOpus45.alias),
-            Triple(LLMModel.AnthropicOpus45, " ClAuDe-Custom/Case ", "ClAuDe-Custom/Case"),
-            Triple(LLMModel.AiTunnelGpt54Mini, "ai-tunnel", tunnelDefault),
-            Triple(LLMModel.AiTunnelGpt54Mini, "GigaChat-2", tunnelDefault),
-            Triple(LLMModel.QwenMax, "GigaChat-2", qwenDefault),
-            Triple(LLMModel.QwenMax, " Raw/ID ", " Raw/ID "),
+            LLMModel.OpenAIGpt52 to "Deployment/ID",
+            LLMModel.AnthropicOpus45 to "ClAuDe-Custom/Case",
+            LLMModel.AiTunnelGpt54Mini to "GigaChat-Custom/Deployment",
+            LLMModel.QwenMax to " Raw/ID ",
         )
-        cases.forEach { (selected, input, resolved) ->
-            val settings = settings().also {
-                every { it.gigaModel } returns selected
-                every { it.openaiModel } returns " Deployment/ID "
-            }
+        cases.forEach { (selected, input) ->
+            val settings = settings().also { every { it.gigaModel } returns selected }
             val anthropic = selected.provider == LlmProvider.ANTHROPIC
             listOf(false, true).forEach { streaming ->
                 val content = when {
@@ -72,7 +59,7 @@ class ProviderStreamingFlowTest {
                     streamClient(content, if (streaming) ContentType.Text.EventStream else ContentType.Application.Json) {
                         requests++
                         val payload = restJsonMapper.readTree(it.body.toByteArray())
-                        assertEquals(if (routed) resolved else input, payload["model"].asText())
+                        assertEquals(input, payload["model"].asText())
                         assertEquals(streaming, payload["stream"].asBoolean())
                         assertFalse(payload.has("provider"))
                     }.use { client ->

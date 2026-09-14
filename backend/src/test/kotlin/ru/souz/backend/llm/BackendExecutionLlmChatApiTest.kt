@@ -95,7 +95,7 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `legacy custom selector retains host fallback while a raw ID is never rewritten`() = runTest {
+    fun `custom selectors use host model resolution while raw IDs are never rewritten`() = runTest {
         val requests = mutableListOf<CapturedRequest>()
         val settings = LlmSettingsStub().apply { gigaModel = LLMModel.OpenAIGpt52 }
         facadeFixture(settingsProvider = settings, providerApiOverride = null, client = recordingClient(requests)).use { fixture ->
@@ -105,7 +105,7 @@ class BackendExecutionLlmChatApiTest {
             settings.openaiModel = " Deployment/ID "
             fixture.api.message(request)
             assertEquals(
-                listOf(LLMModel.OpenAIGpt52.alias, request.model, "Deployment/ID"),
+                listOf(request.model, request.model, "Deployment/ID"),
                 requests.map { it.body["model"].asText() },
             )
         }

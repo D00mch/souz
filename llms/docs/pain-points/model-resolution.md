@@ -11,7 +11,7 @@ An ambiguous embeddings alias prefers the configured embeddings model only when 
 - Keep enum names available as unambiguous selectors when aliases overlap.
 - Add aliases through the shared resolvers and cover whitespace and case normalization.
 - Do not replace unknown, ambiguous, or unsupported selections with an unrelated fallback.
-- `LLMRequest.Chat.provider` is internal routing metadata excluded from JSON. When present, `model` is already the exact provider request ID; routers and adapters must not normalize it. Calls without routing metadata retain legacy model resolution. See [subagent configuration](../../../docs/subagents.md#model-configuration).
+- `LLMRequest.Chat.provider` is internal routing metadata excluded from JSON. Internal callers resolve model selections before constructing requests and preserve the explicit provider; routers and adapters forward exact IDs. The backend also accepts enum selectors without routing metadata through the shared resolver; the desktop uses the selected provider for metadata-free requests without rewriting their model IDs. See [subagent configuration](../../../docs/subagents.md#model-configuration).
 
 ## Verification
 

@@ -22,9 +22,11 @@ class LlmMemoryWriter(
     private val logger = LoggerFactory.getLogger(LlmMemoryWriter::class.java)
 
     override suspend fun extractCandidates(input: MemoryCaptureInput): List<MemoryFactCandidate> {
+        val model = settingsProvider.gigaModel
         val response = api.message(
             LLMRequest.Chat(
-                model = settingsProvider.gigaModel.alias,
+                model = settingsProvider.executionModelId(model),
+                provider = model.provider,
                 messages = listOf(
                     LLMRequest.Message(
                         role = LLMMessageRole.system,

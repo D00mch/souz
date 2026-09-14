@@ -34,7 +34,9 @@ import kotlin.test.assertTrue
 
 class ToolInternetSearchTest {
     private val api = mockk<LLMChatAPI>()
-    private val settingsProvider = mockk<SettingsProvider>()
+    private val settingsProvider = mockk<SettingsProvider> {
+        every { executionModelId(any()) } answers { firstArg<LLMModel>().alias }
+    }
     private val webResearchClient = mockk<WebResearchClient>()
     private val filesToolUtil = mockk<FilesToolUtil>(relaxed = true)
 
@@ -53,7 +55,8 @@ class ToolInternetSearchTest {
 
     @Test
     fun `quick answer mode returns synthesized answer with sources`() = runTest {
-        every { settingsProvider.gigaModel } returns LLMModel.OpenAIGpt5Mini
+        every { settingsProvider.gigaModel } returns LLMModel.OpenAICompatibleCustom
+        every { settingsProvider.executionModelId(LLMModel.OpenAICompatibleCustom) } returns "Search/Deployment"
         coEvery { webResearchClient.searchWeb(any(), any()) } returns listOf(
             WebSearchResult(
                 title = "Tallinn weather today",
@@ -80,7 +83,9 @@ class ToolInternetSearchTest {
         assertEquals(1, output.sources.first().index)
         assertTrue(output.reportMarkdown.contains("Источники"))
         assertNull(output.reportFilePath)
-        coVerify(exactly = 1) { api.message(any()) }
+        coVerify(exactly = 1) {
+            api.message(match { it.model == "Search/Deployment" && it.provider == LLMModel.OpenAICompatibleCustom.provider })
+        }
     }
 
     @Test

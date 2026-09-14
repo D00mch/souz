@@ -21,10 +21,16 @@ class LlmMemoryWriterTest {
     @Test
     fun `writer prompt treats durable user and project statements as memory candidates`() = runTest {
         val api = RecordingChatApi(responseContent = "[]")
-        val writer = LlmMemoryWriter(api, settingsProvider())
+        val settings = settingsProvider().also {
+            every { it.gigaModel } returns LLMModel.OpenAICompatibleCustom
+            every { it.executionModelId(LLMModel.OpenAICompatibleCustom) } returns "Memory/Deployment"
+        }
+        val writer = LlmMemoryWriter(api, settings)
 
         writer.extractCandidates(memoryCaptureInput())
 
+        assertEquals("Memory/Deployment", api.chatRequests.single().model)
+        assertEquals(LLMModel.OpenAICompatibleCustom.provider, api.chatRequests.single().provider)
         val systemPrompt = api.singleSystemPrompt()
         assertTrue(
             systemPrompt.contains(
@@ -153,6 +159,7 @@ class LlmMemoryWriterTest {
 
     private fun settingsProvider(): SettingsProvider = mockk {
         every { gigaModel } returns LLMModel.AiTunnelGpt54Mini
+        every { executionModelId(any()) } answers { firstArg<LLMModel>().alias }
     }
 
     private class RecordingChatApi(

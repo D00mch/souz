@@ -18,6 +18,7 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.json.JsonUtils
 import ru.souz.llms.restJsonMapper
@@ -113,7 +114,7 @@ class SkillApprovalGateTest {
         )
         repository.saveSkillBundle(USER_ID, firstBundle)
 
-        settingsProvider.gigaModel = LLMModel.OpenAIGpt5Mini
+        settingsProvider.gigaModel = LLMModel.OpenAICompatibleCustom
         val firstApproval = assertIs<SkillApprovalGate.Result.Approved>(
             gate.ensureApproved(input(firstBundle))
         )
@@ -129,9 +130,10 @@ class SkillApprovalGateTest {
         )
 
         assertEquals(
-            listOf(LLMModel.OpenAIGpt5Mini.alias, LLMModel.QwenMax.alias),
+            listOf("Validation/Deployment", LLMModel.QwenMax.alias),
             api.models,
         )
+        assertEquals(listOf<LlmProvider?>(LLMModel.OpenAICompatibleCustom.provider, LLMModel.QwenMax.provider), api.providers)
         assertEquals(true, firstApproval.record?.approved)
         assertEquals(true, secondApproval.record?.approved)
     }
@@ -150,6 +152,8 @@ class SkillApprovalGateTest {
     private class MutableAgentSettingsProvider(
         override var gigaModel: LLMModel,
     ) : AgentSettingsProvider {
+        override fun executionModelId(model: LLMModel): String =
+            if (model == LLMModel.OpenAICompatibleCustom) "Validation/Deployment" else model.alias
         override var defaultCalendar: String? = null
         override var regionProfile: String = "default"
         override var activeAgentId: AgentId = AgentId.default
@@ -171,9 +175,11 @@ class SkillApprovalGateTest {
 
     private class CapturingApprovalChatApi : LLMChatAPI {
         val models = mutableListOf<String>()
+        val providers = mutableListOf<LlmProvider?>()
 
         override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
             models += body.model
+            providers += body.provider
             return LLMResponse.Chat.Ok(
                 choices = listOf(
                     LLMResponse.Choice(

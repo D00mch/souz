@@ -2,11 +2,9 @@ package ru.souz.tool
 
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
-import ru.souz.llms.restJsonMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 
 fun interface UserMessageClassifier {
-    suspend fun classify(body: String): Reply
+    suspend fun classify(body: LLMRequest.Chat): Reply
 
     data class Reply(
         val categories: List<ToolCategory> = emptyList(),
@@ -17,13 +15,8 @@ fun interface UserMessageClassifier {
 object LocalRegexClassifier : UserMessageClassifier {
     private val defaultUnknown = UserMessageClassifier.Reply(emptyList(), 0.0)
 
-    override suspend fun classify(body: String): UserMessageClassifier.Reply {
-        val chat: LLMRequest.Chat = try {
-            restJsonMapper.readValue(body)
-        } catch (_: Exception) {
-            return defaultUnknown
-        }
-        val lastUser = chat.messages.lastOrNull { it.role == LLMMessageRole.user }
+    override suspend fun classify(body: LLMRequest.Chat): UserMessageClassifier.Reply {
+        val lastUser = body.messages.lastOrNull { it.role == LLMMessageRole.user }
             ?: return defaultUnknown
 
         val text = lastUser.content

@@ -10,12 +10,15 @@ import kotlinx.coroutines.flow.toList
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.openai.OpenAICompatibleChatAPI
 import ru.souz.llms.runtime.SettingsRoutingLlmChatApi
+import ru.souz.llms.runtime.ApiClassifier
+import ru.souz.tool.ToolCategory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -27,7 +30,13 @@ class SettingsRoutingLlmChatApiTest {
         every { settings.gigaModel } returns LLMModel.Max
         val apis = listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.CODEX).associateWith { provider ->
             val request = LLMRequest.Chat(model = "Arbitrary/ID", provider = provider, messages = emptyList())
-            val response = LLMResponse.Chat.Ok(emptyList(), 1, request.model, LLMResponse.Usage(1, 2, 3, 0))
+            val response = LLMResponse.Chat.Ok(
+                listOf(LLMResponse.Choice(
+                    LLMResponse.Message("FILES 90", LLMMessageRole.assistant, functionsStateId = null),
+                    0, LLMResponse.FinishReason.stop,
+                )),
+                1, request.model, LLMResponse.Usage(1, 2, 3, 0),
+            )
             mockk<LLMChatAPI> {
                 coEvery { message(request) } returns response
                 coEvery { messageStream(request) } returns flowOf(response)
@@ -38,6 +47,7 @@ class SettingsRoutingLlmChatApiTest {
             val request = LLMRequest.Chat(model = "Arbitrary/ID", provider = provider, messages = emptyList())
             assertEquals(request.model, assertIs<LLMResponse.Chat.Ok>(router.message(request)).model)
             assertEquals(request.model, assertIs<LLMResponse.Chat.Ok>(router.messageStream(request).toList().single()).model)
+            assertEquals(listOf(ToolCategory.FILES), ApiClassifier(router).classify(request).categories)
         }
     }
 

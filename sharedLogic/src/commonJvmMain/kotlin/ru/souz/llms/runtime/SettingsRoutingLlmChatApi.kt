@@ -10,7 +10,7 @@ import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LlmProvider
 
-/** Routes interactive-host calls using the providers currently selected in mutable settings. */
+/** Dispatches exact model IDs; requests without a provider use the host's selected provider. */
 class SettingsRoutingLlmChatApi(
     private val settingsProvider: SettingsProvider,
     private val apisByProvider: Map<LlmProvider, LLMChatAPI>,
@@ -24,23 +24,11 @@ class SettingsRoutingLlmChatApi(
     private fun apiFor(provider: LlmProvider): LLMChatAPI =
         apisByProvider[provider] ?: UnsupportedProviderApi(provider)
 
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat {
-        val (api, request) = chatRoute(body)
-        return api.message(request)
-    }
+    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
+        apiFor(body.provider ?: settingsProvider.gigaModel.provider).message(body)
 
-    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
-        val (api, request) = chatRoute(body)
-        return api.messageStream(request)
-    }
-
-    private fun chatRoute(body: LLMRequest.Chat): Pair<LLMChatAPI, LLMRequest.Chat> {
-        val provider = body.provider ?: settingsProvider.gigaModel.provider
-        val request = if (body.provider != null) body else body.copy(
-            model = settingsProvider.resolveLegacyChatModel(provider, body.model),
-        )
-        return apiFor(provider) to request
-    }
+    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> =
+        apiFor(body.provider ?: settingsProvider.gigaModel.provider).messageStream(body)
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
         val normalizedModel = body.model.trim()
