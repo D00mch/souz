@@ -31,6 +31,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.TokenLogging
 import ru.souz.llms.ToolInvocationMeta
@@ -414,6 +415,7 @@ class ChatUseCaseTest {
                 input = "",
                 settings = AgentSettings(
                     model = "model",
+                    provider = LlmProvider.OPENAI,
                     temperature = 0f,
                     toolsByCategory = emptyMap(),
                 ),
@@ -486,6 +488,7 @@ class ChatUseCaseTest {
                 input = "",
                 settings = AgentSettings(
                     model = "model",
+                    provider = LlmProvider.OPENAI,
                     temperature = 0f,
                     toolsByCategory = emptyMap(),
                 ),
@@ -698,6 +701,7 @@ class ChatUseCaseTest {
                 input = "",
                 settings = AgentSettings(
                     model = "model",
+                    provider = LlmProvider.OPENAI,
                     temperature = 0f,
                     toolsByCategory = emptyMap(),
                 ),

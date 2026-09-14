@@ -19,7 +19,6 @@ import ru.souz.backend.agent.runtime.BackendRequestRuntimeEnvironment
 import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.db.SettingsProvider
@@ -27,7 +26,6 @@ import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.LlmProvider
-import ru.souz.llms.LocalModelAvailability
 import ru.souz.llms.anthropic.AnthropicVisionGateway
 import ru.souz.llms.codex.CodexOAuthService
 import ru.souz.llms.http.ProviderHttpClients
@@ -55,7 +53,6 @@ internal class BackendConversationRuntimeFactory(
     private val retryPolicy: BackendProviderRetryPolicy,
     private val providerHttpClients: ProviderHttpClients,
     private val localChatApi: LocalChatAPI,
-    private val localModelAvailability: LocalModelAvailability,
     private val codexOAuthService: CodexOAuthService,
     private val sessionRepository: AgentSessionRepository,
     private val messageRepository: MessageRepository,
@@ -173,16 +170,11 @@ internal class BackendConversationRuntimeFactory(
             createAgent = { maxTurns ->
                 ToolLoopGraphBasedAgent(executionApi, settingsProvider, maxTurns = maxTurns, logObjectMapper = logObjectMapper)
             },
-            settingsProvider = settingsProvider,
             toolCatalog = executionToolCatalog,
             toolsFilter = requestToolsFilter,
             skillBundleProvider = skillBundleProvider,
             commandExecutor = commandExecutor,
-            availableModels = {
-                BackendLlmSupport.chatModels.filter {
-                    it.provider != LlmProvider.LOCAL || it in localModelAvailability.availableGigaModels()
-                }
-            },
+            configuredModels = settingsProvider.subagentModels,
         )
         val kernel = AgentExecutionKernelFactory(
             logObjectMapper = logObjectMapper,

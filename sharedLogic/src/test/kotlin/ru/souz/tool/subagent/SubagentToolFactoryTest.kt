@@ -15,13 +15,13 @@ import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.bundle.SkillFile
 import ru.souz.agent.skills.registry.SkillBundleProvider
 import ru.souz.agent.skills.validation.SkillApprovalGate
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.agent.state.AgentTools
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMModel
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
@@ -143,9 +143,10 @@ class SubagentToolFactoryTest {
             SkillApprovalGate.Result.Approved(input.bundle, SkillBundleHasher.hash(input.bundle), null)
         }
         val meta = ToolInvocationMeta("owner", "conversation", attributes = mapOf("routing" to "session"))
-        val setup = fixture.factory(approval).prepare(
-            SubagentTool.Input("Inspect", skillIds = listOf("selected", "disabled")), fixture.parent, meta,
+        fixture.factory(approval).create(fixture.parent).call(
+            mapOf("task" to "Inspect", "skillIds" to listOf("selected", "disabled")), meta,
         )
+        val setup = fixture.context
         assertTrue(setup.systemPrompt.contains("Approved task instructions."))
         assertTrue(setup.systemPrompt.contains("Fallback bundle."))
         val discovery = ToolGetSkillByName(fixture.catalog, fixture.filter, fixture.bundles)
@@ -192,19 +193,49 @@ class SubagentToolFactoryTest {
     }
 
     @Test
-    fun `model override is available within parent provider and never changes application settings`() = runTest {
+    fun `without configuration only the parent model is advertised and accepted`() = runTest {
         val fixture = Fixture()
-        val tool = fixture.factory(availableModels = { listOf(LLMModel.Max, LLMModel.Pro) }).create(fixture.parent)
-
-        tool.call(mapOf("task" to "Inspect", "model" to "gigachat-2-pro", "maxTurns" to 1))
-
-        assertEquals(LLMModel.Pro.alias, fixture.context.settings.model)
-        assertEquals(LLMModel.Max.alias, fixture.parent.model)
-        listOf("unknown", " ", LLMModel.OpenAIGpt52.name, LLMModel.Lite.name).forEach { model ->
-            val response = tool.call(mapOf("task" to "Inspect", "model" to model))
+        val tool = fixture.factory().create(fixture.parent)
+        assertEquals(listOf(fixture.parent.model), tool.fn.parameters.properties.getValue("model").enum)
+        tool.call(mapOf("task" to "Inspect"))
+        tool.call(mapOf("task" to "Inspect", "model" to fixture.parent.model))
+        assertEquals(List(2) { fixture.parent.copy(tools = AgentTools(emptyMap())) }, fixture.contexts.map { it.settings })
+        listOf("unknown", " ", LLMModel.Pro.alias, LLMModel.Max.name).forEach { model ->
+            val response = tool.call(mapOf("task" to "Inspect", "model" to model, "skillIds" to listOf("unloaded")))
             assertEquals("subagent_model_unavailable", response["error"]["code"].asText())
         }
-        assertEquals(1, fixture.contexts.size)
+        assertEquals(2, fixture.contexts.size)
+        coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
+    }
+
+    @Test
+    fun `configured models retain exact IDs and providers from the advertised snapshot`() = runTest {
+        val fixture = Fixture()
+        val models = linkedMapOf("My-Deployment/v2" to LlmProvider.OPENAI, " another-model " to LlmProvider.ANTHROPIC)
+        val tool = fixture.factory(configuredModels = models).create(fixture.parent)
+        val choices = models + (fixture.parent.model to fixture.parent.provider)
+        models.clear()
+        assertEquals(choices.keys.toList(), tool.fn.parameters.properties.getValue("model").enum)
+        choices.forEach { (model, provider) ->
+            tool.call(mapOf("task" to "Inspect", "model" to model))
+            assertEquals(model, fixture.context.settings.model)
+            assertEquals(provider, fixture.context.settings.provider)
+        }
+        val rejected = tool.call(mapOf("task" to "Inspect", "model" to "my-deployment/v2"))
+        assertEquals("subagent_model_unavailable", rejected["error"]["code"].asText())
+        assertEquals(choices.size, fixture.contexts.size)
+        assertEquals(LLMModel.Max.alias, fixture.parent.model)
+    }
+
+    @Test
+    fun `parent provider wins model ID collisions and omission always inherits`() = runTest {
+        val fixture = Fixture()
+        val parent = fixture.parent.copy(model = "gpt-5.4", provider = LlmProvider.CODEX)
+        val tool = fixture.factory(configuredModels = mapOf("gpt-5.4" to LlmProvider.OPENAI)).create(parent)
+        assertEquals(listOf(parent.model), tool.fn.parameters.properties.getValue("model").enum)
+        tool.call(mapOf("task" to "Inspect"))
+        tool.call(mapOf("task" to "Inspect", "model" to parent.model))
+        assertEquals(List(2) { parent.copy(tools = AgentTools(emptyMap())) }, fixture.contexts.map { it.settings })
     }
 
     @Test
@@ -219,8 +250,7 @@ class SubagentToolFactoryTest {
 
     private class Fixture(compiled: List<LLMToolSetup> = emptyList()) {
         val catalog = immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to compiled))
-        val parent = AgentSettings(LLMModel.Max.alias, 0.5f, AgentTools(catalog.toolsByCategory))
-        val settings = mockk<AgentSettingsProvider> { every { gigaModel } returns LLMModel.Max }
+        val parent = AgentSettings(LLMModel.Max.alias, LLMModel.Max.provider, 0.5f, AgentTools(catalog.toolsByCategory))
         val filter = mockk<AgentToolsFilter> { every { applyFilter(any()) } answers { firstArg() } }
         val bundles = mockk<SkillBundleProvider> { coEvery { loadSkillBundle(any(), any()) } returns null }
         val commands = mockk<SkillCommandExecutor>()
@@ -229,7 +259,7 @@ class SubagentToolFactoryTest {
 
         fun factory(
             approvalGate: SkillApprovalGate? = null,
-            availableModels: () -> List<LLMModel> = { LLMModel.entries },
+            configuredModels: Map<String, LlmProvider> = emptyMap(),
         ) = SubagentToolFactory(
             { _ -> mockk<Agent> {
                 coEvery { execute(any(), any(), any()) } answers {
@@ -237,7 +267,7 @@ class SubagentToolFactoryTest {
                     AgentExecutionResult("child answer", context)
                 }
             } },
-            settings, catalog, filter, bundles, commands, approvalGate, availableModels,
+            catalog, filter, bundles, commands, approvalGate, configuredModels,
         )
     }
 }

@@ -5,6 +5,8 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMModel
@@ -19,6 +21,25 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class SettingsRoutingLlmChatApiTest {
+    @Test
+    fun `explicit routes ignore mutable parent settings in both request modes`() = runTest {
+        val settings = mockk<SettingsProvider>()
+        every { settings.gigaModel } returns LLMModel.Max
+        val apis = listOf(LlmProvider.OPENAI, LlmProvider.ANTHROPIC, LlmProvider.CODEX).associateWith { provider ->
+            val request = LLMRequest.Chat(model = "Arbitrary/ID", provider = provider, messages = emptyList())
+            val response = LLMResponse.Chat.Ok(emptyList(), 1, request.model, LLMResponse.Usage(1, 2, 3, 0))
+            mockk<LLMChatAPI> {
+                coEvery { message(request) } returns response
+                coEvery { messageStream(request) } returns flowOf(response)
+            }
+        }
+        val router = SettingsRoutingLlmChatApi(settings, apis)
+        apis.keys.forEach { provider ->
+            val request = LLMRequest.Chat(model = "Arbitrary/ID", provider = provider, messages = emptyList())
+            assertEquals(request.model, assertIs<LLMResponse.Chat.Ok>(router.message(request)).model)
+            assertEquals(request.model, assertIs<LLMResponse.Chat.Ok>(router.messageStream(request).toList().single()).model)
+        }
+    }
 
     @Test
     fun `embeddings normalizes default marker and explicit request model`() = runTest {

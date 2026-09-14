@@ -2018,7 +2018,8 @@ class MainViewModelTest {
 
     private fun emptyAgentContext() = AgentContext(
         input = "", settings = AgentSettings(
-            model = LLMModel.Max.alias, temperature = 0f, toolsByCategory = emptyMap()
+            model = LLMModel.Max.alias,
+            provider = LLMModel.Max.provider, temperature = 0f, toolsByCategory = emptyMap()
         ), history = emptyList(), activeTools = emptyList(), systemPrompt = ""
     )
 

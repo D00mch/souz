@@ -9,6 +9,7 @@ import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -64,6 +65,7 @@ class AgentExecutorTest {
         input = "",
         settings = AgentSettings(
             model = "model",
+            provider = LlmProvider.OPENAI,
             temperature = 0f,
             toolsByCategory = emptyMap(),
         ),

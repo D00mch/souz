@@ -1,9 +1,15 @@
 package ru.souz.backend.e2e
 
 import io.ktor.client.request.get
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
 import io.ktor.websocket.Frame
 import java.util.UUID
 import kotlin.test.Test
@@ -11,10 +17,79 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMMessageRole
+import ru.souz.llms.restJsonMapper
+import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.http.providerHttpClientDefaults
 
 class BackendSubagentE2eTest {
+    @Test
+    fun `configured remote child runs from a local parent with credentials and usage in both modes`() {
+        listOf(false, true).forEach { streaming ->
+            val childModel = "My-Deployment/v2"
+            var childRequests = 0
+            val http = HttpClient(MockEngine { request ->
+                val body = restJsonMapper.readTree(request.body.toByteArray())
+                assertEquals(childModel, body["model"].asText())
+                assertEquals(streaming, body["stream"].asBoolean())
+                assertEquals("Bearer configured-child-key", request.headers[HttpHeaders.Authorization])
+                assertEquals("api.openai.com", request.url.host)
+                assertFalse(body.has("provider"))
+                childRequests++
+                val reply = """{"choices":[{"index":0,"message":{"role":"assistant","content":"private remote answer"},"delta":{"role":"assistant","content":"private remote answer"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":11,"completion_tokens":4,"total_tokens":15}}"""
+                respond(
+                    if (streaming) "data: $reply\n\ndata: [DONE]\n\n" else reply,
+                    headers = headersOf(HttpHeaders.ContentType, if (streaming) "text/event-stream" else "application/json"),
+                )
+            }) { providerHttpClientDefaults() }
+            val source = object : BackendConfigSource {
+                override fun env(key: String): String? = when (key) {
+                    "SUBAGENT_MODELS_JSON" -> """{"OPENAI":["$childModel"]}"""
+                    "OPENAI_API_KEY" -> "configured-child-key"
+                    else -> null
+                }
+                override fun property(key: String): String? = null
+            }
+            backendE2eTest(
+                schemaPrefix = "e2e_cross_provider",
+                featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true),
+                settingsSource = source,
+                providerClients = ProviderHttpClients(standard = http, openAi = http),
+                llm = E2eLlmApi { request ->
+                    val result = request.messages.lastOrNull { it.name == "SpawnSubagent" }
+                    if (result != null) {
+                        assertEquals("private remote answer", restJsonMapper.readTree(result.content)["result"]?.asText(), result.content)
+                        reply(request, "parent completed")
+                    } else {
+                        val choices = request.functions.single { it.name == "SpawnSubagent" }.parameters.properties.getValue("model").enum
+                        assertEquals(setOf(childModel, E2E_LOCAL_MODEL.alias), choices?.toSet())
+                        toolCallReply(request, "SpawnSubagent", mapOf("task" to "Answer privately", "model" to childModel))
+                    }
+                },
+            ) {
+                val userId = UUID.randomUUID().toString()
+                val chatId = createPublicChat(userId)
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(userId)
+                    jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","streamingMessages":$streaming}""")
+                }
+                client.post(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId); jsonBody("""{"content":"Delegate"}""") }
+                val events = eventually("cross-provider completion") {
+                    client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
+                        .takeIf { items -> items.any { it["type"].asText() == "execution.finished" } }
+                }
+                assertEquals(1, childRequests)
+                assertEquals(2, llm.requests.size)
+                val usage = events.single { it["type"].asText() == "execution.finished" }["payload"]
+                assertEquals(35, usage["totalTokens"].asInt())
+                val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
+                assertEquals(listOf("Delegate", "parent completed"), messages.map { it["content"].asText() })
+            }
+        }
+    }
+
     @Test
     fun `child client tool keeps routing while only parent final reaches public history`() =
         backendE2eTest(

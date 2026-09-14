@@ -27,6 +27,7 @@ import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMException
 import ru.souz.llms.LLMRequest
+import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.restJsonMapper
 import ru.souz.llms.toMessage
@@ -388,6 +389,7 @@ private class Harness(
         input = input,
         settings = AgentSettings(
             model = "test-model",
+            provider = LlmProvider.OPENAI,
             temperature = 0f,
             toolsByCategory = emptyMap(),
         ),

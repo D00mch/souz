@@ -21,6 +21,12 @@ class SettingsProviderImpl(
     private val configStore: ConfigStore,
     private val localProviderAvailability: LocalProviderAvailability = defaultLocalProviderAvailability(),
 ) : SettingsProvider {
+    override val subagentModels: Map<String, LlmProvider> = parseSubagentModels(
+        configStore.get<String>(SUBAGENT_MODELS_JSON)
+            ?: System.getenv(SUBAGENT_MODELS_JSON)
+            ?: System.getProperty(SUBAGENT_MODELS_JSON),
+    )
+
     private val llmBuildProfile by lazy { LlmBuildProfile(this, localProviderAvailability) }
 
     private var _fewShotsDelegate: String? by keyDelegate(configKey = USE_FEW_SHOTS, envKey = USE_FEW_SHOTS)

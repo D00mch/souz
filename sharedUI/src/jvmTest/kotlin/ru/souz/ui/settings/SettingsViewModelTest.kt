@@ -584,6 +584,7 @@ class SettingsViewModelTest {
                         input = "",
                         settings = AgentSettings(
                             model = LLMModel.LocalQwen3_4B_Instruct_2507.alias,
+                            provider = LLMModel.LocalQwen3_4B_Instruct_2507.provider,
                             temperature = 0f,
                             toolsByCategory = emptyMap(),
                         ),
