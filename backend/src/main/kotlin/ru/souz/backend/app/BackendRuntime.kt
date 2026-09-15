@@ -6,6 +6,7 @@ import org.kodein.di.instance
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.telegram.TelegramBotPollingService
+import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
 
 /** Process-wide backend runtime container with shared services and LLM resources. */
@@ -15,6 +16,9 @@ class BackendRuntime private constructor(
     internal val httpDependencies: BackendHttpDependencies by lazy { di.direct.instance() }
     private val telegramBotPollingService: TelegramBotPollingService? by lazy {
         if (httpDependencies.featureFlags.telegramBot) di.direct.instance() else null
+    }
+    private val vkBotPollingService: VkBotPollingService? by lazy {
+        if (httpDependencies.featureFlags.vkBot) di.direct.instance() else null
     }
     private val resources: BackendRuntimeResources by lazy { di.direct.instance() }
     private val applicationScope: BackendApplicationScope by lazy { di.direct.instance() }
@@ -26,6 +30,7 @@ class BackendRuntime private constructor(
             clientThreadRecoveryService.start(applicationScope)
         }
         telegramBotPollingService?.start()
+        vkBotPollingService?.start()
     }
 
     override fun close() {

@@ -42,6 +42,7 @@ internal fun postgresAppConfig(
     featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
     proxyToken: String? = null,
     telegramTokenEncryptionKey: String? = null,
+    vkTokenEncryptionKey: String? = null,
     includeSkillOAuthConfig: Boolean = true,
 ): BackendAppConfig {
     val container = SharedPostgresContainer.instance
@@ -54,6 +55,7 @@ internal fun postgresAppConfig(
         ),
         masterKey = "test-master-key",
         telegramTokenEncryptionKey = telegramTokenEncryptionKey,
+        vkTokenEncryptionKey = vkTokenEncryptionKey,
         skillOAuthTokenEncryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
             .takeIf { includeSkillOAuthConfig },
         skillOAuthProviderCredentials = if (includeSkillOAuthConfig) mapOf(

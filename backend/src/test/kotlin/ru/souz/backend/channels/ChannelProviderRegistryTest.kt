@@ -26,14 +26,16 @@ class ChannelProviderRegistryTest {
     @Test
     fun `listAll flattens channels from all providers`() = runTest {
         val telegram = FakeProvider("telegram", listOf(ChannelDescriptor("telegram", "1", "Telegram")))
+        val vk = FakeProvider("vk", listOf(ChannelDescriptor("vk", "2", "VK")))
         val mobile = FakeProvider("mobile_app", listOf(ChannelDescriptor("mobile_app", "chat-1", "Mobile")))
-        val registry = ChannelProviderRegistry(listOf(telegram, mobile))
+        val registry = ChannelProviderRegistry(listOf(telegram, vk, mobile))
 
         val channels = registry.listAll("user-1")
 
         assertEquals(
             setOf(
                 ChannelDescriptor("telegram", "1", "Telegram"),
+                ChannelDescriptor("vk", "2", "VK"),
                 ChannelDescriptor("mobile_app", "chat-1", "Mobile"),
             ),
             channels.toSet(),

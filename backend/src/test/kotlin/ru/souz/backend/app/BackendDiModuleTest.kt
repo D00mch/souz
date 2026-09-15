@@ -43,11 +43,14 @@ import ru.souz.backend.storage.postgres.PostgresChatRepository
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
+import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
+import ru.souz.backend.vk.VkBotBindingRepository
+import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.backend.user.repository.UserRepository
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
@@ -75,6 +78,7 @@ class BackendDiModuleTest {
             assertIs<PostgresUserSettingsRepository>(di.direct.instance<UserSettingsRepository>())
             assertIs<PostgresUserProviderKeyRepository>(di.direct.instance<UserProviderKeyRepository>())
             assertIs<PostgresTelegramBotBindingRepository>(di.direct.instance<TelegramBotBindingRepository>())
+            assertIs<PostgresVkBotBindingRepository>(di.direct.instance<VkBotBindingRepository>())
             assertIs<PostgresBackendServerPreferenceStore>(di.direct.instance<BackendServerPreferenceStore>())
             assertIs<BackendSettingsProvider>(di.direct.instance<ru.souz.db.SettingsProvider>())
             assertIs<UserProviderKeyService>(di.direct.instance<UserProviderKeyService>())
@@ -103,6 +107,7 @@ class BackendDiModuleTest {
             assertNotNull(httpDependencies.optionService)
             assertNotNull(httpDependencies.eventService)
             assertNull(httpDependencies.telegramBotBindingService)
+            assertNull(httpDependencies.vkBotBindingService)
         } finally {
             di.direct.instance<BackendRuntimeResources>().close()
         }
@@ -166,6 +171,27 @@ class BackendDiModuleTest {
     }
 
     @Test
+    fun `http dependencies include vk binding when feature is enabled`() {
+        val appConfig = testAppConfig(
+            featureFlags = BackendFeatureFlags(vkBot = true),
+            vkTokenEncryptionKey = TEST_VK_TOKEN_ENCRYPTION_KEY,
+        )
+        val dataSource = HikariDataSource()
+        val di = testDi(appConfig, dataSource)
+
+        try {
+            val httpDependencies = di.direct.instance<BackendHttpDependencies>()
+
+            assertSame(
+                di.direct.instance<VkBotBindingService>(),
+                httpDependencies.vkBotBindingService,
+            )
+        } finally {
+            di.direct.instance<BackendRuntimeResources>().close()
+        }
+    }
+
+    @Test
     fun `backend catalog excludes desktop sound configuration tools`() {
         val dataSource = HikariDataSource()
         val di = testDi(testAppConfig(), dataSource)
@@ -217,6 +243,7 @@ class BackendDiModuleTest {
     private fun testAppConfig(
         featureFlags: BackendFeatureFlags = BackendFeatureFlags(),
         telegramTokenEncryptionKey: String? = null,
+        vkTokenEncryptionKey: String? = null,
         includeSkillOAuthConfig: Boolean = true,
     ): BackendAppConfig = BackendAppConfig(
         featureFlags = featureFlags,
@@ -237,6 +264,7 @@ class BackendDiModuleTest {
         ),
         masterKey = "test-master-key",
         telegramTokenEncryptionKey = telegramTokenEncryptionKey,
+        vkTokenEncryptionKey = vkTokenEncryptionKey,
         skillOAuthTokenEncryptionKey = if (includeSkillOAuthConfig) TEST_SKILL_OAUTH_TOKEN_ENCRYPTION_KEY else null,
         skillOAuthProviderCredentials = if (includeSkillOAuthConfig) {
             mapOf(
@@ -253,6 +281,8 @@ class BackendDiModuleTest {
 
     private companion object {
         const val TEST_TELEGRAM_TOKEN_ENCRYPTION_KEY =
+            "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+        const val TEST_VK_TOKEN_ENCRYPTION_KEY =
             "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
         const val TEST_SKILL_OAUTH_TOKEN_ENCRYPTION_KEY =
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="

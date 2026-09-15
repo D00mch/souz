@@ -1,4 +1,4 @@
-package ru.souz.backend.telegram
+package ru.souz.backend.vk
 
 import io.ktor.http.HttpStatusCode
 import java.security.SecureRandom
@@ -11,22 +11,22 @@ import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.badRequestV1
 
-data class TelegramBotBindingUpsertResult(
-    val binding: TelegramBotBinding,
+data class VkBotBindingUpsertResult(
+    val binding: VkBotBinding,
     val pendingLinkCommand: String,
 )
 
-class TelegramBotBindingService(
+class VkBotBindingService(
     private val chatRepository: ChatRepository,
-    private val bindingRepository: TelegramBotBindingRepository,
-    private val telegramBotApi: TelegramBotApi,
-    private val tokenCrypto: TelegramBotTokenCrypto,
+    private val bindingRepository: VkBotBindingRepository,
+    private val vkBotApi: VkBotApi,
+    private val tokenCrypto: VkBotTokenCrypto,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     suspend fun get(
         userId: String,
         chatId: UUID,
-    ): TelegramBotBinding? {
+    ): VkBotBinding? {
         requireOwnedChat(userId, chatId)
         return bindingRepository.getByUserAndChat(userId, chatId)
     }
@@ -35,22 +35,23 @@ class TelegramBotBindingService(
         userId: String,
         chatId: UUID,
         token: String,
-    ): TelegramBotBindingUpsertResult {
+    ): VkBotBindingUpsertResult {
         requireOwnedChat(userId, chatId)
         val normalizedToken = token.trim()
         validateToken(normalizedToken)
 
-        val getMe = try {
-            telegramBotApi.getMe(normalizedToken)
+        val groupInfo = try {
+            vkBotApi.getGroupInfo(normalizedToken)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: TelegramBotApiTransportException) {
+        } catch (e: VkBotApiTransportException) {
             throw bindingFailed()
         } catch (e: Exception) {
             throw bindingFailed()
         }
-        if (!getMe.ok) {
-            throw invalidTelegramToken()
+        val group = groupInfo.response?.firstOrNull()
+        if (groupInfo.error != null || group == null) {
+            throw invalidVkToken()
         }
 
         val tokenHash = sha256Hex(normalizedToken)
@@ -64,21 +65,9 @@ class TelegramBotBindingService(
         if (existingByToken != null && existingByToken.chatId != chatId) {
             throw BackendV1Exception(
                 status = HttpStatusCode.Conflict,
-                code = "telegram_bot_already_bound",
-                message = "Telegram bot is already bound to another chat.",
+                code = "vk_bot_already_bound",
+                message = "VK bot is already bound to another chat.",
             )
-        }
-        try {
-            telegramBotApi.deleteWebhook(
-                token = normalizedToken,
-                dropPendingUpdates = true,
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: TelegramBotApiTransportException) {
-            throw bindingFailed()
-        } catch (e: Exception) {
-            throw bindingFailed()
         }
 
         val linkSecret = generateLinkSecret()
@@ -86,28 +75,28 @@ class TelegramBotBindingService(
             bindingRepository.upsertForChat(
                 userId = userId,
                 chatId = chatId,
-                botToken = tokenCrypto.encrypt(normalizedToken),
-                botTokenHash = tokenHash,
+                groupToken = tokenCrypto.encrypt(normalizedToken),
+                groupTokenHash = tokenHash,
                 linkSecretHash = sha256Hex(linkSecret),
-                botUsername = getMe.result?.username,
-                botFirstName = getMe.result?.firstName,
+                vkGroupId = group.id,
+                vkGroupName = group.name,
                 now = clock.instant(),
             )
         } catch (e: CancellationException) {
             throw e
-        } catch (e: TelegramBotTokenHashConflictException) {
+        } catch (e: VkBotTokenHashConflictException) {
             throw BackendV1Exception(
                 status = HttpStatusCode.Conflict,
-                code = "telegram_bot_already_bound",
-                message = "Telegram bot is already bound to another chat.",
+                code = "vk_bot_already_bound",
+                message = "VK bot is already bound to another chat.",
             )
         } catch (e: Exception) {
             throw bindingFailed()
         }
 
-        return TelegramBotBindingUpsertResult(
+        return VkBotBindingUpsertResult(
             binding = binding,
-            pendingLinkCommand = "/start $linkSecret",
+            pendingLinkCommand = linkSecret,
         )
     }
 
@@ -123,8 +112,8 @@ class TelegramBotBindingService(
         } catch (e: Exception) {
             throw BackendV1Exception(
                 status = HttpStatusCode.InternalServerError,
-                code = "telegram_bot_delete_failed",
-                message = "Failed to delete Telegram bot binding.",
+                code = "vk_bot_delete_failed",
+                message = "Failed to delete VK bot binding.",
             )
         }
     }
@@ -150,18 +139,18 @@ class TelegramBotBindingService(
         }
     }
 
-    private fun invalidTelegramToken(): BackendV1Exception =
+    private fun invalidVkToken(): BackendV1Exception =
         BackendV1Exception(
             status = HttpStatusCode.BadRequest,
-            code = "invalid_telegram_bot_token",
-            message = "Telegram bot token is invalid.",
+            code = "invalid_vk_bot_token",
+            message = "VK group access token is invalid.",
         )
 
     private fun bindingFailed(): BackendV1Exception =
         BackendV1Exception(
             status = HttpStatusCode.InternalServerError,
-            code = "telegram_bot_bind_failed",
-            message = "Failed to bind Telegram bot.",
+            code = "vk_bot_bind_failed",
+            message = "Failed to bind VK bot.",
         )
 
     private companion object {

@@ -25,6 +25,7 @@ import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.channels.ChannelProviderRegistry
 import ru.souz.backend.channels.PublicClientChannelProvider
 import ru.souz.backend.channels.TelegramChannelProvider
+import ru.souz.backend.channels.VkChannelProvider
 import ru.souz.backend.channels.tool.BackendChannelToolCatalog
 import ru.souz.backend.channels.tool.ToolListActiveChannels
 import ru.souz.backend.channels.tool.ToolSendMessageToChannel
@@ -73,6 +74,7 @@ import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresToolCallRepository
 import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
+import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
 import ru.souz.backend.storage.postgres.PostgresUserRepository
 import ru.souz.backend.storage.postgres.PostgresUserProviderKeyRepository
 import ru.souz.backend.storage.postgres.PostgresUserSettingsRepository
@@ -96,6 +98,12 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
+import ru.souz.backend.vk.HttpVkBotApi
+import ru.souz.backend.vk.VkBotApi
+import ru.souz.backend.vk.VkBotBindingRepository
+import ru.souz.backend.vk.VkBotBindingService
+import ru.souz.backend.vk.VkBotPollingService
+import ru.souz.backend.vk.VkBotTokenCrypto
 import ru.souz.skilloauth.impl.SkillOAuthGatewayImpl
 import ru.souz.tool.RuntimeToolsFactory
 import ru.souz.tool.composeToolCatalogs
@@ -170,6 +178,7 @@ fun backendDiModule(
     bindSingleton<UserSettingsRepository> { PostgresUserSettingsRepository(instance()) }
     bindSingleton<UserProviderKeyRepository> { PostgresUserProviderKeyRepository(instance()) }
     bindSingleton<TelegramBotBindingRepository> { PostgresTelegramBotBindingRepository(instance()) }
+    bindSingleton<VkBotBindingRepository> { PostgresVkBotBindingRepository(instance()) }
     bindSingleton {
         // Each AuthorizationCodeOAuthClient and SkillOAuthGatewayImpl owns its own Ktor CIO
         // HttpClient (a selector-manager thread pool each); without closing them here they leak
@@ -360,6 +369,42 @@ fun backendDiModule(
             )
         }
     }
+    if (appConfig.featureFlags.vkBot) {
+        bindSingleton<VkBotApi> { HttpVkBotApi() }
+        bindSingleton {
+            VkBotTokenCrypto(
+                rawBase64Key = appConfig.vkTokenEncryptionKey
+                    ?: error("VK token encryption key is required.")
+            )
+        }
+        bindSingleton {
+            VkBotBindingService(
+                chatRepository = instance(),
+                bindingRepository = instance(),
+                vkBotApi = instance(),
+                tokenCrypto = instance(),
+                clock = instance(),
+            )
+        }
+        bindSingleton {
+            VkBotPollingService(
+                repository = instance(),
+                botApi = instance(),
+                executionService = instance(),
+                tokenCrypto = instance(),
+                scope = instance<BackendApplicationScope>(),
+                maxConcurrency = appConfig.vkPollingMaxConcurrency,
+            )
+        }
+        bindSingleton {
+            VkChannelProvider(
+                bindingRepository = instance(),
+                deliveryService = instance(),
+                vkBotApi = instance(),
+                tokenCrypto = instance(),
+            )
+        }
+    }
     bindSingleton {
         ChannelDeliveryService(
             chatRepository = instance(),
@@ -369,15 +414,18 @@ fun backendDiModule(
     }
     bindSingleton {
         val telegramBindingRepository = instance<TelegramBotBindingRepository>()
+        val vkBindingRepository = instance<VkBotBindingRepository>()
         PublicClientChannelProvider(
             chatRepository = instance(),
             deliveryService = instance(),
             isClaimedByAnotherProvider = { chatId ->
-                // Gated on the same flag TelegramChannelProvider's registration is gated on below —
-                // otherwise a leftover Telegram binding would hide a chat from ListActiveChannels
-                // entirely once telegramBot is turned off.
-                appConfig.featureFlags.telegramBot &&
-                    telegramBindingRepository.getByChat(chatId)?.active == true
+                // Gated on the same flags TelegramChannelProvider/VkChannelProvider's registration
+                // is gated on below — otherwise a leftover Telegram/VK binding would hide a chat
+                // from ListActiveChannels entirely once that channel's flag is turned off.
+                (appConfig.featureFlags.telegramBot &&
+                    telegramBindingRepository.getByChat(chatId)?.active == true) ||
+                    (appConfig.featureFlags.vkBot &&
+                        vkBindingRepository.getByChat(chatId)?.active == true)
             },
         )
     }
@@ -385,6 +433,7 @@ fun backendDiModule(
         ChannelProviderRegistry(
             providers = listOfNotNull(
                 if (appConfig.featureFlags.telegramBot) instance<TelegramChannelProvider>() else null,
+                if (appConfig.featureFlags.vkBot) instance<VkChannelProvider>() else null,
                 instance<PublicClientChannelProvider>(),
             )
         )
@@ -453,6 +502,7 @@ fun backendDiModule(
             eventService = instance(),
             publicClientService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
+            vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,
             selectedModel = {
                 settingsProvider.gigaModel
