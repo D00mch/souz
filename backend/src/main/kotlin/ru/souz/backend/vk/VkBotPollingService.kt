@@ -3,7 +3,10 @@ package ru.souz.backend.vk
 import java.io.IOException
 import java.net.InetAddress
 import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -73,6 +76,7 @@ class VkBotPollingService(
     private val logger = LoggerFactory.getLogger(VkBotPollingService::class.java)
     private val semaphore = Semaphore(maxConcurrency)
     private var pollingJob: Job? = null
+    private val lastAlreadyBoundReplyAt = ConcurrentHashMap<UUID, Instant>()
 
     constructor(
         repository: VkBotBindingRepository,
@@ -234,6 +238,11 @@ class VkBotPollingService(
                 }
                 else -> throw VkBotApiException("Unknown VK Long Poll failed code: ${response.failed}")
             }
+            // A short pause between retries so a VK-side blip returning failed=1/2/3 repeatedly
+            // doesn't fire up to MAX_LONGPOLL_ATTEMPTS requests back-to-back with no backoff.
+            if (attempts < MAX_LONGPOLL_ATTEMPTS) {
+                delay(LONGPOLL_RETRY_DELAY_MS.milliseconds)
+            }
         }
         throw VkBotApiException("VK Long Poll session could not be established after $attempts attempt(s).")
     }
@@ -292,7 +301,7 @@ class VkBotPollingService(
                     val sameSender = message.fromId == claim.binding.vkUserId &&
                         message.peerId == claim.binding.vkPeerId
                     if (!sameSender) {
-                        sendReplySafely(binding.id, token, message.peerId, ALREADY_BOUND_REPLY)
+                        sendAlreadyBoundReplyThrottled(binding.id, token, message.peerId)
                     }
                     claim.binding
                 }
@@ -306,7 +315,7 @@ class VkBotPollingService(
             message.peerId == binding.vkPeerId
         if (!senderMatches) {
             if (isDirect) {
-                sendReplySafely(binding.id, token, message.peerId, ALREADY_BOUND_REPLY)
+                sendAlreadyBoundReplyThrottled(binding.id, token, message.peerId)
             }
             return binding
         }
@@ -392,9 +401,18 @@ class VkBotPollingService(
         error: VkApiError,
     ) {
         when (error.errorCode) {
-            VK_ERROR_UNAUTHORIZED -> repository.markError(binding.id, VK_UNAUTHORIZED, disable = true)
-            VK_ERROR_TOO_MANY_REQUESTS, VK_ERROR_FLOOD_CONTROL, VK_ERROR_RATE_LIMIT_REACHED ->
+            // Both codes mean this token can never succeed on its own — an invalid/revoked token
+            // (5) or one missing a required scope (15, e.g. before Long Poll access was granted).
+            // Retrying without human intervention would just hammer VK forever, so disable.
+            VK_ERROR_UNAUTHORIZED, VK_ERROR_ACCESS_DENIED ->
+                repository.markError(binding.id, VK_UNAUTHORIZED, disable = true)
+            VK_ERROR_TOO_MANY_REQUESTS, VK_ERROR_FLOOD_CONTROL, VK_ERROR_RATE_LIMIT_REACHED -> {
                 repository.markError(binding.id, VK_RATE_LIMITED)
+                // VK's rate-limit errors carry no retry_after; back off a fixed amount so this
+                // binding doesn't immediately retry on the next ~1s poll tick and compound the
+                // flood-control penalty it just hit.
+                delay(RATE_LIMIT_BACKOFF_MS.milliseconds)
+            }
             VK_ERROR_INTERNAL -> repository.markError(binding.id, VK_NETWORK_ERROR)
             else -> repository.markError(binding.id, VK_UNKNOWN_ERROR)
         }
@@ -429,6 +447,22 @@ class VkBotPollingService(
         }
     }
 
+    /**
+     * Foreign/wrong-account traffic on an already-linked or already-claimed binding gets this
+     * reply once per [ALREADY_BOUND_REPLY_COOLDOWN_MS] window instead of once per message — an
+     * unbound-rate reply to repeated foreign messages would itself risk tripping VK's own
+     * flood-control on the community's token.
+     */
+    private suspend fun sendAlreadyBoundReplyThrottled(bindingId: UUID, token: String, peerId: Long) {
+        val now = clock.instant()
+        val last = lastAlreadyBoundReplyAt[bindingId]
+        if (last != null && Duration.between(last, now).toMillis() < ALREADY_BOUND_REPLY_COOLDOWN_MS) {
+            return
+        }
+        lastAlreadyBoundReplyAt[bindingId] = now
+        sendReplySafely(bindingId, token, peerId, ALREADY_BOUND_REPLY)
+    }
+
     private suspend fun sendReplySafely(
         bindingId: UUID,
         token: String,
@@ -457,11 +491,15 @@ class VkBotPollingService(
         const val DEFAULT_MAX_CONCURRENCY: Int = 4
         const val MAX_INCOMING_TEXT_LENGTH: Int = 8_000
         const val MESSAGE_NEW_EVENT: String = "message_new"
+        const val LONGPOLL_RETRY_DELAY_MS: Long = 500L
+        const val RATE_LIMIT_BACKOFF_MS: Long = 5_000L
+        const val ALREADY_BOUND_REPLY_COOLDOWN_MS: Long = 60_000L
 
         const val VK_ERROR_UNAUTHORIZED: Int = 5
         const val VK_ERROR_TOO_MANY_REQUESTS: Int = 6
         const val VK_ERROR_INTERNAL: Int = 10
         const val VK_ERROR_FLOOD_CONTROL: Int = 9
+        const val VK_ERROR_ACCESS_DENIED: Int = 15
         const val VK_ERROR_RATE_LIMIT_REACHED: Int = 29
 
         const val LINKED_REPLY: String = "Готово, этот VK-аккаунт привязан к чату Souz."
