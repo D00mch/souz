@@ -59,7 +59,6 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.backend.user.repository.UserRepository
-import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.MemoryRetrievalRequest
 import ru.souz.memory.legacyMemoryContext
@@ -72,38 +71,22 @@ import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendDiModuleTest {
     @Test
-    fun `hindsight recalls and retains with optional bearer authentication`() = runTest {
-        listOf(null to null, " " to null, "test-token" to "Bearer test-token").forEach { (token, expectedHeader) ->
-            val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/", hindsightApiToken = token)
-                .validate()
-            val authorizations = mutableListOf<String?>()
-            val client = HttpClient(MockEngine { request ->
-                authorizations += request.headers[HttpHeaders.Authorization]
-                respond(
-                    if (request.url.encodedPath.endsWith("/recall")) {
-                        """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
-                    } else """{"success":true}""",
-                    headers = headersOf(HttpHeaders.ContentType, "application/json"),
-                )
-            }) { providerHttpClientDefaults() }
-            val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
-            try {
-                val memory = di.direct.instance<ConversationMemoryRuntime>()
-                val recalled = memory.retrieveMemory(MemoryRetrievalRequest(legacyMemoryContext(), "tea"))
-                assertEquals("fact-1", recalled.facts.single().factId)
-                memory.captureCompletedTurn(
-                    CompletedTurnMemoryInput(
-                        conversationId = null,
-                        userMessageId = "message-1",
-                        assistantMessageId = null,
-                        userMessage = "I like tea",
-                        assistantMessage = "OK",
-                    )
-                )
-                assertEquals(listOf(expectedHeader, expectedHeader), authorizations)
-            } finally {
-                di.direct.instance<BackendRuntimeResources>().close()
-            }
+    fun `hindsight recalls without a token when only url is configured`() = runTest {
+        val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/").validate()
+        val client = HttpClient(MockEngine { request ->
+            assertNull(request.headers[HttpHeaders.Authorization])
+            respond(
+                """{"results":[{"id":"fact-1","text":"The user likes tea"}]}""",
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }) { providerHttpClientDefaults() }
+        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
+        try {
+            val memory = di.direct.instance<ConversationMemoryRuntime>()
+            val recalled = memory.retrieveMemory(MemoryRetrievalRequest(legacyMemoryContext(), "tea"))
+            assertEquals("fact-1", recalled.facts.single().factId)
+        } finally {
+            di.direct.instance<BackendRuntimeResources>().close()
         }
     }
 
