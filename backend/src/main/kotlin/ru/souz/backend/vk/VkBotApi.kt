@@ -14,6 +14,7 @@ import java.time.Duration
 import kotlin.random.Random
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import ru.souz.tool.web.internal.WebToolSupport
 
 interface VkBotApi {
     suspend fun getGroupInfo(groupToken: String): VkGroup
@@ -29,6 +30,7 @@ internal class HttpVkBotApi(
 ) : VkBotApi, AutoCloseable {
     private val mapper = jacksonObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
     private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
+    private val userAgent = WebToolSupport().userAgent
 
     override suspend fun getGroupInfo(groupToken: String): VkGroup {
         val response = method(groupToken, "groups.getById")
@@ -81,7 +83,8 @@ internal class HttpVkBotApi(
     }
 
     private suspend fun request(builder: HttpRequest.Builder): JsonNode = runInterruptible(Dispatchers.IO) {
-        val response = client.send(builder.timeout(Duration.ofSeconds(35)).build(), HttpResponse.BodyHandlers.ofString())
+        val request = builder.header("User-Agent", userAgent).timeout(Duration.ofSeconds(35)).build()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
         if (response.statusCode() !in 200..299) throw IOException("VK HTTP ${response.statusCode()}.")
         mapper.readTree(response.body()) ?: throw IOException("Empty VK response.")
     }

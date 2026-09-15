@@ -11,13 +11,16 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import ru.souz.tool.web.internal.WebToolSupport
 
 class HttpVkBotApiTest {
     @Test
     fun `HTTP adapter handles VK envelopes encodes credentials and rejects failed sends`() = runBlocking {
         val requests = CopyOnWriteArrayList<Pair<String, Map<String, String>>>()
+        val userAgents = CopyOnWriteArrayList<String?>()
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { call ->
+            userAgents += call.requestHeaders.getFirst("User-Agent")
             val body = if (call.requestMethod == "GET") call.requestURI.rawQuery else call.requestBody.reader().readText()
             val form = body.split('&').associate { part ->
                 val (key, value) = part.split('=', limit = 2)
@@ -53,6 +56,7 @@ class HttpVkBotApiTest {
                 assertEquals(5, failure.code)
                 assertFalse(failure.toString().contains("secret-token"))
                 assertFailsWith<IOException> { api.sendMessage("http-error", 7, "hello") }
+                assertEquals(setOf(WebToolSupport().userAgent), userAgents.toSet())
             }
         } finally {
             server.stop(0)
