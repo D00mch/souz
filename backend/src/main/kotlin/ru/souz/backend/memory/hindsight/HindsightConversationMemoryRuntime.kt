@@ -41,7 +41,7 @@ private const val UNSUPPORTED_MUTATION_NOTICE =
 class HindsightConversationMemoryRuntime(
     private val httpClient: HttpClient,
     baseUrl: String,
-    private val apiToken: String,
+    private val apiToken: String? = null,
 ) : ConversationMemoryRuntime {
     private val baseUrl = baseUrl.trimEnd('/')
     private val logger = LoggerFactory.getLogger(HindsightConversationMemoryRuntime::class.java)
@@ -136,7 +136,7 @@ class HindsightConversationMemoryRuntime(
         val response = httpClient.post(
             "$baseUrl/v1/default/banks/${bankIdFor(context.ownerId)}/memories/recall"
         ) {
-            authenticated(apiToken)
+            jsonRequest(apiToken)
             setBody(
                 buildMap<String, Any> {
                     put("query", query)
@@ -154,7 +154,7 @@ class HindsightConversationMemoryRuntime(
         repeat(if (retryOnIoFailure) 2 else 1) { attempt ->
             try {
                 val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories") {
-                    authenticated(apiToken)
+                    jsonRequest(apiToken)
                     timeout { requestTimeoutMillis = RETAIN_TIMEOUT_MILLIS }
                     setBody(mapOf("items" to listOf(item)))
                 }.requireSuccess().body<RetainResponse>()
@@ -185,8 +185,8 @@ private fun CompletedTurnMemoryInput.retainedContent(includeToolEvidence: Boolea
 private fun MemoryContext.chatTags(): List<String> =
     listOfNotNull(conversationId?.value?.let { "chat:$it" })
 
-private fun HttpRequestBuilder.authenticated(apiToken: String) {
-    header(HttpHeaders.Authorization, "Bearer $apiToken")
+private fun HttpRequestBuilder.jsonRequest(apiToken: String?) {
+    if (!apiToken.isNullOrBlank()) header(HttpHeaders.Authorization, "Bearer $apiToken")
     contentType(ContentType.Application.Json)
 }
 

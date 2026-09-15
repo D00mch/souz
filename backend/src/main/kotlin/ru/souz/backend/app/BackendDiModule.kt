@@ -259,12 +259,11 @@ fun backendDiModule(
     }
     bindSingleton<ConversationMemoryRuntime> {
         val hindsightUrl = appConfig.hindsightApiUrl
-        val hindsightToken = appConfig.hindsightApiToken
-        if (hindsightUrl != null && hindsightToken != null) {
+        if (hindsightUrl != null) {
             HindsightConversationMemoryRuntime(
                 httpClient = instance<ProviderHttpClients>().standard,
                 baseUrl = hindsightUrl,
-                apiToken = hindsightToken,
+                apiToken = appConfig.hindsightApiToken,
             )
         } else {
             NoopConversationMemoryRuntime

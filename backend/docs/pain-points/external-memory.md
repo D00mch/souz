@@ -2,6 +2,8 @@
 
 ## Invariant
 
+`HINDSIGHT_API_URL` enables the backend memory runtime. `HINDSIGHT_API_TOKEN` is optional; an absent or blank token omits the Authorization header, while a configured token requires a URL.
+
 Hindsight uses one hash-derived bank per trusted backend user. Untagged facts are global; ordinary completed turns carry a `chat:<conversation-id>` tag, and recall includes only global facts plus the current conversation. Ordinary retained content contains redacted user text and tool output, never assistant synthesis; explicit global memory contains only the user text. A stable user-message ID becomes the Hindsight document ID.
 
 Natural-language forget and delete requests are not mapped from semantic recall results to destructive API calls. Ranked relevance does not prove exact identity, so the runtime tells the agent that exact-ID deletion is unavailable.
@@ -21,4 +23,4 @@ Omitting recall tags exposes one conversation's transient memory in another. Ret
 
 ## Verification
 
-Run `./gradlew :backend:test --tests 'ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntimeTest'`, `./gradlew :sharedLogic:jvmTest --tests 'ru.souz.memory.MemoryRulesTest'`, and `./gradlew souzGateFast`.
+Run `./gradlew :backend:test --tests 'ru.souz.backend.app.BackendDiModuleTest'`, `./gradlew :sharedLogic:jvmTest --tests 'ru.souz.memory.MemoryRulesTest'`, and `./gradlew souzGateFast`.
