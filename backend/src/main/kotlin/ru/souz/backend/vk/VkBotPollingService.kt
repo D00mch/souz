@@ -78,6 +78,12 @@ class VkBotPollingService(
     private var pollingJob: Job? = null
     private val lastAlreadyBoundReplyAt = ConcurrentHashMap<UUID, Instant>()
 
+    // In-memory only — never persisted, and intentionally not part of VkBotBinding. Caches the
+    // server/key pair across poll ticks for a binding so a healthy poll loop only calls
+    // groups.getLongPollServer once (not once per tick); a stale/invalid cached key self-heals
+    // via the ordinary failed=2/3 handling in fetchLongPollBatch, which refreshes and re-caches it.
+    private val longPollSessions = ConcurrentHashMap<UUID, VkLongPollServer>()
+
     constructor(
         repository: VkBotBindingRepository,
         botApi: VkBotApi,
@@ -124,6 +130,7 @@ class VkBotPollingService(
 
     internal suspend fun pollEnabledOnce() {
         val bindings = repository.listEnabled()
+        longPollSessions.keys.retainAll(bindings.mapTo(HashSet()) { it.id })
         supervisorScope {
             bindings.forEach { binding ->
                 launch {
@@ -172,7 +179,7 @@ class VkBotPollingService(
             }
 
             val batch = try {
-                fetchLongPollBatch(token, leasedBinding.vkGroupId, leasedBinding.lastTs)
+                fetchLongPollBatch(leasedBinding.id, token, leasedBinding.vkGroupId, leasedBinding.lastTs)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: VkBotApiHttpException) {
@@ -216,13 +223,16 @@ class VkBotPollingService(
     }
 
     /**
-     * One Long Poll round for [groupId]: negotiates a session (or resumes [lastTs] against a
-     * fresh server/key), retrying in-place per VK's `failed` codes — `1` resumes with the
-     * server-returned `ts`, `2` refreshes only the key, `3` resets the whole session — up to
-     * [MAX_LONGPOLL_ATTEMPTS] before giving up for this poll tick.
+     * One Long Poll round for [groupId]: reuses the cached session for [bindingId] if this
+     * instance already has one (avoiding a `groups.getLongPollServer` call on every healthy poll
+     * tick), or negotiates a fresh one. Resumes from [lastTs] when present. Retries in-place per
+     * VK's `failed` codes — `1` resumes with the server-returned `ts`, `2` refreshes only the key,
+     * `3` resets the whole session — up to [MAX_LONGPOLL_ATTEMPTS] before giving up for this poll
+     * tick; a stale cached key self-heals via the `2`/`3` paths, which re-cache the fresh session.
      */
-    private suspend fun fetchLongPollBatch(token: String, groupId: Long, lastTs: String?): VkLongPollBatch {
-        var session = negotiateSession(token, groupId)
+    private suspend fun fetchLongPollBatch(bindingId: UUID, token: String, groupId: Long, lastTs: String?): VkLongPollBatch {
+        var session = longPollSessions[bindingId]
+            ?: negotiateSession(token, groupId).also { longPollSessions[bindingId] = it }
         var ts = lastTs ?: session.ts
         var attempts = 0
         while (attempts < MAX_LONGPOLL_ATTEMPTS) {
@@ -231,10 +241,14 @@ class VkBotPollingService(
             when (response.failed) {
                 null -> return VkLongPollBatch(newTs = response.ts ?: ts, updates = response.updates)
                 1 -> ts = response.ts ?: ts
-                2 -> session = negotiateSession(token, groupId).let { fresh -> session.copy(server = fresh.server, key = fresh.key) }
+                2 -> {
+                    session = negotiateSession(token, groupId).let { fresh -> session.copy(server = fresh.server, key = fresh.key) }
+                    longPollSessions[bindingId] = session
+                }
                 3 -> {
                     session = negotiateSession(token, groupId)
                     ts = session.ts
+                    longPollSessions[bindingId] = session
                 }
                 else -> throw VkBotApiException("Unknown VK Long Poll failed code: ${response.failed}")
             }

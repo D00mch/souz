@@ -9,13 +9,14 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.vk.VkApiError
@@ -393,7 +394,7 @@ private class FakeVkBotApi : VkBotApi {
     val typingActivity = CopyOnWriteArrayList<Long>()
     private val updates = CopyOnWriteArrayList<VkLongPollUpdate>()
     private val failedSendTexts = CopyOnWriteArrayList<String>()
-    private val nextPollPause = AtomicReference<PausedVkPoll?>()
+    private val nextPollPause = MutableStateFlow<PausedVkPoll?>(null)
 
     fun enqueue(update: VkLongPollUpdate) {
         updates += update
@@ -421,7 +422,7 @@ private class FakeVkBotApi : VkBotApi {
 
     override suspend fun pollLongPoll(server: String, key: String, ts: String, waitSeconds: Int): VkLongPollResponse {
         requestedTs += ts
-        val pause = nextPollPause.getAndSet(null)
+        val pause = nextPollPause.getAndUpdate { null }
         if (pause != null) {
             pause.entered.complete(Unit)
             pause.release.await()
@@ -448,11 +449,16 @@ private class FakeVkBotApi : VkBotApi {
 private class PausedVkPoll {
     val entered = CompletableDeferred<Unit>()
     val release = CompletableDeferred<Unit>()
-    private val response = AtomicReference(VkLongPollResponse(ts = "1", updates = emptyList()))
+
+    // Plain var, not an atomic: safe to publish this way because `respondWith` always runs
+    // (in the test body) before `release.complete(Unit)`, and `pollLongPoll` only reads
+    // `response()` after `release.await()` returns — `release`'s own completion already
+    // establishes that happens-before edge, so no separate JVM concurrency primitive is needed.
+    private var response = VkLongPollResponse(ts = "1", updates = emptyList())
 
     fun respondWith(update: VkLongPollUpdate, newTs: String) {
-        response.set(VkLongPollResponse(ts = newTs, updates = listOf(update)))
+        response = VkLongPollResponse(ts = newTs, updates = listOf(update))
     }
 
-    fun response(): VkLongPollResponse = response.get()
+    fun response(): VkLongPollResponse = response
 }

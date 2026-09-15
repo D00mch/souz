@@ -44,8 +44,6 @@ class VkBotBindingService(
             vkBotApi.getGroupInfo(normalizedToken)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: VkBotApiTransportException) {
-            throw bindingFailed()
         } catch (e: Exception) {
             throw bindingFailed()
         }
