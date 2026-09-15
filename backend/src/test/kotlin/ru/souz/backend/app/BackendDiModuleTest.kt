@@ -8,7 +8,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import com.zaxxer.hikari.HikariDataSource
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
+import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
+import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
@@ -28,6 +35,7 @@ import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.llms.http.ProviderHttpClients
+import ru.souz.llms.http.providerHttpClientDefaults
 import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
@@ -51,6 +59,9 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.backend.user.repository.UserRepository
+import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.MemoryRetrievalRequest
+import ru.souz.memory.legacyMemoryContext
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -59,6 +70,26 @@ import ru.souz.tool.memory.ToolSearchMemory
 import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendDiModuleTest {
+    @Test
+    fun `hindsight recalls without a token when only url is configured`() = runTest {
+        val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/").validate()
+        val client = HttpClient(MockEngine { request ->
+            assertNull(request.headers[HttpHeaders.Authorization])
+            respond(
+                """{"results":[{"id":"fact-1","text":"The user likes tea"}]}""",
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }) { providerHttpClientDefaults() }
+        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
+        try {
+            val memory = di.direct.instance<ConversationMemoryRuntime>()
+            val recalled = memory.retrieveMemory(MemoryRetrievalRequest(legacyMemoryContext(), "tea"))
+            assertEquals("fact-1", recalled.facts.single().factId)
+        } finally {
+            di.direct.instance<BackendRuntimeResources>().close()
+        }
+    }
+
     @Test
     fun `backend binds only postgres repositories`() {
         val appConfig = testAppConfig()
@@ -229,6 +260,7 @@ class BackendDiModuleTest {
     private fun testDi(
         appConfig: BackendAppConfig,
         dataSource: HikariDataSource,
+        providerClients: ProviderHttpClients? = null,
     ): DI = DI {
         import(
             backendDiModule(
@@ -237,6 +269,7 @@ class BackendDiModuleTest {
                 dataSourceFactory = { dataSource },
             )
         )
+        providerClients?.let { bindSingleton<ProviderHttpClients>(overrides = true) { it } }
     }
 
     private fun testAppConfig(

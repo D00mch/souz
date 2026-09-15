@@ -169,10 +169,10 @@ data class BackendAppConfig(
         if (vkPollingMaxConcurrency <= 0) {
             throw BackendConfigurationException("VK polling max concurrency must be positive.")
         }
-        if ((hindsightApiUrl == null) != (hindsightApiToken == null)) {
+        if (hindsightApiToken != null && hindsightApiUrl == null) {
             throw BackendConfigurationException(
-                "HINDSIGHT_API_URL / souz.hindsight.apiUrl and HINDSIGHT_API_TOKEN / souz.hindsight.apiToken " +
-                    "must be set together."
+                "HINDSIGHT_API_URL / souz.hindsight.apiUrl must be set when HINDSIGHT_API_TOKEN / " +
+                    "souz.hindsight.apiToken is provided."
             )
         }
         if (hindsightApiUrl != null && !hindsightApiUrl.isHindsightBaseUrl()) {
