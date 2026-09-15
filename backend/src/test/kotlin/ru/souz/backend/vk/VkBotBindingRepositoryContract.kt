@@ -98,7 +98,11 @@ internal suspend fun assertEnabledListingContract(repository: VkBotBindingReposi
         disable = true,
     )
 
-    assertEquals(listOf(enabled.id), repository.listEnabled().map { it.id })
+    // Checked by membership, not exact list equality — contract functions may run against a
+    // schema shared with other contract checks that also leave enabled rows behind.
+    val listedIds = repository.listEnabled().map { it.id }
+    assertTrue(enabled.id in listedIds)
+    assertTrue(disabled.id !in listedIds)
 }
 
 internal suspend fun assertLastTsContract(repository: VkBotBindingRepository) {

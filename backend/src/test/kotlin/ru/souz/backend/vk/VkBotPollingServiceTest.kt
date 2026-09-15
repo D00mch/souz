@@ -178,14 +178,14 @@ class VkBotPollingServiceTest {
 private class LeaseVkApi(private val update: VkLongPollUpdate) : VkBotApi {
     val sentMessages = CopyOnWriteArrayList<String>()
 
-    override suspend fun getGroupInfo(groupToken: String): VkGetGroupResponse =
-        VkGetGroupResponse(response = listOf(VkGroup(id = 555L, name = "Souz E2E")))
+    override suspend fun getGroupInfo(groupToken: String): VkResponse<List<VkGroup>> =
+        VkResponse(response = listOf(VkGroup(id = 555L, name = "Souz E2E")))
 
-    override suspend fun getLongPollServer(groupToken: String, groupId: Long): VkLongPollServerResponse =
-        VkLongPollServerResponse(response = VkLongPollServer(key = "key-1", server = "https://example.test/lp", ts = "1"))
+    override suspend fun getLongPollServer(groupToken: String, groupId: Long): VkResponse<VkLongPollServer> =
+        VkResponse(response = VkLongPollServer(key = "key-1", server = "https://example.test/lp", ts = "1"))
 
-    override suspend fun getUserInfo(groupToken: String, userId: Long): VkUsersGetResponse =
-        VkUsersGetResponse(response = emptyList())
+    override suspend fun getUserInfo(groupToken: String, userId: Long): VkResponse<List<VkUser>> =
+        VkResponse(response = emptyList())
 
     override suspend fun pollLongPoll(server: String, key: String, ts: String, waitSeconds: Int): VkLongPollResponse =
         VkLongPollResponse(ts = "2", updates = listOf(update))

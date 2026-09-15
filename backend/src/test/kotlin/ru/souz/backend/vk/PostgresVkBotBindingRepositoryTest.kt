@@ -9,92 +9,31 @@ import ru.souz.backend.storage.postgres.postgresAppConfig
 
 class PostgresVkBotBindingRepositoryTest {
     @Test
-    fun `postgres repository keeps one binding per chat and replaces token state`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_chat")
+    fun `postgres repository satisfies the VK binding contract`() = runTest {
+        val schema = newPostgresSchema("postgres_vk_binding")
         val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
 
         dataSource.use {
-            assertChatScopedUpsertContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository enforces unique token hash`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_token")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertUniqueTokenHashContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository listEnabled excludes disabled bindings`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_enabled")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertEnabledListingContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository persists last ts`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_update")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertLastTsContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository applies last ts only for the current lease owner, without monotonicity`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_update_owner")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertLeaseScopedLastTsContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository stores errors and can disable binding`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_error")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertMarkErrorContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository clearError removes stored error state`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_clear")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertClearErrorContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository persists vk link metadata`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_link")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertClaimVkUserContract(PostgresVkBotBindingRepository(it))
-        }
-    }
-
-    @Test
-    fun `postgres repository lease allows one owner at a time`() = runTest {
-        val schema = newPostgresSchema("postgres_vk_binding_lease")
-        val dataSource = PostgresDataSourceFactory.create(postgresAppConfig(schema).postgres)
-
-        dataSource.use {
-            assertLeaseContract(PostgresVkBotBindingRepository(it))
+            val repository = PostgresVkBotBindingRepository(it)
+            val checks = listOf<Pair<String, suspend (VkBotBindingRepository) -> Unit>>(
+                "chat-scoped upsert replaces token state" to ::assertChatScopedUpsertContract,
+                "unique token hash is enforced" to ::assertUniqueTokenHashContract,
+                "listEnabled excludes disabled bindings" to ::assertEnabledListingContract,
+                "last ts is persisted" to ::assertLastTsContract,
+                "last ts applies only for the current lease owner, without monotonicity" to
+                    ::assertLeaseScopedLastTsContract,
+                "errors are stored and can disable the binding" to ::assertMarkErrorContract,
+                "clearError removes stored error state" to ::assertClearErrorContract,
+                "vk link metadata is persisted" to ::assertClaimVkUserContract,
+                "lease allows one owner at a time" to ::assertLeaseContract,
+            )
+            checks.forEach { (description, check) ->
+                try {
+                    check(repository)
+                } catch (e: Throwable) {
+                    throw AssertionError("Contract check failed: $description", e)
+                }
+            }
         }
     }
 }

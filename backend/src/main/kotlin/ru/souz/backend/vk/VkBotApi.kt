@@ -20,13 +20,13 @@ import kotlinx.coroutines.runInterruptible
 
 interface VkBotApi {
     /** `groups.getById` — validates the group token and returns the community's own identity. */
-    suspend fun getGroupInfo(groupToken: String): VkGetGroupResponse
+    suspend fun getGroupInfo(groupToken: String): VkResponse<List<VkGroup>>
 
     /** `groups.getLongPollServer` — issues a fresh Long Poll session (server/key/ts). */
-    suspend fun getLongPollServer(groupToken: String, groupId: Long): VkLongPollServerResponse
+    suspend fun getLongPollServer(groupToken: String, groupId: Long): VkResponse<VkLongPollServer>
 
     /** `users.get` — best-effort display-name lookup; never required for the security-critical claim. */
-    suspend fun getUserInfo(groupToken: String, userId: Long): VkUsersGetResponse
+    suspend fun getUserInfo(groupToken: String, userId: Long): VkResponse<List<VkUser>>
 
     /** `GET <server>?act=a_check&key=&ts=&wait=` against the server VK itself returned. */
     suspend fun pollLongPoll(server: String, key: String, ts: String, waitSeconds: Int = 25): VkLongPollResponse
@@ -49,34 +49,34 @@ internal class HttpVkBotApi : VkBotApi {
         .connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS))
         .build()
 
-    override suspend fun getGroupInfo(groupToken: String): VkGetGroupResponse =
+    override suspend fun getGroupInfo(groupToken: String): VkResponse<List<VkGroup>> =
         methodRequest(
             token = groupToken,
             methodName = "groups.getById",
             formParameters = emptyMap(),
         ).bodyAsGroupList()
 
-    override suspend fun getLongPollServer(groupToken: String, groupId: Long): VkLongPollServerResponse =
+    override suspend fun getLongPollServer(groupToken: String, groupId: Long): VkResponse<VkLongPollServer> =
         methodRequest(
             token = groupToken,
             methodName = "groups.getLongPollServer",
             formParameters = mapOf("group_id" to groupId.toString()),
-        ).bodyAs<VkLongPollServerResponse>()
+        ).bodyAs()
 
-    override suspend fun getUserInfo(groupToken: String, userId: Long): VkUsersGetResponse =
+    override suspend fun getUserInfo(groupToken: String, userId: Long): VkResponse<List<VkUser>> =
         methodRequest(
             token = groupToken,
             methodName = "users.get",
             formParameters = mapOf("user_ids" to userId.toString()),
-        ).bodyAs<VkUsersGetResponse>()
+        ).bodyAs()
 
     override suspend fun pollLongPoll(server: String, key: String, ts: String, waitSeconds: Int): VkLongPollResponse =
         rawGet(
             uri = "$server?act=a_check&key=${key.urlEncode()}&ts=${ts.urlEncode()}&wait=$waitSeconds",
-        ).bodyAs<VkLongPollResponse>()
+        ).bodyAs()
 
     override suspend fun sendMessage(groupToken: String, peerId: Long, text: String) {
-        val response = methodRequest(
+        methodRequest(
             token = groupToken,
             methodName = "messages.send",
             formParameters = mapOf(
@@ -84,14 +84,11 @@ internal class HttpVkBotApi : VkBotApi {
                 "message" to text,
                 "random_id" to secureRandom.nextInt().let { if (it == 0) 1 else it }.toString(),
             ),
-        ).bodyAs<VkSendMessageResponse>()
-        response.error?.let { error ->
-            throw VkBotApiHttpException(methodName = "messages.send", vkError = error)
-        }
+        ).bodyAs<VkResponse<Long>>().throwOnError("messages.send")
     }
 
     override suspend fun setActivity(groupToken: String, peerId: Long, groupId: Long, type: String) {
-        val response = methodRequest(
+        methodRequest(
             token = groupToken,
             methodName = "messages.setActivity",
             formParameters = mapOf(
@@ -99,10 +96,11 @@ internal class HttpVkBotApi : VkBotApi {
                 "group_id" to groupId.toString(),
                 "type" to type,
             ),
-        ).bodyAs<VkSetActivityResponse>()
-        response.error?.let { error ->
-            throw VkBotApiHttpException(methodName = "messages.setActivity", vkError = error)
-        }
+        ).bodyAs<VkResponse<Int>>().throwOnError("messages.setActivity")
+    }
+
+    private fun VkResponse<*>.throwOnError(methodName: String) {
+        error?.let { throw VkBotApiHttpException(methodName = methodName, vkError = it) }
     }
 
     private suspend fun methodRequest(
@@ -171,12 +169,12 @@ internal class HttpVkBotApi : VkBotApi {
      * `{"groups": [...], "profiles": [...]}` object across VK API versions — parse the raw tree
      * and accept either shape rather than betting on one.
      */
-    private fun VkRawResponse.bodyAsGroupList(): VkGetGroupResponse =
+    private fun VkRawResponse.bodyAsGroupList(): VkResponse<List<VkGroup>> =
         try {
             val tree = mapper.readTree(body)
             val errorNode = tree.get("error")
             if (errorNode != null && !errorNode.isNull) {
-                VkGetGroupResponse(error = mapper.treeToValue(errorNode, VkApiError::class.java))
+                VkResponse(error = mapper.treeToValue(errorNode, VkApiError::class.java))
             } else {
                 val responseNode = tree.get("response")
                 val groupsNode = when {
@@ -188,7 +186,7 @@ internal class HttpVkBotApi : VkBotApi {
                 val groups = groupsNode?.let { node ->
                     mapper.readerForListOf(VkGroup::class.java).readValue<List<VkGroup>>(node)
                 }
-                VkGetGroupResponse(response = groups)
+                VkResponse(response = groups)
             }
         } catch (e: CancellationException) {
             throw e
@@ -232,9 +230,10 @@ data class VkApiError(
     val errorMsg: String? = null,
 )
 
+/** Envelope shared by every plain VK API method call: `{"response": T}` or `{"error": {...}}`. */
 @JsonIgnoreProperties(ignoreUnknown = true)
-data class VkGetGroupResponse(
-    val response: List<VkGroup>? = null,
+data class VkResponse<T>(
+    val response: T? = null,
     val error: VkApiError? = null,
 )
 
@@ -247,22 +246,10 @@ data class VkGroup(
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-data class VkLongPollServerResponse(
-    val response: VkLongPollServer? = null,
-    val error: VkApiError? = null,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
 data class VkLongPollServer(
     val key: String,
     val server: String,
     val ts: String,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class VkUsersGetResponse(
-    val response: List<VkUser>? = null,
-    val error: VkApiError? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -272,18 +259,6 @@ data class VkUser(
     val firstName: String? = null,
     @param:JsonProperty("last_name")
     val lastName: String? = null,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-private data class VkSendMessageResponse(
-    val response: Long? = null,
-    val error: VkApiError? = null,
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-private data class VkSetActivityResponse(
-    val response: Int? = null,
-    val error: VkApiError? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
