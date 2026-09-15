@@ -8,6 +8,7 @@ data class BackendFeatureFlags(
     val toolEvents: Boolean = false,
     val options: Boolean = false,
     val telegramBot: Boolean = false,
+    val vkBot: Boolean = false,
 ) {
     companion object {
         fun load(source: BackendConfigSource = SystemBackendConfigSource): BackendFeatureFlags =
@@ -35,6 +36,11 @@ data class BackendFeatureFlags(
                 telegramBot = source.booleanValue(
                     envKey = "ENABLE_BACKEND_TG_FEATURE",
                     propertyKey = "souz.backend.feature.telegramBot",
+                    default = false,
+                ),
+                vkBot = source.booleanValue(
+                    envKey = "ENABLE_BACKEND_VK_FEATURE",
+                    propertyKey = "souz.backend.feature.vkBot",
                     default = false,
                 ),
             )

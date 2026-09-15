@@ -1,6 +1,9 @@
 package ru.souz.backend.channels
 
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.model.CROSS_CHANNEL_MESSAGE_METADATA_KEY
@@ -29,6 +32,35 @@ class ChannelDeliveryService(
         chatRepository.getByIds(chatIds)
             .filter { it.userId == userId && !it.archived }
             .associateBy { it.id }
+
+    /** Persist only chunks accepted by the external channel, including on cancellation. */
+    suspend fun sendChunks(
+        userId: String,
+        chatId: UUID,
+        text: String,
+        channelName: String,
+        send: suspend (String) -> Unit,
+    ): ChannelSendResult {
+        val chunks = channelTextChunks(text)
+        val sent = StringBuilder()
+        var sentCount = 0
+        return try {
+            for (chunk in chunks) {
+                send(chunk)
+                sent.append(chunk)
+                sentCount++
+            }
+            ChannelSendResult.Delivered("Sent via $channelName.")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            ChannelSendResult.Failed("$channelName delivery failed after $sentCount/${chunks.size} part(s).")
+        } finally {
+            if (sent.isNotEmpty()) {
+                withContext(NonCancellable) { deliver(userId, chatId, sent.toString()) }
+            }
+        }
+    }
 
     suspend fun deliver(userId: String, chatId: UUID, text: String) {
         val message = messageRepository.append(

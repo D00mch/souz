@@ -55,8 +55,3 @@ sealed interface TelegramUserClaimResult {
 
     data object NotFound : TelegramUserClaimResult
 }
-
-internal fun sha256Hex(value: String): String =
-    java.security.MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8))
-        .joinToString(separator = "") { byte -> "%02x".format(byte) }

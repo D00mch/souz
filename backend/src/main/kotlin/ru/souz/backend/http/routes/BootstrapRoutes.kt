@@ -27,6 +27,13 @@ internal fun Route.v1Routes(deps: BackendHttpDependencies) {
             },
         )
     }
+    if (deps.featureFlags.vkBot) {
+        vkRoutes(
+            requireNotNull(deps.vkBotBindingService) {
+                "VK feature is enabled without a VK bot binding service."
+            },
+        )
+    }
     messageRoutes(deps)
     eventRoutes(deps)
     choiceRoutes(deps)

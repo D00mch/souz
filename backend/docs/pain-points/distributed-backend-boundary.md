@@ -4,7 +4,7 @@
 
 Backend storage is PostgreSQL-backed, but active runtime ownership is distributed-safe only for the Client-Souz public WebSocket thread path (`docs/public-souz-contract`). That path stores `runtime_owner` and a renewable `runtime_lease_until`, requires sticky routing for live active-thread frames, and has recovery that fails expired public thread leases and emits the required terminal `thread.failed` event.
 
-Ordinary trusted-proxy HTTP executions and Telegram-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
+Ordinary trusted-proxy HTTP executions and Telegram/VK-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
 
 Server-managed Codex OAuth is safe for a single backend process through process-local refresh coordination. A terminal refresh rejection suppresses deployment credentials only while the configured refresh token matches the rejected value. A different `CODEX_REFRESH_TOKEN` lifts suppression, so replace all four deployment values together before restarting. Multi-replica deployments must not enable it unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
 
@@ -27,4 +27,4 @@ Codex refresh tokens can rotate. Without database coordination, two replicas can
 
 ## Verification
 
-Run `./gradlew :backend:test` for changes to execution ownership or recovery. Cover ordinary HTTP execution crash recovery, Telegram-triggered execution crash recovery, Client-Souz expired lease recovery, sticky active-thread routing, cancellation races, option resume from `waiting_option`, and concurrent Codex OAuth refresh when Codex is enabled on multiple replicas.
+Run `./gradlew :backend:test` for changes to execution ownership or recovery. Cover ordinary HTTP execution crash recovery, Telegram/VK-triggered execution crash recovery, Client-Souz expired lease recovery, sticky active-thread routing, cancellation races, option resume from `waiting_option`, and concurrent Codex OAuth refresh when Codex is enabled on multiple replicas.

@@ -31,6 +31,7 @@ import ru.souz.backend.keys.model.UserProviderKeyView
 import ru.souz.backend.execution.service.CancelExecutionResult
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.telegram.TelegramBotBinding
+import ru.souz.backend.vk.VkBotBinding
 import ru.souz.llms.restJsonMapper
 
 internal data class BackendV1SettingsResponse(
@@ -130,6 +131,15 @@ internal data class BackendV1UpsertTelegramBotBindingRequest(
     val token: String? = null,
 )
 
+internal data class BackendV1VkBotBindingResponse(
+    val vkBot: BackendV1VkBotBindingDto?,
+    val pendingLinkCommand: String? = null,
+)
+
+internal data class BackendV1UpsertVkBotBindingRequest(
+    val token: String? = null,
+)
+
 internal data class BackendV1CreateMessageRequest(
     val content: String = "",
     val clientMessageId: String? = null,
@@ -196,6 +206,18 @@ internal data class BackendV1TelegramBotBindingDto(
     val telegramUsername: String? = null,
     val telegramFirstName: String? = null,
     val telegramLastName: String? = null,
+    val linkedAt: String? = null,
+)
+
+internal data class BackendV1VkBotBindingDto(
+    val chatId: String,
+    val enabled: Boolean,
+    val vkGroupName: String?,
+    val createdAt: String,
+    val updatedAt: String,
+    val linked: Boolean,
+    val vkFirstName: String? = null,
+    val vkLastName: String? = null,
     val linkedAt: String? = null,
 )
 
@@ -302,6 +324,19 @@ internal fun TelegramBotBinding.toDto(): BackendV1TelegramBotBindingDto =
         telegramUsername = telegramUsername,
         telegramFirstName = telegramFirstName,
         telegramLastName = telegramLastName,
+        linkedAt = linkedAt?.toString(),
+    )
+
+internal fun VkBotBinding.toDto(): BackendV1VkBotBindingDto =
+    BackendV1VkBotBindingDto(
+        chatId = chatId.toString(),
+        enabled = enabled,
+        vkGroupName = vkGroupName,
+        createdAt = createdAt.toString(),
+        updatedAt = updatedAt.toString(),
+        linked = linked,
+        vkFirstName = vkFirstName,
+        vkLastName = vkLastName,
         linkedAt = linkedAt?.toString(),
     )
 

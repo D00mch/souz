@@ -138,6 +138,8 @@ data class BackendAppConfig(
     val masterKey: String? = null,
     val telegramTokenEncryptionKey: String? = null,
     val telegramPollingMaxConcurrency: Int = 4,
+    val vkTokenEncryptionKey: String? = null,
+    val vkPollingMaxConcurrency: Int = 4,
     val skillOAuthTokenEncryptionKey: String? = null,
     val skillOAuthProviderCredentials: Map<String, SkillOAuthProviderCredentials> = emptyMap(),
     val hindsightApiUrl: String? = null,
@@ -158,6 +160,14 @@ data class BackendAppConfig(
         }
         if (telegramPollingMaxConcurrency <= 0) {
             throw BackendConfigurationException("Telegram polling max concurrency must be positive.")
+        }
+        if (featureFlags.vkBot && vkTokenEncryptionKey.isNullOrBlank()) {
+            throw BackendConfigurationException(
+                "VK_TOKEN_ENCRYPTION_KEY / souz.vk.tokenEncryptionKey must not be blank."
+            )
+        }
+        if (vkPollingMaxConcurrency <= 0) {
+            throw BackendConfigurationException("VK polling max concurrency must be positive.")
         }
         if ((hindsightApiUrl == null) != (hindsightApiToken == null)) {
             throw BackendConfigurationException(
@@ -211,6 +221,15 @@ data class BackendAppConfig(
                 telegramPollingMaxConcurrency = source.intValue(
                     envKey = "SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY",
                     propertyKey = "souz.telegram.pollingMaxConcurrency",
+                    default = 4,
+                ),
+                vkTokenEncryptionKey = source.value(
+                    envKey = "VK_TOKEN_ENCRYPTION_KEY",
+                    propertyKey = "souz.vk.tokenEncryptionKey",
+                )?.trim()?.takeIf { it.isNotEmpty() },
+                vkPollingMaxConcurrency = source.intValue(
+                    envKey = "SOUZ_VK_POLLING_MAX_CONCURRENCY",
+                    propertyKey = "souz.vk.pollingMaxConcurrency",
                     default = 4,
                 ),
                 skillOAuthTokenEncryptionKey = source.value(

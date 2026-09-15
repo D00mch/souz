@@ -9,6 +9,7 @@ Read the topics relevant to the code you plan to change in `:backend`.
 - [Public client WebSocket](pain-points/public-client-websocket.md) — public idempotency, thread/runtime coordination, client tools, acknowledgement ordering, and replay.
 - [Distributed backend boundary](pain-points/distributed-backend-boundary.md) — which backend entry points have distributed runtime ownership and recovery.
 - [Telegram bindings](pain-points/telegram-bindings.md) — token custody, private-account linking, polling leases, and checkpoint safety.
+- [VK bindings](pain-points/vk-bindings.md) — private-account linking, encrypted tokens, Long Poll cursors, and lease fencing.
 - [Testing](pain-points/testing.md) — production-wired E2E coverage, Docker requirement, and allowed test doubles.
 - [Container builds](pain-points/container-builds.md) — JVM temporary files and Kaniko snapshots.
 - [External memory](pain-points/external-memory.md) — Hindsight owner isolation, scope tags, grounded capture, and safe mutation boundaries.

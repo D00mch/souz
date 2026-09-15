@@ -40,6 +40,7 @@ import ru.souz.backend.telegram.TelegramBotBinding
 import ru.souz.backend.toolcall.model.ToolCall
 import ru.souz.backend.toolcall.model.ToolCallStatus
 import ru.souz.backend.user.model.UserRecord
+import ru.souz.backend.vk.VkBotBinding
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LlmProvider
@@ -50,6 +51,7 @@ internal const val CHAT_REQUEST_CONSTRAINT: String = "chats_user_id_request_id_k
 internal const val CLIENT_REQUEST_CONSTRAINT: String = "client_requests_pkey"
 internal const val PRIMARY_KEY_CONSTRAINT: String = "agent_conversation_state_pkey"
 internal const val TELEGRAM_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "telegram_bot_bindings_bot_token_hash_key"
+internal const val VK_BOT_BINDINGS_TOKEN_HASH_CONSTRAINT: String = "vk_bot_bindings_group_token_hash_key"
 internal val postgresStorageMapper = jacksonObjectMapper().findAndRegisterModules()
 
 internal suspend fun <T> DataSource.read(block: (Connection) -> T): T =
@@ -217,6 +219,32 @@ internal fun ResultSet.toTelegramBotBinding(): TelegramBotBinding =
         telegramUsername = getString("telegram_username"),
         telegramFirstName = getString("telegram_first_name"),
         telegramLastName = getString("telegram_last_name"),
+        linkedAt = getObject("linked_at", OffsetDateTime::class.java)?.toInstant(),
+        pollerOwner = getString("poller_owner"),
+        pollerLeaseUntil = getObject("poller_lease_until", OffsetDateTime::class.java)?.toInstant(),
+        lastError = getString("last_error"),
+        lastErrorAt = getObject("last_error_at", OffsetDateTime::class.java)?.toInstant(),
+        createdAt = instant("created_at"),
+        updatedAt = instant("updated_at"),
+    )
+
+internal fun ResultSet.toVkBotBinding(): VkBotBinding =
+    VkBotBinding(
+        id = getObject("id", java.util.UUID::class.java),
+        userId = getString("user_id"),
+        chatId = getObject("chat_id", java.util.UUID::class.java),
+        groupTokenEncrypted = getString("group_token_encrypted"),
+        groupTokenHash = getString("group_token_hash"),
+        linkSecretHash = getString("link_secret_hash"),
+        vkGroupId = getLong("vk_group_id"),
+        vkGroupName = getString("vk_group_name"),
+        lastTs = getString("last_ts"),
+        enabled = getBoolean("enabled"),
+        vkUserId = getObject("vk_user_id", java.lang.Long::class.java)?.toLong(),
+        vkPeerId = getObject("vk_peer_id", java.lang.Long::class.java)?.toLong(),
+        vkFirstName = getString("vk_first_name"),
+        vkLastName = getString("vk_last_name"),
+        linkedMessageId = getObject("linked_message_id", java.lang.Long::class.java)?.toLong(),
         linkedAt = getObject("linked_at", OffsetDateTime::class.java)?.toInstant(),
         pollerOwner = getString("poller_owner"),
         pollerLeaseUntil = getObject("poller_lease_until", OffsetDateTime::class.java)?.toInstant(),
