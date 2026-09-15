@@ -224,6 +224,11 @@ private fun rootEndpoints(featureFlags: BackendFeatureFlags): List<String> =
             add("PUT ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
             add("DELETE ${BackendHttpRoutes.CHAT_TELEGRAM_BOT_PATTERN}")
         }
+        if (featureFlags.vkBot) {
+            add("GET ${BackendHttpRoutes.CHAT_VK_BOT_PATTERN}")
+            add("PUT ${BackendHttpRoutes.CHAT_VK_BOT_PATTERN}")
+            add("DELETE ${BackendHttpRoutes.CHAT_VK_BOT_PATTERN}")
+        }
         add("POST ${BackendHttpRoutes.CHAT_CANCEL_ACTIVE_PATTERN}")
         add("POST ${BackendHttpRoutes.CHAT_EXECUTION_CANCEL_PATTERN}")
         add("POST ${BackendHttpRoutes.OPTION_ANSWER_PATTERN}")

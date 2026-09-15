@@ -7,6 +7,7 @@ import java.time.Clock
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import ru.souz.backend.chat.repository.ChatRepository
+import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.badRequestV1
 

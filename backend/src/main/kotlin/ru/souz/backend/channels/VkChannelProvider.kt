@@ -1,17 +1,17 @@
 package ru.souz.backend.channels
 
 import kotlinx.coroutines.CancellationException
-import ru.souz.backend.telegram.TelegramBotApi
-import ru.souz.backend.telegram.TelegramBotBindingRepository
-import ru.souz.backend.telegram.TelegramBotTokenCrypto
+import ru.souz.backend.vk.VkBotApi
+import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
+import ru.souz.backend.vk.VkBotTokenCrypto
 
-class TelegramChannelProvider(
-    private val bindingRepository: TelegramBotBindingRepository,
+class VkChannelProvider(
+    private val bindingRepository: PostgresVkBotBindingRepository,
     private val deliveryService: ChannelDeliveryService,
-    private val telegramBotApi: TelegramBotApi,
-    private val tokenCrypto: TelegramBotTokenCrypto,
+    private val vkBotApi: VkBotApi,
+    private val tokenCrypto: VkBotTokenCrypto,
 ) : ChannelProvider {
-    override val channelType: String = "telegram"
+    override val channelType: String = "vk"
 
     override suspend fun listChannels(userId: String): List<ChannelDescriptor> {
         val bindings = bindingRepository.listForUser(userId).filter { it.active }
@@ -21,7 +21,7 @@ class TelegramChannelProvider(
             ChannelDescriptor(
                 channelType = channelType,
                 channelId = binding.chatId.toString(),
-                label = chat.title ?: binding.telegramUsername ?: binding.telegramFirstName ?: "Telegram",
+                label = chat.title ?: binding.vkFirstName ?: binding.vkGroupName ?: "VK",
             )
         }
     }
@@ -30,20 +30,20 @@ class TelegramChannelProvider(
         val chatId = channelId.toChannelUuidOrNull()
             ?: return ChannelSendResult.Failed("Invalid channel id.")
         val binding = bindingRepository.getByUserAndChat(userId, chatId)?.takeIf { it.active }
-            ?: return ChannelSendResult.Failed("Telegram channel not found or not linked.")
+            ?: return ChannelSendResult.Failed("VK channel not found or not linked.")
         deliveryService.resolveTarget(userId, chatId)
-            ?: return ChannelSendResult.Failed("Telegram channel not found or not linked.")
-        val telegramChatId = binding.telegramChatId
-            ?: return ChannelSendResult.Failed("Telegram channel not found or not linked.")
+            ?: return ChannelSendResult.Failed("VK channel not found or not linked.")
+        val peerId = binding.vkPeerId
+            ?: return ChannelSendResult.Failed("VK channel not found or not linked.")
         val token = try {
-            tokenCrypto.decrypt(binding.botTokenEncrypted)
+            tokenCrypto.decrypt(binding.groupTokenEncrypted)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return ChannelSendResult.Failed("Telegram delivery failed.")
+            return ChannelSendResult.Failed("VK delivery failed.")
         }
-        return deliveryService.sendChunks(userId, chatId, text, "Telegram") { chunk ->
-            telegramBotApi.sendMessage(token, telegramChatId, chunk)
+        return deliveryService.sendChunks(userId, chatId, text, "VK") { chunk ->
+            vkBotApi.sendMessage(token, peerId, chunk)
         }
     }
 }

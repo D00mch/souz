@@ -460,6 +460,7 @@ Ambient mode is a local-first proactive-help flow. It listens only after the use
 
 PostgreSQL is the backend's only structured-data store. JDBC, HikariCP, and Flyway provide durable event replay, per-chat message/event sequence numbers, one active execution per chat, optimistic locking for `agent_conversation_state`, and durable tool-call audit rows.
 Telegram bot tokens are encrypted at rest via `TELEGRAM_TOKEN_ENCRYPTION_KEY`, pending links use one-time `/start <secret>` commands with only the secret hash stored server-side, and binding setup drops pending Telegram updates before long polling starts.
+VK community tokens use `VK_TOKEN_ENCRYPTION_KEY`. With `ENABLE_BACKEND_VK_FEATURE=true`, trusted-proxy clients manage bindings through `GET`, `PUT` (`{"token":"..."}`), and `DELETE /v1/chats/{chatId}/vk-bot`. Send the returned `pendingLinkCommand` as a private message to the community to link the account. Enable Bots Long Poll and `message_new` events in the community settings.
 Runtime sandbox workspaces remain filesystem-backed and are independent from backend database persistence.
 
 ### Backend configuration
@@ -502,6 +503,12 @@ SOUZ_WEB_USER_AGENT=ProxyApprovedClient/1.0
 SOUZ_TELEGRAM_POLLING_MAX_CONCURRENCY=4
 # Generate once with: openssl rand -base64 32
 TELEGRAM_TOKEN_ENCRYPTION_KEY=...
+
+# VK bot
+ENABLE_BACKEND_VK_FEATURE=false
+SOUZ_VK_POLLING_MAX_CONCURRENCY=4
+# Required when enabled; Base64 of 32 random bytes
+VK_TOKEN_ENCRYPTION_KEY=...
 
 # Provider retries
 SOUZ_BACKEND_PROVIDER_MAX_429_RETRIES=2

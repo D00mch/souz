@@ -31,6 +31,7 @@ internal object BackendOpenApiTags {
     const val EXECUTIONS = "Executions"
     const val OPTIONS = "Options"
     const val TELEGRAM = "Telegram"
+    const val VK = "VK"
 }
 
 internal object BackendOpenApiSecurity {
@@ -314,6 +315,23 @@ internal object BackendOpenApiSchemas {
                 token.copy(
                     type = JsonType.STRING,
                     description = "Telegram bot token.",
+                    minLength = 1,
+                    pattern = NON_BLANK_PATTERN,
+                    maxLength = 4_096,
+                    writeOnly = true,
+                    default = null,
+                    example = null,
+                    examples = null,
+                )
+            }
+
+    fun vkToken(schema: JsonSchema): JsonSchema =
+        schema
+            .copy(required = listOf("token"))
+            .withProperty("token") { token ->
+                token.copy(
+                    type = JsonType.STRING,
+                    description = "VK community group access token.",
                     minLength = 1,
                     pattern = NON_BLANK_PATTERN,
                     maxLength = 4_096,
