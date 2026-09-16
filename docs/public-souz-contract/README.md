@@ -1,6 +1,6 @@
 # Client-Souz Contract
 
-Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools and replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
+Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools, unsubscribe and resubscribe with replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
 
 ## Connection
 
@@ -16,6 +16,7 @@ A **chat** stores history; a **thread** is a task inside it. A **subscription** 
 | --- | --- |
 | `chat.create` | Create or retrieve a chat with `requestId` and `payload:{userId,title?}`. ACK returns `chatId`; `clientType` comes from the socket. |
 | `chat.subscribe` | Replay and receive live events using `chatId`, `requestId` and optional `afterSeq`. |
+| `chat.unsubscribe` | Close this socket's subscription to `chatId`, with a correlated `requestId` ACK. |
 | `message.submit` | Submit user input. Explicit `threadId` continues that thread; omission selects the active thread or creates one. |
 | `history.append` | Store context consumed by the next accepted submit, without executing input. |
 | `tool.result` | Resolve a call by `chatId`, `threadId` and `toolCallId`. |
@@ -47,7 +48,15 @@ A new socket has no subscriptions. Successful creation or an accepted submit aut
 
 The cursor must be a nonnegative integer. An explicit cursor always requests replay, even with a repeated `requestId`; other chats are unaffected. Subscribing does not execute input.
 
-Disconnect closes subscriptions, preserving chats, stored events, executions and pending tools; tool deadlines still apply. Subscriptions have no TTL and survive thread completion. There is no `chat.unsubscribe`.
+`chat.unsubscribe` requires an existing chat whose `clientType` matches the socket and a nonblank `requestId`:
+
+```json
+{"kind":"chat.unsubscribe","chatId":"10000000-0000-4000-8000-000000000001","requestId":"leave-A"}
+```
+
+The accepted ACK has `type:"chat.unsubscribe"` and `duplicate:false` when a subscription was closed, or `duplicate:true` when none existed. The sender and event stream are closed before the ACK: an event already in flight may precede it, but no events from that subscription follow it. Other chats and connections are unaffected. Invalid requests leave subscriptions intact.
+
+Unsubscribe and disconnect preserve chats, history, stored events, executions and pending tools; tool deadlines still apply. They release subscription resources without unloading an active agent runtime. Subscriptions have no TTL and survive thread completion until explicitly closed. A later `chat.subscribe` restores replay using `afterSeq` as above. Successful creation or an accepted submit, including retries, restores a live-only subscription after unsubscribe; a rejected submit does not.
 
 After reconnecting:
 
@@ -68,7 +77,7 @@ Durable public events are `tool.call.started`, `thread.completed|failed|cancelle
 | `message.submit`, `history.append`, `thread.cancel` | Shared `(chatId, requestId)` |
 | `tool.result` | `(chatId, threadId, toolCallId)` |
 
-The same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType` and `title`; tool results compare terminal status and payload. `chat.subscribe.requestId` is only for correlation.
+The same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType` and `title`; tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
 
 Frame envelopes reject unknown fields; tool arguments/results are generic JSON. Malformed JSON and unsupported kinds close the socket; recoverable errors receive correlated rejection ACKs.
 
@@ -78,4 +87,4 @@ JSON decoding rejection ACKs include `error.details` with a JSON Pointer `path` 
 
 - `POST /v1/chats`: HTTP creation for `backend` or `mobile_app`, sharing WebSocket creation idempotency.
 - `GET /v1/chats/{chatId}/threads/{threadId}?clientType=...`: durable status and liveness.
-- `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`: single-chat socket for either client type. Replays from the cursor (default `0`) before processing input; does not accept `chat.create` or `chat.subscribe`.
+- `/v1/chats/{chatId}/ws?clientType=...&afterSeq=...`: single-chat socket for either client type. Replays from the cursor (default `0`) before processing input; does not accept `chat.create`, `chat.subscribe` or `chat.unsubscribe`.

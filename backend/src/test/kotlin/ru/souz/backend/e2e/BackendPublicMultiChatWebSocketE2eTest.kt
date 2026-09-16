@@ -23,6 +23,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
@@ -84,6 +85,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     val decodingFailures = listOf(
                         createFrame(users[0]),
                         subscribeFrame(chats[0]),
+                        unsubscribeFrame(chats[0]),
                         messageFrame(chats[0], users[0], "decode-message"),
                         historyFrame(chats[0], "decode-history", "user", "history"),
                         """{"kind":"tool.result","chatId":"${chats[0]}","threadId":"${threadChats.keys.first()}","toolCallId":"tool","status":"succeeded","result":{}}""",
@@ -104,6 +106,14 @@ class BackendPublicMultiChatWebSocketE2eTest {
                         assertTrue(message.contains("details=${ack["error"].path("details").takeUnless { it.isMissingNode }}"), message)
                         assertEquals(json.readTree(raw)["kind"].asText(), fields["kind"])
                         assertEquals(stage == "decode_frame", ack["error"].has("details"))
+                    }
+                    chats.forEach { chat ->
+                        val before = logs.size
+                        request(socket, unsubscribeFrame(chat), duplicate = false)
+                        val closed = logs.drop(before).single { it.first == "WebSocket subscription closed" }.second
+                        assertEquals(chat, closed["chatId"])
+                        request(socket, unsubscribeFrame(chat), duplicate = true)
+                        request(socket, subscribeFrame(chat, terminals.last()["seq"].asLong()), duplicate = false)
                     }
                 }
             } finally {
@@ -241,6 +251,100 @@ class BackendPublicMultiChatWebSocketE2eTest {
         }
 
     @Test
+    fun `unsubscribe isolates chats and sockets while preserving pending tools history and replay`() =
+        backendE2eTest("e2e_multi_unsubscribe", llm = clientToolLlm()) {
+            val user = UUID.randomUUID().toString()
+            val chats = listOf(createPublicChat(user, "a"), createPublicChat(user, "b"))
+            withMultiChatSocket { first ->
+                val tools = chats.map { submit(first, it, user, "submit") }
+                withMultiChatSocket { second ->
+                    request(second, subscribeFrame(chats[0], tools[0]["seq"].asLong()), duplicate = false)
+                    val ack = request(first, unsubscribeFrame(chats[0]), duplicate = false)
+                    assertEquals("chat.unsubscribe", ack["type"].asText())
+                    assertEquals("unsubscribe", ack["requestId"].asText())
+                    assertEquals(chats[0], ack["chatId"].asText())
+                    assertTrue(ack["error"].isNull)
+                    request(first, unsubscribeFrame(chats[0]), duplicate = true)
+                    // Replay retains the pending tool and its original deadline, without restarting the task.
+                    val callsBefore = llm.requests.size
+                    request(first, subscribeFrame(chats[0], 0), duplicate = false)
+                    assertEquals(tools[0], readJson(first))
+                    assertEquals(callsBefore, llm.requests.size)
+                    request(first, unsubscribeFrame(chats[0]), duplicate = false)
+                    request(first, historyFrame(chats[0], "history", "user", "saved while unsubscribed"))
+                    request(first, unsubscribeFrame(chats[1]).dropLast(1) + ",\"afterSeq\":0}", status = "rejected")
+                    request(first, toolResult(tools[0]))
+                    val terminal = readTerminal(second, tools[0])
+                    // The first socket still receives B, but must not receive A's terminal.
+                    request(first, toolResult(tools[1]))
+                    readTerminal(first, tools[1])
+                    request(first, subscribeFrame(chats[0], tools[0]["seq"].asLong()), duplicate = false)
+                    assertEquals(terminal, readJson(first))
+                    submit(first, chats[0], user, "next")
+                    assertTrue(llm.requests.last().messages.any { it.content.contains("saved while unsubscribed") })
+                }
+            }
+        }
+
+    @Test
+    fun `accepted submits and creation retries restore live subscriptions after unsubscribe`() =
+        backendE2eTest("e2e_multi_unsubscribe_submit", llm = clientToolLlm()) {
+            val user = UUID.randomUUID().toString()
+            withMultiChatSocket { socket ->
+                val chat = request(socket, createFrame(user))["chatId"].asText()
+                val tool = submit(socket, chat, user, "submit")
+                request(socket, unsubscribeFrame(chat), duplicate = false)
+                request(socket, messageFrame(chat, UUID.randomUUID().toString(), "wrong-owner"), status = "rejected")
+                request(socket, unsubscribeFrame(chat), duplicate = true)
+                request(socket, messageFrame(chat, user, "submit"), duplicate = true)
+                assertEquals("thread.status", readJson(socket)["type"].asText())
+                request(socket, subscribeFrame(chat), duplicate = true)
+                request(socket, toolResult(tool))
+                readTerminal(socket, tool)
+                request(socket, unsubscribeFrame(chat), duplicate = false)
+                submit(socket, chat, user, "next")
+                request(socket, unsubscribeFrame(chat), duplicate = false)
+                request(socket, createFrame(user), duplicate = true)
+                request(socket, subscribeFrame(chat), duplicate = true)
+            }
+        }
+
+    @Test
+    fun `unsubscribe ACK fences concurrent events until resubscription`() =
+        backendE2eTest("e2e_multi_unsubscribe_race") {
+            val user = UUID.randomUUID().toString()
+            val chat = createPublicChat(user)
+            withMultiChatSocket { observer ->
+                withMultiChatSocket { producer ->
+                    var cursor = 0L
+                    repeat(10) { index ->
+                        request(observer, subscribeFrame(chat, cursor), duplicate = false)
+                        val terminal = coroutineScope {
+                            val execution = async { submit(producer, chat, user, "submit-$index") }
+                            observer.send(Frame.Text(unsubscribeFrame(chat)))
+                            var frame = readJson(observer)
+                            // A send already in flight may win the race, but only before the ACK.
+                            while (frame["kind"].asText() == "event") {
+                                assertEquals(chat, frame["chatId"].asText())
+                                frame = readJson(observer)
+                            }
+                            assertEquals("chat.unsubscribe", frame["type"].asText())
+                            assertEquals("accepted", frame["status"].asText())
+                            assertFalse(frame["duplicate"].asBoolean())
+                            execution.await()
+                        }
+                        request(observer, unsubscribeFrame(chat), duplicate = true)
+                        assertEquals(null, withTimeoutOrNull(100) { readJson(observer) })
+                        request(observer, subscribeFrame(chat, cursor), duplicate = false)
+                        assertEquals(terminal, readJson(observer))
+                        cursor = terminal["seq"].asLong()
+                        request(observer, unsubscribeFrame(chat), duplicate = false)
+                    }
+                }
+            }
+        }
+
+    @Test
     fun `reconnect and cursor replacement replay each chat independently without executing input`() =
         backendE2eTest("e2e_multi_replay", llm = clientToolLlm()) {
             val userId = UUID.randomUUID().toString()
@@ -300,6 +404,12 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     subscribeFrame("not-a-uuid"),
                     subscribeFrame(missing),
                     subscribeFrame(mobile),
+                    unsubscribeFrame("not-a-uuid"),
+                    unsubscribeFrame(missing),
+                    unsubscribeFrame(mobile),
+                    unsubscribeFrame(chat).replace("\"requestId\":\"unsubscribe\"", "\"requestId\":\" \""),
+                    unsubscribeFrame(chat).replace(",\"requestId\":\"unsubscribe\"", ""),
+                    unsubscribeFrame(chat).dropLast(1) + ",\"afterSeq\":0}",
                     messageFrame(mobile, userId, "wrong-client"),
                     subscribeFrame(chat).replace("\"requestId\":\"subscribe\"", "\"requestId\":\" \""),
                     messageFrame(chat, UUID.randomUUID().toString(), "wrong-owner"),
@@ -309,7 +419,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
                 }
                 invalid.forEach { raw ->
                     val ack = request(socket, raw, status = "rejected", duplicate = false)
-                    assertEquals(json.readTree(raw)["requestId"], ack["requestId"])
+                    assertEquals(json.readTree(raw).path("requestId").asText("invalid"), ack["requestId"].asText())
                 }
                 // History alone must not create a subscription either.
                 request(socket, historyFrame(chat, "history", "user", "saved"))
@@ -335,6 +445,11 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     socket.send(Frame.Text(raw))
                     assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, socket.closeReason.await()?.code)
                 }
+            }
+            val chat = createPublicChat(UUID.randomUUID().toString())
+            withPublicSocket(chat) { socket ->
+                socket.send(Frame.Text(unsubscribeFrame(chat)))
+                assertEquals(CloseReason.Codes.VIOLATED_POLICY.code, socket.closeReason.await()?.code)
             }
         }
         backendE2eTest("e2e_multi_disabled", featureFlags = BackendFeatureFlags(wsEvents = false)) {
@@ -389,6 +504,9 @@ class BackendPublicMultiChatWebSocketE2eTest {
 
     private fun subscribeFrame(chat: String, afterSeq: Long? = null): String =
         """{"kind":"chat.subscribe","chatId":"$chat","requestId":"subscribe"${afterSeq?.let { ",\"afterSeq\":$it" } ?: ""}}"""
+
+    private fun unsubscribeFrame(chat: String): String =
+        """{"kind":"chat.unsubscribe","chatId":"$chat","requestId":"unsubscribe"}"""
 
     private fun toolResult(tool: JsonNode): String =
         """{"kind":"tool.result","chatId":${tool["chatId"]},"threadId":${tool["threadId"]},"toolCallId":${tool["payload"]["toolCallId"]},"status":"succeeded","result":{"answer":"yes"}}"""

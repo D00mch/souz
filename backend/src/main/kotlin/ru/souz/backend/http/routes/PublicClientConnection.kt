@@ -26,8 +26,9 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.client.ChatCreateAck
 import ru.souz.backend.client.ChatCreateFrame
-import ru.souz.backend.client.ChatSubscribeAck
 import ru.souz.backend.client.ChatSubscribeFrame
+import ru.souz.backend.client.ChatSubscriptionAck
+import ru.souz.backend.client.ChatUnsubscribeFrame
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientError
 import ru.souz.backend.client.CreateClientChatRequest
@@ -150,9 +151,25 @@ internal class PublicClientConnection(
                                 // Prepare first to cover concurrent events; stop the old sender before the replay ack.
                                 stage = "replace_subscription"
                                 if (pendingStream != null) subscriptions.remove(target.id)?.cancelAndJoin()
-                                HandledClientFrame(ChatSubscribeAck(
-                                    chatId = target.id.toString(), requestId = subscribe.requestId.trim(), status = "accepted",
+                                HandledClientFrame(ChatSubscriptionAck(
+                                    type = kind, chatId = target.id.toString(), requestId = subscribe.requestId.trim(), status = "accepted",
                                     duplicate = pendingStream == null, receivedAt = Instant.now().toString(),
+                                ))
+                            }
+                        }
+                        "chat.unsubscribe" -> {
+                            val unsubscribe = decode(ChatUnsubscribeFrame::class.java, "resolve_chat")
+                            if (unsubscribe.requestId.isBlank()) throw ClientContractException("invalid_request", "requestId must not be empty.")
+                            val target = resolveFrameChat(node)
+                            chat = target
+                            withContext(mdcContext()) {
+                                stage = "close_subscription"
+                                val subscription = subscriptions.remove(target.id)
+                                // Join outside the writer mutex: cleanup and any in-flight send must finish before the ACK.
+                                subscription?.cancelAndJoin()
+                                HandledClientFrame(ChatSubscriptionAck(
+                                    type = kind, chatId = target.id.toString(), requestId = unsubscribe.requestId.trim(), status = "accepted",
+                                    duplicate = subscription == null, receivedAt = Instant.now().toString(),
                                 ))
                             }
                         }
@@ -306,8 +323,8 @@ internal class PublicClientConnection(
                 requestId = requestId, chatId = null, status = "rejected", duplicate = false,
                 error = error, receivedAt = now.toString(),
             )
-            "chat.subscribe" -> ChatSubscribeAck(
-                chatId = chatId, requestId = requestId, status = "rejected", duplicate = false,
+            "chat.subscribe", "chat.unsubscribe" -> ChatSubscriptionAck(
+                type = kind, chatId = chatId, requestId = requestId, status = "rejected", duplicate = false,
                 error = error, receivedAt = now.toString(),
             )
             "message.submit" -> MessageSubmitAck.rejected(chatId, requestId, error, now)
@@ -346,4 +363,4 @@ private suspend fun AgentEventStream.forwardPublicEvents(
 }
 
 private val socketLogger = LoggerFactory.getLogger("SouzClientWebSocket")
-private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "message.submit", "history.append", "tool.result", "thread.cancel")
+private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "chat.unsubscribe", "message.submit", "history.append", "tool.result", "thread.cancel")

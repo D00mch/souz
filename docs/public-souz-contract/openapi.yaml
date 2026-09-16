@@ -204,10 +204,11 @@ components:
         platform:
           type: string
     ClientMessage:
-      description: Client-to-Souz frame. ChatCreate and ChatSubscribe are accepted only on /v1/ws?clientType=backend.
+      description: Client-to-Souz frame. ChatCreate, ChatSubscribe and ChatUnsubscribe are accepted only on /v1/ws?clientType=backend.
       oneOf:
         - $ref: "#/components/schemas/ChatCreate"
         - $ref: "#/components/schemas/ChatSubscribe"
+        - $ref: "#/components/schemas/ChatUnsubscribe"
         - $ref: "#/components/schemas/MessageSubmit"
         - $ref: "#/components/schemas/HistoryAppend"
         - $ref: "#/components/schemas/SucceededToolResult"
@@ -254,8 +255,21 @@ components:
           format: int64
           minimum: 0
           maximum: 9223372036854775807
+    ChatUnsubscribe:
+      description: Closes only this socket's subscription to an existing chat with matching clientType. Stops and releases the event stream before acknowledging; events already in flight may precede the ACK, but none from that subscription follow it. Preserves history, tasks, pending tools and deadlines. Repeated requests without a subscription succeed; requestId is for correlation only. Later chat.subscribe can replay via afterSeq; successful creation or accepted submits (including retries) restore live-only delivery.
+      type: object
+      additionalProperties: false
+      required: [kind, chatId, requestId]
+      properties:
+        kind:
+          type: string
+          enum: [chat.unsubscribe]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
     MessageSubmit:
-      description: Submits user input and selects, continues, or creates an execution thread.
+      description: Submits user input and selects, continues, or creates an execution thread. An accepted submit (including a retry) automatically restores live-only delivery if unsubscribed; a rejection does not subscribe.
       type: object
       additionalProperties: false
       required: [kind, chatId, requestId, payload]
@@ -472,6 +486,8 @@ components:
         - $ref: "#/components/schemas/RejectedChatCreateAck"
         - $ref: "#/components/schemas/AcceptedChatSubscribeAck"
         - $ref: "#/components/schemas/RejectedChatSubscribeAck"
+        - $ref: "#/components/schemas/AcceptedChatUnsubscribeAck"
+        - $ref: "#/components/schemas/RejectedChatUnsubscribeAck"
         - $ref: "#/components/schemas/AcceptedMessageSubmitAck"
         - $ref: "#/components/schemas/RejectedMessageSubmitAck"
         - $ref: "#/components/schemas/AcceptedHistoryAppendAck"
@@ -569,6 +585,56 @@ components:
         type:
           type: string
           enum: [chat.subscribe]
+        chatId:
+          type: string
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [rejected]
+        duplicate:
+          type: boolean
+          const: false
+        error:
+          $ref: "#/components/schemas/Error"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    AcceptedChatUnsubscribeAck:
+      type: object
+      additionalProperties: false
+      required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        type:
+          type: string
+          enum: [chat.unsubscribe]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        requestId:
+          $ref: "#/components/schemas/NonEmptyString"
+        status:
+          type: string
+          enum: [accepted]
+        duplicate:
+          description: True when this socket had no subscription for the accessible chat; false when a subscription was closed.
+          type: boolean
+        error:
+          type: "null"
+        receivedAt:
+          $ref: "#/components/schemas/DateTime"
+    RejectedChatUnsubscribeAck:
+      type: object
+      additionalProperties: false
+      required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        type:
+          type: string
+          enum: [chat.unsubscribe]
         chatId:
           type: string
         requestId:
