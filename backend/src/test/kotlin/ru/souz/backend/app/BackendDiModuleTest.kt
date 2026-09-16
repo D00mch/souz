@@ -59,9 +59,12 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.backend.user.repository.UserRepository
+import ru.souz.memory.CompletedTurnMemoryInput
+import ru.souz.memory.ConversationId
 import ru.souz.memory.ConversationMemoryRuntime
+import ru.souz.memory.MemoryContext
+import ru.souz.memory.MemoryOwnerId
 import ru.souz.memory.MemoryRetrievalRequest
-import ru.souz.memory.legacyMemoryContext
 import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.tool.ToolCategory
 import ru.souz.tool.knowledge.ToolGetKnowledge
@@ -71,22 +74,33 @@ import ru.souz.tool.skills.SkillCommandExecutor
 
 class BackendDiModuleTest {
     @Test
-    fun `hindsight recalls without a token when only url is configured`() = runTest {
+    fun `hindsight uses user ID banks for recall search and capture without a token`() = runTest {
         val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/").validate()
-        val client = HttpClient(MockEngine { request ->
+        val userId = "76c4ddee-bfb3-4e8a-89cb-d81f6771493b"
+        val engine = MockEngine { request ->
             assertNull(request.headers[HttpHeaders.Authorization])
             respond(
-                """{"results":[{"id":"fact-1","text":"The user likes tea"}]}""",
+                if (request.url.encodedPath.endsWith("/recall")) {
+                    """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
+                } else {
+                    """{"success":true}"""
+                },
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
-        }) { providerHttpClientDefaults() }
+        }
+        val client = HttpClient(engine) { providerHttpClientDefaults() }
         val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
-        try {
+        di.direct.instance<BackendRuntimeResources>().use {
             val memory = di.direct.instance<ConversationMemoryRuntime>()
-            val recalled = memory.retrieveMemory(MemoryRetrievalRequest(legacyMemoryContext(), "tea"))
+            val context = MemoryContext(MemoryOwnerId(userId), ConversationId("chat-1"), null, null)
+            val recalled = memory.retrieveMemory(MemoryRetrievalRequest(context, "tea"))
             assertEquals("fact-1", recalled.facts.single().factId)
-        } finally {
-            di.direct.instance<BackendRuntimeResources>().close()
+            assertEquals("fact-1", memory.searchMemory(context, "tea", emptyList(), 1).single().factId)
+            memory.captureCompletedTurn(
+                CompletedTurnMemoryInput(context, "chat-1", "message-1", "reply-1", "I like tea", "Noted"),
+            )
+            val bankUrl = "http://hindsight.test/v1/default/banks/$userId/memories"
+            assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", bankUrl), engine.requestHistory.map { it.url.toString() })
         }
     }
 
