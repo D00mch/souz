@@ -437,6 +437,15 @@ items:
                       }
                     }
                   }
+            - title: 11 chat.unsubscribe A
+              message:
+                type: json
+                data: |-
+                  {
+                    "kind": "chat.unsubscribe",
+                    "chatId": "{{chatId}}",
+                    "requestId": "{{$randomUUID}}"
+                  }
           auth: inherit
 bundled: true
 extensions:

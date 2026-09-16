@@ -28,12 +28,14 @@ Save each chat's last successfully processed event `seq` in `afterSeq` or `after
 
 Disconnect, reconnect the same multi-chat request, and send `07 chat.subscribe A reconnect` and `08 chat.subscribe B reconnect`, without submitting input. Each explicit cursor replaces only that chat's stream, acknowledges with `duplicate:false`, replays `seq > afterSeq`, then delivers live events. Track progress independently and deduplicate by `(chatId, seq)`.
 
+Send `11 chat.unsubscribe A` to stop A's events on the current socket while keeping B subscribed. Its accepted ACK has `duplicate:false` when the subscription was closed, or `duplicate:true` when already unsubscribed. No events from that subscription follow the ACK; running tasks and pending tool deadlines continue. Use `07 chat.subscribe A reconnect` with the saved `afterSeq` to resume with replay.
+
 Automatic subscriptions from creation or accepted submits are live-only, including events caused by the submit. They do not recover earlier events. A subscription with an omitted cursor keeps an existing stream with `duplicate:true`; on an unsubscribed chat it replays from `0`. Disconnect does not cancel execution or extend pending tool deadlines.
 
 ## HTTP and compatibility
 
 `http / Create chat` creates or retrieves chat A and sets `chatId` for the current session without persisting it. It shares creation idempotency with `01 chat.create A`; the existing HTTP retry checks the same result. `Get thread status` uses `chatId` and `threadId`; substitute the B variables in its URL to inspect B.
 
-`websocket / Client-Souz single-chat WebSocket (existing chat)` connects to `/v1/chats/{{chatId}}/ws` and replays from `0`. Set an existing `chatId` first; `chat.create` and `chat.subscribe` belong to the multi-chat endpoint. Its explicit continuation template requires the current `threadId` and `acceptsInput:true`; it also uses a fresh message UUID.
+`websocket / Client-Souz single-chat WebSocket (existing chat)` connects to `/v1/chats/{{chatId}}/ws` and replays from `0`. Set an existing `chatId` first; `chat.create`, `chat.subscribe` and `chat.unsubscribe` belong to the multi-chat endpoint. Its explicit continuation template requires the current `threadId` and `acceptsInput:true`; it also uses a fresh message UUID.
 
 See the [public contract](../README.md), [schemas](../openapi.yaml), and [example trace](../examples/happy-path.jsonl) for other operations.
