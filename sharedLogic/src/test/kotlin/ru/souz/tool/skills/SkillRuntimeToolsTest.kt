@@ -223,6 +223,48 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `direct file backed lookup surfaces declared composite commands`() = runTest {
+        val withCommands = SkillBundle.fromFiles(
+            skillId = SkillId("tv-control"),
+            files = listOf(
+                SkillFile(
+                    normalizedPath = "SKILL.md",
+                    content = """
+                        ---
+                        name: tv-control
+                        description: Control a TV
+                        commands:
+                          locate:
+                            inputs: [device, target]
+                            steps:
+                              - id: screenshot
+                                tool: device.mcp.call_tool
+                              - id: located
+                                script: scripts/vision_locate.py
+                                runtime: PYTHON
+                            returns: "${'$'}{located}"
+                        ---
+                        Body.
+                    """.trimIndent().toByteArray(),
+                )
+            ),
+        )
+        val repository = repository(withCommands, bundle("plain"))
+
+        val withCommandsResponse = getSkillByNameTool(repository).call(mapOf("skillId" to "tv-control"))
+        val plainResponse = getSkillByNameTool(repository).call(mapOf("skillId" to "plain"))
+
+        assertEquals(setOf("locate"), withCommandsResponse["skill"]["commands"].fieldNameSet())
+        assertEquals(
+            listOf("device", "target"),
+            withCommandsResponse["skill"]["commands"]["locate"]["inputs"].map { it.asText() },
+        )
+        // A skill declaring no composite commands keeps the exact same field set as before —
+        // `commands` is omitted entirely, not sent as an empty object.
+        assertFalse(plainResponse["skill"].has("commands"))
+    }
+
+    @Test
     fun `file backed lookup returns validation error when approval rejects`() = runTest {
         val repository = repository(bundle("unsafe"))
         val approvalGate = rejectingApprovalGate("Rejected by policy.")

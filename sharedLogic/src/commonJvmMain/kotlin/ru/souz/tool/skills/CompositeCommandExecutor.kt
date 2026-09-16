@@ -21,11 +21,17 @@ import ru.souz.tool.BadInputException
  * Interprets a Skill manifest's declarative `commands` (`CompositeCommandSpec`, `:agent`) — a
  * linear, parse-time-validated chain of tool calls, bundled scripts, and deterministic waits —
  * so the model makes one `RunSkillCommand(arguments={command, inputs})` call instead of a
- * separately LLM-decided step for each one. Tool steps reuse [toolCatalog]/[toolsFilter] the same
- * way [SkillCommandExecutor]'s (bridge) socket does today: an in-process `LLMToolSetup.invoke`,
- * no IPC, reaching only tools already exposed to this invocation's filtered catalog. Script steps
- * run through [runScript], which the owning [SkillCommandExecutor] binds to its own script
- * execution path with the bridge disabled — composite mode never starts it, it doesn't need it.
+ * separately LLM-decided step for each one. Tool steps resolve through [toolCatalog]/[toolsFilter]
+ * the same way [SkillCommandExecutor]'s (bridge) socket does — an in-process `LLMToolSetup.invoke`,
+ * no IPC — but a step's `tool:` name must also be in [ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE]
+ * (see [executeToolStep]) before it's looked up there: [toolCatalog] alone is the *host's* full
+ * catalog, not scoped to any one invocation, so without that check a composite step could reach a
+ * tool the calling agent (parent or a spawned child) was never itself granted — that attribute is
+ * `AgentToolExecutor`'s own record of exactly what the calling agent could dispatch, so reusing it
+ * here means a composite step can never reach further than the calling agent already could.
+ * Script steps run through [runScript], which the owning [SkillCommandExecutor] binds to its own
+ * script execution path with the bridge disabled — composite mode never starts it, it doesn't
+ * need it.
  */
 internal class CompositeCommandExecutor(
     private val toolCatalog: AgentToolCatalog?,
@@ -89,6 +95,16 @@ internal class CompositeCommandExecutor(
         val toolName = step.tool!!
         if (toolName in RESTRICTED_TOOLS) {
             throw BadInputException("tool '$toolName' cannot be called from a composite command step.")
+        }
+        val allowedTools = meta.attributes[ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE]
+            ?.split(',')
+            ?.filter(String::isNotEmpty)
+            ?.toSet()
+            .orEmpty()
+        if (toolName !in allowedTools) {
+            throw BadInputException(
+                "tool '$toolName' is not among the tools available to the calling agent for this invocation."
+            )
         }
         val catalog = toolCatalog ?: throw BadInputException("no tool catalog is available for composite tool steps.")
         val filter = toolsFilter ?: throw BadInputException("no tool filter is available for composite tool steps.")

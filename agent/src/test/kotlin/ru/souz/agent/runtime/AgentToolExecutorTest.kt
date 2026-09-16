@@ -199,7 +199,8 @@ class AgentToolExecutorTest {
             ),
         )
 
-        assertEquals(ToolInvocationMeta.localDefault(), receivedMeta)
+        assertEquals(activeToolNamesAttribute("tool.read_file"), receivedMeta?.attributes)
+        assertEquals(ToolInvocationMeta.localDefault().userId, receivedMeta?.userId)
     }
 
     @Test
@@ -232,8 +233,11 @@ class AgentToolExecutorTest {
             meta = meta,
         )
 
-        assertEquals(meta, receivedMeta)
+        assertEquals(meta.copy(attributes = activeToolNamesAttribute("tool.read_file")), receivedMeta)
     }
+
+    private fun activeToolNamesAttribute(vararg names: String): Map<String, String> =
+        mapOf(ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE to names.joinToString(","))
 
     private fun settingsWithFileTool(
         invokeWithMeta: (suspend (LLMResponse.FunctionCall, ToolInvocationMeta) -> LLMRequest.Message)? = null,

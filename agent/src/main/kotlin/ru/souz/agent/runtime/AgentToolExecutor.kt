@@ -64,8 +64,13 @@ class AgentToolExecutor(
                 errorType = error::class.simpleName,
             )
         }
+        val scopedMeta = meta.copy(
+            attributes = meta.attributes + (
+                ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE to settings.tools.byName.keys.joinToString(",")
+            ),
+        )
         return try {
-            fn.invoke(functionCall, meta).also {
+            fn.invoke(functionCall, scopedMeta).also {
                 eventSink.emit(
                     AgentRuntimeEvent.ToolCallFinished(
                         toolCallId = runtimeToolCallId,

@@ -66,7 +66,19 @@ class ParentSubagentExecutionTest {
 
                 assertEquals("parent answer", result.output)
                 assertSame(context.settings, harness.boundSettings.last())
-                assertEquals(context.toolInvocationMeta, harness.invocationMetadata.last())
+                // AgentToolExecutor enriches meta with the caller's active tool names before
+                // dispatch — see ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE. The dispatch-time
+                // settings (core tools merged in by graph setup) is wider than context.settings,
+                // so derive the expectation from the actual request's settings, not context's.
+                assertEquals(
+                    context.toolInvocationMeta.copy(
+                        attributes = context.toolInvocationMeta.attributes + (
+                            ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE to
+                                requests.last().settings.tools.byName.keys.joinToString(",")
+                        ),
+                    ),
+                    harness.invocationMetadata.last(),
+                )
                 assertTrue(requests.all { request ->
                     request.activeTools.single { it.name == "SpawnSubagent" }.description == model &&
                         request.settings.tools.byName.containsKey("SpawnSubagent")

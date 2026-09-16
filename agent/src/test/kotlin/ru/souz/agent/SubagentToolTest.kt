@@ -87,7 +87,13 @@ class SubagentToolTest {
             attributes = mapOf("clientSessionId" to "client-session", "connectionId" to "connection"),
         )
         var toolCalls = 0
-        val selected = tool("Selected") { assertSame(meta, it); toolCalls += 1; "tool result" }
+        val selected = tool("Selected") {
+            // The child's own AgentToolExecutor dispatch enriches meta with the child's active
+            // tool names before invoking a selected tool — see ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE.
+            assertEquals(meta.copy(attributes = meta.attributes + (ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE to "Selected")), it)
+            toolCalls += 1
+            "tool result"
+        }
         var requests = 0
         val categories = mutableListOf<String?>()
         val subagent = subagent(

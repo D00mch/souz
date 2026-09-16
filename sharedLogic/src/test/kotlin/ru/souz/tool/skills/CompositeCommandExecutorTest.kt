@@ -22,6 +22,11 @@ import kotlin.test.assertTrue
 class CompositeCommandExecutorTest {
     private val meta = ToolInvocationMeta(userId = "user-1")
 
+    private fun meta(vararg allowedTools: String): ToolInvocationMeta =
+        if (allowedTools.isEmpty()) meta else meta.copy(
+            attributes = mapOf(ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE to allowedTools.joinToString(",")),
+        )
+
     @Test
     fun `runs a tool step then a script step, threading a nested field between them`() = runTest {
         val screenshotTool = FakeTool("device.mcp.call_tool") { arguments ->
@@ -62,7 +67,7 @@ class CompositeCommandExecutorTest {
             bundleHash = SkillBundleHasher.hash(bundle),
             commandName = "locate",
             inputs = mapOf("device" to "tv-1", "target" to "search icon"),
-            meta = meta,
+            meta = meta("device.mcp.call_tool"),
         )
 
         assertEquals(0, result.exitCode)
@@ -104,7 +109,7 @@ class CompositeCommandExecutorTest {
             bundleHash = SkillBundleHasher.hash(bundle),
             commandName = "act",
             inputs = mapOf("action" to "click_element", "actionArguments" to """{"id":"el_1"}"""),
-            meta = meta,
+            meta = meta("device.mcp.call_tool"),
         )
     }
 
@@ -143,7 +148,7 @@ class CompositeCommandExecutorTest {
             bundleHash = SkillBundleHasher.hash(bundle),
             commandName = "act_and_observe",
             inputs = mapOf("device" to "tv-1"),
-            meta = meta,
+            meta = meta("device.mcp.call_tool"),
         )
 
         assertEquals(listOf(1500L), recordedDelays)
@@ -179,7 +184,7 @@ class CompositeCommandExecutorTest {
             bundleHash = SkillBundleHasher.hash(bundle),
             commandName = "broken",
             inputs = emptyMap(),
-            meta = meta,
+            meta = meta("device.mcp.call_tool", "other.tool"),
         )
 
         assertEquals(1, result.exitCode)
@@ -244,12 +249,49 @@ class CompositeCommandExecutorTest {
             bundleHash = SkillBundleHasher.hash(bundle),
             commandName = "escape",
             inputs = emptyMap(),
-            meta = meta,
+            meta = meta(ToolInvokeSkill.NAME),
         )
 
         assertEquals(1, result.exitCode)
         assertTrue(!invoked)
         assertTrue(result.stderr.contains("cannot be called"))
+    }
+
+    @Test
+    fun `a tool outside allowedTools is rejected without invoking it, even though it's not in RESTRICTED_TOOLS`() = runTest {
+        var invoked = false
+        val ungranted = FakeTool("device.mcp.call_tool") { invoked = true; "{}" }
+        val executor = CompositeCommandExecutor(
+            toolCatalog = catalog(ToolCategory.FILES to listOf(ungranted)),
+            toolsFilter = TestToolsFilter(),
+            runScript = { _, _, _, _ -> error("no script step in this test") },
+        )
+        val bundle = bundle(
+            "tv-control",
+            """
+            locate:
+              inputs: [device, target]
+              steps:
+                - id: screenshot
+                  tool: device.mcp.call_tool
+                  arguments:
+                    name: get_screenshot
+              returns: "${'$'}{screenshot}"
+            """.trimIndent(),
+        )
+
+        val result = executor.execute(
+            bundle = bundle,
+            bundleHash = SkillBundleHasher.hash(bundle),
+            commandName = "locate",
+            inputs = mapOf("device" to "tv-1", "target" to "icon"),
+            // Simulates a caller (e.g. a subagent) that was never granted device.mcp.call_tool.
+            meta = meta("some.other.tool"),
+        )
+
+        assertEquals(1, result.exitCode)
+        assertTrue(!invoked)
+        assertTrue(result.stderr.contains("not among the tools available"))
     }
 
     @Test
@@ -311,7 +353,7 @@ class CompositeCommandExecutorTest {
             bundleHash = SkillBundleHasher.hash(bundle),
             commandName = "locate",
             inputs = mapOf("device" to ""), // "current device" convention — see resolveValue's isOmittable
-            meta = meta,
+            meta = meta("device.mcp.call_tool"),
         )
 
         assertEquals(setOf("name"), capturedArguments!!.keys)
@@ -344,7 +386,7 @@ class CompositeCommandExecutorTest {
             bundleHash = SkillBundleHasher.hash(bundle),
             commandName = "typo",
             inputs = emptyMap(), // declared input "target" is never supplied at call time
-            meta = meta,
+            meta = meta("device.mcp.call_tool"),
         )
 
         assertEquals(1, result.exitCode)
