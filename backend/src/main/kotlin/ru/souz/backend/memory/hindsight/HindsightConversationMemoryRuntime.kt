@@ -11,9 +11,9 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import java.io.IOException
-import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import ru.souz.memory.CompletedTurnEvidenceKind
@@ -21,7 +21,6 @@ import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.ExplicitMemoryIntent
 import ru.souz.memory.MemoryContext
-import ru.souz.memory.MemoryOwnerId
 import ru.souz.memory.MemoryPromptFact
 import ru.souz.memory.MemoryRetrievalRequest
 import ru.souz.memory.MemoryRetrievalResult
@@ -37,7 +36,7 @@ private const val UNSUPPORTED_MUTATION_NOTICE =
     "Persistent memory cannot safely forget or delete a natural-language target in this runtime. " +
         "Do not claim the operation succeeded; explain that exact-ID memory deletion is unavailable."
 
-/** Hindsight-backed memory with one bank per trusted Souz owner. */
+/** Hindsight-backed memory using the trusted Souz user ID as the bank ID. */
 class HindsightConversationMemoryRuntime(
     private val httpClient: HttpClient,
     baseUrl: String,
@@ -54,7 +53,7 @@ class HindsightConversationMemoryRuntime(
             else -> Unit
         }
 
-        val bankId = bankIdFor(request.context.ownerId)
+        val bankId = request.context.ownerId.value
         val maxFacts = request.maxFacts ?: MemorySearchPolicy.DEFAULT_MAX_FACTS
         return try {
             val items = recall(
@@ -110,7 +109,7 @@ class HindsightConversationMemoryRuntime(
             -> return
         }
 
-        val bankId = bankIdFor(input.context.ownerId)
+        val bankId = input.context.ownerId.value
         try {
             val item = buildMap<String, Any> {
                 put("content", input.retainedContent(includeToolEvidence = intent == ExplicitMemoryIntent.NONE))
@@ -134,7 +133,7 @@ class HindsightConversationMemoryRuntime(
         require(maxFacts in 1..MemorySearchPolicy.MAX_FACTS)
         require(maxTokens > 0)
         val response = httpClient.post(
-            "$baseUrl/v1/default/banks/${bankIdFor(context.ownerId)}/memories/recall"
+            "$baseUrl/v1/default/banks/${context.ownerId.value.encodeURLPathPart()}/memories/recall"
         ) {
             jsonRequest(apiToken)
             setBody(
@@ -153,7 +152,7 @@ class HindsightConversationMemoryRuntime(
     private suspend fun retain(bankId: String, item: Map<String, Any>, retryOnIoFailure: Boolean) {
         repeat(if (retryOnIoFailure) 2 else 1) { attempt ->
             try {
-                val response = httpClient.post("$baseUrl/v1/default/banks/$bankId/memories") {
+                val response = httpClient.post("$baseUrl/v1/default/banks/${bankId.encodeURLPathPart()}/memories") {
                     jsonRequest(apiToken)
                     timeout { requestTimeoutMillis = RETAIN_TIMEOUT_MILLIS }
                     setBody(mapOf("items" to listOf(item)))
@@ -193,11 +192,6 @@ private fun HttpRequestBuilder.jsonRequest(apiToken: String?) {
 private fun HttpResponse.requireSuccess(): HttpResponse {
     if (!status.isSuccess()) error("Hindsight returned $status")
     return this
-}
-
-private fun bankIdFor(ownerId: MemoryOwnerId): String {
-    val digest = MessageDigest.getInstance("SHA-256").digest(ownerId.value.toByteArray(Charsets.UTF_8))
-    return "souz-" + digest.take(16).joinToString("") { "%02x".format(it) }
 }
 
 private fun RecalledMemory.scope(context: MemoryContext): String =
