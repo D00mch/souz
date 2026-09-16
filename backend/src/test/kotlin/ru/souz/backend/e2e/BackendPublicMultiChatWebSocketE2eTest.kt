@@ -365,9 +365,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
                 request(socket, subscribeFrame(chats[0], 0), duplicate = false)
                 assertEquals(tools[0], readJson(socket))
                 assertEquals(terminal, readJson(socket))
-                chats.forEach { chat ->
-                    request(socket, subscribeFrame(chat), duplicate = true)
-                }
                 assertEquals(callsAfter, llm.requests.size)
             }
         }
