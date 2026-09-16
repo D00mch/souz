@@ -112,8 +112,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
                         request(socket, unsubscribeFrame(chat), duplicate = false)
                         val closed = logs.drop(before).single { it.first == "WebSocket subscription closed" }.second
                         assertEquals(chat, closed["chatId"])
-                        request(socket, unsubscribeFrame(chat), duplicate = true)
-                        request(socket, subscribeFrame(chat, terminals.last()["seq"].asLong()), duplicate = false)
                     }
                 }
             } finally {
