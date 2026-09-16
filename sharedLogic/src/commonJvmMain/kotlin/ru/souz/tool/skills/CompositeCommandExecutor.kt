@@ -140,7 +140,14 @@ internal class CompositeCommandExecutor(
             val timeoutNote = if (result.timedOut) " (timed out)" else ""
             throw BadInputException("script '${step.script}' exited ${result.exitCode}$timeoutNote: ${result.stderr.take(500)}")
         }
-        return result.stdout.asJsonOrText()
+        // Unlike a tool step's result (already structured JSON from resultMessage), a script's
+        // stdout is just text the author controls — it may look like JSON without meaning to be
+        // reinterpreted as one (e.g. a pre-built request body string meant to flow verbatim into
+        // a later tool step's argument). Keep it as text; a step that wants structured field
+        // access on its own output can still get it, since ${step} substituted into a tool
+        // argument is that same text, and downstream JSON.parse-style consumers (another tool
+        // step's arguments) work fine against a JSON-shaped string too.
+        return TextNode(result.stdout)
     }
 
     // --- ${...} resolution -------------------------------------------------------------------

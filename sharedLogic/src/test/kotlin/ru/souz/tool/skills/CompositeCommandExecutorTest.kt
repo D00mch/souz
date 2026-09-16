@@ -77,6 +77,48 @@ class CompositeCommandExecutorTest {
     }
 
     @Test
+    fun `a script step's JSON-shaped stdout flows into a later tool argument as a raw string, not an object`() = runTest {
+        var capturedBody: Any? = null
+        val safeApiCall = FakeTool("SafeApiCall") { arguments -> capturedBody = arguments["body"]; """{"statusCode":200}""" }
+        val executor = CompositeCommandExecutor(
+            toolCatalog = catalog(ToolCategory.FILES to listOf(safeApiCall)),
+            toolsFilter = TestToolsFilter(),
+            runScript = { _, _, _, _ ->
+                // Mirrors ysh_api.py build-action-body: prints a JSON request body as plain text.
+                SandboxCommandResult(exitCode = 0, stdout = """{"devices":[{"id":"light-1"}]}""", stderr = "")
+            },
+        )
+        val bundle = bundle(
+            "yandex-smart-home",
+            """
+            control_device:
+              inputs: [device_id, state]
+              steps:
+                - id: action_body
+                  script: scripts/ysh_api.py
+                  runtime: PYTHON
+                  args: ["build-action-body", "${'$'}{inputs.device_id}", "${'$'}{inputs.state}"]
+                - id: sent
+                  tool: SafeApiCall
+                  arguments:
+                    body: "${'$'}{action_body}"
+              returns: "${'$'}{sent}"
+            """.trimIndent(),
+        )
+
+        val result = executor.execute(
+            bundle = bundle,
+            bundleHash = SkillBundleHasher.hash(bundle),
+            commandName = "control_device",
+            inputs = mapOf("device_id" to "light-1", "state" to "on"),
+            meta = meta("SafeApiCall"),
+        )
+
+        assertEquals(0, result.exitCode)
+        assertEquals("""{"devices":[{"id":"light-1"}]}""", capturedBody)
+    }
+
+    @Test
     fun `a whole-reference argument keeps its JSON type instead of being stringified`() = runTest {
         val actTool = FakeTool("device.mcp.call_tool") { arguments ->
             @Suppress("UNCHECKED_CAST")
