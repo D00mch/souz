@@ -138,38 +138,29 @@ internal class PublicClientConnection(
                                 ))
                             }
                         }
-                        "chat.subscribe" -> {
-                            val subscribe = decode(ChatSubscribeFrame::class.java, "resolve_chat")
-                            node.requireSubscribe(subscribe)
+                        "chat.subscribe", "chat.unsubscribe" -> {
+                            val subscribe = if (kind == "chat.subscribe") decode(ChatSubscribeFrame::class.java, "resolve_chat") else null
+                            val requestId = subscribe?.requestId ?: decode(ChatUnsubscribeFrame::class.java, "resolve_chat").requestId
+                            node.requireSubscription(requestId)
                             val target = resolveFrameChat(node)
                             chat = target
                             withContext(mdcContext()) {
-                                stage = "prepare_subscription"
-                                pendingStream = if (node.has("afterSeq")) {
-                                    deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
-                                } else prepare(target, subscribe.afterSeq)
-                                // Prepare first to cover concurrent events; stop the old sender before the replay ack.
-                                stage = "replace_subscription"
-                                if (pendingStream != null) subscriptions.remove(target.id)?.cancelAndJoin()
+                                val duplicate = if (subscribe != null) {
+                                    stage = "prepare_subscription"
+                                    pendingStream = if (node.has("afterSeq")) {
+                                        deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
+                                    } else prepare(target, subscribe.afterSeq)
+                                    stage = "replace_subscription"
+                                    pendingStream == null
+                                } else {
+                                    stage = "close_subscription"
+                                    target.id !in subscriptions
+                                }
+                                // Prepare replay first; join the old sender outside the writer mutex before acknowledging.
+                                if (!duplicate) subscriptions.remove(target.id)?.cancelAndJoin()
                                 HandledClientFrame(ChatSubscriptionAck(
-                                    type = kind, chatId = target.id.toString(), requestId = subscribe.requestId.trim(), status = "accepted",
-                                    duplicate = pendingStream == null, receivedAt = Instant.now().toString(),
-                                ))
-                            }
-                        }
-                        "chat.unsubscribe" -> {
-                            val unsubscribe = decode(ChatUnsubscribeFrame::class.java, "resolve_chat")
-                            if (unsubscribe.requestId.isBlank()) throw ClientContractException("invalid_request", "requestId must not be empty.")
-                            val target = resolveFrameChat(node)
-                            chat = target
-                            withContext(mdcContext()) {
-                                stage = "close_subscription"
-                                val subscription = subscriptions.remove(target.id)
-                                // Join outside the writer mutex: cleanup and any in-flight send must finish before the ACK.
-                                subscription?.cancelAndJoin()
-                                HandledClientFrame(ChatSubscriptionAck(
-                                    type = kind, chatId = target.id.toString(), requestId = unsubscribe.requestId.trim(), status = "accepted",
-                                    duplicate = subscription == null, receivedAt = Instant.now().toString(),
+                                    type = kind, chatId = target.id.toString(), requestId = requestId.trim(), status = "accepted",
+                                    duplicate = duplicate, receivedAt = Instant.now().toString(),
                                 ))
                             }
                         }
@@ -303,13 +294,13 @@ internal class PublicClientConnection(
         return service.requireChat(id, clientType)
     }
 
-    private fun JsonNode.requireSubscribe(frame: ChatSubscribeFrame) {
+    private fun JsonNode.requireSubscription(requestId: String) {
         get("afterSeq")?.let { cursor ->
             if (!cursor.isIntegralNumber || !cursor.canConvertToLong() || cursor.asLong() < 0) {
                 throw ClientContractException("invalid_request", "afterSeq must be a non-negative integer.")
             }
         }
-        if (frame.requestId.isBlank()) throw ClientContractException("invalid_request", "requestId must not be empty.")
+        if (requestId.isBlank()) throw ClientContractException("invalid_request", "requestId must not be empty.")
     }
 
     private fun rejectedFor(node: JsonNode, kind: String, error: ClientError): HandledClientFrame {
