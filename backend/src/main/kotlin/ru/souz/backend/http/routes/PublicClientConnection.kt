@@ -17,7 +17,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -83,10 +82,7 @@ internal class PublicClientConnection(
                 }
             }
         } finally {
-            withContext(NonCancellable) {
-                subscriptions.values.forEach { it.cancel() }
-                subscriptions.values.toList().joinAll()
-            }
+            subscriptions.values.forEach { it.cancel() }
         }
     }
 
