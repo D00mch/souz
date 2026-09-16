@@ -64,6 +64,19 @@ class SubagentToolFactoryTest {
     }
 
     @Test
+    fun `reasoningEffort input is forwarded to the child settings and defaults to null`() = runTest {
+        val fixture = Fixture()
+        val tool = fixture.factory().create(fixture.parent)
+
+        tool.call(mapOf("task" to "Inspect"))
+        assertEquals(null, fixture.context.settings.reasoningEffort)
+
+        tool.call(mapOf("task" to "Inspect", "reasoningEffort" to "low"))
+        assertEquals("low", fixture.context.settings.reasoningEffort)
+        assertEquals(null, fixture.parent.reasoningEffort) // parent's own settings stay untouched
+    }
+
+    @Test
     fun `enabled compiled tools take precedence and selection preserves host schemas`() = runTest {
         val selected = namedTool("selected")
         val other = namedTool("other")

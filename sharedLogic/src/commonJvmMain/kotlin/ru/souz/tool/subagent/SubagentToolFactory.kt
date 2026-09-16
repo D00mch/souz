@@ -45,7 +45,7 @@ class SubagentToolFactory(
             val model = input.model ?: parentSettings.model
             val provider = models[model]
                 ?: fail("subagent_model_unavailable", "Choose an advertised model ID: $model is unavailable.")
-            prepare(input, parentSettings.copy(model = model, provider = provider), meta)
+            prepare(input, parentSettings.copy(model = model, provider = provider, reasoningEffort = input.reasoningEffort), meta)
         }
     }
 

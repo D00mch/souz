@@ -1,5 +1,6 @@
 package ru.souz.agent.skills.bundle
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import ru.souz.agent.skills.SkillId
 
 internal const val SKILL_MD_PATH = "SKILL.md"
@@ -61,7 +62,42 @@ data class SkillManifest(
     /** OAuth scopes this skill requires from [oauthProvider]. Ignored when [oauthProvider] is null. */
     val oauthScopes: List<String> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
+    /** Declarative composite commands, keyed by name — see [CompositeCommandSpec]. */
+    val commands: Map<String, CompositeCommandSpec> = emptyMap(),
     val rawFrontmatter: String,
+)
+
+/**
+ * A deterministic, linear chain of [CompositeStepSpec]s that `SkillCommandExecutor` interprets
+ * directly — never handed to skill-authored code — so the model sees one `RunSkillCommand(...,
+ * arguments={command: "<name>", inputs: {...}})` call instead of a sequence of separately
+ * LLM-decided tool calls. [inputs] names the values the caller must supply; [steps] run in order
+ * with each step's outputs addressable by later steps as `${stepId...}`; [returns] is a `${...}`
+ * expression resolved against [inputs] and step outputs once every step has succeeded.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class CompositeCommandSpec(
+    val inputs: List<String> = emptyList(),
+    val steps: List<CompositeStepSpec>,
+    val returns: String,
+)
+
+/**
+ * One step of a [CompositeCommandSpec]. Exactly one of [tool], [script], or [waitMs] must be set
+ * — a step is a tool call, a bundled script invocation, or a deterministic pause, never more than
+ * one. [arguments]/[args] values may contain `${...}` references to `inputs.*` or an earlier
+ * step's `id`. [runtime] is required when [script] is set — `SkillCommandExecutor`'s runtime
+ * argument defaults to BASH and is never inferred from the script's extension.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class CompositeStepSpec(
+    val id: String,
+    val tool: String? = null,
+    val script: String? = null,
+    val waitMs: Long? = null,
+    val runtime: String? = null,
+    val arguments: Map<String, Any?> = emptyMap(),
+    val args: List<String> = emptyList(),
 )
 
 data class SkillFile(

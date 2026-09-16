@@ -3,6 +3,8 @@ package ru.souz.tool.skills
 import java.nio.file.Path
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.spi.AgentToolCatalog
+import ru.souz.agent.spi.AgentToolsFilter
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.runtime.sandbox.RuntimeSandbox
 import ru.souz.runtime.sandbox.SandboxCommandRequest
@@ -12,9 +14,12 @@ import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
 import ru.souz.tool.BadInputException
 import ru.souz.tool.InputParamDescription
 
-
 class SkillCommandExecutor(
     private val sandboxResolver: ToolInvocationRuntimeSandboxResolver,
+    /** Only used to resolve a composite command's `tool:` steps (see [Args.composite]); left
+     * null, composite commands can only run `script`/`waitMs` steps. */
+    private val toolCatalog: AgentToolCatalog? = null,
+    private val toolsFilter: AgentToolsFilter? = null,
 ) {
     internal data class Args(
         @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands.")
@@ -35,6 +40,10 @@ class SkillCommandExecutor(
         val stdin: String? = null,
         @InputParamDescription("Timeout in milliseconds. Defaults to 60000 and is capped at 300000.")
         val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+        @InputParamDescription("Name of a declared composite command in this Skill's manifest (see its `commands` field). When set, runs that deterministic step chain instead of scriptPath/script/command, ignoring them.")
+        val composite: String? = null,
+        @InputParamDescription("Named inputs for `composite`, matching its declared `inputs` list.")
+        val inputs: Map<String, String> = emptyMap(),
     )
 
     private companion object {
@@ -44,7 +53,26 @@ class SkillCommandExecutor(
         const val SKILL_MARKDOWN_PATH = "SKILL.md"
     }
 
+    private val compositeExecutor = CompositeCommandExecutor(
+        toolCatalog = toolCatalog,
+        toolsFilter = toolsFilter,
+        runScript = { bundle, bundleHash, args, meta -> runScript(bundle, bundleHash, args, meta) },
+    )
+
     internal suspend fun execute(
+        bundle: SkillBundle,
+        bundleHash: String,
+        arguments: Args,
+        meta: ToolInvocationMeta,
+    ): SandboxCommandResult {
+        val composite = arguments.composite
+        if (composite != null) {
+            return compositeExecutor.execute(bundle, bundleHash, composite, arguments.inputs, meta)
+        }
+        return runScript(bundle, bundleHash, arguments, meta)
+    }
+
+    private suspend fun runScript(
         bundle: SkillBundle,
         bundleHash: String,
         arguments: Args,

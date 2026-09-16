@@ -98,9 +98,40 @@ class NodesLLMTest {
         assertEquals("Hello streaming world", result.history.last().content)
     }
 
+    @Test
+    fun `settings reasoningEffort is forwarded to the provider request`() = runTest {
+        var captured: LLMRequest.Chat? = null
+        val api = mockk<LLMChatAPI> {
+            coEvery { message(any()) } answers {
+                captured = firstArg()
+                LLMResponse.Chat.Ok(
+                    choices = listOf(
+                        LLMResponse.Choice(
+                            message = LLMResponse.Message("done", LLMMessageRole.assistant, functionsStateId = null),
+                            index = 0,
+                            finishReason = LLMResponse.FinishReason.stop,
+                        )
+                    ),
+                    created = 0,
+                    model = "test-model",
+                    usage = LLMResponse.Usage(1, 1, 2, 0),
+                )
+            }
+        }
+        val nodes = NodesLLM(api, mockk { every { useStreaming } returns false })
+        val graph = buildGraph<String, LLMResponse.Chat> {
+            nodeInput.edgeTo(nodes.chat()).edgeTo(nodeFinish)
+        }
+
+        graph.start(context(emptyList(), reasoningEffort = "low"))
+
+        assertEquals("low", captured?.reasoningEffort)
+    }
+
     private fun context(
         history: List<LLMRequest.Message>,
         runtimeEventSink: AgentRuntimeEventSink = AgentRuntimeEventSink.NONE,
+        reasoningEffort: String? = null,
     ): AgentContext<String> = AgentContext(
         input = "ignored",
         settings = AgentSettings(
@@ -108,6 +139,7 @@ class NodesLLMTest {
             provider = LlmProvider.OPENAI,
             temperature = 0.2f,
             toolsByCategory = emptyMap(),
+            reasoningEffort = reasoningEffort,
         ),
         history = history,
         activeTools = emptyList(),

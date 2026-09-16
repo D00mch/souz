@@ -24,6 +24,7 @@ class SubagentTool(
         val skillIds: List<String> = emptyList(),
         val model: String? = null,
         val maxTurns: Int = 32,
+        val reasoningEffort: String? = null,
     )
 
     /** [settings] must contain only the child's selected tools; schemas are derived from that lookup. */
@@ -47,6 +48,13 @@ class SubagentTool(
                 ),
                 "model" to LLMRequest.Property("string", "Optional exact model ID from the advertised choices. Defaults to the parent's model.", enum = modelChoices),
                 "maxTurns" to LLMRequest.Property("integer", "Maximum child LLM calls, from 1 to 128. Defaults to 32."),
+                "reasoningEffort" to LLMRequest.Property(
+                    "string",
+                    "Optional reasoning effort for the child's model, e.g. \"low\" for a fast, mostly-deterministic " +
+                        "tool-calling task. Only honored by OpenAI-compatible providers; ignored otherwise. " +
+                        "Defaults to the provider's own default effort.",
+                    enum = listOf("minimal", "low", "medium", "high"),
+                ),
             ),
             required = listOf("task"),
         ),
