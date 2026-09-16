@@ -17,7 +17,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -26,8 +25,9 @@ import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.client.ChatCreateAck
 import ru.souz.backend.client.ChatCreateFrame
-import ru.souz.backend.client.ChatSubscribeAck
 import ru.souz.backend.client.ChatSubscribeFrame
+import ru.souz.backend.client.ChatSubscriptionAck
+import ru.souz.backend.client.ChatUnsubscribeFrame
 import ru.souz.backend.client.ClientContractException
 import ru.souz.backend.client.ClientError
 import ru.souz.backend.client.CreateClientChatRequest
@@ -82,10 +82,7 @@ internal class PublicClientConnection(
                 }
             }
         } finally {
-            withContext(NonCancellable) {
-                subscriptions.values.forEach { it.cancel() }
-                subscriptions.values.toList().joinAll()
-            }
+            subscriptions.values.forEach { it.cancel() }
         }
     }
 
@@ -137,22 +134,29 @@ internal class PublicClientConnection(
                                 ))
                             }
                         }
-                        "chat.subscribe" -> {
-                            val subscribe = decode(ChatSubscribeFrame::class.java, "resolve_chat")
-                            node.requireSubscribe(subscribe)
+                        "chat.subscribe", "chat.unsubscribe" -> {
+                            val subscribe = if (kind == "chat.subscribe") decode(ChatSubscribeFrame::class.java, "resolve_chat") else null
+                            val requestId = subscribe?.requestId ?: decode(ChatUnsubscribeFrame::class.java, "resolve_chat").requestId
+                            node.requireSubscription(requestId)
                             val target = resolveFrameChat(node)
                             chat = target
                             withContext(mdcContext()) {
-                                stage = "prepare_subscription"
-                                pendingStream = if (node.has("afterSeq")) {
-                                    deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
-                                } else prepare(target, subscribe.afterSeq)
-                                // Prepare first to cover concurrent events; stop the old sender before the replay ack.
-                                stage = "replace_subscription"
-                                if (pendingStream != null) subscriptions.remove(target.id)?.cancelAndJoin()
-                                HandledClientFrame(ChatSubscribeAck(
-                                    chatId = target.id.toString(), requestId = subscribe.requestId.trim(), status = "accepted",
-                                    duplicate = pendingStream == null, receivedAt = Instant.now().toString(),
+                                val duplicate = if (subscribe != null) {
+                                    stage = "prepare_subscription"
+                                    pendingStream = if (node.has("afterSeq")) {
+                                        deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
+                                    } else prepare(target, subscribe.afterSeq)
+                                    stage = "replace_subscription"
+                                    pendingStream == null
+                                } else {
+                                    stage = "close_subscription"
+                                    target.id !in subscriptions
+                                }
+                                // Prepare replay first; join the old sender outside the writer mutex before acknowledging.
+                                if (!duplicate) subscriptions.remove(target.id)?.cancelAndJoin()
+                                HandledClientFrame(ChatSubscriptionAck(
+                                    type = kind, chatId = target.id.toString(), requestId = requestId.trim(), status = "accepted",
+                                    duplicate = duplicate, receivedAt = Instant.now().toString(),
                                 ))
                             }
                         }
@@ -286,13 +290,13 @@ internal class PublicClientConnection(
         return service.requireChat(id, clientType)
     }
 
-    private fun JsonNode.requireSubscribe(frame: ChatSubscribeFrame) {
+    private fun JsonNode.requireSubscription(requestId: String) {
         get("afterSeq")?.let { cursor ->
             if (!cursor.isIntegralNumber || !cursor.canConvertToLong() || cursor.asLong() < 0) {
                 throw ClientContractException("invalid_request", "afterSeq must be a non-negative integer.")
             }
         }
-        if (frame.requestId.isBlank()) throw ClientContractException("invalid_request", "requestId must not be empty.")
+        if (requestId.isBlank()) throw ClientContractException("invalid_request", "requestId must not be empty.")
     }
 
     private fun rejectedFor(node: JsonNode, kind: String, error: ClientError): HandledClientFrame {
@@ -306,8 +310,8 @@ internal class PublicClientConnection(
                 requestId = requestId, chatId = null, status = "rejected", duplicate = false,
                 error = error, receivedAt = now.toString(),
             )
-            "chat.subscribe" -> ChatSubscribeAck(
-                chatId = chatId, requestId = requestId, status = "rejected", duplicate = false,
+            "chat.subscribe", "chat.unsubscribe" -> ChatSubscriptionAck(
+                type = kind, chatId = chatId, requestId = requestId, status = "rejected", duplicate = false,
                 error = error, receivedAt = now.toString(),
             )
             "message.submit" -> MessageSubmitAck.rejected(chatId, requestId, error, now)
@@ -346,4 +350,4 @@ private suspend fun AgentEventStream.forwardPublicEvents(
 }
 
 private val socketLogger = LoggerFactory.getLogger("SouzClientWebSocket")
-private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "message.submit", "history.append", "tool.result", "thread.cancel")
+private val clientFrameKinds = setOf("chat.create", "chat.subscribe", "chat.unsubscribe", "message.submit", "history.append", "tool.result", "thread.cancel")

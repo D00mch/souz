@@ -36,6 +36,8 @@ data class ChatSubscribeFrame(
     val afterSeq: Long = 0,
 )
 
+data class ChatUnsubscribeFrame(val kind: String, val chatId: String, val requestId: String)
+
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ChatCreateAck(
     val kind: String = "ack",
@@ -50,9 +52,9 @@ data class ChatCreateAck(
 )
 
 @JsonInclude(JsonInclude.Include.ALWAYS)
-data class ChatSubscribeAck(
+data class ChatSubscriptionAck(
     val kind: String = "ack",
-    val type: String = "chat.subscribe",
+    val type: String,
     val chatId: String,
     val requestId: String,
     val status: String,
