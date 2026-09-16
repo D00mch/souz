@@ -59,14 +59,15 @@ class ToolInvokeSkill(
             if (skillId.isEmpty()) {
                 return errorMessage(functionCall.name, "invalid_skill_id", "Skill ID must not be blank.")
             }
-            when (val resolved = resolver().resolve(SkillId(skillId), meta.userId)) {
+            val resolver = resolver()
+            when (val resolved = resolver.resolve(SkillId(skillId), meta.userId)) {
                 is SkillResolution.Compiled -> resolved.tool.invoke(
                     LLMResponse.FunctionCall(resolved.tool.fn.name, input.arguments),
                     meta = meta,
                 ).copy(name = functionCall.name)
                 is SkillResolution.Bundle -> {
                     val arguments = restJsonMapper.convertValue(input.arguments, SkillCommandExecutor.Args::class.java)
-                    val result = commandExecutor.execute(resolved.bundle, resolved.bundleHash, arguments, meta)
+                    val result = commandExecutor.execute(resolved.bundle, resolved.bundleHash, arguments, meta, allowedCompositeTools(meta, resolver))
                     resultMessage(functionCall.name, result)
                 }
                 is SkillResolution.Error -> errorMessage(functionCall.name, resolved.code, resolved.message)
@@ -83,6 +84,31 @@ class ToolInvokeSkill(
         skillId.trim().takeIf { it.isNotEmpty() }?.let { resolver().enabledTools.byName[it]?.fn?.name }
 
     private fun resolver() = SkillResolver(toolCatalog, toolsFilter, loadBundle, approvalGate)
+
+    /**
+     * Tool names a composite command's `tool:` steps may call — everything this exact
+     * `RunSkillCommand` call could already reach, one way or another, without composites:
+     * - [ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE] — the calling agent's own dispatch
+     *   table (`AgentSettings.tools`, set by `AgentToolExecutor`). Covers tools flattened
+     *   directly into a spawned child's settings (e.g. a subagent's `device.mcp.call_tool`).
+     * - [resolver]'s own `enabledTools` — the compiled-tool catalog *this* `ToolInvokeSkill`
+     *   instance resolves `SkillResolution.Compiled` against. Covers tools the model could
+     *   already reach indirectly via a plain `RunSkillCommand(skillId: "<compiledToolName>")`
+     *   call, e.g. `SafeApiCall` for the parent's unrestricted core `RunSkillCommand` — those
+     *   never appear in `AgentSettings.tools` at all (core tools stay outside the compiled
+     *   catalog), so the first source alone misses them. A spawned child's *own*
+     *   `bundleCommandTool` is constructed with an empty compiled catalog specifically so this
+     *   source contributes nothing extra there — its only route to a compiled tool is the first
+     *   source, exactly matching its `skillIds` grant.
+     */
+    private fun allowedCompositeTools(meta: ToolInvocationMeta, resolver: SkillResolver): Set<String> {
+        val fromDispatch = meta.attributes[ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE]
+            ?.split(',')
+            ?.filter(String::isNotEmpty)
+            ?.toSet()
+            .orEmpty()
+        return fromDispatch + resolver.enabledTools.byName.keys
+    }
 
     private fun errorMessage(functionName: String, code: String, message: String) =
         resultMessage(functionName, mapOf("error" to mapOf("code" to code, "message" to message)))

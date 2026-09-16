@@ -64,10 +64,13 @@ class SkillCommandExecutor(
         bundleHash: String,
         arguments: Args,
         meta: ToolInvocationMeta,
+        /** Tool names a `composite` command's `tool:` steps may call — see
+         * [ToolInvokeSkill.allowedCompositeTools]. Ignored outside composite mode. */
+        allowedCompositeTools: Set<String> = emptySet(),
     ): SandboxCommandResult {
         val composite = arguments.composite
         if (composite != null) {
-            return compositeExecutor.execute(bundle, bundleHash, composite, arguments.inputs, meta)
+            return compositeExecutor.execute(bundle, bundleHash, composite, arguments.inputs, meta, allowedCompositeTools)
         }
         return runScript(bundle, bundleHash, arguments, meta)
     }

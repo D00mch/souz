@@ -23,15 +23,15 @@ import ru.souz.tool.BadInputException
  * so the model makes one `RunSkillCommand(arguments={command, inputs})` call instead of a
  * separately LLM-decided step for each one. Tool steps resolve through [toolCatalog]/[toolsFilter]
  * the same way [SkillCommandExecutor]'s (bridge) socket does — an in-process `LLMToolSetup.invoke`,
- * no IPC — but a step's `tool:` name must also be in [ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE]
- * (see [executeToolStep]) before it's looked up there: [toolCatalog] alone is the *host's* full
- * catalog, not scoped to any one invocation, so without that check a composite step could reach a
- * tool the calling agent (parent or a spawned child) was never itself granted — that attribute is
- * `AgentToolExecutor`'s own record of exactly what the calling agent could dispatch, so reusing it
- * here means a composite step can never reach further than the calling agent already could.
- * Script steps run through [runScript], which the owning [SkillCommandExecutor] binds to its own
- * script execution path with the bridge disabled — composite mode never starts it, it doesn't
- * need it.
+ * no IPC — but a step's `tool:` name must also be in the caller-supplied `allowedTools` (see
+ * [execute]) before it's looked up there: [toolCatalog] alone is the *host's* full catalog, shared
+ * across every invocation regardless of who's calling, so without that check a composite step
+ * could reach a tool the calling agent (parent or a spawned child) was never itself granted.
+ * [ToolInvokeSkill.allowedCompositeTools] computes that set as everything the caller could already
+ * reach one way or another *without* composites — see its doc for why that needs two different
+ * sources, not just one. Script steps run through [runScript], which the owning
+ * [SkillCommandExecutor] binds to its own script execution path with the bridge disabled —
+ * composite mode never starts it, it doesn't need it.
  */
 internal class CompositeCommandExecutor(
     private val toolCatalog: AgentToolCatalog?,
@@ -50,13 +50,18 @@ internal class CompositeCommandExecutor(
         commandName: String,
         inputs: Map<String, String>,
         meta: ToolInvocationMeta,
+        /** Tool names this composite command's `tool:` steps may call — see
+         * [ToolInvokeSkill.allowedCompositeTools]. Empty means no `tool:` step can run (fail
+         * closed); `script`/`waitMs` steps are unaffected, they're bounded by the skill's own
+         * sandbox already. */
+        allowedTools: Set<String>,
     ): SandboxCommandResult {
         val spec = bundle.manifest.commands[commandName]
             ?: return failure("Composite command is unavailable: $commandName")
 
         val context = mutableMapOf<String, JsonNode>("inputs" to inputsToNode(inputs))
         for (step in spec.steps) {
-            val result = runCatching { executeStep(bundle, bundleHash, step, context, meta) }
+            val result = runCatching { executeStep(bundle, bundleHash, step, context, meta, allowedTools) }
                 .getOrElse { error -> return failure("step '${step.id}' failed: ${error.message ?: error::class.simpleName}") }
             context[step.id] = result
         }
@@ -72,6 +77,7 @@ internal class CompositeCommandExecutor(
         step: CompositeStepSpec,
         context: MutableMap<String, JsonNode>,
         meta: ToolInvocationMeta,
+        allowedTools: Set<String>,
     ): JsonNode {
         val waitMs = step.waitMs
         val tool = step.tool
@@ -81,7 +87,7 @@ internal class CompositeCommandExecutor(
                 delayFn(waitMs)
                 NullNode.instance
             }
-            tool != null -> executeToolStep(step, context, meta)
+            tool != null -> executeToolStep(step, context, meta, allowedTools)
             script != null -> executeScriptStep(bundle, bundleHash, step, context, meta)
             else -> error("composite step '${step.id}' has no kind — SkillBundleParser should have rejected this")
         }
@@ -91,16 +97,12 @@ internal class CompositeCommandExecutor(
         step: CompositeStepSpec,
         context: Map<String, JsonNode>,
         meta: ToolInvocationMeta,
+        allowedTools: Set<String>,
     ): JsonNode {
         val toolName = step.tool!!
         if (toolName in RESTRICTED_TOOLS) {
             throw BadInputException("tool '$toolName' cannot be called from a composite command step.")
         }
-        val allowedTools = meta.attributes[ToolInvocationMeta.ACTIVE_TOOL_NAMES_ATTRIBUTE]
-            ?.split(',')
-            ?.filter(String::isNotEmpty)
-            ?.toSet()
-            .orEmpty()
         if (toolName !in allowedTools) {
             throw BadInputException(
                 "tool '$toolName' is not among the tools available to the calling agent for this invocation."
@@ -140,13 +142,6 @@ internal class CompositeCommandExecutor(
             val timeoutNote = if (result.timedOut) " (timed out)" else ""
             throw BadInputException("script '${step.script}' exited ${result.exitCode}$timeoutNote: ${result.stderr.take(500)}")
         }
-        // Unlike a tool step's result (already structured JSON from resultMessage), a script's
-        // stdout is just text the author controls — it may look like JSON without meaning to be
-        // reinterpreted as one (e.g. a pre-built request body string meant to flow verbatim into
-        // a later tool step's argument). Keep it as text; a step that wants structured field
-        // access on its own output can still get it, since ${step} substituted into a tool
-        // argument is that same text, and downstream JSON.parse-style consumers (another tool
-        // step's arguments) work fine against a JSON-shaped string too.
         return TextNode(result.stdout)
     }
 

@@ -448,6 +448,118 @@ class SkillRuntimeToolsTest {
     }
 
     @Test
+    fun `composite tool step reaches a compiled tool via RunSkillCommand's own resolver even when the caller's dispatch table doesn't include it`() = runTest {
+        val home = createTempDirectory("composite-resolver-home-")
+        val stateRoot = home.resolve("state").createDirectories()
+        stateRoot.resolve("skills/with-composite").createDirectories()
+        val safeApiCall = RecordingTool("SafeApiCall")
+        val catalog = catalog(ToolCategory.OAUTH to listOf(safeApiCall))
+        val commandExecutor = SkillCommandExecutor(
+            sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot)),
+            toolCatalog = catalog,
+            toolsFilter = TestToolsFilter(),
+        )
+        val withComposite = SkillBundle.fromFiles(
+            skillId = SkillId("with-composite"),
+            files = listOf(
+                SkillFile(
+                    normalizedPath = "SKILL.md",
+                    content = """
+                        ---
+                        name: with-composite
+                        description: test
+                        commands:
+                          call_it:
+                            steps:
+                              - id: only
+                                tool: SafeApiCall
+                                arguments: {value: 1}
+                            returns: "${'$'}{only}"
+                        ---
+                        body
+                    """.trimIndent().toByteArray(),
+                )
+            ),
+        )
+        val repository = repository(withComposite)
+        val runner = ToolInvokeSkill(
+            toolCatalog = catalog,
+            toolsFilter = TestToolsFilter(),
+            loadBundle = repository::loadSkillBundle,
+            commandExecutor = commandExecutor,
+        )
+        // No ACTIVE_TOOL_NAMES_ATTRIBUTE at all — mirrors a parent whose own AgentSettings.tools
+        // (core tools only) never lists compiled tools like SafeApiCall directly; reachability
+        // must come from this ToolInvokeSkill's own resolver instead (see
+        // ToolInvokeSkill.allowedCompositeTools).
+        val meta = ToolInvocationMeta(userId = USER_ID)
+
+        val result = runner.call(
+            mapOf("skillId" to "with-composite", "arguments" to mapOf("composite" to "call_it")),
+            meta,
+        )
+
+        assertEquals(mapOf("value" to 1), safeApiCall.lastArguments)
+        assertEquals(0, result["exitCode"].asInt())
+    }
+
+    @Test
+    fun `a restricted child resolver grants nothing extra to a composite step beyond its own dispatch table`() = runTest {
+        val home = createTempDirectory("composite-child-resolver-home-")
+        val stateRoot = home.resolve("state").createDirectories()
+        stateRoot.resolve("skills/with-composite").createDirectories()
+        val safeApiCall = RecordingTool("SafeApiCall")
+        val fullCatalog = catalog(ToolCategory.OAUTH to listOf(safeApiCall))
+        val commandExecutor = SkillCommandExecutor(
+            sandboxResolver = ToolInvocationRuntimeSandboxResolver.fixed(localSandbox(home, stateRoot)),
+            toolCatalog = fullCatalog,
+            toolsFilter = TestToolsFilter(),
+        )
+        val withComposite = SkillBundle.fromFiles(
+            skillId = SkillId("with-composite"),
+            files = listOf(
+                SkillFile(
+                    normalizedPath = "SKILL.md",
+                    content = """
+                        ---
+                        name: with-composite
+                        description: test
+                        commands:
+                          call_it:
+                            steps:
+                              - id: only
+                                tool: SafeApiCall
+                                arguments: {value: 1}
+                            returns: "${'$'}{only}"
+                        ---
+                        body
+                    """.trimIndent().toByteArray(),
+                )
+            ),
+        )
+        val repository = repository(withComposite)
+        // Mirrors SubagentToolFactory.bundleCommandTool: a spawned child's own RunSkillCommand is
+        // built with an empty compiled catalog, so it can never resolve SafeApiCall as
+        // SkillResolution.Compiled — only the bundles explicitly selected at spawn.
+        val restrictedRunner = ToolInvokeSkill(
+            toolCatalog = catalog(),
+            toolsFilter = TestToolsFilter(),
+            loadBundle = repository::loadSkillBundle,
+            commandExecutor = commandExecutor,
+        )
+        val meta = ToolInvocationMeta(userId = USER_ID)
+
+        val result = restrictedRunner.call(
+            mapOf("skillId" to "with-composite", "arguments" to mapOf("composite" to "call_it")),
+            meta,
+        )
+
+        assertEquals(1, result["exitCode"].asInt())
+        assertTrue(result["stderr"].asText().contains("not among the tools available"))
+        assertEquals(null, safeApiCall.lastArguments)
+    }
+
+    @Test
     fun `file backed invocation returns validation error when approval rejects`() = runTest {
         val repository = repository(bundle("unsafe"))
         val approvalGate = rejectingApprovalGate("Rejected by policy.")
