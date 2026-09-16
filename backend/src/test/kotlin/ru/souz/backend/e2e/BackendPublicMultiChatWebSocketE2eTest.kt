@@ -217,7 +217,7 @@ class BackendPublicMultiChatWebSocketE2eTest {
         }
 
     @Test
-    fun `automatic subscriptions exclude old events for first submits and creation retries`() =
+    fun `fresh submits and creation retries restore live-only subscriptions after reconnect and unsubscribe`() =
         backendE2eTest("e2e_multi_live_only") {
             val userId = UUID.randomUUID().toString()
             val chat = createPublicChat(userId)
@@ -225,26 +225,37 @@ class BackendPublicMultiChatWebSocketE2eTest {
             withMultiChatSocket { socket ->
                 val live = submit(socket, chat, userId, "new")
                 assertEquals("thread.completed", live["type"].asText())
+                request(socket, unsubscribeFrame(chat), duplicate = false)
+                submit(socket, chat, userId, "after-unsubscribe")
             }
             withMultiChatSocket { socket ->
-                val retry = request(socket, createFrame(userId, "create-1"), duplicate = true)
-                assertEquals(chat, retry["chatId"].asText())
-                request(socket, subscribeFrame(chat), duplicate = true)
-                // No historical terminal may appear between the creation and next submit acknowledgements.
-                submit(socket, chat, userId, "after-create-retry")
+                repeat(2) { attempt ->
+                    val retry = request(socket, createFrame(userId, "create-1"), duplicate = true)
+                    assertEquals(chat, retry["chatId"].asText())
+                    request(socket, subscribeFrame(chat), duplicate = true)
+                    // No historical terminal may appear between the creation and next submit acknowledgements.
+                    submit(socket, chat, userId, "after-create-retry-$attempt")
+                    request(socket, unsubscribeFrame(chat), duplicate = false)
+                }
             }
         }
 
     @Test
-    fun `duplicate submits auto subscribe without replaying the previous tool event`() =
+    fun `duplicate submits restore live-only subscriptions after reconnect and unsubscribe while rejections do not`() =
         backendE2eTest("e2e_multi_submit_retry", llm = clientToolLlm()) {
             val userId = UUID.randomUUID().toString()
             val chat = createPublicChat(userId)
             val tool = withMultiChatSocket { submit(it, chat, userId, "submit") }
             withMultiChatSocket { socket ->
-                val retry = request(socket, messageFrame(chat, userId, "submit"), duplicate = true)
-                assertEquals(tool["threadId"], retry["thread"]["id"])
-                assertEquals("thread.status", readJson(socket)["type"].asText())
+                repeat(2) { attempt ->
+                    if (attempt > 0) request(socket, unsubscribeFrame(chat), duplicate = false)
+                    request(socket, messageFrame(chat, UUID.randomUUID().toString(), "wrong-owner"), status = "rejected")
+                    request(socket, unsubscribeFrame(chat), duplicate = true)
+                    val retry = request(socket, messageFrame(chat, userId, "submit"), duplicate = true)
+                    assertEquals(tool["threadId"], retry["thread"]["id"])
+                    assertEquals("thread.status", readJson(socket)["type"].asText())
+                    request(socket, subscribeFrame(chat), duplicate = true)
+                }
                 request(socket, toolResult(tool))
                 readTerminal(socket, tool)
             }
@@ -283,29 +294,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
                     submit(first, chats[0], user, "next")
                     assertTrue(llm.requests.last().messages.any { it.content.contains("saved while unsubscribed") })
                 }
-            }
-        }
-
-    @Test
-    fun `accepted submits and creation retries restore live subscriptions after unsubscribe`() =
-        backendE2eTest("e2e_multi_unsubscribe_submit", llm = clientToolLlm()) {
-            val user = UUID.randomUUID().toString()
-            withMultiChatSocket { socket ->
-                val chat = request(socket, createFrame(user))["chatId"].asText()
-                val tool = submit(socket, chat, user, "submit")
-                request(socket, unsubscribeFrame(chat), duplicate = false)
-                request(socket, messageFrame(chat, UUID.randomUUID().toString(), "wrong-owner"), status = "rejected")
-                request(socket, unsubscribeFrame(chat), duplicate = true)
-                request(socket, messageFrame(chat, user, "submit"), duplicate = true)
-                assertEquals("thread.status", readJson(socket)["type"].asText())
-                request(socket, subscribeFrame(chat), duplicate = true)
-                request(socket, toolResult(tool))
-                readTerminal(socket, tool)
-                request(socket, unsubscribeFrame(chat), duplicate = false)
-                submit(socket, chat, user, "next")
-                request(socket, unsubscribeFrame(chat), duplicate = false)
-                request(socket, createFrame(user), duplicate = true)
-                request(socket, subscribeFrame(chat), duplicate = true)
             }
         }
 
