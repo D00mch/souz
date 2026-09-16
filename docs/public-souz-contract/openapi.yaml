@@ -484,10 +484,8 @@ components:
       oneOf:
         - $ref: "#/components/schemas/AcceptedChatCreateAck"
         - $ref: "#/components/schemas/RejectedChatCreateAck"
-        - $ref: "#/components/schemas/AcceptedChatSubscribeAck"
-        - $ref: "#/components/schemas/RejectedChatSubscribeAck"
-        - $ref: "#/components/schemas/AcceptedChatUnsubscribeAck"
-        - $ref: "#/components/schemas/RejectedChatUnsubscribeAck"
+        - $ref: "#/components/schemas/AcceptedChatSubscriptionAck"
+        - $ref: "#/components/schemas/RejectedChatSubscriptionAck"
         - $ref: "#/components/schemas/AcceptedMessageSubmitAck"
         - $ref: "#/components/schemas/RejectedMessageSubmitAck"
         - $ref: "#/components/schemas/AcceptedHistoryAppendAck"
@@ -549,7 +547,7 @@ components:
           $ref: "#/components/schemas/Error"
         receivedAt:
           $ref: "#/components/schemas/DateTime"
-    AcceptedChatSubscribeAck:
+    AcceptedChatSubscriptionAck:
       type: object
       additionalProperties: false
       required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
@@ -559,7 +557,7 @@ components:
           enum: [ack]
         type:
           type: string
-          enum: [chat.subscribe]
+          enum: [chat.subscribe, chat.unsubscribe]
         chatId:
           $ref: "#/components/schemas/UUID"
         requestId:
@@ -568,13 +566,13 @@ components:
           type: string
           enum: [accepted]
         duplicate:
-          description: True only when afterSeq was omitted and the existing subscription was kept.
+          description: For chat.subscribe, true when afterSeq was omitted and the existing subscription was kept. For chat.unsubscribe, true when this socket had no subscription for the accessible chat.
           type: boolean
         error:
           type: "null"
         receivedAt:
           $ref: "#/components/schemas/DateTime"
-    RejectedChatSubscribeAck:
+    RejectedChatSubscriptionAck:
       type: object
       additionalProperties: false
       required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
@@ -584,57 +582,7 @@ components:
           enum: [ack]
         type:
           type: string
-          enum: [chat.subscribe]
-        chatId:
-          type: string
-        requestId:
-          type: string
-        status:
-          type: string
-          enum: [rejected]
-        duplicate:
-          type: boolean
-          const: false
-        error:
-          $ref: "#/components/schemas/Error"
-        receivedAt:
-          $ref: "#/components/schemas/DateTime"
-    AcceptedChatUnsubscribeAck:
-      type: object
-      additionalProperties: false
-      required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
-      properties:
-        kind:
-          type: string
-          enum: [ack]
-        type:
-          type: string
-          enum: [chat.unsubscribe]
-        chatId:
-          $ref: "#/components/schemas/UUID"
-        requestId:
-          $ref: "#/components/schemas/NonEmptyString"
-        status:
-          type: string
-          enum: [accepted]
-        duplicate:
-          description: True when this socket had no subscription for the accessible chat; false when a subscription was closed.
-          type: boolean
-        error:
-          type: "null"
-        receivedAt:
-          $ref: "#/components/schemas/DateTime"
-    RejectedChatUnsubscribeAck:
-      type: object
-      additionalProperties: false
-      required: [kind, type, chatId, requestId, status, duplicate, error, receivedAt]
-      properties:
-        kind:
-          type: string
-          enum: [ack]
-        type:
-          type: string
-          enum: [chat.unsubscribe]
+          enum: [chat.subscribe, chat.unsubscribe]
         chatId:
           type: string
         requestId:
