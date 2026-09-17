@@ -14,12 +14,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
 import ru.souz.backend.channels.channelTextChunks
+import ru.souz.backend.channels.pollBindings
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -36,25 +36,6 @@ fun interface TelegramTurnExecutor {
         clientMessageId: String,
         requestOverrides: UserSettingsOverrides,
     ): SendMessageResult
-}
-
-private class AgentExecutionTelegramTurnExecutor(
-    private val executionService: AgentExecutionService,
-) : TelegramTurnExecutor {
-    override suspend fun execute(
-        userId: String,
-        chatId: UUID,
-        content: String,
-        clientMessageId: String,
-        requestOverrides: UserSettingsOverrides,
-    ): SendMessageResult =
-        executionService.executeChatTurnAndAwaitCompletion(
-            userId = userId,
-            chatId = chatId,
-            content = content,
-            clientMessageId = clientMessageId,
-            requestOverrides = requestOverrides,
-        )
 }
 
 class TelegramBotPollingService(
@@ -89,7 +70,7 @@ class TelegramBotPollingService(
     ) : this(
         repository = repository,
         botApi = botApi,
-        turnExecutor = AgentExecutionTelegramTurnExecutor(executionService),
+        turnExecutor = executionService::executeChatTurnAndAwaitCompletion,
         tokenCrypto = tokenCrypto,
         scope = scope,
         clock = clock,
@@ -101,41 +82,21 @@ class TelegramBotPollingService(
     )
 
     fun start() {
-        if (pollingJob?.isActive == true) {
-            return
-        }
+        if (pollingJob?.isActive == true) return
         pollingJob = scope.launch {
-            while (isActive) {
-                try {
-                    pollEnabledOnce()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    logger.warn("Telegram polling loop iteration failed: {}", e.message)
-                }
-                delay(pollLoopDelayMs.milliseconds)
-            }
-        }
-    }
-
-    internal suspend fun pollEnabledOnce() {
-        val bindings = repository.listEnabled()
-        supervisorScope {
-            bindings.forEach { binding ->
-                launch {
-                    semaphore.withPermit {
-                        pollBinding(binding)
-                    }
+            pollBindings(pollLoopDelayMs, logger) {
+                repository.listEnabled().associate { binding ->
+                    binding.id to suspend { pollBinding(binding.id) }
                 }
             }
         }
     }
 
-    private suspend fun pollBinding(binding: TelegramBotBinding) = coroutineScope {
+    internal suspend fun pollBinding(id: UUID) = coroutineScope {
         val bindingScope = this
         val now = clock.instant()
         val leasedBinding = repository.tryAcquireLease(
-            id = binding.id,
+            id = id,
             owner = instanceId,
             leaseUntil = now.plusSeconds(leaseTtlSeconds),
             now = now,
@@ -204,10 +165,12 @@ class TelegramBotPollingService(
             repository.clearError(leasedBinding.id)
             var currentBinding = leasedBinding
             for (update in updates.result) {
-                if (!repository.hasActiveLease(currentBinding.id, instanceId, clock.instant())) {
-                    return@coroutineScope
+                semaphore.withPermit {
+                    if (!repository.hasActiveLease(currentBinding.id, instanceId, clock.instant())) {
+                        return@coroutineScope
+                    }
+                    currentBinding = handleUpdate(currentBinding, token, update)
                 }
-                currentBinding = handleUpdate(currentBinding, token, update)
                 if (!repository.hasActiveLease(currentBinding.id, instanceId, clock.instant())) {
                     return@coroutineScope
                 }

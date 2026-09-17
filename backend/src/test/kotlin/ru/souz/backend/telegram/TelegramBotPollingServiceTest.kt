@@ -101,7 +101,7 @@ class TelegramBotPollingServiceTest {
             )
 
             try {
-                val poll = scope.async { service.pollEnabledOnce() }
+                val poll = scope.async { service.pollBinding(binding.id) }
                 withTimeout(5.seconds) { turnStarted.await() }
                 val initialLease = assertNotNull(bindingRepository.getByChat(chatId)?.pollerLeaseUntil)
                 var renewedLease: Instant? = null
