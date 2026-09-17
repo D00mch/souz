@@ -22,3 +22,5 @@ The Long Poll `ts` is an opaque batch cursor. Persist the initial cursor before 
 ## Verification
 
 Run `./gradlew :backend:test`. The VK workflow suite covers binding, private linking, replay, ownership, polling recovery, lease loss, and channel tools. Focused tests cover HTTP encoding/error handling and database lease fencing.
+
+Use the shared [manual polling checks](testing.md#verification) to verify cross-binding independence and cancellation.

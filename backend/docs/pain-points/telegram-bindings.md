@@ -24,3 +24,5 @@ Tokens, one-time secrets, Telegram identity, and poller ownership are separate s
 ## Verification
 
 Run `./gradlew :backend:test`. Cover feature gating, token redaction/encryption, one-time linking, foreign-account rejection, lease takeover and renewal, reply fencing, checkpoint advancement, idempotent retries, message chunking, and persistence constraints.
+
+Use the shared [manual polling checks](testing.md#verification) to verify cross-binding independence and cancellation.
