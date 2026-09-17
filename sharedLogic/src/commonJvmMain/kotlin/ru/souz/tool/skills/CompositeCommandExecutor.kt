@@ -1,5 +1,6 @@
 package ru.souz.tool.skills
 
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.NullNode
 import com.fasterxml.jackson.databind.node.TextNode
@@ -85,5 +86,8 @@ internal suspend fun SkillCommandExecutor.executeComposite(
     }
 }
 
+private val compositeJsonReader = restJsonMapper.reader()
+    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+
 private fun jsonOrText(value: String): JsonNode =
-    runCatching { restJsonMapper.readTree(value) }.getOrNull()?.takeUnless { it.isMissingNode } ?: TextNode(value)
+    runCatching { compositeJsonReader.readTree(value) }.getOrNull()?.takeUnless { it.isMissingNode } ?: TextNode(value)

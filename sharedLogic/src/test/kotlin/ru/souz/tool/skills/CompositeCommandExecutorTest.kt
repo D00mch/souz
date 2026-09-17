@@ -34,6 +34,18 @@ class CompositeCommandExecutorTest {
     private val scripts = mockk<SkillCommandExecutor>()
 
     @Test
+    fun `inputs and tool results preserve text after a JSON prefix`() = runTest {
+        val spec = bundle("inputs: [value]\nsteps: [{id: echo, tool: echo, arguments: {value: '\${inputs.value}'}}]\nreturns: '\${echo}'")
+        val text = "42 inch TV"
+        val echo = tool("echo") { call, _ ->
+            assertEquals(text, call.arguments["value"])
+            text
+        }
+        val result = runner(spec, listOf(echo)).run(inputs = mapOf("value" to text))
+        assertEquals(SandboxCommandResult(0, text, ""), result)
+    }
+
+    @Test
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun `discovery and mixed execution preserve typed results script text and invocation identity`() = runTest {
         val bundle = bundle("""
