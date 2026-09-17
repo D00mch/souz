@@ -19,7 +19,7 @@ class SkillCommandExecutor(
     internal data class Args(
         @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands.")
         val runtime: SandboxCommandRuntime = SandboxCommandRuntime.BASH,
-        @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. Leave empty for BASH/PYTHON/NODE.")
+        @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. When empty, PROCESS uses scriptPath and args. Leave empty for BASH/PYTHON/NODE.")
         val command: List<String> = emptyList(),
         @InputParamDescription("Inline script for BASH/PYTHON/NODE runtimes. For bundled scripts, call them by relative path, for example: bash scripts/run.sh")
         val script: String? = null,
@@ -61,7 +61,14 @@ class SkillCommandExecutor(
         return sandbox.commandExecutor.execute(
             SandboxCommandRequest(
                 runtime = arguments.runtime,
-                command = arguments.command,
+                command = if (
+                    arguments.runtime == SandboxCommandRuntime.PROCESS &&
+                    arguments.command.isEmpty() && scriptPath != null
+                ) {
+                    listOf(scriptPath) + arguments.args
+                } else {
+                    arguments.command
+                },
                 script = arguments.script,
                 scriptPath = scriptPath,
                 args = arguments.args,
