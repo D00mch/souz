@@ -19,7 +19,9 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import org.slf4j.LoggerFactory
+import ru.souz.backend.channels.BindingLoopSupervisor
 import ru.souz.backend.channels.channelTextChunks
+import ru.souz.backend.channels.runBindingPollLoop
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -73,6 +75,7 @@ class TelegramBotPollingService(
     private val logger = LoggerFactory.getLogger(TelegramBotPollingService::class.java)
     private val semaphore = Semaphore(maxConcurrency)
     private var pollingJob: Job? = null
+    private val bindingLoops = BindingLoopSupervisor<TelegramBotBinding>(scope) { it.id }
 
     constructor(
         repository: TelegramBotBindingRepository,
@@ -100,6 +103,7 @@ class TelegramBotPollingService(
         maxIncomingTextLength = maxIncomingTextLength,
     )
 
+    /** Each enabled binding runs its own independent loop; see [BindingLoopSupervisor]. */
     fun start() {
         if (pollingJob?.isActive == true) {
             return
@@ -107,25 +111,28 @@ class TelegramBotPollingService(
         pollingJob = scope.launch {
             while (isActive) {
                 try {
-                    pollEnabledOnce()
+                    bindingLoops.sync(repository.listEnabled()) { binding ->
+                        runBindingPollLoop(binding.id, "Telegram", logger, pollLoopDelayMs) {
+                            pollBinding(binding)
+                        }
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    logger.warn("Telegram polling loop iteration failed: {}", e.message)
+                    logger.warn("Telegram binding loop sync failed: {}", e.message)
                 }
                 delay(pollLoopDelayMs.milliseconds)
             }
         }
     }
 
+    /** One batched poll-and-process round over all enabled bindings; kept for tests only. */
     internal suspend fun pollEnabledOnce() {
         val bindings = repository.listEnabled()
         supervisorScope {
             bindings.forEach { binding ->
                 launch {
-                    semaphore.withPermit {
-                        pollBinding(binding)
-                    }
+                    pollBinding(binding)
                 }
             }
         }
@@ -207,7 +214,7 @@ class TelegramBotPollingService(
                 if (!repository.hasActiveLease(currentBinding.id, instanceId, clock.instant())) {
                     return@coroutineScope
                 }
-                currentBinding = handleUpdate(currentBinding, token, update)
+                currentBinding = semaphore.withPermit { handleUpdate(currentBinding, token, update) }
                 if (!repository.hasActiveLease(currentBinding.id, instanceId, clock.instant())) {
                     return@coroutineScope
                 }

@@ -19,7 +19,9 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import org.slf4j.LoggerFactory
+import ru.souz.backend.channels.BindingLoopSupervisor
 import ru.souz.backend.channels.channelTextChunks
+import ru.souz.backend.channels.runBindingPollLoop
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.service.AgentExecutionService
@@ -44,6 +46,7 @@ class VkBotPollingService(
     private val pollMutex = Mutex()
     private val sessions = mutableMapOf<UUID, PollSession>()
     private var pollingJob: Job? = null
+    private val bindingLoops = BindingLoopSupervisor<VkBotBinding>(scope) { it.id }
 
     // Map membership is coordinated by pollMutex; each child owns one session per round.
     private class PollSession {
@@ -51,22 +54,29 @@ class VkBotPollingService(
         var lastRejectionAt: Instant = Instant.MIN
     }
 
+    /** Each enabled binding runs its own independent loop; see [BindingLoopSupervisor]. */
     fun start() {
         if (pollingJob?.isActive == true) return
         pollingJob = scope.launch {
             while (isActive) {
                 try {
-                    pollEnabledOnce()
+                    bindingLoops.sync(repository.listEnabled()) { binding ->
+                        val session = PollSession()
+                        runBindingPollLoop(binding.id, "VK", logger, pollLoopDelayMs) {
+                            pollBinding(binding, session)
+                        }
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    logger.warn("VK polling iteration failed.")
+                    logger.warn("VK binding loop sync failed.")
                 }
                 delay(pollLoopDelayMs)
             }
         }
     }
 
+    /** One batched poll-and-process round over all enabled bindings; kept for tests only. */
     internal suspend fun pollEnabledOnce() = pollMutex.withLock {
         val bindings = repository.listEnabled()
         sessions.keys.retainAll(bindings.map { it.id }.toSet())
@@ -75,7 +85,7 @@ class VkBotPollingService(
             rounds.forEach { (binding, session) ->
                 launch {
                     try {
-                        semaphore.withPermit { pollBinding(binding, session) }
+                        pollBinding(binding, session)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
@@ -110,7 +120,7 @@ class VkBotPollingService(
             val batch = fetchBatch(current, token, session)
             for (update in batch.updates) {
                 if (!owns(current.id)) return@coroutineScope
-                current = handleUpdate(current, token, update, session)
+                current = semaphore.withPermit { handleUpdate(current, token, update, session) }
             }
             repository.updateLastTs(current.id, owner, requireNotNull(batch.ts), clock.instant())
         } catch (e: CancellationException) {
