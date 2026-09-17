@@ -1,0 +1,102 @@
+{
+  "episodes": [
+    {
+      "id": "anapa-planning",
+      "turns": [
+        { "id": "anapa-month", "text": "Планирую поездку в Анапу в сентябре. Еду отдыхать на неделю, хочу жить рядом с морем. Какие вопросы стоит решить заранее? Ответь кратко.", "assistant": "Для поездки в Анапу в сентябре на неделю заранее выбери жильё у моря, дорогу и бюджет." },
+        { "id": "anapa-hotel", "text": "Для моей поездки в Анапу в сентябре я выбрал гостевой дом «Лазурный маяк-742». Мой бюджет на жильё — 48000 рублей. Кратко перечисли, что я уже определил.", "assistant": "Поездка в Анапу в сентябре, гостевой дом «Лазурный маяк-742», бюджет на жильё — 48000 рублей." }
+      ]
+    },
+    {
+      "id": "movie",
+      "turns": [
+        { "id": "movie-assistant-only", "text": "Посоветуй один фильм Гая Ричи для просмотра вечером. Напиши только его русское название, без пояснений. С поездками этот вопрос не связан.", "assistant": "Карты, деньги, два ствола" }
+      ]
+    },
+    {
+      "id": "household",
+      "turns": [
+        { "id": "lentils", "text": "Сегодня готовлю суп из красной чечевицы. Не люблю острое. Подскажи мягкие специи, ответь одним предложением.", "assistant": "Добавь в суп из красной чечевицы немного кориандра и сладкой паприки." },
+        {
+          "id": "weather-tool",
+          "text": "Найди через InternetSearch прогноз погоды в Туле на завтра и сообщи температуру.",
+          "assistant": "В Туле завтра 17 градусов тепла и облачно.",
+          "toolCalls": [
+            { "name": "InternetSearch", "arguments": { "query": "Прогноз погоды в Туле на завтра", "maxSources": 1 } }
+          ],
+          "toolResults": {
+            "InternetSearch": "{\"status\":\"COMPLETE\",\"answer\":\"В Туле завтра 17 градусов тепла и облачно.\",\"results\":[{\"title\":\"Тестовый прогноз Тулы\",\"url\":\"https://weather.example/tula\",\"snippet\":\"Завтра +17 °C, облачно\"}]}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "anapa-update",
+      "turns": [
+        { "id": "anapa-new-budget", "text": "Вернёмся к моей поездке в Анапу. Сентябрь и гостевой дом «Лазурный маяк-742» остаются, но бюджет на жильё меняю с 48000 на 63000 рублей. Подтверди новый бюджет одним предложением.", "assistant": "Новый бюджет на жильё в Анапе — 63000 рублей; сентябрь и «Лазурный маяк-742» остаются." }
+      ]
+    },
+    {
+      "id": "other-user-control",
+      "owner": "other",
+      "turns": [
+        { "id": "other-user-hobby", "text": "Мой домашний проект называется «Бирюзовый компас-915». Я занимаюсь переплётом книг. Предложи следующий небольшой шаг для проекта одним предложением.", "assistant": "Для проекта «Бирюзовый компас-915» подготовь бумагу и картон для одного пробного переплёта." }
+      ]
+    }
+  ],
+  "probes": [
+    {
+      "id": "anapa-details-after-distractions",
+      "question": "Помнишь, мы обсуждали мою поездку в Анапу? На какой месяц она была запланирована и какой гостевой дом я выбрал?",
+      "contextPatterns": ["(?i)(сентябр|september)", "(?i)(742)"],
+      "answerPatterns": ["(?i)сентябр", "(?i)742"]
+    },
+    {
+      "id": "latest-budget",
+      "question": "Какой бюджет на жильё я назвал в последнем обсуждении поездки в Анапу? Нужен именно последний вариант.",
+      "sourceTurns": ["anapa-new-budget"],
+      "contextPatterns": ["63[ ,]?000"],
+      "answerPatterns": ["63[ ,]?000"],
+      "diagnostic": true,
+      "limitation": "Current recall ranks facts; it does not guarantee the latest discussion. Observation provenance may be omitted by the current adapter request."
+    },
+    {
+      "id": "cross-chat",
+      "chat": "new-chat",
+      "question": "Помнишь, мы говорили о моей поездке в Анапу? Какой гостевой дом я выбрал?",
+      "contextPatterns": ["742"],
+      "answerPatterns": ["742"],
+      "diagnostic": true,
+      "limitation": "Ordinary memories are filtered to the current chat; this probe keeps the desired cross-chat expectation."
+    },
+    {
+      "id": "assistant-only-film",
+      "question": "Какой фильм Гая Ричи ты мне советовал для просмотра вечером? Назови именно прежнюю рекомендацию.",
+      "sourceTurns": ["movie-assistant-only"],
+      "answerFromTurn": "movie-assistant-only",
+      "diagnostic": true,
+      "limitation": "Assistant synthesis is excluded from capture. A guessed title matching by chance is not evidence of recall; inspect sources and context."
+    },
+    {
+      "id": "unknown-topic",
+      "question": "Какой отель в Киото мы выбрали для моей поездки? Если сведений нет, скажи, что не знаешь.",
+      "answerPatterns": ["(?is)(не (знаю|помню|наш[её]л|выбирали|обсуждали)|нет.{0,80}(информации|сведений|данных|записей)|не.{0,40}(сохранил|сохранилось|информации))"],
+      "diagnostic": true,
+      "limitation": "An abstention regex is only a heuristic; the saved answer must be reviewed for invented details."
+    },
+    {
+      "id": "owner-isolation",
+      "owner": "other",
+      "question": "Помнишь мою поездку в Анапу? Какой гостевой дом и бюджет на жильё я выбрал? Если сведений нет, не придумывай.",
+      "forbiddenSourceOwner": "main",
+      "forbiddenAnswerPatterns": ["742", "48[ ,]?000", "63[ ,]?000"]
+    },
+    {
+      "id": "other-user-positive-control",
+      "owner": "other",
+      "question": "Как называется мой домашний проект по переплёту книг?",
+      "contextPatterns": ["915"],
+      "answerPatterns": ["915"]
+    }
+  ]
+}
