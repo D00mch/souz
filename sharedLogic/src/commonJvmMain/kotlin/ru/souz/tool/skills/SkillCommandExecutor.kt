@@ -19,11 +19,11 @@ class SkillCommandExecutor(
     internal data class Args(
         @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands.")
         val runtime: SandboxCommandRuntime = SandboxCommandRuntime.BASH,
-        @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. When empty, PROCESS uses scriptPath and args. Leave empty for BASH/PYTHON/NODE.")
+        @InputParamDescription("Required argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. PROCESS ignores scriptPath and args. Leave empty for BASH/PYTHON/NODE.")
         val command: List<String> = emptyList(),
         @InputParamDescription("Inline script for BASH/PYTHON/NODE runtimes. For bundled scripts, call them by relative path, for example: bash scripts/run.sh")
         val script: String? = null,
-        @InputParamDescription("Path to a bundled script inside the active Skill root. Prefer this over inline script when running supporting scripts.")
+        @InputParamDescription("Path to a bundled script inside the active Skill root for BASH/PYTHON/NODE. Prefer this over inline script when running supporting scripts.")
         val scriptPath: String? = null,
         @InputParamDescription("Arguments to pass to scriptPath, or to the inline script process as positional arguments.")
         val args: List<String> = emptyList(),
@@ -57,20 +57,13 @@ class SkillCommandExecutor(
         val sandbox = sandboxResolver.resolve(meta)
         val skillRoot = resolveSkillRoot(sandbox, bundle.skillId, bundleHash)
         val workingDirectory = resolveWorkingDirectory(skillRoot, arguments.workingDirectory)
-        val scriptPath = resolveScriptPath(sandbox, skillRoot, arguments.scriptPath)
+        val scriptPath = arguments.scriptPath.takeUnless { arguments.runtime == SandboxCommandRuntime.PROCESS }
         return sandbox.commandExecutor.execute(
             SandboxCommandRequest(
                 runtime = arguments.runtime,
-                command = if (
-                    arguments.runtime == SandboxCommandRuntime.PROCESS &&
-                    arguments.command.isEmpty() && scriptPath != null
-                ) {
-                    listOf(scriptPath) + arguments.args
-                } else {
-                    arguments.command
-                },
+                command = arguments.command,
                 script = arguments.script,
-                scriptPath = scriptPath,
+                scriptPath = resolveScriptPath(sandbox, skillRoot, scriptPath),
                 args = arguments.args,
                 workingDirectory = workingDirectory,
                 environment = mapOf(

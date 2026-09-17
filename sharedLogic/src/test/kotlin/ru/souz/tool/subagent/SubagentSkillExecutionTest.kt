@@ -31,7 +31,6 @@ import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 class SubagentSkillExecutionTest {
     @Test
@@ -48,7 +47,7 @@ class SubagentSkillExecutionTest {
             val root = "${runtime.runtimePaths.skillsDirPath}/loose"
             fileSystem.writeText(fileSystem.resolvePath("$root/SKILL.md"), "---\nname: Loose\ndescription: Test\n---\nRun run.sh")
             fileSystem.writeText(fileSystem.resolvePath("$root/run.sh"), "#!/bin/sh\nprintf original")
-            assertTrue(java.io.File("$root/run.sh").setExecutable(true))
+            assertFalse(java.io.File("$root/run.sh").canExecute())
             val registry = FileSystemSkillRegistryRepository(runtime)
             val commands = SkillCommandExecutor(ToolInvocationRuntimeSandboxResolver.fixed(runtime))
             val catalog = immutableToolCatalogSnapshot(emptyMap())
@@ -61,11 +60,11 @@ class SubagentSkillExecutionTest {
             }
             val arguments = mapOf<String, Any>(
                 "skillId" to "loose",
-                "arguments" to mapOf("runtime" to "PROCESS", "scriptPath" to "run.sh", "args" to listOf("edited; *")),
+                "arguments" to mapOf("runtime" to "BASH", "scriptPath" to "run.sh", "args" to listOf("edited; *")),
             )
             val readReport = LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
                 "skillId" to "loose", "arguments" to mapOf(
-                    "runtime" to "PROCESS", "command" to listOf("cat", "report.txt"), "scriptPath" to "run.sh",
+                    "runtime" to "PROCESS", "command" to listOf("cat", "report.txt"), "scriptPath" to "missing.sh",
                 ),
             ))
             var requests = 0

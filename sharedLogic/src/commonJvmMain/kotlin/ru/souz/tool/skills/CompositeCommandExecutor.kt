@@ -31,13 +31,10 @@ internal suspend fun SkillCommandExecutor.executeComposite(
             ?: error("Command is unavailable.")
         require(arguments.inputs.keys.containsAll(spec.inputs)) { "Missing inputs: ${spec.inputs - arguments.inputs.keys}" }
         // Reject unavailable capabilities before any earlier step can produce side effects.
-        spec.steps.forEach { step ->
-            step.tool?.let { name ->
-                require(name in tools && name !in NON_DELEGABLE_SKILL_TOOLS && tools.getValue(name).fn.name !in NON_DELEGABLE_SKILL_TOOLS) {
-                    "Tool '$name' is unavailable."
-                }
+        spec.steps.mapNotNull { it.tool }.forEach { name ->
+            require(name in tools && name !in NON_DELEGABLE_SKILL_TOOLS && tools.getValue(name).fn.name !in NON_DELEGABLE_SKILL_TOOLS) {
+                "Tool '$name' is unavailable."
             }
-            step.runtime?.let { SandboxCommandRuntime.valueOf(it.uppercase()) }
         }
         val context = mutableMapOf<String, JsonNode>(
             "inputs" to restJsonMapper.valueToTree(arguments.inputs.mapValues { jsonOrText(it.value) }),

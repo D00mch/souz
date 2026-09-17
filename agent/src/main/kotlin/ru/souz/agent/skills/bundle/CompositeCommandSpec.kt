@@ -77,7 +77,8 @@ internal fun CompositeCommandSpec.validate(name: String) {
         check(step.waitMs == null || step.waitMs >= 0, "waitMs must not be negative.")
         if (step.script != null) {
             SkillPathNormalizer.normalize(step.script)
-            check(!step.script.contains("\${") && !step.runtime.isNullOrBlank(), "scripts need a static path and explicit runtime.")
+            check(!step.script.contains("\${"), "scripts need a static path.")
+            check(step.runtime?.uppercase() in listOf("BASH", "PYTHON", "NODE"), "scripts require BASH, PYTHON, or NODE runtime.")
         }
         validateReferences(step.arguments)
         validateReferences(step.args)

@@ -18,12 +18,18 @@ class SkillBundleParserTest {
         assertEquals(listOf("target"), spec.inputs)
         assertEquals(listOf("read", "done"), spec.steps.map { it.id })
         assertEquals("device.read", spec.steps.first().tool)
+        listOf("BASH", "PYTHON", "NODE", "python").forEach { runtime ->
+            assertEquals(runtime, parse("[{id: done, script: scripts/run, runtime: $runtime}]").steps.single().runtime)
+        }
 
         listOf(
             "[]",
             "[{id: done}]",
             "[{id: done, tool: read, waitMs: 1}]",
             "[{id: done, script: scripts/read.py}]",
+            "[{id: done, script: scripts/run, runtime: PROCESS}]",
+            "[{id: done, script: scripts/run, runtime: process}]",
+            "[{id: done, script: scripts/run, runtime: RUBY}]",
             "[{id: done, script: ../read.py, runtime: PYTHON}]",
             "[{id: done, waitMs: -1}]",
             "[{id: done, waitMs: 0}, {id: done, waitMs: 0}]",
