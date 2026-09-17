@@ -145,5 +145,6 @@ internal fun <T> AgentContext<T>.toGigaRequest(history: List<LLMRequest.Message>
         functions = ctx.activeTools,
         temperature = ctx.settings.temperature,
         maxTokens = ctx.settings.contextSize,
+        reasoningEffort = ctx.settings.reasoningEffort,
     )
 }

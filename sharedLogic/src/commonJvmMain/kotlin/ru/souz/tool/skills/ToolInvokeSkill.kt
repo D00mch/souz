@@ -1,6 +1,7 @@
 package ru.souz.tool.skills
 
 import kotlinx.coroutines.CancellationException
+import ru.souz.agent.SubagentTool
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.validation.SkillApprovalGate
@@ -59,14 +60,19 @@ class ToolInvokeSkill(
             if (skillId.isEmpty()) {
                 return errorMessage(functionCall.name, "invalid_skill_id", "Skill ID must not be blank.")
             }
-            when (val resolved = resolver().resolve(SkillId(skillId), meta.userId)) {
+            val resolver = resolver()
+            when (val resolved = resolver.resolve(SkillId(skillId), meta.userId)) {
                 is SkillResolution.Compiled -> resolved.tool.invoke(
                     LLMResponse.FunctionCall(resolved.tool.fn.name, input.arguments),
                     meta = meta,
                 ).copy(name = functionCall.name)
                 is SkillResolution.Bundle -> {
                     val arguments = restJsonMapper.convertValue(input.arguments, SkillCommandExecutor.Args::class.java)
-                    val result = commandExecutor.execute(resolved.bundle, resolved.bundleHash, arguments, meta)
+                    val result = if (arguments.composite == null) {
+                        commandExecutor.execute(resolved.bundle, resolved.bundleHash, arguments, meta)
+                    } else {
+                        commandExecutor.executeComposite(resolved.bundle, resolved.bundleHash, arguments, meta, resolver.enabledTools.byName)
+                    }
                     resultMessage(functionCall.name, result)
                 }
                 is SkillResolution.Error -> errorMessage(functionCall.name, resolved.code, resolved.message)
@@ -97,3 +103,11 @@ class ToolInvokeSkill(
         const val NAME = "RunSkillCommand"
     }
 }
+
+internal val NON_DELEGABLE_SKILL_TOOLS = setOf(
+    SubagentTool.NAME,
+    ToolInvokeSkill.NAME,
+    ToolGetSkillByName.NAME,
+    ToolGetSkillsByCategory.NAME,
+    ToolGetSkillsNamesByCategory.NAME,
+)

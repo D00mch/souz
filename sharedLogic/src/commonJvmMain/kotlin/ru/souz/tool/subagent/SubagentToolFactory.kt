@@ -18,13 +18,11 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.tool.RuntimePassThroughToolsFilter
 import ru.souz.tool.ToolCategory
-import ru.souz.tool.immutableToolCatalogSnapshot
+import ru.souz.tool.immutableToolCatalogFromLists
 import ru.souz.tool.skills.SkillCommandExecutor
 import ru.souz.tool.skills.SkillResolution
 import ru.souz.tool.skills.SkillResolver
-import ru.souz.tool.skills.ToolGetSkillByName
-import ru.souz.tool.skills.ToolGetSkillsByCategory
-import ru.souz.tool.skills.ToolGetSkillsNamesByCategory
+import ru.souz.tool.skills.NON_DELEGABLE_SKILL_TOOLS
 import ru.souz.tool.skills.ToolInvokeSkill
 import ru.souz.tool.skills.fileSkillExecutionSchema
 import ru.souz.tool.skills.toDetail
@@ -45,7 +43,7 @@ class SubagentToolFactory(
             val model = input.model ?: parentSettings.model
             val provider = models[model]
                 ?: fail("subagent_model_unavailable", "Choose an advertised model ID: $model is unavailable.")
-            prepare(input, parentSettings.copy(model = model, provider = provider), meta)
+            prepare(input, parentSettings.copy(model = model, provider = provider, reasoningEffort = input.reasoningEffort), meta)
         }
     }
 
@@ -59,12 +57,12 @@ class SubagentToolFactory(
         val bundles = linkedMapOf<SkillId, SkillBundle>()
         input.skillIds.map(String::trim).distinct().forEach { id ->
             if (id.isBlank()) fail("invalid_skill_id", "Skill ID must not be blank.")
-            if (id in RESTRICTED_TOOLS) fail("skill_not_allowed", "This core tool cannot be delegated: $id")
+            if (id in NON_DELEGABLE_SKILL_TOOLS) fail("skill_not_allowed", "This core tool cannot be delegated: $id")
             val skillId = SkillId(id)
             when (val resolved = resolver.resolve(skillId, meta.userId)) {
                 is SkillResolution.Compiled -> {
                     // Check the function too: a filter must not alias a restricted helper.
-                    if (resolved.tool.fn.name in RESTRICTED_TOOLS) {
+                    if (resolved.tool.fn.name in NON_DELEGABLE_SKILL_TOOLS) {
                         fail("skill_not_allowed", "This core tool cannot be delegated: $id")
                     }
                     tools += resolved.tool
@@ -73,7 +71,7 @@ class SubagentToolFactory(
                 is SkillResolution.Error -> fail(resolved.code, resolved.message)
             }
         }
-        if (bundles.isNotEmpty()) tools += bundleCommandTool(bundles.toMap(), meta.userId)
+        if (bundles.isNotEmpty()) tools += bundleCommandTool(bundles.toMap(), meta.userId, tools.toList())
         return SubagentTool.Setup(
             settings = parentSettings.copy(tools = AgentTools(tools, tools.associate {
                 it.fn.name to (resolver.enabledTools.categoryByName[it.fn.name] ?: ToolCategory.CHAT)
@@ -82,9 +80,9 @@ class SubagentToolFactory(
         )
     }
 
-    private fun bundleCommandTool(bundles: Map<SkillId, SkillBundle>, ownerId: String): LLMToolSetup {
+    private fun bundleCommandTool(bundles: Map<SkillId, SkillBundle>, ownerId: String, tools: List<LLMToolSetup>): LLMToolSetup {
         val command = ToolInvokeSkill(
-            toolCatalog = immutableToolCatalogSnapshot(emptyMap()),
+            toolCatalog = immutableToolCatalogFromLists(mapOf(ToolCategory.CHAT to tools)),
             toolsFilter = RuntimePassThroughToolsFilter,
             loadBundle = { userId, skillId ->
                 bundles[skillId].takeIf { userId == ownerId }
@@ -117,14 +115,4 @@ class SubagentToolFactory(
     }
 
     private fun fail(code: String, message: String): Nothing = throw SubagentInputException(code, message)
-
-    private companion object {
-        val RESTRICTED_TOOLS = setOf(
-            SubagentTool.NAME,
-            ToolInvokeSkill.NAME,
-            ToolGetSkillByName.NAME,
-            ToolGetSkillsByCategory.NAME,
-            ToolGetSkillsNamesByCategory.NAME,
-        )
-    }
 }

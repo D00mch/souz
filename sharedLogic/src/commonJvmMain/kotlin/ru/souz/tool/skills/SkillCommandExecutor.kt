@@ -35,9 +35,13 @@ class SkillCommandExecutor(
         val stdin: String? = null,
         @InputParamDescription("Timeout in milliseconds. Defaults to 60000 and is capped at 300000.")
         val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+        @InputParamDescription("Name of a command declared in this Skill's manifest. Runs its steps instead of scriptPath/script/command.")
+        val composite: String? = null,
+        @InputParamDescription("Named inputs declared by the composite command. JSON-encoded values are decoded; other values remain text.")
+        val inputs: Map<String, String> = emptyMap(),
     )
 
-    private companion object {
+    internal companion object {
         const val BUNDLES_DIRECTORY_NAME = "bundles"
         const val DEFAULT_TIMEOUT_MILLIS = 60_000L
         const val MAX_TIMEOUT_MILLIS = 300_000L

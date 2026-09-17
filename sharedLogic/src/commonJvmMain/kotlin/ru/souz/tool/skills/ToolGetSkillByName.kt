@@ -131,6 +131,7 @@ internal fun SkillBundle.toDetail(): SkillDetail = BundleSkillDetail(
     description = manifest.description,
     skillMarkdownBody = skillMarkdownBody,
     supportingFiles = files.map { it.normalizedPath }.filterNot { it == "SKILL.md" },
+    commands = manifest.commands.mapValues { (_, command) -> mapOf("inputs" to command.inputs) },
 )
 
 internal data class SkillLookupResponse(
@@ -164,6 +165,8 @@ private data class BundleSkillDetail(
     val description: String,
     val skillMarkdownBody: String,
     val supportingFiles: List<String>,
+    @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
+    val commands: Map<String, Map<String, List<String>>>,
 ) : SkillDetail
 
 internal data class SkillDiscoveryError(

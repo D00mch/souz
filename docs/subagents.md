@@ -14,7 +14,11 @@
 
 File-backed Skills use the same command execution as the parent, with approval applied when selected at spawn. Commands use the existing Skill directory, so executable permissions, file edits, and generated outputs persist between calls.
 
+[Composite commands](composite-skill-commands.md) execute fixed tool/script/wait sequences in one call. Include every tool used by their steps in `skillIds` alongside the file-backed Skill; its manifest does not grant capabilities.
+
 The optional `model` selects an exact advertised model ID; omission inherits the parent's actual model and provider. Temperature and context size are inherited. `maxTurns` defaults to 32 and accepts 1–128 model turns. Existing provider retries and timeouts still apply.
+
+The optional `reasoningEffort` accepts `minimal`, `low`, `medium`, or `high` and applies only to the child. For example, add `"reasoningEffort": "low"` for a mostly mechanical task. Omission leaves effort unspecified for provider defaults, even if the parent has an explicit effort. Support depends on the selected provider and model.
 
 The parent receives `{"result":"..."}` or `{"error":{"code":"...","message":"..."}}`. Turn exhaustion keeps the `subagent_turn_limit` error and adds `status: "incomplete"` and `progress`: `modelTurns`, `sideEffectsMayHaveOccurred`, `completedToolCallCount`, `omittedToolCallCount`, and bounded recent `completedToolCalls`. Each reported call contains `toolCallId`, `name`, `result`, and a `truncated` flag; attachments and child reasoning are omitted. Counts describe returned tool messages, which can include tool-level errors, rather than successful operations.
 

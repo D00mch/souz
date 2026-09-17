@@ -177,6 +177,38 @@ class SubagentToolFactoryTest {
     }
 
     @Test
+    fun `composites can call only tools selected for this child`() = runTest {
+        val allowed = namedTool("allowed")
+        val unselected = namedTool("unselected")
+        coEvery { allowed.invoke(any(), any()) } returns LLMRequest.Message(LLMMessageRole.function, "ok", name = "allowed")
+        val fixture = Fixture(listOf(allowed, unselected))
+        val bundle = SkillBundle.fromFiles(SkillId("bundle"), listOf(SkillFile("SKILL.md", """
+            ---
+            name: bundle
+            description: Test
+            commands:
+              allowed:
+                steps: [{id: result, tool: allowed}]
+                returns: '${'$'}{result}'
+              denied:
+                steps: [{id: result, tool: unselected}]
+                returns: '${'$'}{result}'
+            ---
+            Run a command.
+        """.trimIndent().toByteArray())))
+        coEvery { fixture.bundles.loadSkillBundle("owner", SkillId("bundle")) } returns bundle
+        fixture.factory().create(fixture.parent).call(mapOf("task" to "Run", "skillIds" to listOf("allowed", "bundle")))
+        val command = fixture.context.settings.tools.byName.getValue(ToolInvokeSkill.NAME)
+        val success = command.call(mapOf("skillId" to "bundle", "arguments" to mapOf("composite" to "allowed")))
+        val denied = command.call(mapOf("skillId" to "bundle", "arguments" to mapOf("composite" to "denied")))
+        assertEquals("ok", success["stdout"].asText())
+        assertEquals(1, denied["exitCode"].asInt())
+        assertContains(denied["stderr"].asText(), "unselected")
+        coVerify(exactly = 1) { allowed.invoke(any(), ToolInvocationMeta("owner")) }
+        coVerify(exactly = 0) { unselected.invoke(any(), any()) }
+    }
+
+    @Test
     fun `rejected bundle is never shown or executed`() = runTest {
         val fixture = Fixture()
         coEvery { fixture.bundles.loadSkillBundle(any(), any()) } returns bundle("rejected", "Hidden instructions.")
@@ -206,6 +238,22 @@ class SubagentToolFactoryTest {
         }
         assertEquals(2, fixture.contexts.size)
         coVerify(exactly = 0) { fixture.bundles.loadSkillBundle(any(), any()) }
+    }
+
+    @Test
+    fun `reasoning effort belongs to each child and omission keeps provider defaults`() = runTest {
+        val fixture = Fixture()
+        val parent = fixture.parent.copy(reasoningEffort = "high")
+        val tool = fixture.factory().create(parent)
+        for (effort in listOf("minimal", "low", "medium", "high", null)) {
+            val arguments = buildMap<String, Any> {
+                put("task", "Inspect")
+                effort?.let { put("reasoningEffort", it) }
+            }
+            assertEquals("child answer", tool.call(arguments)["result"].asText())
+            assertEquals(effort, fixture.context.settings.reasoningEffort)
+        }
+        assertEquals("high", parent.reasoningEffort)
     }
 
     @Test

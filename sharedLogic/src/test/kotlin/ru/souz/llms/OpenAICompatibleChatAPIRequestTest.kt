@@ -36,6 +36,7 @@ class OpenAICompatibleChatAPIRequestTest {
                     functions = listOf(function("get_horoscope")),
                     temperature = 0.4f,
                     maxTokens = 256,
+                    reasoningEffort = "low",
                 ),
                 stream = true,
             )
@@ -51,6 +52,7 @@ class OpenAICompatibleChatAPIRequestTest {
             assertEquals(case.sendsStreamUsage, "stream_options" in chatRequest)
             assertEquals(case.embeddingEncodingFormat, embeddingsRequest["encoding_format"])
             assertEquals(case.provider == LlmProvider.QWEN, chatRequest["parallel_tool_calls"] == true)
+            assertEquals(if (case.provider == LlmProvider.OPENAI) "low" else null, chatRequest["reasoning_effort"])
         }
     }
 

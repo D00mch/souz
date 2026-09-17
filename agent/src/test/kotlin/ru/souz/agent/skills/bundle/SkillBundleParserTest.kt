@@ -7,6 +7,41 @@ import kotlin.test.assertFailsWith
 class SkillBundleParserTest {
 
     @Test
+    fun `composites validate linear references and step shapes`() {
+        fun parse(steps: String, returns: String = "\${done}", inputs: String = "[target]") = SkillBundleParser.parseManifest(
+            "---\nname: composite\ndescription: Test\ncommands:\n  run:\n    inputs: $inputs\n" +
+                "    steps: $steps\n    returns: '$returns'\n---\nBody",
+        ).commands.getValue("run")
+
+        val valid = """[{id: read, tool: device.read, arguments: {target: '${'$'}{inputs.target}'}}, {id: done, waitMs: 0}]"""
+        val spec = parse(valid, "\${read.content[0].uri}")
+        assertEquals(listOf("target"), spec.inputs)
+        assertEquals(listOf("read", "done"), spec.steps.map { it.id })
+        assertEquals("device.read", spec.steps.first().tool)
+
+        listOf(
+            "[]",
+            "[{id: done}]",
+            "[{id: done, tool: read, waitMs: 1}]",
+            "[{id: done, script: scripts/read.py}]",
+            "[{id: done, script: ../read.py, runtime: PYTHON}]",
+            "[{id: done, waitMs: -1}]",
+            "[{id: done, waitMs: 0}, {id: done, waitMs: 0}]",
+            "[{id: inputs, waitMs: 0}]",
+            "[{id: 'bad-id', waitMs: 0}]",
+            "[{id: done, tool: ''}]",
+            "[{id: done, tool: '\${inputs.target}'}]",
+            "[{id: done, tool: read, arguments: {self: '\${done}'}}]",
+            "[{id: first, tool: read, arguments: {future: ['\${done}']}}, {id: done, waitMs: 0}]",
+            "[{id: done, tool: read, arguments: {nested: {value: '\${inputs.unknown}'}}}]",
+        ).forEach { steps -> assertFailsWith<SkillBundleException>(steps) { parse(steps) } }
+        listOf("\${unknown}", "\${}", "\${read..field}", "\${read[0]junk}", "\${read").forEach { reference ->
+            assertFailsWith<SkillBundleException>(reference) { parse(valid, reference) }
+        }
+        assertFailsWith<SkillBundleException> { parse(valid, inputs = "[target, target]") }
+    }
+
+    @Test
     fun `oauthProvider and oauthScopes default to absent when not declared`() {
         val manifest = SkillBundleParser.parseManifest(
             """

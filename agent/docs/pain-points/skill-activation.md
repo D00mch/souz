@@ -25,6 +25,7 @@ The core tools merge compiled tools and stored bundles into one ID namespace. Ca
 - Keep `AgentCoreTools` out of `AgentToolCatalog`; graph nodes install them explicitly.
 - Preserve compiled-tool precedence consistently in summary, detail, and execution paths. Load a stored bundle only after enabled-tool lookup fails.
 - Never expose `activeSkills`, bundle hashes, storage paths, or supporting-file content through skill discovery. Generic execution binds those values internally.
+- Validate composite command step shapes and references when parsing the manifest. Tool names and script paths are static; references can target declared inputs or earlier steps only. Share template traversal with execution so accepted syntax cannot resolve differently at runtime.
 
 ## Verification
 

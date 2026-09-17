@@ -24,6 +24,7 @@ class SubagentTool(
         val skillIds: List<String> = emptyList(),
         val model: String? = null,
         val maxTurns: Int = 32,
+        val reasoningEffort: String? = null,
     )
 
     /** [settings] must contain only the child's selected tools; schemas are derived from that lookup. */
@@ -47,6 +48,10 @@ class SubagentTool(
                 ),
                 "model" to LLMRequest.Property("string", "Optional exact model ID from the advertised choices. Defaults to the parent's model.", enum = modelChoices),
                 "maxTurns" to LLMRequest.Property("integer", "Maximum child LLM calls, from 1 to 128. Defaults to 32."),
+                "reasoningEffort" to LLMRequest.Property(
+                    "string", "Optional child reasoning effort. Omit to use provider defaults; support depends on the provider and model.",
+                    enum = REASONING_EFFORTS,
+                ),
             ),
             required = listOf("task"),
         ),
@@ -65,6 +70,9 @@ class SubagentTool(
             }
             if (input.task.isBlank() || input.maxTurns !in 1..128) {
                 throw SubagentInputException("invalid_subagent_input", "task must be nonblank and maxTurns must be between 1 and 128.")
+            }
+            if (input.reasoningEffort != null && input.reasoningEffort !in REASONING_EFFORTS) {
+                throw SubagentInputException("invalid_subagent_input", "reasoningEffort must be one of $REASONING_EFFORTS.")
             }
             val setup = prepare(input, meta)
             val childContext = AgentContext(
@@ -117,6 +125,7 @@ class SubagentTool(
 
     companion object {
         const val NAME = "SpawnSubagent"
+        private val REASONING_EFFORTS = listOf("minimal", "low", "medium", "high")
         private const val MAX_REPORTED_TOOL_CALLS = 8
         private const val MAX_TOOL_RESULT_CHARS = 1024
         private const val MAX_TOOL_ID_CHARS = 256
