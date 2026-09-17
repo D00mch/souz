@@ -1,7 +1,7 @@
 package ru.souz.runtime.sandbox.local
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import ru.souz.runtime.sandbox.SandboxCommandExecutor
 import ru.souz.runtime.sandbox.SandboxCommandRequest
 import ru.souz.runtime.sandbox.SandboxCommandResult
@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 internal class LocalSandboxCommandExecutor(
     private val fileSystem: SandboxFileSystem,
 ) : SandboxCommandExecutor {
-    override suspend fun execute(request: SandboxCommandRequest): SandboxCommandResult = withContext(Dispatchers.IO) {
+    override suspend fun execute(request: SandboxCommandRequest): SandboxCommandResult = runInterruptible(Dispatchers.IO) {
         val workingDirectory = request.workingDirectory
             ?.let(fileSystem::resolveExistingDirectory)
             ?.path
@@ -27,23 +27,25 @@ internal class LocalSandboxCommandExecutor(
         }.start()
         val output = process.startSandboxCommandOutputCapture("local-sandbox-command")
 
-        request.stdin?.let { input ->
-            process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                writer.write(input)
+        val timedOut = try {
+            request.stdin?.let { input ->
+                process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
+                    writer.write(input)
+                }
+            } ?: process.outputStream.close()
+            request.timeoutMillis?.let { timeout ->
+                !process.waitFor(timeout, TimeUnit.MILLISECONDS)
+            } ?: run {
+                process.waitFor()
+                false
             }
-        } ?: process.outputStream.close()
-
-        val timedOut = request.timeoutMillis?.let { timeout ->
-            !process.waitFor(timeout, TimeUnit.MILLISECONDS)
-        } ?: run {
-            process.waitFor()
-            false
+        } finally {
+            if (process.isAlive) {
+                process.descendants().use { children -> children.forEach { it.destroyForcibly() } }
+                process.destroyForcibly()
+            }
+            output.awaitDrainedOrClose()
         }
-
-        if (timedOut) {
-            process.destroyForcibly()
-        }
-        output.awaitDrainedOrClose()
 
         SandboxCommandResult(
             exitCode = if (timedOut) -1 else process.exitValue(),

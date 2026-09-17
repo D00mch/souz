@@ -16,6 +16,7 @@ import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
+import kotlin.time.TimeSource
 
 /** Tool lookup is the caller's already-filtered snapshot; scripts use the ordinary bundle executor. */
 internal suspend fun SkillCommandExecutor.executeComposite(
@@ -45,9 +46,13 @@ internal suspend fun SkillCommandExecutor.executeComposite(
                     ?: error("Unresolved reference: ${tokens.joinToString(".")}")
             }
         }
-        withTimeoutOrNull(arguments.timeoutMillis.coerceIn(1, SkillCommandExecutor.MAX_TIMEOUT_MILLIS)) {
+        val timeoutMillis = arguments.timeoutMillis.coerceIn(1, SkillCommandExecutor.MAX_TIMEOUT_MILLIS)
+        val started = TimeSource.Monotonic.markNow()
+        withTimeoutOrNull(timeoutMillis) {
             for (step in spec.steps) {
                 location = "step '${step.id}'"
+                val remainingMillis = timeoutMillis - started.elapsedNow().inWholeMilliseconds
+                if (remainingMillis <= 0) return@withTimeoutOrNull null
                 val tool = step.tool
                 context[step.id] = when {
                     tool != null -> {
@@ -60,7 +65,7 @@ internal suspend fun SkillCommandExecutor.executeComposite(
                             runtime = SandboxCommandRuntime.valueOf(step.runtime!!.uppercase()),
                             scriptPath = step.script,
                             args = step.args.map { CompositeTemplate.text(resolve(it)) },
-                            timeoutMillis = arguments.timeoutMillis,
+                            timeoutMillis = remainingMillis,
                         ), meta)
                         if (result.exitCode != 0 || result.timedOut) {
                             return@withTimeoutOrNull result.copy(stderr = "$location: ${result.stderr}")

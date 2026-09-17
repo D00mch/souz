@@ -6,6 +6,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
@@ -34,52 +35,41 @@ class CompositeCommandExecutorTest {
     private val scripts = mockk<SkillCommandExecutor>()
 
     @Test
-    fun `inputs and tool results preserve text after a JSON prefix`() = runTest {
-        val spec = bundle("inputs: [value]\nsteps: [{id: echo, tool: echo, arguments: {value: '\${inputs.value}'}}]\nreturns: '\${echo}'")
+    fun `discovery and mixed execution preserve values identity and remaining deadline`() = runBlocking {
         val text = "42 inch TV"
-        val echo = tool("echo") { call, _ ->
-            assertEquals(text, call.arguments["value"])
-            text
-        }
-        val result = runner(spec, listOf(echo)).run(inputs = mapOf("value" to text))
-        assertEquals(SandboxCommandResult(0, text, ""), result)
-    }
-
-    @Test
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    fun `discovery and mixed execution preserve typed results script text and invocation identity`() = runTest {
         val bundle = bundle("""
             inputs: [target, options, empty]
             steps:
               - id: read
                 tool: device.read
                 arguments: {target: '${'$'}{inputs.target}', options: '${'$'}{inputs.options}', omit: '${'$'}{inputs.empty}'}
+              - id: settled
+                waitMs: 100
               - id: body
                 script: scripts/body.py
                 runtime: PYTHON
                 args: ['uri=${'$'}{read.content[0].uri}']
-              - id: settled
-                waitMs: 1500
               - id: sent
                 tool: device.send
                 arguments: {body: '${'$'}{body}', flags: ['${'$'}{read.ok}', 3]}
-            returns: '${'$'}{sent}'
+            returns: '${'$'}{sent}: ${'$'}{read.content[0]}'
         """)
         val read = tool("device.read") { call, identity ->
             assertEquals(meta, identity)
-            assertEquals(mapOf("target" to "tv", "options" to mapOf("x" to 7)), call.arguments)
+            assertEquals(mapOf("target" to text, "options" to mapOf("x" to 7)), call.arguments)
             """{"content":[{"uri":"screen.png"}],"ok":true}"""
         }
         val send = tool("device.send") { call, identity ->
             assertEquals(meta, identity)
             assertEquals(mapOf("body" to "{\"device\":1}\n", "flags" to listOf(true, 3)), call.arguments)
-            "{\"sent\":true}"
+            text
         }
         coEvery { scripts.execute(bundle, any(), any(), meta) } coAnswers {
             val args = thirdArg<SkillCommandExecutor.Args>()
             assertEquals(SandboxCommandRuntime.PYTHON, args.runtime)
             assertEquals("scripts/body.py", args.scriptPath)
             assertEquals(listOf("uri=screen.png"), args.args)
+            assertTrue(args.timeoutMillis in 1..4_900)
             SandboxCommandResult(0, "{\"device\":1}\n", "")
         }
         val catalog = immutableToolCatalogFromLists(mapOf(ToolCategory.FILES to listOf(read, send)))
@@ -87,9 +77,8 @@ class CompositeCommandExecutorTest {
         val detail = ToolGetSkillByName(catalog, RuntimePassThroughToolsFilter, provider)
             .invoke(LLMResponse.FunctionCall(ToolGetSkillByName.NAME, mapOf("skillId" to "skill")), meta)
         assertEquals(listOf("target", "options", "empty"), restJsonMapper.readTree(detail.content)["skill"]["commands"]["run"]["inputs"].map { it.asText() })
-        val result = runner(bundle, listOf(read, send)).run(inputs = mapOf("target" to "tv", "options" to "{\"x\":7}", "empty" to ""))
-        assertEquals(SandboxCommandResult(0, "{\"sent\":true}", ""), result)
-        assertEquals(1500L, testScheduler.currentTime)
+        val result = runner(bundle, listOf(read, send)).run(inputs = mapOf("target" to text, "options" to "{\"x\":7}", "empty" to ""), timeout = 5_000)
+        assertEquals(SandboxCommandResult(0, "$text: {\"uri\":\"screen.png\"}", ""), result)
     }
 
     @Test
