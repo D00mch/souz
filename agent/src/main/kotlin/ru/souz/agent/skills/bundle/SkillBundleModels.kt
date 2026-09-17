@@ -61,6 +61,7 @@ data class SkillManifest(
     /** OAuth scopes this skill requires from [oauthProvider]. Ignored when [oauthProvider] is null. */
     val oauthScopes: List<String> = emptyList(),
     val metadata: Map<String, String> = emptyMap(),
+    val commands: Map<String, CompositeCommandSpec> = emptyMap(),
     val rawFrontmatter: String,
 )
 

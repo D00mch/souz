@@ -19,11 +19,11 @@ class SkillCommandExecutor(
     internal data class Args(
         @InputParamDescription("Runtime to execute: BASH, PYTHON, NODE, or PROCESS. Use BASH for shell scripts and PROCESS for argv commands.")
         val runtime: SandboxCommandRuntime = SandboxCommandRuntime.BASH,
-        @InputParamDescription("Command argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. Leave empty for BASH/PYTHON/NODE.")
+        @InputParamDescription("Required argv for PROCESS runtime, for example [\"bash\", \"scripts/run.sh\"]. PROCESS ignores scriptPath and args. Leave empty for BASH/PYTHON/NODE.")
         val command: List<String> = emptyList(),
         @InputParamDescription("Inline script for BASH/PYTHON/NODE runtimes. For bundled scripts, call them by relative path, for example: bash scripts/run.sh")
         val script: String? = null,
-        @InputParamDescription("Path to a bundled script inside the active Skill root. Prefer this over inline script when running supporting scripts.")
+        @InputParamDescription("Path to a bundled script inside the active Skill root for BASH/PYTHON/NODE. Prefer this over inline script when running supporting scripts.")
         val scriptPath: String? = null,
         @InputParamDescription("Arguments to pass to scriptPath, or to the inline script process as positional arguments.")
         val args: List<String> = emptyList(),
@@ -35,9 +35,13 @@ class SkillCommandExecutor(
         val stdin: String? = null,
         @InputParamDescription("Timeout in milliseconds. Defaults to 60000 and is capped at 300000.")
         val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+        @InputParamDescription("Name of a command declared in this Skill's manifest. Runs its steps instead of scriptPath/script/command.")
+        val composite: String? = null,
+        @InputParamDescription("Named inputs declared by the composite command. JSON-encoded values are decoded; other values remain text.")
+        val inputs: Map<String, String> = emptyMap(),
     )
 
-    private companion object {
+    internal companion object {
         const val BUNDLES_DIRECTORY_NAME = "bundles"
         const val DEFAULT_TIMEOUT_MILLIS = 60_000L
         const val MAX_TIMEOUT_MILLIS = 300_000L
@@ -53,13 +57,13 @@ class SkillCommandExecutor(
         val sandbox = sandboxResolver.resolve(meta)
         val skillRoot = resolveSkillRoot(sandbox, bundle.skillId, bundleHash)
         val workingDirectory = resolveWorkingDirectory(skillRoot, arguments.workingDirectory)
-        val scriptPath = resolveScriptPath(sandbox, skillRoot, arguments.scriptPath)
+        val scriptPath = arguments.scriptPath.takeUnless { arguments.runtime == SandboxCommandRuntime.PROCESS }
         return sandbox.commandExecutor.execute(
             SandboxCommandRequest(
                 runtime = arguments.runtime,
                 command = arguments.command,
                 script = arguments.script,
-                scriptPath = scriptPath,
+                scriptPath = resolveScriptPath(sandbox, skillRoot, scriptPath),
                 args = arguments.args,
                 workingDirectory = workingDirectory,
                 environment = mapOf(

@@ -19,6 +19,7 @@ object SkillBundleParser {
         val oauthProvider: String? = null,
         val oauthScopes: List<String>? = null,
         val metadata: Map<String, String>? = null,
+        val commands: Map<String, CompositeCommandSpec> = emptyMap(),
     )
 
     fun parse(markdown: String): ParsedSkillMarkdown {
@@ -65,6 +66,8 @@ object SkillBundleParser {
         val description = raw.description?.takeIf { it.isNotBlank() }
             ?: throw SkillBundleException("SKILL.md frontmatter is missing required field: description")
 
+        raw.commands.forEach { (name, command) -> command.validate(name) }
+
         return SkillManifest(
             name = name,
             description = description,
@@ -73,6 +76,7 @@ object SkillBundleParser {
             oauthProvider = raw.oauthProvider?.takeIf { it.isNotBlank() },
             oauthScopes = raw.oauthScopes.orEmpty(),
             metadata = raw.metadata.orEmpty(),
+            commands = raw.commands,
             rawFrontmatter = frontmatter,
         )
     }

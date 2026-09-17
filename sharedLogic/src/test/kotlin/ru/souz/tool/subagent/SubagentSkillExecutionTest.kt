@@ -31,7 +31,6 @@ import ru.souz.tool.skills.ToolInvokeSkill
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 class SubagentSkillExecutionTest {
     @Test
@@ -48,7 +47,7 @@ class SubagentSkillExecutionTest {
             val root = "${runtime.runtimePaths.skillsDirPath}/loose"
             fileSystem.writeText(fileSystem.resolvePath("$root/SKILL.md"), "---\nname: Loose\ndescription: Test\n---\nRun run.sh")
             fileSystem.writeText(fileSystem.resolvePath("$root/run.sh"), "#!/bin/sh\nprintf original")
-            assertTrue(java.io.File("$root/run.sh").setExecutable(true))
+            assertFalse(java.io.File("$root/run.sh").canExecute())
             val registry = FileSystemSkillRegistryRepository(runtime)
             val commands = SkillCommandExecutor(ToolInvocationRuntimeSandboxResolver.fixed(runtime))
             val catalog = immutableToolCatalogSnapshot(emptyMap())
@@ -61,10 +60,12 @@ class SubagentSkillExecutionTest {
             }
             val arguments = mapOf<String, Any>(
                 "skillId" to "loose",
-                "arguments" to mapOf("runtime" to "PROCESS", "command" to listOf("./run.sh")),
+                "arguments" to mapOf("runtime" to "BASH", "scriptPath" to "run.sh", "args" to listOf("edited; *")),
             )
             val readReport = LLMResponse.FunctionCall(ToolInvokeSkill.NAME, mapOf(
-                "skillId" to "loose", "arguments" to mapOf("script" to "cat report.txt"),
+                "skillId" to "loose", "arguments" to mapOf(
+                    "runtime" to "PROCESS", "command" to listOf("cat", "report.txt"), "scriptPath" to "missing.sh",
+                ),
             ))
             var requests = 0
             val api = mockk<LLMChatAPI> {
@@ -73,11 +74,11 @@ class SubagentSkillExecutionTest {
                     val call = when (++requests) {
                         1 -> {
                             assertEquals(listOf(ToolInvokeSkill.NAME), request.functions.map { it.name })
-                            fileSystem.writeText(fileSystem.resolvePath("$root/run.sh"), "#!/bin/sh\nprintf edited > report.txt\ncat report.txt")
+                            fileSystem.writeText(fileSystem.resolvePath("$root/run.sh"), "#!/bin/sh\nprintf '%s' \"\$1\" > report.txt\ncat report.txt")
                             LLMResponse.FunctionCall(ToolInvokeSkill.NAME, arguments)
                         }
                         else -> {
-                            assertEquals("edited", restJsonMapper.readTree(request.messages.last().content)["stdout"].asText())
+                            assertEquals("edited; *", restJsonMapper.readTree(request.messages.last().content)["stdout"].asText())
                             readReport.takeIf { requests == 2 }
                         }
                     }
@@ -105,8 +106,8 @@ class SubagentSkillExecutionTest {
 
             val generic = ToolInvokeSkill(catalog, filter, registry::loadSkillBundle, commands, approval)
             val genericResult = generic.invoke(readReport, meta)
-            assertEquals("edited", restJsonMapper.readTree(genericResult.content)["stdout"].asText())
-            assertEquals("edited", fileSystem.readText(fileSystem.resolveExistingFile("$root/report.txt")))
+            assertEquals("edited; *", restJsonMapper.readTree(genericResult.content)["stdout"].asText())
+            assertEquals("edited; *", fileSystem.readText(fileSystem.resolveExistingFile("$root/report.txt")))
             assertFalse(fileSystem.resolvePath("$root/bundles").exists)
             assertFalse(fileSystem.resolvePath("$root/stored-skill.json").exists)
         } finally {

@@ -39,6 +39,20 @@ import kotlin.test.assertTrue
 
 class SubagentToolTest {
     @Test
+    fun `reasoning effort reaches streaming and ordinary child requests`() = runTest {
+        for (streaming in listOf(false, true)) {
+            val requests = mutableListOf<LLMRequest.Chat>()
+            val subagent = subagent(streaming = streaming, prepare = { input, _ ->
+                setup(settings().copy(reasoningEffort = input.reasoningEffort))
+            }) { request -> requests += request; response("done") }
+            val efforts = listOf(null, "minimal", "low", "medium", "high")
+            assertEquals(efforts.filterNotNull(), subagent.fn.parameters.properties.getValue("reasoningEffort").enum)
+            for (effort in efforts) assertEquals("done", subagent.call(reasoningEffort = effort)["result"].asText())
+            assertEquals(efforts, requests.map { it.reasoningEffort })
+        }
+    }
+
+    @Test
     fun `each tool invocation starts with only its task and selected tools`() = runTest {
         val requests = mutableListOf<LLMRequest.Chat>()
         val selected = tool("Selected")
@@ -233,7 +247,8 @@ class SubagentToolTest {
             error("Provider must not be called")
         }
         val invalidInputs = listOf(emptyMap(), mapOf("task" to " "), mapOf("task" to "Task", "skillIds" to 2)) +
-            listOf(-1, 0, 129).map { mapOf("task" to "Task", "maxTurns" to it) }
+            listOf(-1, 0, 129).map { mapOf("task" to "Task", "maxTurns" to it) } +
+            listOf("", "unknown").map { mapOf("task" to "Task", "reasoningEffort" to it) }
         for (arguments in invalidInputs) {
             val response = subagent.invoke(LLMResponse.FunctionCall(subagent.fn.name, arguments))
             assertEquals("invalid_subagent_input", restJsonMapper.readTree(response.content)["error"]["code"].asText())
@@ -368,9 +383,11 @@ class SubagentToolTest {
 
     private suspend fun LLMToolSetup.call(
         task: String = "task", maxTurns: Int? = null, meta: ToolInvocationMeta = ToolInvocationMeta.localDefault(),
+        reasoningEffort: String? = null,
     ) = restJsonMapper.readTree(invoke(LLMResponse.FunctionCall(fn.name, buildMap {
         put("task", task)
         maxTurns?.let { put("maxTurns", it) }
+        reasoningEffort?.let { put("reasoningEffort", it) }
     }), meta).content)
 
     private fun setup(settings: AgentSettings = settings(), tools: List<LLMToolSetup> = emptyList()) =

@@ -70,6 +70,7 @@ data class AgentSettings(
     val temperature: Float,
     val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
+    val reasoningEffort: String? = null,
 ) {
     constructor(
         model: String,
@@ -77,5 +78,6 @@ data class AgentSettings(
         temperature: Float,
         toolsByCategory: Map<ToolCategory, Map<String, LLMToolSetup>>,
         contextSize: Int = DEFAULT_MAX_TOKENS,
-    ): this(model, provider, temperature, AgentTools(toolsByCategory), contextSize)
+        reasoningEffort: String? = null,
+    ): this(model, provider, temperature, AgentTools(toolsByCategory), contextSize, reasoningEffort)
 }

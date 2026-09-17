@@ -4,9 +4,11 @@ import io.mockk.every
 import io.mockk.mockk
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_LIMIT_BYTES
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_TRUNCATION_PREFIX
@@ -21,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -38,9 +41,8 @@ class LocalSandboxCommandExecutorTest {
     @Test
     fun `executes command inside resolved sandbox working directory`() = runTest {
         val home = createTempDirectory("sandbox-home-")
-        val stateRoot = createTempDirectory("sandbox-state-")
         val workspace = home.resolve("workspace").createDirectories()
-        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
+        val sandbox = createSandbox(home)
 
         val result = sandbox.commandExecutor.execute(
             SandboxCommandRequest(
@@ -58,7 +60,7 @@ class LocalSandboxCommandExecutorTest {
     fun `rejects working directory outside sandbox`() = runTest {
         val home = createTempDirectory("sandbox-home-")
         val outside = createTempDirectory("sandbox-outside-")
-        val sandbox = createSandbox(home = home, stateRoot = createTempDirectory("sandbox-state-"))
+        val sandbox = createSandbox(home)
 
         val error = assertFailsWith<BadInputException> {
             sandbox.commandExecutor.execute(
@@ -76,12 +78,11 @@ class LocalSandboxCommandExecutorTest {
     @Test
     fun `executes script path with args`() = runTest {
         val home = createTempDirectory("sandbox-home-")
-        val stateRoot = createTempDirectory("sandbox-state-")
         val scripts = home.resolve("scripts").createDirectories()
         val script = scripts.resolve("echo.sh").apply {
             writeText($$"printf '%s:%s:%s' \"$PWD\" \"$1\" \"$2\"")
         }
-        val sandbox = createSandbox(home = home, stateRoot = stateRoot)
+        val sandbox = createSandbox(home)
 
         val result = sandbox.commandExecutor.execute(
             SandboxCommandRequest(
@@ -99,7 +100,7 @@ class LocalSandboxCommandExecutorTest {
     @Test
     fun `truncates noisy stdout and stderr`() = runTest {
         val home = createTempDirectory("sandbox-home-")
-        val sandbox = createSandbox(home = home, stateRoot = createTempDirectory("sandbox-state-"))
+        val sandbox = createSandbox(home)
 
         val result = sandbox.commandExecutor.execute(
             SandboxCommandRequest(
@@ -124,7 +125,7 @@ class LocalSandboxCommandExecutorTest {
     @Test
     fun `does not hang when background child keeps stdout open`() = runBlocking {
         val home = createTempDirectory("sandbox-home-")
-        val sandbox = createSandbox(home = home, stateRoot = createTempDirectory("sandbox-state-"))
+        val sandbox = createSandbox(home)
 
         val startedAt = System.nanoTime()
         val result = withTimeout(3_000.milliseconds) {
@@ -144,37 +145,36 @@ class LocalSandboxCommandExecutorTest {
     }
 
     @Test
-    fun `returns timed out result when process exceeds timeout`() = runBlocking {
-        val home = createTempDirectory("sandbox-home-")
-        val sandbox = createSandbox(home = home, stateRoot = createTempDirectory("sandbox-state-"))
-
-        val result = withTimeout(3_000.milliseconds) {
-            sandbox.commandExecutor.execute(
-                SandboxCommandRequest(
+    fun `timeout and cancellation terminate the process and its children`() = runBlocking {
+        for (cancel in listOf(false, true)) {
+            val home = createTempDirectory("sandbox-home-")
+            val sandbox = createSandbox(home)
+            val startedAt = System.nanoTime()
+            val result = withTimeoutOrNull(1_000) {
+                sandbox.commandExecutor.execute(SandboxCommandRequest(
                     runtime = SandboxCommandRuntime.BASH,
-                    script = "sleep 5",
-                    timeoutMillis = 100,
-                )
-            )
+                    script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids; wait",
+                    workingDirectory = home.toString(), timeoutMillis = if (cancel) 10_000 else 100,
+                ))
+            }
+            assertTrue((System.nanoTime() - startedAt) / 1_000_000 < 3_000, "Process wait exceeded deadline")
+            if (cancel) assertNull(result) else {
+                assertEquals(-1, result?.exitCode)
+                assertTrue(result!!.timedOut)
+            }
+            val pids = Files.readString(home.resolve("pids")).split(' ').map(String::toLong)
+            withTimeout(2_000) {
+                while (pids.any { ProcessHandle.of(it).map { process -> process.isAlive }.orElse(false) }) delay(10)
+            }
         }
-
-        assertEquals(-1, result.exitCode)
-        assertTrue(result.timedOut)
     }
 
-    private fun createSandbox(
-        home: Path,
-        stateRoot: Path,
-    ): LocalRuntimeSandbox {
-        val settingsProvider = mockk<SettingsProvider>()
-        every { settingsProvider.forbiddenFolders } returns emptyList()
-        return LocalRuntimeSandbox(
-            scope = SandboxScope(userId = "user-1"),
-            settingsProvider = settingsProvider,
-            homePath = home,
-            stateRoot = stateRoot,
-        )
-    }
+    private fun createSandbox(home: Path) = LocalRuntimeSandbox(
+        scope = SandboxScope(userId = "user-1"),
+        settingsProvider = mockk<SettingsProvider> { every { forbiddenFolders } returns emptyList() },
+        homePath = home,
+        stateRoot = createTempDirectory("sandbox-state-"),
+    )
 
     private fun createTempDirectory(prefix: String): Path =
         Files.createTempDirectory(prefix).also(createdPaths::add)
