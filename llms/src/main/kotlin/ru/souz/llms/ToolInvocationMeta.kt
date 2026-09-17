@@ -23,15 +23,8 @@ data class ToolInvocationMeta(
     }
 
     companion object {
-        /** [attributes] key `AgentToolExecutor` sets to the comma-joined names of every tool the
-         * calling agent could execute at dispatch time (`AgentSettings.tools.byName.keys`) — the
-         * exact same set it uses to resolve `functionCall.name` itself. Skill-invocation tools
-         * (`RunSkillCommand`/`CompositeCommandExecutor`) read it back to scope which tools a
-         * declarative composite command step may call, so a composite step can never reach a tool
-         * the calling agent (parent or a spawned child) wasn't already allowed to call directly.
-         * Absent when a tool is invoked outside that dispatch path (e.g. `invoke(functionCall)`
-         * with no meta, or a test calling a tool directly) — treat absence as "no tools allowed",
-         * fail closed, the same convention the Skill Tool Bridge's allowlist already uses. */
+        /** [attributes] key for the calling agent's own dispatchable tool names, set by
+         * `AgentToolExecutor`. Read by composite skill commands to scope `tool:` steps. */
         const val ACTIVE_TOOL_NAMES_ATTRIBUTE = "souz.activeToolNames"
 
         fun localDefault(

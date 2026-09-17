@@ -70,9 +70,7 @@ data class AgentSettings(
     val temperature: Float,
     val tools: AgentTools,
     val contextSize: Int = DEFAULT_MAX_TOKENS,
-    /** Forwarded to the provider as `reasoning_effort` (only OPENAI-compatible providers honor
-     * it, see `OpenAICompatibleChatAPI`; others silently ignore it). Null leaves the provider's
-     * own default in place. */
+    /** Forwarded to the provider as `reasoning_effort`; not all providers honor it. */
     val reasoningEffort: String? = null,
 ) {
     constructor(

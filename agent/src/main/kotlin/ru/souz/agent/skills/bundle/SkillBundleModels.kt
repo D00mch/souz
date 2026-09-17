@@ -67,14 +67,8 @@ data class SkillManifest(
     val rawFrontmatter: String,
 )
 
-/**
- * A deterministic, linear chain of [CompositeStepSpec]s that `SkillCommandExecutor` interprets
- * directly — never handed to skill-authored code — so the model sees one `RunSkillCommand(...,
- * arguments={command: "<name>", inputs: {...}})` call instead of a sequence of separately
- * LLM-decided tool calls. [inputs] names the values the caller must supply; [steps] run in order
- * with each step's outputs addressable by later steps as `${stepId...}`; [returns] is a `${...}`
- * expression resolved against [inputs] and step outputs once every step has succeeded.
- */
+/** A deterministic, linear chain of [CompositeStepSpec]s run by `SkillCommandExecutor` as one
+ * `RunSkillCommand(arguments={composite: "<name>", inputs: {...}})` call. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class CompositeCommandSpec(
     val inputs: List<String> = emptyList(),
@@ -82,13 +76,8 @@ data class CompositeCommandSpec(
     val returns: String,
 )
 
-/**
- * One step of a [CompositeCommandSpec]. Exactly one of [tool], [script], or [waitMs] must be set
- * — a step is a tool call, a bundled script invocation, or a deterministic pause, never more than
- * one. [arguments]/[args] values may contain `${...}` references to `inputs.*` or an earlier
- * step's `id`. [runtime] is required when [script] is set — `SkillCommandExecutor`'s runtime
- * argument defaults to BASH and is never inferred from the script's extension.
- */
+/** One step: exactly one of [tool]/[script]/[waitMs]. `runtime` is required when [script] is
+ * set — it's never inferred from the file extension. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class CompositeStepSpec(
     val id: String,

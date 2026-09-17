@@ -84,13 +84,8 @@ object SkillBundleParser {
 
     private val referenceExpression = Regex("""\$\{([^}]+)}""")
 
-    /**
-     * Keeps composite commands linear and statically checkable at parse time, per the v1 scope
-     * (no loops, no conditionals, no expression language): every step is exactly one of
-     * tool/script/waitMs, script steps declare their runtime explicitly (the same BASH-default
-     * gotcha `RunSkillCommand` already has), step ids are unique, and every `${...}` reference in
-     * `arguments`/`args`/`returns` names either a declared input or an earlier step's id.
-     */
+    /** Rejects a composite command whose steps aren't linear/unambiguous or whose `${...}`
+     * references don't resolve to a declared input or earlier step id. */
     private fun validateComposite(commandName: String, spec: CompositeCommandSpec) {
         fun fail(message: String): Nothing =
             throw SkillBundleException("SKILL.md composite command '$commandName' $message")
@@ -130,10 +125,7 @@ object SkillBundleParser {
 
     private val pathToken = Regex("""[A-Za-z0-9_]+|\[(\d+)]""")
 
-    /** Splits `inputs.device` / `screenshot.content[0].uri` into `["inputs","device"]` /
-     * `["screenshot","content","0","uri"]` — shared shape with the runtime resolver in
-     * `CompositeCommandExecutor` (`:sharedLogic`), duplicated rather than shared across modules
-     * for a helper this small. */
+    /** Splits `screenshot.content[0].uri` into `["screenshot","content","0","uri"]`. */
     private fun referencePathTokens(reference: String): List<String> =
         pathToken.findAll(reference).map { it.groupValues[1].ifEmpty { it.value } }.toList()
 

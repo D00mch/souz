@@ -17,22 +17,8 @@ import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.tool.BadInputException
 
-/**
- * Interprets a Skill manifest's declarative `commands` (`CompositeCommandSpec`, `:agent`) — a
- * linear, parse-time-validated chain of tool calls, bundled scripts, and deterministic waits —
- * so the model makes one `RunSkillCommand(arguments={command, inputs})` call instead of a
- * separately LLM-decided step for each one. Tool steps resolve through [toolCatalog]/[toolsFilter]
- * the same way [SkillCommandExecutor]'s (bridge) socket does — an in-process `LLMToolSetup.invoke`,
- * no IPC — but a step's `tool:` name must also be in the caller-supplied `allowedTools` (see
- * [execute]) before it's looked up there: [toolCatalog] alone is the *host's* full catalog, shared
- * across every invocation regardless of who's calling, so without that check a composite step
- * could reach a tool the calling agent (parent or a spawned child) was never itself granted.
- * [ToolInvokeSkill.allowedCompositeTools] computes that set as everything the caller could already
- * reach one way or another *without* composites — see its doc for why that needs two different
- * sources, not just one. Script steps run through [runScript], which the owning
- * [SkillCommandExecutor] binds to its own script execution path with the bridge disabled —
- * composite mode never starts it, it doesn't need it.
- */
+/** Interprets a Skill manifest's declarative `commands` as one `RunSkillCommand` call instead of
+ * a separately LLM-decided tool call per step. A `tool:` step is gated by `allowedTools`. */
 internal class CompositeCommandExecutor(
     private val toolCatalog: AgentToolCatalog?,
     private val toolsFilter: AgentToolsFilter?,
@@ -50,10 +36,7 @@ internal class CompositeCommandExecutor(
         commandName: String,
         inputs: Map<String, String>,
         meta: ToolInvocationMeta,
-        /** Tool names this composite command's `tool:` steps may call — see
-         * [ToolInvokeSkill.allowedCompositeTools]. Empty means no `tool:` step can run (fail
-         * closed); `script`/`waitMs` steps are unaffected, they're bounded by the skill's own
-         * sandbox already. */
+        /** Tool names this command's `tool:` steps may call — see [ToolInvokeSkill.allowedCompositeTools]. */
         allowedTools: Set<String>,
     ): SandboxCommandResult {
         val spec = bundle.manifest.commands[commandName]
@@ -151,15 +134,8 @@ internal class CompositeCommandExecutor(
     private val referenceExpression = Regex("""\$\{([^}]+)}""")
     private val pathToken = Regex("""[A-Za-z0-9_]+|\[(\d+)]""")
 
-    /** Resolves a manifest-declared value (string, nested map/list from YAML, or scalar) against
-     * [context], substituting `${...}` references. A value that is *exactly* one reference (e.g.
-     * `"${inputs.actionArguments}"`) keeps that reference's real JSON type (object, array,
-     * number...); a reference embedded in a larger string is stringified. Inside an object
-     * (`arguments`), a field that resolves to null or an empty string is **omitted** rather than
-     * sent as `""`/`null` — lets a manifest thread an optional value like `target` straight from
-     * `inputs.device` without a conditional: the caller passes `""` for "not specified" (the same
-     * convention `tv-control`'s SKILL.md already uses for "current device"), and the composite
-     * step ends up calling the tool exactly as if that argument had never been set. */
+    /** Substitutes `${...}` references; a whole-reference value keeps its real JSON type, an
+     * embedded one stringifies. A null/empty-string field is omitted from an object entirely. */
     private fun resolveValue(context: Map<String, JsonNode>, value: Any?): JsonNode = when (value) {
         null -> NullNode.instance
         is String -> resolveString(context, value)
@@ -206,17 +182,10 @@ internal class CompositeCommandExecutor(
         inputs.forEach { (key, value) -> set<JsonNode>(key, value.asJsonOrText()) }
     }
 
-    /** Values arriving as text (tool-call arguments, `inputs`, step outputs) are JSON when the
-     * author or model wrote structured data, and plain text otherwise (a URL, a device id) — try
-     * JSON first, fall back to a text node. A side effect worth knowing: a bare numeric-looking
-     * string (e.g. a package name that happens to be all digits) parses as a JSON number, not
-     * text — acceptable for this v1, not perfectly lossless. */
+    /** Tries JSON first (structured `inputs`/results), falls back to a text node. */
     private fun String.asJsonOrText(): JsonNode =
         runCatching { restJsonMapper.readTree(this) }.getOrNull()
-            // Jackson's readTree("") returns a non-null MissingNode rather than throwing or
-            // returning Kotlin null — filter it out too, or an empty string round-trips as a
-            // node that is neither textual nor null and defeats isOmittable() below.
-            ?.takeUnless { it.isMissingNode }
+            ?.takeUnless { it.isMissingNode } // readTree("") returns MissingNode, not null
             ?: TextNode(this)
 
     private fun JsonNode.asArgString(): String = if (isTextual) asText() else toString()
@@ -227,9 +196,7 @@ internal class CompositeCommandExecutor(
         SandboxCommandResult(exitCode = 1, stdout = "", stderr = message)
 
     private companion object {
-        /** No re-entrant escape hatch — mirrors `SubagentToolFactory.RESTRICTED_TOOLS`. A
-         * composite step's tool name is static (declared in the manifest, parse-time visible),
-         * so this is defense in depth rather than the primary guard. */
+        /** No re-entrant escape hatch — mirrors `SubagentToolFactory.RESTRICTED_TOOLS`. */
         val RESTRICTED_TOOLS = setOf(
             SubagentTool.NAME,
             ToolInvokeSkill.NAME,

@@ -165,11 +165,7 @@ private data class BundleSkillDetail(
     val description: String,
     val skillMarkdownBody: String,
     val supportingFiles: List<String>,
-    /** Declarative composite commands this Skill's manifest declares (name -> summary), so a
-     * model discovering the Skill this way — not just by reading its prose — can learn that
-     * `RunSkillCommand(arguments={composite: "<name>", inputs: {...}})` is available. Omitted
-     * from the response entirely when the Skill declares none, to keep existing responses
-     * unchanged. */
+    /** Composite commands this Skill declares. Omitted entirely when there are none. */
     @field:JsonInclude(JsonInclude.Include.NON_EMPTY)
     val commands: Map<String, CompositeCommandSummary> = emptyMap(),
 ) : SkillDetail
