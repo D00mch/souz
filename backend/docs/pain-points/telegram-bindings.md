@@ -17,9 +17,12 @@ Tokens, one-time secrets, Telegram identity, and poller ownership are separate s
 - Preserve encrypted token custody, unique token hashes, hashed link secrets, and redacted API DTOs.
 - Require the exact private-chat link handshake before activating a binding; never infer ownership from a username or untrusted message field.
 - Renew leases during in-flight work and verify ownership before every externally visible reply or checkpoint side effect.
+- Keep one independent poll loop per enabled binding. Limit update processing, never idle long polls, and recheck lease ownership after waiting for a processing permit.
 - Keep Telegram update IDs in the client-message identity so retried updates remain idempotent.
 - Treat plaintext-compatible rows as migration input only; rebinding or an application rewrite must place them on encrypted storage before removing compatibility support.
 
 ## Verification
 
 Run `./gradlew :backend:test`. Cover feature gating, token redaction/encryption, one-time linking, foreign-account rejection, lease takeover and renewal, reply fencing, checkpoint advancement, idempotent retries, message chunking, and persistence constraints.
+
+Use the shared [manual polling checks](testing.md#verification) to verify cross-binding independence and cancellation.

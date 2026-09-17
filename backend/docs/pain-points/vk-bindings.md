@@ -15,9 +15,12 @@ The Long Poll `ts` is an opaque batch cursor. Persist the initial cursor before 
 - Keep token contents and VK error bodies out of responses and logs. VK has no plaintext token migration path.
 - API and Long Poll requests share the web tools' `SOUZ_WEB_USER_AGENT` setting and default.
 - Preserve lease fencing and message-based execution identity when changing polling or persistence.
+- Each enabled binding owns its poll loop and cached session. Limit update processing, never idle long polls, and recheck lease ownership after waiting for a processing permit.
 - Use shared channel text splitting and delivery bookkeeping. Only successfully sent chunks belong in cross-channel chat history.
 - VK execution has the same process-local crash-recovery limitation as ordinary HTTP and Telegram execution; the binding lease does not own the agent runtime.
 
 ## Verification
 
 Run `./gradlew :backend:test`. The VK workflow suite covers binding, private linking, replay, ownership, polling recovery, lease loss, and channel tools. Focused tests cover HTTP encoding/error handling and database lease fencing.
+
+Use the shared [manual polling checks](testing.md#verification) to verify cross-binding independence and cancellation.

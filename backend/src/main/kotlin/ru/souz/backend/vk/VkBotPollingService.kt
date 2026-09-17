@@ -13,13 +13,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import org.slf4j.LoggerFactory
 import ru.souz.backend.channels.channelTextChunks
+import ru.souz.backend.channels.pollBindings
 import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.service.AgentExecutionService
@@ -41,12 +39,9 @@ class VkBotPollingService(
     private val logger = LoggerFactory.getLogger(javaClass)
     private val owner = UUID.randomUUID().toString()
     private val semaphore = Semaphore(maxConcurrency)
-    private val pollMutex = Mutex()
-    private val sessions = mutableMapOf<UUID, PollSession>()
     private var pollingJob: Job? = null
 
-    // Map membership is coordinated by pollMutex; each child owns one session per round.
-    private class PollSession {
+    internal class PollSession {
         var server: VkLongPollServer? = null
         var lastRejectionAt: Instant = Instant.MIN
     }
@@ -54,48 +49,25 @@ class VkBotPollingService(
     fun start() {
         if (pollingJob?.isActive == true) return
         pollingJob = scope.launch {
-            while (isActive) {
-                try {
-                    pollEnabledOnce()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    logger.warn("VK polling iteration failed.")
-                }
-                delay(pollLoopDelayMs)
-            }
-        }
-    }
-
-    internal suspend fun pollEnabledOnce() = pollMutex.withLock {
-        val bindings = repository.listEnabled()
-        sessions.keys.retainAll(bindings.map { it.id }.toSet())
-        val rounds = bindings.map { it to sessions.getOrPut(it.id) { PollSession() } }
-        supervisorScope {
-            rounds.forEach { (binding, session) ->
-                launch {
-                    try {
-                        semaphore.withPermit { pollBinding(binding, session) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        logger.warn("VK polling failed for binding {}", binding.id)
-                    }
+            pollBindings(pollLoopDelayMs, logger) {
+                repository.listEnabled().associate { binding ->
+                    val session = PollSession()
+                    binding.id to suspend { pollBinding(binding.id, session) }
                 }
             }
         }
     }
 
-    private suspend fun pollBinding(binding: VkBotBinding, session: PollSession) = coroutineScope {
+    internal suspend fun pollBinding(id: UUID, session: PollSession) = coroutineScope {
         val now = clock.instant()
-        var current = repository.tryAcquireLease(binding.id, owner, now.plusSeconds(leaseTtlSeconds), now)
+        var current = repository.tryAcquireLease(id, owner, now.plusSeconds(leaseTtlSeconds), now)
             ?: return@coroutineScope
         val bindingScope = this
         val heartbeat = launch {
             while (isActive) {
                 delay((leaseTtlSeconds * 1_000 / 3).coerceAtLeast(100))
                 val tick = clock.instant()
-                if (!repository.renewLease(binding.id, owner, tick.plusSeconds(leaseTtlSeconds), tick)) {
+                if (!repository.renewLease(id, owner, tick.plusSeconds(leaseTtlSeconds), tick)) {
                     bindingScope.cancel("Lost VK binding lease.")
                 }
             }
@@ -109,8 +81,10 @@ class VkBotPollingService(
             }
             val batch = fetchBatch(current, token, session)
             for (update in batch.updates) {
-                if (!owns(current.id)) return@coroutineScope
-                current = handleUpdate(current, token, update, session)
+                semaphore.withPermit {
+                    if (!owns(current.id)) return@coroutineScope
+                    current = handleUpdate(current, token, update, session)
+                }
             }
             repository.updateLastTs(current.id, owner, requireNotNull(batch.ts), clock.instant())
         } catch (e: CancellationException) {
@@ -123,7 +97,7 @@ class VkBotPollingService(
                 code == 10 || e is IOException -> "vk_network_error"
                 else -> "vk_unknown_error"
             }
-            repository.markError(binding.id, owner, error, clock.instant(), disable = code == 5 || code == 15)
+            repository.markError(id, owner, error, clock.instant(), disable = code == 5 || code == 15)
             if (error == "vk_rate_limited") delay(5_000)
         } finally {
             heartbeat.cancelAndJoin()

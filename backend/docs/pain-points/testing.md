@@ -16,8 +16,11 @@ Partial route contexts and in-memory repositories can pass while the production 
 - Use the shared E2E harness to allocate a unique Postgres schema, install production HTTP routes, override only external boundaries, and close runtime resources.
 - Use HTTP or WebSocket helpers for assertions. Direct SQL is reserved for encryption-at-rest, legacy compatibility, lease/crash recovery, and restart persistence checks.
 - Keep ordinary route validation table-driven inside workflow tests instead of adding one route class per branch.
+- Keep deterministic per-binding poll helpers in the test harness; production polling uses the shared scheduler.
 - Do not add general-purpose in-memory repository implementations.
 
 ## Verification
 
 Run Docker-backed backend tests with `./gradlew :backend:test`. Focus the production-wired suite with `./gradlew :backend:test --tests 'ru.souz.backend.e2e.*'`.
+
+Cross-binding scheduling requires manual verification for both Telegram and VK: keep more bindings idle than the channel's processing limit and confirm another binding handles consecutive messages without waiting for their long polls. Remove an idle binding and stop the host to check poll cancellation. Automated channel suites cover linking, delivery, retries, and lease fencing.

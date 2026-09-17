@@ -11,7 +11,7 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 - Build one immutable request-scoped catalog by applying each execution's enabled-tool snapshot to the policy-hostable compiled tools before adding Client-Souz tool-backed Skills. When that client catalog supplies `web.search`, the policy excludes compiled `InternetSearch` for that execution only.
 - Build every turn with the backend's single request-scoped steerable `AgentId.SKILLS_GRAPH`. Advertise only its fixed core Skill tools and discover catalog capabilities through Skill inventory.
 - Keep product messages, thread lifecycle, agent continuation state, client tool calls, idempotency receipts, and replay events in their existing ownership layers.
-- Telegram and VK bindings use encrypted tokens, private-account linking, and leased polling; their channel providers share text splitting and delivery persistence.
+- Telegram and VK bindings use encrypted tokens, private-account linking, and independent leased poll loops. Their shared poll scheduler keeps idle long polls outside the processing limit; channel providers share text splitting and delivery persistence.
 - PostgreSQL is the structured repository store. Sandbox workspaces remain filesystem-backed and user-scoped.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
 
