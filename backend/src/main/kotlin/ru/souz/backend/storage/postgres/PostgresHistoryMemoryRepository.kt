@@ -106,7 +106,7 @@ internal class PostgresHistoryMemoryRepository(
         update(fragment, "lease_until = ?") { it.setInstant(1, clock.instant().plusSeconds(180)) }
 
     suspend fun complete(fragment: HistoryMemoryFragment): Boolean =
-        update(fragment, "completed_at = ?, lease_token = null, lease_until = null") { it.setInstant(1, clock.instant()) }
+        update(fragment, "completed_at = ?, payload = null, lease_token = null, lease_until = null") { it.setInstant(1, clock.instant()) }
 
     suspend fun retry(fragment: HistoryMemoryFragment): Boolean =
         update(fragment, "available_at = ?, lease_token = null, lease_until = null") {

@@ -26,6 +26,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
@@ -184,6 +185,17 @@ class BackendHistoryMemoryE2eTest {
             }
             assertFalse(backend.captureHistoryMemory())
             assertEquals(1, hindsight.items.size)
+            sql { connection ->
+                connection.prepareStatement("select payload, completed_at, source_ids from history_memory_fragments where id = ?").use { statement ->
+                    statement.setObject(1, first.id)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertNotNull(rows.getObject("completed_at"))
+                        assertNull(rows.getString("payload"))
+                        assertEquals(documents.flatMap { it.sourceIds }, (rows.getArray("source_ids").array as Array<*>).map { it.toString() })
+                    }
+                }
+            }
         }
     }
 

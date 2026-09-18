@@ -25,7 +25,7 @@ Omitting recall tags exposes one conversation's transient memory in another. Ret
 - Preserve owner-derived bank isolation and global-plus-current-conversation recall.
 - Keep ordinary capture grounded in user text and tool output; do not promote conversation tool evidence with an explicit global-memory marker.
 - Supply deterministic document identity for completed turns.
-- Commit imported-history enqueueing with the receipt, freeze payloads before retain, and complete only after synchronous success. Never reuse a fragment for later appends after it has been claimed.
+- Commit imported-history enqueueing with the receipt, freeze payloads before retain, and complete only after synchronous success. Clear frozen payloads on completion; keep source IDs for preceding-context reconstruction. Never reuse a fragment for later appends after it has been claimed.
 - Preserve source attribution in actual extracted fact text, not only input role labels or recall wrappers. Keep source references visible in recall and `SearchMemory`.
 - Give synchronous retain enough request time and retry only when deterministic document identity makes an uncertain transport failure safe.
 - Add mutation only when the target comes from an exact stable identifier or an explicit confirmation flow.
