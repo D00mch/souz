@@ -35,12 +35,13 @@ internal fun LLMRequest.Message.isInjectedMemoryContextMessage(): Boolean =
 internal class NodesMemory(
     private val memoryRuntime: ConversationMemoryRuntime,
     private val captureScope: CoroutineScope,
+    private val automaticMemoryRecall: Boolean = true,
 ) {
     private val logger = LoggerFactory.getLogger(NodesMemory::class.java)
 
-    /** Replaces the previous memory augmentation with memory relevant to the current user input. */
+    /** Removes previous memory augmentation and optionally retrieves memory for the current input. */
     fun recall(name: String = "Memory recall"): Node<String, String> = Node(name) { ctx ->
-        val memoryBlock = retrieveMemoryBlock(ctx)
+        val memoryBlock = if (automaticMemoryRecall) retrieveMemoryBlock(ctx) else null
         val history = ctx.history
             .filterNot(LLMRequest.Message::isInjectedMemoryContextMessage)
             .toMutableList()
