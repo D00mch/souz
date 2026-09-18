@@ -2,15 +2,18 @@ package ru.souz.backend.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
@@ -59,6 +62,8 @@ import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotBindingService
 import ru.souz.backend.vk.VkBotBindingService
 import ru.souz.backend.user.repository.UserRepository
+import ru.souz.memory.CompletedTurnEvidence
+import ru.souz.memory.CompletedTurnEvidenceKind
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationId
 import ru.souz.memory.ConversationMemoryRuntime
@@ -97,10 +102,31 @@ class BackendDiModuleTest {
             assertEquals("fact-1", recalled.facts.single().factId)
             assertEquals("fact-1", memory.searchMemory(context, "tea", emptyList(), 1).single().factId)
             memory.captureCompletedTurn(
-                CompletedTurnMemoryInput(context, "chat-1", "message-1", "reply-1", "I like tea", "Noted"),
+                CompletedTurnMemoryInput(
+                    context, "chat-1", "message-1", "reply-1",
+                    userMessage = "  Remember that I like tea. token=user-secret-12345  ",
+                    assistantMessage = "  Noted. token=assistant-secret-67890  ",
+                    evidence = listOf(
+                        CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "SearchMemory", assertNotNull(recalled.renderedPromptBlock)),
+                        CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "web.search", "Unselected tool options"),
+                        CompletedTurnEvidence(CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS, text = "Intermediate assistant synthesis"),
+                    ),
+                ),
             )
             val bankUrl = "http://hindsight.test/v1/default/banks/$userId/memories"
             assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", bankUrl), engine.requestHistory.map { it.url.toString() })
+            val item = jacksonObjectMapper().readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
+            val content = item["content"].asText()
+            assertEquals(
+                "[USER]\nRemember that I like tea. token=[redacted-secret]\n\n[ASSISTANT]\nNoted. token=[redacted-secret]",
+                content,
+            )
+            listOf("The user likes tea", "SearchMemory", "web.search", "Unselected tool options", "Intermediate assistant synthesis",
+                "user-secret-12345", "assistant-secret-67890").forEach { excluded ->
+                assertFalse(content.contains(excluded), "Retained content contains $excluded")
+            }
+            assertTrue(item["tags"].isEmpty)
+            assertEquals("souz-turn-message-1", item["document_id"].asText())
         }
     }
 
