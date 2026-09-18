@@ -80,11 +80,7 @@ class BackendHistoryMemoryE2eTest {
             })
             val retained = eventually("completed SearchMemory turn") { hindsight.items.singleOrNull() }
             assertEquals(owner, retained.bank)
-            val content = retained.item["content"].asText()
-            assertEquals("[USER]\nWhat do you remember about my travel preferences?\n\n[ASSISTANT]\n$finalAnswer", content)
-            assertFalse(content.contains(recalled))
-            assertFalse(content.contains("SearchMemory"))
-            assertFalse(content.contains("user travel preferences travel"))
+            assertEquals("[USER]\nWhat do you remember about my travel preferences?\n\n[ASSISTANT]\n$finalAnswer", retained.item["content"].asText())
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
         }
@@ -108,9 +104,7 @@ class BackendHistoryMemoryE2eTest {
                 it.name == "souz_injected_memory" && it.content.contains(recalled)
             })
             val retained = eventually("completed HTTP turn memory") { hindsight.items.singleOrNull() }
-            val content = retained.item["content"].asText()
-            assertEquals("[USER]\nPlan a trip\n\n[ASSISTANT]\nassistant reply to Plan a trip", content)
-            assertFalse(content.contains(recalled))
+            assertEquals("[USER]\nPlan a trip\n\n[ASSISTANT]\nassistant reply to Plan a trip", retained.item["content"].asText())
         }
     }
 
@@ -139,11 +133,7 @@ class BackendHistoryMemoryE2eTest {
                 it.role == LLMMessageRole.function && it.content.contains("Unselected options")
             })
             val retained = eventually("completed client-tool turn") { hindsight.items.singleOrNull() }
-            val content = retained.item["content"].asText()
-            assertEquals("[USER]\nFind travel options for the weekend\n\n[ASSISTANT]\nclient tool completed", content)
-            assertFalse(content.contains("Unselected options"))
-            assertFalse(content.contains("web.search"))
-            assertFalse(content.contains("weekend travel options"))
+            assertEquals("[USER]\nFind travel options for the weekend\n\n[ASSISTANT]\nclient tool completed", retained.item["content"].asText())
         }
     }
 

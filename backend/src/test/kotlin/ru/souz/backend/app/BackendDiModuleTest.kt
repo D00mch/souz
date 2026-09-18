@@ -2,7 +2,6 @@ package ru.souz.backend.app
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -116,15 +115,10 @@ class BackendDiModuleTest {
             val bankUrl = "http://hindsight.test/v1/default/banks/$userId/memories"
             assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", bankUrl), engine.requestHistory.map { it.url.toString() })
             val item = jacksonObjectMapper().readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
-            val content = item["content"].asText()
             assertEquals(
                 "[USER]\nRemember that I like tea. token=[redacted-secret]\n\n[ASSISTANT]\nNoted. token=[redacted-secret]",
-                content,
+                item["content"].asText(),
             )
-            listOf("The user likes tea", "SearchMemory", "web.search", "Unselected tool options", "Intermediate assistant synthesis",
-                "user-secret-12345", "assistant-secret-67890").forEach { excluded ->
-                assertFalse(content.contains(excluded), "Retained content contains $excluded")
-            }
             assertTrue(item["tags"].isEmpty)
             assertEquals("souz-turn-message-1", item["document_id"].asText())
         }
