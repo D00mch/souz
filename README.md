@@ -664,6 +664,8 @@ export SOUZ_AGENT_INTEGRATION_TESTS_ON=true
 ./gradlew :sharedUI:cleanJvmTest :sharedUI:jvmTest --tests "agent.GraphAgentComplexScenarios"
 ```
 
+Opt-in [Hindsight conversation scenarios](desktopApp/docs/hindsight-scenarios.md) generate reusable memory corpora through real graph agents and evaluate them from fresh contexts.
+
 Run backend tests:
 
 ```bash
