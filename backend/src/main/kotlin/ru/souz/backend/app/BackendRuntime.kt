@@ -3,11 +3,13 @@ package ru.souz.backend.app
 import org.kodein.di.DI
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
 import kotlinx.coroutines.runBlocking
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.backend.client.ClientThreadRecoveryService
+import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 
 /** Process-wide backend runtime container with shared services and LLM resources. */
 class BackendRuntime private constructor(
@@ -31,6 +33,7 @@ class BackendRuntime private constructor(
         }
         telegramBotPollingService?.start()
         vkBotPollingService?.start()
+        di.direct.instanceOrNull<HistoryMemoryWorker>()?.start(applicationScope)
     }
 
     override fun close() {

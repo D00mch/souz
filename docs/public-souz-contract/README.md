@@ -26,6 +26,8 @@ History, tool results and cancellation neither require nor initiate subscription
 
 Assistant tool history uses `content: {"type":"tool_call","name":"weather","arguments":{},"result":{"temperature_c":25.1}}`. Both `arguments` and `result` are required JSON objects; history content has no `toolCallId` or `target`.
 
+With Hindsight enabled, accepted user/assistant text also enters durable background memory capture without a submit, active thread or connected socket. ACK confirms saved history; it does not wait for extraction. Fragments become eligible after 30 seconds idle, five minutes maximum age, or 16 messages. Text remains chat-scoped and attributed: assistant proposals are proposals, action reports are unverified, and explicit user choices retain their conversational context. Tool names, arguments and results are excluded from this memory path. Opt-out and secret-redaction rules apply. Retries reuse source/document IDs, and later agent context loading does not capture the same history again. See [external memory](../../backend/docs/pain-points/external-memory.md) for limits and recovery.
+
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
