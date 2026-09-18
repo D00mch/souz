@@ -289,7 +289,7 @@ components:
         payload:
           $ref: "#/components/schemas/MessageSubmitPayload"
     HistoryAppend:
-      description: Appends role-preserving chat history without selecting or mutating a thread or triggering model execution. Stored history is supplied with the next message.submit.
+      description: Appends role-preserving chat history without selecting or mutating a thread or triggering agent execution. Stored history is supplied with the next message.submit. When Hindsight is enabled, user/assistant text also enters durable chat-scoped memory capture; tool history is excluded. ACK confirms committed history, not memory extraction. Capture runs independently of subsequent submits and socket lifetime.
       type: object
       additionalProperties: false
       required: [kind, chatId, requestId, payload]

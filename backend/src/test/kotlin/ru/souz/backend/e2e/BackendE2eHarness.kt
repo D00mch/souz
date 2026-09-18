@@ -23,6 +23,7 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import java.sql.Connection
+import java.time.Clock
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -34,6 +35,9 @@ import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import org.kodein.di.direct
 import org.kodein.di.instance
+import org.kodein.di.instanceOrNull
+import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.app.BackendAppConfig
 import ru.souz.backend.app.BackendApplicationScope
@@ -116,6 +120,8 @@ internal fun backendE2eTest(
     startBackgroundServices: Boolean = false,
     settingsSource: BackendConfigSource? = null,
     providerClients: ProviderHttpClients? = null,
+    hindsightUrl: String? = null,
+    clock: Clock = Clock.systemUTC(),
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
@@ -128,6 +134,8 @@ internal fun backendE2eTest(
         startBackgroundServices = startBackgroundServices,
         settingsSource = settingsSource,
         providerClients = providerClients,
+        hindsightUrl = hindsightUrl,
+        clock = clock,
     )
     application {
         backendApplication(backend.dependencies)
@@ -209,9 +217,10 @@ internal class BackendE2eScope(
 
     suspend fun <T> withPeerBackend(
         llm: E2eLlmApi = E2eLlmApi(),
+        providerClients: ProviderHttpClients? = null,
         block: suspend (BackendE2eScope) -> T,
     ): T {
-        val peerBackend = backend.createPeer(llm)
+        val peerBackend = backend.createPeer(llm, providerClients)
         val peerApplication = TestApplication {
             application {
                 backendApplication(peerBackend.dependencies)
@@ -240,6 +249,8 @@ internal class BackendE2eBackend(
     startBackgroundServices: Boolean,
     private val settingsSource: BackendConfigSource? = null,
     private val providerClients: ProviderHttpClients? = null,
+    private val hindsightUrl: String? = null,
+    private val clock: Clock = Clock.systemUTC(),
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
         schema = schema,
@@ -248,7 +259,7 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = false,
-    )
+    ).copy(hindsightApiUrl = hindsightUrl)
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability()
     private val localRuntime = relaxedLocalRuntime()
@@ -263,6 +274,7 @@ internal class BackendE2eBackend(
         bindSingleton<LocalProviderAvailability>(overrides = true) { localAvailability }
         bindSingleton<LocalLlamaRuntime>(overrides = true) { localRuntime }
         bindSingleton<LocalChatAPI>(overrides = true) { localChatApi }
+        bindSingleton<Clock>(overrides = true) { clock }
         if (settingsSource != null) {
             bindSingleton<SettingsProvider>(overrides = true) {
                 BackendSettingsProvider(instance(), localAvailability, settingsSource)
@@ -300,6 +312,7 @@ internal class BackendE2eBackend(
             if (featureFlags.vkBot) {
                 di.direct.instance<VkBotPollingService>().start()
             }
+            di.direct.instanceOrNull<HistoryMemoryWorker>()?.start(applicationScope)
         }
     }
 
@@ -318,7 +331,11 @@ internal class BackendE2eBackend(
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)
 
-    fun createPeer(llm: E2eLlmApi = E2eLlmApi()): BackendE2eBackend =
+    val historyMemoryRepository: PostgresHistoryMemoryRepository get() = di.direct.instance()
+
+    suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
+
+    fun createPeer(llm: E2eLlmApi = E2eLlmApi(), providerClients: ProviderHttpClients? = null): BackendE2eBackend =
         BackendE2eBackend(
             schema = schema,
             featureFlags = featureFlags,
@@ -327,6 +344,9 @@ internal class BackendE2eBackend(
             vkApi = null,
             turnRunnerOverride = null,
             startBackgroundServices = false,
+            providerClients = providerClients,
+            hindsightUrl = hindsightUrl,
+            clock = clock,
         )
 
     override fun close() {

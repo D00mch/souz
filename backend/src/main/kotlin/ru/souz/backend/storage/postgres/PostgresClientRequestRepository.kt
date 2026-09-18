@@ -2,6 +2,7 @@ package ru.souz.backend.storage.postgres
 
 import java.sql.Connection
 import java.sql.ResultSet
+import java.time.Clock
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
@@ -19,9 +20,12 @@ import ru.souz.backend.execution.model.acceptsInput
 
 class PostgresClientRequestRepository(
     private val dataSource: DataSource,
+    private val captureHistoryMemory: Boolean = false,
+    clock: Clock = Clock.systemUTC(),
 ) : ClientRequestRepository {
     private val executionWriter = PostgresAgentExecutionRepository(dataSource)
     private val messageWriter = PostgresMessageRepository(dataSource)
+    private val historyMemory = PostgresHistoryMemoryRepository(dataSource, clock)
 
     internal suspend fun get(chatId: UUID, requestId: String): ClientRequest? = dataSource.read { connection ->
         connection.findClientRequest(chatId, requestId)
@@ -105,7 +109,7 @@ class PostgresClientRequestRepository(
     ): ClientRequestResult = serialize(userId, key) {
         acceptedRequest.requireKey(key)
         require(acceptedRequest.threadId == null)
-        messageWriter.append(
+        val message = messageWriter.append(
             connection = this,
             userId = userId,
             chatId = key.chatId,
@@ -115,6 +119,9 @@ class PostgresClientRequestRepository(
             id = input.messageId,
             createdAt = input.createdAt,
         )
+        if (captureHistoryMemory && input.toolArgumentsJson == null && input.role in setOf(ChatRole.USER, ChatRole.ASSISTANT)) {
+            historyMemory.enqueue(this, message)
+        }
         insertClientRequest(this, acceptedRequest)
         ClientRequestResult.HistoryAccepted(acceptedRequest)
     }

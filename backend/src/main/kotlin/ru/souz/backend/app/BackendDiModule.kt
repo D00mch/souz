@@ -57,6 +57,8 @@ import ru.souz.backend.llm.ProviderCredentialResolver
 import ru.souz.backend.llm.StoredProviderCredentialResolver
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
+import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
+import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
@@ -167,7 +169,9 @@ fun backendDiModule(
     }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
-    bindSingleton<ClientRequestRepository> { PostgresClientRequestRepository(instance()) }
+    bindSingleton<ClientRequestRepository> {
+        PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance())
+    }
     bindSingleton<MessageRepository> { PostgresMessageRepository(instance()) }
     bindSingleton<AgentStateRepository> { PostgresAgentStateRepository(instance()) }
     bindSingleton<AgentExecutionRepository> { PostgresAgentExecutionRepository(instance()) }
@@ -267,6 +271,12 @@ fun backendDiModule(
             )
         } else {
             NoopConversationMemoryRuntime
+        }
+    }
+    if (appConfig.hindsightApiUrl != null) {
+        bindSingleton { PostgresHistoryMemoryRepository(instance(), instance()) }
+        bindSingleton {
+            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime)
         }
     }
     bindSingleton {
