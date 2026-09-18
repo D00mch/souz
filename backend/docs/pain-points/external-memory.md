@@ -6,7 +6,7 @@
 
 Hindsight uses the trusted backend user ID directly as its bank ID. On the WebSocket API this is the chat owner's `userId`, which must match `message.submit.payload.device.userId`. Bank IDs are URL-encoded as a single path segment. Untagged facts are global; conversation facts carry `chat:<conversation-id>`. Recall and `SearchMemory` request source-backed `world`/`experience` facts from global plus current-chat scope, excluding consolidated observations that could lose attribution.
 
-Completed Souz turns retain redacted user text and tool output, never assistant synthesis; explicit global memory contains only user text. `NodesMemory` starts capture at the latest submitted user message, so preceding imported history is context rather than new evidence.
+Completed Souz turns retain only redacted user text, never tool calls, arguments, results, recalled memory or assistant synthesis. Explicit remember requests retain that user text globally; ordinary turns remain chat-scoped. `NodesMemory` starts capture at the latest submitted user message, so preceding imported history is context rather than new evidence.
 
 Accepted `history.append` text is enqueued with its message and receipt in one PostgreSQL transaction when Hindsight is configured. The application worker runs independently of threads and sockets. Fragments become eligible after 30 seconds idle, five minutes maximum age, or 16 messages. Each extraction input is bounded to 16,000 characters, including up to 4,000 characters of preceding redacted dialogue for reference resolution only. Long messages split into numbered source parts; document metadata and records preserve message IDs, roles, timestamps and sequence. Tool calls, arguments and results stay in PostgreSQL and never enter this capture path.
 
@@ -18,12 +18,13 @@ Natural-language forget and delete requests are not mapped from semantic recall 
 
 ## Why it is fragile
 
-Omitting recall tags exposes one conversation's transient memory in another. Retaining assistant synthesis can promote model hallucinations into durable facts. Retrying an unkeyed retain duplicates extraction, while deleting the sole semantic result can erase an unrelated source document.
+Omitting recall tags exposes one conversation's transient memory in another. Retaining assistant synthesis can promote model hallucinations into durable facts. Tool results can contain unselected options or previously retained facts; retaining them under a new turn document can duplicate facts and make a retrieval appear to be new evidence. Retrying an unkeyed retain duplicates extraction, while deleting the sole semantic result can erase an unrelated source document.
 
 ## Safe-change guidance
 
 - Preserve owner-derived bank isolation and global-plus-current-conversation recall.
-- Keep ordinary capture grounded in user text and tool output; do not promote conversation tool evidence with an explicit global-memory marker.
+- Keep completed-turn retain content limited to user text, even when the shared agent supplies tool evidence. Do not replace excluded tool results with assistant summaries of them.
+- Clients must preserve tool provenance with `history.append` assistant `content.type=tool_call`, including memory retrieval results. Tool history stays available to the agent but is excluded from both imported-history extraction and subsequent completed-turn capture. Plain text history is eligible dialogue, so wrapping results as user/assistant text defeats that boundary.
 - Supply deterministic document identity for completed turns.
 - Commit imported-history enqueueing with the receipt, freeze payloads before retain, and complete only after synchronous success. Clear frozen payloads on completion; keep source IDs for preceding-context reconstruction. Never reuse a fragment for later appends after it has been claimed.
 - Preserve source attribution in actual extracted fact text, not only input role labels or recall wrappers. Keep source references visible in recall and `SearchMemory`.
@@ -35,6 +36,8 @@ Omitting recall tags exposes one conversation's transient memory in another. Ret
 
 Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendHistoryMemory*' --tests 'ru.souz.backend.app.BackendDiModuleTest'`, `./gradlew :sharedLogic:jvmTest --tests 'ru.souz.memory.MemoryRulesTest'`, and `./gradlew souzGateFast`.
 
-The deterministic suite covers ACK independence, disconnect, restart, leases, filtering, bounded context and subsequent Souz capture. Real extraction checks are deferred to the scenario work in [PR #774](https://github.com/D00mch/souz/pull/774), which needs imported-history ingestion before it covers this path. Required scenarios include contextual selections, unconfirmed proposals, purchase reports with and without tool history, source provenance, retry identity and owner/chat isolation. HTTP-body assertions alone do not verify extraction quality.
+The deterministic suite covers ACK independence, disconnect, restart, leases, filtering, bounded context, live `SearchMemory` and client tools, and imported tool history followed by Souz execution. For real Hindsight verification, use isolated banks: retain a user preference, recall it, then capture a turn asking about it. The completed turn must create no new preference fact and recall must preserve the original source. Repeat with unselected tool-provided travel options; no option may enter retained facts. HTTP-body assertions alone do not verify extraction quality.
+
+Broader real extraction scenarios are tracked in [PR #774](https://github.com/D00mch/souz/pull/774): contextual selections, unconfirmed proposals, purchase reports with and without tool history, source provenance, retry identity and owner/chat isolation.
 
 Worker diagnostics contain chat/fragment IDs, attempts, document counts and error categories, never message bodies.

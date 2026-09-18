@@ -22,7 +22,6 @@ import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
-import ru.souz.memory.CompletedTurnEvidenceKind
 import ru.souz.memory.CompletedTurnMemoryInput
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.memory.ExplicitMemoryIntent
@@ -118,7 +117,7 @@ class HindsightConversationMemoryRuntime(
         val bankId = input.context.ownerId.value
         try {
             val item = buildMap<String, Any> {
-                put("content", input.retainedContent(includeToolEvidence = intent == ExplicitMemoryIntent.NONE))
+                put("content", "[USER]\n${MemorySanitizer.redact(input.userMessage.trim())}")
                 put("tags", tags)
                 input.userMessageId?.let { put("document_id", "souz-turn-$it") }
             }
@@ -217,21 +216,6 @@ class HindsightConversationMemoryRuntime(
         }
     }
 }
-
-private fun CompletedTurnMemoryInput.retainedContent(includeToolEvidence: Boolean): String = buildList {
-    add("[USER]\n${MemorySanitizer.redact(userMessage.trim())}")
-    if (!includeToolEvidence) return@buildList
-    evidence.filter { it.kind == CompletedTurnEvidenceKind.TOOL_OUTPUT }.forEach { item ->
-        val source = item.sourceName
-            ?.let(MemorySanitizer::redact)
-            ?.replace('\n', ' ')
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-            ?.let { " source=$it" }
-            .orEmpty()
-        add("[${item.kind.name}$source]\n${MemorySanitizer.redact(item.text.trim())}")
-    }
-}.joinToString("\n\n")
 
 private fun MemoryContext.chatTags(): List<String> =
     listOfNotNull(conversationId?.value?.let { "chat:$it" })
