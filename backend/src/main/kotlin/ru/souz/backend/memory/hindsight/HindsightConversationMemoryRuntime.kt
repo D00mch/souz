@@ -104,8 +104,7 @@ class HindsightConversationMemoryRuntime(
     }
 
     override suspend fun captureCompletedTurn(input: CompletedTurnMemoryInput) {
-        val intent = parseExplicitMemoryIntent(input.userMessage)
-        val tags = when (intent) {
+        val tags = when (parseExplicitMemoryIntent(input.userMessage)) {
             ExplicitMemoryIntent.NONE -> input.context.chatTags()
             ExplicitMemoryIntent.REMEMBER_SIGNAL -> emptyList()
             ExplicitMemoryIntent.DO_NOT_CAPTURE_THIS_TURN,
