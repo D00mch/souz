@@ -116,7 +116,8 @@ class HindsightConversationMemoryRuntime(
         val bankId = input.context.ownerId.value
         try {
             val item = buildMap<String, Any> {
-                put("content", "[USER]\n${MemorySanitizer.redact(input.userMessage.trim())}")
+                put("content", "[USER]\n${MemorySanitizer.redact(input.userMessage.trim())}" +
+                    "\n\n[ASSISTANT]\n${MemorySanitizer.redact(input.assistantMessage.trim())}")
                 put("tags", tags)
                 input.userMessageId?.let { put("document_id", "souz-turn-$it") }
             }

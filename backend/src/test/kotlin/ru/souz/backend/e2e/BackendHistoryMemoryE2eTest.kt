@@ -51,11 +51,12 @@ class BackendHistoryMemoryE2eTest {
     @Test
     fun `client turn skips automatic recall but explicit SearchMemory and capture still work`() {
         val recalled = "The user prefers quiet sleeper trains"
+        val finalAnswer = "I found your saved travel preferences."
         hindsight.recalledText = recalled
         backendE2eTest("memory_search_capture", hindsightUrl = HINDSIGHT_TEST_URL,
             providerClients = hindsight.clients(), llm = E2eLlmApi { request ->
                 if (request.messages.any { it.role == LLMMessageRole.function && it.name == "SearchMemory" }) {
-                    reply(request, recalled)
+                    reply(request, finalAnswer)
                 } else {
                     toolCallReply(request, "SearchMemory", mapOf("semanticQuery" to "user travel preferences", "lexicalHints" to listOf("travel")))
                 }
@@ -79,14 +80,14 @@ class BackendHistoryMemoryE2eTest {
             })
             val retained = eventually("completed SearchMemory turn") { hindsight.items.singleOrNull() }
             assertEquals(owner, retained.bank)
-            assertEquals("[USER]\nWhat do you remember about my travel preferences?", retained.item["content"].asText())
+            assertEquals("[USER]\nWhat do you remember about my travel preferences?\n\n[ASSISTANT]\n$finalAnswer", retained.item["content"].asText())
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
         }
     }
 
     @Test
-    fun `non client HTTP turn retains automatic recall`() {
+    fun `non client HTTP turn uses automatic recall without retaining recalled memory`() {
         val recalled = "The user prefers quiet sleeper trains"
         hindsight.recalledText = recalled
         backendE2eTest("memory_http_recall", hindsightUrl = HINDSIGHT_TEST_URL, providerClients = hindsight.clients()) {
@@ -102,6 +103,8 @@ class BackendHistoryMemoryE2eTest {
             assertTrue(request.messages.any {
                 it.name == "souz_injected_memory" && it.content.contains(recalled)
             })
+            val retained = eventually("completed HTTP turn memory") { hindsight.items.singleOrNull() }
+            assertEquals("[USER]\nPlan a trip\n\n[ASSISTANT]\nassistant reply to Plan a trip", retained.item["content"].asText())
         }
     }
 
@@ -130,7 +133,7 @@ class BackendHistoryMemoryE2eTest {
                 it.role == LLMMessageRole.function && it.content.contains("Unselected options")
             })
             val retained = eventually("completed client-tool turn") { hindsight.items.singleOrNull() }
-            assertEquals("[USER]\nFind travel options for the weekend", retained.item["content"].asText())
+            assertEquals("[USER]\nFind travel options for the weekend\n\n[ASSISTANT]\nclient tool completed", retained.item["content"].asText())
         }
     }
 
@@ -216,7 +219,8 @@ class BackendHistoryMemoryE2eTest {
                 readJson(socket)
             }
             eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["strategy"] == null } }
-            assertEquals("[USER]\nA new Souz request", hindsight.items.last().item["content"].asText())
+            assertEquals("[USER]\nA new Souz request\n\n[ASSISTANT]\nassistant reply to A new Souz request",
+                hindsight.items.last().item["content"].asText())
             assertTrue(llm.requests.last().messages.any {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
             })
