@@ -9,8 +9,10 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.websocket.Frame
 import java.io.IOException
@@ -47,7 +49,7 @@ class BackendHistoryMemoryE2eTest {
     private val clock = HistoryTestClock()
 
     @Test
-    fun `completed turn does not retain recalled memory or SearchMemory results`() {
+    fun `client turn skips automatic recall but explicit SearchMemory and capture still work`() {
         val recalled = "The user prefers quiet sleeper trains"
         hindsight.recalledText = recalled
         backendE2eTest("memory_search_capture", hindsightUrl = HINDSIGHT_TEST_URL,
@@ -67,7 +69,11 @@ class BackendHistoryMemoryE2eTest {
                 assertEquals("thread.completed", readJson(socket)["type"].asText())
             }
             val messages = llm.requests.last().messages
-            assertTrue(messages.any { it.role == LLMMessageRole.user && it.content.contains(recalled) })
+            assertFalse(messages.any { it.role == LLMMessageRole.user && it.content.contains(recalled) })
+            assertEquals(listOf("user travel preferences travel"), hindsight.recalls)
+            assertTrue(messages.any {
+                it.role == LLMMessageRole.system && it.content.contains("exact-ID memory deletion is unavailable")
+            })
             assertTrue(messages.any {
                 it.role == LLMMessageRole.function && it.name == "SearchMemory" && it.content.contains(recalled)
             })
@@ -76,6 +82,26 @@ class BackendHistoryMemoryE2eTest {
             assertEquals("[USER]\nWhat do you remember about my travel preferences?", retained.item["content"].asText())
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
+        }
+    }
+
+    @Test
+    fun `non client HTTP turn retains automatic recall`() {
+        val recalled = "The user prefers quiet sleeper trains"
+        hindsight.recalledText = recalled
+        backendE2eTest("memory_http_recall", hindsightUrl = HINDSIGHT_TEST_URL, providerClients = hindsight.clients()) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            val response = client.post(BackendHttpRoutes.chatMessages(chat)) {
+                trusted(owner)
+                jsonBody("""{"content":"Plan a trip","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+            }
+            assertEquals(HttpStatusCode.OK, response.status)
+            val request = eventually("completed HTTP turn") { llm.requests.singleOrNull() }
+            assertEquals(listOf("Plan a trip"), hindsight.recalls)
+            assertTrue(request.messages.any {
+                it.name == "souz_injected_memory" && it.content.contains(recalled)
+            })
         }
     }
 
@@ -195,6 +221,7 @@ class BackendHistoryMemoryE2eTest {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
             })
             assertEquals(2, hindsight.historyItems.size)
+            assertTrue(hindsight.recalls.isEmpty())
         }
     }
 
@@ -358,6 +385,7 @@ private class HistoryTestClock : Clock() {
 private class HistoryHindsightStub {
     data class Item(val bank: String, val item: JsonNode)
     val items = CopyOnWriteArrayList<Item>()
+    val recalls = CopyOnWriteArrayList<String>()
     val historyItems get() = items.filter { it.item["strategy"] != null }
     val configs = ConcurrentHashMap<String, JsonNode>()
     var applyStrategy = true
@@ -377,9 +405,12 @@ private class HistoryHindsightStub {
                     if (request.method == HttpMethod.Patch && applyStrategy) configs[bank] = mapper.readTree(request.body.toByteArray())["updates"]
                     mapper.createObjectNode().set<JsonNode>("config", configs[bank]).toString()
                 }
-                path.endsWith("/recall") -> mapper.writeValueAsString(mapOf(
-                    "results" to listOfNotNull(recalledText?.let { mapOf("id" to "stored-fact", "text" to it) }),
-                ))
+                path.endsWith("/recall") -> {
+                    recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
+                    mapper.writeValueAsString(mapOf(
+                        "results" to listOfNotNull(recalledText?.let { mapOf("id" to "stored-fact", "text" to it) }),
+                    ))
+                }
                 else -> {
                     val item = mapper.readTree(request.body.toByteArray())["items"].single()
                     items += Item(bank, item)

@@ -204,6 +204,7 @@ internal class BackendConversationRuntimeFactory(
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
             memoryRuntime = memoryRuntime,
+            automaticMemoryRecall = !request.clientToolsEnabled,
             captureScope = agentBackgroundScope + backendLogContext(
                 "userId" to key.userId,
                 "chatId" to key.conversationId,

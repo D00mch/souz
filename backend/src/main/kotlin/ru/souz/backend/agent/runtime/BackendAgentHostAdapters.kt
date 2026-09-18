@@ -8,6 +8,7 @@ import ru.souz.agent.spi.AgentErrorMessages
 import ru.souz.agent.spi.AgentRuntimeEnvironment
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LLMToolSetup
@@ -53,7 +54,11 @@ class BackendConversationSettingsProvider(
         this.contextSize = request.contextSize
         this.temperature = request.temperature ?: temperature
         this.regionProfile = localeToRegionProfile(request.locale)
-        this.overrideSystemPrompt = request.systemPrompt
+        this.overrideSystemPrompt = if (request.clientToolsEnabled) {
+            "${request.systemPrompt ?: defaultSystemPrompt}\n\n$UNSUPPORTED_MEMORY_MUTATION_NOTICE"
+        } else {
+            request.systemPrompt
+        }
         this.useStreaming = request.streamingMessages == true
         this.useFewShotExamples = request.useFewShotExamples ?: this.useFewShotExamples
         this.requestTimeoutMillis = request.requestTimeoutMillis ?: this.requestTimeoutMillis

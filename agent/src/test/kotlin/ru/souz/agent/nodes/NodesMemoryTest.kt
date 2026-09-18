@@ -79,25 +79,10 @@ class NodesMemoryTest {
         assertEquals("backend-chat", request.context.conversationId?.value)
         assertEquals("backend-chat", request.context.sessionId?.value)
         assertEquals("hello", request.query)
-        assertTrue(result.history[result.history.lastIndex - 1].isInjectedMemoryContextMessage())
-        assertTrue(result.history[result.history.lastIndex - 1].content.contains("User prefers Kotlin"))
-    }
-
-    @Test
-    fun `recall uses a provider-safe provenance name`() = runTest {
-        val memoryRuntime = RecordingMemoryRuntime(
-            retrievalResult = memoryResult("Relevant memory:\n- A fact"),
-        )
-
-        val result = NodesMemory(memoryRuntime, backgroundScope)
-            .recall()
-            .execute(stringContext("hello"), graphRuntime())
-
-        val name = assertNotNull(
-            result.history.single(LLMRequest.Message::isInjectedMemoryContextMessage).name,
-        )
-        assertEquals("souz_injected_memory", name)
-        assertTrue(name.matches(Regex("[A-Za-z0-9_-]+")))
+        val memory = result.history.single(LLMRequest.Message::isInjectedMemoryContextMessage)
+        assertEquals(result.history.lastIndex - 1, result.history.indexOf(memory))
+        assertEquals("souz_injected_memory", memory.name)
+        assertTrue(memory.content.contains("User prefers Kotlin"))
     }
 
     @Test
@@ -141,22 +126,21 @@ class NodesMemoryTest {
     }
 
     @Test
-    fun `empty or failed recall removes stale memory without failing the turn`() = runTest {
-        val emptyRuntime = RecordingMemoryRuntime(retrievalResult = MemoryRetrievalResult(null))
-        val failedRuntime = RecordingMemoryRuntime(retrievalFailure = IllegalStateException("offline"))
-        val context = stringContext("hello").copy(
-            history = listOf(
-                "system".toSystemPromptMessage(),
-                memoryMessage("stale"),
-                LLMRequest.Message(LLMMessageRole.user, "hello"),
-            ),
-        )
+    fun `disabled empty or failed recall removes stale memory and preserves client history`() = runTest {
+        val clientMemory = LLMRequest.Message(LLMMessageRole.function, "Client recalled fact", name = "RunSkillCommand")
+        val history = listOf("system".toSystemPromptMessage(), clientMemory, LLMRequest.Message(LLMMessageRole.user, "hello"))
+        val context = stringContext("hello").copy(history = listOf(memoryMessage("stale")) + history)
+        listOf(
+            false to RecordingMemoryRuntime(retrievalResult = memoryResult("Unwanted recall")),
+            true to RecordingMemoryRuntime(),
+            true to RecordingMemoryRuntime(retrievalFailure = IllegalStateException("offline")),
+        ).forEach { (automaticRecall, memoryRuntime) ->
+            val result = NodesMemory(memoryRuntime, backgroundScope, automaticMemoryRecall = automaticRecall)
+                .recall().execute(context, graphRuntime())
 
-        val emptyResult = NodesMemory(emptyRuntime, backgroundScope).recall().execute(context, graphRuntime())
-        val failedResult = NodesMemory(failedRuntime, backgroundScope).recall().execute(context, graphRuntime())
-
-        assertFalse(emptyResult.history.any(LLMRequest.Message::isInjectedMemoryContextMessage))
-        assertFalse(failedResult.history.any(LLMRequest.Message::isInjectedMemoryContextMessage))
+            assertEquals(automaticRecall, memoryRuntime.retrievalRequest != null)
+            assertEquals(history, result.history)
+        }
     }
 
     @Test

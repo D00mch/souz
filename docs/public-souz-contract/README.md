@@ -26,7 +26,7 @@ History, tool results and cancellation neither require nor initiate subscription
 
 Assistant tool history uses `content: {"type":"tool_call","name":"weather","arguments":{},"result":{"temperature_c":25.1}}`. Both `arguments` and `result` are required JSON objects; history content has no `toolCallId` or `target`. Send memory retrieval results through this same shape, preserving the tool name, arguments and result. Do not copy tool results into text history: text is eligible for memory extraction.
 
-With Hindsight enabled, accepted text history also enters background memory capture. See [external memory](../../backend/docs/pain-points/external-memory.md) for retention, acknowledgement timing, attribution, privacy and recovery rules.
+Souz uses client-supplied memory history without automatically querying memory before the LLM. The agent can still invoke `SearchMemory` explicitly. With Hindsight enabled, accepted text history also enters background memory capture. See [external memory](../../backend/docs/pain-points/external-memory.md) for retention, acknowledgement timing, attribution, privacy and recovery rules.
 
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
