@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.api.io.TempDir
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_LIMIT_BYTES
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_TRUNCATION_PREFIX
@@ -19,7 +20,6 @@ import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.tool.BadInputException
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
-import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -28,15 +28,8 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
 class LocalSandboxCommandExecutorTest {
-    private val createdPaths = mutableListOf<Path>()
-
-    @AfterTest
-    fun cleanup() {
-        createdPaths.asReversed().forEach { path ->
-            runCatching { path.toFile().deleteRecursively() }
-        }
-        createdPaths.clear()
-    }
+    @TempDir
+    lateinit var tempRoot: Path
 
     @Test
     fun `executes command inside resolved sandbox working directory`() = runTest {
@@ -183,5 +176,5 @@ class LocalSandboxCommandExecutorTest {
     )
 
     private fun createTempDirectory(prefix: String): Path =
-        Files.createTempDirectory(prefix).also(createdPaths::add)
+        Files.createTempDirectory(tempRoot, prefix)
 }
