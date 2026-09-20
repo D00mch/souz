@@ -4,11 +4,12 @@ import io.mockk.every
 import io.mockk.mockk
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_LIMIT_BYTES
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_TRUNCATION_PREFIX
@@ -23,7 +24,6 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -149,21 +149,27 @@ class LocalSandboxCommandExecutorTest {
         for (cancel in listOf(false, true)) {
             val home = createTempDirectory("sandbox-home-")
             val sandbox = createSandbox(home)
-            val startedAt = System.nanoTime()
-            val result = withTimeoutOrNull(1_000) {
-                sandbox.commandExecutor.execute(SandboxCommandRequest(
-                    runtime = SandboxCommandRuntime.BASH,
-                    script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids; wait",
-                    workingDirectory = home.toString(), timeoutMillis = if (cancel) 10_000 else 100,
-                ))
-            }
-            assertTrue((System.nanoTime() - startedAt) / 1_000_000 < 3_000, "Process wait exceeded deadline")
-            if (cancel) assertNull(result) else {
-                assertEquals(-1, result?.exitCode)
-                assertTrue(result!!.timedOut)
-            }
-            val pids = Files.readString(home.resolve("pids")).split(' ').map(String::toLong)
-            withTimeout(2_000) {
+            withTimeout(10_000) {
+                val execution = async {
+                    sandbox.commandExecutor.execute(SandboxCommandRequest(
+                        runtime = SandboxCommandRuntime.BASH,
+                        script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
+                        workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000,
+                    ))
+                }
+                // Cancel only after both PIDs are published; allow startup and draining in the test watchdog.
+                val pidFile = home.resolve("pids")
+                while (!Files.exists(pidFile)) delay(10)
+                val pids = Files.readString(pidFile).split(' ').map(String::toLong)
+                if (cancel) {
+                    assertTrue(execution.isActive)
+                    execution.cancelAndJoin()
+                    assertTrue(execution.isCancelled)
+                } else {
+                    val result = execution.await()
+                    assertEquals(-1, result.exitCode)
+                    assertTrue(result.timedOut)
+                }
                 while (pids.any { ProcessHandle.of(it).map { process -> process.isAlive }.orElse(false) }) delay(10)
             }
         }

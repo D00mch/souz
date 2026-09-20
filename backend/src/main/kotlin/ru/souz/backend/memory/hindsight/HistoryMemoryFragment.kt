@@ -7,8 +7,8 @@ import ru.souz.memory.MemorySanitizer
 import ru.souz.memory.parseExplicitMemoryIntent
 
 internal const val HISTORY_MEMORY_MAX_CHARS = 16_000
-internal const val HISTORY_MEMORY_STRATEGY = "souz-history-v1"
 private const val CONTEXT_CHARS = 4_000
+private const val DIALOGUE_PART_CHARS = 1_500
 private val historyMapper = jacksonObjectMapper()
 private val reasoningBlocks = Regex("<(think|analysis|reasoning)>.*?(?:</\\1>|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 
@@ -69,23 +69,32 @@ internal fun historyMemoryDocuments(
 
 private data class HistoryMemoryRecord(val id: String, val timestamp: String, val json: String)
 
-private fun HistoryMemorySource.records(contextOnly: Boolean = false): List<HistoryMemoryRecord> = buildList {
+private fun HistoryMemorySource.records(contextOnly: Boolean = false): List<HistoryMemoryRecord> {
     when (parseExplicitMemoryIntent(userIntent.orEmpty())) {
         ExplicitMemoryIntent.NONE, ExplicitMemoryIntent.REMEMBER_SIGNAL -> Unit
-        else -> return@buildList
+        else -> return emptyList()
     }
-    val clean = MemorySanitizer.redact(reasoningBlocks.replace(text, "")).trim()
-    var offset = if (contextOnly) (clean.length - 1_500).coerceAtLeast(0) else 0
-    if (contextOnly && offset < clean.length && clean[offset].isLowSurrogate()) offset++
-    while (offset < clean.length) {
+    return dialogueMemoryRecords(cleanDialogueText(text), linkedMapOf(
+        "role" to role, "source" to id, "seq" to seq, "timestamp" to timestamp,
+    ), contextOnly).map { HistoryMemoryRecord(id, timestamp, "$it\n") }
+}
+
+internal fun cleanDialogueText(text: String): String =
+    MemorySanitizer.redact(reasoningBlocks.replace(text, "")).trim()
+
+/** Each serialized record fits below Hindsight's structured chunk limit, including JSON escaping. */
+internal fun dialogueMemoryRecords(
+    text: String,
+    fields: Map<String, Any>,
+    contextOnly: Boolean = false,
+): List<String> = buildList {
+    var offset = if (contextOnly) (text.length - DIALOGUE_PART_CHARS).coerceAtLeast(0) else 0
+    if (contextOnly && offset < text.length && text[offset].isLowSurrogate()) offset++
+    while (offset < text.length) {
         // Even fully JSON-escaped control characters fit with the context and source header.
-        var end = minOf(offset + 1_500, clean.length)
-        if (end < clean.length && clean[end - 1].isHighSurrogate()) end--
-        val json = historyMapper.writeValueAsString(linkedMapOf(
-            "role" to role, "source" to id, "seq" to seq, "timestamp" to timestamp,
-            "offset" to offset, "text" to clean.substring(offset, end),
-        ))
-        add(HistoryMemoryRecord(id, timestamp, "$json\n"))
+        var end = minOf(offset + DIALOGUE_PART_CHARS, text.length)
+        if (end < text.length && text[end - 1].isHighSurrogate()) end--
+        add(historyMapper.writeValueAsString(fields + mapOf("offset" to offset, "text" to text.substring(offset, end))))
         offset = end
     }
 }
