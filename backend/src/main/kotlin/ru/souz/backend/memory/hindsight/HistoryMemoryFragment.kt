@@ -7,7 +7,6 @@ import ru.souz.memory.MemorySanitizer
 import ru.souz.memory.parseExplicitMemoryIntent
 
 internal const val HISTORY_MEMORY_MAX_CHARS = 16_000
-internal const val HISTORY_MEMORY_STRATEGY = "souz-history-v1"
 private const val CONTEXT_CHARS = 4_000
 private val historyMapper = jacksonObjectMapper()
 private val reasoningBlocks = Regex("<(think|analysis|reasoning)>.*?(?:</\\1>|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))

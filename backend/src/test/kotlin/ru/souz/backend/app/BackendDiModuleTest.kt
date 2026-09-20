@@ -14,6 +14,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
@@ -34,6 +35,7 @@ import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendHttpDependencies
+import ru.souz.backend.memory.hindsight.DIALOGUE_MEMORY_STRATEGY
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.llms.http.ProviderHttpClients
@@ -81,13 +83,21 @@ class BackendDiModuleTest {
     fun `hindsight uses user ID banks for recall search and capture without a token`() = runTest {
         val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/").validate()
         val userId = "76c4ddee-bfb3-4e8a-89cb-d81f6771493b"
+        val mapper = jacksonObjectMapper()
+        var applyStrategy = true
         val engine = MockEngine { request ->
             assertNull(request.headers[HttpHeaders.Authorization])
             respond(
-                if (request.url.encodedPath.endsWith("/recall")) {
-                    """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
-                } else {
-                    """{"success":true}"""
+                when {
+                    request.url.encodedPath.endsWith("/recall") ->
+                        """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
+                    request.url.encodedPath.endsWith("/config") -> {
+                        val applied = if (request.method == HttpMethod.Patch && applyStrategy) {
+                            mapper.readTree(request.body.toByteArray())["updates"]
+                        } else mapper.createObjectNode()
+                        mapper.writeValueAsString(mapOf("config" to applied))
+                    }
+                    else -> """{"success":true}"""
                 },
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
@@ -100,27 +110,34 @@ class BackendDiModuleTest {
             val recalled = memory.retrieveMemory(MemoryRetrievalRequest(context, "tea"))
             assertEquals("fact-1", recalled.facts.single().factId)
             assertEquals("fact-1", memory.searchMemory(context, "tea", emptyList(), 1).single().factId)
-            memory.captureCompletedTurn(
-                CompletedTurnMemoryInput(
-                    context, "chat-1", "message-1", "reply-1",
-                    userMessage = "  Remember that I like tea. token=user-secret-12345  ",
-                    assistantMessage = "  Noted. token=assistant-secret-67890  ",
-                    evidence = listOf(
-                        CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "SearchMemory", assertNotNull(recalled.renderedPromptBlock)),
-                        CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "web.search", "Unselected tool options"),
-                        CompletedTurnEvidence(CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS, text = "Intermediate assistant synthesis"),
-                    ),
+            val turn = CompletedTurnMemoryInput(
+                context, "chat-1", "message-1", "reply-1",
+                userMessage = "  Remember that I like tea. token=user-secret-12345  ",
+                assistantMessage = "  Noted. token=assistant-secret-67890  ",
+                evidence = listOf(
+                    CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "SearchMemory", assertNotNull(recalled.renderedPromptBlock)),
+                    CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "web.search", "Unselected tool options"),
+                    CompletedTurnEvidence(CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS, text = "Intermediate assistant synthesis"),
                 ),
             )
+            memory.captureCompletedTurn(turn)
             val bankUrl = "http://hindsight.test/v1/default/banks/$userId/memories"
-            assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", bankUrl), engine.requestHistory.map { it.url.toString() })
-            val item = jacksonObjectMapper().readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
+            val configUrl = "http://hindsight.test/v1/default/banks/$userId/config"
+            assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", configUrl, configUrl, bankUrl),
+                engine.requestHistory.map { it.url.toString() })
+            val item = mapper.readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
             assertEquals(
                 "[USER]\nRemember that I like tea. token=[redacted-secret]\n\n[ASSISTANT]\nNoted. token=[redacted-secret]",
                 item["content"].asText(),
             )
             assertTrue(item["tags"].isEmpty)
             assertEquals("souz-turn-message-1", item["document_id"].asText())
+            assertEquals(DIALOGUE_MEMORY_STRATEGY, item["strategy"].asText())
+
+            applyStrategy = false
+            memory.captureCompletedTurn(turn.copy(userMessageId = "message-2"))
+            assertEquals(configUrl, engine.requestHistory.last().url.toString())
+            assertEquals(1, engine.requestHistory.count { it.url.toString() == bankUrl })
         }
     }
 

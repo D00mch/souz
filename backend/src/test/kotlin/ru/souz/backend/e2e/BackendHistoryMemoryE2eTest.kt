@@ -36,6 +36,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.memory.hindsight.DIALOGUE_MEMORY_STRATEGY
 import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_CHARS
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
@@ -218,13 +219,16 @@ class BackendHistoryMemoryE2eTest {
                 readJson(socket)
                 readJson(socket)
             }
-            eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["strategy"] == null } }
+            eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["document_id"].asText().startsWith("souz-turn-") } }
             assertEquals("[USER]\nA new Souz request\n\n[ASSISTANT]\nassistant reply to A new Souz request",
                 hindsight.items.last().item["content"].asText())
             assertTrue(llm.requests.last().messages.any {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
             })
             assertEquals(2, hindsight.historyItems.size)
+            assertEquals(setOf(DIALOGUE_MEMORY_STRATEGY), hindsight.items.map { it.item["strategy"].asText() }.toSet())
+            assertEquals(1, hindsight.configPatches.size)
+            assertEquals("unrelated", hindsight.configs.values.single()["retain_default_strategy"].asText())
             assertTrue(hindsight.recalls.isEmpty())
         }
     }
@@ -390,8 +394,9 @@ private class HistoryHindsightStub {
     data class Item(val bank: String, val item: JsonNode)
     val items = CopyOnWriteArrayList<Item>()
     val recalls = CopyOnWriteArrayList<String>()
-    val historyItems get() = items.filter { it.item["strategy"] != null }
+    val historyItems get() = items.filter { it.item.path("metadata").path("source").asText() == "souz-history" }
     val configs = ConcurrentHashMap<String, JsonNode>()
+    val configPatches = CopyOnWriteArrayList<JsonNode>()
     var applyStrategy = true
     var failAfterRetain = false
     var recalledText: String? = null
@@ -405,8 +410,19 @@ private class HistoryHindsightStub {
             val bank = path.substringAfter("/banks/").substringBefore('/')
             val body = when {
                 path.endsWith("/config") -> {
-                    configs.putIfAbsent(bank, mapper.readTree("""{"retain_strategies":{"unrelated":{"retain_extraction_mode":"verbose"}}}"""))
-                    if (request.method == HttpMethod.Patch && applyStrategy) configs[bank] = mapper.readTree(request.body.toByteArray())["updates"]
+                    configs.putIfAbsent(bank, mapper.readTree("""{"retain_default_strategy":"unrelated","retain_strategies":{"unrelated":{"retain_extraction_mode":"verbose"}}}"""))
+                    if (request.method == HttpMethod.Patch) {
+                        val updates = mapper.readTree(request.body.toByteArray())["updates"]
+                        configPatches.add(updates)
+                        assertEquals(listOf("retain_strategies"), updates.fieldNames().asSequence().toList())
+                        val strategy = updates["retain_strategies"][DIALOGUE_MEMORY_STRATEGY]
+                        assertEquals("custom", strategy["retain_extraction_mode"].asText())
+                        val instructions = strategy["retain_custom_instructions"].asText()
+                        listOf("[USER]", "[ASSISTANT]", "NEW records only", "CONTEXT ONLY", "User stated",
+                            "Assistant proposed", "Assistant reported", "execution is unverified", "recalled facts",
+                            "never invent missing IDs").forEach { assertTrue(instructions.contains(it), it) }
+                        if (applyStrategy) (configs.getValue(bank) as ObjectNode).setAll<JsonNode>(updates as ObjectNode)
+                    }
                     mapper.createObjectNode().set<JsonNode>("config", configs[bank]).toString()
                 }
                 path.endsWith("/recall") -> {
@@ -417,6 +433,8 @@ private class HistoryHindsightStub {
                 }
                 else -> {
                     val item = mapper.readTree(request.body.toByteArray())["items"].single()
+                    assertEquals(DIALOGUE_MEMORY_STRATEGY, item["strategy"]?.asText())
+                    assertNotNull(configs.getValue(bank)["retain_strategies"][DIALOGUE_MEMORY_STRATEGY])
                     items += Item(bank, item)
                     started.complete(Unit)
                     gate?.await()
