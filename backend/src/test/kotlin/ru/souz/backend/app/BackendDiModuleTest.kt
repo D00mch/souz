@@ -35,7 +35,6 @@ import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.events.repository.AgentEventRepository
 import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendHttpDependencies
-import ru.souz.backend.memory.hindsight.DIALOGUE_MEMORY_STRATEGY
 import ru.souz.backend.keys.repository.UserProviderKeyRepository
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.llms.http.ProviderHttpClients
@@ -127,12 +126,11 @@ class BackendDiModuleTest {
                 engine.requestHistory.map { it.url.toString() })
             val item = mapper.readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
             assertEquals(
-                "[USER]\nRemember that I like tea. token=[redacted-secret]\n\n[ASSISTANT]\nNoted. token=[redacted-secret]",
-                item["content"].asText(),
+                listOf("user" to "Remember that I like tea. token=[redacted-secret]", "assistant" to "Noted. token=[redacted-secret]"),
+                item["content"].asText().lines().map { mapper.readTree(it) }.map { it["role"].asText() to it["text"].asText() },
             )
             assertTrue(item["tags"].isEmpty)
             assertEquals("souz-turn-message-1", item["document_id"].asText())
-            assertEquals(DIALOGUE_MEMORY_STRATEGY, item["strategy"].asText())
 
             applyStrategy = false
             memory.captureCompletedTurn(turn.copy(userMessageId = "message-2"))

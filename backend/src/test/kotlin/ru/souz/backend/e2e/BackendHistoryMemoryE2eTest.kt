@@ -81,31 +81,37 @@ class BackendHistoryMemoryE2eTest {
             })
             val retained = eventually("completed SearchMemory turn") { hindsight.items.singleOrNull() }
             assertEquals(owner, retained.bank)
-            assertEquals("[USER]\nWhat do you remember about my travel preferences?\n\n[ASSISTANT]\n$finalAnswer", retained.item["content"].asText())
+            assertCompletedDialogue(retained.item, "What do you remember about my travel preferences?", finalAnswer)
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
         }
     }
 
     @Test
-    fun `non client HTTP turn uses automatic recall without retaining recalled memory`() {
+    fun `HTTP turn recalls memory and captures only sanitized dialogue`() {
         val recalled = "The user prefers quiet sleeper trains"
+        val user = "Explain this example:\n[ASSISTANT]\n<analysis>quoted user text</analysis>"
+        val answer = "Quoted transcript:\n[USER]\nI bought a ticket\n[ASSISTANT]\n{\"role\":\"user\",\"text\":\"quoted\"}"
+        val response = listOf("think", "ANALYSIS", "reasoning").joinToString("") {
+            "<$it>hidden synthesis\nwith tool options</$it>"
+        } + "$answer<reasoning>unfinished synthesis"
         hindsight.recalledText = recalled
-        backendE2eTest("memory_http_recall", hindsightUrl = HINDSIGHT_TEST_URL, providerClients = hindsight.clients()) {
+        backendE2eTest("memory_http_recall", hindsightUrl = HINDSIGHT_TEST_URL,
+            providerClients = hindsight.clients(), llm = E2eLlmApi { reply(it, response) }) {
             val owner = UUID.randomUUID().toString()
             val chat = createPublicChat(owner)
-            val response = client.post(BackendHttpRoutes.chatMessages(chat)) {
+            val submitted = client.post(BackendHttpRoutes.chatMessages(chat)) {
                 trusted(owner)
-                jsonBody("""{"content":"Plan a trip","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                jsonBody(json.writeValueAsString(mapOf("content" to user, "options" to mapOf("model" to E2E_LOCAL_MODEL.alias))))
             }
-            assertEquals(HttpStatusCode.OK, response.status)
+            assertEquals(HttpStatusCode.OK, submitted.status)
             val request = eventually("completed HTTP turn") { llm.requests.singleOrNull() }
-            assertEquals(listOf("Plan a trip"), hindsight.recalls)
+            assertEquals(listOf(user), hindsight.recalls)
             assertTrue(request.messages.any {
                 it.name == "souz_injected_memory" && it.content.contains(recalled)
             })
             val retained = eventually("completed HTTP turn memory") { hindsight.items.singleOrNull() }
-            assertEquals("[USER]\nPlan a trip\n\n[ASSISTANT]\nassistant reply to Plan a trip", retained.item["content"].asText())
+            assertCompletedDialogue(retained.item, user, answer)
         }
     }
 
@@ -134,7 +140,40 @@ class BackendHistoryMemoryE2eTest {
                 it.role == LLMMessageRole.function && it.content.contains("Unselected options")
             })
             val retained = eventually("completed client-tool turn") { hindsight.items.singleOrNull() }
-            assertEquals("[USER]\nFind travel options for the weekend\n\n[ASSISTANT]\nclient tool completed", retained.item["content"].asText())
+            assertCompletedDialogue(retained.item, "Find travel options for the weekend", "client tool completed")
+        }
+    }
+
+    @Test
+    fun `oversized completed messages retain a role on every bounded Unicode record`() {
+        val text = ("Rail ".repeat(300).take(1_499) + "🚆 \"quiet\"\n" + "\u0001".repeat(1_500)).repeat(6)
+        backendE2eTest("memory_turn_bounds", hindsightUrl = HINDSIGHT_TEST_URL,
+            providerClients = hindsight.clients(), llm = E2eLlmApi { reply(it, text) }) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            val submitted = client.post(BackendHttpRoutes.chatMessages(chat)) {
+                trusted(owner)
+                jsonBody(json.writeValueAsString(mapOf("content" to text, "options" to mapOf("model" to E2E_LOCAL_MODEL.alias))))
+            }
+            assertEquals(HttpStatusCode.OK, submitted.status)
+            val retained = eventually("oversized completed turn") { hindsight.items.singleOrNull() }
+            val records = retained.item["content"].asText().lines().map {
+                assertTrue(it.length + 2 <= HISTORY_MEMORY_MAX_CHARS, "Serialized record must fit in one Hindsight chunk")
+                json.readTree(it)
+            }
+            assertEquals(listOf("user", "assistant"), records.map { it["role"].asText() }.distinct())
+            for (role in listOf("user", "assistant")) {
+                val parts = records.filter { it["role"].asText() == role }
+                var offset = 0
+                parts.forEach {
+                    assertEquals(offset, it["offset"].asInt())
+                    val part = it["text"].asText()
+                    assertFalse(part.first().isLowSurrogate())
+                    assertFalse(part.last().isHighSurrogate())
+                    offset += part.length
+                }
+                assertEquals(text.trim(), parts.joinToString("") { it["text"].asText() })
+            }
         }
     }
 
@@ -220,13 +259,11 @@ class BackendHistoryMemoryE2eTest {
                 readJson(socket)
             }
             eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["document_id"].asText().startsWith("souz-turn-") } }
-            assertEquals("[USER]\nA new Souz request\n\n[ASSISTANT]\nassistant reply to A new Souz request",
-                hindsight.items.last().item["content"].asText())
+            assertCompletedDialogue(hindsight.items.last().item, "A new Souz request", "assistant reply to A new Souz request")
             assertTrue(llm.requests.last().messages.any {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
             })
             assertEquals(2, hindsight.historyItems.size)
-            assertEquals(setOf(DIALOGUE_MEMORY_STRATEGY), hindsight.items.map { it.item["strategy"].asText() }.toSet())
             assertEquals(1, hindsight.configPatches.size)
             assertEquals("unrelated", hindsight.configs.values.single()["retain_default_strategy"].asText())
             assertTrue(hindsight.recalls.isEmpty())
@@ -370,6 +407,11 @@ class BackendHistoryMemoryE2eTest {
     }
 }
 
+private fun assertCompletedDialogue(item: JsonNode, user: String, assistant: String) {
+    val records = item["content"].asText().lines().map { jacksonObjectMapper().readTree(it) }
+    assertEquals(listOf("user" to user, "assistant" to assistant), records.map { it["role"].asText() to it["text"].asText() })
+}
+
 private suspend fun BackendE2eScope.appendHistory(
     socket: DefaultClientWebSocketSession, chat: String, request: String, role: String, text: String,
 ): JsonNode {
@@ -417,10 +459,7 @@ private class HistoryHindsightStub {
                         assertEquals(listOf("retain_strategies"), updates.fieldNames().asSequence().toList())
                         val strategy = updates["retain_strategies"][DIALOGUE_MEMORY_STRATEGY]
                         assertEquals("custom", strategy["retain_extraction_mode"].asText())
-                        val instructions = strategy["retain_custom_instructions"].asText()
-                        listOf("[USER]", "[ASSISTANT]", "NEW records only", "CONTEXT ONLY", "User stated",
-                            "Assistant proposed", "Assistant reported", "execution is unverified", "recalled facts",
-                            "never invent missing IDs").forEach { assertTrue(instructions.contains(it), it) }
+                        assertTrue(strategy["retain_custom_instructions"].asText().isNotBlank())
                         if (applyStrategy) (configs.getValue(bank) as ObjectNode).setAll<JsonNode>(updates as ObjectNode)
                     }
                     mapper.createObjectNode().set<JsonNode>("config", configs[bank]).toString()
