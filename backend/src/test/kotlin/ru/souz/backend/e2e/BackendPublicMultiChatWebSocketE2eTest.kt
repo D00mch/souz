@@ -159,21 +159,33 @@ class BackendPublicMultiChatWebSocketE2eTest {
         }
 
     @Test
-    fun `concurrent creation on separate backend instances returns one durable chat`() =
+    fun `concurrent creation on one or two backends distinguishes duplicates and conflicts`() =
         backendE2eTest("e2e_multi_create_race") {
             val primary = this
-            val userId = UUID.randomUUID().toString()
             withPeerBackend { peer ->
-                withMultiChatSocket { first ->
-                    peer.withMultiChatSocket { second ->
-                        val replies = coroutineScope {
-                            val a = async { primary.request(first, createFrame(userId)) }
-                            val b = async { peer.request(second, createFrame(userId)) }
-                            listOf(a.await(), b.await())
+                for (other in listOf(primary, peer)) {
+                    withMultiChatSocket { first ->
+                        other.withMultiChatSocket { second ->
+                            for (title in listOf(null, "Different")) {
+                                val userId = UUID.randomUUID().toString()
+                                val replies = coroutineScope {
+                                    val a = async { primary.request(first, createFrame(userId), status = null) }
+                                    val b = async { other.request(second, createFrame(userId, title = title), status = null) }
+                                    listOf(a.await(), b.await())
+                                }
+                                if (title == null) {
+                                    assertEquals(setOf("accepted"), replies.map { it["status"].asText() }.toSet())
+                                    assertEquals(setOf(false, true), replies.map { it["duplicate"].asBoolean() }.toSet())
+                                    assertEquals(replies[0].deepCopy<ObjectNode>().put("duplicate", true),
+                                        replies[1].deepCopy<ObjectNode>().put("duplicate", true))
+                                } else {
+                                    val accepted = replies.single { it["status"].asText() == "accepted" }
+                                    val rejected = replies.single { it["status"].asText() == "rejected" }
+                                    assertFalse(accepted["duplicate"].asBoolean())
+                                    assertEquals("idempotency_conflict", rejected["error"]["code"].asText())
+                                }
+                            }
                         }
-                        assertEquals(setOf(false, true), replies.map { it["duplicate"].asBoolean() }.toSet())
-                        assertEquals(replies[0].deepCopy<ObjectNode>().put("duplicate", true),
-                            replies[1].deepCopy<ObjectNode>().put("duplicate", true))
                     }
                 }
             }
@@ -443,12 +455,12 @@ class BackendPublicMultiChatWebSocketE2eTest {
     }
 
     private suspend fun BackendE2eScope.request(
-        socket: DefaultClientWebSocketSession, raw: String, status: String = "accepted", duplicate: Boolean? = null,
+        socket: DefaultClientWebSocketSession, raw: String, status: String? = "accepted", duplicate: Boolean? = null,
     ): JsonNode {
         socket.send(Frame.Text(raw))
         return readJson(socket).also {
             assertEquals("ack", it["kind"].asText(), it.toString())
-            assertEquals(status, it["status"].asText(), raw)
+            status?.let { expected -> assertEquals(expected, it["status"].asText(), raw) }
             duplicate?.let { expected -> assertEquals(expected, it["duplicate"].asBoolean(), raw) }
         }
     }
