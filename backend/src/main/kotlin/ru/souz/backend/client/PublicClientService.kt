@@ -427,16 +427,6 @@ internal class PublicClientService(
         )
     }
 
-    private fun ToolCall.toClientToolOutcome(): ClientToolOutcome =
-        ClientToolOutcome(
-            status = status.value,
-            result = resultJson?.let { mapper.readTree(it) },
-            error = errorJson?.let { stored ->
-                runCatching { mapper.readValue(stored, ClientError::class.java) }
-                    .getOrElse { ClientError("client_tool_failed", "Client tool failed.") }
-            },
-        )
-
     private fun AgentExecution.toPublicThreadStatus(chatId: UUID, now: Instant): PublicThreadStatusResponse {
         val active = status.isActive()
         val leaseAlive = runtimeLeaseUntil?.isAfter(now) ?: true
@@ -465,7 +455,7 @@ internal class PublicClientService(
         payloadHash: String,
         now: Instant,
     ): HandledClientFrame = if (toolCall.resultPayloadHash == payloadHash) {
-        val outcome = toolCall.toClientToolOutcome()
+        val outcome = toolCall.toClientToolOutcome(mapper)
         HandledClientFrame(acceptedTool(chatId, threadId, toolCallId, duplicate = true, now)) {
             registry.finishTool(threadId, toolCallId, outcome)
         }

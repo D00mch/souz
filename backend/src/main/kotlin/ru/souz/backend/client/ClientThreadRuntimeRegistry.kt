@@ -1,6 +1,7 @@
 package ru.souz.backend.client
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
 import java.net.InetAddress
 import java.time.Duration
 import java.time.Instant
@@ -12,12 +13,23 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
+import ru.souz.backend.toolcall.model.ToolCall
 
 internal data class ClientToolOutcome(
     val status: String,
     val result: JsonNode?,
     val error: ClientError?,
 )
+
+internal fun ToolCall.toClientToolOutcome(mapper: ObjectMapper): ClientToolOutcome =
+    ClientToolOutcome(
+        status = status.value,
+        result = resultJson?.let { mapper.readTree(it) },
+        error = errorJson?.let { stored ->
+            runCatching { mapper.readValue(stored, ClientError::class.java) }
+                .getOrElse { ClientError("client_tool_failed", "Client tool failed.") }
+        },
+    )
 
 internal data class PendingClientTool(
     val toolCallId: String,
