@@ -166,7 +166,7 @@ private class ClientWebSocketSkill(
         } else {
             null
         }
-        return completed ?: timeOut(context, threadId, toolCallId, pending)
+        return completed ?: timeOut(context, threadId, toolCallId)
     }
 
     private suspend fun failStartedCall(context: ToolCallContext, cause: Exception) {
@@ -184,32 +184,23 @@ private class ClientWebSocketSkill(
         context: ToolCallContext,
         threadId: UUID,
         toolCallId: String,
-        pending: PendingClientTool,
     ): ClientToolOutcome {
         val error = ClientError("client_tool_timed_out", "Client tool result deadline expired.")
-        val errorNode = restJsonMapper.valueToTree<JsonNode>(error)
         val payloadHash = PublicPayloadHash.ofValue(mapOf("status" to "timed_out", "error" to error))
         val completed = toolCallRepository.completeClientCall(
             context = context,
             status = ToolCallStatus.TIMED_OUT,
             resultJson = null,
-            errorJson = restJsonMapper.writeValueAsString(errorNode),
+            errorJson = restJsonMapper.writeValueAsString(error),
             payloadHash = payloadHash,
             receivedAt = now(),
         )
-        if (completed == null) {
-            val storedOutcome = toolCallRepository.get(context)
+        val storedOutcome = if (completed == null) {
+            toolCallRepository.get(context)
                 ?.takeIf { it.target == "client" && it.status != ToolCallStatus.RUNNING }
                 ?.toClientToolOutcome()
-            if (storedOutcome != null) {
-                registry.finishTool(threadId, toolCallId, storedOutcome)
-                return storedOutcome
-            }
-            val outcome = ClientToolOutcome("timed_out", null, error)
-            registry.finishTool(threadId, toolCallId, outcome)
-            return outcome
-        }
-        val outcome = ClientToolOutcome("timed_out", null, error)
+        } else null
+        val outcome = storedOutcome ?: ClientToolOutcome("timed_out", null, error)
         registry.finishTool(threadId, toolCallId, outcome)
         return outcome
     }
