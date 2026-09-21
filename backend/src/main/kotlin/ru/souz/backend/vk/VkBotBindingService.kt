@@ -44,8 +44,8 @@ class VkBotBindingService(
                 .encodeToString(ByteArray(18).also(SecureRandom()::nextBytes))
             VkBotBindingUpsertResult(
                 bindingRepository.upsertForChat(
-                    userId, chatId, tokenCrypto.encrypt(normalizedToken), sha256Hex(normalizedToken),
-                    sha256Hex(secret), group.id, group.name, clock.instant(),
+                    userId, chatId, tokenCrypto.encrypt(normalizedToken), normalizedToken.sha256Hex(),
+                    secret.sha256Hex(), group.id, group.name, clock.instant(),
                 ),
                 secret,
             )

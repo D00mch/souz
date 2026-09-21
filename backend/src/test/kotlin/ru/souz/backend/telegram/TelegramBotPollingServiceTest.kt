@@ -21,6 +21,7 @@ import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatMessage
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.service.SendMessageResult
+import ru.souz.backend.crypto.sha256Hex
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.settings.service.UserSettingsOverrides
@@ -59,15 +60,15 @@ class TelegramBotPollingServiceTest {
                 userId = userId,
                 chatId = chatId,
                 botToken = tokenCrypto.encrypt("123456:renewal-token"),
-                botTokenHash = sha256("123456:renewal-token"),
-                linkSecretHash = sha256("link-secret"),
+                botTokenHash = "123456:renewal-token".sha256Hex(),
+                linkSecretHash = "link-secret".sha256Hex(),
                 botUsername = "souze2ebot",
                 botFirstName = "Souz",
                 now = Instant.parse("2026-08-24T00:00:01Z"),
             )
             val linked = bindingRepository.claimTelegramUser(
                 id = binding.id,
-                linkSecretHash = sha256("link-secret"),
+                linkSecretHash = "link-secret".sha256Hex(),
                 telegramUserId = 701L,
                 telegramChatId = 701L,
                 telegramUsername = "linked_user",

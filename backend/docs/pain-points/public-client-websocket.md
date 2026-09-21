@@ -23,6 +23,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 ## Safe-change guidance
 
 - Keep strict JSON decoding and reject unknown fields.
+- Preserve persisted payload hashes: `ofValue` sorts bean and map properties; `ofJson` sorts JSON-node properties recursively without changing array order or mutating the input. Both hash the UTF-8 JSON bytes with SHA-256 and lowercase, zero-padded hex.
 - Completed assistant tool history uses `tool_call` with `arguments` and `result` objects, without `toolCallId` or `target`. Public WebSocket tool-start frames omit `target`; proxy HTTP event DTOs preserve it. Retain the stored event's `target` discriminator so replay recognizes client tool starts before projecting them to transport JSON.
 - Keep HTTP and WebSocket thread status fields identical; the WebSocket frame flattens the shared status payload and adds its envelope. Preserve explicit nulls and correlation identifiers in status and rejection frames.
 - Validate and serialize initial input before registering live thread state. Propagate startup cancellation instead of converting it to a rejected acknowledgement.

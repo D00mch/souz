@@ -139,7 +139,7 @@ class VkBotPollingService(
         val text = message.text?.trim().orEmpty()
         if (text.isEmpty()) return binding
         if (!binding.linked) {
-            val secretHash = sha256Hex(text)
+            val secretHash = text.sha256Hex()
             if (binding.linkSecretHash != secretHash) {
                 reply(binding, token, message.peerId, "Чтобы привязать этот чат, отправь секрет, который показал Souz.")
                 return binding
