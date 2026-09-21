@@ -53,7 +53,7 @@ class TelegramBotBindingService(
             throw invalidTelegramToken()
         }
 
-        val tokenHash = sha256Hex(normalizedToken)
+        val tokenHash = normalizedToken.sha256Hex()
         val existingByToken = try {
             bindingRepository.findByTokenHash(tokenHash)
         } catch (e: CancellationException) {
@@ -88,7 +88,7 @@ class TelegramBotBindingService(
                 chatId = chatId,
                 botToken = tokenCrypto.encrypt(normalizedToken),
                 botTokenHash = tokenHash,
-                linkSecretHash = sha256Hex(linkSecret),
+                linkSecretHash = linkSecret.sha256Hex(),
                 botUsername = getMe.result?.username,
                 botFirstName = getMe.result?.firstName,
                 now = clock.instant(),

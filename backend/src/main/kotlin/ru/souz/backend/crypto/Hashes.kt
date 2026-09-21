@@ -1,6 +1,6 @@
 package ru.souz.backend.crypto
 
-fun sha256Hex(value: String): String =
-    java.security.MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8))
-        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+private val hexFormat = java.util.HexFormat.of()
+
+fun String.sha256Hex(): String = this@sha256Hex.toByteArray(Charsets.UTF_8).sha256Hex()
+fun ByteArray.sha256Hex(): String = hexFormat.formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(this))

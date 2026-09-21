@@ -203,7 +203,7 @@ class TelegramBotPollingService(
             return when (
                 val claim = repository.claimTelegramUser(
                     id = binding.id,
-                    linkSecretHash = sha256Hex(startSecret),
+                    linkSecretHash = startSecret.sha256Hex(),
                     telegramUserId = sender.id,
                     telegramChatId = message.chat.id,
                     telegramUsername = sender.username,

@@ -142,22 +142,18 @@ internal class PublicClientService(
         val now = Instant.now()
         val threadId = frame.threadId.uuid("threadId")
         val toolCallId = frame.toolCallId.required("toolCallId")
-        val status = frame.status.takeIf { it in supportedToolResultStatuses }
-            ?: return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "Unsupported tool result status.", now)
-        if (status == "succeeded" && frame.result == null) {
-            return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "A succeeded result requires result.", now)
+        val status = frame.status
+        val validationError = when {
+            status !in supportedToolResultStatuses -> "Unsupported tool result status."
+            status == "succeeded" && frame.result == null -> "A succeeded result requires result."
+            status == "succeeded" && frame.error != null -> "A succeeded result must not include error."
+            status != "succeeded" && frame.error == null -> "A non-succeeded result requires error."
+            status != "succeeded" && frame.result != null -> "A non-succeeded result must not include result."
+            frame.error?.details?.isObject == false -> "error.details must be an object."
+            else -> null
         }
-        if (status == "succeeded" && frame.error != null) {
-            return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "A succeeded result must not include error.", now)
-        }
-        if (status != "succeeded" && frame.error == null) {
-            return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "A non-succeeded result requires error.", now)
-        }
-        if (status != "succeeded" && frame.result != null) {
-            return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "A non-succeeded result must not include result.", now)
-        }
-        if (frame.error?.details?.isObject == false) {
-            return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", "error.details must be an object.", now)
+        if (validationError != null) {
+            return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", validationError, now)
         }
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), toolCallId)
         val existing = toolCallRepository.get(context)
@@ -427,16 +423,6 @@ internal class PublicClientService(
         )
     }
 
-    private fun ToolCall.toClientToolOutcome(): ClientToolOutcome =
-        ClientToolOutcome(
-            status = status.value,
-            result = resultJson?.let { mapper.readTree(it) },
-            error = errorJson?.let { stored ->
-                runCatching { mapper.readValue(stored, ClientError::class.java) }
-                    .getOrElse { ClientError("client_tool_failed", "Client tool failed.") }
-            },
-        )
-
     private fun AgentExecution.toPublicThreadStatus(chatId: UUID, now: Instant): PublicThreadStatusResponse {
         val active = status.isActive()
         val leaseAlive = runtimeLeaseUntil?.isAfter(now) ?: true
@@ -465,7 +451,7 @@ internal class PublicClientService(
         payloadHash: String,
         now: Instant,
     ): HandledClientFrame = if (toolCall.resultPayloadHash == payloadHash) {
-        val outcome = toolCall.toClientToolOutcome()
+        val outcome = toolCall.toClientToolOutcome(mapper)
         HandledClientFrame(acceptedTool(chatId, threadId, toolCallId, duplicate = true, now)) {
             registry.finishTool(threadId, toolCallId, outcome)
         }
