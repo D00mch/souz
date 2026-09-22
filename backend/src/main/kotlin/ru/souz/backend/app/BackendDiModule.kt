@@ -11,6 +11,7 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.runtime.BackendSandboxScopeResolver
@@ -169,6 +170,7 @@ fun backendDiModule(
     }
     bindSingleton<UserRepository> { PostgresUserRepository(instance()) }
     bindSingleton<ChatRepository> { PostgresChatRepository(instance()) }
+    bindSingleton<ConversationKnowledgeStore> { PostgresConversationKnowledgeStore(instance<HikariDataSource>()) }
     bindSingleton<ClientRequestRepository> {
         PostgresClientRequestRepository(instance(), appConfig.hindsightApiUrl != null, instance())
     }

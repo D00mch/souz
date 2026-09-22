@@ -44,7 +44,7 @@ class SandboxConversationKnowledgeStoreTest {
     @Test
     fun `round trips complete exact-cap and empty entries with compact canonical records`() = runTest {
         withFixture { fixture ->
-            val exactCap = "a".repeat(SandboxConversationKnowledgeStore.MAX_RETAINED_CONTENT_BYTES.toInt())
+            val exactCap = "a".repeat(KnowledgeRecordCodec.MAX_RETAINED_CONTENT_BYTES.toInt())
             val exact = fixture.store.put(fixture.meta(), "ReadFile", exactCap).storedEntry()
             val empty = fixture.store.put(fixture.meta(), "EmptyTool", "").storedEntry()
 
@@ -70,7 +70,7 @@ class SandboxConversationKnowledgeStoreTest {
     fun `oversized ascii content retains equal head and tail budgets`() = runTest {
         withFixture { fixture ->
             val omittedChars = 137
-            val partLength = SandboxConversationKnowledgeStore.PART_BYTE_BUDGET.toInt()
+            val partLength = KnowledgeRecordCodec.PART_BYTE_BUDGET.toInt()
             val content = "h".repeat(partLength) + "x".repeat(omittedChars) + "t".repeat(partLength)
 
             val entry = fixture.store.put(
@@ -81,7 +81,7 @@ class SandboxConversationKnowledgeStoreTest {
             val truncated = assertIs<KnowledgeContent.Truncated>(entry.content)
 
             assertEquals(content.length, entry.originalLength)
-            assertEquals(SandboxConversationKnowledgeStore.MAX_RETAINED_CONTENT_BYTES.toInt(), entry.storedLength)
+            assertEquals(KnowledgeRecordCodec.MAX_RETAINED_CONTENT_BYTES.toInt(), entry.storedLength)
             assertEquals(partLength, truncated.head.length)
             assertEquals(partLength, truncated.tail.length)
             assertTrue(truncated.head.all { it == 'h' })
@@ -288,7 +288,7 @@ class SandboxConversationKnowledgeStoreTest {
             val oversized = fixture.store.put(meta, "Tool", "other").storedEntry()
             Files.write(
                 fixture.recordPath(meta, oversized.id),
-                ByteArray(SandboxConversationKnowledgeStore.MAX_SERIALIZED_RECORD_BYTES.toInt() + 1),
+                ByteArray(KnowledgeRecordCodec.MAX_SERIALIZED_RECORD_BYTES.toInt() + 1),
             )
             val readsBeforeOversizedRecord = readCount
             assertFailsWith<KnowledgeStoreCorruptionException> { fixture.store.get(meta, oversized.id) }

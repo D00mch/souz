@@ -1,0 +1,260 @@
+package ru.souz.backend.storage.postgres
+
+import com.fasterxml.jackson.databind.JsonNode
+import com.zaxxer.hikari.HikariDataSource
+import java.time.Instant
+import java.util.UUID
+import javax.sql.DataSource
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.test.runTest
+import org.kodein.di.DI
+import org.kodein.di.bindSingleton
+import org.kodein.di.direct
+import org.kodein.di.instance
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.agent.knowledge.KnowledgeContent
+import ru.souz.agent.knowledge.KnowledgeEntry
+import ru.souz.agent.knowledge.KnowledgeStoreCorruptionException
+import ru.souz.agent.knowledge.KnowledgeStorePersistenceException
+import ru.souz.agent.knowledge.KnowledgeStoreUnavailableException
+import ru.souz.agent.knowledge.KnowledgeWriteResult
+import ru.souz.backend.app.backendDiModule
+import ru.souz.backend.chat.model.Chat
+import ru.souz.knowledge.KnowledgeRecordCodec
+import ru.souz.llms.LLMResponse
+import ru.souz.llms.LLMToolSetup
+import ru.souz.llms.ToolInvocationMeta
+import ru.souz.llms.restJsonMapper
+import ru.souz.runtime.sandbox.RuntimeSandboxFactory
+import ru.souz.runtime.sandbox.ToolInvocationRuntimeSandboxResolver
+import ru.souz.tool.knowledge.ToolGetKnowledge
+import ru.souz.tool.knowledge.ToolSearchKnowledge
+
+class PostgresConversationKnowledgeStoreTest {
+    @Test
+    fun `backend wiring round trips complete records without constructing a sandbox`() = knowledgeTest {
+        assertIs<PostgresConversationKnowledgeStore>(store)
+        assertSame(store, di.direct.instance<ConversationKnowledgeStore>())
+        for (text in listOf("", "a".repeat(1_048_576), "before\u0000\n\t\"\\🙂after")) {
+            val entry = put(text)
+            assertEquals(KnowledgeContent.Complete(text), entry.content)
+            assertEquals(text.length, entry.originalLength)
+            assertEquals(entry, store.get(meta, " ${entry.id.uppercase()} "))
+            assertEquals(text, read(entry)["text"].asText())
+        }
+        for (invalid in listOf("missing", "../record", "1-1-1-1-1", UUID.randomUUID().toString())) {
+            assertNull(store.get(meta, invalid))
+            assertEquals("knowledge_not_found", call(getTool, mapOf("knowledgeId" to invalid))["error"]["code"].asText())
+        }
+    }
+
+    @Test
+    fun `truncation retains byte budgets Unicode boundaries and original search offsets`() = knowledgeTest {
+        for (text in listOf("h".repeat(600_000) + "t".repeat(600_000), "head🙂" + "🙂".repeat(300_000) + "🙂tail")) {
+            val entry = put(text)
+            val content = assertIs<KnowledgeContent.Truncated>(entry.content)
+            assertEquals(text.length, entry.originalLength)
+            assertEquals(content.head.length + content.tail.length, entry.storedLength)
+            assertTrue(content.head.toByteArray().size <= KnowledgeRecordCodec.PART_BYTE_BUDGET)
+            assertTrue(content.tail.toByteArray().size <= KnowledgeRecordCodec.PART_BYTE_BUDGET)
+            assertTrue(!content.head.last().isHighSurrogate() && !content.tail.first().isLowSurrogate())
+            assertEquals(entry, store.get(meta, entry.id))
+            val full = read(entry)
+            assertEquals(content.head.length, full["head"]["end"].asInt())
+            assertEquals(text.length - content.tail.length, full["tail"]["start"].asInt())
+            assertEquals(content.head.length, full["omitted"]["start"].asInt())
+            val matches = call(searchTool, mapOf("knowledgeId" to entry.id, "regex" to "^.", "charsBefore" to 0, "charsAfter" to 0))["matches"]
+            assertEquals(listOf(0, text.length - content.tail.length), matches.map { it["start"].asInt() })
+        }
+    }
+
+    @Test
+    fun `ownership scopes writes reads cleanup and database foreign keys`() = knowledgeTest {
+        val otherChat = createConversation(meta.userId)
+        val otherUser = createConversation("other-user")
+        val spacedUser = createConversation(" ${meta.userId} ")
+        val own = put("owned")
+        val otherEntries = listOf(otherChat, otherUser, spacedUser).associateWith { scope ->
+            assertIs<KnowledgeWriteResult.Stored>(store.put(scope, "Tool", "other")).entry
+        }
+        val foreign = meta.copy(userId = otherUser.userId)
+        for (scope in listOf(foreign, otherChat, otherUser, spacedUser)) {
+            assertNull(store.get(scope, own.id))
+        }
+        for (scope in listOf(foreign, meta.copy(conversationId = UUID.randomUUID().toString()))) {
+            assertEquals(KnowledgeWriteResult.ConversationUnavailable, store.put(scope, "Tool", "forbidden"))
+            store.clearConversation(scope)
+            assertEquals(own, store.get(meta, own.id))
+        }
+        assertFailsWith<java.sql.SQLException> {
+            dataSource.write { connection ->
+                connection.prepareStatement("update conversation_knowledge set user_id = ? where id = ?").use {
+                    it.setString(1, otherUser.userId)
+                    it.setObject(2, UUID.fromString(own.id))
+                    it.executeUpdate()
+                }
+            }
+        }
+        store.clearConversation(meta)
+        store.clearConversation(meta)
+        assertNull(store.get(meta, own.id))
+        otherEntries.forEach { (scope, entry) -> assertEquals(entry, store.get(scope, entry.id)) }
+    }
+
+    @Test
+    fun `missing and noncanonical conversation scope never falls back to user storage`() = knowledgeTest {
+        for (id in listOf(null, "", " ", "not-a-chat", " ${meta.conversationId}", "95C3E969-01EF-4F41-9158-A45E643DCB21", "1-1-1-1-1")) {
+            val scope = meta.copy(conversationId = id)
+            assertEquals(KnowledgeWriteResult.ConversationUnavailable, store.put(scope, "Tool", "content"))
+            assertFailsWith<KnowledgeStoreUnavailableException> { store.get(scope, UUID.randomUUID().toString()) }
+            assertFailsWith<KnowledgeStoreUnavailableException> { store.clearConversation(scope) }
+        }
+    }
+
+    @Test
+    fun `archive retains references while chat and user deletion cascade`() = knowledgeTest {
+        val entry = put("keep when archived")
+        PostgresChatRepository(dataSource).updateArchived(meta.userId, UUID.fromString(meta.conversationId), true, Instant.now())
+        assertEquals(entry, store.get(meta, entry.id))
+        dataSource.write { connection ->
+            connection.prepareStatement("delete from chats where user_id = ? and id = ?").use {
+                it.setString(1, meta.userId)
+                it.setObject(2, UUID.fromString(meta.conversationId))
+                it.executeUpdate()
+            }
+        }
+        assertNull(store.get(meta, entry.id))
+        assertEquals(KnowledgeWriteResult.ConversationUnavailable, store.put(meta, "Tool", "deleted"))
+        val next = createConversation(meta.userId)
+        val nextEntry = assertIs<KnowledgeWriteResult.Stored>(store.put(next, "Tool", "delete with user")).entry
+        dataSource.write { connection ->
+            connection.prepareStatement("delete from users where id = ?").use {
+                it.setString(1, meta.userId)
+                it.executeUpdate()
+            }
+        }
+        assertNull(store.get(next, nextEntry.id))
+    }
+
+    @Test
+    fun `another instance and replacement writer retrieve the same durable record`() = knowledgeTest {
+        val entry = put("durable result")
+        PostgresDataSourceFactory.create(config.postgres).use { replica ->
+            assertEquals(entry, PostgresConversationKnowledgeStore(replica).get(meta, entry.id))
+        }
+        dataSource.close()
+        PostgresDataSourceFactory.create(config.postgres).use { replacement ->
+            val restarted = PostgresConversationKnowledgeStore(replacement)
+            assertEquals(entry, restarted.get(meta, entry.id))
+            restarted.clearConversation(meta)
+            assertNull(restarted.get(meta, entry.id))
+        }
+    }
+
+    @Test
+    fun `collision retries never overwrite an immutable record`() = knowledgeTest {
+        val entry = put("first")
+        val id = UUID.fromString(entry.id)
+        val colliding = PostgresConversationKnowledgeStore(dataSource) { id }
+        assertFailsWith<KnowledgeStorePersistenceException> { colliding.put(meta, "Tool", "overwrite") }
+        var attempt = 0
+        val retrying = PostgresConversationKnowledgeStore(dataSource) { if (attempt++ == 0) id else UUID.randomUUID() }
+        val next = assertIs<KnowledgeWriteResult.Stored>(retrying.put(meta, "Tool", "second")).entry
+        assertEquals(2, attempt)
+        assertEquals(entry, store.get(meta, entry.id))
+        assertEquals(KnowledgeContent.Complete("second"), store.get(meta, next.id)?.content)
+    }
+
+    @Test
+    fun `corrupt records become storage failures in retrieval tools`() = knowledgeTest {
+        val entry = put("valid")
+        val codec = KnowledgeRecordCodec()
+        for (record in listOf("{}", codec.serialize(entry).replace("\"version\":1", "\"version\":9"), codec.serialize(entry.copy(id = UUID.randomUUID().toString())))) {
+            dataSource.write { connection ->
+                connection.prepareStatement("update conversation_knowledge set record_json = ? where id = ?").use {
+                    it.setString(1, record)
+                    it.setObject(2, UUID.fromString(entry.id))
+                    it.executeUpdate()
+                }
+            }
+            assertFailsWith<KnowledgeStoreCorruptionException> { store.get(meta, entry.id) }
+            assertEquals("storage_failure", read(entry)["error"]["code"].asText())
+        }
+    }
+
+    @Test
+    fun `failed commit publishes no entry and database outages remain typed`() = knowledgeTest {
+        dataSource.write { connection ->
+            connection.createStatement().use {
+                it.execute("""create function reject_knowledge() returns trigger language plpgsql as 'begin raise exception ''test commit failure''; end'""")
+                it.execute("""create constraint trigger reject_knowledge after insert on conversation_knowledge deferrable initially deferred for each row execute function reject_knowledge()""")
+            }
+        }
+        val id = UUID.randomUUID()
+        val writer = PostgresConversationKnowledgeStore(dataSource) { id }
+        assertFailsWith<KnowledgeStorePersistenceException> { writer.put(meta, "Tool", "uncommitted") }
+        assertNull(store.get(meta, id.toString()))
+        dataSource.close()
+        assertFailsWith<KnowledgeStorePersistenceException> { store.put(meta, "Tool", "offline") }
+        assertFailsWith<KnowledgeStorePersistenceException> { store.get(meta, id.toString()) }
+        assertFailsWith<KnowledgeStorePersistenceException> { store.clearConversation(meta) }
+        assertEquals("storage_failure", call(getTool, mapOf("knowledgeId" to id.toString()))["error"]["code"].asText())
+        assertEquals("storage_failure", call(searchTool, mapOf("knowledgeId" to id.toString(), "regex" to "x"))["error"]["code"].asText())
+    }
+
+    @Test
+    fun `cancellation at the connection boundary propagates from every operation`() = knowledgeTest {
+        val cancelled = CancellationException("cancel database acquisition")
+        val cancelling = PostgresConversationKnowledgeStore(object : DataSource by dataSource {
+            override fun getConnection(): java.sql.Connection = throw cancelled
+        })
+        assertEquals(cancelled.message, assertFailsWith<CancellationException> { cancelling.put(meta, "Tool", "text") }.message)
+        assertEquals(cancelled.message, assertFailsWith<CancellationException> { cancelling.get(meta, UUID.randomUUID().toString()) }.message)
+        assertEquals(cancelled.message, assertFailsWith<CancellationException> { cancelling.clearConversation(meta) }.message)
+    }
+}
+
+private fun knowledgeTest(block: suspend KnowledgeFixture.() -> Unit) = runTest {
+    KnowledgeFixture().use { fixture ->
+        fixture.meta = fixture.createConversation("knowledge-user")
+        fixture.block()
+    }
+}
+
+private class KnowledgeFixture : AutoCloseable {
+    val config = postgresAppConfig(newPostgresSchema("knowledge"))
+    val dataSource: HikariDataSource = PostgresDataSourceFactory.create(config.postgres)
+    val di = DI {
+        import(backendDiModule("Knowledge test", config, dataSourceFactory = { dataSource }))
+        bindSingleton<ToolInvocationRuntimeSandboxResolver>(overrides = true) { error("Knowledge constructed a sandbox resolver") }
+        bindSingleton<RuntimeSandboxFactory>(overrides = true) { error("Knowledge constructed a sandbox factory") }
+    }
+    val store: ConversationKnowledgeStore = di.direct.instance()
+    val getTool: ToolGetKnowledge = di.direct.instance()
+    val searchTool: ToolSearchKnowledge = di.direct.instance()
+    lateinit var meta: ToolInvocationMeta
+
+    suspend fun createConversation(userId: String): ToolInvocationMeta {
+        PostgresUserRepository(dataSource).ensureUser(userId)
+        val id = UUID.randomUUID()
+        PostgresChatRepository(dataSource).create(Chat(
+            id = id, userId = userId, title = null, archived = false,
+            clientType = "backend", requestId = id.toString(), payloadHash = "test",
+            createdAt = Instant.now(), updatedAt = Instant.now(),
+        ))
+        return ToolInvocationMeta(userId, id.toString())
+    }
+
+    suspend fun put(text: String): KnowledgeEntry = assertIs<KnowledgeWriteResult.Stored>(store.put(meta, "Tool", text)).entry
+    suspend fun read(entry: KnowledgeEntry): JsonNode = call(getTool, mapOf("knowledgeId" to entry.id))
+    suspend fun call(tool: LLMToolSetup, arguments: Map<String, Any>): JsonNode =
+        restJsonMapper.readTree(tool.invoke(LLMResponse.FunctionCall(tool.fn.name, arguments), meta).content)
+    override fun close() = dataSource.close()
+}
