@@ -19,6 +19,7 @@ class ToolCallPreviewerTest {
             null to "null",
             emptyMap<String, Any?>() to "{}",
             emptyList<Any?>() to "[]",
+            listOf(true, false, null, 1.25, -0.5) to "[true,false,null,1.25,-0.5]",
             (1..8).toList() to "[1,2,3,4,5,6,7,8]",
             (1..20).toList() to """[1,2,3,4,5,6,7,8,"[TRUNCATED 12 more items]"]""",
             (1..8).associate { "k$it" to it } to """{"k1":1,"k2":2,"k3":3,"k4":4,"k5":5,"k6":6,"k7":7,"k8":8}""",
@@ -30,6 +31,8 @@ class ToolCallPreviewerTest {
                 """{"a":{"b":{"c":{"d":{"e":{"f":"[TRUNCATED]"}}}}}}""",
             """{"api_key":"abc","items":[{"password":"xyz"},"Bearer abc","sk-abc123"]}""" to
                 """{"api_key":"[REDACTED]","items":[{"password":"[REDACTED]"},"Bearer [REDACTED]","[REDACTED]"]}""",
+            """{"api-key":"abc","Refresh_Token":"xyz","visible":true}""" to
+                """{"api-key":"[REDACTED]","Refresh_Token":"[REDACTED]","visible":true}""",
             "plain text" to "\"plain text\"",
         )
         for ((input, expected) in cases) {

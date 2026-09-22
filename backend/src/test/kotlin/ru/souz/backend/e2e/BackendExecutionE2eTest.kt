@@ -193,6 +193,7 @@ class BackendExecutionE2eTest {
                     items.any { event -> event["type"].asText() == "execution.finished" }
                 }
             }
+            assertFalse(events.toString().contains(secret), "toolEvents=$toolEvents")
             val toolCall = backend.toolCallRepository.listByExecution(
                 ToolCallContext(userId, sourceChatId, executionId, ""),
             ).single { it.name == "RunSkillCommand" }
@@ -207,7 +208,6 @@ class BackendExecutionE2eTest {
                     .associate { it["type"].asText() to it["payload"] }
                 assertEquals(restJsonMapper.readTree(toolCall.argumentsJson), payloads.getValue("tool.call.started")["argumentsPreview"])
                 assertEquals(restJsonMapper.readTree(result), payloads.getValue("tool.call.finished")["resultPreview"])
-                assertFalse(toolAudit.toString().contains(secret))
             } else {
                 assertTrue(toolAudit.isEmpty())
             }
