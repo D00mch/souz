@@ -56,6 +56,7 @@ import ru.souz.backend.http.backendApplication
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotPollingService
 import ru.souz.backend.vk.VkBotApi
@@ -332,6 +333,8 @@ internal class BackendE2eBackend(
         dataSource.connection.use(block)
 
     val historyMemoryRepository: PostgresHistoryMemoryRepository get() = di.direct.instance()
+
+    val toolCallRepository: ToolCallRepository get() = di.direct.instance()
 
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 

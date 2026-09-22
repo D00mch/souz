@@ -4,7 +4,7 @@
 
 The primary backend suite runs through Ktor `testApplication`, `backendDiModule`, Flyway migrations, the real agent kernel, and PostgreSQL 16 Testcontainers. Tests fake only external or nondeterministic boundaries: provider/local LLM calls, Telegram, VK and Hindsight API calls, and clocks where a scenario requires deterministic time. Real Hindsight attribution checks are tracked in the [external-memory verification guide](external-memory.md#verification).
 
-Focused unit tests remain for configuration validation, runtime shutdown and launcher races, LLM routing and accounting, quota limits, bounded event-bus behavior, compatibility codecs, datasource initialization failure handling, sandbox scoping, channel text chunking, and repository lease fencing.
+Focused unit tests remain for configuration validation, runtime shutdown and launcher races, LLM routing and accounting, quota limits, bounded event-bus behavior, compatibility codecs, datasource initialization failure handling, sandbox scoping, tool preview sanitization, channel text chunking, and repository lease fencing.
 
 ## Why it is fragile
 
