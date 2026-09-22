@@ -72,6 +72,7 @@ internal class BackendConversationRuntimeFactory(
     private val knowledgeStore: ConversationKnowledgeStore,
     private val agentBackgroundScope: CoroutineScope,
     private val memoryRuntime: ConversationMemoryRuntime,
+    private val wsAutomaticMemoryRecall: Boolean = false,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
@@ -204,7 +205,7 @@ internal class BackendConversationRuntimeFactory(
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
             memoryRuntime = memoryRuntime,
-            automaticMemoryRecall = !request.clientToolsEnabled,
+            automaticMemoryRecall = !request.clientToolsEnabled || wsAutomaticMemoryRecall,
             captureScope = agentBackgroundScope + backendLogContext(
                 "userId" to key.userId,
                 "chatId" to key.conversationId,
