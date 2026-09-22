@@ -159,17 +159,14 @@ class PostgresConversationKnowledgeStoreTest {
     }
 
     @Test
-    fun `collision retries never overwrite an immutable record`() = knowledgeTest {
+    fun `collision fails without retrying or overwriting an immutable record`() = knowledgeTest {
         val entry = put("first")
         val id = UUID.fromString(entry.id)
-        val colliding = PostgresConversationKnowledgeStore(dataSource) { id }
-        assertFailsWith<KnowledgeStorePersistenceException> { colliding.put(meta, "Tool", "overwrite") }
         var attempt = 0
-        val retrying = PostgresConversationKnowledgeStore(dataSource) { if (attempt++ == 0) id else UUID.randomUUID() }
-        val next = assertIs<KnowledgeWriteResult.Stored>(retrying.put(meta, "Tool", "second")).entry
-        assertEquals(2, attempt)
+        val colliding = PostgresConversationKnowledgeStore(dataSource) { if (attempt++ == 0) id else UUID.randomUUID() }
+        assertFailsWith<KnowledgeStorePersistenceException> { colliding.put(meta, "Tool", "overwrite") }
+        assertEquals(1, attempt)
         assertEquals(entry, store.get(meta, entry.id))
-        assertEquals(KnowledgeContent.Complete("second"), store.get(meta, next.id)?.content)
     }
 
     @Test

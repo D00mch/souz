@@ -10,7 +10,7 @@ Rows belong to an exact user and canonical chat UUID, enforced by a composite fo
 
 ## Failure contract
 
-Absent or invalid conversation scope is unavailable; foreign or nonexistent chats cannot receive writes. Missing or cross-scope records return `knowledge_not_found`. Database and corrupt-record reads produce `storage_failure`; failed writes keep the original tool result inline. Cancellation propagates. No operation falls back to filesystem storage. Oversized subagent results, including exhaustion progress, pass through the parent's ordinary offload path; this does not change the fields kept in immediate context.
+Absent or invalid conversation scope is unavailable; foreign or nonexistent chats cannot receive writes. Missing or cross-scope records return `knowledge_not_found`. Database and corrupt-record reads produce `storage_failure`; failed writes keep the original tool result inline. Writes generate one UUID; a collision fails through the same persistence-error path without retrying or overwriting the existing record. Cancellation propagates. No operation falls back to filesystem storage. Oversized subagent results, including exhaustion progress, pass through the parent's ordinary offload path; this does not change the fields kept in immediate context.
 
 ## Deployment and safe changes
 

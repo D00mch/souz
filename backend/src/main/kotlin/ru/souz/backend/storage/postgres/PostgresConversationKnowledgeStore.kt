@@ -4,11 +4,9 @@ import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.knowledge.KnowledgeEntry
-import ru.souz.agent.knowledge.KnowledgeStorePersistenceException
 import ru.souz.agent.knowledge.KnowledgeStoreUnavailableException
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.knowledge.KnowledgeRecordCodec
-import ru.souz.knowledge.KnowledgeRecordCodec.Companion.MAX_ID_GENERATION_ATTEMPTS
 import ru.souz.knowledge.canonicalKnowledgeIdOrNull
 import ru.souz.knowledge.knowledgePersistenceOperation
 import ru.souz.llms.ToolInvocationMeta
@@ -34,26 +32,21 @@ class PostgresConversationKnowledgeStore(
                 }
                 if (!owned) return@write KnowledgeWriteResult.ConversationUnavailable
 
-                repeat(MAX_ID_GENERATION_ATTEMPTS) {
-                    val id = idGenerator()
-                    val entry = codec.createEntry(id.toString(), sourceTool, content)
-                    val inserted = connection.prepareStatement(
-                        """
-                        insert into conversation_knowledge(id, user_id, chat_id, record_json)
-                        values (?, ?, ?, ?) on conflict (id) do nothing
-                        """.trimIndent()
-                    ).use { statement ->
-                        statement.setObject(1, id)
-                        statement.setString(2, meta.userId)
-                        statement.setObject(3, chatId)
-                        statement.setString(4, codec.serialize(entry))
-                        statement.executeUpdate() == 1
-                    }
-                    if (inserted) return@write KnowledgeWriteResult.Stored(entry)
+                val id = idGenerator()
+                val entry = codec.createEntry(id.toString(), sourceTool, content)
+                connection.prepareStatement(
+                    """
+                    insert into conversation_knowledge(id, user_id, chat_id, record_json)
+                    values (?, ?, ?, ?)
+                    """.trimIndent()
+                ).use { statement ->
+                    statement.setObject(1, id)
+                    statement.setString(2, meta.userId)
+                    statement.setObject(3, chatId)
+                    statement.setString(4, codec.serialize(entry))
+                    statement.executeUpdate()
                 }
-                throw KnowledgeStorePersistenceException(
-                    "Failed to allocate a unique Knowledge ID after $MAX_ID_GENERATION_ATTEMPTS attempts."
-                )
+                KnowledgeWriteResult.Stored(entry)
             }
         }
     }
