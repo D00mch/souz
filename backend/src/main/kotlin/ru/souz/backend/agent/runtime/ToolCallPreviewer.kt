@@ -14,14 +14,12 @@ internal class ToolCallPreviewer(
     fun argumentsPreview(arguments: Any?): JsonNode =
         previewJson(arguments, placeholder = "[UNAVAILABLE_ARGUMENTS]")
 
-    fun argumentsPreviewJson(arguments: Any?): String =
-        serializePreview(argumentsPreview(arguments))
-
     fun resultPreview(result: Any?): JsonNode =
         previewJson(result, placeholder = "[UNAVAILABLE_RESULT]")
 
-    fun resultPreviewJson(result: Any?): String =
-        serializePreview(resultPreview(result))
+    fun serializePreview(node: JsonNode): String =
+        runCatching { mapper.writeValueAsString(node) }
+            .getOrElse { mapper.writeValueAsString("[UNAVAILABLE_PREVIEW]") }
 
     fun safeErrorPreview(error: Throwable): String {
         val type = error::class.simpleName ?: "ToolExecutionFailed"
@@ -50,14 +48,10 @@ internal class ToolCallPreviewer(
     private fun toJsonNode(value: Any?): JsonNode =
         when (value) {
             null -> JsonNodeFactory.instance.nullNode()
-            is JsonNode -> value.deepCopy<JsonNode>()
-            is String -> parseStringValue(value)
+            is JsonNode -> value // Sanitization reads the input and builds fresh containers.
+            is String -> runCatching { mapper.readTree(value) }.getOrElse { TextNode.valueOf(value) }
             else -> mapper.valueToTree(value)
         }
-
-    private fun parseStringValue(value: String): JsonNode =
-        runCatching { mapper.readTree(value) }
-            .getOrElse { TextNode.valueOf(value) }
 
     private fun sanitizeNode(
         node: JsonNode,
@@ -69,8 +63,7 @@ internal class ToolCallPreviewer(
         return when {
             node.isObject -> sanitizeObject(node as ObjectNode, depth)
             node.isArray -> sanitizeArray(node as ArrayNode, depth)
-            node.isTextual -> TextNode.valueOf(truncateText(sanitizeText(node.asText()), MAX_STRING_LENGTH))
-            node.isNumber || node.isBoolean || node.isNull -> node.deepCopy<JsonNode>()
+            node.isNumber || node.isBoolean || node.isNull -> node
             else -> TextNode.valueOf(truncateText(sanitizeText(node.asText()), MAX_STRING_LENGTH))
         }
     }
@@ -80,8 +73,9 @@ internal class ToolCallPreviewer(
         depth: Int,
     ): ObjectNode {
         val sanitized = JsonNodeFactory.instance.objectNode()
-        val fields = node.fields().asSequence().toList()
-        fields.take(MAX_OBJECT_FIELDS).forEach { (key, value) ->
+        val fields = node.fields()
+        repeat(minOf(node.size(), MAX_OBJECT_FIELDS)) {
+            val (key, value) = fields.next()
             sanitized.set<JsonNode>(
                 key,
                 if (isSensitiveKey(key)) {
@@ -91,8 +85,8 @@ internal class ToolCallPreviewer(
                 },
             )
         }
-        if (fields.size > MAX_OBJECT_FIELDS) {
-            sanitized.put("_truncated", "${fields.size - MAX_OBJECT_FIELDS} more fields")
+        if (node.size() > MAX_OBJECT_FIELDS) {
+            sanitized.put("_truncated", "${node.size() - MAX_OBJECT_FIELDS} more fields")
         }
         return sanitized
     }
@@ -102,19 +96,14 @@ internal class ToolCallPreviewer(
         depth: Int,
     ): ArrayNode {
         val sanitized = JsonNodeFactory.instance.arrayNode()
-        val items = node.elements().asSequence().toList()
-        items.take(MAX_ARRAY_ITEMS).forEach { item ->
-            sanitized.add(sanitizeNode(item, depth + 1))
+        repeat(minOf(node.size(), MAX_ARRAY_ITEMS)) { index ->
+            sanitized.add(sanitizeNode(node[index], depth + 1))
         }
-        if (items.size > MAX_ARRAY_ITEMS) {
-            sanitized.add("[TRUNCATED ${items.size - MAX_ARRAY_ITEMS} more items]")
+        if (node.size() > MAX_ARRAY_ITEMS) {
+            sanitized.add("[TRUNCATED ${node.size() - MAX_ARRAY_ITEMS} more items]")
         }
         return sanitized
     }
-
-    private fun serializePreview(node: JsonNode): String =
-        runCatching { mapper.writeValueAsString(node) }
-            .getOrElse { mapper.writeValueAsString("[UNAVAILABLE_PREVIEW]") }
 
     private fun isSensitiveKey(key: String): Boolean =
         key.lowercase()
