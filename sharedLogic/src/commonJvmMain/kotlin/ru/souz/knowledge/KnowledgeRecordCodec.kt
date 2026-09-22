@@ -23,23 +23,15 @@ class KnowledgeRecordCodec(private val objectMapper: ObjectMapper = restJsonMapp
     )
 
     fun serialize(entry: KnowledgeEntry): String {
+        val metadata = StoredKnowledgeRecord(
+            version = RECORD_VERSION,
+            id = entry.id,
+            sourceTool = entry.sourceTool,
+            originalLength = entry.originalLength,
+        )
         val record = when (val content = entry.content) {
-            is KnowledgeContent.Complete -> StoredKnowledgeRecord(
-                version = RECORD_VERSION,
-                id = entry.id,
-                sourceTool = entry.sourceTool,
-                originalLength = entry.originalLength,
-                content = content.content,
-            )
-
-            is KnowledgeContent.Truncated -> StoredKnowledgeRecord(
-                version = RECORD_VERSION,
-                id = entry.id,
-                sourceTool = entry.sourceTool,
-                originalLength = entry.originalLength,
-                head = content.head,
-                tail = content.tail,
-            )
+            is KnowledgeContent.Complete -> metadata.copy(content = content.content)
+            is KnowledgeContent.Truncated -> metadata.copy(head = content.head, tail = content.tail)
         }
         val serialized = objectMapper.writeValueAsString(record)
         if (serialized.toByteArray(StandardCharsets.UTF_8).size > MAX_SERIALIZED_RECORD_BYTES) {
