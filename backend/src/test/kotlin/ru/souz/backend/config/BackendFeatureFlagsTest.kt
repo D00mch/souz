@@ -24,6 +24,7 @@ class BackendFeatureFlagsTest {
         assertFalse(flags.options)
         assertFalse(flags.telegramBot)
         assertFalse(flags.vkBot)
+        assertFalse(flags.wsAutomaticMemoryRecall)
     }
 
     @Test
@@ -35,6 +36,7 @@ class BackendFeatureFlagsTest {
                     "SOUZ_FEATURE_STREAMING_MESSAGES" to "TRUE",
                     "ENABLE_BACKEND_TG_FEATURE" to "true",
                     "ENABLE_BACKEND_VK_FEATURE" to "true",
+                    "SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL" to " TRUE ",
                 ),
                 properties = mapOf(
                     "souz.backend.feature.toolEvents" to "true",
@@ -49,6 +51,22 @@ class BackendFeatureFlagsTest {
         assertTrue(flags.options)
         assertTrue(flags.telegramBot)
         assertTrue(flags.vkBot)
+        assertTrue(flags.wsAutomaticMemoryRecall)
+    }
+
+    @Test
+    fun `WS recall supports properties and gives environment precedence`() {
+        for (value in listOf(null, "true", "false", "", " ", "invalid")) {
+            val source = MapBackendConfigSource(
+                env = value?.let { mapOf("SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL" to it) }.orEmpty(),
+                properties = mapOf("souz.backend.feature.wsAutomaticMemoryRecall" to "true"),
+            )
+            if (value == "invalid") {
+                assertFailsWith<BackendConfigurationException> { BackendFeatureFlags.load(source) }
+            } else {
+                assertEquals(value == null || value == "true", BackendFeatureFlags.load(source).wsAutomaticMemoryRecall)
+            }
+        }
     }
 }
 

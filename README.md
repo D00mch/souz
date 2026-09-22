@@ -381,7 +381,9 @@ Confirmation-related flows:
 
 ## Memory
 
-The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime. The backend uses the no-op runtime unless `HINDSIGHT_API_URL` is set, in which case it bridges recall, `SearchMemory`, completed-turn capture and durable `history.append` text capture to self-hosted [Hindsight](https://hindsight.vectorize.io) using the trusted user ID as the bank ID. `HINDSIGHT_API_TOKEN` is optional; when absent or blank, requests omit the Authorization header. Ordinary Souz turns retain redacted user/tool evidence in chat scope; explicit remember turns retain user text globally. Imported user/assistant dialogue stays chat-scoped, with source attribution and unverified action reports; tools are excluded. Its PostgreSQL queue survives disconnects, failures and restarts without delaying history ACKs. See [external memory](backend/docs/pain-points/external-memory.md) for extraction configuration, timing and verification. Natural-language forget or delete requests report exact-ID deletion as unavailable instead of mutating a semantic recall hit or claiming success.
+The desktop host provides a scoped persistent fact store used by agent graphs as untrusted prompt context. Agent graphs accept memory through a host-supplied runtime. The backend uses the no-op runtime unless `HINDSIGHT_API_URL` is set, in which case it bridges recall, `SearchMemory`, completed-turn capture and durable `history.append` text capture to self-hosted [Hindsight](https://hindsight.vectorize.io) using the trusted user ID as the bank ID. `HINDSIGHT_API_TOKEN` is optional; when absent or blank, requests omit the Authorization header. Completed Souz turns retain only redacted user/assistant dialogue; ordinary turns are chat-scoped and explicit remember turns are global. Imported user/assistant dialogue stays chat-scoped, with source attribution and unverified action reports; tools are excluded. Its PostgreSQL queue survives disconnects, failures and restarts without delaying history ACKs. See [external memory](backend/docs/pain-points/external-memory.md) for extraction configuration, timing and verification. Natural-language forget or delete requests report exact-ID deletion as unavailable instead of mutating a semantic recall hit or claiming success.
+
+Backend automatic recall is opt-in: with `HINDSIGHT_API_URL` configured, set `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL=true` (JVM property `souz.backend.feature.wsAutomaticMemoryRecall`, default `false`). The flag controls all backend executions. Recall runs once before the first LLM call.
 
 Memory flow:
 
@@ -486,6 +488,7 @@ CODEX_EXPIRES_AT=... # Unix epoch seconds
 
 # Feature flags
 SOUZ_FEATURE_WS_EVENTS=true
+SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL=false
 SOUZ_FEATURE_STREAMING_MESSAGES=true
 SOUZ_FEATURE_TOOL_EVENTS=true
 SOUZ_FEATURE_OPTIONS=true

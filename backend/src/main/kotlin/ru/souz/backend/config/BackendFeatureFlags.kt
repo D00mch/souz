@@ -9,6 +9,7 @@ data class BackendFeatureFlags(
     val options: Boolean = false,
     val telegramBot: Boolean = false,
     val vkBot: Boolean = false,
+    val wsAutomaticMemoryRecall: Boolean = false,
 ) {
     companion object {
         fun load(source: BackendConfigSource = SystemBackendConfigSource): BackendFeatureFlags =
@@ -41,6 +42,11 @@ data class BackendFeatureFlags(
                 vkBot = source.booleanValue(
                     envKey = "ENABLE_BACKEND_VK_FEATURE",
                     propertyKey = "souz.backend.feature.vkBot",
+                    default = false,
+                ),
+                wsAutomaticMemoryRecall = source.booleanValue(
+                    envKey = "SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL",
+                    propertyKey = "souz.backend.feature.wsAutomaticMemoryRecall",
                     default = false,
                 ),
             )
