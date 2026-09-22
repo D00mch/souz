@@ -2,9 +2,7 @@ package ru.souz.backend.agent.runtime
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
-import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.node.TextNode
 import ru.souz.llms.restJsonMapper
 
@@ -14,14 +12,12 @@ internal class ToolCallPreviewer(
     fun argumentsPreview(arguments: Any?): JsonNode =
         previewJson(arguments, placeholder = "[UNAVAILABLE_ARGUMENTS]")
 
-    fun argumentsPreviewJson(arguments: Any?): String =
-        serializePreview(argumentsPreview(arguments))
-
     fun resultPreview(result: Any?): JsonNode =
         previewJson(result, placeholder = "[UNAVAILABLE_RESULT]")
 
-    fun resultPreviewJson(result: Any?): String =
-        serializePreview(resultPreview(result))
+    fun serializePreview(node: JsonNode): String =
+        runCatching { mapper.writeValueAsString(node) }
+            .getOrElse { mapper.writeValueAsString("[UNAVAILABLE_PREVIEW]") }
 
     fun safeErrorPreview(error: Throwable): String {
         val type = error::class.simpleName ?: "ToolExecutionFailed"
@@ -50,76 +46,41 @@ internal class ToolCallPreviewer(
     private fun toJsonNode(value: Any?): JsonNode =
         when (value) {
             null -> JsonNodeFactory.instance.nullNode()
-            is JsonNode -> value.deepCopy<JsonNode>()
-            is String -> parseStringValue(value)
+            is JsonNode -> value // Sanitization reads the input and builds fresh containers.
+            is String -> runCatching { mapper.readTree(value) }.getOrElse { TextNode.valueOf(value) }
             else -> mapper.valueToTree(value)
         }
 
-    private fun parseStringValue(value: String): JsonNode =
-        runCatching { mapper.readTree(value) }
-            .getOrElse { TextNode.valueOf(value) }
-
-    private fun sanitizeNode(
-        node: JsonNode,
-        depth: Int,
-    ): JsonNode {
-        if (depth >= MAX_DEPTH) {
-            return TextNode.valueOf("[TRUNCATED]")
-        }
-        return when {
-            node.isObject -> sanitizeObject(node as ObjectNode, depth)
-            node.isArray -> sanitizeArray(node as ArrayNode, depth)
-            node.isTextual -> TextNode.valueOf(truncateText(sanitizeText(node.asText()), MAX_STRING_LENGTH))
-            node.isNumber || node.isBoolean || node.isNull -> node.deepCopy<JsonNode>()
+    private fun sanitizeNode(node: JsonNode, depth: Int): JsonNode =
+        when {
+            depth >= MAX_DEPTH -> TextNode.valueOf("[TRUNCATED]")
+            node.isObject -> JsonNodeFactory.instance.objectNode().apply {
+                val fields = node.properties().iterator()
+                repeat(minOf(node.size(), MAX_OBJECT_FIELDS)) {
+                    val (key, value) = fields.next()
+                    set<JsonNode>(
+                        key,
+                        if (isSensitiveKey(key)) TextNode.valueOf(REDACTED) else sanitizeNode(value, depth + 1),
+                    )
+                }
+                if (node.size() > MAX_OBJECT_FIELDS) {
+                    put("_truncated", "${node.size() - MAX_OBJECT_FIELDS} more fields")
+                }
+            }
+            node.isArray -> JsonNodeFactory.instance.arrayNode().apply {
+                repeat(minOf(node.size(), MAX_ARRAY_ITEMS)) { index ->
+                    add(sanitizeNode(node[index], depth + 1))
+                }
+                if (node.size() > MAX_ARRAY_ITEMS) {
+                    add("[TRUNCATED ${node.size() - MAX_ARRAY_ITEMS} more items]")
+                }
+            }
+            node.isNumber || node.isBoolean || node.isNull -> node
             else -> TextNode.valueOf(truncateText(sanitizeText(node.asText()), MAX_STRING_LENGTH))
         }
-    }
-
-    private fun sanitizeObject(
-        node: ObjectNode,
-        depth: Int,
-    ): ObjectNode {
-        val sanitized = JsonNodeFactory.instance.objectNode()
-        val fields = node.fields().asSequence().toList()
-        fields.take(MAX_OBJECT_FIELDS).forEach { (key, value) ->
-            sanitized.set<JsonNode>(
-                key,
-                if (isSensitiveKey(key)) {
-                    TextNode.valueOf(REDACTED)
-                } else {
-                    sanitizeNode(value, depth + 1)
-                },
-            )
-        }
-        if (fields.size > MAX_OBJECT_FIELDS) {
-            sanitized.put("_truncated", "${fields.size - MAX_OBJECT_FIELDS} more fields")
-        }
-        return sanitized
-    }
-
-    private fun sanitizeArray(
-        node: ArrayNode,
-        depth: Int,
-    ): ArrayNode {
-        val sanitized = JsonNodeFactory.instance.arrayNode()
-        val items = node.elements().asSequence().toList()
-        items.take(MAX_ARRAY_ITEMS).forEach { item ->
-            sanitized.add(sanitizeNode(item, depth + 1))
-        }
-        if (items.size > MAX_ARRAY_ITEMS) {
-            sanitized.add("[TRUNCATED ${items.size - MAX_ARRAY_ITEMS} more items]")
-        }
-        return sanitized
-    }
-
-    private fun serializePreview(node: JsonNode): String =
-        runCatching { mapper.writeValueAsString(node) }
-            .getOrElse { mapper.writeValueAsString("[UNAVAILABLE_PREVIEW]") }
 
     private fun isSensitiveKey(key: String): Boolean =
-        key.lowercase()
-            .replace("-", "")
-            .replace("_", "") in SENSITIVE_KEYS
+        key.lowercase().replace("-", "").replace("_", "") in SENSITIVE_KEYS
 
     private fun sanitizeText(value: String): String {
         if (value.isBlank()) return value
@@ -129,15 +90,8 @@ internal class ToolCallPreviewer(
             .replace(KEY_VALUE_REGEX) { "${it.groupValues[1]}=[REDACTED]" }
     }
 
-    private fun truncateText(
-        value: String,
-        maxLength: Int,
-    ): String =
-        if (value.length <= maxLength) {
-            value
-        } else {
-            value.take(maxLength - 3) + "..."
-        }
+    private fun truncateText(value: String, maxLength: Int): String =
+        if (value.length <= maxLength) value else value.take(maxLength - 3) + "..."
 }
 
 private const val REDACTED = "[REDACTED]"

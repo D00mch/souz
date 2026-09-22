@@ -3,17 +3,20 @@ package ru.souz.backend.e2e
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.toolcall.model.ToolCallStatus
+import ru.souz.backend.toolcall.repository.ToolCallContext
+import ru.souz.llms.restJsonMapper
 
 class BackendExecutionE2eTest {
     @Test
@@ -154,14 +157,14 @@ class BackendExecutionE2eTest {
         }
 
     @Test
-    fun `tool audit events redact secrets while production delivery keeps the original payload`() {
+    fun `tool previews stay redacted and persisted with or without audit events`() = listOf(true, false).forEach { toolEvents ->
         val secret = "sk-audit-secret-123"
         val deliveredText = "Authorization: Bearer $secret"
         val prompt = "deliver an audit payload"
         val llm = E2eLlmApi()
         backendE2eTest(
             schemaPrefix = "e2e_execution_audit",
-            featureFlags = BackendFeatureFlags(wsEvents = true, toolEvents = true),
+            featureFlags = BackendFeatureFlags(wsEvents = true, toolEvents = toolEvents),
             llm = llm,
         ) {
             val userId = UUID.randomUUID().toString()
@@ -182,20 +185,32 @@ class BackendExecutionE2eTest {
                 jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
             }
             assertEquals(HttpStatusCode.OK, sent.status)
-            val auditResponse = eventually("redacted tool audit events") {
+            val executionId = sent.jsonBody()["execution"]["id"].asText()
+            val events = eventually("finished execution with toolEvents=$toolEvents") {
                 client.get(BackendHttpRoutes.chatEvents(sourceChatId)) {
                     trusted(userId)
-                }.takeIf { response ->
-                    val items = response.jsonBody()["items"]
-                    items.any { event ->
-                        event["type"].asText() == "tool.call.started" &&
-                            event["payload"]["name"].asText() == "RunSkillCommand"
-                    } && items.any { event -> event["type"].asText() == "execution.finished" }
+                }.jsonBody()["items"].takeIf { items ->
+                    items.any { event -> event["type"].asText() == "execution.finished" }
                 }
             }
-            val auditBody = auditResponse.bodyAsText()
-            assertFalse(auditBody.contains(secret))
-            assertTrue(auditBody.contains("[REDACTED]"))
+            assertFalse(events.toString().contains(secret), "toolEvents=$toolEvents")
+            val toolCall = backend.toolCallRepository.listByExecution(
+                ToolCallContext(userId, sourceChatId, executionId, ""),
+            ).single { it.name == "RunSkillCommand" }
+            assertEquals(ToolCallStatus.SUCCEEDED, toolCall.status)
+            assertFalse(toolCall.argumentsJson.contains(secret))
+            assertTrue(toolCall.argumentsJson.contains("[REDACTED]"))
+            val result = assertNotNull(toolCall.resultJson)
+            assertFalse(result.contains(secret))
+            val toolAudit = events.filter { it["type"].asText().startsWith("tool.call.") }
+            if (toolEvents) {
+                val payloads = toolAudit.filter { it["payload"]["name"].asText() == "RunSkillCommand" }
+                    .associate { it["type"].asText() to it["payload"] }
+                assertEquals(restJsonMapper.readTree(toolCall.argumentsJson), payloads.getValue("tool.call.started")["argumentsPreview"])
+                assertEquals(restJsonMapper.readTree(result), payloads.getValue("tool.call.finished")["resultPreview"])
+            } else {
+                assertTrue(toolAudit.isEmpty())
+            }
 
             val delivered = client.get(BackendHttpRoutes.chatMessages(targetChatId)) {
                 trusted(userId)

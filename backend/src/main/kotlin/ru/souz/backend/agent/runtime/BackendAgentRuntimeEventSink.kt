@@ -129,11 +129,10 @@ internal class BackendAgentRuntimeEventSink(
 
     private suspend fun onToolCallStarted(event: AgentRuntimeEvent.ToolCallStarted) {
         val argumentsPreviewNode = toolCallPreviewer.argumentsPreview(event.arguments)
-        val argumentsPreview = toolCallPreviewer.argumentsPreviewJson(event.arguments)
         toolCallRepository.started(
             context = toolCallContext(event.toolCallId.toString()),
             name = event.name,
-            argumentsPreview = argumentsPreview,
+            argumentsPreview = toolCallPreviewer.serializePreview(argumentsPreviewNode),
         )
         if (!publicClientThread && toolEventsEnabled) {
             appendDurableEvent(
@@ -150,11 +149,10 @@ internal class BackendAgentRuntimeEventSink(
 
     private suspend fun onToolCallFinished(event: AgentRuntimeEvent.ToolCallFinished) {
         val resultPreviewNode = toolCallPreviewer.resultPreview(event.result)
-        val resultPreview = toolCallPreviewer.resultPreviewJson(event.result)
         toolCallRepository.finished(
             context = toolCallContext(event.toolCallId.toString()),
             name = event.name,
-            resultPreview = resultPreview,
+            resultPreview = toolCallPreviewer.serializePreview(resultPreviewNode),
             durationMs = event.durationMs,
         )
         if (!publicClientThread && toolEventsEnabled) {
