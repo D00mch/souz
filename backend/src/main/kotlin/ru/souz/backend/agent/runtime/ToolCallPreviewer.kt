@@ -45,13 +45,9 @@ internal class ToolCallPreviewer(
         when (value) {
             null -> JsonNodeFactory.instance.nullNode()
             is JsonNode -> value // Sanitization only reads the input and builds new containers.
-            is String -> parseStringValue(value)
+            is String -> runCatching { mapper.readTree(value) }.getOrElse { TextNode.valueOf(value) }
             else -> mapper.valueToTree(value)
         }
-
-    private fun parseStringValue(value: String): JsonNode =
-        runCatching { mapper.readTree(value) }
-            .getOrElse { TextNode.valueOf(value) }
 
     private fun sanitizeNode(
         node: JsonNode,
@@ -94,7 +90,7 @@ internal class ToolCallPreviewer(
         depth: Int,
     ): ArrayNode {
         val sanitized = JsonNodeFactory.instance.arrayNode()
-        node.elements().asSequence().take(MAX_ARRAY_ITEMS).forEach { item ->
+        node.asSequence().take(MAX_ARRAY_ITEMS).forEach { item ->
             sanitized.add(sanitizeNode(item, depth + 1))
         }
         if (node.size() > MAX_ARRAY_ITEMS) {
