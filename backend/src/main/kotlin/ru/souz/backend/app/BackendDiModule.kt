@@ -303,6 +303,7 @@ fun backendDiModule(
             knowledgeStore = instance<ConversationKnowledgeStore>(),
             agentBackgroundScope = instance<BackendApplicationScope>(),
             memoryRuntime = instance<ConversationMemoryRuntime>(),
+            wsAutomaticMemoryRecall = appConfig.featureFlags.wsAutomaticMemoryRecall,
         )
     }
     bindSingleton {
