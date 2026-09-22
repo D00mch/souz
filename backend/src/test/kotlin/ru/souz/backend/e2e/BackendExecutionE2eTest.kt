@@ -3,7 +3,6 @@ package ru.souz.backend.e2e
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlin.test.Test
@@ -157,14 +156,14 @@ class BackendExecutionE2eTest {
         }
 
     @Test
-    fun `tool audit events redact secrets while production delivery keeps the original payload`() {
+    fun `tool previews are redacted in storage and events but not in delivery`() = listOf(true, false).forEach { toolEventsEnabled ->
         val secret = "sk-audit-secret-123"
         val deliveredText = "Authorization: Bearer $secret"
         val prompt = "deliver an audit payload"
         val llm = E2eLlmApi()
         backendE2eTest(
             schemaPrefix = "e2e_execution_audit",
-            featureFlags = BackendFeatureFlags(wsEvents = true, toolEvents = true),
+            featureFlags = BackendFeatureFlags(wsEvents = true, toolEvents = toolEventsEnabled),
             llm = llm,
         ) {
             val userId = UUID.randomUUID().toString()
@@ -185,74 +184,36 @@ class BackendExecutionE2eTest {
                 jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
             }
             assertEquals(HttpStatusCode.OK, sent.status)
-            val auditResponse = eventually("redacted tool audit events") {
+            val executionId = sent.jsonBody()["execution"]["id"].asText()
+            val events = eventually("finished execution with toolEvents=$toolEventsEnabled") {
                 client.get(BackendHttpRoutes.chatEvents(sourceChatId)) {
                     trusted(userId)
-                }.takeIf { response ->
-                    val items = response.jsonBody()["items"]
-                    items.any { event ->
-                        event["type"].asText() == "tool.call.started" &&
-                            event["payload"]["name"].asText() == "RunSkillCommand"
-                    } && items.any { event -> event["type"].asText() == "execution.finished" }
-                }
+                }.jsonBody()["items"].takeIf { items -> items.any { it["type"].asText() == "execution.finished" } }
             }
-            val auditBody = auditResponse.bodyAsText()
-            assertFalse(auditBody.contains(secret))
-            assertTrue(auditBody.contains("[REDACTED]"))
+            assertFalse(events.toString().contains(secret))
+            val stored = backend.toolCallRepository.listByExecution(
+                ToolCallContext(userId = userId, chatId = sourceChatId, executionId = executionId, toolCallId = ""),
+            ).single { it.name == "RunSkillCommand" }
+            assertEquals(ToolCallStatus.SUCCEEDED, stored.status)
+            assertFalse(stored.argumentsJson.contains(secret))
+            assertTrue(stored.argumentsJson.contains("[REDACTED]"))
+            val storedResult = assertNotNull(stored.resultJson)
+            assertFalse(storedResult.contains(secret))
+            val toolEvents = events.filter { it["type"].asText().startsWith("tool.call.") }
+            if (toolEventsEnabled) {
+                val previews = toolEvents.filter { it["payload"]["name"].asText() == "RunSkillCommand" }
+                    .associate { it["type"].asText() to it["payload"] }
+                assertEquals(json.readTree(stored.argumentsJson), previews.getValue("tool.call.started")["argumentsPreview"])
+                assertEquals(json.readTree(storedResult), previews.getValue("tool.call.finished")["resultPreview"])
+            } else {
+                assertTrue(toolEvents.isEmpty())
+            }
 
             val delivered = client.get(BackendHttpRoutes.chatMessages(targetChatId)) {
                 trusted(userId)
             }.jsonBody()["items"].single()
             assertEquals(deliveredText, delivered["content"].asText())
             assertEquals("true", delivered["metadata"]["crossChannel"].asText())
-        }
-    }
-
-    @Test
-    fun `tool previews are persisted when tool events are disabled`() {
-        val secret = "sk-persisted-secret-456"
-        val prompt = "deliver a quiet payload"
-        val llm = E2eLlmApi()
-        backendE2eTest(
-            schemaPrefix = "e2e_execution_tool_calls",
-            featureFlags = BackendFeatureFlags(wsEvents = true, toolEvents = false),
-            llm = llm,
-        ) {
-            val userId = UUID.randomUUID().toString()
-            val sourceChatId = createPublicChat(userId, "create-source")
-            val targetChatId = createPublicChat(userId, "create-target")
-            llm.requestSkillForPrompt(
-                prompt = prompt,
-                skillId = "SendMessageToChannel",
-                arguments = mapOf(
-                    "channelType" to "public_client",
-                    "channelId" to targetChatId,
-                    "text" to "Authorization: Bearer $secret",
-                ),
-            )
-
-            val sent = client.post(BackendHttpRoutes.chatMessages(sourceChatId)) {
-                trusted(userId)
-                jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-            }
-            assertEquals(HttpStatusCode.OK, sent.status)
-            val executionId = sent.jsonBody()["execution"]["id"].asText()
-            val events = eventually("finished execution without tool events") {
-                client.get(BackendHttpRoutes.chatEvents(sourceChatId)) {
-                    trusted(userId)
-                }.jsonBody()["items"].takeIf { items ->
-                    items.any { event -> event["type"].asText() == "execution.finished" }
-                }
-            }
-            assertFalse(events.any { event -> event["type"].asText().startsWith("tool.call.") })
-
-            val toolCall = backend.toolCallRepository.listByExecution(
-                ToolCallContext(userId = userId, chatId = sourceChatId, executionId = executionId, toolCallId = ""),
-            ).single { call -> call.name == "RunSkillCommand" }
-            assertEquals(ToolCallStatus.SUCCEEDED, toolCall.status)
-            assertFalse(toolCall.argumentsJson.contains(secret))
-            assertTrue(toolCall.argumentsJson.contains("[REDACTED]"))
-            assertNotNull(toolCall.resultJson)
         }
     }
 }

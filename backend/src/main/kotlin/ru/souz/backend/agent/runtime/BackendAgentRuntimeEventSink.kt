@@ -128,11 +128,12 @@ internal class BackendAgentRuntimeEventSink(
     }
 
     private suspend fun onToolCallStarted(event: AgentRuntimeEvent.ToolCallStarted) {
-        val argumentsPreview = toolCallPreviewer.argumentsPreview(event.arguments)
+        val argumentsPreviewNode = toolCallPreviewer.argumentsPreview(event.arguments)
+        val argumentsPreview = toolCallPreviewer.serializePreview(argumentsPreviewNode)
         toolCallRepository.started(
             context = toolCallContext(event.toolCallId.toString()),
             name = event.name,
-            argumentsPreview = argumentsPreview.json,
+            argumentsPreview = argumentsPreview,
         )
         if (!publicClientThread && toolEventsEnabled) {
             appendDurableEvent(
@@ -141,18 +142,19 @@ internal class BackendAgentRuntimeEventSink(
                     toolCallId = event.toolCallId,
                     name = event.name,
                     argumentKeys = event.arguments.keys.sorted(),
-                    argumentsPreview = argumentsPreview.node,
+                    argumentsPreview = argumentsPreviewNode,
                 ),
             )
         }
     }
 
     private suspend fun onToolCallFinished(event: AgentRuntimeEvent.ToolCallFinished) {
-        val resultPreview = toolCallPreviewer.resultPreview(event.result)
+        val resultPreviewNode = toolCallPreviewer.resultPreview(event.result)
+        val resultPreview = toolCallPreviewer.serializePreview(resultPreviewNode)
         toolCallRepository.finished(
             context = toolCallContext(event.toolCallId.toString()),
             name = event.name,
-            resultPreview = resultPreview.json,
+            resultPreview = resultPreview,
             durationMs = event.durationMs,
         )
         if (!publicClientThread && toolEventsEnabled) {
@@ -161,7 +163,7 @@ internal class BackendAgentRuntimeEventSink(
                 payload = ToolCallFinishedPayload(
                     toolCallId = event.toolCallId,
                     name = event.name,
-                    resultPreview = resultPreview.node,
+                    resultPreview = resultPreviewNode,
                     durationMs = event.durationMs,
                 ),
             )

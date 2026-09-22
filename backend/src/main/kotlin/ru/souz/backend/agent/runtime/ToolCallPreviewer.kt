@@ -8,20 +8,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.node.TextNode
 import ru.souz.llms.restJsonMapper
 
-/** One sanitized tool preview: [node] for event payloads, [json] for `tool_calls` persistence. */
-internal data class ToolCallPreview(
-    val node: JsonNode,
-    val json: String,
-)
-
 internal class ToolCallPreviewer(
     private val mapper: ObjectMapper = restJsonMapper,
 ) {
-    fun argumentsPreview(arguments: Any?): ToolCallPreview =
-        preview(arguments, placeholder = "[UNAVAILABLE_ARGUMENTS]")
+    fun argumentsPreview(arguments: Any?): JsonNode =
+        previewJson(arguments, placeholder = "[UNAVAILABLE_ARGUMENTS]")
 
-    fun resultPreview(result: Any?): ToolCallPreview =
-        preview(result, placeholder = "[UNAVAILABLE_RESULT]")
+    fun resultPreview(result: Any?): JsonNode =
+        previewJson(result, placeholder = "[UNAVAILABLE_RESULT]")
 
     fun safeErrorPreview(error: Throwable): String {
         val type = error::class.simpleName ?: "ToolExecutionFailed"
@@ -32,27 +26,25 @@ internal class ToolCallPreviewer(
         )
     }
 
-    private fun preview(
+    private fun previewJson(
         value: Any?,
         placeholder: String,
-    ): ToolCallPreview {
+    ): JsonNode {
         val rawNode = runCatching { toJsonNode(value) }
             .getOrElse { TextNode.valueOf(placeholder) }
         val sanitized = sanitizeNode(rawNode, depth = 0)
         val serialized = runCatching { mapper.writeValueAsString(sanitized) }.getOrNull()
-            ?: return ToolCallPreview(sanitized, mapper.writeValueAsString("[UNAVAILABLE_PREVIEW]"))
-        if (serialized.length <= MAX_SERIALIZED_PREVIEW_LENGTH) {
-            return ToolCallPreview(sanitized, serialized)
+        return if (serialized != null && serialized.length > MAX_SERIALIZED_PREVIEW_LENGTH) {
+            TextNode.valueOf(truncateText(serialized, MAX_SERIALIZED_PREVIEW_LENGTH))
+        } else {
+            sanitized
         }
-        val truncated = TextNode.valueOf(truncateText(serialized, MAX_SERIALIZED_PREVIEW_LENGTH))
-        return ToolCallPreview(truncated, mapper.writeValueAsString(truncated))
     }
 
-    // Sanitization always builds a fresh tree, so the input is only read and needs no defensive copy.
     private fun toJsonNode(value: Any?): JsonNode =
         when (value) {
             null -> JsonNodeFactory.instance.nullNode()
-            is JsonNode -> value
+            is JsonNode -> value // Sanitization only reads the input and builds new containers.
             is String -> parseStringValue(value)
             else -> mapper.valueToTree(value)
         }
@@ -71,7 +63,6 @@ internal class ToolCallPreviewer(
         return when {
             node.isObject -> sanitizeObject(node as ObjectNode, depth)
             node.isArray -> sanitizeArray(node as ArrayNode, depth)
-            node.isTextual -> TextNode.valueOf(truncateText(sanitizeText(node.asText()), MAX_STRING_LENGTH))
             node.isNumber || node.isBoolean || node.isNull -> node
             else -> TextNode.valueOf(truncateText(sanitizeText(node.asText()), MAX_STRING_LENGTH))
         }
@@ -82,7 +73,7 @@ internal class ToolCallPreviewer(
         depth: Int,
     ): ObjectNode {
         val sanitized = JsonNodeFactory.instance.objectNode()
-        for ((key, value) in node.fields().asSequence().take(MAX_OBJECT_FIELDS)) {
+        node.properties().asSequence().take(MAX_OBJECT_FIELDS).forEach { (key, value) ->
             sanitized.set<JsonNode>(
                 key,
                 if (isSensitiveKey(key)) {
@@ -103,7 +94,7 @@ internal class ToolCallPreviewer(
         depth: Int,
     ): ArrayNode {
         val sanitized = JsonNodeFactory.instance.arrayNode()
-        for (item in node.elements().asSequence().take(MAX_ARRAY_ITEMS)) {
+        node.elements().asSequence().take(MAX_ARRAY_ITEMS).forEach { item ->
             sanitized.add(sanitizeNode(item, depth + 1))
         }
         if (node.size() > MAX_ARRAY_ITEMS) {
@@ -111,6 +102,10 @@ internal class ToolCallPreviewer(
         }
         return sanitized
     }
+
+    fun serializePreview(node: JsonNode): String =
+        runCatching { mapper.writeValueAsString(node) }
+            .getOrElse { mapper.writeValueAsString("[UNAVAILABLE_PREVIEW]") }
 
     private fun isSensitiveKey(key: String): Boolean =
         key.lowercase()

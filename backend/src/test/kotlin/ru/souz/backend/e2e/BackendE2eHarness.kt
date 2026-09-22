@@ -56,9 +56,9 @@ import ru.souz.backend.http.backendApplication
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
-import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotPollingService
+import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.backend.vk.VkBotApi
 import ru.souz.backend.vk.VkBotPollingService
 import ru.souz.llms.LLMModel
