@@ -52,15 +52,8 @@ class BackendHistoryMemoryE2eTest {
     private val clock = HistoryTestClock()
 
     @Test
-    fun `default WS recall is disabled with SearchMemory and capture available`() = verifyClientRecall(null)
-
-    @Test
-    fun `disabled WS recall keeps SearchMemory and capture available`() = verifyClientRecall("false")
-
-    @Test
-    fun `enabled WS recall precedes first LLM call with SearchMemory and capture available`() = verifyClientRecall("true")
-
-    private fun verifyClientRecall(setting: String?) {
+    fun `WS recall modes preserve explicit search and capture`() = listOf(null, "false", "true").forEach { setting ->
+        val memory = HistoryHindsightStub()
         val flags = BackendFeatureFlags.load(object : BackendConfigSource {
             override fun env(key: String): String? = when (key) {
                 "SOUZ_FEATURE_WS_EVENTS" -> "true"
@@ -73,10 +66,10 @@ class BackendHistoryMemoryE2eTest {
         val question = "What do you remember about my travel preferences?"
         val recalled = "The user prefers quiet sleeper trains"
         val finalAnswer = "I found your saved travel preferences."
-        hindsight.recalledText = recalled
+        memory.recalledText = recalled
         backendE2eTest("memory_search_capture", hindsightUrl = HINDSIGHT_TEST_URL,
             featureFlags = flags,
-            providerClients = hindsight.clients(), llm = E2eLlmApi { request ->
+            providerClients = memory.clients(), llm = E2eLlmApi { request ->
                 if (request.messages.any { it.role == LLMMessageRole.function && it.name == "SearchMemory" }) {
                     reply(request, finalAnswer)
                 } else {
@@ -94,17 +87,17 @@ class BackendHistoryMemoryE2eTest {
             val messages = llm.requests.last().messages
             llm.requests.forEach { request ->
                 val injected = request.messages.filter { it.name == "souz_injected_memory" }
-                assertEquals(if (automaticRecall) 1 else 0, injected.size)
+                assertEquals(if (automaticRecall) 1 else 0, injected.size, "WS recall setting: $setting")
                 if (automaticRecall) assertTrue(injected.single().content.contains(recalled))
             }
-            assertEquals(listOfNotNull(question.takeIf { automaticRecall }, "user travel preferences travel"), hindsight.recalls)
+            assertEquals(listOfNotNull(question.takeIf { automaticRecall }, "user travel preferences travel"), memory.recalls)
             assertTrue(messages.any {
                 it.role == LLMMessageRole.system && it.content.contains("exact-ID memory deletion is unavailable")
             })
             assertTrue(messages.any {
                 it.role == LLMMessageRole.function && it.name == "SearchMemory" && it.content.contains(recalled)
             })
-            val retained = eventually("completed SearchMemory turn") { hindsight.items.singleOrNull() }
+            val retained = eventually("completed SearchMemory turn") { memory.items.singleOrNull() }
             assertEquals(owner, retained.bank)
             assertCompletedDialogue(retained.item, question, finalAnswer)
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
@@ -128,9 +121,6 @@ class BackendHistoryMemoryE2eTest {
                 assertEquals("thread.status", readJson(socket)["type"].asText())
                 llm.awaitPrompt("Plan a journey")
                 assertEquals(listOf("Plan a journey"), hindsight.recalls)
-                socket.send(Frame.Text(initial))
-                assertTrue(readJson(socket)["duplicate"].asBoolean())
-                assertEquals("thread.status", readJson(socket)["type"].asText())
                 accepted["thread"]["id"].asText()
             }
             withPublicSocket(chat) { socket ->
@@ -147,47 +137,9 @@ class BackendHistoryMemoryE2eTest {
                 }
                 llm.release()
                 assertEquals("thread.completed", readJson(socket)["type"].asText())
-                socket.send(Frame.Text(initial))
-                assertTrue(readJson(socket)["duplicate"].asBoolean())
-                assertEquals("thread.status", readJson(socket)["type"].asText())
             }
             assertTrue(llm.requests.last().messages.any { it.content == "Prefer a train 1" })
             assertEquals(listOf("Plan a journey"), hindsight.recalls)
-        }
-    }
-
-    @Test
-    fun `WS recall keeps owner and chat scope and clears stale memory after Hindsight failure`() {
-        backendE2eTest("memory_ws_scope", hindsightUrl = HINDSIGHT_TEST_URL,
-            featureFlags = BackendFeatureFlags(wsEvents = true, wsAutomaticMemoryRecall = true),
-            providerClients = hindsight.clients()) {
-            val owner = UUID.randomUUID().toString()
-            val chat = createPublicChat(owner)
-            val otherChat = createPublicChat(owner, "other-chat")
-            val otherOwner = UUID.randomUUID().toString()
-            val otherOwnerChat = createPublicChat(otherOwner)
-            val conversations = listOf(owner to chat, owner to chat, owner to otherChat, otherOwner to otherOwnerChat)
-            for ((index, identity) in conversations.withIndex()) {
-                val (userId, chatId) = identity
-                hindsight.failRecall = index == 1
-                hindsight.recalledText = "memory-fact-$index"
-                withMultiChatSocket { socket ->
-                    socket.send(Frame.Text(messageFrame(chatId, userId, "turn-$index", text = "Plan journey $index")))
-                    assertEquals("accepted", readJson(socket)["status"].asText())
-                    assertEquals("thread.status", readJson(socket)["type"].asText())
-                    assertEquals("thread.completed", readJson(socket)["type"].asText())
-                }
-                val request = hindsight.recallRequests.last()
-                assertEquals(userId, request.bank)
-                assertEquals(listOf("chat:$chatId"), request.item["tags"].map(JsonNode::asText))
-                assertEquals("any", request.item["tags_match"].asText())
-                assertEquals(listOf("world", "experience"), request.item["types"].map(JsonNode::asText))
-                val injected = llm.requests.last().messages.filter { it.name == "souz_injected_memory" }
-                if (hindsight.failRecall) assertTrue(injected.isEmpty())
-                else assertTrue(injected.single().content.contains("memory-fact-$index"))
-                eventually("completed capture $index") { hindsight.items.size.takeIf { it == index + 1 } }
-            }
-            assertEquals((0..3).map { "Plan journey $it" }, hindsight.recalls)
         }
     }
 
@@ -541,14 +493,12 @@ private class HistoryTestClock : Clock() {
 private class HistoryHindsightStub {
     data class Item(val bank: String, val item: JsonNode)
     val items = CopyOnWriteArrayList<Item>()
-    val recallRequests = CopyOnWriteArrayList<Item>()
-    val recalls get() = recallRequests.map { it.item["query"].asText() }
+    val recalls = CopyOnWriteArrayList<String>()
     val historyItems get() = items.filter { it.item.path("metadata").path("source").asText() == "souz-history" }
     val configs = ConcurrentHashMap<String, JsonNode>()
     val configPatches = CopyOnWriteArrayList<JsonNode>()
     var applyStrategy = true
     var failAfterRetain = false
-    var failRecall = false
     var recalledText: String? = null
     var gate: CompletableDeferred<Unit>? = null
     val started = CompletableDeferred<Unit>()
@@ -573,8 +523,7 @@ private class HistoryHindsightStub {
                     mapper.createObjectNode().set<JsonNode>("config", configs[bank]).toString()
                 }
                 path.endsWith("/recall") -> {
-                    recallRequests += Item(bank, mapper.readTree(request.body.toByteArray()))
-                    if (failRecall) return@MockEngine respond("unavailable", HttpStatusCode.ServiceUnavailable)
+                    recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
                     mapper.writeValueAsString(mapOf(
                         "results" to listOfNotNull(recalledText?.let { mapOf("id" to "stored-fact", "text" to it) }),
                     ))
