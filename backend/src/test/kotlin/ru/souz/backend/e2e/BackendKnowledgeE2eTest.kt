@@ -22,8 +22,7 @@ class BackendKnowledgeE2eTest {
     private fun knowledgeScenario(progress: Boolean = false, failWrites: Boolean = false) {
         val answer = if (progress) "progress-evidence ".repeat(100) else "head:" + "🙂".repeat(270_000) + ":tail"
         var knowledgeId: String? = null
-        var expectedMatchStart = 0
-        var retrieved = false
+        var expectedMatchStart: Int? = null
         var searched = false
         backendE2eTest(
             schemaPrefix = "e2e_knowledge",
@@ -49,8 +48,8 @@ class BackendKnowledgeE2eTest {
                     result?.name == "GetKnowledge" -> {
                         val body = restJsonMapper.readTree(result.content)
                         assertEquals(knowledgeId, body["knowledgeId"].asText())
+                        assertEquals(!progress, body["truncated"].asBoolean())
                         if (progress) {
-                            assertFalse(body["truncated"].asBoolean())
                             val text = body["text"].asText()
                             val report = restJsonMapper.readTree(text)
                             assertEquals("subagent_turn_limit", report["error"]["code"].asText())
@@ -58,12 +57,10 @@ class BackendKnowledgeE2eTest {
                             assertEquals(8, report["progress"]["completedToolCallCount"].asInt())
                             expectedMatchStart = text.indexOf("progress-evidence")
                         } else {
-                            assertTrue(body["truncated"].asBoolean())
                             val tail = body["tail"]
                             expectedMatchStart = tail["start"].asInt() + tail["text"].asText().indexOf(":tail")
                             assertTrue(body["omitted"]["end"].asInt() > body["omitted"]["start"].asInt())
                         }
-                        retrieved = true
                         toolCallReply(request, "SearchKnowledge", mapOf(
                             "knowledgeId" to knowledgeId!!,
                             "regex" to if (progress) "progress-evidence" else ":tail",
@@ -119,7 +116,7 @@ class BackendKnowledgeE2eTest {
                 }
             }
             assertEquals(if (progress) 8 else 1, clientCalls)
-            assertEquals(!failWrites, retrieved)
+            assertEquals(!failWrites, expectedMatchStart != null)
             assertEquals(!failWrites, searched)
             backend.sql { connection ->
                 connection.createStatement().use { statement ->

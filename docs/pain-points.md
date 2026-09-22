@@ -16,7 +16,7 @@ Before editing a module, open its index below and read only the topics related t
 - [`:skill-oauth-api`](../skill-oauth-api/docs/pain-points.md)
 - [`:skill-oauth-impl`](../skill-oauth-impl/docs/pain-points.md)
 - [`:desktopApp`](../desktopApp/docs/pain-points.md)
-- [`:backend`](../backend/docs/pain-points.md) — includes [PostgreSQL conversation Knowledge](../backend/docs/pain-points/conversation-knowledge.md).
+- [`:backend`](../backend/docs/pain-points.md)
 
 ## Topic format
 

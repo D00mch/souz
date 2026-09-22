@@ -41,7 +41,7 @@ class PostgresConversationKnowledgeStoreTest {
     @Test
     fun `backend wiring round trips complete records without constructing a sandbox`() = knowledgeTest {
         assertIs<PostgresConversationKnowledgeStore>(store)
-        assertSame(store, di.direct.instance<ConversationKnowledgeStore>())
+        assertSame(store, di.instance<ConversationKnowledgeStore>())
         for (text in listOf("", "a".repeat(1_048_576), "before\u0000\n\t\"\\🙂after")) {
             val entry = put(text)
             assertEquals(KnowledgeContent.Complete(text), entry.content)
@@ -81,9 +81,7 @@ class PostgresConversationKnowledgeStoreTest {
         val otherUser = createConversation("other-user")
         val spacedUser = createConversation(" ${meta.userId} ")
         val own = put("owned")
-        val otherEntries = listOf(otherChat, otherUser, spacedUser).associateWith { scope ->
-            assertIs<KnowledgeWriteResult.Stored>(store.put(scope, "Tool", "other")).entry
-        }
+        val otherEntries = listOf(otherChat, otherUser, spacedUser).associateWith { put("other", it) }
         val foreign = meta.copy(userId = otherUser.userId)
         for (scope in listOf(foreign, otherChat, otherUser, spacedUser)) {
             assertNull(store.get(scope, own.id))
@@ -94,13 +92,7 @@ class PostgresConversationKnowledgeStoreTest {
             assertEquals(own, store.get(meta, own.id))
         }
         assertFailsWith<java.sql.SQLException> {
-            dataSource.write { connection ->
-                connection.prepareStatement("update conversation_knowledge set user_id = ? where id = ?").use {
-                    it.setString(1, otherUser.userId)
-                    it.setObject(2, UUID.fromString(own.id))
-                    it.executeUpdate()
-                }
-            }
+            execute("update conversation_knowledge set user_id = ? where id = ?", otherUser.userId, UUID.fromString(own.id))
         }
         store.clearConversation(meta)
         store.clearConversation(meta)
@@ -123,23 +115,12 @@ class PostgresConversationKnowledgeStoreTest {
         val entry = put("keep when archived")
         PostgresChatRepository(dataSource).updateArchived(meta.userId, UUID.fromString(meta.conversationId), true, Instant.now())
         assertEquals(entry, store.get(meta, entry.id))
-        dataSource.write { connection ->
-            connection.prepareStatement("delete from chats where user_id = ? and id = ?").use {
-                it.setString(1, meta.userId)
-                it.setObject(2, UUID.fromString(meta.conversationId))
-                it.executeUpdate()
-            }
-        }
+        execute("delete from chats where user_id = ? and id = ?", meta.userId, UUID.fromString(meta.conversationId))
         assertNull(store.get(meta, entry.id))
         assertEquals(KnowledgeWriteResult.ConversationUnavailable, store.put(meta, "Tool", "deleted"))
         val next = createConversation(meta.userId)
-        val nextEntry = assertIs<KnowledgeWriteResult.Stored>(store.put(next, "Tool", "delete with user")).entry
-        dataSource.write { connection ->
-            connection.prepareStatement("delete from users where id = ?").use {
-                it.setString(1, meta.userId)
-                it.executeUpdate()
-            }
-        }
+        val nextEntry = put("delete with user", next)
+        execute("delete from users where id = ?", meta.userId)
         assertNull(store.get(next, nextEntry.id))
     }
 
@@ -174,13 +155,7 @@ class PostgresConversationKnowledgeStoreTest {
         val entry = put("valid")
         val codec = KnowledgeRecordCodec()
         for (record in listOf("{}", codec.serialize(entry).replace("\"version\":1", "\"version\":9"), codec.serialize(entry.copy(id = UUID.randomUUID().toString())))) {
-            dataSource.write { connection ->
-                connection.prepareStatement("update conversation_knowledge set record_json = ? where id = ?").use {
-                    it.setString(1, record)
-                    it.setObject(2, UUID.fromString(entry.id))
-                    it.executeUpdate()
-                }
-            }
+            execute("update conversation_knowledge set record_json = ? where id = ?", record, UUID.fromString(entry.id))
             assertFailsWith<KnowledgeStoreCorruptionException> { store.get(meta, entry.id) }
             assertEquals("storage_failure", read(entry)["error"]["code"].asText())
         }
@@ -188,12 +163,8 @@ class PostgresConversationKnowledgeStoreTest {
 
     @Test
     fun `failed commit publishes no entry and database outages remain typed`() = knowledgeTest {
-        dataSource.write { connection ->
-            connection.createStatement().use {
-                it.execute("""create function reject_knowledge() returns trigger language plpgsql as 'begin raise exception ''test commit failure''; end'""")
-                it.execute("""create constraint trigger reject_knowledge after insert on conversation_knowledge deferrable initially deferred for each row execute function reject_knowledge()""")
-            }
-        }
+        execute("""create function reject_knowledge() returns trigger language plpgsql as 'begin raise exception ''test commit failure''; end'""")
+        execute("""create constraint trigger reject_knowledge after insert on conversation_knowledge deferrable initially deferred for each row execute function reject_knowledge()""")
         val id = UUID.randomUUID()
         val writer = PostgresConversationKnowledgeStore(dataSource) { id }
         assertFailsWith<KnowledgeStorePersistenceException> { writer.put(meta, "Tool", "uncommitted") }
@@ -232,10 +203,10 @@ private class KnowledgeFixture : AutoCloseable {
         import(backendDiModule("Knowledge test", config, dataSourceFactory = { dataSource }))
         bindSingleton<ToolInvocationRuntimeSandboxResolver>(overrides = true) { error("Knowledge constructed a sandbox resolver") }
         bindSingleton<RuntimeSandboxFactory>(overrides = true) { error("Knowledge constructed a sandbox factory") }
-    }
-    val store: ConversationKnowledgeStore = di.direct.instance()
-    val getTool: ToolGetKnowledge = di.direct.instance()
-    val searchTool: ToolSearchKnowledge = di.direct.instance()
+    }.direct
+    val store: ConversationKnowledgeStore = di.instance()
+    val getTool: ToolGetKnowledge = di.instance()
+    val searchTool: ToolSearchKnowledge = di.instance()
     lateinit var meta: ToolInvocationMeta
 
     suspend fun createConversation(userId: String): ToolInvocationMeta {
@@ -249,9 +220,17 @@ private class KnowledgeFixture : AutoCloseable {
         return ToolInvocationMeta(userId, id.toString())
     }
 
-    suspend fun put(text: String): KnowledgeEntry = assertIs<KnowledgeWriteResult.Stored>(store.put(meta, "Tool", text)).entry
+    suspend fun put(text: String, scope: ToolInvocationMeta = meta): KnowledgeEntry =
+        assertIs<KnowledgeWriteResult.Stored>(store.put(scope, "Tool", text)).entry
     suspend fun read(entry: KnowledgeEntry): JsonNode = call(getTool, mapOf("knowledgeId" to entry.id))
     suspend fun call(tool: LLMToolSetup, arguments: Map<String, Any>): JsonNode =
         restJsonMapper.readTree(tool.invoke(LLMResponse.FunctionCall(tool.fn.name, arguments), meta).content)
     override fun close() = dataSource.close()
+
+    suspend fun execute(sql: String, vararg parameters: Any) = dataSource.write { connection ->
+        connection.prepareStatement(sql).use { statement ->
+            parameters.forEachIndexed { index, value -> statement.setObject(index + 1, value) }
+            statement.executeUpdate()
+        }
+    }
 }
