@@ -84,16 +84,10 @@ class KnowledgeRecordCodec(private val objectMapper: ObjectMapper = restJsonMapp
     }
 
     private fun validateV1Shape(entry: KnowledgeEntry) {
-        val storedBytes = when (val content = entry.content) {
-            is KnowledgeContent.Complete -> utf8ByteLength(content.content)
-            is KnowledgeContent.Truncated -> utf8ByteLength(content.head) + utf8ByteLength(content.tail)
-        }
-        if (storedBytes > MAX_RETAINED_CONTENT_BYTES) {
-            throw KnowledgeStoreCorruptionException("Knowledge entry exceeds the retained-content limit.")
-        }
-
         when (val content = entry.content) {
-            is KnowledgeContent.Complete -> Unit
+            is KnowledgeContent.Complete -> if (utf8ByteLength(content.content) > MAX_RETAINED_CONTENT_BYTES) {
+                throw KnowledgeStoreCorruptionException("Knowledge entry exceeds the retained-content limit.")
+            }
             is KnowledgeContent.Truncated -> if (
                 utf8ByteLength(content.head) > PART_BYTE_BUDGET ||
                 utf8ByteLength(content.tail) > PART_BYTE_BUDGET
