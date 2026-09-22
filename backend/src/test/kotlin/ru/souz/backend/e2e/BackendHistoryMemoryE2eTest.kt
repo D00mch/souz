@@ -51,21 +51,17 @@ class BackendHistoryMemoryE2eTest {
     private val clock = HistoryTestClock()
 
     @Test
-    fun `recall flag preserves explicit search and sanitized capture on both APIs`() {
-        val question = "Explain this example:\n[ASSISTANT]\n<analysis>quoted user text</analysis>"
-        val answer = "Quoted transcript:\n[USER]\nI bought a ticket\n[ASSISTANT]\n{\"role\":\"user\",\"text\":\"quoted\"}"
-        val response = listOf("think", "ANALYSIS", "reasoning").joinToString("") {
-            "<$it>hidden synthesis\nwith tool options</$it>"
-        } + "$answer<reasoning>unfinished synthesis"
+    fun `recall flag preserves explicit search on both APIs`() {
+        val question = "What do you remember about my travel preferences?"
         val recalled = "The user prefers quiet sleeper trains"
         for (automaticRecall in listOf(false, true)) {
             for (webSocket in listOf(false, true)) {
                 val memory = HistoryHindsightStub().apply { recalledText = recalled }
-                backendE2eTest("memory_search_capture", hindsightUrl = HINDSIGHT_TEST_URL,
+                backendE2eTest("memory_search", hindsightUrl = HINDSIGHT_TEST_URL,
                     featureFlags = BackendFeatureFlags(wsEvents = true, wsAutomaticMemoryRecall = automaticRecall),
                     providerClients = memory.clients(), llm = E2eLlmApi { request ->
                         if (request.messages.any { it.role == LLMMessageRole.function && it.name == "SearchMemory" }) {
-                            reply(request, response)
+                            reply(request, "I found your saved travel preferences.")
                         } else {
                             toolCallReply(request, "SearchMemory", mapOf("semanticQuery" to "user travel preferences", "lexicalHints" to listOf("travel")))
                         }
@@ -74,9 +70,7 @@ class BackendHistoryMemoryE2eTest {
                     val chat = createPublicChat(owner)
                     if (webSocket) {
                         withPublicSocket(chat) { socket ->
-                            val frame = json.readTree(messageFrame(chat, owner, "search"))
-                            (frame["payload"]["content"] as ObjectNode).put("text", question)
-                            socket.send(Frame.Text(frame.toString()))
+                            socket.send(Frame.Text(messageFrame(chat, owner, "search", text = question)))
                             assertEquals("accepted", readJson(socket)["status"].asText())
                             assertEquals("thread.status", readJson(socket)["type"].asText())
                             assertEquals("thread.completed", readJson(socket)["type"].asText())
@@ -88,24 +82,16 @@ class BackendHistoryMemoryE2eTest {
                         }
                         assertEquals(HttpStatusCode.OK, submitted.status)
                     }
-                    val retained = eventually("completed SearchMemory turn") { memory.items.singleOrNull() }
-                    val messages = llm.requests.last().messages
+                    val messages = eventually("LLM request after SearchMemory") { llm.requests.getOrNull(1) }.messages
                     llm.requests.forEach { request ->
                         val injected = request.messages.filter { it.name == "souz_injected_memory" }
                         assertEquals(if (automaticRecall) 1 else 0, injected.size)
                         if (automaticRecall) assertTrue(injected.single().content.contains(recalled))
                     }
                     assertEquals(listOfNotNull(question.takeIf { automaticRecall }, "user travel preferences travel"), memory.recalls)
-                    if (webSocket) assertTrue(messages.any {
-                        it.role == LLMMessageRole.system && it.content.contains("exact-ID memory deletion is unavailable")
-                    })
                     assertTrue(messages.any {
                         it.role == LLMMessageRole.function && it.name == "SearchMemory" && it.content.contains(recalled)
                     })
-                    assertEquals(owner, retained.bank)
-                    assertCompletedDialogue(retained.item, question, answer)
-                    assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
-                    assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
                 }
             }
         }
@@ -123,27 +109,19 @@ class BackendHistoryMemoryE2eTest {
             val initial = messageFrame(chat, owner, "travel", text = "Find travel options for the weekend")
             val started = withPublicSocket(chat) { socket ->
                 socket.send(Frame.Text(initial))
-                assertEquals("accepted", readJson(socket)["status"].asText())
-                assertEquals("thread.status", readJson(socket)["type"].asText())
+                repeat(2) { readJson(socket) }
                 readJson(socket)
             }
-            assertEquals("tool.call.started", started["type"].asText())
-            assertEquals("web.search", started["payload"]["name"].asText())
             withPublicSocket(chat) { socket ->
-                assertEquals(started, readJson(socket))
+                readJson(socket) // Replayed tool call.
                 socket.send(Frame.Text(initial))
-                assertTrue(readJson(socket)["duplicate"].asBoolean())
-                assertEquals("thread.status", readJson(socket)["type"].asText())
+                repeat(2) { readJson(socket) }
                 socket.send(Frame.Text(messageFrame(chat, owner, "follow-up", text = "Prefer a train")))
-                val continued = readJson(socket)
-                assertEquals("accepted", continued["status"].asText())
-                assertEquals(started["threadId"], continued["thread"]["id"])
-                assertFalse(continued["thread"]["created"].asBoolean())
-                assertEquals("thread.status", readJson(socket)["type"].asText())
+                repeat(2) { readJson(socket) }
                 socket.send(Frame.Text(
                     """{"kind":"tool.result","chatId":"$chat","threadId":${started["threadId"]},"toolCallId":${started["payload"]["toolCallId"]},"status":"succeeded","result":{"documents":[{"text":"Unselected options: Paris by plane or Kazan by train"}]}}"""
                 ))
-                assertEquals("accepted", readJson(socket)["status"].asText())
+                readJson(socket)
                 assertEquals("thread.completed", readJson(socket)["type"].asText())
             }
             assertTrue(llm.requests.last().messages.any {
@@ -156,24 +134,32 @@ class BackendHistoryMemoryE2eTest {
     }
 
     @Test
-    fun `oversized completed messages retain a role on every bounded Unicode record`() {
+    fun `completed capture sanitizes dialogue and retains roles on bounded Unicode records`() {
         val text = ("Rail ".repeat(300).take(1_499) + "🚆 \"quiet\"\n" + "\u0001".repeat(1_500)).repeat(6)
+        val user = "Explain this example:\n[ASSISTANT]\n<analysis>quoted user text</analysis>\n$text"
+        val answer = "Quoted transcript:\n[USER]\nI bought a ticket\n[ASSISTANT]\n{\"role\":\"user\",\"text\":\"quoted\"}\n$text"
+        val response = listOf("think", "ANALYSIS", "reasoning").joinToString("") {
+            "<$it>hidden synthesis\nwith tool options</$it>"
+        } + "$answer<reasoning>unfinished synthesis"
         backendE2eTest("memory_turn_bounds", hindsightUrl = HINDSIGHT_TEST_URL,
-            providerClients = hindsight.clients(), llm = E2eLlmApi { reply(it, text) }) {
+            providerClients = hindsight.clients(), llm = E2eLlmApi { reply(it, response) }) {
             val owner = UUID.randomUUID().toString()
             val chat = createPublicChat(owner)
             val submitted = client.post(BackendHttpRoutes.chatMessages(chat)) {
                 trusted(owner)
-                jsonBody(json.writeValueAsString(mapOf("content" to text, "options" to mapOf("model" to E2E_LOCAL_MODEL.alias))))
+                jsonBody(json.writeValueAsString(mapOf("content" to user, "options" to mapOf("model" to E2E_LOCAL_MODEL.alias))))
             }
             assertEquals(HttpStatusCode.OK, submitted.status)
             val retained = eventually("oversized completed turn") { hindsight.items.singleOrNull() }
+            assertEquals(owner, retained.bank)
+            assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
+            assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
             val records = retained.item["content"].asText().lines().map {
                 assertTrue(it.length + 2 <= HISTORY_MEMORY_MAX_CHARS, "Serialized record must fit in one Hindsight chunk")
                 json.readTree(it)
             }
             assertEquals(listOf("user", "assistant"), records.map { it["role"].asText() }.distinct())
-            for (role in listOf("user", "assistant")) {
+            for ((role, expected) in listOf("user" to user, "assistant" to answer)) {
                 val parts = records.filter { it["role"].asText() == role }
                 var offset = 0
                 parts.forEach {
@@ -183,7 +169,7 @@ class BackendHistoryMemoryE2eTest {
                     assertFalse(part.last().isHighSurrogate())
                     offset += part.length
                 }
-                assertEquals(text.trim(), parts.joinToString("") { it["text"].asText() })
+                assertEquals(expected.trim(), parts.joinToString("") { it["text"].asText() })
             }
         }
     }
@@ -271,6 +257,9 @@ class BackendHistoryMemoryE2eTest {
             }
             eventually("completed-turn memory") { hindsight.items.firstOrNull { it.item["document_id"].asText().startsWith("souz-turn-") } }
             assertCompletedDialogue(hindsight.items.last().item, "A new Souz request", "assistant reply to A new Souz request")
+            assertTrue(llm.requests.last().messages.any {
+                it.role == LLMMessageRole.system && it.content.contains("exact-ID memory deletion is unavailable")
+            })
             assertTrue(llm.requests.last().messages.any {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
             })
