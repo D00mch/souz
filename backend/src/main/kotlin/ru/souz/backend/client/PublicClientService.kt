@@ -156,6 +156,12 @@ internal class PublicClientService(
             return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", validationError, now)
         }
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), toolCallId)
+        registry.channelTool(context)?.let { pending ->
+            return HandledClientFrame(
+                response = acceptedTool(chat.id, threadId, toolCallId, duplicate = false, now),
+                afterSend = { pending.complete(ClientToolOutcome(status, frame.result, frame.error)) },
+            )
+        }
         val existing = toolCallRepository.get(context)
             ?: return rejectedTool(chat.id, threadId, toolCallId, "tool_call_not_found", "Tool call not found.", now)
         if (existing.target != "client") {

@@ -13,6 +13,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
 
@@ -93,6 +97,28 @@ class ClientThreadRuntimeRegistryTest {
         registry.clearTool(threadId, "tool-1")
         registry.ackSent(threadId, "message-2")
         acknowledgement.await()
+    }
+
+    @Test
+    fun `channel waiters are scoped and cleaned after timeout cancellation or failure`() = runTest {
+        val registry = ClientThreadRuntimeRegistry()
+        val context = ToolCallContext("user", "chat", UUID.randomUUID().toString(), "tool")
+        val timed = async(start = CoroutineStart.UNDISPATCHED) {
+            registry.withChannelTool(context) { result -> withTimeoutOrNull(10) { result.await() } }
+        }
+        assertFalse(registry.isEmpty())
+        assertFalse(registry.contains(UUID.fromString(context.executionId)))
+        assertEquals(null, registry.channelTool(context.copy(userId = "other")))
+        assertEquals(null, registry.channelTool(context.copy(chatId = "other")))
+        assertEquals(null, timed.await())
+        assertTrue(registry.isEmpty())
+        val cancelled = async(start = CoroutineStart.UNDISPATCHED) {
+            registry.withChannelTool(context) { it.await() }
+        }
+        cancelled.cancelAndJoin()
+        assertTrue(registry.isEmpty())
+        assertFailsWith<IllegalStateException> { registry.withChannelTool(context) { error("publish failed") } }
+        assertTrue(registry.isEmpty())
     }
 
     private fun device(id: String) = ClientDevice(

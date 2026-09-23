@@ -30,6 +30,22 @@ With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL
 
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
+Cross-channel client Skills accept `channelId` from `ListActiveChannels`. The target must be an owned,
+unarchived device channel with a live subscription on the caller's backend process. Souz removes
+`channelId` from the device arguments. These `tool.call.started` events have `seq:null` and are never
+replayed. Their `threadId` is a correlation UUID, not a persisted target thread: echo it in `tool.result`,
+but do not query or cancel it as a thread. The target can run its own thread concurrently.
+
+Cross-channel results resume the caller after the ACK is sent. They have no durable idempotency
+receipt: the first acknowledged completion wins while the waiter exists; results after completion,
+timeout or caller cancellation are rejected as `tool_call_not_found`. Disconnect does not replay the
+call; if no result arrives before `deadlineAt`, the caller receives `client_tool_timed_out`.
+
+`orion.call` accepts `{"utterance":"включи Pink Floyd"}` and returns `{"reply":"Включаю Pink Floyd"}`.
+It handles Orion music, playback, volume, timer and alarm commands, with a one-minute deadline.
+An unrecognized command can return an ordinary apology in `reply`; transport errors use
+`orion_call_failed` or `client_tool_timed_out`.
+
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 
 ## Subscriptions and reconnect
@@ -63,7 +79,7 @@ Unsubscribe and disconnect preserve chats, history, stored events, executions an
 After reconnecting:
 
 1. Restore each desired chat with `chat.subscribe`, passing its last successfully processed `seq` as `afterSeq`.
-2. Process missed events followed by live events; save progress and deduplicate by `(chatId, seq)`.
+2. Process missed events followed by live events; save progress and deduplicate durable events by `(chatId, seq)`. Live-only tool starts have `seq:null`; execute them once per `(chatId, threadId, toolCallId)` without updating the replay cursor.
 
 Events saved during disconnection or recovery remain available. Reopening the socket or retrying a submit alone does not recover missed events.
 
@@ -71,7 +87,7 @@ Events saved during disconnection or recovery remain available. Reopening the so
 
 Souz sends an `ack` before events caused by a command and before subscription replay. Accepted submit/cancel also receive live `thread.status` feedback after the ACK. ACKs and status are not replayed.
 
-Durable public events are `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread message events are excluded. Events are ordered within each chat; chats may interleave, and filtered internal events leave valid sequence gaps.
+Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread message events are excluded. Events are ordered within each chat; chats may interleave, and filtered internal events leave valid sequence gaps.
 
 | Operation | Idempotency key |
 | --- | --- |
@@ -79,7 +95,7 @@ Durable public events are `tool.call.started`, `thread.completed|failed|cancelle
 | `message.submit`, `history.append`, `thread.cancel` | Shared `(chatId, requestId)` |
 | `tool.result` | `(chatId, threadId, toolCallId)` |
 
-The same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType` and `title`; tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
+For durable operations, the same key, operation and normalized payload return the original result with `duplicate:true`, without repeating execution. Changes conflict with `idempotency_conflict`. Creation compares `clientType` and `title`; tool results compare terminal status and payload. For `chat.subscribe` and `chat.unsubscribe`, `requestId` is only for correlation; each request applies to the current connection state.
 
 Frame envelopes reject unknown fields; tool arguments/results are generic JSON. Malformed JSON and unsupported kinds close the socket; recoverable errors receive correlated rejection ACKs.
 

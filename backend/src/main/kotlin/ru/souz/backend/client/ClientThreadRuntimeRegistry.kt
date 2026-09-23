@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
+import ru.souz.backend.toolcall.repository.ToolCallContext
 import ru.souz.backend.toolcall.model.ToolCall
 
 internal data class ClientToolOutcome(
@@ -57,13 +58,31 @@ internal class ClientThreadRuntimeRegistry(
 
     private val mutex = Mutex()
     private val states = linkedMapOf<UUID, State>()
+    private val channelTools = mutableMapOf<ToolCallContext, CompletableDeferred<ClientToolOutcome>>()
+
+    // Live-only calls use a correlation ID, never a target-chat execution or durable replay.
+    suspend fun <T> withChannelTool(
+        context: ToolCallContext,
+        block: suspend (CompletableDeferred<ClientToolOutcome>) -> T,
+    ): T {
+        val result = CompletableDeferred<ClientToolOutcome>()
+        try {
+            mutex.withLock { channelTools[context] = result }
+            return block(result)
+        } finally {
+            withContext(NonCancellable) { mutex.withLock { channelTools.remove(context) } }
+        }
+    }
+
+    suspend fun channelTool(context: ToolCallContext): CompletableDeferred<ClientToolOutcome>? =
+        mutex.withLock { channelTools[context] }
 
     suspend fun contains(threadId: UUID): Boolean = mutex.withLock {
         states.containsKey(threadId)
     }
 
     suspend fun isEmpty(): Boolean = mutex.withLock {
-        states.isEmpty()
+        states.isEmpty() && channelTools.isEmpty()
     }
 
     /** Suspends until [threadId] is no longer tracked, or returns immediately if it already isn't. */

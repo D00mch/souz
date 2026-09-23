@@ -261,6 +261,7 @@ fun backendDiModule(
             registry = instance(),
             toolCallRepository = instance(),
             eventService = instance(),
+            channelDeliveryService = instance(),
         )
     }
     bindSingleton<ConversationMemoryRuntime> {

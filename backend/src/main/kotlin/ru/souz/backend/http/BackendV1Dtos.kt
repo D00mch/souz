@@ -265,7 +265,7 @@ internal data class BackendV1EventDto(
 
 internal data class PublicClientEventDto(
     val kind: String = "event",
-    val seq: Long,
+    val seq: Long?,
     val type: String,
     val chatId: String,
     // Null for out-of-band pushes not tied to any thread the client started — see
@@ -413,7 +413,7 @@ internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
 
 internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
     PublicClientEventDto(
-        seq = requireNotNull(seq),
+        seq = if (type == AgentEventType.TOOL_CALL_STARTED) seq else requireNotNull(seq),
         type = type.value,
         chatId = chatId.toString(),
         // Null only for the out-of-band message.created case admitted by isPublicClientEvent() below.

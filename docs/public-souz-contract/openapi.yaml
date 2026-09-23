@@ -909,7 +909,10 @@ components:
           type: string
           enum: [event]
         seq:
-          $ref: "#/components/schemas/EventSeq"
+          description: Null for live-only cross-channel calls; never use null as a replay cursor.
+          anyOf:
+            - $ref: "#/components/schemas/EventSeq"
+            - type: "null"
         type:
           type: string
           enum: [tool.call.started]
@@ -917,6 +920,7 @@ components:
           $ref: "#/components/schemas/UUID"
         threadId:
           $ref: "#/components/schemas/UUID"
+          description: For seq-null calls, a correlation ID to echo in tool.result, not a persisted thread.
         payload:
           $ref: "#/components/schemas/ToolCallStartedPayload"
         createdAt:

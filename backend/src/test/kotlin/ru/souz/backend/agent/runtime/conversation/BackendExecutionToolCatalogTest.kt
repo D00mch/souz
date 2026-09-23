@@ -73,6 +73,21 @@ class BackendExecutionToolCatalogTest {
         )
     }
 
+    @Test
+    fun `remote client tools preserve server search outside client executions`() {
+        for (clientSearch in listOf(false, true)) {
+            val catalog = backendExecutionToolCatalog(
+                compiledToolCatalog = TestToolCatalog(),
+                executionLlmToolCatalog = TestToolCatalog(ToolCategory.WEB_SEARCH to listOf("InternetSearch")),
+                enabledCompiledToolNames = setOf("InternetSearch"),
+                clientToolCatalog = TestToolCatalog(ToolCategory.WEB_SEARCH to listOf("web.search")),
+                includeFewShotExamples = true,
+                clientSearchEnabled = clientSearch,
+            )
+            assertEquals(if (clientSearch) setOf("web.search") else setOf("web.search", "InternetSearch"), toolNames(catalog))
+        }
+    }
+
     private fun executionCatalog(enabledCompiledToolNames: Set<String>?): AgentToolCatalog =
         backendExecutionToolCatalog(
             compiledToolCatalog = TestToolCatalog(

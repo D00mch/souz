@@ -10,6 +10,9 @@ class AgentEventBus {
     private val subscribers =
         ConcurrentHashMap<AgentEventStreamKey, MutableSet<Channel<AgentEventEnvelope>>>()
 
+    fun hasSubscriber(userId: String, chatId: UUID): Boolean =
+        subscribers[AgentEventStreamKey(userId, chatId)]?.isNotEmpty() == true
+
     suspend fun subscribe(userId: String, chatId: UUID): AgentEventSubscription {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
         val channel = Channel<AgentEventEnvelope>(

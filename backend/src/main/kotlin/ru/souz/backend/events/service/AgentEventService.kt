@@ -98,6 +98,8 @@ class AgentEventService(
         createdAt = createdAt,
     )
 
+    fun hasLiveSubscriber(userId: String, chatId: UUID): Boolean = eventBus.hasSubscriber(userId, chatId)
+
     suspend fun publishLive(
         userId: String,
         chatId: UUID,
