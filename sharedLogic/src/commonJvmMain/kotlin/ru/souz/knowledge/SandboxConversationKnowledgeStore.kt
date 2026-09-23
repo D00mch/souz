@@ -15,7 +15,6 @@ import ru.souz.agent.knowledge.KnowledgeStoreCorruptionException
 import ru.souz.agent.knowledge.KnowledgeStorePersistenceException
 import ru.souz.agent.knowledge.KnowledgeStoreUnavailableException
 import ru.souz.agent.knowledge.KnowledgeWriteResult
-import ru.souz.knowledge.KnowledgeRecordCodec.Companion.MAX_ID_GENERATION_ATTEMPTS
 import ru.souz.knowledge.KnowledgeRecordCodec.Companion.MAX_SERIALIZED_RECORD_BYTES
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
@@ -43,7 +42,7 @@ class SandboxConversationKnowledgeStore(
             ?: return KnowledgeWriteResult.ConversationUnavailable
 
         return withContext(ioDispatcher) {
-            knowledgePersistenceOperation("write") {
+            codec.knowledgePersistenceOperation("write") {
                 val sandbox = sandboxResolver.resolve(meta)
                 val fileSystem = sandbox.fileSystem
                 val conversationDirectory = conversationDirectory(sandbox, meta.userId, conversationId)
@@ -81,10 +80,10 @@ class SandboxConversationKnowledgeStore(
         knowledgeId: String,
     ): KnowledgeEntry? {
         val conversationId = requireConversationId(meta)
-        val canonicalId = canonicalKnowledgeIdOrNull(knowledgeId) ?: return null
+        val canonicalId = codec.canonicalKnowledgeIdOrNull(knowledgeId) ?: return null
 
         return withContext(ioDispatcher) {
-            knowledgePersistenceOperation("read") {
+            codec.knowledgePersistenceOperation("read") {
                 val sandbox = sandboxResolver.resolve(meta)
                 val fileSystem = sandbox.fileSystem
                 val path = fileSystem.resolvePath(
@@ -104,7 +103,7 @@ class SandboxConversationKnowledgeStore(
     override suspend fun clearConversation(meta: ToolInvocationMeta) {
         val conversationId = requireConversationId(meta)
         withContext(ioDispatcher) {
-            knowledgePersistenceOperation("clear") {
+            codec.knowledgePersistenceOperation("clear") {
                 val sandbox = sandboxResolver.resolve(meta)
                 val fileSystem = sandbox.fileSystem
                 val directory = fileSystem.resolvePath(
@@ -177,6 +176,7 @@ class SandboxConversationKnowledgeStore(
             )
 
     internal companion object {
+        private const val MAX_ID_GENERATION_ATTEMPTS = 16
         private const val KNOWLEDGE_DIRECTORY = "knowledge"
         private const val USERS_DIRECTORY = "users"
         private const val CONVERSATIONS_DIRECTORY = "conversations"

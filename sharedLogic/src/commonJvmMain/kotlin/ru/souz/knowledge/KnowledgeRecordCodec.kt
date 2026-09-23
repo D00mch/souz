@@ -83,6 +83,25 @@ class KnowledgeRecordCodec(private val objectMapper: ObjectMapper = restJsonMapp
         return entry
     }
 
+    fun canonicalKnowledgeIdOrNull(raw: String): String? {
+        val normalized = raw.trim()
+        val canonical = runCatching { UUID.fromString(normalized).toString() }.getOrNull() ?: return null
+        return canonical.takeIf { normalized.equals(it, ignoreCase = true) }
+    }
+
+    inline fun <T> knowledgePersistenceOperation(
+        operation: String,
+        block: () -> T,
+    ): T = try {
+        block()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: KnowledgeStoreException) {
+        throw error
+    } catch (error: Exception) {
+        throw KnowledgeStorePersistenceException("Knowledge $operation failed.", error)
+    }
+
     private fun validateV1Shape(entry: KnowledgeEntry) {
         when (val content = entry.content) {
             is KnowledgeContent.Complete -> if (utf8ByteLength(content.content) > MAX_RETAINED_CONTENT_BYTES) {
@@ -117,6 +136,51 @@ class KnowledgeRecordCodec(private val objectMapper: ObjectMapper = restJsonMapp
         )
     }
 
+    private fun utf8ByteLength(value: String): Long {
+        var byteLength = 0L
+        var index = 0
+        while (index < value.length) {
+            val codePoint = value.codePointAt(index)
+            byteLength += codePoint.utf8Width()
+            index += Character.charCount(codePoint)
+        }
+        return byteLength
+    }
+
+    private fun prefixEndWithinUtf8Budget(value: String, budget: Long): Int {
+        var usedBytes = 0L
+        var index = 0
+        while (index < value.length) {
+            val codePoint = value.codePointAt(index)
+            val width = codePoint.utf8Width()
+            if (usedBytes + width > budget) break
+            usedBytes += width
+            index += Character.charCount(codePoint)
+        }
+        return index
+    }
+
+    private fun suffixStartWithinUtf8Budget(value: String, budget: Long): Int {
+        var usedBytes = 0L
+        var index = value.length
+        while (index > 0) {
+            val codePoint = value.codePointBefore(index)
+            val width = codePoint.utf8Width()
+            if (usedBytes + width > budget) break
+            usedBytes += width
+            index -= Character.charCount(codePoint)
+        }
+        return index
+    }
+
+    private fun Int.utf8Width(): Int = when {
+        this <= 0x7f -> 1
+        this <= 0x7ff -> 2
+        this in 0xd800..0xdfff -> 1
+        this <= 0xffff -> 3
+        else -> 4
+    }
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private data class StoredKnowledgeRecord(
         val version: Int,
@@ -132,71 +196,6 @@ class KnowledgeRecordCodec(private val objectMapper: ObjectMapper = restJsonMapp
         const val MAX_RETAINED_CONTENT_BYTES: Long = 1_048_576L
         const val PART_BYTE_BUDGET: Long = MAX_RETAINED_CONTENT_BYTES / 2
         const val MAX_SERIALIZED_RECORD_BYTES: Long = 8L * 1_048_576L
-        const val MAX_ID_GENERATION_ATTEMPTS = 16
         private const val RECORD_VERSION = 1
     }
-}
-
-fun canonicalKnowledgeIdOrNull(raw: String): String? {
-    val normalized = raw.trim()
-    val canonical = runCatching { UUID.fromString(normalized).toString() }.getOrNull() ?: return null
-    return canonical.takeIf { normalized.equals(it, ignoreCase = true) }
-}
-
-inline fun <T> knowledgePersistenceOperation(
-    operation: String,
-    block: () -> T,
-): T = try {
-    block()
-} catch (error: CancellationException) {
-    throw error
-} catch (error: KnowledgeStoreException) {
-    throw error
-} catch (error: Exception) {
-    throw KnowledgeStorePersistenceException("Knowledge $operation failed.", error)
-}
-
-private fun utf8ByteLength(value: String): Long {
-    var byteLength = 0L
-    var index = 0
-    while (index < value.length) {
-        val codePoint = value.codePointAt(index)
-        byteLength += codePoint.utf8Width()
-        index += Character.charCount(codePoint)
-    }
-    return byteLength
-}
-
-private fun prefixEndWithinUtf8Budget(value: String, budget: Long): Int {
-    var usedBytes = 0L
-    var index = 0
-    while (index < value.length) {
-        val codePoint = value.codePointAt(index)
-        val width = codePoint.utf8Width()
-        if (usedBytes + width > budget) break
-        usedBytes += width
-        index += Character.charCount(codePoint)
-    }
-    return index
-}
-
-private fun suffixStartWithinUtf8Budget(value: String, budget: Long): Int {
-    var usedBytes = 0L
-    var index = value.length
-    while (index > 0) {
-        val codePoint = value.codePointBefore(index)
-        val width = codePoint.utf8Width()
-        if (usedBytes + width > budget) break
-        usedBytes += width
-        index -= Character.charCount(codePoint)
-    }
-    return index
-}
-
-private fun Int.utf8Width(): Int = when {
-    this <= 0x7f -> 1
-    this <= 0x7ff -> 2
-    this in 0xd800..0xdfff -> 1
-    this <= 0xffff -> 3
-    else -> 4
 }

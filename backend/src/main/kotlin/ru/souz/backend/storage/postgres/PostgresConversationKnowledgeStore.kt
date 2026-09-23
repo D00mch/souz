@@ -7,8 +7,6 @@ import ru.souz.agent.knowledge.KnowledgeEntry
 import ru.souz.agent.knowledge.KnowledgeStoreUnavailableException
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.knowledge.KnowledgeRecordCodec
-import ru.souz.knowledge.canonicalKnowledgeIdOrNull
-import ru.souz.knowledge.knowledgePersistenceOperation
 import ru.souz.llms.ToolInvocationMeta
 
 class PostgresConversationKnowledgeStore(
@@ -20,7 +18,7 @@ class PostgresConversationKnowledgeStore(
     override suspend fun put(meta: ToolInvocationMeta, sourceTool: String, content: String): KnowledgeWriteResult {
         require(sourceTool.isNotBlank()) { "Knowledge source tool must not be blank." }
         val chatId = conversationIdOrNull(meta) ?: return KnowledgeWriteResult.ConversationUnavailable
-        return knowledgePersistenceOperation("write") {
+        return codec.knowledgePersistenceOperation("write") {
             dataSource.write { connection ->
                 // Keep ownership stable until the insert commits; deletion then cascades.
                 val owned = connection.prepareStatement(
@@ -53,8 +51,8 @@ class PostgresConversationKnowledgeStore(
 
     override suspend fun get(meta: ToolInvocationMeta, knowledgeId: String): KnowledgeEntry? {
         val chatId = requireConversationId(meta)
-        val id = canonicalKnowledgeIdOrNull(knowledgeId) ?: return null
-        return knowledgePersistenceOperation("read") {
+        val id = codec.canonicalKnowledgeIdOrNull(knowledgeId) ?: return null
+        return codec.knowledgePersistenceOperation("read") {
             dataSource.read { connection ->
                 connection.prepareStatement(
                     "select record_json from conversation_knowledge where user_id = ? and chat_id = ? and id = ?"
@@ -72,7 +70,7 @@ class PostgresConversationKnowledgeStore(
 
     override suspend fun clearConversation(meta: ToolInvocationMeta) {
         val chatId = requireConversationId(meta)
-        knowledgePersistenceOperation("clear") {
+        codec.knowledgePersistenceOperation("clear") {
             dataSource.write { connection ->
                 connection.prepareStatement(
                     "delete from conversation_knowledge where user_id = ? and chat_id = ?"
