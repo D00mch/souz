@@ -37,9 +37,10 @@ replayed. Their `threadId` is a correlation UUID, not a persisted target thread:
 but do not query or cancel it as a thread. The target can run its own thread concurrently.
 
 Cross-channel results resume the caller after the ACK is sent. They have no durable idempotency
-receipt: the first acknowledged completion wins while the waiter exists; results after completion,
-timeout or caller cancellation are rejected as `tool_call_not_found`. Disconnect does not replay the
-call; if no result arrives before `deadlineAt`, the caller receives `client_tool_timed_out`.
+receipt: the first result reserved before `deadlineAt` wins and waits for its ACK even beyond that
+deadline. Further results, including those after timeout or caller cancellation, are rejected as
+`tool_call_not_found`. A failed ACK write releases the caller with `client_tool_failed`. Disconnect
+does not replay the call; if no result arrives before `deadlineAt`, the caller receives `client_tool_timed_out`.
 
 `orion.call` accepts `{"utterance":"включи Pink Floyd"}` and returns `{"reply":"Включаю Pink Floyd"}`.
 It handles Orion music, playback, volume, timer and alarm commands, with a one-minute deadline.

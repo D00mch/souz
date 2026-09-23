@@ -11,6 +11,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.toolcall.repository.ToolCallContext
@@ -37,6 +38,23 @@ internal data class PendingClientTool(
     val result: CompletableDeferred<ClientToolOutcome> = CompletableDeferred(),
 )
 
+internal class PendingChannelTool(private val deadlineAt: Instant) {
+    private val received = CompletableDeferred<Boolean>()
+    val result = CompletableDeferred<ClientToolOutcome>()
+
+    fun accept(now: Instant): Boolean = now.isBefore(deadlineAt) && received.complete(true)
+
+    suspend fun awaitResult(now: Instant): ClientToolOutcome {
+        if (withTimeoutOrNull(Duration.between(now, deadlineAt).toMillis()) { received.await() } == null) {
+            received.complete(false)
+        }
+        // Receipt and timeout compete once; a received result then waits for its ACK, without the deadline.
+        return if (received.await()) result.await() else ClientToolOutcome(
+            "timed_out", null, ClientError("client_tool_timed_out", "Client tool result deadline expired."),
+        )
+    }
+}
+
 internal sealed interface BeginClientToolResult {
     data class Started(val device: ClientDevice) : BeginClientToolResult
     data object Busy : BeginClientToolResult
@@ -58,24 +76,26 @@ internal class ClientThreadRuntimeRegistry(
 
     private val mutex = Mutex()
     private val states = linkedMapOf<UUID, State>()
-    private val channelTools = mutableMapOf<ToolCallContext, CompletableDeferred<ClientToolOutcome>>()
+    private val channelTools = mutableMapOf<ToolCallContext, PendingChannelTool>()
 
     // Live-only calls use a correlation ID, never a target-chat execution or durable replay.
     suspend fun <T> withChannelTool(
         context: ToolCallContext,
-        block: suspend (CompletableDeferred<ClientToolOutcome>) -> T,
+        deadlineAt: Instant,
+        block: suspend (PendingChannelTool) -> T,
     ): T {
-        val result = CompletableDeferred<ClientToolOutcome>()
+        val pending = PendingChannelTool(deadlineAt)
         try {
-            mutex.withLock { channelTools[context] = result }
-            return block(result)
+            mutex.withLock { channelTools[context] = pending }
+            return block(pending)
         } finally {
             withContext(NonCancellable) { mutex.withLock { channelTools.remove(context) } }
+            pending.result.cancel()
         }
     }
 
-    suspend fun channelTool(context: ToolCallContext): CompletableDeferred<ClientToolOutcome>? =
-        mutex.withLock { channelTools[context] }
+    suspend fun acceptChannelTool(context: ToolCallContext, now: Instant): PendingChannelTool? =
+        mutex.withLock { channelTools[context]?.takeIf { it.accept(now) } }
 
     suspend fun contains(threadId: UUID): Boolean = mutex.withLock {
         states.containsKey(threadId)

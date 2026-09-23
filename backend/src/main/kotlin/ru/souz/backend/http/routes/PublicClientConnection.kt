@@ -102,6 +102,7 @@ internal class PublicClientConnection(
             "toolCallId" to logNode?.get("toolCallId")?.asText(),
         )
         var pendingStream: AgentEventStream? = null
+        var onSendFailure: (() -> Unit)? = null
         try {
             val node = frame.parseClient()
             logNode = node
@@ -197,6 +198,7 @@ internal class PublicClientConnection(
                     rejectedFor(node, kind, error)
                 }
                 resolvedThreadId = handled.statusFeedback?.threadId
+                onSendFailure = handled.onSendFailure
                 withContext(mdcContext()) {
                     pendingStream?.let {
                         socketLogger.info("WebSocket subscription prepared initialSeq={}", it.initialSeq)
@@ -207,6 +209,7 @@ internal class PublicClientConnection(
                         socket.sendClient(handled.response)
                         stage = "after_ack"
                         handled.afterSend()
+                        onSendFailure = null
                         socketLogger.info("WebSocket ack sent elapsedMs={}", started.elapsedNow().inWholeMilliseconds)
                         handled.statusFeedback?.let { feedback ->
                             stage = "send_status"
@@ -232,6 +235,7 @@ internal class PublicClientConnection(
             }
             throw failure
         } finally {
+            onSendFailure?.invoke()
             val interrupted = !scope.isActive
             withContext(NonCancellable + mdcContext()) {
                 if (interrupted) socketLogger.info("WebSocket frame interrupted stage={} elapsedMs={}", stage, started.elapsedNow().inWholeMilliseconds)

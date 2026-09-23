@@ -41,6 +41,7 @@ import kotlin.time.Duration.Companion.milliseconds
 internal data class HandledClientFrame(
     val response: Any,
     val statusFeedback: ThreadStatusFeedback? = null,
+    val onSendFailure: () -> Unit = {},
     val afterSend: suspend () -> Unit = {},
 )
 
@@ -156,10 +157,13 @@ internal class PublicClientService(
             return rejectedTool(chat.id, threadId, toolCallId, "invalid_request", validationError, now)
         }
         val context = ToolCallContext(chat.userId, chat.id.toString(), threadId.toString(), toolCallId)
-        registry.channelTool(context)?.let { pending ->
+        registry.acceptChannelTool(context, now)?.let { pending ->
             return HandledClientFrame(
                 response = acceptedTool(chat.id, threadId, toolCallId, duplicate = false, now),
-                afterSend = { pending.complete(ClientToolOutcome(status, frame.result, frame.error)) },
+                afterSend = { pending.result.complete(ClientToolOutcome(status, frame.result, frame.error)) },
+                onSendFailure = { pending.result.complete(ClientToolOutcome(
+                    "failed", null, ClientError("client_tool_failed", "Could not acknowledge client tool result."),
+                )) },
             )
         }
         val existing = toolCallRepository.get(context)

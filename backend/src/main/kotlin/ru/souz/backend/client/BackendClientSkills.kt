@@ -162,8 +162,8 @@ private class ClientWebSocketSkill(
         }
         val threadId = UUID.randomUUID()
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), UUID.randomUUID().toString())
-        return registry.withChannelTool(context) { result ->
-            val deadlineAt = now().plus(timeout)
+        val deadlineAt = now().plus(timeout)
+        return registry.withChannelTool(context, deadlineAt) { pending ->
             val published = eventService.publishClientToolCall(
                 userId = meta.userId,
                 chatId = chatId,
@@ -178,9 +178,7 @@ private class ClientWebSocketSkill(
             if (!published) return@withChannelTool errorMessage(
                 functionCall.name, "client_tool_busy", "Device command queues are full or disconnected.",
             )
-            val outcome = withTimeoutOrNull(Duration.between(now(), deadlineAt).toMillis()) { result.await() }
-                ?: ClientToolOutcome("timed_out", null, ClientError("client_tool_timed_out", "Client tool result deadline expired."))
-            outcomeMessage(functionCall.name, outcome)
+            outcomeMessage(functionCall.name, pending.awaitResult(now()))
         }
     }
 
