@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -13,18 +14,31 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.RawAgentEventPayload
 
 class AgentEventBusTest {
     @Test
-    fun `slow subscriber sees only the latest bounded live window and publisher does not block`() = runTest {
+    fun `slow subscriber keeps commands rejects overflow and bounds droppable notifications`() = runTest {
         val userId = "user-a"
         val chatId = UUID.randomUUID()
         val bus = AgentEventBus()
         val subscription = bus.subscribe(userId = userId, chatId = chatId)
         val totalEvents = AgentEventLimits.LIVE_BUFFER_SIZE + 32
+        val command = AgentLiveEvent(UUID.randomUUID(), userId, chatId, null,
+            AgentEventType.TOOL_CALL_STARTED, RawAgentEventPayload(emptyMap()), Instant.EPOCH)
 
         try {
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertTrue(bus.publishCommand(command)) }
+            assertFalse(bus.publishCommand(command))
+            // A full subscriber must not prevent another subscription from accepting a command.
+            val available = bus.subscribe(userId, chatId)
+            try {
+                assertTrue(bus.publishCommand(command))
+                assertEquals(command, available.commands.receive())
+            } finally {
+                available.close()
+            }
             withTimeout(1_000) {
                 repeat(totalEvents) { index ->
                     bus.publish(
@@ -46,9 +60,13 @@ class AgentEventBusTest {
 
             assertEquals((expectedFirstSeq..totalEvents.toLong()).toList(), receivedSeqs)
             assertTrue(subscription.events.tryReceive().isFailure)
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertEquals(command, subscription.commands.receive()) }
+            assertTrue(subscription.commands.tryReceive().isFailure)
+            assertTrue(bus.publishCommand(command))
         } finally {
             subscription.close()
         }
+        assertFalse(bus.publishCommand(command))
     }
 
     @Test

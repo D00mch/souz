@@ -164,17 +164,19 @@ private class ClientWebSocketSkill(
         val context = ToolCallContext(meta.userId, chatId.toString(), threadId.toString(), UUID.randomUUID().toString())
         return registry.withChannelTool(context) { result ->
             val deadlineAt = now().plus(timeout)
-            eventService.publishLive(
+            val published = eventService.publishClientToolCall(
                 userId = meta.userId,
                 chatId = chatId,
                 executionId = threadId,
-                type = AgentEventType.TOOL_CALL_STARTED,
                 payload = PublicToolCallStartedPayload(
                     toolCallId = context.toolCallId,
                     name = fn.name,
                     arguments = restJsonMapper.valueToTree(functionCall.arguments - "channelId"),
                     deadlineAt = deadlineAt.toString(),
                 ),
+            )
+            if (!published) return@withChannelTool errorMessage(
+                functionCall.name, "client_tool_busy", "Device command queues are full or disconnected.",
             )
             val outcome = withTimeoutOrNull(Duration.between(now(), deadlineAt).toMillis()) { result.await() }
                 ?: ClientToolOutcome("timed_out", null, ClientError("client_tool_timed_out", "Client tool result deadline expired."))

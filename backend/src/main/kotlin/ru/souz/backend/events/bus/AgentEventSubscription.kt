@@ -5,5 +5,6 @@ import ru.souz.backend.events.model.AgentEventEnvelope
 
 data class AgentEventSubscription(
     val events: ReceiveChannel<AgentEventEnvelope>,
+    val commands: ReceiveChannel<AgentEventEnvelope>,
     val close: suspend () -> Unit,
 )

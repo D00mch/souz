@@ -344,7 +344,8 @@ private suspend fun AgentEventStream.forwardPublicEvents(
     } finally {
         replayDone.complete(Unit)
     }
-    for (event in liveEvents) {
+    while (true) {
+        val event = receiveLive() ?: break
         val seq = event.seq
         if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
         if (!event.durable && event.isPublicClientEvent()) send(event)

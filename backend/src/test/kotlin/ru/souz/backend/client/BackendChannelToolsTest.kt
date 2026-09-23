@@ -15,6 +15,7 @@ import ru.souz.backend.channels.ChannelDeliveryService
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.events.bus.AgentEventBus
+import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.ToolInvocationMeta
@@ -37,16 +38,18 @@ class BackendChannelToolsTest {
         registry.register(source, ClientDevice(target.userId, "device", "tv_box", emptySet()), "submit")
         try {
             val pending = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, meta) }
-            assertTrue(subscription.events.tryReceive().isFailure)
+            assertTrue(subscription.commands.tryReceive().isFailure)
             assertFalse(pending.isCompleted)
             registry.ackSent(source, "submit")
-            subscription.events.receive()
+            subscription.commands.receive()
             pending.cancelAndJoin()
             registry.discard(source)
 
             val http = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, meta) }
-            subscription.events.receive()
+            val command = subscription.commands.receive()
             http.cancelAndJoin()
+            repeat(AgentEventLimits.LIVE_BUFFER_SIZE) { assertTrue(bus.publishCommand(command)) }
+            assertTrue(skill.invoke(call, meta).content.contains("client_tool_busy"))
             assertTrue(registry.isEmpty())
         } finally {
             subscription.close()
