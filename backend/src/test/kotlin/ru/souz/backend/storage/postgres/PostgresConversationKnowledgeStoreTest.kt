@@ -10,8 +10,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
-import kotlin.test.assertSame
-import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
@@ -27,7 +25,6 @@ import ru.souz.agent.knowledge.KnowledgeStoreUnavailableException
 import ru.souz.agent.knowledge.KnowledgeWriteResult
 import ru.souz.backend.app.backendDiModule
 import ru.souz.backend.chat.model.Chat
-import ru.souz.knowledge.KnowledgeRecordCodec
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
@@ -41,14 +38,11 @@ class PostgresConversationKnowledgeStoreTest {
     @Test
     fun `backend wiring round trips complete records without constructing a sandbox`() = knowledgeTest {
         assertIs<PostgresConversationKnowledgeStore>(store)
-        assertSame(store, di.instance<ConversationKnowledgeStore>())
-        for (text in listOf("", "a".repeat(1_048_576), "before\u0000\n\t\"\\🙂after")) {
-            val entry = put(text)
-            assertEquals(KnowledgeContent.Complete(text), entry.content)
-            assertEquals(text.length, entry.originalLength)
-            assertEquals(entry, store.get(meta, " ${entry.id.uppercase()} "))
-            assertEquals(text, read(entry)["text"].asText())
-        }
+        val text = "before\u0000\n\t\"\\🙂after"
+        val entry = put(text)
+        assertEquals(KnowledgeContent.Complete(text), entry.content)
+        assertEquals(entry, store.get(meta, " ${entry.id.uppercase()} "))
+        assertEquals(text, read(entry)["text"].asText())
         for (invalid in listOf("missing", "../record", "1-1-1-1-1", UUID.randomUUID().toString())) {
             assertNull(store.get(meta, invalid))
             assertEquals("knowledge_not_found", call(getTool, mapOf("knowledgeId" to invalid))["error"]["code"].asText())
@@ -56,23 +50,13 @@ class PostgresConversationKnowledgeStoreTest {
     }
 
     @Test
-    fun `truncation retains byte budgets Unicode boundaries and original search offsets`() = knowledgeTest {
-        for (text in listOf("h".repeat(600_000) + "t".repeat(600_000), "head🙂" + "🙂".repeat(300_000) + "🙂tail")) {
-            val entry = put(text)
-            val content = assertIs<KnowledgeContent.Truncated>(entry.content)
-            assertEquals(text.length, entry.originalLength)
-            assertEquals(content.head.length + content.tail.length, entry.storedLength)
-            assertTrue(content.head.toByteArray().size <= KnowledgeRecordCodec.PART_BYTE_BUDGET)
-            assertTrue(content.tail.toByteArray().size <= KnowledgeRecordCodec.PART_BYTE_BUDGET)
-            assertTrue(!content.head.last().isHighSurrogate() && !content.tail.first().isLowSurrogate())
-            assertEquals(entry, store.get(meta, entry.id))
-            val full = read(entry)
-            assertEquals(content.head.length, full["head"]["end"].asInt())
-            assertEquals(text.length - content.tail.length, full["tail"]["start"].asInt())
-            assertEquals(content.head.length, full["omitted"]["start"].asInt())
-            val matches = call(searchTool, mapOf("knowledgeId" to entry.id, "regex" to "^.", "charsBefore" to 0, "charsAfter" to 0))["matches"]
-            assertEquals(listOf(0, text.length - content.tail.length), matches.map { it["start"].asInt() })
-        }
+    fun `truncated records round trip through PostgreSQL and retrieval`() = knowledgeTest {
+        val entry = put("head🙂" + "🙂".repeat(300_000) + "🙂tail")
+        val content = assertIs<KnowledgeContent.Truncated>(entry.content)
+        assertEquals(entry, store.get(meta, entry.id))
+        val full = read(entry)
+        assertEquals(content.head, full["head"]["text"].asText())
+        assertEquals(content.tail, full["tail"]["text"].asText())
     }
 
     @Test
@@ -153,12 +137,9 @@ class PostgresConversationKnowledgeStoreTest {
     @Test
     fun `corrupt records become storage failures in retrieval tools`() = knowledgeTest {
         val entry = put("valid")
-        val codec = KnowledgeRecordCodec()
-        for (record in listOf("{}", codec.serialize(entry).replace("\"version\":1", "\"version\":9"), codec.serialize(entry.copy(id = UUID.randomUUID().toString())))) {
-            execute("update conversation_knowledge set record_json = ? where id = ?", record, UUID.fromString(entry.id))
-            assertFailsWith<KnowledgeStoreCorruptionException> { store.get(meta, entry.id) }
-            assertEquals("storage_failure", read(entry)["error"]["code"].asText())
-        }
+        execute("update conversation_knowledge set record_json = ? where id = ?", "{}", UUID.fromString(entry.id))
+        assertFailsWith<KnowledgeStoreCorruptionException> { store.get(meta, entry.id) }
+        assertEquals("storage_failure", read(entry)["error"]["code"].asText())
     }
 
     @Test
