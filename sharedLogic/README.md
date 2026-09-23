@@ -95,6 +95,7 @@ Hosts that own a request-scoped catalog can install command, Knowledge, and memo
 `portableSkillRuntimeToolsDiModule`. The full `portableSkillToolsDiModule` includes those runtime tools plus
 catalog-dependent Skill discovery and delegation. Filesystem-backed hosts opt into registry storage through
 `fileSystemSkillRegistryDiModule`; general runtime DI installs none of these modules implicitly.
+Hosts must also bind `ConversationKnowledgeStore`; see the [Knowledge storage contract](docs/pain-points/runtime-sandbox-and-skills.md).
 
 Skills use one host-local storage layout:
 

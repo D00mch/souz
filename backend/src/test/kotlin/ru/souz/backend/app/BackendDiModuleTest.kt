@@ -51,6 +51,7 @@ import ru.souz.backend.storage.postgres.PostgresAgentExecutionRepository
 import ru.souz.backend.storage.postgres.PostgresAgentStateRepository
 import ru.souz.backend.storage.postgres.PostgresBackendServerPreferenceStore
 import ru.souz.backend.storage.postgres.PostgresChatRepository
+import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.backend.storage.postgres.PostgresMessageRepository
 import ru.souz.backend.storage.postgres.PostgresOptionRepository
 import ru.souz.backend.storage.postgres.PostgresTelegramBotBindingRepository
@@ -297,7 +298,7 @@ class BackendDiModuleTest {
             assertIs<FileSystemSkillRegistryRepository>(di.direct.instance<SkillRegistryRepository>())
             assertIs<BackendClientSkills>(di.direct.instance<BackendClientSkills>())
             assertIs<SkillCommandExecutor>(di.direct.instance<SkillCommandExecutor>())
-            assertNotNull(di.direct.instance<ConversationKnowledgeStore>())
+            assertIs<PostgresConversationKnowledgeStore>(di.direct.instance<ConversationKnowledgeStore>())
             assertNotNull(di.direct.instance<ToolGetKnowledge>())
             assertNotNull(di.direct.instance<ToolSearchKnowledge>())
             assertNotNull(di.direct.instance<ToolSearchMemory>())

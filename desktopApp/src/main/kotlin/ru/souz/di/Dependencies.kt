@@ -20,6 +20,8 @@ import ru.souz.ambient.selectAmbientLocalModel
 import ru.souz.paths.SouzPaths
 import ru.souz.agent.agentDiModule
 import ru.souz.agent.AgentFacade
+import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.knowledge.SandboxConversationKnowledgeStore
 import ru.souz.agent.spi.AgentDesktopInfoRepository
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
@@ -486,6 +488,7 @@ val mainDiModule = DI.Module(DiTags.MODULE_MAIN) {
     }
     bindSingleton<AgentToolCatalog> { instance<ToolsFactory>() }
     import(fileSystemSkillRegistryDiModule())
+    bindSingleton<ConversationKnowledgeStore> { SandboxConversationKnowledgeStore(instance()) }
     import(portableSkillToolsDiModule())
     import(
         agentDiModule(
