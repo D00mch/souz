@@ -45,6 +45,7 @@ import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.common.withBackendLogContext
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendV1Exception
@@ -101,6 +102,7 @@ internal class PublicClientConnection(
             "toolCallId" to logNode?.get("toolCallId")?.asText(),
         )
         var pendingStream: AgentEventStream? = null
+        var onSendFailure: (() -> Unit)? = null
         try {
             val node = frame.parseClient()
             logNode = node
@@ -196,6 +198,7 @@ internal class PublicClientConnection(
                     rejectedFor(node, kind, error)
                 }
                 resolvedThreadId = handled.statusFeedback?.threadId
+                onSendFailure = handled.onSendFailure
                 withContext(mdcContext()) {
                     pendingStream?.let {
                         socketLogger.info("WebSocket subscription prepared initialSeq={}", it.initialSeq)
@@ -206,6 +209,7 @@ internal class PublicClientConnection(
                         socket.sendClient(handled.response)
                         stage = "after_ack"
                         handled.afterSend()
+                        onSendFailure = null
                         socketLogger.info("WebSocket ack sent elapsedMs={}", started.elapsedNow().inWholeMilliseconds)
                         handled.statusFeedback?.let { feedback ->
                             stage = "send_status"
@@ -231,6 +235,7 @@ internal class PublicClientConnection(
             }
             throw failure
         } finally {
+            onSendFailure?.invoke()
             val interrupted = !scope.isActive
             withContext(NonCancellable + mdcContext()) {
                 if (interrupted) socketLogger.info("WebSocket frame interrupted stage={} elapsedMs={}", stage, started.elapsedNow().inWholeMilliseconds)
@@ -326,7 +331,7 @@ internal class PublicClientConnection(
 
 private suspend fun AgentEventStream.forwardPublicEvents(
     replayDone: CompletableDeferred<Unit>,
-    send: suspend (AgentEvent) -> Unit,
+    send: suspend (AgentEventEnvelope) -> Unit,
 ) {
     var lastSeq = initialSeq
     suspend fun sendDurableEvents(events: Iterable<AgentEvent>) {
@@ -343,9 +348,11 @@ private suspend fun AgentEventStream.forwardPublicEvents(
     } finally {
         replayDone.complete(Unit)
     }
-    for (event in liveEvents) {
+    while (true) {
+        val event = receiveLive() ?: break
         val seq = event.seq
         if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
+        if (!event.durable && event.isPublicClientEvent()) send(event)
     }
 }
 

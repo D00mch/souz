@@ -1,6 +1,6 @@
 ---
 name: device-media-open
-description: Open media on the user's active client device over the public Souz WebSocket. Use when the user asks to play or open a movie, show, video, song, or other media.
+description: Open media on the user's active client device over the public Souz WebSocket. Use for movies, shows and video; prefer orion.call for music and playback commands.
 metadata:
   souz.skill-id: device.media.open
   souz.transport: client-websocket

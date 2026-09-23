@@ -13,17 +13,18 @@ import ru.souz.tool.web.ToolWebImageSearch
 
 class BackendExecutionToolCatalogTest {
     @Test
-    fun `execution catalog selects compiled tools through the backend capability policy`() {
-        val executionTools = toolNames(executionCatalog(enabledCompiledToolNames = null))
-
-        assertEquals(setOf("ReadFile", "WebPageText", "ClientAsk") + LLM_BACKED_TOOL_NAMES, executionTools)
-    }
-
-    @Test
-    fun `client tools merge after compiled selection and survive an enabled snapshot`() {
-        val executionTools = toolNames(executionCatalog(enabledCompiledToolNames = setOf("ReadFile")))
-
-        assertEquals(setOf("ReadFile", "ClientAsk"), executionTools)
+    fun `catalog filters compiled tools preserves client tools and selects the search provider`() {
+        val selections = mapOf(
+            null to (setOf("ReadFile", "WebPageText") + LLM_BACKED_TOOL_NAMES),
+            setOf("ReadFile") to setOf("ReadFile"),
+            setOf("InternetSearch") to setOf("InternetSearch"),
+        )
+        for ((enabled, compiled) in selections) {
+            for (clientSearch in listOf(false, true)) {
+                val expected = (if (clientSearch) compiled - "InternetSearch" else compiled) + setOf("ClientAsk", "web.search")
+                assertEquals(expected, toolNames(executionCatalog(enabled, clientSearch)), "enabled=$enabled, clientSearch=$clientSearch")
+            }
+        }
     }
 
     @Test
@@ -73,7 +74,7 @@ class BackendExecutionToolCatalogTest {
         )
     }
 
-    private fun executionCatalog(enabledCompiledToolNames: Set<String>?): AgentToolCatalog =
+    private fun executionCatalog(enabledCompiledToolNames: Set<String>?, clientSearch: Boolean): AgentToolCatalog =
         backendExecutionToolCatalog(
             compiledToolCatalog = TestToolCatalog(
                 ToolCategory.FILES to listOf("ReadFile"),
@@ -84,8 +85,12 @@ class BackendExecutionToolCatalogTest {
                 ToolCategory.WEB_SEARCH to BackendToolCapabilityPolicy.executionBoundToolNames.toList(),
             ),
             enabledCompiledToolNames = enabledCompiledToolNames,
-            clientToolCatalog = TestToolCatalog(ToolCategory.CHAT to listOf("ClientAsk")),
+            clientToolCatalog = TestToolCatalog(
+                ToolCategory.CHAT to listOf("ClientAsk"),
+                ToolCategory.WEB_SEARCH to listOf("web.search"),
+            ),
             includeFewShotExamples = true,
+            clientSearchEnabled = clientSearch,
         )
 
     private fun toolNames(catalog: AgentToolCatalog): Set<String> =

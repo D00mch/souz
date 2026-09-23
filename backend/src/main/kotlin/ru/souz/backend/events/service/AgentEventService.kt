@@ -98,6 +98,23 @@ class AgentEventService(
         createdAt = createdAt,
     )
 
+    fun hasLiveSubscriber(userId: String, chatId: UUID): Boolean = eventBus.hasSubscriber(userId, chatId)
+
+    fun publishClientToolCall(
+        userId: String,
+        chatId: UUID,
+        executionId: UUID,
+        payload: PublicToolCallStartedPayload,
+    ): Boolean = eventBus.publishCommand(AgentLiveEvent(
+        id = UUID.randomUUID(),
+        userId = userId,
+        chatId = chatId,
+        executionId = executionId,
+        type = AgentEventType.TOOL_CALL_STARTED,
+        payload = payload,
+        createdAt = Instant.now(),
+    ))
+
     suspend fun publishLive(
         userId: String,
         chatId: UUID,
@@ -150,6 +167,7 @@ class AgentEventService(
             return AgentEventStream(
                 replay = if (afterSeq == null) emptyList() else listPublicStreamReplay(userId, chatId, afterSeq),
                 liveEvents = subscription.events,
+                commands = subscription.commands,
                 close = { subscription.close() },
                 replayAfter = { seq -> listPublicStreamReplay(userId, chatId, seq) },
                 initialSeq = initialSeq,

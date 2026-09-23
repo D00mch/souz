@@ -454,6 +454,102 @@ class BackendPublicMultiChatWebSocketE2eTest {
         }
     }
 
+    @Test
+    fun `WS and HTTP channel calls coexist with target threads and isolate results without replay`() =
+        backendE2eTest("e2e_channel_tools") {
+            val user = UUID.randomUUID().toString()
+            withMultiChatSocket { socket ->
+                val target = request(socket, createFrame(user, "target"))["chatId"].asText()
+                val foreign = request(socket, createFrame(UUID.randomUUID().toString()))["chatId"].asText()
+                llm.requestSkillForPrompt("local", "user.ask", mapOf("question" to "Continue?"))
+                val local = submit(socket, target, user, "local", "local")
+                for (http in listOf(false, true)) {
+                    val prompt = "remote-$http"
+                    val source = if (http) createPublicChat(user, prompt)
+                        else request(socket, createFrame(user, prompt))["chatId"].asText()
+                    llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "включи Pink Floyd"))
+                    val sourceThread = if (http) {
+                        client.post(BackendHttpRoutes.chatMessages(source)) {
+                            trusted(user)
+                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                        }.also { assertEquals(HttpStatusCode.OK, it.status) }.jsonBody()["execution"]["id"].asText()
+                    } else {
+                        val ack = request(socket, messageFrame(source, user, prompt, text = prompt))
+                        assertEquals("thread.status", readJson(socket)["type"].asText())
+                        ack["thread"]["id"].asText()
+                    }
+                    val remote = readJson(socket)
+                    assertEquals("tool.call.started", remote["type"].asText())
+                    assertEquals(target, remote["chatId"].asText())
+                    assertTrue(remote["seq"].isNull)
+                    assertNotEquals(local["threadId"], remote["threadId"])
+                    assertNotEquals(sourceThread, remote["threadId"].asText())
+                    assertEquals("orion.call", remote["payload"]["name"].asText())
+                    assertEquals(json.readTree("""{"utterance":"включи Pink Floyd"}"""), remote["payload"]["arguments"])
+                    assertFalse(remote["payload"].has("target"))
+                    assertEquals(HttpStatusCode.NotFound, client.get(
+                        "${BackendHttpRoutes.chatThread(target, remote["threadId"].asText())}?clientType=backend",
+                    ).status)
+                    for (wrongChat in listOf(source, foreign)) {
+                        val wrongResult = toolResult(remote).replace(target, wrongChat)
+                        assertEquals("tool_call_not_found", request(socket, wrongResult, status = "rejected")["error"]["code"].asText())
+                    }
+                    request(socket, toolResult(remote, """{"reply":"Включаю Pink Floyd"}"""))
+                    if (http) {
+                        eventually("HTTP tool result") {
+                            client.get(BackendHttpRoutes.chatMessages(source)) { trusted(user) }.jsonBody()["items"]
+                                .firstOrNull { it["role"].asText() == "assistant" }
+                        }
+                    } else {
+                        val completed = readJson(socket)
+                        assertEquals("thread.completed", completed["type"].asText())
+                        assertEquals(sourceThread, completed["threadId"].asText())
+                    }
+                    assertTrue(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content.contains("Включаю Pink Floyd"))
+                    assertEquals("tool_call_not_found", request(socket, toolResult(remote), status = "rejected")["error"]["code"].asText())
+                }
+                request(socket, toolResult(local))
+                val localCompleted = readTerminal(socket, local)
+                request(socket, subscribeFrame(target, 0), duplicate = false)
+                assertEquals(local, readJson(socket))
+                assertEquals(localCompleted, readJson(socket))
+                // A subsequent ACK also proves there were no replayed cross-channel calls.
+                request(socket, unsubscribeFrame(target))
+            }
+        }
+
+    @Test
+    fun `invalid unavailable and unowned channel targets fail and cancellation discards pending calls`() =
+        backendE2eTest("e2e_channel_tool_failures") {
+            val user = UUID.randomUUID().toString()
+            val offline = createPublicChat(user, "offline")
+            val archived = createPublicChat(user, "archived")
+            client.post(BackendHttpRoutes.archiveChat(archived)) { trusted(user) }
+            val mobile = client.post(BackendHttpRoutes.CHATS) {
+                jsonBody("""{"userId":"$user","requestId":"mobile","clientType":"mobile_app"}""")
+            }.jsonBody()["chat"]["id"].asText()
+            withMultiChatSocket { socket ->
+                val source = request(socket, createFrame(user, "source"))["chatId"].asText()
+                val foreign = request(socket, createFrame(UUID.randomUUID().toString()))["chatId"].asText()
+                val invalid: List<Any> = listOf("", "not-a-uuid", 123, UUID.randomUUID().toString(), foreign, archived, mobile, offline)
+                invalid.forEachIndexed { index, target ->
+                    val prompt = "invalid-$index"
+                    llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "тише"))
+                    assertEquals("thread.completed", submit(socket, source, user, prompt, prompt)["type"].asText())
+                    assertTrue(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content.contains("client_context_missing"))
+                }
+                request(socket, subscribeFrame(offline))
+                llm.requestSkillForPrompt("cancel", "orion.call", mapOf("channelId" to offline, "utterance" to "тише"))
+                val ack = request(socket, messageFrame(source, user, "cancel", text = "cancel"))
+                readJson(socket) // thread.status
+                val remote = readJson(socket)
+                request(socket, """{"kind":"thread.cancel","chatId":"$source","requestId":"stop","threadId":${ack["thread"]["id"]}}""")
+                assertEquals("thread.status", readJson(socket)["type"].asText())
+                assertEquals("thread.cancelled", readJson(socket)["type"].asText())
+                assertEquals("tool_call_not_found", request(socket, toolResult(remote), status = "rejected")["error"]["code"].asText())
+            }
+        }
+
     private suspend fun BackendE2eScope.request(
         socket: DefaultClientWebSocketSession, raw: String, status: String? = "accepted", duplicate: Boolean? = null,
     ): JsonNode {
@@ -503,6 +599,6 @@ class BackendPublicMultiChatWebSocketE2eTest {
     private fun unsubscribeFrame(chat: String): String =
         """{"kind":"chat.unsubscribe","chatId":"$chat","requestId":"unsubscribe"}"""
 
-    private fun toolResult(tool: JsonNode): String =
-        """{"kind":"tool.result","chatId":${tool["chatId"]},"threadId":${tool["threadId"]},"toolCallId":${tool["payload"]["toolCallId"]},"status":"succeeded","result":{"answer":"yes"}}"""
+    private fun toolResult(tool: JsonNode, result: String = """{"answer":"yes"}"""): String =
+        """{"kind":"tool.result","chatId":${tool["chatId"]},"threadId":${tool["threadId"]},"toolCallId":${tool["payload"]["toolCallId"]},"status":"succeeded","result":$result}"""
 }

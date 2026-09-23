@@ -21,7 +21,7 @@ Codex refresh tokens can rotate. Without database coordination, two replicas can
 - Document deployments as distributed-ready only for the Client-Souz public WebSocket active-thread path unless ordinary executions also gain runtime ownership, lease refresh, and recovery.
 - Keep `waiting_option` separate from owned runtime work. Clear any runtime lease when entering `waiting_option`, and acquire a fresh lease when an option continuation resumes.
 - Prefer a shared execution-ownership model over endpoint-specific recovery logic: `queued`, `running`, and `cancelling` should have an owner and renewable lease when a process is executing them.
-- Keep live Client-Souz frames owner-sticky while the live registry remains process-local.
+- Keep live Client-Souz frames owner-sticky while the live registry remains process-local. Cross-channel tool callers and target subscriptions must share that process; their waiters and events are live-only.
 - Do not fail active ordinary executions on backend startup in a multi-replica deployment unless ownership proves the starting process is recovering only abandoned work.
 - Do not enable server-managed Codex OAuth on multiple replicas without a database-backed lock or compare-and-set path that re-reads credentials before refresh and stores the refreshed credential set atomically.
 
