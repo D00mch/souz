@@ -33,40 +33,37 @@ import kotlin.test.assertTrue
 
 class NodesClassificationPromptTest {
     @Test
-    fun `provider policy accepts multiple categories despite regex disagreement`() {
-        val result = executeClassification(
-            input = "Read a file and open a website", history = emptyList(),
-            localClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.CHAT), 50.0) },
-            apiClassifier = UserMessageClassifier { _, categories ->
-                assertEquals(setOf(ToolCategory.FILES, ToolCategory.BROWSER), categories.keys)
-                assertTrue(categories.values.all { it.isNotBlank() })
-                UserMessageClassifier.Reply(listOf(ToolCategory.FILES, ToolCategory.BROWSER), null)
-            },
+    fun `provider selections bypass regex agreement and preserve all-tools fallback`() {
+        val cases = mapOf(
+            listOf(ToolCategory.BROWSER) to listOf("Open"),
+            listOf(ToolCategory.FILES, ToolCategory.BROWSER) to listOf("Read", "Open"),
+            emptyList<ToolCategory>() to listOf("Read", "Open"),
+            listOf(ToolCategory.HELP) to listOf("Read", "Open"),
         )
-        assertEquals(listOf("Read", "Open"), result.activeTools.map { it.name })
-    }
-
-    @Test
-    fun `provider policy preserves no matches and help fallback`() {
-        for (categories in listOf(emptyList(), listOf(ToolCategory.HELP))) {
+        for ((categories, tools) in cases) {
             val result = executeClassification(
-                input = "Help", history = emptyList(),
+                input = "Open the website", history = emptyList(),
                 localClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) },
                 apiClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(categories, null) },
             )
-            assertEquals(listOf("Read", "Open"), result.activeTools.map { it.name })
+            assertEquals(tools, result.activeTools.map { it.name })
         }
     }
 
     @Test
     fun `remote failures get two attempts then fall back to regex`() {
         var calls = 0
+        var localCalls = 0
         val result = executeClassification(
             input = "Read the file", history = emptyList(),
-            localClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) },
+            localClassifier = UserMessageClassifier { _, _ ->
+                localCalls++
+                UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0)
+            },
             apiClassifier = UserMessageClassifier { _, _ -> calls++; error("Provider unavailable") },
         )
         assertEquals(2, calls)
+        assertEquals(1, localCalls)
         assertEquals(listOf("Read"), result.activeTools.map { it.name })
     }
 

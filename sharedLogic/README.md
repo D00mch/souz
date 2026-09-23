@@ -6,12 +6,9 @@ Shared provider clients, settings and memory contracts, sandbox contracts, skill
 
 ## Jev classification
 
-The reusable `ru.souz.jev.JevClient` evaluates named Noul (yes/no probability) questions through the
-[hosted TypeSafe API](https://api.typesafe.ai/docs). Shared runtime DI supplies it with the host-owned
-standard HTTP client; constructing or resolving it does not require credentials or make a request.
-The client supports Noul questions only and returns probabilities, the resolved model, and token usage.
-
-The classic `GraphBasedAgent` can use Jev for tool-category selection independently of its conversational
+`ru.souz.jev.JevClient` evaluates named yes/no questions through the [hosted TypeSafe API](https://api.typesafe.ai/docs)
+and returns their probabilities. Shared runtime DI binds it lazily using the host-owned HTTP client.
+The classic `GraphBasedAgent` can select multiple tool categories with Jev independently of its conversational
 model. The skills graph, including backend conversations, does not classify tool categories.
 
 | Variable | Behavior |
@@ -27,32 +24,28 @@ Export `JEV_TOKEN` in the environment that starts Souz, then run:
 SOUZ_CLASSIFIER=jev JEV_MODEL=jev-latest JEV_THRESHOLD=0.5 ./gradlew :desktopApp:run
 ```
 
-Selecting Jev with a missing token or invalid threshold fails during classifier construction. Unknown
-classifier names also fail. Each request has a 30-second timeout. The graph makes up to two remote
-attempts on failures before falling back to regex; cancellation propagates immediately. Only enabled,
-nonempty tool categories are evaluated, and several can be selected together. No matches preserves
-the graph's all-tools fallback; `HELP` also exposes all available tools. An empty catalog makes no Jev call.
-Environment settings take effect when the application starts.
+Settings are read at construction; invalid Jev configuration fails when Jev is selected or its client is resolved.
+Requests time out after 30 seconds. The graph tries twice before regex fallback and propagates cancellation.
+Only enabled, nonempty categories are evaluated; an empty catalog makes no request. No matches or `HELP`
+exposes all available tools.
 
 Other shared-runtime callers can inject `JevClient` directly, without a graph or tool catalog:
 
 ```kotlin
 import com.fasterxml.jackson.databind.JsonNode
 import ru.souz.jev.JevClient
-import ru.souz.jev.JevNoulQuestion
 import ru.souz.llms.restJsonMapper
 
 suspend fun needsCalendar(jev: JevClient, message: String): Double {
-    val state = restJsonMapper.valueToTree<JsonNode>(mapOf("message" to message))
     return jev.evaluate(
-        state = state,
-        questions = mapOf("calendar" to JevNoulQuestion("Does this request require calendar access?")),
-    ).probabilities.getValue("calendar")
+        state = restJsonMapper.valueToTree<JsonNode>(message),
+        questions = mapOf("calendar" to "Does this request require calendar access?"),
+    ).getValue("calendar")
 }
 ```
 
-`evaluate` also accepts a per-call `model` override. Callers decide how to apply returned probabilities;
-the generic client has no tool-category or threshold policy and never closes its supplied HTTP client.
+Callers can pass credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
+but leaves selection policy to callers and never closes the supplied transport.
 
 Regular tests use mock HTTP responses. Run the opt-in hosted test with the same `JEV_TOKEN`:
 
