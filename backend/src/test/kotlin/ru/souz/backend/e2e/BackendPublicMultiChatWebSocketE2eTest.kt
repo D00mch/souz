@@ -455,74 +455,66 @@ class BackendPublicMultiChatWebSocketE2eTest {
     }
 
     @Test
-    fun `channel tools coexist with target threads and isolate results without replay or persistence`() =
+    fun `WS and HTTP channel calls coexist with target threads and isolate results without replay`() =
         backendE2eTest("e2e_channel_tools") {
             val user = UUID.randomUUID().toString()
             withMultiChatSocket { socket ->
-                val source = request(socket, createFrame(user, "source"))["chatId"].asText()
                 val target = request(socket, createFrame(user, "target"))["chatId"].asText()
                 val foreign = request(socket, createFrame(UUID.randomUUID().toString()))["chatId"].asText()
                 llm.requestSkillForPrompt("local", "user.ask", mapOf("question" to "Continue?"))
-                llm.requestSkillForPrompt("remote", "orion.call", mapOf("channelId" to target, "utterance" to "включи Pink Floyd"))
                 val local = submit(socket, target, user, "local", "local")
-                val sourceAck = request(socket, messageFrame(source, user, "remote", text = "remote"))
-                assertEquals("thread.status", readJson(socket)["type"].asText())
-                val remote = readJson(socket)
-                assertEquals("tool.call.started", remote["type"].asText())
-                assertEquals(target, remote["chatId"].asText())
-                assertTrue(remote["seq"].isNull)
-                assertNotEquals(local["threadId"], remote["threadId"])
-                assertEquals("orion.call", remote["payload"]["name"].asText())
-                assertEquals(json.readTree("""{"utterance":"включи Pink Floyd"}"""), remote["payload"]["arguments"])
-                assertFalse(remote["payload"].has("target"))
-                assertEquals(HttpStatusCode.NotFound, client.get(
-                    "${BackendHttpRoutes.chatThread(target, remote["threadId"].asText())}?clientType=backend",
-                ).status)
-                for (wrongChat in listOf(source, foreign)) {
-                    val wrongResult = toolResult(remote).replace(target, wrongChat)
-                    assertEquals("tool_call_not_found", request(socket, wrongResult, status = "rejected")["error"]["code"].asText())
+                for (http in listOf(false, true)) {
+                    val prompt = "remote-$http"
+                    val source = if (http) createPublicChat(user, prompt)
+                        else request(socket, createFrame(user, prompt))["chatId"].asText()
+                    llm.requestSkillForPrompt(prompt, "orion.call", mapOf("channelId" to target, "utterance" to "включи Pink Floyd"))
+                    val sourceThread = if (http) {
+                        client.post(BackendHttpRoutes.chatMessages(source)) {
+                            trusted(user)
+                            jsonBody("""{"content":"$prompt","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                        }.also { assertEquals(HttpStatusCode.OK, it.status) }.jsonBody()["execution"]["id"].asText()
+                    } else {
+                        val ack = request(socket, messageFrame(source, user, prompt, text = prompt))
+                        assertEquals("thread.status", readJson(socket)["type"].asText())
+                        ack["thread"]["id"].asText()
+                    }
+                    val remote = readJson(socket)
+                    assertEquals("tool.call.started", remote["type"].asText())
+                    assertEquals(target, remote["chatId"].asText())
+                    assertTrue(remote["seq"].isNull)
+                    assertNotEquals(local["threadId"], remote["threadId"])
+                    assertNotEquals(sourceThread, remote["threadId"].asText())
+                    assertEquals("orion.call", remote["payload"]["name"].asText())
+                    assertEquals(json.readTree("""{"utterance":"включи Pink Floyd"}"""), remote["payload"]["arguments"])
+                    assertFalse(remote["payload"].has("target"))
+                    assertEquals(HttpStatusCode.NotFound, client.get(
+                        "${BackendHttpRoutes.chatThread(target, remote["threadId"].asText())}?clientType=backend",
+                    ).status)
+                    for (wrongChat in listOf(source, foreign)) {
+                        val wrongResult = toolResult(remote).replace(target, wrongChat)
+                        assertEquals("tool_call_not_found", request(socket, wrongResult, status = "rejected")["error"]["code"].asText())
+                    }
+                    request(socket, toolResult(remote, """{"reply":"Включаю Pink Floyd"}"""))
+                    if (http) {
+                        eventually("HTTP tool result") {
+                            client.get(BackendHttpRoutes.chatMessages(source)) { trusted(user) }.jsonBody()["items"]
+                                .firstOrNull { it["role"].asText() == "assistant" }
+                        }
+                    } else {
+                        val completed = readJson(socket)
+                        assertEquals("thread.completed", completed["type"].asText())
+                        assertEquals(sourceThread, completed["threadId"].asText())
+                    }
+                    assertTrue(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content.contains("Включаю Pink Floyd"))
+                    assertEquals("tool_call_not_found", request(socket, toolResult(remote), status = "rejected")["error"]["code"].asText())
                 }
-                request(socket, toolResult(remote, """{"reply":"Включаю Pink Floyd"}"""))
-                val completed = readJson(socket)
-                assertEquals("thread.completed", completed["type"].asText())
-                assertEquals(sourceAck["thread"]["id"], completed["threadId"])
-                assertTrue(llm.requests.last().messages.last { it.name == "RunSkillCommand" }.content.contains("Включаю Pink Floyd"))
-                assertEquals("tool_call_not_found", request(socket, toolResult(remote), status = "rejected")["error"]["code"].asText())
                 request(socket, toolResult(local))
                 val localCompleted = readTerminal(socket, local)
                 request(socket, subscribeFrame(target, 0), duplicate = false)
                 assertEquals(local, readJson(socket))
                 assertEquals(localCompleted, readJson(socket))
-                // A subsequent ACK also proves there was no extra replayed remote call.
+                // A subsequent ACK also proves there were no replayed cross-channel calls.
                 request(socket, unsubscribeFrame(target))
-            }
-        }
-
-    @Test
-    fun `channel calls are available to HTTP executions without an attached client`() =
-        backendE2eTest("e2e_http_channel_tool") {
-            val user = UUID.randomUUID().toString()
-            val source = createPublicChat(user)
-            val target = createPublicChat(user, "target")
-            client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted(user)
-                jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}"}""")
-            }
-            llm.requestSkill("orion.call", mapOf("channelId" to target, "utterance" to "тише"))
-            withPublicSocket(target) { socket ->
-                client.post(BackendHttpRoutes.chatMessages(source)) {
-                    trusted(user)
-                    jsonBody("""{"content":"remote"}""")
-                }.also { assertEquals(HttpStatusCode.OK, it.status) }
-                val remote = readJson(socket)
-                assertTrue(remote["seq"].isNull)
-                assertEquals("orion.call", remote["payload"]["name"].asText())
-                request(socket, toolResult(remote))
-                eventually("HTTP tool result") {
-                    client.get(BackendHttpRoutes.chatMessages(source)) { trusted(user) }.jsonBody()["items"]
-                        .firstOrNull { it["role"].asText() == "assistant" }
-                }
-                assertTrue(client.get(BackendHttpRoutes.chatEvents(target)) { trusted(user) }.jsonBody()["items"].isEmpty)
             }
         }
 
