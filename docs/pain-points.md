@@ -11,7 +11,7 @@ Before editing a module, open its index below and read only the topics related t
 - [`:llms`](../llms/docs/pain-points.md)
 - [`:native`](../native/docs/pain-points.md)
 - [`:ambientAgent`](../ambientAgent/docs/pain-points.md)
-- [`:sharedLogic`](../sharedLogic/docs/pain-points.md) — includes [sandbox and composite Skill execution](../sharedLogic/docs/pain-points/runtime-sandbox-and-skills.md).
+- [`:sharedLogic`](../sharedLogic/docs/pain-points.md) — includes [sandbox and composite Skill execution](../sharedLogic/docs/pain-points/runtime-sandbox-and-skills.md) and [provider/classifier HTTP lifecycle](../sharedLogic/docs/pain-points/provider-http-lifecycle.md).
 - [`:sharedUI`](../sharedUI/docs/pain-points.md)
 - [`:skill-oauth-api`](../skill-oauth-api/docs/pain-points.md)
 - [`:skill-oauth-impl`](../skill-oauth-impl/docs/pain-points.md)

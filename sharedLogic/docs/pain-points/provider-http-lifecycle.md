@@ -21,7 +21,10 @@ Each Ktor client owns an engine, connection pool, plugins, and coroutine lifecyc
 - Keep token accounting at the `LLMChatAPI` boundary, where normalized usage is available, rather than in HTTP middleware or provider adapters.
 - Keep custom OpenAI-compatible behavior explicit. Do not retry a rejected request with a different payload.
 - Resolve internal model selections with `executionModelId` when constructing requests and include their explicit provider. The desktop router and remote adapters forward exact IDs in streaming and ordinary calls; they do not guess models from prefixes or replace them with settings defaults. Classifiers pass typed requests to preserve routing metadata.
+- Jev uses the standard host-owned transport and reads `JEV_TOKEN` for request-local authorization. Its model and Noul probabilities are independent of conversational LLM routing and aggregate confidence. Keep Jev's generic evaluation client separate from the tool-category threshold adapter; validate every requested probability before accepting the selection.
 
 ## Verification
 
 Run `./gradlew :sharedLogic:jvmTest`. Cover concurrent credential and timeout isolation, shared-client reuse, Giga token invalidation, and exactly-once host shutdown.
+
+Jev live verification is opt-in with `SOUZ_TEST_JEV=1` and `JEV_TOKEN`; see [setup and usage](../../README.md#jev-classification).
