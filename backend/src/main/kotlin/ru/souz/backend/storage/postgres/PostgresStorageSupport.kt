@@ -146,6 +146,7 @@ internal fun SQLException.isConstraintViolation(constraintName: String): Boolean
         message.orEmpty().contains(constraintName))
 
 internal data class StoredSettingsPayload(
+    val reasoningEffort: String? = null,
     val defaultModel: String? = null,
     val contextSize: Int? = null,
     val temperature: Float? = null,
@@ -384,6 +385,7 @@ internal fun ResultSet.toUserSettings(): UserSettings {
     return UserSettings(
         userId = getString("user_id"),
         defaultModel = payload.defaultModel.toModelOrNull(),
+        reasoningEffort = payload.reasoningEffort,
         contextSize = payload.contextSize,
         temperature = payload.temperature,
         locale = payload.locale.toLocaleOrNull(),
@@ -419,6 +421,7 @@ internal fun ResultSet.toUserProviderKeyOrNull(): UserProviderKey? =
 internal fun UserSettings.toSettingsJson(): String =
     postgresStorageMapper.writeValueAsString(
         StoredSettingsPayload(
+            reasoningEffort = reasoningEffort,
             defaultModel = defaultModel?.alias,
             contextSize = contextSize,
             temperature = temperature,

@@ -33,6 +33,7 @@ class UserSettingsService(
         userSettingsRepository.save(
             UserSettings(
                 userId = userId,
+                reasoningEffort = existing?.reasoningEffort,
                 defaultModel = overrides.defaultModel ?: existing?.defaultModel,
                 contextSize = overrides.contextSize ?: existing?.contextSize,
                 temperature = overrides.temperature ?: existing?.temperature,

@@ -24,6 +24,15 @@ import kotlin.test.assertTrue
 
 class CodexChatAPIRequestTest {
     @Test
+    fun `reasoning effort is nested for Responses and omitted when unset`() {
+        val api = createApi()
+        val configured = invokeBuildResponsesRequest(api, chatRequest().copy(reasoningEffort = "low"))
+        assertEquals(mapOf("effort" to "low"), configured["reasoning"])
+        assertTrue("reasoning_effort" !in configured)
+        assertTrue("reasoning" !in invokeBuildResponsesRequest(api, chatRequest()))
+    }
+
+    @Test
     fun `terminal stream failure is not followed by fallback success`() = runTest {
         val fixture = streamingFixture(CODEX_FAILED_STREAM)
 

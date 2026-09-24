@@ -64,7 +64,7 @@ internal class BackendConversationRuntime(
 
         val result = executor.execute(
             agentId = AgentId.SKILLS_GRAPH,
-            context = seedContext,
+            context = seedContext.copy(settings = seedContext.settings.copy(reasoningEffort = request.reasoningEffort)),
             input = request.prompt,
             eventSink = eventSink,
             onActiveRunReady = onRuntimeReady,

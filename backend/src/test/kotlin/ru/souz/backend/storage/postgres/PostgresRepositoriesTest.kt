@@ -128,6 +128,7 @@ class PostgresRepositoriesTest {
         val settings = UserSettings(
             userId = "user-a",
             defaultModel = LLMModel.Max,
+            reasoningEffort = "low",
             contextSize = 16_000,
             temperature = 0.7f,
             locale = Locale.forLanguageTag("en-US"),

@@ -6,6 +6,7 @@ import ru.souz.llms.LLMModel
 internal data class BackendConversationTurnRequest(
     val prompt: String,
     val model: LLMModel,
+    val reasoningEffort: String? = null,
     val contextSize: Int,
     val locale: String,
     val timeZone: String,

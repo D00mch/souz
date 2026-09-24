@@ -100,6 +100,7 @@ internal class AgentExecutionRequestFactory(
             execution = execution,
             conversationKey = AgentConversationKey.fromChat(userId, chatId),
             runtimeRequest = BackendConversationTurnRequest(
+                reasoningEffort = effectiveSettings.reasoningEffort,
                 prompt = content,
                 model = effectiveSettings.defaultModel,
                 contextSize = effectiveSettings.contextSize,
