@@ -144,6 +144,8 @@ dependencies {
     runtimeOnly("it.tdlight:tdlight-natives:${libs.versions.tdlight.natives.get()}:${tdlightNativeClassifier()}")
 
     testImplementation(libs.kotlin.test)
+    testImplementation(projects.backend)
+    testImplementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
     testImplementation(libs.kotlin.testJunit5)
     testImplementation(libs.junit.jupiterParams)
     testImplementation(libs.mockk)
@@ -152,6 +154,11 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // External-bank evaluations must run again even when sources have not changed.
+    val hindsightScenarios = providers.environmentVariable("SOUZ_HINDSIGHT_SCENARIOS_ON")
+        .map { it.equals("true", ignoreCase = true) }.orElse(false)
+    outputs.upToDateWhen { !hindsightScenarios.get() }
+    outputs.doNotCacheIf("Hindsight scenarios use an external memory bank") { hindsightScenarios.get() }
     systemProperty("junit.jupiter.execution.timeout.default", "5 m")
     systemProperty("junit.jupiter.execution.timeout.mode", "enabled")
 }
