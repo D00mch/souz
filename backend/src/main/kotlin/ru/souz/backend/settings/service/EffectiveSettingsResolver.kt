@@ -53,15 +53,19 @@ class EffectiveSettingsResolver(
         model: LLMModel,
         userManagedProviders: Set<LlmProvider>? = null,
     ): Boolean =
-        isSelectableModel(userId, model, userManagedProviders)
+        isSelectableModel(model) { userManagedProviders ?: loadUserManagedProviders(userId) }
 
     suspend fun resolve(
         userId: String,
         requestOverrides: UserSettingsOverrides? = null,
         userManagedProviders: Set<LlmProvider>? = null,
     ): EffectiveUserSettings {
+        var loadedProviders = userManagedProviders
+        val providers: suspend () -> Set<LlmProvider> = {
+            loadedProviders ?: loadUserManagedProviders(userId).also { loadedProviders = it }
+        }
         val persisted = userSettingsRepository.get(userId)
-            ?: userSettingsRepository.save(defaultsFor(userId, userManagedProviders))
+            ?: userSettingsRepository.save(defaultsFor(userId, providers))
 
         val locale = normalizeLocale(requestOverrides?.locale ?: persisted.locale ?: defaultLocale())
         val timeZone = requestOverrides?.timeZone ?: persisted.timeZone ?: ZoneId.systemDefault()
@@ -76,10 +80,9 @@ class EffectiveSettingsResolver(
                 ?: baseSettingsProvider.requestTimeoutMillis
         )
         val defaultModel = normalizeModel(
-            userId = userId,
             model = requestOverrides?.defaultModel ?: persisted.defaultModel,
             locale = locale,
-            userManagedProviders = userManagedProviders,
+            userManagedProviders = providers,
         )
         val enabledTools = normalizeEnabledTools(requestOverrides?.enabledTools ?: persisted.enabledTools)
         val showToolEventsPreference = requestOverrides?.showToolEvents ?: persisted.showToolEvents ?: true
@@ -111,13 +114,13 @@ class EffectiveSettingsResolver(
 
     private suspend fun defaultsFor(
         userId: String,
-        userManagedProviders: Set<LlmProvider>?,
+        userManagedProviders: suspend () -> Set<LlmProvider>,
     ): UserSettings {
         val locale = defaultLocale()
         val now = Instant.now()
         return UserSettings(
             userId = userId,
-            defaultModel = defaultModelForNewSettings(userId, locale, userManagedProviders),
+            defaultModel = defaultModelForNewSettings(locale, userManagedProviders),
             contextSize = baseSettingsProvider.contextSize,
             temperature = baseSettingsProvider.temperature,
             locale = locale,
@@ -140,37 +143,34 @@ class EffectiveSettingsResolver(
         (enabledTools ?: advertisedToolNames).filterTo(linkedSetOf()) { it in advertisedToolNames }
 
     private suspend fun normalizeModel(
-        userId: String,
         model: LLMModel?,
         locale: Locale,
-        userManagedProviders: Set<LlmProvider>?,
+        userManagedProviders: suspend () -> Set<LlmProvider>,
     ): LLMModel {
         if (model?.provider == LlmProvider.GIGA) {
             return model
         }
-        val fallback = fallbackModel(userId, locale, userManagedProviders)
-        val candidate = (model ?: fallback).withConfiguredOpenAiCompatibleChatModel()
-        return candidate.takeIf { isSelectableModel(userId, it, userManagedProviders) } ?: fallback
+        return model?.withConfiguredOpenAiCompatibleChatModel()
+            ?.takeIf { isSelectableModel(it, userManagedProviders) }
+            ?: fallbackModel(locale, userManagedProviders)
     }
 
     private suspend fun defaultModelForNewSettings(
-        userId: String,
         locale: Locale,
-        userManagedProviders: Set<LlmProvider>?,
+        userManagedProviders: suspend () -> Set<LlmProvider>,
     ): LLMModel {
         val candidate = baseSettingsProvider.gigaModel.withConfiguredOpenAiCompatibleChatModel()
-        return candidate.takeIf { isSelectableModel(userId, it, userManagedProviders) }
-            ?: fallbackModel(userId, locale, userManagedProviders)
+        return candidate.takeIf { isSelectableModel(it, userManagedProviders) }
+            ?: fallbackModel(locale, userManagedProviders)
     }
 
     private suspend fun fallbackModel(
-        userId: String,
         locale: Locale,
-        userManagedProviders: Set<LlmProvider>?,
+        userManagedProviders: suspend () -> Set<LlmProvider>,
     ): LLMModel {
         if (
             hasConfiguredOpenAiCompatibleChatModel() &&
-            hasConfiguredAccess(userId, LlmProvider.OPENAI, userManagedProviders)
+            hasConfiguredAccess(LlmProvider.OPENAI, userManagedProviders)
         ) {
             return LLMModel.OpenAICompatibleCustom
         }
@@ -181,7 +181,7 @@ class EffectiveSettingsResolver(
             .firstNotNullOfOrNull { provider ->
                 when (provider) {
                     LlmProvider.LOCAL -> localDefault
-                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(userId, provider, userManagedProviders) }
+                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(provider, userManagedProviders) }
                 }
             }
             ?: localDefault
@@ -189,9 +189,8 @@ class EffectiveSettingsResolver(
     }
 
     private suspend fun hasConfiguredAccess(
-        userId: String,
         provider: LlmProvider,
-        userManagedProviders: Set<LlmProvider>?,
+        userManagedProviders: suspend () -> Set<LlmProvider>,
     ): Boolean =
         if (provider !in BackendLlmSupport.chatProviders) {
             false
@@ -199,8 +198,7 @@ class EffectiveSettingsResolver(
             when (provider) {
                 LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
                 LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
-                else -> baseSettingsProvider.hasKey(provider) ||
-                    provider in (userManagedProviders ?: loadUserManagedProviders(userId))
+                else -> baseSettingsProvider.hasKey(provider) || provider in userManagedProviders()
             }
         }
 
@@ -211,19 +209,18 @@ class EffectiveSettingsResolver(
             }
 
     private suspend fun isSelectableModel(
-        userId: String,
         model: LLMModel,
-        userManagedProviders: Set<LlmProvider>?,
+        userManagedProviders: suspend () -> Set<LlmProvider>,
     ): Boolean =
         if (model !in BackendLlmSupport.chatModels) {
             false
         } else if (model == LLMModel.OpenAICompatibleCustom) {
             hasConfiguredOpenAiCompatibleChatModel() &&
-                hasConfiguredAccess(userId, LlmProvider.OPENAI, userManagedProviders)
+                hasConfiguredAccess(LlmProvider.OPENAI, userManagedProviders)
         } else {
             when (model.provider) {
                 LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
-                else -> hasConfiguredAccess(userId, model.provider, userManagedProviders)
+                else -> hasConfiguredAccess(model.provider, userManagedProviders)
             }
         }
 
