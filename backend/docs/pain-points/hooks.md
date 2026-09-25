@@ -1,0 +1,13 @@
+# Workspace hook admission and recovery
+
+Hook owners come from the host allowlist and resolved workspace, never from request headers/body or a newly discovered YAML identity. DOCKER must match the owner to the workspace. LOCAL hook files are trusted operator configuration on a shared filesystem. Unknown auth fields and conflicting IDs fail closed.
+
+Acknowledgement follows receipt commit. The receipt UUID is reserved as the execution ID before dispatch; only receipts establish hook origin for recovery and LLM budgets. Keep pre-auth processing independent of agent/skill/OAuth setup. Do not log parser exceptions containing YAML, Authorization or payload text.
+
+`verify` and `auth` are mutually exclusive. A verifier uses the owner's configured LOCAL or DOCKER sandbox and its ordinary filesystem, network and environment permissions; it is trusted user/operator code, not an isolated untrusted-code service. Capture supporting files on reload, run their temporary copy through `SandboxCommandExecutor`, and remove it on completion/cancellation. Never build a shell command from request data or invoke Skill discovery/validation on this path. Bound request headers/body, verifier concurrency and stdout; a verifier rejection or runtime error must not reach receipt admission. Use the verified event ID rather than the sender's `Idempotency-Key`, and recheck the loaded snapshot after the suspend call so reload/disable takes effect during verification.
+
+Hooks run in one backend process. Each new receipt gets a separate hidden technical chat so events do not inherit conversation history; deduplication returns the existing receipt before creating a chat. The worker serializes receipts per hook and preserves `waiting_option`. Startup fails interrupted hook work through the existing execution finalizer and resumes pending receipts. It must never recover unrelated executions or replay an uncertain external effect automatically. A running receipt has to remain running while waiting for an option, so its persistent provider budget also applies to continuation.
+
+Reserve provider attempts transactionally before calling the provider, including retries and nested tools; in-memory quota counters alone do not survive restart. Usage and delivery success are separate from event acknowledgement and the assistant's final answer. See [the operating contract](../../../docs/hooks.md) for configuration, limits and HTTP behavior.
+
+Run `./gradlew :backend:test --tests 'ru.souz.backend.hooks.HookVerifierTest'` with local Python for verifier changes. Run `./gradlew :backend:test --tests 'ru.souz.backend.e2e.BackendHooksE2eTest'` with Docker, followed by the backend suite when changing lifecycle or LLM integration.

@@ -5,6 +5,7 @@ import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.SystemBackendConfigSource
+import ru.souz.backend.hooks.HookConfig
 import ru.souz.skilloauth.impl.OAuthProviderCatalog
 
 /**
@@ -146,6 +147,7 @@ data class BackendAppConfig(
     val hindsightApiToken: String? = null,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
+    val hooks: HookConfig = HookConfig(),
 ) {
     fun validate(): BackendAppConfig {
         server.validate()
@@ -194,6 +196,10 @@ data class BackendAppConfig(
         fun load(source: BackendConfigSource = SystemBackendConfigSource): BackendAppConfig =
             BackendAppConfig(
                 featureFlags = BackendFeatureFlags.load(source),
+                hooks = HookConfig(
+                    owners = source.value("SOUZ_HOOK_OWNERS", "souz.hooks.owners")
+                        ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet().orEmpty(),
+                ),
                 server = BackendServerConfig(
                     host = source.value(
                         envKey = "SOUZ_BACKEND_HOST",

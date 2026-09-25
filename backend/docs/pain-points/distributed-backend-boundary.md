@@ -6,6 +6,8 @@ Backend storage is PostgreSQL-backed, but active runtime ownership is distribute
 
 Ordinary trusted-proxy HTTP executions and Telegram/VK-triggered executions run as process-local background jobs without a renewable runtime lease. Their durable `agent_executions` rows can remain active if the owning process exits while the job is running. `waiting_option` is durable user-wait state and must not be treated as a crashed runtime by lease recovery.
 
+[Workspace hooks](hooks.md) have single-process receipt-based recovery: pending work resumes and interrupted receipt-linked executions fail without replaying side effects. This does not provide distributed ownership or recover unrelated ordinary executions.
+
 Server-managed Codex OAuth is safe for a single backend process through process-local refresh coordination. A terminal refresh rejection suppresses deployment credentials only while the configured refresh token matches the rejected value. A different `CODEX_REFRESH_TOKEN` lifts suppression, so replace all four deployment values together before restarting. Multi-replica deployments must not enable it unless refresh is database-coordinated and replaces the access token, refresh token, account ID, and expiry as one credential set.
 
 ## Why it is fragile
