@@ -48,12 +48,8 @@ class EffectiveSettingsResolver(
     private val advertisedToolNames: Set<String> =
         BackendToolCapabilityPolicy.advertisedToolNames(toolCatalog)
 
-    suspend fun isSelectableDefaultModel(
-        userId: String,
-        model: LLMModel,
-        userManagedProviders: Set<LlmProvider>? = null,
-    ): Boolean =
-        isSelectableModel(model) { userManagedProviders ?: loadUserManagedProviders(userId) }
+    suspend fun isSelectableDefaultModel(userId: String, model: LLMModel): Boolean =
+        isSelectableModel(model) { loadUserManagedProviders(userId) }
 
     suspend fun resolve(
         userId: String,
@@ -168,39 +164,21 @@ class EffectiveSettingsResolver(
         locale: Locale,
         userManagedProviders: suspend () -> Set<LlmProvider>,
     ): LLMModel {
-        if (
-            hasConfiguredOpenAiCompatibleChatModel() &&
-            hasConfiguredAccess(LlmProvider.OPENAI, userManagedProviders)
-        ) {
+        if (isSelectableModel(LLMModel.OpenAICompatibleCustom, userManagedProviders)) {
             return LLMModel.OpenAICompatibleCustom
         }
         val defaults = LlmBuildProfile.defaultsForLanguage(locale.languageOrRegion())
         val localDefault = localModelAvailability.defaultGigaModel()
         return LlmBuildProfile.providerPrioritiesForLanguage(locale.languageOrRegion())
-            .filter { it in BackendLlmSupport.chatProviders }
             .firstNotNullOfOrNull { provider ->
                 when (provider) {
                     LlmProvider.LOCAL -> localDefault
-                    else -> defaults[provider]?.takeIf { hasConfiguredAccess(provider, userManagedProviders) }
+                    else -> defaults[provider]?.takeIf { isSelectableModel(it, userManagedProviders) }
                 }
             }
             ?: localDefault
             ?: defaults.values.first { it in BackendLlmSupport.chatModels }
     }
-
-    private suspend fun hasConfiguredAccess(
-        provider: LlmProvider,
-        userManagedProviders: suspend () -> Set<LlmProvider>,
-    ): Boolean =
-        if (provider !in BackendLlmSupport.chatProviders) {
-            false
-        } else {
-            when (provider) {
-                LlmProvider.LOCAL -> localModelAvailability.isProviderAvailable()
-                LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
-                else -> baseSettingsProvider.hasKey(provider) || provider in userManagedProviders()
-            }
-        }
 
     private suspend fun loadUserManagedProviders(userId: String): Set<LlmProvider> =
         userProviderKeyRepository.list(userId)
@@ -212,16 +190,12 @@ class EffectiveSettingsResolver(
         model: LLMModel,
         userManagedProviders: suspend () -> Set<LlmProvider>,
     ): Boolean =
-        if (model !in BackendLlmSupport.chatModels) {
-            false
-        } else if (model == LLMModel.OpenAICompatibleCustom) {
-            hasConfiguredOpenAiCompatibleChatModel() &&
-                hasConfiguredAccess(LlmProvider.OPENAI, userManagedProviders)
-        } else {
-            when (model.provider) {
-                LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
-                else -> hasConfiguredAccess(model.provider, userManagedProviders)
-            }
+        when {
+            model !in BackendLlmSupport.chatModels -> false
+            model == LLMModel.OpenAICompatibleCustom && !hasConfiguredOpenAiCompatibleChatModel() -> false
+            model.provider == LlmProvider.LOCAL -> model in localModelAvailability.availableGigaModels()
+            model.provider == LlmProvider.CODEX -> baseSettingsProvider.hasCompleteCodexOAuthCredentials()
+            else -> baseSettingsProvider.hasKey(model.provider) || model.provider in userManagedProviders()
         }
 
     private fun hasConfiguredOpenAiCompatibleChatModel(): Boolean =
