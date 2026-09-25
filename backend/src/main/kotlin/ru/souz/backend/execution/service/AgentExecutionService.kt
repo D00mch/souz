@@ -3,6 +3,7 @@ package ru.souz.backend.execution.service
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeout
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -16,7 +17,6 @@ import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.execution.model.acceptsInput
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -52,8 +52,9 @@ class AgentExecutionService internal constructor(
         latestDeviceContextJson: String = "{}",
         userMessageMetadata: Map<String, String> = emptyMap(),
         clientToolsEnabled: Boolean = false,
+        executionTimeoutMillis: Long? = null,
     ): SendMessageResult {
-        val prepared = prepareChatTurn(
+        val base = prepareChatTurn(
             userId = userId,
             chatId = chatId,
             content = content,
@@ -63,6 +64,9 @@ class AgentExecutionService internal constructor(
             latestDeviceContextJson = latestDeviceContextJson,
             userMessageMetadata = userMessageMetadata,
             clientToolsEnabled = clientToolsEnabled,
+        )
+        val prepared = if (executionTimeoutMillis == null) base else base.copy(
+            execution = base.execution.copy(metadata = base.execution.metadata + ("executionTimeoutMillis" to executionTimeoutMillis.toString())),
         )
         prepared.normalizedClientMessageId?.let { normalizedClientMessageId ->
             executionRepository.findByClientMessageId(userId, chatId, normalizedClientMessageId)
@@ -223,12 +227,11 @@ class AgentExecutionService internal constructor(
             },
         ) {
             try {
-                finalizer.runExecution(
-                    execution = execution,
-                    conversationKey = conversationKey,
-                    turnRequest = turnRequest,
-                    eventSink = eventSink,
-                )
+                val run = suspend {
+                    finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
+                }
+                val timeout = execution.metadata["executionTimeoutMillis"]?.toLongOrNull()
+                if (timeout == null) run() else withTimeout(timeout) { run() }
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by AgentExecutionFinalizer.
             }
@@ -313,7 +316,7 @@ class AgentExecutionService internal constructor(
 
     internal suspend fun failStartup(started: AgentExecution): AgentExecution? {
         val execution = executionRepository.getByChat(started.userId, started.chatId, started.id) ?: return null
-        if (!execution.status.acceptsInput()) return execution
+        if (!execution.status.isActive() || execution.status == AgentExecutionStatus.WAITING_OPTION) return execution
         return finalizer.markFailed(
             executionId = execution.id,
             userId = execution.userId,

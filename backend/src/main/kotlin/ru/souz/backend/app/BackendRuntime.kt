@@ -27,6 +27,7 @@ class BackendRuntime private constructor(
     private val clientThreadRecoveryService: ClientThreadRecoveryService by lazy { di.direct.instance() }
 
     fun startBackgroundServices() {
+        runBlocking { httpDependencies.hookService.start(applicationScope) }
         if (httpDependencies.featureFlags.wsEvents) {
             runBlocking { clientThreadRecoveryService.recover() }
             clientThreadRecoveryService.start(applicationScope)

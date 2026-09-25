@@ -7,6 +7,7 @@ import ru.souz.backend.client.PublicClientService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.service.AgentExecutionService
+import ru.souz.backend.hooks.HookService
 import ru.souz.backend.keys.service.UserProviderKeyService
 import ru.souz.backend.onboarding.BackendOnboardingService
 import ru.souz.backend.options.service.OptionService
@@ -27,6 +28,7 @@ internal data class BackendHttpDependencies(
     val optionService: OptionService,
     val eventService: AgentEventService,
     val publicClientService: PublicClientService,
+    val hookService: HookService,
     val telegramBotBindingService: TelegramBotBindingService? = null,
     val vkBotBindingService: VkBotBindingService? = null,
     val skillOAuthGatewayImpl: SkillOAuthGatewayImpl? = null,

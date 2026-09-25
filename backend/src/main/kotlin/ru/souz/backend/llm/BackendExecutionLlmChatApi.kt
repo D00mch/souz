@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModelSelection
 import ru.souz.llms.LLMChatAPI
@@ -37,6 +38,7 @@ internal class BackendExecutionLlmChatApi(
     initialUsage: LLMResponse.Usage = ZERO_USAGE,
     private val delayMillis: suspend (Long) -> Unit = { delay(it) },
     private val providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = null,
+    private val hookBudget: HookLlmBudget? = null,
 ) : LLMChatAPI {
     private val providerStateMutex = Mutex()
     private val credentials = mutableMapOf<LlmProvider, String?>()
@@ -57,13 +59,13 @@ internal class BackendExecutionLlmChatApi(
                 requestParameters = settingsProvider.openaiSummarizationParameters,
             )
             val request = body.copy(model = summarizationModel, provider = LlmProvider.OPENAI, maxTokens = 0)
-            return retryChat { api.message(request) }.also { recordUsage(it) }
+            return retryChat { callProvider(LlmProvider.OPENAI, request, api) }.also { recordUsage(it) }
         }
         val (provider, request) = when (val route = chatRoute(body)) {
             is ChatRoute.Ready -> route
             is ChatRoute.Rejected -> return route.error
         }
-        return retryChat { apiFor(provider).message(request) }.also { recordUsage(it) }
+        return retryChat { callProvider(provider, request, apiFor(provider)) }.also { recordUsage(it) }
     }
 
     override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> {
@@ -72,7 +74,7 @@ internal class BackendExecutionLlmChatApi(
             is ChatRoute.Rejected -> return flow { emit(route.error) }
         }
         val api = apiFor(provider)
-        return retryingStream(api, request)
+        return retryingStream(provider, api, request)
     }
 
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings {
@@ -90,6 +92,7 @@ internal class BackendExecutionLlmChatApi(
             }
             else -> return unsupportedEmbeddingModel(resolution)
         }
+        hookBudget?.beforeAuxiliaryCall()
         return apiFor(model.provider).embeddings(body.copy(model = model.alias))
     }
 
@@ -194,24 +197,33 @@ internal class BackendExecutionLlmChatApi(
         }
     }
 
-    private fun retryingStream(api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
+    private suspend fun callProvider(provider: LlmProvider, body: LLMRequest.Chat, api: LLMChatAPI): LLMResponse.Chat {
+        val budget = hookBudget ?: return api.message(body)
+        return budget.quotas.withProviderPermit(provider) { api.message(budget.beforeCall(body)) }
+    }
+
+    private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
         var attempt = 0
         while (true) {
             try {
                 var emitted = false
                 var previousUsage = ZERO_USAGE
-                api.messageStream(body).collect { response ->
-                    if (
-                        !emitted &&
-                        response is LLMResponse.Chat.Error &&
-                        response.status == TOO_MANY_REQUESTS &&
-                        attempt < retryPolicy.max429Retries
-                    ) {
-                        throw RetryFirstStreaming429(response)
+                val collect = suspend {
+                    api.messageStream(hookBudget?.beforeCall(body) ?: body).collect { response ->
+                        if (
+                            !emitted &&
+                            response is LLMResponse.Chat.Error &&
+                            response.status == TOO_MANY_REQUESTS &&
+                            attempt < retryPolicy.max429Retries
+                        ) {
+                            throw RetryFirstStreaming429(response)
+                        }
+                        previousUsage = emitAndRecordStreamingUsage(response, previousUsage)
+                        emitted = true
                     }
-                    previousUsage = emitAndRecordStreamingUsage(response, previousUsage)
-                    emitted = true
                 }
+                val budget = hookBudget
+                if (budget == null) collect() else budget.quotas.withProviderPermit(provider) { collect() }
                 return@flow
             } catch (retry: RetryFirstStreaming429) {
                 delayMillis(backoffForAttempt(attempt, retry.error.message))
@@ -227,6 +239,7 @@ internal class BackendExecutionLlmChatApi(
         if (response is LLMResponse.Chat.Ok) {
             val delta = response.usage.deltaFrom(previousUsage)
             usageMutex.withLock { usage = usage.plus(delta) }
+            hookBudget?.recordUsage(delta.totalTokens)
             emit(response)
             return response.usage
         }
@@ -237,6 +250,7 @@ internal class BackendExecutionLlmChatApi(
     private suspend fun recordUsage(response: LLMResponse.Chat) {
         if (response !is LLMResponse.Chat.Ok) return
         usageMutex.withLock { usage = usage.plus(response.usage) }
+        hookBudget?.recordUsage(response.usage.totalTokens)
     }
 
     private fun backoffForAttempt(attempt: Int, message: String): Long {
