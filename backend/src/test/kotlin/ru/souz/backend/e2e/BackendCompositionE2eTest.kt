@@ -1,6 +1,7 @@
 package ru.souz.backend.e2e
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
@@ -15,6 +16,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import ru.souz.backend.common.BackendLlmSupport
+import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMModel
@@ -92,6 +94,42 @@ class BackendCompositionE2eTest {
                     }
                 }
             )
+        }
+
+    @Test
+    fun `stored provider keys decide the default model on each request`() =
+        backendE2eTest(
+            "e2e_key_model",
+            settingsSource = object : BackendConfigSource {
+                override fun env(key: String): String? = null
+                override fun property(key: String): String? = null
+            },
+        ) {
+            val userId = "key-model-user"
+            val qwen = """{"defaultModel":"${LLMModel.QwenMax.alias}"}"""
+            val withoutKey = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody(qwen)
+            }
+            client.put(BackendHttpRoutes.providerKey("qwen")) {
+                trusted(userId)
+                jsonBody("""{"apiKey":"user-qwen-key"}""")
+            }
+            val withKey = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+                jsonBody(qwen)
+            }
+            client.delete(BackendHttpRoutes.providerKey("qwen")) {
+                trusted(userId)
+            }
+            val afterDelete = client.get(BackendHttpRoutes.SETTINGS) {
+                trusted(userId)
+            }
+
+            assertEquals(HttpStatusCode.BadRequest, withoutKey.status)
+            assertEquals(HttpStatusCode.OK, withKey.status)
+            assertEquals(LLMModel.QwenMax.alias, withKey.jsonBody()["settings"]["defaultModel"].asText())
+            assertEquals(E2E_LOCAL_MODEL.alias, afterDelete.jsonBody()["settings"]["defaultModel"].asText())
         }
 
     @Test
