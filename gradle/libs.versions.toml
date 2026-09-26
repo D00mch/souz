@@ -1,4 +1,5 @@
 [versions]
+commonmark = "0.30.0"
 androidx-lifecycle = "2.9.5"
 commonsCsv = "1.10.0"
 composeHotReload = "1.0.0-rc04"
@@ -38,6 +39,7 @@ testcontainers = "1.21.4"
 
 
 [libraries]
+commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commonsCsv" }

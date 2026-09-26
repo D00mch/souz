@@ -217,7 +217,7 @@ private class ScriptedVkApi : VkBotApi {
         onPoll?.also { onPoll = null }?.invoke()
         return responses.removeFirstOrNull() ?: VkLongPollResponse(ts)
     }
-    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String) {
+    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String, format: ru.souz.backend.vk.VkMessageFormat?) {
         if (failSend) { failSend = false; throw IOException("Failed send") }
         sent += peerId to text
     }

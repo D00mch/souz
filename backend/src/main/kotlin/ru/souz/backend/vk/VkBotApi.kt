@@ -21,7 +21,7 @@ interface VkBotApi {
     suspend fun getLongPollServer(groupToken: String, groupId: Long): VkLongPollServer
     suspend fun getUserInfo(groupToken: String, userId: Long): VkUser?
     suspend fun pollLongPoll(server: String, key: String, ts: String, waitSeconds: Int = 25): VkLongPollResponse
-    suspend fun sendMessage(groupToken: String, peerId: Long, text: String)
+    suspend fun sendMessage(groupToken: String, peerId: Long, text: String, format: VkMessageFormat? = null)
     suspend fun setActivity(groupToken: String, peerId: Long, groupId: Long)
 }
 
@@ -57,11 +57,16 @@ internal class HttpVkBotApi(
             VkLongPollResponse::class.java,
         )
 
-    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String) {
-        method(
-            groupToken, "messages.send", "peer_id" to peerId.toString(), "message" to text,
-            "random_id" to Random.nextInt(1, Int.MAX_VALUE).toString(),
-        )
+    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String, format: VkMessageFormat?) {
+        val parameters = buildList {
+            add("peer_id" to peerId.toString())
+            add("message" to text)
+            add("random_id" to Random.nextInt(1, Int.MAX_VALUE).toString())
+            format?.takeIf { it.items.isNotEmpty() }?.let {
+                add("format_data" to mapper.writeValueAsString(it))
+            }
+        }
+        method(groupToken, "messages.send", *parameters.toTypedArray())
     }
 
     override suspend fun setActivity(groupToken: String, peerId: Long, groupId: Long) {

@@ -23,4 +23,6 @@ Partial route contexts and in-memory repositories can pass while the production 
 
 Run Docker-backed backend tests with `./gradlew :backend:test`. Focus the production-wired suite with `./gradlew :backend:test --tests 'ru.souz.backend.e2e.*'`.
 
+For changes unrelated to database behavior (schema, migrations, queries, persistence, or transactions), PostgreSQL-backed tests may be skipped. Select relevant non-PostgreSQL tests with `--tests`; Docker is not required for that verification.
+
 Cross-binding scheduling requires manual verification for both Telegram and VK: keep more bindings idle than the channel's processing limit and confirm another binding handles consecutive messages without waiting for their long polls. Remove an idle binding and stop the host to check poll cancellation. Automated channel suites cover linking, delivery, retries, and lease fencing.

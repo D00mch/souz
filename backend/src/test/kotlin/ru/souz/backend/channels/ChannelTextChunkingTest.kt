@@ -1,10 +1,22 @@
 package ru.souz.backend.channels
 
+import ru.souz.backend.telegram.TELEGRAM_RICH_TEXT_LIMIT
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ChannelTextChunkingTest {
+    @Test
+    fun `Telegram rich replies use larger chunks without changing the default channel limit`() {
+        val text = "**" + "я".repeat(5_000) + "**"
+        assertEquals(listOf(text), channelTextChunks(text, TELEGRAM_RICH_TEXT_LIMIT))
+        assertTrue(channelTextChunks(text).size > 1)
+        val oversized = "я".repeat(TELEGRAM_RICH_TEXT_LIMIT - 1) + "😀" + "tail"
+        val chunks = channelTextChunks(oversized, TELEGRAM_RICH_TEXT_LIMIT)
+        assertEquals(oversized, chunks.joinToString(""))
+        assertTrue(chunks.all { it.length <= TELEGRAM_RICH_TEXT_LIMIT && !it.last().isHighSurrogate() })
+    }
+
     @Test
     fun `text exactly at the limit is not split`() {
         val text = "a".repeat(50)

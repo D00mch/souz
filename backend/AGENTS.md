@@ -17,5 +17,5 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 
 ## Verification
 
-- Run backend tests with Docker running: `./gradlew :backend:test`
+- Run backend tests with Docker running: `./gradlew :backend:test`. For changes unrelated to database behavior, PostgreSQL-backed tests may be skipped; select the relevant non-PostgreSQL tests with `--tests`.
 - Run the server: `./gradlew :backend:run`

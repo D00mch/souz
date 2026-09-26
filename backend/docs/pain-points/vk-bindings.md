@@ -10,13 +10,17 @@ Polling uses a renewable database lease. Claims, cursor writes, and error writes
 
 The Long Poll `ts` is an opaque batch cursor. Persist the initial cursor before processing and advance it only after the batch completes. Handle `failed=1` by replacing the cursor, `2` by refreshing the key/server, and `3` by refreshing the whole session. VK can discard old events in the last case. Turn IDs use the binding and VK message IDs so replay does not execute the agent again. Failed delivery leaves the cursor for retry; previously delivered replies in that batch may repeat.
 
+Markdown is parsed with CommonMark before chunking. VK receives rendered text plus `format_data` version 1 for bold, italic, headings, and HTTP(S) links. Code is literal plain text; lists and quotes use readable text markers. Entity offsets and lengths use Unicode code points for API 5.199, not Kotlin UTF-16 indices. This follows the [published VK compatibility probe](https://pypi.org/project/hermes-vk-community/); real-client verification remains necessary when changing the wire format.
+
+Complete cross-channel delivery persists the original Markdown. Partial delivery persists only accepted rendered text. Polling checks lease ownership before every formatted chunk. Plain service replies omit `format_data`.
+
 ## Safe changes
 
 - Keep token contents and VK error bodies out of responses and logs. VK has no plaintext token migration path.
 - API and Long Poll requests share the web tools' `SOUZ_WEB_USER_AGENT` setting and default.
 - Preserve lease fencing and message-based execution identity when changing polling or persistence.
 - Each enabled binding owns its poll loop and cached session. Limit update processing, never idle long polls, and recheck lease ownership after waiting for a processing permit.
-- Use shared channel text splitting and delivery bookkeeping. Only successfully sent chunks belong in cross-channel chat history.
+- Split rendered text and clip/rebase formatting ranges per chunk; keep shared delivery bookkeeping. Only successfully sent chunks belong in cross-channel chat history.
 - VK execution has the same process-local crash-recovery limitation as ordinary HTTP and Telegram execution; the binding lease does not own the agent runtime.
 
 ## Verification

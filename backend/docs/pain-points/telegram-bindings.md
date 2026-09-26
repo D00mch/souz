@@ -8,6 +8,8 @@ A binding remains pending until the exact secret arrives from a private Telegram
 
 Each poller holds a renewable per-binding lease. Accepted text is submitted through `AgentExecutionService` with an update-derived client message ID and non-streaming message delivery. Reply and checkpoint writes are fenced by current lease ownership, and `lastUpdateId` advances only after processing completes under that owner. Long assistant replies are split to Telegram's message limit, with a short fallback response when delivery content is unavailable.
 
+Bot replies and cross-channel deliveries use `sendRichMessage` with JSON `rich_message.markdown`. Telegram chunks use a conservative 32,768 UTF-16-unit source limit; VK retains its own limit. Splitting prefers line boundaries but can still interrupt Markdown constructs in oversized replies. Preserve the original Markdown in conversation storage.
+
 ## Why it is fragile
 
 Tokens, one-time secrets, Telegram identity, and poller ownership are separate security boundaries. Advancing a checkpoint early, replying after lease loss, or accepting a public/foreign sender can lose updates, duplicate agent turns, leak a bot credential, or bind the wrong account.

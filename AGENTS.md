@@ -52,6 +52,7 @@ Only these direct production project dependencies are allowed. Standard test-sou
 
 ## Verification
 
+- PostgreSQL-backed tests may be skipped when changes do not affect database behavior (schema, migrations, queries, persistence, or transactions). Run the relevant non-PostgreSQL tests instead; this exception also applies to the full verification commands below.
 - Use the Gradle wrapper and the Java 21 toolchain configured by the build.
 - Run `./gradlew souzGateFast` for repository policy, production module-boundary, and coroutine checks.
 - Run `npm ci --prefix quality && ./gradlew souzDuplicationCheck` for the exact-checkout duplicate-code ratchet.

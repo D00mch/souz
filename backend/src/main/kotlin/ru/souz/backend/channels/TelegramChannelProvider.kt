@@ -1,6 +1,7 @@
 package ru.souz.backend.channels
 
 import kotlinx.coroutines.CancellationException
+import ru.souz.backend.telegram.TELEGRAM_RICH_TEXT_LIMIT
 import ru.souz.backend.telegram.TelegramBotApi
 import ru.souz.backend.telegram.TelegramBotBindingRepository
 import ru.souz.backend.telegram.TelegramBotTokenCrypto
@@ -42,7 +43,7 @@ class TelegramChannelProvider(
         } catch (e: Exception) {
             return ChannelSendResult.Failed("Telegram delivery failed.")
         }
-        return deliveryService.sendChunks(userId, chatId, text, "Telegram") { chunk ->
+        return deliveryService.sendChunks(userId, chatId, text, "Telegram", maxLength = TELEGRAM_RICH_TEXT_LIMIT) { chunk ->
             telegramBotApi.sendMessage(token, telegramChatId, chunk)
         }
     }
