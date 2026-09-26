@@ -7,9 +7,12 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -20,6 +23,7 @@ import ru.souz.agent.graph.RetryPolicy
 import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
@@ -31,6 +35,95 @@ import ru.souz.llms.LlmProvider
 import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
+    @Test
+    fun `accepted streaming response emits complete ordered blocks only after the stream finishes`() = runTest {
+        val partial = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val events = mutableListOf<AgentRuntimeEvent>()
+        val api = mockk<LLMChatAPI> {
+            coEvery { messageStream(any()) } returns flow {
+                emit(block(7, "Let"))
+                emit(block(7, " "))
+                partial.complete(Unit)
+                finish.await()
+                emit(block(7, "me check"))
+                emit(block(16, "Second block"))
+                emit(block(32, "", tool = true))
+            }
+        }
+        val node = SteerableChatNode(NodesLLM(api, mockk { every { useStreaming } returns true }), ActiveRunInputController())
+        val execution = async {
+            node.execute(context(emptyList(), recordingSink(events)), GraphRuntime(RetryPolicy(), 10))
+        }
+        partial.await()
+        assertTrue(events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().isEmpty())
+        finish.complete(Unit)
+
+        val result = execution.await()
+        assertEquals(listOf("Let me check", "Second block"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
+        assertEquals(listOf("Let me check", "Second block", ""), result.history.map { it.content })
+    }
+
+    @Test
+    fun `failed stream attempts never emit assistant messages even when text and tools arrived`() = runTest {
+        val events = mutableListOf<AgentRuntimeEvent>()
+        var attempts = 0
+        val api = mockk<LLMChatAPI> {
+            coEvery { messageStream(any()) } answers {
+                flow {
+                    attempts++
+                    emit(block(0, if (attempts == 1) "discarded" else "accepted"))
+                    emit(block(1, "", tool = true))
+                    if (attempts == 1) throw LLMException(LLMResponse.Chat.Error(503, "retry"))
+                }
+            }
+        }
+        val node = SteerableChatNode(NodesLLM(api, mockk { every { useStreaming } returns true }), ActiveRunInputController())
+        buildGraph<String, LLMResponse.Chat> {
+            nodeInput.edgeTo(node).edgeTo(nodeFinish)
+        }.start(context(emptyList(), recordingSink(events)))
+
+        assertEquals(2, attempts)
+        assertEquals(listOf("accepted"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
+    }
+
+    @Test
+    fun `cancelled incomplete stream emits no assistant messages`() = runTest {
+        val partial = CompletableDeferred<Unit>()
+        val events = mutableListOf<AgentRuntimeEvent>()
+        val api = mockk<LLMChatAPI> {
+            coEvery { messageStream(any()) } returns flow {
+                emit(block(0, "discarded"))
+                emit(block(1, "", tool = true))
+                partial.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            }
+        }
+        val node = SteerableChatNode(NodesLLM(api, mockk { every { useStreaming } returns true }), ActiveRunInputController())
+        val execution = async {
+            node.execute(context(emptyList(), recordingSink(events)), GraphRuntime(RetryPolicy(), 10))
+        }
+        partial.await()
+        execution.cancelAndJoin()
+        assertTrue(events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().isEmpty())
+    }
+
+    private fun recordingSink(events: MutableList<AgentRuntimeEvent>) = object : AgentRuntimeEventSink {
+        override suspend fun emit(event: AgentRuntimeEvent) { events += event }
+    }
+
+    private fun block(index: Int, content: String, tool: Boolean = false) = LLMResponse.Chat.Ok(
+        choices = listOf(LLMResponse.Choice(
+            LLMResponse.Message(
+                content, LLMMessageRole.assistant,
+                functionCall = if (tool) LLMResponse.FunctionCall("TestTool", emptyMap()) else null,
+                functionsStateId = if (tool) "call-$index" else null,
+            ),
+            index, null,
+        )),
+        created = 1, model = "test-model", usage = LLMResponse.Usage(1, 1, 2, 0),
+    )
+
     @Test
     fun `chat retries only LLM exceptions and respects the attempt limit`() = runTest {
         val failures = listOf(

@@ -27,6 +27,10 @@ sealed interface AgentRuntimeEvent {
         val text: String,
     ) : AgentRuntimeEvent
 
+    data class AssistantMessage(
+        val content: String,
+    ) : AgentRuntimeEvent
+
     data class ToolCallStarted(
         val toolCallId: String,
         val name: String,

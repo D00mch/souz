@@ -7,6 +7,8 @@ import java.util.UUID
 
 sealed interface AgentEventPayload
 
+data class AssistantMessagePayload(val content: String) : AgentEventPayload
+
 data class PublicToolCallStartedPayload(
     val toolCallId: String,
     val name: String,
@@ -160,6 +162,7 @@ internal object AgentEventPayloadStorageCodec {
     ): AgentEventPayload? =
         runCatching {
             when (type) {
+                AgentEventType.ASSISTANT_MESSAGE -> null // Progress is never persisted.
                 AgentEventType.MESSAGE_CREATED -> mapper.treeToValue(payload, MessageCreatedPayload::class.java)
                 AgentEventType.MESSAGE_DELTA -> mapper.treeToValue(payload, MessageDeltaPayload::class.java)
                 AgentEventType.MESSAGE_COMPLETED -> mapper.treeToValue(payload, MessageCompletedPayload::class.java)

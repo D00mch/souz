@@ -2,6 +2,8 @@ package ru.souz.agent.nodes
 
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.supervisorScope
 import ru.souz.agent.ActiveRunInput
@@ -10,6 +12,7 @@ import ru.souz.agent.graph.Node
 import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.runtime.ActiveRunInputController
 import ru.souz.agent.runtime.ActiveRunInputController.NextLlmStep
+import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.state.AgentContext
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
@@ -52,6 +55,15 @@ internal class SteerableChatNode(
                 continue
             }
 
+            if (response is LLMResponse.Chat.Ok && response.isToolUse) {
+                response.choices.forEach { choice ->
+                    val message = choice.message
+                    if (message.role == LLMMessageRole.assistant && message.content.isNotBlank()) {
+                        currentCoroutineContext().ensureActive()
+                        responseContext.runtimeEventSink.emit(AgentRuntimeEvent.AssistantMessage(message.content))
+                    }
+                }
+            }
             return responseContext
         }
     }

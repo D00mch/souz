@@ -46,6 +46,7 @@ import ru.souz.backend.common.withBackendLogContext
 import ru.souz.backend.events.bus.AgentEventStream
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventEnvelope
+import ru.souz.backend.events.model.AgentLiveEvent
 import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.http.BackendHttpDependencies
 import ru.souz.backend.http.BackendV1Exception
@@ -329,7 +330,7 @@ internal class PublicClientConnection(
     }
 }
 
-private suspend fun AgentEventStream.forwardPublicEvents(
+internal suspend fun AgentEventStream.forwardPublicEvents(
     replayDone: CompletableDeferred<Unit>,
     send: suspend (AgentEventEnvelope) -> Unit,
 ) {
@@ -352,6 +353,7 @@ private suspend fun AgentEventStream.forwardPublicEvents(
         val event = receiveLive() ?: break
         val seq = event.seq
         if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
+        if ((event as? AgentLiveEvent)?.discardAfterSeq?.let { lastSeq > it } == true) continue
         if (!event.durable && event.isPublicClientEvent()) send(event)
     }
 }

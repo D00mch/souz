@@ -2,6 +2,8 @@ package ru.souz.backend.agent.runtime
 
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -11,6 +13,7 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.events.model.ChoiceOptionItemPayload
 import ru.souz.backend.events.model.ChoiceRequestedPayload
 import ru.souz.backend.events.model.ExecutionCancelledPayload
@@ -80,6 +83,11 @@ internal class BackendAgentRuntimeEventSink(
         when (event) {
             is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
+            is AgentRuntimeEvent.AssistantMessage -> if (publicClientThread) {
+                beforePublicEvent()
+                currentCoroutineContext().ensureActive()
+                publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))
+            }
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
 
             is AgentRuntimeEvent.ToolCallFinished -> onToolCallFinished(event)

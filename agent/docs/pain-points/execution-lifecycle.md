@@ -26,6 +26,7 @@ The facade owns mutable context, execution state, active-agent routing, and sess
 - Keep continuation state execution-scoped. Reserve and publish under the mailbox mutex, but run producer callbacks and wait for notifications outside it. Release every reservation even when its producer fails or is cancelled. Hosts must protect accepted durable commits from cancellation until their input is returned; publication and reservation release must also finish before cancellation propagates.
 - Bundle durable history with the execute input that claims it. Preserve stored roles and do not add a passive history wake-up path.
 - Keep a completed LLM response provisional until the controller accepts the tool or final boundary. Replan from the pre-attempt context when queued input wins, and seal before memory-aware finalization.
+- After accepting a tool response, emit one `AssistantMessage` per nonblank assistant text block in original order before executing tools. Publish only assembled responses, outside provider retries; never emit final answers, reasoning, or discarded attempts. Preserve streaming block indexes and whitespace fragments. Events do not append history.
 - Advance the stream revision with accepted input and attach the captured revision where `NodesLLM` produces each chunk.
 - Keep controller closure suspending and serialized before explicit graph cancellation. Do not reintroduce a separate job-based acceptance gate.
 - Update facade context only from the current execution and restore the facade's base invocation metadata after per-call overrides.

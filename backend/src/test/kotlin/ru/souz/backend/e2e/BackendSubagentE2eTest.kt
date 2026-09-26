@@ -99,7 +99,9 @@ class BackendSubagentE2eTest {
                 val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                 when {
                     request.functions.map { it.name } == listOf("user.ask") ->
-                        if (result == null) toolCallReply(request, "user.ask", mapOf("question" to "Which genre?"))
+                        if (result == null) toolCallReply(request, "user.ask", mapOf("question" to "Which genre?")).let { response ->
+                            response.copy(choices = response.choices.map { it.copy(message = it.message.copy(content = "private child progress")) })
+                        }
                         else reply(request, "private child answer: Horror")
 
                     result?.name == "SpawnSubagent" -> reply(request, "parent final answer")

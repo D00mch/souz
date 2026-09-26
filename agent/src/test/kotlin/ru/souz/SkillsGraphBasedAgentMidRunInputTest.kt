@@ -22,6 +22,8 @@ import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.SKILL_INVENTORY_NODE_NAME
 import ru.souz.agent.runtime.AgentToolExecutor
+import ru.souz.agent.runtime.AgentRuntimeEvent
+import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMMessageRole
@@ -38,6 +40,43 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SkillsGraphBasedAgentMidRunInputTest {
+    @Test
+    fun `accepted assistant blocks retain order and repetition before every tool`() = runTest {
+        val expected = listOf("First block", "First block", "Last block")
+        var toolsExecuted = 0
+        lateinit var harness: Harness
+        harness = Harness(
+            chatHandler = { call, ctx ->
+                ctx.map {
+                    if (call > 1) finalResponse("final answer") else toolResponse().copy(
+                        choices = finalResponse(expected[0]).choices +
+                            finalResponse(" \n ").choices +
+                            finalResponse("internal prompt").choices.map {
+                                it.copy(message = it.message.copy(role = LLMMessageRole.system))
+                            } +
+                            finalResponse("").choices.map {
+                                it.copy(message = it.message.copy(reasoningContent = "private reasoning"))
+                            } +
+                            finalResponse(expected[1]).choices + toolResponse().choices +
+                            finalResponse(expected[2]).choices + toolResponse().choices.map {
+                                it.copy(message = it.message.copy(functionsStateId = "call-2"))
+                            },
+                    )
+                }
+            },
+            toolHandler = {
+                assertEquals(expected, harness.runtimeEvents.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
+                toolsExecuted++
+                LLMRequest.Message(LLMMessageRole.function, "tool result", name = "TestTool")
+            },
+        )
+
+        assertEquals("final answer", harness.agent.execute(harness.context()).output)
+        assertEquals(2, toolsExecuted)
+        assertEquals(expected, harness.runtimeEvents.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
+        assertEquals(expected, harness.requestHistories.last().map { it.content }.filter { it in expected })
+    }
+
     @Test
     fun `provider retries retain consumed steering input`() = runTest {
         val started = CompletableDeferred<Unit>()
@@ -60,6 +99,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
         assertEquals(harness.requestHistories[1], harness.requestHistories[2])
         assertEquals("follow-up", harness.requestHistories[2].last().content)
         assertEquals(1, harness.finalizationCount)
+        assertTrue(harness.runtimeEvents.isEmpty())
     }
 
     @Test
@@ -167,7 +207,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
 
     @Test
     fun `queued input discards a completed response at the tool or final boundary`() = runTest {
-        for (provisional in listOf(toolResponse(), finalResponse("provisional"))) {
+        for (provisional in listOf(toolResponse("discarded progress"), finalResponse("provisional"))) {
             lateinit var harness: Harness
             harness = Harness(
                 chatHandler = { call, ctx ->
@@ -190,6 +230,7 @@ class SkillsGraphBasedAgentMidRunInputTest {
             )
             assertEquals("replacement", result.output)
             assertEquals(1, harness.finalizationCount)
+            assertTrue(harness.runtimeEvents.isEmpty())
         }
     }
 
@@ -333,6 +374,7 @@ private class Harness(
 
     val requestHistories = mutableListOf<List<LLMRequest.Message>>()
     val streamRevisions = mutableListOf<Long>()
+    val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
     var chatCallCount = 0
         private set
     var finalizationCount = 0
@@ -396,6 +438,9 @@ private class Harness(
         history = emptyList(),
         activeTools = emptyList(),
         systemPrompt = "system",
+        runtimeEventSink = object : AgentRuntimeEventSink {
+            override suspend fun emit(event: AgentRuntimeEvent) { runtimeEvents += event }
+        },
     )
 }
 
@@ -416,11 +461,11 @@ private fun finalResponse(content: String): LLMResponse.Chat.Ok = LLMResponse.Ch
     usage = LLMResponse.Usage(1, 1, 2, 0),
 )
 
-private fun toolResponse(): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
+private fun toolResponse(content: String = ""): LLMResponse.Chat.Ok = LLMResponse.Chat.Ok(
     choices = listOf(
         LLMResponse.Choice(
             message = LLMResponse.Message(
-                content = "",
+                content = content,
                 role = LLMMessageRole.assistant,
                 functionCall = functionCall(),
                 functionsStateId = "call-1",

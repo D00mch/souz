@@ -8,6 +8,7 @@ import ru.souz.backend.options.service.AnswerOptionResult
 import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.model.ChoiceRequestedPayload
 import ru.souz.backend.events.model.ExecutionCancelledPayload
@@ -413,7 +414,10 @@ internal fun AgentEventEnvelope.toDto(): BackendV1EventDto =
 
 internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
     PublicClientEventDto(
-        seq = if (type == AgentEventType.TOOL_CALL_STARTED) seq else requireNotNull(seq),
+        seq = when (type) {
+            AgentEventType.TOOL_CALL_STARTED, AgentEventType.ASSISTANT_MESSAGE -> seq
+            else -> requireNotNull(seq)
+        },
         type = type.value,
         chatId = chatId.toString(),
         // Null only for the out-of-band message.created case admitted by isPublicClientEvent() below.
@@ -427,6 +431,7 @@ internal fun AgentEventEnvelope.toPublicDto(): PublicClientEventDto =
 
 private fun AgentEventPayload.toTransportPayload(type: AgentEventType): Map<String, Any?> =
     when (this) {
+        is AssistantMessagePayload -> linkedMapOf("content" to content)
         is PublicToolCallStartedPayload -> linkedMapOf<String, Any?>(
             "toolCallId" to toolCallId,
             "name" to name,
@@ -636,6 +641,7 @@ private fun Map<String, String>.toLegacyTransportPayload(type: AgentEventType): 
             copyLongIfPresent("durationMs")
         }
 
+        AgentEventType.ASSISTANT_MESSAGE -> buildLegacyPayload { copyIfPresent("content") }
         AgentEventType.THREAD_COMPLETED -> buildLegacyPayload { copyIfPresent("response") }
         AgentEventType.THREAD_FAILED -> buildLegacyPayload { copyJsonValueIfPresent("error") }
         AgentEventType.THREAD_CANCELLED -> buildLegacyPayload { copyIfPresent("reason") }

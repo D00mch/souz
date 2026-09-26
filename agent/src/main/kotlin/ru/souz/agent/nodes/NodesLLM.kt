@@ -118,7 +118,7 @@ internal class NodesLLM(
                     }
                     acc.merge(choice)
                 }
-                val merged = choicesByIndex.entries.map { (index, acc) -> acc.toChoice(index) }
+                val merged = choicesByIndex.entries.sortedBy { it.key }.map { (index, acc) -> acc.toChoice(index) }
 
                 LLMResponse.Chat.Ok(
                     choices = merged,
@@ -147,9 +147,7 @@ internal class NodesLLM(
     ) {
         fun merge(choice: LLMResponse.Choice) {
             val msg = choice.message
-            if (msg.content.isNotBlank()) {
-                content.append(msg.content)
-            }
+            content.append(msg.content)
             if (msg.functionCall != null) {
                 functionCall = msg.functionCall
             }

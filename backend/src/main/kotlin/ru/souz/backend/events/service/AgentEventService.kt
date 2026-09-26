@@ -4,6 +4,8 @@ import io.ktor.http.HttpStatusCode
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -39,6 +41,7 @@ class AgentEventService(
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
     ): AgentEvent {
+        require(type != AgentEventType.ASSISTANT_MESSAGE) { "Assistant progress is live-only" }
         if (type.isPublicTerminal() && executionId != null) {
             return terminalMutex.withLock {
                 eventRepository.findTerminal(executionId)?.let { return@withLock it }
@@ -124,6 +127,9 @@ class AgentEventService(
         id: UUID = UUID.randomUUID(),
         createdAt: Instant = Instant.now(),
     ): AgentLiveEvent {
+        val discardAfterSeq = if (type == AgentEventType.ASSISTANT_MESSAGE) {
+            eventRepository.latestSeq(userId, chatId).also { currentCoroutineContext().ensureActive() }
+        } else null
         val event = AgentLiveEvent(
             id = id,
             userId = userId,
@@ -132,6 +138,7 @@ class AgentEventService(
             type = type,
             payload = payload,
             createdAt = createdAt,
+            discardAfterSeq = discardAfterSeq,
         )
         eventBus.publish(event)
         return event

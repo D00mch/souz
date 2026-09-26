@@ -72,6 +72,7 @@ internal fun Route.eventRoutes(deps: BackendHttpDependencies) {
 
 internal fun AgentEventEnvelope.isPublicClientEvent(): Boolean =
     when (type) {
+        AgentEventType.ASSISTANT_MESSAGE -> !durable
         AgentEventType.TOOL_CALL_STARTED -> payload is PublicToolCallStartedPayload
         AgentEventType.THREAD_COMPLETED,
         AgentEventType.THREAD_FAILED,
