@@ -105,30 +105,39 @@ class HookVerifierTest {
 
     @Test
     fun `concurrent checks are bounded and cancellation cleans child processes and files`() = runBlocking {
-        writeHook("""
-            import pathlib,subprocess,time
-            child=subprocess.Popen(['python3','-c','import time; time.sleep(30)'])
-            pathlib.Path('child.pid').write_text(str(child.pid))
-            time.sleep(30)
-        """.trimIndent())
-        val loaded = HookDefinitions(sandboxes, config).load(owner).single()
-        val verifier = HookVerifier(config.copy(verifierTimeoutMillis = 10_000), sandboxes)
-        val running = async { verifier.verify(loaded, request()) }
-        val pid = withTimeout(5_000) {
-            var found: Long? = null
-            while (found == null) {
-                found = temporaryDirectories().firstOrNull { Files.exists(it.resolve("child.pid")) }
-                    ?.resolve("child.pid")?.let { Files.readString(it).toLongOrNull() }
-                if (found == null) delay(20)
+        for (cancel in listOf(false, true)) {
+            writeHook("""
+                import os,pathlib,subprocess,time
+                child=subprocess.Popen(['python3','-c','import time; time.sleep(30)'])
+                pathlib.Path('pids.tmp').write_text(str(os.getpid())+' '+str(child.pid))
+                pathlib.Path('pids.tmp').rename('pids')
+                time.sleep(30)
+            """.trimIndent())
+            val loaded = HookDefinitions(sandboxes, config).load(owner).single()
+            val verifier = HookVerifier(config.copy(verifierTimeoutMillis = if (cancel) 10_000 else 1_000), sandboxes)
+            withTimeout(5_000) {
+                val running = async {
+                    try {
+                        verifier.verify(loaded, request(ByteArray(HookDefinitions.MAX_BODY_BYTES)))
+                        error("Verifier should time out")
+                    } catch (error: BackendV1Exception) { error }
+                }
+                val pids = run {
+                    var file: Path? = null
+                    while (file == null) {
+                        file = temporaryDirectories().map { it.resolve("pids") }.firstOrNull(Files::exists)
+                        if (file == null) delay(20)
+                    }
+                    Files.readString(file).split(' ').map(String::toLong)
+                }
+                assertEquals(429, assertFailsWith<BackendV1Exception> { verifier.verify(loaded, request()) }.status.value)
+                if (cancel) running.cancelAndJoin() else assertEquals(503, running.await().status.value)
+                while (pids.any { ProcessHandle.of(it).map { process -> process.isAlive }.orElse(false) }) delay(20)
+                assertTrue(temporaryDirectories().isEmpty())
+                writeHook("print('{\"accept\":true,\"eventId\":\"after-cleanup\"}')")
+                assertEquals("{}", verifier.verify(HookDefinitions(sandboxes, config).load(owner).single(), request()).payload)
             }
-            found
         }
-        assertEquals(429, assertFailsWith<BackendV1Exception> { verifier.verify(loaded, request()) }.status.value)
-        running.cancelAndJoin()
-        withTimeout(3_000) { while (ProcessHandle.of(pid).map { it.isAlive }.orElse(false)) delay(20) }
-        assertTrue(temporaryDirectories().isEmpty())
-        writeHook("print('{\"accept\":true,\"eventId\":\"after-cancel\"}')")
-        assertEquals("{}", verifier.verify(HookDefinitions(sandboxes, config).load(owner).single(), request()).payload)
     }
 
     private fun writeHook(source: String) {

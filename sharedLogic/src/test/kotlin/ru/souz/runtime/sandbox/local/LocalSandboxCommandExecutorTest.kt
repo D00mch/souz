@@ -139,7 +139,7 @@ class LocalSandboxCommandExecutorTest {
 
     @Test
     fun `timeout and cancellation terminate the process and its children`() = runBlocking {
-        for (cancel in listOf(false, true)) {
+        for (cancel in listOf(false, true)) for (input in listOf(null, "x".repeat(90_000))) {
             val home = createTempDirectory("sandbox-home-")
             val sandbox = createSandbox(home)
             withTimeout(10_000) {
@@ -147,7 +147,7 @@ class LocalSandboxCommandExecutorTest {
                     sandbox.commandExecutor.execute(SandboxCommandRequest(
                         runtime = SandboxCommandRuntime.BASH,
                         script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
-                        workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000,
+                        workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000, stdin = input,
                     ))
                 }
                 // Cancel only after both PIDs are published; allow startup and draining in the test watchdog.
