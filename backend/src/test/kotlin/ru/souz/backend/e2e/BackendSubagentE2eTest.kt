@@ -12,6 +12,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import io.ktor.websocket.Frame
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -91,57 +92,81 @@ class BackendSubagentE2eTest {
     }
 
     @Test
-    fun `child client tool keeps routing while only parent final reaches public history`() =
+    fun `both sockets deliver parent progress before child tools without replay or child text`() {
+        val releaseChild = CompletableDeferred<Unit>()
+        val blocks = listOf("Let me check.", "Another detail.", "Let me check.")
+        val task = "Ask the user for a genre and report it."
         backendE2eTest(
             schemaPrefix = "e2e_subagent_client",
             featureFlags = BackendFeatureFlags(wsEvents = true, streamingMessages = true, toolEvents = true),
             llm = E2eLlmApi { request ->
                 val result = request.messages.lastOrNull { it.role == LLMMessageRole.function }
                 when {
-                    request.functions.map { it.name } == listOf("user.ask") ->
-                        if (result == null) toolCallReply(request, "user.ask", mapOf("question" to "Which genre?"))
-                        else reply(request, "private child answer: Horror")
-
+                    request.functions.map { it.name } == listOf("user.ask") -> {
+                        releaseChild.await()
+                        if (result != null) reply(request, "private child answer: Horror")
+                        else toolCallReply(request, "user.ask", mapOf("question" to "Which genre?")).let { response ->
+                            response.copy(choices = response.choices.map { it.copy(message = it.message.copy(content = "private child progress")) })
+                        }
+                    }
                     result?.name == "SpawnSubagent" -> reply(request, "parent final answer")
-                    else -> toolCallReply(request, "SpawnSubagent", mapOf(
-                        "task" to "Ask the user for a genre and report it.",
-                        "skillIds" to listOf("user.ask"),
-                    ))
+                    else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to task, "skillIds" to listOf("user.ask"))).let { response ->
+                        response.copy(choices = (blocks.flatMap { reply(request, it).choices } + response.choices)
+                            .mapIndexed { index, choice -> choice.copy(index = index) })
+                    }
                 }
             },
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            val settings = client.patch(BackendHttpRoutes.SETTINGS) {
-                trusted(userId)
-                jsonBody("""{"streamingMessages":true}""")
-            }
-            assertEquals(HttpStatusCode.OK, settings.status)
-
-            withPublicSocket(chatId) { session ->
-                session.send(Frame.Text(messageFrame(chatId, userId, "delegate", text = "delegate the question", deviceId = "child-device")))
-                val ack = readJson(session)
-                assertEquals("accepted", ack["status"].asText())
-                assertEquals("thread.status", readJson(session)["type"].asText())
-                val started = readJson(session)
-                val threadId = ack["thread"]["id"].asText()
-                val payload = started["payload"]
-                assertEquals("tool.call.started", started["type"].asText())
-                assertEquals(chatId, started["chatId"].asText())
-                assertEquals(threadId, started["threadId"].asText())
-                assertEquals("user.ask", payload["name"].asText())
-                assertEquals("child-device", payload["deviceId"].asText())
-                assertEquals("Which genre?", payload["arguments"]["question"].asText())
-
-                session.send(Frame.Text(
-                    """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":${payload["toolCallId"]},"status":"succeeded","result":{"answer":"Horror"}}"""
-                ))
-                assertEquals("accepted", readJson(session)["status"].asText())
-                val terminal = readJson(session)
-                assertEquals("thread.completed", terminal["type"].asText())
-                assertEquals(threadId, terminal["threadId"].asText())
-            }
-
+            client.patch(BackendHttpRoutes.SETTINGS) { trusted(userId); jsonBody("""{"streamingMessages":true}""") }
+            withPublicSocket(chatId) { session -> withMultiChatSocket { observer ->
+                try {
+                    observer.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$chatId","requestId":"watch"}"""))
+                    assertEquals("accepted", readJson(observer)["status"].asText())
+                    session.send(Frame.Text(messageFrame(chatId, userId, "delegate", text = "delegate the question", deviceId = "child-device")))
+                    val ack = readJson(session)
+                    assertEquals("accepted", ack["status"].asText())
+                    assertEquals("thread.status", readJson(session)["type"].asText())
+                    val threadId = ack["thread"]["id"].asText()
+                    // The tool has started before either subscriber reads or acknowledges progress.
+                    llm.awaitPrompt(task)
+                    for (socket in listOf(session, observer)) for (content in blocks) {
+                        val event = readJson(socket)
+                        assertEquals("assistant.message", event["type"].asText())
+                        assertEquals(chatId, event["chatId"].asText())
+                        assertEquals(threadId, event["threadId"].asText())
+                        assertTrue(event["seq"].isNull)
+                        assertEquals(json.createObjectNode().put("content", content), event["payload"])
+                    }
+                    releaseChild.complete(Unit)
+                    val started = readJson(session)
+                    assertEquals(started, readJson(observer))
+                    val payload = started["payload"]
+                    assertEquals("tool.call.started", started["type"].asText())
+                    assertEquals(chatId, started["chatId"].asText())
+                    assertEquals(threadId, started["threadId"].asText())
+                    assertEquals("user.ask", payload["name"].asText())
+                    assertEquals("child-device", payload["deviceId"].asText())
+                    assertEquals("Which genre?", payload["arguments"]["question"].asText())
+                    session.send(Frame.Text(
+                        """{"kind":"tool.result","chatId":"$chatId","threadId":"$threadId","toolCallId":${payload["toolCallId"]},"status":"succeeded","result":{"answer":"Horror"}}"""
+                    ))
+                    assertEquals("accepted", readJson(session)["status"].asText())
+                    val terminal = readJson(session)
+                    assertEquals("thread.completed", terminal["type"].asText())
+                    assertEquals(threadId, terminal["threadId"].asText())
+                    assertEquals(terminal, readJson(observer))
+                    withPublicSocket(chatId) { replay ->
+                        assertEquals(started, readJson(replay))
+                        assertEquals(terminal, readJson(replay))
+                        replay.send(Frame.Text(historyFrame(chatId, "history", "user", "passive context")))
+                        assertEquals("ack", readJson(replay)["kind"].asText())
+                    }
+                } finally {
+                    releaseChild.complete(Unit)
+                }
+            } }
             assertEquals(4, llm.requests.size)
             val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("user.ask") }
             assertEquals(2, childRequests.size)
@@ -149,15 +174,15 @@ class BackendSubagentE2eTest {
             assertFalse(childRequests.first().messages.any { "delegate the question" in it.content || "<skill_inventory>" in it.content })
             val parentResult = llm.requests.last().messages.single { it.name == "SpawnSubagent" }
             assertEquals("private child answer: Horror", json.readTree(parentResult.content)["result"].asText())
+            assertTrue("private child progress" in llm.streamedChunks)
             assertTrue("private child answer: Horror" in llm.streamedChunks)
-
             val messages = client.get(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId) }.jsonBody()["items"]
-            assertEquals(listOf("user", "assistant"), messages.map { it["role"].asText() })
-            assertEquals("parent final answer", messages.last()["content"].asText())
+            assertEquals(listOf("delegate the question", "parent final answer", "passive context"), messages.map { it["content"].asText() })
             val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
             assertEquals(listOf("tool.call.started", "thread.completed"), events.map { it["type"].asText() })
             assertEquals("parent final answer", events.last()["payload"]["response"].asText())
         }
+    }
 
     @Test
     fun `HTTP execution accounts for child usage and stores only the parent response`() =

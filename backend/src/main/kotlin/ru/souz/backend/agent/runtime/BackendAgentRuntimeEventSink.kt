@@ -11,6 +11,7 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
+import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.events.model.ChoiceOptionItemPayload
 import ru.souz.backend.events.model.ChoiceRequestedPayload
 import ru.souz.backend.events.model.ExecutionCancelledPayload
@@ -73,13 +74,13 @@ internal class BackendAgentRuntimeEventSink(
     val hasRequestedOption: Boolean get() = requestedOptionId != null
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
-        handleEvent(event)
-    }
-
-    private suspend fun handleEvent(event: AgentRuntimeEvent) {
         when (event) {
             is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
+            is AgentRuntimeEvent.AssistantMessage -> if (publicClientThread) {
+                beforePublicEvent()
+                publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))
+            }
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
 
             is AgentRuntimeEvent.ToolCallFinished -> onToolCallFinished(event)
