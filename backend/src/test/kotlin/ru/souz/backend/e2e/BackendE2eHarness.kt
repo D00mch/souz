@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import ru.souz.backend.execution.service.AgentExecutionLauncher
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.runtime.sandbox.RuntimeSandboxFactory
 import com.fasterxml.jackson.databind.JsonNode
@@ -342,6 +343,8 @@ internal class BackendE2eBackend(
             )
         }
     }
+
+    suspend fun awaitExecution(id: UUID) { di.direct.instance<AgentExecutionLauncher>().join(id) }
 
     fun <T> sql(block: (Connection) -> T): T =
         dataSource.connection.use(block)

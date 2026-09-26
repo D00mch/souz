@@ -16,6 +16,10 @@ import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
+import ru.souz.backend.events.model.ExecutionCancelledPayload
+import ru.souz.backend.events.model.ExecutionFailedPayload
+import ru.souz.backend.events.model.ExecutionFinishedPayload
+import ru.souz.backend.events.model.ExecutionUsagePayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
@@ -336,6 +340,26 @@ class AgentExecutionService internal constructor(
             errorMessage = "Thread startup was interrupted.",
             usage = execution.usage,
         )
+    }
+
+    internal suspend fun recoverHookExecution(started: AgentExecution) {
+        val finished = failStartup(started) ?: return
+        val (type, payload) = when (finished.status) {
+            AgentExecutionStatus.FAILED -> AgentEventType.EXECUTION_FAILED to ExecutionFailedPayload(
+                finished.id, finished.assistantMessageId,
+                finished.errorCode ?: "agent_execution_failed", finished.errorMessage ?: "Thread startup was interrupted.",
+            )
+            AgentExecutionStatus.CANCELLED -> AgentEventType.EXECUTION_CANCELLED to ExecutionCancelledPayload(
+                finished.id, finished.assistantMessageId,
+            )
+            AgentExecutionStatus.COMPLETED -> AgentEventType.EXECUTION_FINISHED to ExecutionFinishedPayload(
+                finished.id, finished.assistantMessageId, finished.status.value,
+                finished.usage?.let { ExecutionUsagePayload(it.promptTokens, it.completionTokens, it.totalTokens, it.precachedTokens) },
+            )
+            else -> return
+        }
+        // Also repairs a crash after the state transition; storage deduplicates terminal events.
+        eventService.appendDurable(finished.userId, finished.chatId, finished.id, type, payload)
     }
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {

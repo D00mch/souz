@@ -34,6 +34,8 @@ import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.hooks.hookInput
 import ru.souz.backend.hooks.sha256
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
+import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.runtime.sandbox.DefaultRuntimeSandboxFactory
 import ru.souz.runtime.sandbox.RuntimeSandboxModeResolver
 import ru.souz.runtime.sandbox.docker.DockerRuntimeSandbox
@@ -198,38 +200,77 @@ class BackendHooksE2eTest {
 
     @Test
     fun `hook selects owned channel and restart recovers pending receipts without replaying running work`() {
-        writeHook()
-        runHooks {
-            setupOwner()
-            val target = createPublicChat(owner)
-            val prompt = "Send event to the selected channel"
-            writeHook(prompt = prompt)
-            reload()
-            llm.requestSkillForPrompt(hookInput(prompt, "{}"), "SendMessageToChannel", mapOf(
-                "channelType" to "public_client", "channelId" to target, "text" to "hook delivery",
-            ))
-            val delivered = invoke().jsonBody()["receiptId"].asText()
-            awaitStatus(delivered, "completed")
-            assertTrue(client.get(BackendHttpRoutes.chatMessages(target)) { trusted(owner) }.jsonBody()["items"]
-                .any { it["content"].asText() == "hook delivery" })
+        for ((initial, terminal) in listOf("running" to "failed", "cancelling" to "cancelled")) {
+            writeHook()
+            runHooks {
+                setupOwner()
+                val target = createPublicChat(owner)
+                val prompt = "Send event to the selected channel"
+                writeHook(prompt = prompt)
+                reload()
+                llm.requestSkillForPrompt(hookInput(prompt, "{}"), "SendMessageToChannel", mapOf(
+                    "channelType" to "public_client", "channelId" to target, "text" to "hook delivery",
+                ))
+                val delivered = invoke().jsonBody()["receiptId"].asText()
+                awaitStatus(delivered, "completed")
+                assertTrue(client.get(BackendHttpRoutes.chatMessages(target)) { trusted(owner) }.jsonBody()["items"]
+                    .any { it["content"].asText() == "hook delivery" })
 
-            // Simulate a lost process after a side effect: recovery must not replay this turn.
-            sql { c ->
-                c.prepareStatement("""
-                    with crashed as (update agent_executions set status = 'running', finished_at = null where id = ? returning id)
-                    update hook_receipts set status = 'running' where id in (select id from crashed)
-                """.trimIndent()).use { s -> s.setObject(1, UUID.fromString(delivered)); s.executeUpdate() }
-            }
-            val pending = invoke().jsonBody()["receiptId"].asText()
-            backend.close()
-            val restartedLlm = E2eLlmApi()
-            backend.createPeer(restartedLlm).use { peer ->
-                val failed = peer.dependencies.hookService.status(owner, UUID.fromString(delivered))
-                assertEquals("failed", failed.status)
-                eventually("pending receipt after restart") {
-                    peer.dependencies.hookService.status(owner, UUID.fromString(pending)).takeIf { it.status == "completed" }
+                llm.pauseUntilReleased()
+                val callCount = llm.requests.size
+                val interrupted = UUID.fromString(invoke().jsonBody()["receiptId"].asText())
+                eventually("provider call in progress") { llm.requests.takeIf { it.size > callCount } }
+                val chatId = UUID.fromString(awaitStatus(interrupted.toString(), "running")["execution"]["chatId"].asText())
+                val events = backend.dependencies.eventService.listByChat(owner, chatId)
+                assertTrue(events.any { it.type.value == "execution.started" })
+                assertTrue(events.none { it.type.value in setOf("execution.finished", "execution.failed", "execution.cancelled") })
+                val pending = UUID.fromString(invoke().jsonBody()["receiptId"].asText())
+
+                // Keep independent DB access after stopping the host; restore the interrupted
+                // state and remove only the cancellation event produced by graceful test shutdown.
+                PostgresDataSourceFactory.create(postgresAppConfig(sql { it.schema }).postgres).use { db ->
+                    backend.close()
+                    db.connection.use { c ->
+                        c.prepareStatement("""
+                            update agent_executions set status = ?, finished_at = null, cancel_requested = ?,
+                              error_code = null, error_message = null where id = ?
+                        """.trimIndent()).use { s ->
+                            s.setString(1, initial); s.setBoolean(2, initial == "cancelling"); s.setObject(3, interrupted); s.executeUpdate()
+                        }
+                        c.prepareStatement("delete from agent_events where execution_id = ? and type = 'execution.cancelled'").use { s ->
+                            s.setObject(1, interrupted); s.executeUpdate()
+                        }
+                    }
+                    val restartedLlm = E2eLlmApi()
+                    var terminalEventId: UUID? = null
+                    for (attempt in 0..2) {
+                        db.connection.use { c ->
+                            // Attempt 1 models a crash between state and event writes;
+                            // attempt 2 models a crash between event and receipt writes.
+                            if (attempt == 1) c.prepareStatement("delete from agent_events where execution_id = ? and type = ?").use { s ->
+                                s.setObject(1, interrupted); s.setString(2, "execution.$terminal"); s.executeUpdate()
+                            }
+                            c.prepareStatement("update hook_receipts set status = 'running' where id = ?").use { s ->
+                                s.setObject(1, interrupted); s.executeUpdate()
+                            }
+                        }
+                        backend.createPeer(restartedLlm).use { peer ->
+                            assertEquals(terminal, peer.dependencies.hookService.status(owner, interrupted).status)
+                            val event = peer.dependencies.eventService.listByChat(owner, chatId)
+                                .filter { it.type.value in setOf("execution.finished", "execution.failed", "execution.cancelled") }.single()
+                            assertEquals("execution.$terminal", event.type.value)
+                            if (attempt == 2) assertEquals(terminalEventId, event.id)
+                            terminalEventId = event.id
+                            eventually("pending receipt after restart $initial/$attempt") {
+                                peer.dependencies.hookService.status(owner, pending).also {
+                                    check(it.status !in setOf("failed", "cancelled")) { "Pending receipt $initial/$attempt: $it" }
+                                }.takeIf { it.status == "completed" }
+                            }
+                            peer.awaitExecution(pending)
+                            assertEquals(1, restartedLlm.requests.size, "Interrupted work must not be replayed")
+                        }
+                    }
                 }
-                assertEquals(1, restartedLlm.requests.size)
             }
         }
     }

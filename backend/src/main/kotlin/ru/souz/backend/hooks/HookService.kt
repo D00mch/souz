@@ -57,7 +57,7 @@ internal class HookService(
             val execution = executions.getByChat(receipt.userId, receipt.chatId, receipt.id)
             if (execution?.status == AgentExecutionStatus.WAITING_OPTION) continue
             val interrupted = execution == null || execution.status.isActive()
-            if (execution != null && interrupted) executionService.failStartup(execution)
+            if (execution != null) executionService.recoverHookExecution(execution)
             store.update(receipt.id, if (interrupted) "failed" else "finished", if (interrupted) "hook_interrupted" else null)
         }
         ready = true
@@ -153,7 +153,7 @@ internal class HookService(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                executions.getByChat(receipt.userId, receipt.chatId, receipt.id)?.let { executionService.failStartup(it) }
+                executions.getByChat(receipt.userId, receipt.chatId, receipt.id)?.let { executionService.recoverHookExecution(it) }
                 store.update(receipt.id, "failed", "hook_start_failed")
                 log.warn("Hook {} receipt {} could not start ({})", receipt.hookId, receipt.id, error.javaClass.simpleName)
             }
