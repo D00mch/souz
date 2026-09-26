@@ -162,7 +162,7 @@ internal object AgentEventPayloadStorageCodec {
     ): AgentEventPayload? =
         runCatching {
             when (type) {
-                AgentEventType.ASSISTANT_MESSAGE -> null // Live-only; no stored payload.
+                AgentEventType.ASSISTANT_MESSAGE -> mapper.treeToValue(payload, AssistantMessagePayload::class.java)
                 AgentEventType.MESSAGE_CREATED -> mapper.treeToValue(payload, MessageCreatedPayload::class.java)
                 AgentEventType.MESSAGE_DELTA -> mapper.treeToValue(payload, MessageDeltaPayload::class.java)
                 AgentEventType.MESSAGE_COMPLETED -> mapper.treeToValue(payload, MessageCompletedPayload::class.java)

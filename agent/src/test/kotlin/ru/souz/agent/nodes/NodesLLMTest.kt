@@ -36,28 +36,31 @@ class NodesLLMTest {
             IllegalStateException("Unexpected failure") to 1,
             CancellationException("Provider cancelled") to 1,
         )
-        for (streaming in listOf(false, true)) for ((failure, expectedAttempts) in failures) {
-            val events = mutableListOf<AgentRuntimeEvent>()
-            var attempts = 0
-            val api = mockk<LLMChatAPI> {
-                coEvery { message(any()) } answers { attempts += 1; throw failure }
-                coEvery { messageStream(any()) } returns flow {
-                    attempts++
-                    emit(block(0, "unfinished", tool = true))
-                    throw failure
+        for (streaming in listOf(false, true)) {
+            for ((failure, expectedAttempts) in failures) {
+                val events = mutableListOf<AgentRuntimeEvent>()
+                var attempts = 0
+                val api = mockk<LLMChatAPI> {
+                    coEvery { message(any()) } answers { attempts += 1; throw failure }
+                    coEvery { messageStream(any()) } returns flow {
+                        attempts++
+                        emit(block(0, "unfinished", tool = true))
+                        throw failure
+                    }
                 }
-            }
-            val nodes = NodesLLM(api, mockk { every { useStreaming } returns streaming })
-            val graph = buildGraph<String, LLMResponse.Chat> {
-                nodeInput.edgeTo(SteerableChatNode(nodes, ActiveRunInputController())).edgeTo(nodeFinish)
-            }
+                val nodes = NodesLLM(api, mockk { every { useStreaming } returns streaming })
+                val graph = buildGraph<String, LLMResponse.Chat> {
+                    nodeInput.edgeTo(SteerableChatNode(nodes, ActiveRunInputController())).edgeTo(nodeFinish)
+                }
 
-            val thrown = assertFailsWith(failure::class) { graph.start(context(emptyList(), recordingSink(events))) }
-            if (failure !is CancellationException) {
-                assertEquals(failure.message, thrown.message)
+                val thrown =
+                    assertFailsWith(failure::class) { graph.start(context(emptyList(), recordingSink(events))) }
+                if (failure !is CancellationException) {
+                    assertEquals(failure.message, thrown.message)
+                }
+                assertEquals(expectedAttempts, attempts)
+                assertEquals(emptyList(), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>())
             }
-            assertEquals(expectedAttempts, attempts)
-            assertEquals(emptyList(), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>())
         }
     }
 

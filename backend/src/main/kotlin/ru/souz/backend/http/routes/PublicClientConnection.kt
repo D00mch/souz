@@ -353,7 +353,8 @@ internal suspend fun AgentEventStream.forwardPublicEvents(
         val event = receiveLive() ?: break
         val seq = event.seq
         if (seq == null || seq > lastSeq) sendDurableEvents(replayAfter(lastSeq))
-        if ((event as? AgentLiveEvent)?.discardAfterSeq?.let { lastSeq > it } == true) continue
+        val discardAfterSeq = (event as? AgentLiveEvent)?.discardAfterSeq
+        if (discardAfterSeq != null && lastSeq > discardAfterSeq) continue
         if (!event.durable && event.isPublicClientEvent()) send(event)
     }
 }
