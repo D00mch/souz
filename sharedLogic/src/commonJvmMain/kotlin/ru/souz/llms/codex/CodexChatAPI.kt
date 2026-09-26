@@ -187,6 +187,7 @@ class CodexChatAPI(
 
         return buildMap {
             put("model", body.model)
+            body.reasoningEffort?.let { put("reasoning", mapOf("effort" to it)) }
             put("input", inputItems)
             if (!instructions.isNullOrBlank()) put("instructions", instructions)
             put("store", false)

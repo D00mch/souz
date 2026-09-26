@@ -78,6 +78,7 @@ internal class AgentExecutionRequestFactory(
             errorMessage = null,
             usage = null,
             metadata = executionMetadata(
+                reasoningEffort = effectiveSettings.reasoningEffort,
                 contextSize = effectiveSettings.contextSize,
                 temperature = effectiveSettings.temperature,
                 locale = effectiveSettings.locale.toLanguageTag(),
@@ -100,6 +101,7 @@ internal class AgentExecutionRequestFactory(
             execution = execution,
             conversationKey = AgentConversationKey.fromChat(userId, chatId),
             runtimeRequest = BackendConversationTurnRequest(
+                reasoningEffort = effectiveSettings.reasoningEffort,
                 prompt = content,
                 model = effectiveSettings.defaultModel,
                 contextSize = effectiveSettings.contextSize,
@@ -141,6 +143,7 @@ internal class AgentExecutionRequestFactory(
         }
         return BackendConversationTurnRequest(
             prompt = option.toContinuationInput(),
+            reasoningEffort = execution.metadata[METADATA_REASONING_EFFORT],
             model = model,
             contextSize = executionMetadataInt(execution, METADATA_CONTEXT_SIZE)
                 ?: throw internalError("Execution contextSize is missing."),
@@ -191,6 +194,7 @@ internal class AgentExecutionRequestFactory(
         clientMessageId?.let { linkedMapOf("clientMessageId" to it) } ?: emptyMap()
 
     private fun executionMetadata(
+        reasoningEffort: String?,
         contextSize: Int,
         temperature: Float,
         locale: String,
@@ -212,6 +216,7 @@ internal class AgentExecutionRequestFactory(
         put(METADATA_USE_FEW_SHOT_EXAMPLES, useFewShotExamples.toString())
         put(METADATA_ENABLED_TOOLS, restJsonMapper.writeValueAsString(enabledTools.sorted()))
         systemPrompt?.let { put(METADATA_SYSTEM_PROMPT, it) }
+        reasoningEffort?.let { put(METADATA_REASONING_EFFORT, it) }
     }
 
     private fun executionMetadataInt(
@@ -277,6 +282,7 @@ private fun internalError(message: String): BackendV1Exception =
         message = message,
     )
 
+private const val METADATA_REASONING_EFFORT = "reasoningEffort"
 private const val METADATA_CONTEXT_SIZE = "contextSize"
 private const val METADATA_TEMPERATURE = "temperature"
 private const val METADATA_LOCALE = "locale"

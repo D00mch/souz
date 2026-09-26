@@ -91,6 +91,7 @@ class EffectiveSettingsResolver(
 
         return EffectiveUserSettings(
             userId = userId,
+            reasoningEffort = persisted.reasoningEffort,
             defaultModel = defaultModel,
             contextSize = requestOverrides?.contextSize ?: persisted.contextSize ?: baseSettingsProvider.contextSize,
             temperature = requestOverrides?.temperature ?: persisted.temperature ?: baseSettingsProvider.temperature,
