@@ -1,5 +1,6 @@
 package ru.souz.backend.vk
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.sun.net.httpserver.HttpServer
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -50,6 +51,19 @@ class HttpVkBotApiTest {
                 assertEquals("token+&= я", requests.last().second["access_token"])
                 assertEquals("hello & 😀", requests.last().second["message"])
                 assertTrue(requests.last().second.getValue("random_id").toInt() != 0)
+                assertFalse(requests.last().second.containsKey("format_data"))
+                api.sendMessage("token", 7, "😀 Билет ссылка", listOf(
+                    VkFormatItem("bold", 2, 5),
+                    VkFormatItem("url", 8, 6, "https://example.com?a=1&b=2"),
+                ))
+                val (path, sent) = requests.last()
+                assertEquals("/messages.send", path)
+                assertEquals("😀 Билет ссылка", sent["message"])
+                val mapper = jacksonObjectMapper()
+                assertEquals(
+                    mapper.readTree("""{"version":1,"items":[{"type":"bold","offset":2,"length":5},{"type":"url","offset":8,"length":6,"url":"https://example.com?a=1&b=2"}]}"""),
+                    mapper.readTree(sent.getValue("format_data")),
+                )
                 api.setActivity("token", 7, 123)
                 assertEquals("123", requests.last().second["group_id"])
                 val failure = assertFailsWith<VkBotApiException> { api.sendMessage("rejected", 7, "hello") }

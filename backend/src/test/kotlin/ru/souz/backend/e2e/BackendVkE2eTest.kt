@@ -17,6 +17,7 @@ import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.vk.VkBotApi
 import ru.souz.backend.vk.VkBotApiException
+import ru.souz.backend.vk.VkFormatItem
 import ru.souz.backend.vk.VkGroup
 import ru.souz.backend.vk.VkLongPollResponse
 import ru.souz.backend.vk.VkLongPollServer
@@ -77,7 +78,8 @@ class BackendVkE2eTest {
             assertTrue(binding(user, chat)["linked"].asBoolean())
             assertEquals("Test", binding(user, chat)["vkFirstName"].asText())
 
-            val turn = update(5, "VK question")
+            val question = "**VK question**"
+            val turn = update(5, question)
             vk.failSend = true
             vk.responses.add(VkLongPollResponse("4", listOf(link, turn)))
             backend.pollVkOnce()
@@ -85,15 +87,16 @@ class BackendVkE2eTest {
             vk.responses.add(VkLongPollResponse("4", listOf(link, turn)))
             backend.pollVkOnce()
             assertEquals("4", stored(chat, "last_ts"))
-            assertEquals(1, llm.requests.count { it.conversationPrompt() == "VK question" })
+            assertEquals(1, llm.requests.count { it.conversationPrompt() == question })
             val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
-            assertEquals(listOf("VK question", messages.last()["content"].asText()), messages.map { it["content"].asText() })
-            assertEquals(messages.last()["content"].asText(), vk.sent.last().second)
+            assertEquals(listOf(question, "assistant reply to $question"), messages.map { it["content"].asText() })
+            assertEquals("assistant reply to VK question", vk.sent.last().second)
+            assertEquals(listOf(VkFormatItem("bold", 19, 11)), vk.formats.last())
 
             vk.responses.add(VkLongPollResponse("5", listOf(update(6, "foreign", sender = 999), update(7, "foreign", sender = 999))))
             backend.pollVkOnce()
             assertEquals(1, vk.sent.count { it.first == 999L })
-            assertEquals(1, llm.requests.count { it.conversationPrompt() == "VK question" })
+            assertEquals(1, llm.requests.count { it.conversationPrompt() == question })
 
             llm.requestSkillForPrompt("discover", "ListActiveChannels", emptyMap())
             runSkill(user, source, "discover")
@@ -101,10 +104,11 @@ class BackendVkE2eTest {
             assertEquals(setOf("vk:$chat", "public_client:$source"), channels.map {
                 "${it["channelType"].asText()}:${it["channelId"].asText()}"
             }.toSet())
-            llm.requestSkillForPrompt("forward", "SendMessageToChannel", mapOf("channelType" to "vk", "channelId" to chat, "text" to "forwarded"))
+            llm.requestSkillForPrompt("forward", "SendMessageToChannel", mapOf("channelType" to "vk", "channelId" to chat, "text" to "**forwarded**"))
             runSkill(user, source, "forward")
             assertEquals("forwarded", vk.sent.last().second)
-            assertEquals("forwarded", client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"].last()["content"].asText())
+            assertEquals(listOf(VkFormatItem("bold", 0, 9)), vk.formats.last())
+            assertEquals("**forwarded**", client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"].last()["content"].asText())
 
             val replacement = bind(user, chat).jsonBody()["pendingLinkCommand"].asText()
             assertFalse(binding(user, chat)["linked"].asBoolean())
@@ -200,6 +204,7 @@ private class ScriptedVkApi : VkBotApi {
     val responses = ArrayDeque<VkLongPollResponse>()
     val cursors = mutableListOf<String>()
     val sent = mutableListOf<Pair<Long, String>>()
+    val formats = mutableListOf<List<VkFormatItem>>()
     var negotiations = 0
     var failSend = false
     var onPoll: (suspend () -> Unit)? = null
@@ -217,9 +222,10 @@ private class ScriptedVkApi : VkBotApi {
         onPoll?.also { onPoll = null }?.invoke()
         return responses.removeFirstOrNull() ?: VkLongPollResponse(ts)
     }
-    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String) {
+    override suspend fun sendMessage(groupToken: String, peerId: Long, text: String, format: List<VkFormatItem>) {
         if (failSend) { failSend = false; throw IOException("Failed send") }
         sent += peerId to text
+        formats += format
     }
     override suspend fun setActivity(groupToken: String, peerId: Long, groupId: Long) = Unit
 }

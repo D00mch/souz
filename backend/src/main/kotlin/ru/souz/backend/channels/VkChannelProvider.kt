@@ -1,6 +1,7 @@
 package ru.souz.backend.channels
 
 import kotlinx.coroutines.CancellationException
+import ru.souz.backend.vk.VkMarkdown
 import ru.souz.backend.vk.VkBotApi
 import ru.souz.backend.storage.postgres.PostgresVkBotBindingRepository
 import ru.souz.backend.vk.VkBotTokenCrypto
@@ -42,8 +43,10 @@ class VkChannelProvider(
         } catch (e: Exception) {
             return ChannelSendResult.Failed("VK delivery failed.")
         }
-        return deliveryService.sendChunks(userId, chatId, text, "VK") { chunk ->
-            vkBotApi.sendMessage(token, peerId, chunk)
+        return deliveryService.sendChunks(
+            userId, chatId, text, "VK", VkMarkdown(text).chunks(), { it.text },
+        ) { chunk ->
+            vkBotApi.sendMessage(token, peerId, chunk.text, chunk.format)
         }
     }
 }
