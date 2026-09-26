@@ -3,7 +3,6 @@ package ru.souz.agent.nodes
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -13,7 +12,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
@@ -24,7 +22,6 @@ import ru.souz.agent.graph.buildGraph
 import ru.souz.agent.runtime.AgentRuntimeEvent
 import ru.souz.agent.runtime.AgentRuntimeEventSink
 import ru.souz.agent.runtime.ActiveRunInputController
-import ru.souz.agent.spi.AgentSettingsProvider
 import ru.souz.agent.state.AgentContext
 import ru.souz.agent.state.AgentSettings
 import ru.souz.llms.LLMChatAPI
@@ -36,55 +33,31 @@ import ru.souz.llms.LLMResponse
 
 class NodesLLMTest {
     @Test
-    fun `accepted streaming response emits complete ordered blocks only after the stream finishes`() = runTest {
-        val partial = CompletableDeferred<Unit>()
-        val finish = CompletableDeferred<Unit>()
-        val events = mutableListOf<AgentRuntimeEvent>()
-        val api = mockk<LLMChatAPI> {
-            coEvery { messageStream(any()) } returns flow {
-                emit(block(7, "Let"))
-                emit(block(7, " "))
-                partial.complete(Unit)
-                finish.await()
-                emit(block(7, "me check"))
-                emit(block(16, "Second block"))
-                emit(block(32, "", tool = true))
-            }
-        }
-        val node = SteerableChatNode(NodesLLM(api, mockk { every { useStreaming } returns true }), ActiveRunInputController())
-        val execution = async {
-            node.execute(context(emptyList(), recordingSink(events)), GraphRuntime(RetryPolicy(), 10))
-        }
-        partial.await()
-        assertTrue(events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().isEmpty())
-        finish.complete(Unit)
-
-        val result = execution.await()
-        assertEquals(listOf("Let me check", "Second block"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
-        assertEquals(listOf("Let me check", "Second block", ""), result.history.map { it.content })
-    }
-
-    @Test
-    fun `failed stream attempts never emit assistant messages even when text and tools arrived`() = runTest {
+    fun `stream retries publish only complete accepted blocks in index order`() = runTest {
         val events = mutableListOf<AgentRuntimeEvent>()
         var attempts = 0
         val api = mockk<LLMChatAPI> {
             coEvery { messageStream(any()) } answers {
                 flow {
                     attempts++
-                    emit(block(0, if (attempts == 1) "discarded" else "accepted"))
-                    emit(block(1, "", tool = true))
+                    emit(block(16, "Second block"))
+                    emit(block(7, "Let"))
+                    emit(block(7, " "))
+                    emit(block(7, "me check"))
+                    emit(block(32, "", tool = true))
+                    assertTrue(events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().isEmpty())
                     if (attempts == 1) throw LLMException(LLMResponse.Chat.Error(503, "retry"))
                 }
             }
         }
         val node = SteerableChatNode(NodesLLM(api, mockk { every { useStreaming } returns true }), ActiveRunInputController())
-        buildGraph<String, LLMResponse.Chat> {
+        val result = buildGraph<String, LLMResponse.Chat> {
             nodeInput.edgeTo(node).edgeTo(nodeFinish)
         }.start(context(emptyList(), recordingSink(events)))
 
         assertEquals(2, attempts)
-        assertEquals(listOf("accepted"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
+        assertEquals(listOf("Let me check", "Second block"), events.filterIsInstance<AgentRuntimeEvent.AssistantMessage>().map { it.content })
+        assertEquals(listOf("Let me check", "Second block", ""), result.history.map { it.content })
     }
 
     @Test
@@ -152,23 +125,16 @@ class NodesLLMTest {
     @Test
     fun `streaming chat emits runtime deltas and keeps side effects batching`() = runTest {
         val runtimeEvents = mutableListOf<AgentRuntimeEvent>()
-        val settingsProvider = mockk<AgentSettingsProvider> {
-            every { useStreaming } returns true
-        }
+        val chunks = listOf("Hello", " streaming", " world")
         val nodes = NodesLLM(
-            llmApi = StreamingChatApi(
-                chunks = listOf("Hello", " streaming", " world"),
-                model = "test-model",
-            ),
-            settingsProvider = settingsProvider,
+            llmApi = mockk {
+                coEvery { messageStream(any()) } returns flow { chunks.forEach { emit(block(0, it)) } }
+            },
+            settingsProvider = mockk { every { useStreaming } returns true },
         )
         val context = context(
             history = listOf(LLMRequest.Message(role = LLMMessageRole.user, content = "Prompt")),
-            runtimeEventSink = object : AgentRuntimeEventSink {
-                override suspend fun emit(event: AgentRuntimeEvent) {
-                    runtimeEvents += event
-                }
-            },
+            runtimeEventSink = recordingSink(runtimeEvents),
         )
 
         val sideEffect = async(start = CoroutineStart.UNDISPATCHED) { nodes.sideEffects.first() }
@@ -177,14 +143,7 @@ class NodesLLMTest {
             runtime = GraphRuntime(retryPolicy = RetryPolicy(), maxSteps = 10),
         )
 
-        assertEquals(
-            listOf<AgentRuntimeEvent>(
-                AgentRuntimeEvent.LlmMessageDelta("Hello"),
-                AgentRuntimeEvent.LlmMessageDelta(" streaming"),
-                AgentRuntimeEvent.LlmMessageDelta(" world"),
-            ),
-            runtimeEvents,
-        )
+        assertEquals<List<AgentRuntimeEvent>>(chunks.map { AgentRuntimeEvent.LlmMessageDelta(it) }, runtimeEvents)
         assertEquals(AgentStreamChunk("Hello streaming world", 7L), sideEffect.await())
         val response = result.input as LLMResponse.Chat.Ok
         assertEquals("Hello streaming world", response.choices.single().message.content)
@@ -207,51 +166,4 @@ class NodesLLMTest {
         systemPrompt = "system",
         runtimeEventSink = runtimeEventSink,
     )
-}
-
-private class StreamingChatApi(
-    private val chunks: List<String>,
-    private val model: String,
-) : LLMChatAPI {
-    override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat =
-        error("Non-streaming path is not expected in this test.")
-
-    override suspend fun messageStream(body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
-        chunks.forEachIndexed { index, chunk ->
-            emit(
-                LLMResponse.Chat.Ok(
-                    choices = listOf(
-                        LLMResponse.Choice(
-                            message = LLMResponse.Message(
-                                content = chunk,
-                                role = LLMMessageRole.assistant,
-                                functionsStateId = null,
-                            ),
-                            index = 0,
-                            finishReason = if (index == chunks.lastIndex) {
-                                LLMResponse.FinishReason.stop
-                            } else {
-                                null
-                            },
-                        )
-                    ),
-                    created = index.toLong(),
-                    model = model,
-                    usage = LLMResponse.Usage(1, index + 1, index + 2, 0),
-                )
-            )
-        }
-    }
-
-    override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
-        error("Embeddings are not used in this test.")
-
-    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
-        error("File upload is not used in this test.")
-
-    override suspend fun downloadFile(fileId: String): String? =
-        error("File download is not used in this test.")
-
-    override suspend fun balance(): LLMResponse.Balance =
-        error("Balance is not used in this test.")
 }

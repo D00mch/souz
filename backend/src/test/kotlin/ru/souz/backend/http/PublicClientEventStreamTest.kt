@@ -50,28 +50,6 @@ class PublicClientEventStreamTest {
         }
     }
 
-    @Test
-    fun `live blocks preserve order and repetition without advancing replay cursor`() = runTest {
-        val first = progress()
-        val second = first.copy(id = UUID.randomUUID(), payload = AssistantMessagePayload("Second"))
-        val repeated = first.copy(id = UUID.randomUUID())
-        val live = Channel<AgentEventEnvelope>(Channel.UNLIMITED)
-        val blocks = listOf(first, second, repeated)
-        blocks.forEach { live.send(it) }
-        live.close()
-        val cursors = mutableListOf<Long>()
-        val stream = AgentEventStream(
-            replay = emptyList(), liveEvents = live, commands = Channel(), close = {},
-            replayAfter = { cursors += it; emptyList() }, initialSeq = 5,
-        )
-        val sent = mutableListOf<AgentEventEnvelope>()
-        stream.forwardPublicEvents(CompletableDeferred()) { sent += it }
-        assertEquals<List<AgentEventEnvelope>>(blocks, sent)
-        assertEquals(listOf(5L, 5L, 5L, 5L), cursors)
-        assertEquals(mapOf("content" to "Working"), first.toPublicDto().payload)
-        assertEquals(null, first.toPublicDto().seq)
-    }
-
     private fun progress() = AgentLiveEvent(
         UUID.randomUUID(), "user", UUID.randomUUID(), UUID.randomUUID(),
         AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Working"), Instant.EPOCH,

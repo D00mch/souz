@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalAtomicApi::class)
-
 package ru.souz.agent.nodes
 
 import kotlinx.coroutines.Dispatchers
@@ -19,9 +17,6 @@ import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.LLMResponse
 import ru.souz.llms.toMessage
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.concurrent.atomics.AtomicReference
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
  * Nodes with calls to LLM
@@ -81,61 +76,44 @@ internal class NodesLLM(
         eventSink: AgentRuntimeEventSink,
         streamRevision: Long,
     ): LLMResponse.Chat {
-        val streamResponse = AtomicReference<LLMResponse.Chat?>(null)
-        val choicesByIndex = ConcurrentHashMap<Int, ChoiceAccumulator>()
+        var lastResponse: LLMResponse.Chat? = null
+        val choicesByIndex = sortedMapOf<Int, ChoiceAccumulator>()
         val pending = StringBuilder()
         var increasingChunkSize = 20
 
-        withContext(Dispatchers.IO) {
-            llmApi.messageStream(request).takeWhile { response ->
-                l.info("Stream response type ${response::class.java}")
-                if (response is LLMResponse.Chat.Error) {
-                    streamResponse.store(response)
-                    false
-                } else {
-                    true
-                }
-            }.collect { response ->
-                response as LLMResponse.Chat.Ok
-                l.debug("choices: {}", response.choices)
+        llmApi.messageStream(request).takeWhile { response ->
+            lastResponse = response
+            response is LLMResponse.Chat.Ok
+        }.collect { response ->
+            response as LLMResponse.Chat.Ok
+            l.debug("choices: {}", response.choices)
 
-                val content = response.choices.firstOrNull()?.message?.content
-                if (content?.isNotEmpty() == true) {
-                    eventSink.emit(AgentRuntimeEvent.LlmMessageDelta(content))
-                    pending.append(content)
-                    if (pending.length >= increasingChunkSize) {
-                        val toEmit = pending.toString()
-                        l.info("About to emit into sideEffects flow: {}", toEmit)
-                        mutableSideEffects.tryEmit(AgentStreamChunk(toEmit, streamRevision))
-                        pending.clear()
-                        increasingChunkSize *= 3
-                    }
+            val content = response.choices.firstOrNull()?.message?.content
+            if (content?.isNotEmpty() == true) {
+                eventSink.emit(AgentRuntimeEvent.LlmMessageDelta(content))
+                pending.append(content)
+                if (pending.length >= increasingChunkSize) {
+                    mutableSideEffects.tryEmit(AgentStreamChunk(pending.toString(), streamRevision))
+                    pending.clear()
+                    increasingChunkSize *= 3
                 }
-
-                response.choices.forEach { choice ->
-                    val acc = choicesByIndex.getOrPut(choice.index) {
-                        ChoiceAccumulator(choice.message.role)
-                    }
-                    acc.merge(choice)
-                }
-                val merged = choicesByIndex.entries.sortedBy { it.key }.map { (index, acc) -> acc.toChoice(index) }
-
-                LLMResponse.Chat.Ok(
-                    choices = merged,
-                    created = response.created,
-                    model = response.model,
-                    usage = response.usage,
-                ).also(streamResponse::store)
             }
 
-            if (pending.isNotEmpty()) {
-                val toEmit = pending.toString()
-                l.info("About to emit final chunk into sideEffects flow: {}", toEmit)
-                mutableSideEffects.tryEmit(AgentStreamChunk(toEmit, streamRevision))
+            response.choices.forEach { choice ->
+                choicesByIndex.getOrPut(choice.index) {
+                    ChoiceAccumulator(choice.message.role)
+                }.merge(choice)
             }
         }
 
-        return streamResponse.load() ?: LLMResponse.Chat.Error(-1, "Connection error")
+        if (pending.isNotEmpty()) {
+            mutableSideEffects.tryEmit(AgentStreamChunk(pending.toString(), streamRevision))
+        }
+
+        return when (val response = lastResponse) {
+            is LLMResponse.Chat.Ok -> response.copy(choices = choicesByIndex.map { (index, acc) -> acc.toChoice(index) })
+            else -> response ?: LLMResponse.Chat.Error(-1, "Connection error")
+        }
     }
 
     private class ChoiceAccumulator(
@@ -148,12 +126,8 @@ internal class NodesLLM(
         fun merge(choice: LLMResponse.Choice) {
             val msg = choice.message
             content.append(msg.content)
-            if (msg.functionCall != null) {
-                functionCall = msg.functionCall
-            }
-            if (msg.functionsStateId != null) {
-                functionsStateId = msg.functionsStateId
-            }
+            functionCall = msg.functionCall ?: functionCall
+            functionsStateId = msg.functionsStateId ?: functionsStateId
             finishReason = choice.finishReason ?: finishReason
             role = msg.role
         }

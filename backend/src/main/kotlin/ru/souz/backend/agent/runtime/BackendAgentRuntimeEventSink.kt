@@ -2,8 +2,6 @@ package ru.souz.backend.agent.runtime
 
 import java.time.Instant
 import java.util.UUID
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ru.souz.agent.runtime.AgentRuntimeEvent
@@ -76,16 +74,11 @@ internal class BackendAgentRuntimeEventSink(
     val hasRequestedOption: Boolean get() = requestedOptionId != null
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
-        handleEvent(event)
-    }
-
-    private suspend fun handleEvent(event: AgentRuntimeEvent) {
         when (event) {
             is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.AssistantMessage -> if (publicClientThread) {
                 beforePublicEvent()
-                currentCoroutineContext().ensureActive()
                 publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))
             }
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
