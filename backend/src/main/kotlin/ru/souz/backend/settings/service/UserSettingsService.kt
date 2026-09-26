@@ -28,29 +28,22 @@ class UserSettingsService(
         ) {
             throw invalidV1Request("defaultModel must be available to the current user.")
         }
-        val existing = userSettingsRepository.get(userId)
         val now = Instant.now()
+        val existing = userSettingsRepository.get(userId) ?: UserSettings(userId = userId, createdAt = now)
         userSettingsRepository.save(
-            UserSettings(
-                userId = userId,
-                reasoningEffort = existing?.reasoningEffort,
-                defaultModel = overrides.defaultModel ?: existing?.defaultModel,
-                contextSize = overrides.contextSize ?: existing?.contextSize,
-                temperature = overrides.temperature ?: existing?.temperature,
-                locale = overrides.locale ?: existing?.locale,
-                timeZone = overrides.timeZone ?: existing?.timeZone,
-                systemPrompt = overrides.systemPrompt ?: existing?.systemPrompt,
-                enabledTools = overrides.enabledTools ?: existing?.enabledTools,
-                showToolEvents = overrides.showToolEvents ?: existing?.showToolEvents,
-                streamingMessages = overrides.streamingMessages ?: existing?.streamingMessages,
-                interfaceLanguage = overrides.interfaceLanguage ?: existing?.interfaceLanguage,
-                requestTimeoutMillis = overrides.requestTimeoutMillis ?: existing?.requestTimeoutMillis,
-                useFewShotExamples = overrides.useFewShotExamples ?: existing?.useFewShotExamples,
-                toolPermissions = existing?.toolPermissions ?: emptyMap(),
-                mcp = existing?.mcp ?: emptyMap(),
-                schemaVersion = existing?.schemaVersion ?: UserSettings.CURRENT_SCHEMA_VERSION,
-                onboardingCompletedAt = existing?.onboardingCompletedAt,
-                createdAt = existing?.createdAt ?: now,
+            existing.copy(
+                defaultModel = overrides.defaultModel ?: existing.defaultModel,
+                contextSize = overrides.contextSize ?: existing.contextSize,
+                temperature = overrides.temperature ?: existing.temperature,
+                locale = overrides.locale ?: existing.locale,
+                timeZone = overrides.timeZone ?: existing.timeZone,
+                systemPrompt = overrides.systemPrompt ?: existing.systemPrompt,
+                enabledTools = overrides.enabledTools ?: existing.enabledTools,
+                showToolEvents = overrides.showToolEvents ?: existing.showToolEvents,
+                streamingMessages = overrides.streamingMessages ?: existing.streamingMessages,
+                interfaceLanguage = overrides.interfaceLanguage ?: existing.interfaceLanguage,
+                requestTimeoutMillis = overrides.requestTimeoutMillis ?: existing.requestTimeoutMillis,
+                useFewShotExamples = overrides.useFewShotExamples ?: existing.useFewShotExamples,
                 updatedAt = now,
             )
         )
