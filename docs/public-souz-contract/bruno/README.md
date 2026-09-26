@@ -12,7 +12,7 @@ Start the backend and PostgreSQL from the repository root with `docker compose u
 2. Copy each creation ACK's `chatId` into `chatId` (A) or `chatIdB` (B) in the selected environment. The ACK's `userId` identifies the owner. Repeating creation reuses the same chat; change `createChatRequestId` only when you want new chats. The shared request ID is scoped per user.
 3. Send `03 message.submit A`, then `04 message.submit B` while A is waiting for a tool reply. Copy each accepted submit ACK's `thread.id` into `threadId` or `threadIdB`. Route ACKs, status, and events by `chatId`; the two chats may interleave.
 4. For A's `tool.call.started`, copy the event's `threadId` and `payload.toolCallId` into `threadId` and the matching `toolCallIdAsk` or `toolCallIdOpenMedia`. Every public `tool.call.started` requests client execution; its payload has no `target` field. Send template `05` or `06` for the actual pending call before its `deadlineAt`. Adjust the result to the call's arguments; model-selected calls and their order can vary.
-5. Read the final response in `thread.completed.payload.response`. Repeat either submit template to send new input.
+5. Read informational `assistant.message.payload.content` blocks as they arrive; they have `seq:null`, require no reply, and do not finish the thread. Read the final response in `thread.completed.payload.response`. Repeat either submit template to send new input.
 
 Every `message.submit` and `history.append` uses `{{$randomUUID}}`, so each send has a fresh request ID. Ordinary multi-chat submissions omit `threadId`: Souz selects the active thread or creates one when none exists. For a deliberate retry, copy the original resolved UUID and unchanged payload from the sent message; sending the template again is a new operation.
 
@@ -24,7 +24,7 @@ Tool history uses `role: "assistant"` and `content.type: "tool_call"`, with `nam
 
 ## Reconnect
 
-Save each chat's last successfully processed event `seq` in `afterSeq` or `afterSeqB`. These values must be nonnegative integers; the templates insert them without JSON quotes. `0` requests all retained public events.
+Save each chat's last successfully processed durable event `seq` in `afterSeq` or `afterSeqB`. Ignore `seq:null` for cursor tracking. Assistant messages are live-only, can be dropped when stale, and never replay. These cursors must be nonnegative integers; the templates insert them without JSON quotes. `0` requests all retained public events.
 
 Disconnect, reconnect the same multi-chat request, and send `07 chat.subscribe A reconnect` and `08 chat.subscribe B reconnect`, without submitting input. Each explicit cursor replaces only that chat's stream, acknowledges with `duplicate:false`, replays `seq > afterSeq`, then delivers live events. Track progress independently and deduplicate by `(chatId, seq)`.
 

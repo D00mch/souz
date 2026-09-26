@@ -1,6 +1,7 @@
 package ru.souz.backend.events.model
 
 enum class AgentEventType(val value: String) {
+    ASSISTANT_MESSAGE("assistant.message"),
     MESSAGE_CREATED("message.created"),
     MESSAGE_DELTA("message.delta"),
     MESSAGE_COMPLETED("message.completed"),

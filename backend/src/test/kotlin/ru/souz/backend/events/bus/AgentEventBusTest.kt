@@ -7,17 +7,53 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.events.model.AgentEvent
+import ru.souz.backend.events.model.AgentEventEnvelope
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.AgentLiveEvent
+import ru.souz.backend.events.model.AssistantMessagePayload
+import ru.souz.backend.events.model.ThreadCompletedPayload
+import ru.souz.backend.events.model.PublicToolCallStartedPayload
 import ru.souz.backend.events.model.RawAgentEventPayload
+import ru.souz.backend.http.routes.forwardPublicEvents
+import ru.souz.llms.restJsonMapper
 
 class AgentEventBusTest {
+    @Test
+    fun `replay drops stale progress but preserves current progress and client commands`() = runTest {
+        for (initialReplay in listOf(false, true)) for (tool in listOf(false, true)) {
+            val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), UUID.randomUUID(),
+                AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Checking"), Instant.EPOCH, discardAfterSeq = 5)
+            val durable = AgentEvent(UUID.randomUUID(), progress.userId, progress.chatId, progress.executionId, 6,
+                if (tool) AgentEventType.TOOL_CALL_STARTED else AgentEventType.THREAD_COMPLETED,
+                if (tool) PublicToolCallStartedPayload("call", "user.ask", arguments = restJsonMapper.createObjectNode())
+                else ThreadCompletedPayload("Done"), Instant.EPOCH)
+            val current = progress.copy(executionId = UUID.randomUUID(), discardAfterSeq = 6)
+            val command = progress.copy(type = AgentEventType.TOOL_CALL_STARTED,
+                payload = PublicToolCallStartedPayload("live-call", "user.ask", arguments = restJsonMapper.createObjectNode()),
+                discardAfterSeq = null)
+            val live = Channel<AgentEventEnvelope>(Channel.UNLIMITED)
+            var stored = if (initialReplay) listOf(durable) else emptyList()
+            val stream = AgentEventStream(stored, live, Channel(), {}, { after -> stored.filter { it.seq > after } }, 5)
+            val ready = CompletableDeferred<Unit>()
+            val sent = mutableListOf<AgentEventEnvelope>()
+            val forwarding = async { stream.forwardPublicEvents(ready) { sent += it } }
+            ready.await()
+            stored = listOf(durable)
+            listOf(progress, durable, current, command).forEach { live.send(it) }
+            live.close()
+            forwarding.await()
+            assertEquals(listOf(durable, current, command), sent)
+        }
+    }
+
     @Test
     fun `slow subscriber keeps commands rejects overflow and bounds droppable notifications`() = runTest {
         val userId = "user-a"
