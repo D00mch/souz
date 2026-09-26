@@ -356,6 +356,8 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
+            hookStore = instance(),
+            hookConfig = appConfig.hooks,
         )
     }
     if (appConfig.featureFlags.telegramBot) {

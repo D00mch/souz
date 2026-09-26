@@ -3,6 +3,8 @@ package ru.souz.backend.execution.service
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -20,6 +22,8 @@ import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.hooks.HookConfig
+import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.options.model.Option
@@ -41,7 +45,11 @@ class AgentExecutionService internal constructor(
     private val requestFactory: AgentExecutionRequestFactory,
     private val finalizer: AgentExecutionFinalizer,
     private val launcher: AgentExecutionLauncher,
+    private val hookStore: HookStore,
+    hookConfig: HookConfig,
 ) {
+    private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
+
     suspend fun executeChatTurn(
         userId: String,
         chatId: UUID,
@@ -215,6 +223,7 @@ class AgentExecutionService internal constructor(
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ) {
+        val isHook = hookStore.find(execution.userId, execution.id) != null
         launcher.launchRegistered(
             execution = execution,
             onCancelled = {
@@ -228,10 +237,12 @@ class AgentExecutionService internal constructor(
         ) {
             try {
                 val run = suspend {
-                    finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
+                    val timeout = execution.metadata["executionTimeoutMillis"]?.toLongOrNull()
+                    if (timeout == null) finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
+                    else withTimeout(timeout) { finalizer.runExecution(execution, conversationKey, turnRequest, eventSink) }
                 }
-                val timeout = execution.metadata["executionTimeoutMillis"]?.toLongOrNull()
-                if (timeout == null) run() else withTimeout(timeout) { run() }
+                // Both initial turns and option continuations acquire capacity for actual agent work.
+                if (isHook) hookSlots.withPermit { run() } else run()
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by AgentExecutionFinalizer.
             }

@@ -116,7 +116,7 @@ class BackendOptionsE2eTest {
         }
 }
 
-private class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
+internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
     private val waitingConversations = LinkedHashSet<AgentConversationKey>()
 
     override suspend fun run(

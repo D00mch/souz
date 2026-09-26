@@ -13,11 +13,22 @@ import java.util.UUID
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import ru.souz.agent.runtime.AgentRuntimeEventSink
+import ru.souz.backend.agent.model.AgentConversationKey
+import ru.souz.backend.agent.model.BackendConversationTurnRequest
+import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
+import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
+import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.llms.LLMResponse
 import org.junit.jupiter.api.io.TempDir
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.hooks.hookInput
@@ -104,6 +115,54 @@ class BackendHooksE2eTest {
     }
 
     @Test
+    fun `initial hook turns and option continuations share capacity regardless of hook ID order`() {
+        for ((waitingHook, otherHook) in listOf("a" to "z", "z" to "a")) {
+            writeHook(id = waitingHook, directory = waitingHook)
+            writeHook(id = otherHook, directory = otherHook)
+            val entered = Channel<String>(Channel.UNLIMITED)
+            val release = Channel<Unit>(Channel.UNLIMITED)
+            val options = ScriptedOptionTurnRunner()
+            val runner = object : BackendConversationTurnRunner {
+                override suspend fun run(conversationKey: AgentConversationKey, request: BackendConversationTurnRequest,
+                    eventSink: AgentRuntimeEventSink, initialUsage: LLMResponse.Usage): BackendConversationTurnOutcome {
+                    entered.send(requireNotNull(request.executionId))
+                    release.receive()
+                    return options.run(conversationKey, request, eventSink, initialUsage)
+                }
+            }
+            runHooks(HookConfig(setOf(owner), concurrentExecutions = 1), runner = runner) {
+                setupOwner()
+                suspend fun answer(receipt: JsonNode) {
+                    val chatId = receipt["execution"]["chatId"].asText()
+                    val optionId = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(owner) }.jsonBody()["items"]
+                        .first { it["type"].asText() == "option.requested" }["payload"]["optionId"].asText()
+                    assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.optionAnswer(optionId)) {
+                        trusted(owner); jsonBody("""{"selectedOptionIds":["a"]}""")
+                    }.status)
+                }
+                withTimeout(15_000) {
+                    val first = invoke(id = waitingHook).jsonBody()["receiptId"].asText()
+                    assertEquals(first, entered.receive())
+                    val second = invoke(id = otherHook).jsonBody()["receiptId"].asText()
+                    assertNull(withTimeoutOrNull(350) { entered.receive() }, "Initial turn must wait for capacity")
+                    release.send(Unit)
+                    assertEquals(second, entered.receive(), "Waiting for an option must release capacity")
+                    answer(awaitStatus(first, "waiting_option"))
+                    assertNull(withTimeoutOrNull(350) { entered.receive() }, "Continuation must wait for capacity")
+                    release.send(Unit)
+                    assertEquals(first, entered.receive())
+                    release.send(Unit)
+                    awaitStatus(first, "completed")
+                    answer(awaitStatus(second, "waiting_option"))
+                    assertEquals(second, entered.receive())
+                    release.send(Unit)
+                    awaitStatus(second, "completed")
+                }
+            }
+        }
+    }
+
+    @Test
     fun `docker workspace ownership and ambiguous IDs fail closed`() {
         fun userWorkspace(user: String) = workspace.resolve(Base64.getUrlEncoder().withoutPadding().encodeToString(user.toByteArray())).resolve("workspace")
         val ownRoot = userWorkspace(owner)
@@ -175,8 +234,8 @@ class BackendHooksE2eTest {
         }
     }
 
-    private fun writeHook(token: String = secret, enabled: Boolean = true, prompt: String = "Check the event", base: Path = workspace, id: String = "check", hookOwner: String = owner) {
-        val file = base.resolve("hooks/check/hook.yaml")
+    private fun writeHook(token: String = secret, enabled: Boolean = true, prompt: String = "Check the event", base: Path = workspace, id: String = "check", hookOwner: String = owner, directory: String = "check") {
+        val file = base.resolve("hooks/$directory/hook.yaml")
         Files.createDirectories(file.parent)
         Files.writeString(file, """
             version: 1
@@ -190,8 +249,9 @@ class BackendHooksE2eTest {
         """.trimIndent())
     }
 
-    private fun runHooks(config: HookConfig = HookConfig(setOf(owner)), llm: E2eLlmApi = E2eLlmApi(), block: suspend BackendE2eScope.() -> Unit) =
-        backendE2eTest("e2e_hooks", hookConfig = config, llm = llm, sandboxFactory = { settings ->
+    private fun runHooks(config: HookConfig = HookConfig(setOf(owner)), llm: E2eLlmApi = E2eLlmApi(), runner: BackendConversationTurnRunner? = null, block: suspend BackendE2eScope.() -> Unit) =
+        backendE2eTest("e2e_hooks", hookConfig = config, llm = llm, turnRunnerOverride = runner,
+            featureFlags = BackendFeatureFlags(wsEvents = true, options = runner != null), sandboxFactory = { settings ->
             DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "local" }, workspace, workspace.resolve("state"), workspace)
         }, block = block)
 
@@ -204,8 +264,8 @@ class BackendHooksE2eTest {
 
     private suspend fun BackendE2eScope.reload() = client.post("/v1/hooks/reload") { trusted(owner) }.also { assertEquals(200, it.status.value) }
 
-    private suspend fun BackendE2eScope.invoke(token: String = secret, payload: String = "{}", key: String? = null) =
-        client.post("/hooks/check") {
+    private suspend fun BackendE2eScope.invoke(token: String = secret, payload: String = "{}", key: String? = null, id: String = "check") =
+        client.post("/hooks/$id") {
             header("Authorization", "Bearer $token")
             header("X-User-Id", other)
             if (key != null) header("Idempotency-Key", key)

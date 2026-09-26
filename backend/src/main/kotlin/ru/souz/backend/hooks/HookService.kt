@@ -129,14 +129,12 @@ internal class HookService(
 
     private suspend fun processPending() = mutex.withLock {
         val active = store.active()
-        var running = active.count { it.status == "running" }
         for (receipt in active) {
             val execution = executions.getByChat(receipt.userId, receipt.chatId, receipt.id)
             if (receipt.status == "running") {
                 when {
                     execution == null -> store.update(receipt.id, "failed", "hook_start_failed")
                     !execution.status.isActive() -> store.update(receipt.id, "finished")
-                    execution.status == AgentExecutionStatus.WAITING_OPTION -> running--
                 }
                 continue
             }
@@ -146,14 +144,12 @@ internal class HookService(
                 store.update(receipt.id, "failed", "hook_configuration_changed")
                 continue
             }
-            if (running >= config.concurrentExecutions) continue
             store.update(receipt.id, "running")
             try {
                 executionService.executeChatTurn(
                     userId = receipt.userId, chatId = receipt.chatId, executionId = receipt.id,
                     content = hookInput(receipt.prompt, receipt.payload), executionTimeoutMillis = config.executionTimeoutMillis,
                 )
-                running++
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
