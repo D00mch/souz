@@ -474,7 +474,13 @@ class BackendCompositionE2eTest {
             assertProxySecurity(listEvents)
             assertUuidPathParameter(listEvents, "chatId")
             assertEquals(0.0, listEvents.queryParameter("afterSeq")["schema"]["minimum"].asDouble())
-            assertEquals("array", document.resolveSchema(listEvents.jsonResponseSchema("200"))["properties"]["items"]["type"].asText())
+            val replayItems = document.resolveSchema(listEvents.jsonResponseSchema("200"))["properties"]["items"]
+            assertEquals("array", replayItems["type"].asText())
+            val replayVariants = document.resolveSchema(replayItems["items"])["oneOf"].map { document.resolveSchema(it) }
+            val legacyTypes = replayVariants.single { it.has("not") }["properties"]["type"]["enum"].map { it.asText() }
+            assertFalse("assistant.message" in legacyTypes)
+            assertTrue("message.delta" in legacyTypes, "Legacy schema allows message.delta for compatibility")
+            assertTrue(legacyTypes.containsAll(listOf("thread.completed", "thread.failed", "thread.cancelled")))
 
             val createChat = document.operation(BackendHttpRoutes.CHATS, "post")
             assertFalse(createChat.has("security"))

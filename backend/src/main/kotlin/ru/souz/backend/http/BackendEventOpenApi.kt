@@ -115,14 +115,16 @@ internal object BackendEventOpenApiSchemas {
         JsonSchema(
             type = JsonType.OBJECT,
             title = LEGACY_DURABLE_EVENT,
-            description = "Replay compatibility for legacy or partial stored durable events, including historically persisted message.delta rows. Canonical events are explicitly excluded.",
+            description = "Replay compatibility for legacy or partial stored durable events. The type enum includes message.delta for compatibility. Canonical events are explicitly excluded.",
             required = listOf("seq", "durable", "chatId", "executionId", "type", "payload", "createdAt"),
             properties = mapOf(
                 "seq" to value(positiveSequenceSchema()),
                 "durable" to value(singletonBoolean(true)),
                 "chatId" to value(uuidSchema()),
                 "executionId" to value(nullableUuidSchema()),
-                "type" to value(stringEnum(AgentEventType.entries.map { it.value })),
+                "type" to value(stringEnum(AgentEventType.entries
+                    .filterNot { it == AgentEventType.ASSISTANT_MESSAGE }
+                    .map { it.value })),
                 "payload" to value(arbitraryObjectSchema("Legacy event payload with producer-specific or partial fields.")),
                 "createdAt" to value(dateTimeSchema()),
             ),

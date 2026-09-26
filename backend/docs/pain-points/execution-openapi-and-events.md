@@ -33,7 +33,7 @@ Generated OpenAPI is also easy to drift: route helpers and deferred registration
 - Register background work before its body can run. Keep cancellation persistence and event emission non-cancellable, and unregister only in the lifecycle job's outermost cleanup.
 - Keep complete same-thread client tool arguments, results or errors, deadline, and result idempotency state in `tool_calls`. Only one client tool waiter may be outstanding per thread.
 - Runtime tool audit previews are sanitized once, then reused for persistence and optional events. Sanitization creates independent containers without mutating the input; keep persistence outside the event-enabled guard.
-- Preserve the canonical-or-legacy replay union and keep compatibility payloads structurally distinct.
+- Preserve the canonical-or-legacy replay union and keep compatibility payloads structurally distinct. The legacy durable type enum excludes `assistant.message` and allows `message.delta` for compatibility.
 - Give every ordinary HTTP route a stable operation ID, tag, inputs, success responses, structured errors, and trusted-proxy security where applicable.
 - Keep compiler inference limited to explicitly commented paths; runtime route descriptions and reflection are authoritative for helpers and conditional behavior.
 - Exclude WebSocket routes and their upgrade fallback through both compiler and runtime OpenAPI controls.
