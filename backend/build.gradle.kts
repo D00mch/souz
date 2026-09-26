@@ -29,6 +29,7 @@ dependencies {
     implementation(libs.kotlinx.coroutinesSlf4j)
     implementation(libs.jackson)
     implementation(libs.commonmark)
+    implementation(libs.jackson.dataformat.yaml)
     implementation(libs.flyway.core)
     implementation(libs.flyway.database.postgresql)
     implementation(libs.hikari.cp)

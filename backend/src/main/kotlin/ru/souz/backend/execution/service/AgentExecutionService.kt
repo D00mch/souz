@@ -3,6 +3,9 @@ package ru.souz.backend.execution.service
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeout
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -16,10 +19,11 @@ import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.execution.model.acceptsInput
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
+import ru.souz.backend.hooks.HookConfig
+import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.http.invalidV1Request
 import ru.souz.backend.options.model.Option
@@ -41,7 +45,11 @@ class AgentExecutionService internal constructor(
     private val requestFactory: AgentExecutionRequestFactory,
     private val finalizer: AgentExecutionFinalizer,
     private val launcher: AgentExecutionLauncher,
+    private val hookStore: HookStore,
+    private val hookConfig: HookConfig,
 ) {
+    private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
+
     suspend fun executeChatTurn(
         userId: String,
         chatId: UUID,
@@ -211,6 +219,7 @@ class AgentExecutionService internal constructor(
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ) {
+        val isHook = hookStore.find(execution.userId, execution.id) != null
         launcher.launchRegistered(
             execution = execution,
             onCancelled = {
@@ -223,12 +232,11 @@ class AgentExecutionService internal constructor(
             },
         ) {
             try {
-                finalizer.runExecution(
-                    execution = execution,
-                    conversationKey = conversationKey,
-                    turnRequest = turnRequest,
-                    eventSink = eventSink,
-                )
+                val run = suspend {
+                    finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
+                }
+                // Both initial turns and option continuations acquire capacity for actual agent work.
+                if (isHook) hookSlots.withPermit { withTimeout(hookConfig.executionTimeoutMillis) { run() } } else run()
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by AgentExecutionFinalizer.
             }
@@ -313,7 +321,7 @@ class AgentExecutionService internal constructor(
 
     internal suspend fun failStartup(started: AgentExecution): AgentExecution? {
         val execution = executionRepository.getByChat(started.userId, started.chatId, started.id) ?: return null
-        if (!execution.status.acceptsInput()) return execution
+        if (!execution.status.isActive() || execution.status == AgentExecutionStatus.WAITING_OPTION) return execution
         return finalizer.markFailed(
             executionId = execution.id,
             userId = execution.userId,
@@ -322,6 +330,25 @@ class AgentExecutionService internal constructor(
             errorMessage = "Thread startup was interrupted.",
             usage = execution.usage,
         )
+    }
+
+    internal suspend fun recoverHookExecution(started: AgentExecution) {
+        val finished = failStartup(started) ?: return
+        val sink = requestFactory.createEventSink(
+            userId = finished.userId, chatId = finished.chatId, execution = finished,
+            messageRepository = messageRepository, optionRepository = optionRepository,
+            executionRepository = executionRepository, eventService = eventService, toolCallRepository = toolCallRepository,
+            streamingMessagesEnabled = false, toolEventsEnabled = false,
+        )
+        // Repair interrupted event writes through the same sink as live executions; storage deduplicates them.
+        when (finished.status) {
+            AgentExecutionStatus.FAILED -> sink.emitExecutionFailed(
+                finished.errorCode ?: "agent_execution_failed", finished.errorMessage ?: "Thread startup was interrupted.",
+            )
+            AgentExecutionStatus.CANCELLED -> sink.emitExecutionCancelled()
+            AgentExecutionStatus.COMPLETED -> sink.emitExecutionFinished(finished)
+            else -> Unit
+        }
     }
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {

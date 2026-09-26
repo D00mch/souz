@@ -138,7 +138,7 @@ class BackendOptionsE2eTest {
     }
 }
 
-private class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
+internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
     val reasoningEfforts = CopyOnWriteArrayList<String?>()
     private val waitingConversations = LinkedHashSet<AgentConversationKey>()
 
