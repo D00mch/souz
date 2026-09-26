@@ -241,7 +241,7 @@ class BackendTelegramE2eTest {
                 binding(userId, telegramChatId).takeIf { it["linked"].asBoolean() }
             }
 
-            val deliveredText = "telegram outbound delivery"
+            val deliveredText = "**telegram outbound delivery** " + "я".repeat(5_000)
             llm.requestSkillForPrompt(
                 prompt = "send telegram outbound",
                 skillId = "SendMessageToChannel",

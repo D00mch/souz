@@ -305,6 +305,7 @@ class TelegramBotPollingService(
         }
         val chunks = channelTextChunks(
             text = responseText.ifBlank { FALLBACK_ASSISTANT_REPLY },
+            maxLength = TELEGRAM_RICH_TEXT_LIMIT,
         )
         chunks.forEach { chunk ->
             sendReplySafely(bindingId, token, chatId, chunk)
