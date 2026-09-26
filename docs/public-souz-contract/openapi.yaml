@@ -891,6 +891,7 @@ components:
           $ref: "#/components/schemas/DateTime"
     SouzServerEvent:
       oneOf:
+        - $ref: "#/components/schemas/AssistantMessageEvent"
         - $ref: "#/components/schemas/ToolCallStartedEvent"
         - $ref: "#/components/schemas/ThreadCompletedEvent"
         - $ref: "#/components/schemas/ThreadFailedEvent"
@@ -900,6 +901,44 @@ components:
       type: integer
       format: int64
       minimum: 1
+    AssistantMessageEvent:
+      description: >-
+        Live-only informational progress from an accepted LLM response containing tool calls.
+        Each nonblank assistant text block produces a separate event in original block order,
+        after complete response assembly and acceptance and before tool execution. The originating
+        request ACK precedes these events. No client ACK or tool.result is required, and tools
+        do not wait for receipt or speech synthesis. Events may be lost or suppressed when stale;
+        they are never persisted or replayed and do not complete the thread. Reasoning, discarded
+        attempts and final answers are excluded. No additional transcript rows are created.
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        seq:
+          type: "null"
+          description: Never advances the replay cursor or provides a deduplication key.
+        type:
+          type: string
+          enum: [assistant.message]
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/AssistantMessagePayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    AssistantMessagePayload:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          $ref: "#/components/schemas/NonEmptyString"
+          description: One complete nonblank assistant text block, preserving its original content.
     ToolCallStartedEvent:
       type: object
       additionalProperties: false

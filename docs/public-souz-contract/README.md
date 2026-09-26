@@ -49,9 +49,17 @@ An unrecognized command can return an ordinary apology in `reply`; transport err
 
 Active-thread submit/tool/cancel operations must reach the runtime owner in multi-replica deployments. Durable replay and thread status can be read from any process.
 
+## Intermediate assistant messages
+
+`assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check."}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
+
+The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. The originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.
+
+Progress is live-only and best-effort. Current subscribers may receive it; disconnects, bounded-queue overflow, or durable catch-up overtaking queued progress can discard it. Souz never stores or replays these events, and does not add separate chat transcript rows. Intermediate text remains in the agent's existing conversation history. `seq:null` does not advance `afterSeq` and cannot be deduplicated by `(chatId, seq)`; do not collapse separate blocks with identical content.
+
 ## Subscriptions and reconnect
 
-Public events are stored in the database independently of subscriptions. A subscription keeps a temporary cursor; **Souz does not persist which events the client received or processed**.
+Durable public events are stored in the database independently of subscriptions. Live-only assistant messages and cross-channel tool starts are not stored. A subscription keeps a temporary durable cursor; **Souz does not persist which events the client received or processed**.
 
 A new socket has no subscriptions. Successful creation or an accepted submit automatically subscribes an unsubscribed chat to **live events only**, including retries. Events caused by that submit are included; earlier events require explicit replay:
 
@@ -80,7 +88,7 @@ Unsubscribe and disconnect preserve chats, history, stored events, executions an
 After reconnecting:
 
 1. Restore each desired chat with `chat.subscribe`, passing its last successfully processed `seq` as `afterSeq`.
-2. Process missed events followed by live events; save progress and deduplicate durable events by `(chatId, seq)`. Live-only tool starts have `seq:null`; execute them once per `(chatId, threadId, toolCallId)` without updating the replay cursor.
+2. Process missed events followed by live events; save the durable cursor and deduplicate durable events by `(chatId, seq)`. Live-only tool starts have `seq:null`; execute them once per `(chatId, threadId, toolCallId)` without updating the replay cursor. `assistant.message` also has `seq:null`, requires no reply, and never appears in replay.
 
 Events saved during disconnection or recovery remain available. Reopening the socket or retrying a submit alone does not recover missed events.
 
@@ -88,7 +96,7 @@ Events saved during disconnection or recovery remain available. Reopening the so
 
 Souz sends an `ack` before events caused by a command and before subscription replay. Accepted submit/cancel also receive live `thread.status` feedback after the ACK. ACKs and status are not replayed.
 
-Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread message events are excluded. Events are ordered within each chat; chats may interleave, and filtered internal events leave valid sequence gaps.
+Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
 
 | Operation | Idempotency key |
 | --- | --- |

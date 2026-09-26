@@ -122,7 +122,7 @@ internal object BackendEventOpenApiSchemas {
                 "durable" to value(singletonBoolean(true)),
                 "chatId" to value(uuidSchema()),
                 "executionId" to value(nullableUuidSchema()),
-                "type" to value(stringEnum(AgentEventType.entries.map { it.value })),
+                "type" to value(stringEnum((AgentEventType.entries - AgentEventType.ASSISTANT_MESSAGE).map { it.value })),
                 "payload" to value(arbitraryObjectSchema("Legacy event payload with producer-specific or partial fields.")),
                 "createdAt" to value(dateTimeSchema()),
             ),

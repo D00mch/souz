@@ -50,6 +50,7 @@ Client operation definitions are backend-owned and reviewed. Do not accept runti
 - Validate unsubscribe access and correlation before removing the subscription. Cancel and join its sender, including stream cleanup, before acknowledging; never hold the writer mutex while joining. Events may precede the ACK during a race, but none from the closed subscription may follow it. Resubscribe can replay missed events; accepted submits restore live-only delivery.
 - `PublicClientConnection.run` owns the connection coroutine scope, subscription jobs, and writer mutex. Launch subscriptions in that scope, including when sending an acknowledgement inside a nested logging context. Keep one sender per chat and serialize socket writes across acknowledgement, `afterSend`, and status. Never join a sender while holding the writer mutex. Close stream resources on disconnect without cancelling runtime work.
 - Keep replay subscription-before-query, re-query durable events from the last covered sequence before consuming bounded live signals, and suppress duplicate delivery by sequence.
+- Assistant progress uses the droppable live queue and `seq:null`, without persistence or transcript rows. Await input ACKs and recheck cancellation before publishing. Its internal durable position lets replay suppress overtaken progress; tools never wait for progress receipts or speech.
 - Iterate the event bus's concurrent subscriber set directly during publication; Kotlin collection-size fast paths can race with disconnect and throw while copying it.
 
 ## Diagnostics
