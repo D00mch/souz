@@ -4,6 +4,55 @@
 
 Shared provider clients, settings and memory contracts, sandbox contracts, skill storage/loading, and portable tools live under `src/commonJvmMain`. Desktop/backend-only configuration, native local models, local and Docker sandboxes, MCP transports, speech services, and Office/PDF tooling live under `src/jvmMain`. OS-bound desktop services and tools remain in `:desktopApp`.
 
+## Jev classification
+
+`ru.souz.jev.JevClient` evaluates named yes/no questions through the [hosted TypeSafe API](https://api.typesafe.ai/docs)
+and returns their probabilities. Shared runtime DI binds it lazily using the host-owned HTTP client.
+The classic `GraphBasedAgent` can select multiple tool categories with Jev independently of its conversational
+model. The skills graph, including backend conversations, does not classify tool categories.
+
+| Variable | Behavior |
+| --- | --- |
+| `SOUZ_CLASSIFIER` | Unset or `llm`: existing LLM classifier with regex fallback. `jev`: Jev classifier. |
+| `JEV_TOKEN` | Required, nonblank Bearer credential for Jev and its live tests. |
+| `JEV_MODEL` | Hosted model ID or alias; defaults to `jev-latest`. |
+| `JEV_THRESHOLD` | Finite probability in `[0, 1]`; defaults to `0.5`. Categories must score strictly above it. |
+
+Export `JEV_TOKEN` in the environment that starts Souz, then run:
+
+```zsh
+SOUZ_CLASSIFIER=jev JEV_MODEL=jev-latest JEV_THRESHOLD=0.5 ./gradlew :desktopApp:run
+```
+
+Settings are read at construction; invalid Jev configuration fails when Jev is selected or its client is resolved.
+Requests time out after 30 seconds. The graph tries twice before regex fallback and propagates cancellation.
+Only enabled, nonempty categories are evaluated; an empty catalog makes no request. No matches or `HELP`
+exposes all available tools.
+
+Other shared-runtime callers can inject `JevClient` directly, without a graph or tool catalog:
+
+```kotlin
+import com.fasterxml.jackson.databind.JsonNode
+import ru.souz.jev.JevClient
+import ru.souz.llms.restJsonMapper
+
+suspend fun needsCalendar(jev: JevClient, message: String): Double {
+    return jev.evaluate(
+        state = restJsonMapper.valueToTree<JsonNode>(message),
+        questions = mapOf("calendar" to "Does this request require calendar access?"),
+    ).getValue("calendar")
+}
+```
+
+Callers can pass credentials and a model to `JevClient(http, token, model)`. The client validates probabilities
+but leaves selection policy to callers and never closes the supplied transport.
+
+Regular tests use mock HTTP responses. Run the opt-in hosted test with the same `JEV_TOKEN`:
+
+```zsh
+SOUZ_TEST_JEV=1 ./gradlew :sharedLogic:jvmTest --tests 'ru.souz.jev.JevIntegrationTest' --rerun
+```
+
 ## Sandbox Modes
 
 On JVM hosts, `DefaultRuntimeSandboxFactory` chooses the active sandbox with `SOUZ_SANDBOX_MODE`.

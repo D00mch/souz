@@ -33,13 +33,48 @@ import kotlin.test.assertTrue
 
 class NodesClassificationPromptTest {
     @Test
+    fun `provider selections bypass regex agreement and preserve all-tools fallback`() {
+        val cases = mapOf(
+            listOf(ToolCategory.BROWSER) to listOf("Open"),
+            listOf(ToolCategory.FILES, ToolCategory.BROWSER) to listOf("Read", "Open"),
+            emptyList<ToolCategory>() to listOf("Read", "Open"),
+            listOf(ToolCategory.HELP) to listOf("Read", "Open"),
+        )
+        for ((categories, tools) in cases) {
+            val result = executeClassification(
+                input = "Open the website", history = emptyList(),
+                localClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0) },
+                apiClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(categories, null) },
+            )
+            assertEquals(tools, result.activeTools.map { it.name })
+        }
+    }
+
+    @Test
+    fun `remote failures get two attempts then fall back to regex`() {
+        var calls = 0
+        var localCalls = 0
+        val result = executeClassification(
+            input = "Read the file", history = emptyList(),
+            localClassifier = UserMessageClassifier { _, _ ->
+                localCalls++
+                UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 50.0)
+            },
+            apiClassifier = UserMessageClassifier { _, _ -> calls++; error("Provider unavailable") },
+        )
+        assertEquals(2, calls)
+        assertEquals(1, localCalls)
+        assertEquals(listOf("Read"), result.activeTools.map { it.name })
+    }
+
+    @Test
     fun `classification cancellation is not retried`() {
         var requests = 0
         assertFailsWith<CancellationException> {
             executeClassification(
                 input = "Read the file", history = emptyList(),
-                localClassifier = UserMessageClassifier { UserMessageClassifier.Reply(emptyList(), 0.0) },
-                apiClassifier = UserMessageClassifier { requests++; throw CancellationException("Cancelled") },
+                localClassifier = UserMessageClassifier { _, _ -> UserMessageClassifier.Reply(emptyList(), 0.0) },
+                apiClassifier = UserMessageClassifier { _, _ -> requests++; throw CancellationException("Cancelled") },
             )
         }
         assertEquals(1, requests)
@@ -54,7 +89,7 @@ class NodesClassificationPromptTest {
             input = "Read the file", history = emptyList(),
             model = " Custom/Deployment ", provider = LlmProvider.OPENAI,
             localClassifier = local,
-            apiClassifier = UserMessageClassifier { request ->
+            apiClassifier = UserMessageClassifier { request, _ ->
                 requests += request
                 if (requests.size == 1) error("Temporary provider failure")
                 reply
@@ -149,7 +184,7 @@ class NodesClassificationPromptTest {
         val model = LLMModel.LocalQwen3_4B_Instruct_2507
         val reply = UserMessageClassifier.Reply(listOf(ToolCategory.FILES), 90.0)
         val apiClassifier = mockk<UserMessageClassifier>()
-        coEvery { apiClassifier.classify(any()) } returns reply
+        coEvery { apiClassifier.classify(any(), any()) } returns reply
 
         val result = executeClassification(
             input = "Прочитай файл",
@@ -162,7 +197,7 @@ class NodesClassificationPromptTest {
         )
 
         assertEquals(listOf("Read"), result.activeTools.map { it.name })
-        coVerify(exactly = 1) { apiClassifier.classify(any()) }
+        coVerify(exactly = 1) { apiClassifier.classify(any(), any()) }
     }
 
     @Test
@@ -290,6 +325,8 @@ class NodesClassificationPromptTest {
         val body: LLMRequest.Chat = localClassifier.requireBody()
         val prompt = body.messages.first().content
 
+        assertEquals(setOf(ToolCategory.FILES), localClassifier.requireCategories())
+        assertEquals(setOf(ToolCategory.FILES), apiClassifier.requireCategories())
         assertTrue(prompt.contains("- FILES:"))
         assertFalse(prompt.contains("- BROWSER:"))
         assertFalse(prompt.contains("\nBROWSER: "))
@@ -414,12 +451,16 @@ class NodesClassificationPromptTest {
         private val reply: UserMessageClassifier.Reply,
     ) : UserMessageClassifier {
         private var body: LLMRequest.Chat? = null
+        private var categories: Map<ToolCategory, String> = emptyMap()
 
-        override suspend fun classify(body: LLMRequest.Chat): UserMessageClassifier.Reply {
+        override suspend fun classify(body: LLMRequest.Chat, categories: Map<ToolCategory, String>): UserMessageClassifier.Reply {
             this.body = body
+            this.categories = categories
             return reply
         }
 
         fun requireBody(): LLMRequest.Chat = checkNotNull(body) { "Classifier was not invoked" }
+
+        fun requireCategories(): Set<ToolCategory> = categories.keys
     }
 }

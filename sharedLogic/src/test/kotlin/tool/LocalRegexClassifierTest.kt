@@ -32,7 +32,7 @@ class LocalRegexClassifierTest {
         "прочитай readme и открой example.com" to listOf(FILES, APPLICATIONS, MAIL),
     ).map { (text, expected) ->
         dynamicTest(text) {
-            runBlocking { assertEquals(expected, LocalRegexClassifier.classify(body(text)).categories) }
+            runBlocking { assertEquals(expected, LocalRegexClassifier.classify(body(text), emptyMap()).categories) }
         }
     }
 
@@ -59,7 +59,7 @@ class LocalRegexClassifierTest {
         "Перешли это в телеграм" to CHANNEL_MESSAGING,
     ).map { (text, expected) ->
         dynamicTest(text) {
-            runBlocking { assertEquals(expected, LocalRegexClassifier.classify(body(text)).categories.first()) }
+            runBlocking { assertEquals(expected, LocalRegexClassifier.classify(body(text), emptyMap()).categories.first()) }
         }
     }
 }
