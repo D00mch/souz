@@ -335,6 +335,9 @@ class BackendCompositionE2eTest {
         val expectedWithoutTelegram = linkedMapOf(
             "/" to setOf("get"),
             "/health" to setOf("get"),
+            "/hooks/{hookId}" to setOf("post"),
+            "/v1/hooks/reload" to setOf("post"),
+            "/v1/hooks/receipts/{receiptId}" to setOf("get"),
             "/v1/bootstrap" to setOf("get"),
             "/v1/onboarding/state" to setOf("get"),
             "/v1/onboarding/complete" to setOf("post"),
@@ -376,7 +379,7 @@ class BackendCompositionE2eTest {
                 assertFalse(actual.containsKey(BackendHttpRoutes.CHAT_WS_PATTERN))
                 assertFalse(actual.containsKey(BackendHttpRoutes.WS))
                 assertEquals(
-                    setOf("souzProxyAuth", "souzUserIdentity"),
+                    setOf("souzProxyAuth", "souzUserIdentity", "hookBearer"),
                     document["components"]["securitySchemes"].fieldNames().asSequence().toSet(),
                 )
                 document["paths"].properties().forEach { (path, pathItem) ->
@@ -387,7 +390,10 @@ class BackendCompositionE2eTest {
                                 path == "/" || path == "/health" ||
                                     (path == "/v1/chats" && method == "post") ||
                                     (path == "/v1/chats/{chatId}/threads/{threadId}" && method == "get")
-                            if (publicOperation) {
+                            if (path == "/hooks/{hookId}") {
+                                assertEquals(setOf("hookBearer"), operation["security"][0].fieldNames().asSequence().toSet())
+                                assertEquals(0, operation["security"][1].size(), "Custom verification need not use a Bearer header")
+                            } else if (publicOperation) {
                                 assertFalse(operation.has("security"), "$method $path")
                             } else {
                                 assertEquals(

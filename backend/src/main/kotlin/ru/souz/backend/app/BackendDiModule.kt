@@ -11,6 +11,12 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.backend.hooks.HookDefinitions
+import ru.souz.backend.hooks.HookService
+import ru.souz.backend.hooks.HookStore
+import ru.souz.backend.hooks.HookVerifier
+import ru.souz.backend.execution.service.ExecutionLimits
+import kotlinx.coroutines.sync.Semaphore
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -218,6 +224,10 @@ fun backendDiModule(
         )
     }
     bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
+    bindSingleton { HookStore(instance<HikariDataSource>(), appConfig.hooks) }
+    bindSingleton { HookDefinitions(instance(), appConfig.hooks) }
+    bindSingleton { HookVerifier(appConfig.hooks, instance()) }
+    bindSingleton { HookService(appConfig.hooks, instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
             baseSettingsProvider = instance(),
@@ -307,12 +317,13 @@ fun backendDiModule(
             agentBackgroundScope = instance<BackendApplicationScope>(),
             memoryRuntime = instance<ConversationMemoryRuntime>(),
             automaticMemoryRecall = appConfig.featureFlags.wsAutomaticMemoryRecall,
+            hookStore = instance(),
+            executionQuotas = instance(),
         )
     }
     bindSingleton {
         AgentExecutionRequestFactory(
             effectiveSettingsResolver = instance(),
-            featureFlags = instance(),
             clientThreadRegistry = instance(),
         )
     }
@@ -336,6 +347,8 @@ fun backendDiModule(
         )
     }
     bindSingleton {
+        val hookStore = instance<HookStore>()
+        val hookLimits = ExecutionLimits(Semaphore(appConfig.hooks.concurrentExecutions), appConfig.hooks.executionTimeoutMillis)
         AgentExecutionService(
             chatRepository = instance(),
             messageRepository = instance(),
@@ -346,6 +359,9 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
+            clientThreadRegistry = instance(),
+            optionsEnabled = appConfig.featureFlags.options,
+            executionLimits = { execution -> hookLimits.takeIf { hookStore.find(execution.userId, execution.id) != null } },
         )
     }
     if (appConfig.featureFlags.telegramBot) {
@@ -516,6 +532,7 @@ fun backendDiModule(
             optionService = instance(),
             eventService = instance(),
             publicClientService = instance(),
+            hookService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,

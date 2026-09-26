@@ -4,20 +4,13 @@ import java.time.Instant
 import java.util.UUID
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
-import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
-import ru.souz.backend.chat.repository.MessageRepository
-import ru.souz.backend.config.BackendFeatureFlags
-import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.execution.repository.AgentExecutionRepository
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.options.model.Option
-import ru.souz.backend.options.repository.OptionRepository
 import ru.souz.backend.settings.model.EffectiveUserSettings
 import ru.souz.backend.settings.service.EffectiveSettingsResolver
 import ru.souz.backend.settings.service.UserSettingsOverrides
-import ru.souz.backend.toolcall.repository.ToolCallRepository
 import ru.souz.llms.restJsonMapper
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.common.BackendLlmSupport
@@ -41,7 +34,6 @@ internal data class PreparedContinuationTurn(
 
 internal class AgentExecutionRequestFactory(
     private val effectiveSettingsResolver: EffectiveSettingsResolver,
-    private val featureFlags: BackendFeatureFlags,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
 ) {
     suspend fun prepareChatTurn(
@@ -160,35 +152,6 @@ internal class AgentExecutionRequestFactory(
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
         )
     }
-
-    suspend fun createEventSink(
-        userId: String,
-        chatId: UUID,
-        execution: AgentExecution,
-        messageRepository: MessageRepository,
-        optionRepository: OptionRepository,
-        executionRepository: AgentExecutionRepository,
-        eventService: AgentEventService,
-        toolCallRepository: ToolCallRepository,
-        streamingMessagesEnabled: Boolean,
-        toolEventsEnabled: Boolean,
-    ): BackendAgentRuntimeEventSink =
-        BackendAgentRuntimeEventSink(
-            userId = userId,
-            chatId = chatId,
-            executionId = execution.id,
-            messageRepository = messageRepository,
-            optionRepository = optionRepository,
-            executionRepository = executionRepository,
-            eventService = eventService,
-            toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = streamingMessagesEnabled,
-            toolEventsEnabled = toolEventsEnabled,
-            optionsEnabled = featureFlags.options,
-            assistantMessageId = execution.assistantMessageId,
-            beforePublicEvent = { clientThreadRegistry?.awaitAcceptedInputAcks(execution.id) },
-            publicClientThread = execution.runtimeOwner != null,
-        )
 
     private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =
         clientMessageId?.let { linkedMapOf("clientMessageId" to it) } ?: emptyMap()
