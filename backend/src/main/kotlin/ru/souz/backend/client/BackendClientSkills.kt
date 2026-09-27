@@ -112,7 +112,6 @@ private class ClientWebSocketSkill(
                 startedAt = startedAt,
             )
             clientCallStarted = true
-            registry.awaitAcceptedInputAcks(threadId)
             eventService.appendDurable(
                 userId = meta.userId,
                 chatId = chatId,
@@ -155,8 +154,6 @@ private class ClientWebSocketSkill(
         val chat = channelDeliveryService.resolveTarget(meta.userId, chatId)
             ?.takeIf { it.clientType in supportedClientTypes }
             ?: return errorMessage(functionCall.name, "client_context_missing", "Device channel not found.")
-        meta.requestId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-            ?.let { registry.awaitAcceptedInputAcks(it) }
         if (!eventService.hasLiveSubscriber(chat.userId, chat.id)) {
             return errorMessage(functionCall.name, "client_context_missing", "No device is connected on that channel.")
         }

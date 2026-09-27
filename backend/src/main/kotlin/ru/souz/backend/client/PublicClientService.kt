@@ -10,9 +10,13 @@ import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
@@ -54,8 +58,11 @@ internal class PublicClientService(
     private val toolCallRepository: ToolCallRepository,
     private val executionService: AgentExecutionService,
     private val registry: ClientThreadRuntimeRegistry,
+    private val applicationScope: CoroutineScope,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
+    private val logger = LoggerFactory.getLogger(PublicClientService::class.java)
+
     suspend fun requireChat(chatId: UUID, clientType: String): Chat {
         val chat = chatRepository.getById(chatId) ?: throw ClientContractException("chat_not_found", "Chat not found.")
         if (chat.clientType != clientType) {
@@ -239,7 +246,6 @@ internal class PublicClientService(
         }
         val result = registry.commitCancellation(
             threadId = threadId,
-            requestId = requestId,
             commit = { runtimeAvailable ->
                 clientRequestRepository.cancel(
                     userId = chat.userId,
@@ -277,39 +283,43 @@ internal class PublicClientService(
         )
         val threadId = prepared.execution.id
         val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, now = now)
-        val result = withContext(NonCancellable) {
-            registry.register(threadId, frame.payload.device, key.requestId)
-            var resolution: ClientRequestResult? = null
-            try {
-                clientRequestRepository.resolveMessage(
-                    userId = chat.userId,
-                    key = key,
-                    requestedThreadId = null,
-                    newExecution = prepared.execution,
-                    acceptedRequest = key.request(threadId, ack, now),
-                    rejectedRequest = rejectedMessageRequest(key, now),
-                ).also { resolution = it }
-            } finally {
-                if (resolution !is ClientRequestResult.Accepted) registry.discard(threadId)
-            }
-        }
-        if (result !is ClientRequestResult.Accepted) {
-            return if (result is ClientRequestResult.Continue) {
-                continueThread(chat, frame, key, result.execution, now)
-            } else {
-                handledReceipt(result, key, now)
-            }
-        }
-        val startupFailure = runCatching {
-            withContext(NonCancellable) { executionService.startPreparedChatTurn(prepared) }
-        }.exceptionOrNull()
-        startupFailure?.let { failure ->
+        // The application owns the complete handoff; disconnect only cancels the socket's await.
+        val result = applicationScope.async(MDCContext()) {
             withContext(NonCancellable) {
-                executionService.finalizeInterruptedExecution(prepared.execution, emitEvent = false)
+                registry.register(threadId, frame.payload.device)
+                var resolution: ClientRequestResult? = null
+                try {
+                    resolution = clientRequestRepository.resolveMessage(
+                        userId = chat.userId,
+                        key = key,
+                        requestedThreadId = null,
+                        newExecution = prepared.execution,
+                        acceptedRequest = key.request(threadId, ack, now),
+                        rejectedRequest = rejectedMessageRequest(key, now),
+                    )
+                    if (resolution is ClientRequestResult.Accepted) {
+                        runCatching { executionService.startPreparedChatTurn(prepared) }.exceptionOrNull()?.let { failure ->
+                            logger.error("Thread startup failed threadId={}", threadId, failure)
+                            executionService.finalizeInterruptedExecution(prepared.execution)
+                            if (failure is CancellationException) throw failure
+                        }
+                    }
+                    resolution
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    logger.error("Thread acceptance failed threadId={}", threadId, failure)
+                    throw failure
+                } finally {
+                    if (resolution !is ClientRequestResult.Accepted) registry.discard(threadId)
+                }
             }
-            if (failure is CancellationException) throw failure
+        }.await()
+        return if (result is ClientRequestResult.Continue) {
+            continueThread(chat, frame, key, result.execution, now)
+        } else {
+            handledReceipt(result, key, now)
         }
-        return handledReceipt(result, key, now)
     }
 
     private suspend fun continueThread(
@@ -344,7 +354,6 @@ internal class PublicClientService(
         val result = if (runtimeAvailable) {
             registry.acceptInput(
                 threadId = threadId,
-                requestId = key.requestId,
                 device = frame.payload.device,
                 commit = { afterSeq -> commit(afterSeq, input) },
             )
@@ -534,9 +543,7 @@ internal class PublicClientService(
             .put("duplicate", result is ClientRequestResult.Duplicate)
         val feedback = request.threadId?.takeIf { response["status"].asText() == "accepted" }
             ?.let { ThreadStatusFeedback(it, request.requestId) }
-        return HandledClientFrame(response, statusFeedback = feedback) {
-            feedback?.let { registry.ackSent(it.threadId, it.requestId) }
-        }
+        return HandledClientFrame(response, statusFeedback = feedback)
     }
 
     private fun rejectedMessageRequest(
