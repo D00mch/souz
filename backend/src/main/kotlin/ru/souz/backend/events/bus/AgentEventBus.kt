@@ -18,6 +18,9 @@ class AgentEventBus {
     fun hasSubscriber(userId: String, chatId: UUID): Boolean =
         subscribers[AgentEventStreamKey(userId, chatId)]?.isNotEmpty() == true
 
+    fun liveChatIds(userId: String): List<UUID> =
+        subscribers.keys.filter { it.userId == userId }.map { it.chatId }
+
     suspend fun subscribe(userId: String, chatId: UUID): AgentEventSubscription {
         val key = AgentEventStreamKey(userId = userId, chatId = chatId)
         val subscriber = Subscriber()

@@ -72,6 +72,25 @@ internal class HookStore(private val dataSource: DataSource, private val config:
         }
     }
 
+    suspend fun latestByHookIds(userId: String, hookIds: Set<String>): Map<String, HookReceipt> {
+        if (hookIds.isEmpty()) return emptyMap()
+        return dataSource.read { c ->
+            val ids = c.createArrayOf("text", hookIds.toTypedArray())
+            try {
+                c.prepareStatement("""
+                    select distinct on (hook_id) * from hook_receipts
+                    where user_id = ? and hook_id = any(?) order by hook_id, ordinal desc
+                """.trimIndent()).use { s ->
+                    s.setString(1, userId)
+                    s.setArray(2, ids)
+                    s.executeQuery().use { rows -> buildMap {
+                        while (rows.next()) rows.receipt().let { put(it.hookId, it) }
+                    } }
+                }
+            } finally { ids.free() }
+        }
+    }
+
     suspend fun active(): List<HookReceipt> = dataSource.read { c ->
         c.prepare("""
             select distinct on (hook_id) * from hook_receipts

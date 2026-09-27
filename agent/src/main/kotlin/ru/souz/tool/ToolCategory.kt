@@ -11,6 +11,7 @@ enum class ToolCategory {
     APPLICATIONS,
     DATA_ANALYTICS,
     CALENDAR,
+    SCHEDULING,
     MAIL,
     TEXT_REPLACE,
     CALCULATOR,
