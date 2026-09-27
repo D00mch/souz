@@ -10,9 +10,13 @@ import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
@@ -54,8 +58,11 @@ internal class PublicClientService(
     private val toolCallRepository: ToolCallRepository,
     private val executionService: AgentExecutionService,
     private val registry: ClientThreadRuntimeRegistry,
+    private val applicationScope: CoroutineScope,
     private val mapper: ObjectMapper = jacksonObjectMapper().registerKotlinModule(),
 ) {
+    private val logger = LoggerFactory.getLogger(PublicClientService::class.java)
+
     suspend fun requireChat(chatId: UUID, clientType: String): Chat {
         val chat = chatRepository.getById(chatId) ?: throw ClientContractException("chat_not_found", "Chat not found.")
         if (chat.clientType != clientType) {
@@ -277,39 +284,51 @@ internal class PublicClientService(
         )
         val threadId = prepared.execution.id
         val ack = acceptedMessage(chat.id, key.requestId, threadId, created = true, now = now)
-        val result = withContext(NonCancellable) {
-            registry.register(threadId, frame.payload.device, key.requestId)
-            var resolution: ClientRequestResult? = null
-            try {
-                clientRequestRepository.resolveMessage(
-                    userId = chat.userId,
-                    key = key,
-                    requestedThreadId = null,
-                    newExecution = prepared.execution,
-                    acceptedRequest = key.request(threadId, ack, now),
-                    rejectedRequest = rejectedMessageRequest(key, now),
-                ).also { resolution = it }
-            } finally {
-                if (resolution !is ClientRequestResult.Accepted) registry.discard(threadId)
-            }
-        }
-        if (result !is ClientRequestResult.Accepted) {
-            return if (result is ClientRequestResult.Continue) {
-                continueThread(chat, frame, key, result.execution, now)
-            } else {
-                handledReceipt(result, key, now)
-            }
-        }
-        val startupFailure = runCatching {
-            withContext(NonCancellable) { executionService.startPreparedChatTurn(prepared) }
-        }.exceptionOrNull()
-        startupFailure?.let { failure ->
+        // The application owns acceptance and startup: a disconnect cancels only the socket's wait,
+        // and shutdown joins the operation before the datasource closes.
+        val acceptance = applicationScope.async(MDCContext()) {
             withContext(NonCancellable) {
-                executionService.finalizeInterruptedExecution(prepared.execution, emitEvent = false)
+                registry.register(threadId, frame.payload.device, key.requestId)
+                val resolution = try {
+                    clientRequestRepository.resolveMessage(
+                        userId = chat.userId,
+                        key = key,
+                        requestedThreadId = null,
+                        newExecution = prepared.execution,
+                        acceptedRequest = key.request(threadId, ack, now),
+                        rejectedRequest = rejectedMessageRequest(key, now),
+                    )
+                } catch (failure: Throwable) {
+                    registry.discard(threadId)
+                    throw failure
+                }
+                if (resolution !is ClientRequestResult.Accepted) {
+                    registry.discard(threadId)
+                } else {
+                    runCatching { executionService.startPreparedChatTurn(prepared) }.exceptionOrNull()?.let { failure ->
+                        executionService.finalizeInterruptedExecution(prepared.execution, emitEvent = false)
+                        if (failure is CancellationException) throw failure
+                    }
+                }
+                resolution
             }
-            if (failure is CancellationException) throw failure
         }
-        return handledReceipt(result, key, now)
+        val result = try {
+            acceptance.await()
+        } catch (cancelled: CancellationException) {
+            // Nobody reads the result after a disconnect, so a later failure is logged here.
+            acceptance.invokeOnCompletion { failure ->
+                if (failure != null && failure !is CancellationException) {
+                    logger.error("Thread acceptance failed after the socket stopped waiting threadId={}", threadId, failure)
+                }
+            }
+            throw cancelled
+        }
+        return if (result is ClientRequestResult.Continue) {
+            continueThread(chat, frame, key, result.execution, now)
+        } else {
+            handledReceipt(result, key, now)
+        }
     }
 
     private suspend fun continueThread(

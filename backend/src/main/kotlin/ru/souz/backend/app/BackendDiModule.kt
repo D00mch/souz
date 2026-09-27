@@ -494,6 +494,7 @@ fun backendDiModule(
             toolCallRepository = instance(),
             executionService = instance(),
             registry = instance(),
+            applicationScope = instance<BackendApplicationScope>(),
         )
     }
     bindSingleton {

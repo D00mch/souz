@@ -357,6 +357,8 @@ internal class BackendE2eBackend(
 
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
 
+    val applicationScope: BackendApplicationScope get() = di.direct.instance()
+
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 
     fun createPeer(llm: E2eLlmApi = E2eLlmApi(), providerClients: ProviderHttpClients? = null): BackendE2eBackend =
