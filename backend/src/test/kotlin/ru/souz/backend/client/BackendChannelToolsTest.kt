@@ -11,6 +11,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -33,15 +34,13 @@ import ru.souz.llms.restJsonMapper
 @OptIn(ExperimentalCoroutinesApi::class)
 class BackendChannelToolsTest {
     @Test
-    fun `channel publication waits for source acknowledgement but not for an HTTP runtime`() = runTest {
-        with(Fixture()) {
+    fun `channel publication is independent of source delivery and HTTP runtime`() = runTest {
+        with(Fixture(backgroundScope)) {
             val subscription = bus.subscribe(target.userId, target.id)
-            registry.register(source, ClientDevice(target.userId, "device", "tv_box", emptySet()), "submit")
+            registry.register(source, ClientDevice(target.userId, "device", "tv_box", emptySet()))
             try {
                 val pending = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, meta) }
-                assertTrue(subscription.commands.tryReceive().isFailure)
                 assertFalse(pending.isCompleted)
-                registry.ackSent(source, "submit")
                 subscription.commands.receive()
                 pending.cancelAndJoin()
                 registry.discard(source)
@@ -61,7 +60,7 @@ class BackendChannelToolsTest {
     @Test
     fun `receipt wins timeout before ACK and callers are released on ACK failure cancellation or expiry`() = runTest {
         for (finish in listOf("ack", "write failure", "cancellation", "timeout")) {
-            with(Fixture()) {
+            with(Fixture(backgroundScope)) {
                 val subscription = bus.subscribe(target.userId, target.id)
                 try {
                     val pending = async(start = CoroutineStart.UNDISPATCHED) { skill.invoke(call, meta) }
@@ -107,7 +106,7 @@ class BackendChannelToolsTest {
         }
     }
 
-    private class Fixture {
+    private class Fixture(scope: CoroutineScope) {
         val source = UUID.randomUUID()
         val target = Chat(UUID.randomUUID(), "user", null, false, Instant.EPOCH, Instant.EPOCH)
         val chats = mockk<ChatRepository> {
@@ -120,7 +119,7 @@ class BackendChannelToolsTest {
         val startedAt = Instant.now()
         val skill = BackendClientSkills(registry, tools, events, ChannelDeliveryService(chats, mockk(), events), now = { startedAt })
             .toolsByCategory.values.firstNotNullOf { it["orion.call"] }
-        val service = PublicClientService(chats, mockk(), mockk(), tools, mockk(), registry)
+        val service = PublicClientService(chats, mockk(), mockk(), tools, mockk(), registry, scope)
         val call = LLMResponse.FunctionCall("orion.call", mapOf("channelId" to target.id.toString(), "utterance" to "play"))
         val meta = ToolInvocationMeta(target.userId, requestId = source.toString())
     }

@@ -2,6 +2,7 @@ package ru.souz.runtime.sandbox.local
 
 import io.mockk.every
 import io.mockk.mockk
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.async
@@ -15,6 +16,7 @@ import ru.souz.db.SettingsProvider
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_LIMIT_BYTES
 import ru.souz.runtime.sandbox.SANDBOX_COMMAND_OUTPUT_TRUNCATION_PREFIX
 import ru.souz.runtime.sandbox.SandboxCommandRequest
+import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxScope
 import ru.souz.tool.BadInputException
@@ -153,30 +155,58 @@ class LocalSandboxCommandExecutorTest {
         for (cancel in listOf(false, true)) for (input in listOf(null, "x".repeat(90_000))) {
             val home = createTempDirectory("sandbox-home-")
             val sandbox = createSandbox(home)
-            withTimeout(10_000) {
-                val execution = async {
-                    sandbox.commandExecutor.execute(SandboxCommandRequest(
-                        runtime = SandboxCommandRuntime.BASH,
-                        script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
-                        workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000, stdin = input,
-                    ))
+            val pidFile = home.resolve("pids")
+            var phase = "waiting for PID file"
+            var pids = emptyList<Long>()
+            var commandResult: SandboxCommandResult? = null
+            try {
+                withTimeout(10_000) {
+                    val execution = async {
+                        sandbox.commandExecutor.execute(SandboxCommandRequest(
+                            runtime = SandboxCommandRuntime.BASH,
+                            script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
+                            workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000, stdin = input,
+                        )).also { commandResult = it }
+                    }
+                    // Cancel only after both PIDs are published; allow startup and draining in the test watchdog.
+                    while (!Files.exists(pidFile)) delay(10)
+                    pids = Files.readString(pidFile).split(' ').map(String::toLong)
+                    phase = if (cancel) "cancelling command" else "waiting for command timeout"
+                    if (cancel) {
+                        assertTrue(execution.isActive)
+                        assertTrue(pids.all(::isProcessRunning))
+                        execution.cancelAndJoin()
+                        assertTrue(execution.isCancelled)
+                    } else {
+                        val result = execution.await()
+                        assertEquals(-1, result.exitCode)
+                        assertTrue(result.timedOut)
+                    }
+                    phase = "waiting for process termination"
+                    while (pids.any(::isProcessRunning)) delay(10)
                 }
-                // Cancel only after both PIDs are published; allow startup and draining in the test watchdog.
-                val pidFile = home.resolve("pids")
-                while (!Files.exists(pidFile)) delay(10)
-                val pids = Files.readString(pidFile).split(' ').map(String::toLong)
-                if (cancel) {
-                    assertTrue(execution.isActive)
-                    execution.cancelAndJoin()
-                    assertTrue(execution.isCancelled)
-                } else {
-                    val result = execution.await()
-                    assertEquals(-1, result.exitCode)
-                    assertTrue(result.timedOut)
+                phase = "completed"
+            } finally {
+                if (phase != "completed") {
+                    System.err.println(
+                        "Process cleanup failed: cancel=$cancel, stdinBytes=${input?.length ?: 0}, phase=$phase, " +
+                            "pidFileExists=${Files.exists(pidFile)}, result=$commandResult, " +
+                            "running=${pids.associateWith(::isProcessRunning)}",
+                    )
                 }
-                while (pids.any { ProcessHandle.of(it).map { process -> process.isAlive }.orElse(false) }) delay(10)
             }
         }
+    }
+
+    private fun isProcessRunning(pid: Long): Boolean {
+        if (!ProcessHandle.of(pid).map { it.isAlive }.orElse(false)) return false
+        // Linux retains killed children as zombies until their new parent reaps them.
+        val state = try {
+            Files.readString(Path.of("/proc/$pid/stat")).substringAfterLast(") ").first()
+        } catch (_: IOException) {
+            null
+        }
+        return state != 'Z'
     }
 
     private fun createSandbox(home: Path) = LocalRuntimeSandbox(

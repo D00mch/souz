@@ -62,7 +62,6 @@ internal class BackendAgentRuntimeEventSink(
     private val optionsEnabled: Boolean = false,
     private val assistantMessageId: UUID? = null,
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
-    private val beforePublicEvent: suspend () -> Unit = {},
     private val publicClientThread: Boolean = false,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
@@ -78,7 +77,6 @@ internal class BackendAgentRuntimeEventSink(
             is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
             is AgentRuntimeEvent.AssistantMessage -> if (publicClientThread) {
-                beforePublicEvent()
                 publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))
             }
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
@@ -234,7 +232,6 @@ internal class BackendAgentRuntimeEventSink(
 
     suspend fun emitExecutionFinished(execution: AgentExecution) {
         if (publicClientThread) {
-            beforePublicEvent()
             appendDurableEvent(
                 type = AgentEventType.THREAD_COMPLETED,
                 payload = ThreadCompletedPayload(response = assistantMessage?.content.orEmpty()),
@@ -264,7 +261,6 @@ internal class BackendAgentRuntimeEventSink(
         errorMessage: String,
     ) {
         if (publicClientThread) {
-            beforePublicEvent()
             appendDurableEvent(
                 type = AgentEventType.THREAD_FAILED,
                 payload = ThreadFailedPayload(PublicErrorPayload(errorCode.toPublicErrorCode(), errorMessage)),
@@ -279,7 +275,6 @@ internal class BackendAgentRuntimeEventSink(
 
     suspend fun emitExecutionCancelled() {
         if (publicClientThread) {
-            beforePublicEvent()
             appendDurableEvent(type = AgentEventType.THREAD_CANCELLED, payload = ThreadCancelledPayload())
         } else {
             appendDurableEvent(

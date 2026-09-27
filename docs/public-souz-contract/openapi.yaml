@@ -906,7 +906,8 @@ components:
         Live-only informational progress from an accepted LLM response containing tool calls.
         Each nonblank assistant text block produces a separate event in original block order,
         after complete response assembly and acceptance and before tool execution. The originating
-        request ACK precedes these events. No client ACK or tool.result is required, and tools
+        request ACK precedes these events on the submitting connection. Other connections proceed
+        independently. No client ACK or tool.result is required, and tools
         do not wait for receipt or speech synthesis. Events may be lost or suppressed when stale;
         they are never persisted or replayed and do not complete the thread. Reasoning, discarded
         attempts and final answers are excluded. No additional transcript rows are created.

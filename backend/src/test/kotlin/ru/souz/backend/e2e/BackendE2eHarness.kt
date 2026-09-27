@@ -47,6 +47,7 @@ import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendApplicationScope
 import ru.souz.backend.app.BackendRuntimeResources
 import ru.souz.backend.app.backendDiModule
+import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.client.ClientThreadRecoveryService
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.BackendConfigSource
@@ -356,6 +357,12 @@ internal class BackendE2eBackend(
     val historyMemoryRepository: PostgresHistoryMemoryRepository get() = di.direct.instance()
 
     val toolCallRepository: ToolCallRepository get() = di.direct.instance()
+
+    val applicationScope: BackendApplicationScope get() = di.direct.instance()
+
+    val clientThreadRegistry: ClientThreadRuntimeRegistry get() = di.direct.instance()
+
+    suspend fun shutdown() = resources.shutdown()
 
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 

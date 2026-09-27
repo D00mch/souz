@@ -20,7 +20,7 @@ Generated OpenAPI is also easy to drift: route helpers and deferred registration
 
 ## Safe-change guidance
 
-- Keep execution launch/finalization and event-sink creation in `AgentExecutionService`, and session reconstruction in the runtime factory/repository layer. Interrupted-execution finalization preserves waiting options and terminal outcomes and repairs missing terminal events; public startup handling suppresses inline event emission before acknowledgement.
+- Keep execution launch/finalization and event-sink creation in `AgentExecutionService`, and session reconstruction in the runtime factory/repository layer. Interrupted-execution finalization preserves waiting options and terminal outcomes and repairs missing terminal events; public startup failures persist their terminal event in the application-owned acceptance operation, independently of socket delivery.
 - Advance `basedOnMessageSeq` only across context that the runtime has observed. An execute barrier loads the bounded durable gap through its trigger and filters ordinary rows already represented in the saved session. Client history advances the cursor only with the `message.submit` that claims it. If history precedes a terminal assistant row, the next execute inserts that history after the saved response rather than retroactively changing the completed turn.
 - Keep provider clients out of request-scoped runtimes and close process-owned transports exactly once at backend shutdown.
 - Route nested search, research, vision, and summarization calls through the current execution API so credentials, timeout, and usage stay in the same scope.
@@ -29,7 +29,7 @@ Generated OpenAPI is also easy to drift: route helpers and deferred registration
 - Reject unsupported backend providers explicitly. Do not silently replace a persisted or requested Giga model with another provider.
 - Do not read the shared JVM agent preference or mutate singleton tool policy. Build the immutable execution catalog from execution metadata and keep compiled-tool selection request-scoped.
 - Publish internal deltas only on the live bus. Same-thread client tool starts and thread terminals are durable `agent_events`; cross-channel tool starts are live-only. Acknowledgements are not events.
-- Register a Client-Souz execution before launching its steerable runtime. Accepted mid-run input must reserve the runtime's active controller before durable commit, and public events must wait until accepted acknowledgements are sent.
+- Register a Client-Souz execution before launching its steerable runtime. Accepted mid-run input must reserve the runtime's active controller before durable commit, and the submitting socket must serialize command handling through acknowledgement/status delivery before sending subsequent events. Runtime event persistence never waits for acknowledgements.
 - Register background work before its body can run. Keep cancellation persistence and event emission non-cancellable, and unregister only in the lifecycle job's outermost cleanup.
 - Keep complete same-thread client tool arguments, results or errors, deadline, and result idempotency state in `tool_calls`. Only one client tool waiter may be outstanding per thread.
 - Runtime tool audit previews are sanitized once, then reused for persistence and optional events. Sanitization creates independent containers without mutating the input; keep persistence outside the event-enabled guard.

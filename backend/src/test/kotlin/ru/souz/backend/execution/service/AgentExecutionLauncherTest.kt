@@ -129,22 +129,24 @@ class AgentExecutionLauncherTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `stopped execution scope still finalizes non client execution`() = runTest {
+    fun `stopped execution scope still finalizes client and non client executions`() = runTest {
         val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)).also { it.cancel() }
         launcherFixture(scope = scope).use { fixture ->
-            var bodyStarted = false
-            val cancellationObserved = CompletableDeferred<Unit>()
+            for (owner in listOf(null, "client-owner")) {
+                var bodyStarted = false
+                val cancellationObserved = CompletableDeferred<Unit>()
 
-            fixture.launcher.launchRegistered(
-                execution = fixture.execution,
-                onCancelled = { cancellationObserved.complete(Unit) },
-            ) {
-                bodyStarted = true
+                fixture.launcher.launchRegistered(
+                    execution = fixture.execution.copy(runtimeOwner = owner),
+                    onCancelled = { cancellationObserved.complete(Unit) },
+                ) {
+                    bodyStarted = true
+                }
+
+                assertFalse(bodyStarted)
+                assertTrue(cancellationObserved.isCompleted)
+                assertFalse(fixture.registry.contains(fixture.execution.id))
             }
-
-            assertFalse(bodyStarted)
-            assertTrue(cancellationObserved.isCompleted)
-            assertFalse(fixture.registry.contains(fixture.execution.id))
         }
     }
 

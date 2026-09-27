@@ -355,7 +355,6 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
-            clientThreadRegistry = instance(),
             optionsEnabled = appConfig.featureFlags.options,
             hookStore = instance(),
             hookConfig = appConfig.hooks,
@@ -494,6 +493,7 @@ fun backendDiModule(
             toolCallRepository = instance(),
             executionService = instance(),
             registry = instance(),
+            applicationScope = instance<BackendApplicationScope>(),
         )
     }
     bindSingleton {

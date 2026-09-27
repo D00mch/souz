@@ -14,7 +14,6 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
-import ru.souz.backend.client.ClientThreadRuntimeRegistry
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.events.model.AgentEventType
@@ -46,7 +45,6 @@ class AgentExecutionService internal constructor(
     private val requestFactory: AgentExecutionRequestFactory,
     private val finalizer: AgentExecutionFinalizer,
     private val launcher: AgentExecutionLauncher,
-    private val clientThreadRegistry: ClientThreadRuntimeRegistry,
     private val optionsEnabled: Boolean,
     private val hookStore: HookStore,
     private val hookConfig: HookConfig,
@@ -300,8 +298,7 @@ class AgentExecutionService internal constructor(
         return CancelExecutionResult(cancelExecutionInternal(execution))
     }
 
-    // Public startup failures defer events until their input acknowledgement has been sent.
-    internal suspend fun finalizeInterruptedExecution(started: AgentExecution, emitEvent: Boolean = true): AgentExecution? {
+    internal suspend fun finalizeInterruptedExecution(started: AgentExecution): AgentExecution? {
         val execution = executionRepository.getByChat(started.userId, started.chatId, started.id) ?: return null
         if (execution.status == AgentExecutionStatus.WAITING_OPTION) return execution
         val finished = if (!execution.status.isActive()) execution else finalizer.markFailed(
@@ -312,7 +309,6 @@ class AgentExecutionService internal constructor(
             errorMessage = "Agent execution was interrupted.",
             usage = execution.usage,
         )
-        if (!emitEvent) return finished
         val sink = createEventSink(finished)
         // Repair interrupted event writes through the same sink as live executions; storage deduplicates them.
         when (finished.status) {
@@ -333,7 +329,6 @@ class AgentExecutionService internal constructor(
             executionRepository = executionRepository, eventService = eventService, toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents, optionsEnabled = optionsEnabled,
             assistantMessageId = execution.assistantMessageId,
-            beforePublicEvent = { clientThreadRegistry.awaitAcceptedInputAcks(execution.id) },
             publicClientThread = execution.runtimeOwner != null,
         )
 
