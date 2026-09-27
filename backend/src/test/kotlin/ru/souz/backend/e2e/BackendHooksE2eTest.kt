@@ -136,6 +136,38 @@ class BackendHooksE2eTest {
     }
 
     @Test
+    fun `local reload isolates invalid definitions by declared owner`() {
+        val secondOwner = "42"
+        writeHook()
+        writeHook(id = "other", directory = "other", hookOwner = secondOwner)
+        val manifest = workspace.resolve("hooks/other/hook.yaml")
+        val valid = Files.readString(manifest)
+        runHooks(HookConfig(setOf(owner, secondOwner))) {
+            setupOwner()
+            setupOwner(secondOwner)
+            for (invalid in listOf(
+                valid.replace(sha256(secret.toByteArray()), "invalid-digest"),
+                valid.replace("prompt: Check the event", "prompt: \"\""),
+                valid.replace("prompt: Check the event", ""),
+                valid.replace("type: bearer", "type: bearer\n  unknownField: true"),
+                valid.replace("version: 1", "version: 2"),
+                valid.replace("hookId: other", "hookId: invalid id"),
+                valid.replace("ownerUserId: $secondOwner", "ownerUserId: unconfigured-owner"),
+            )) {
+                Files.writeString(manifest, valid)
+                assertEquals(listOf("other"), reload(secondOwner).jsonBody()["hookIds"].map { it.asText() })
+                Files.writeString(manifest, invalid)
+                assertEquals(listOf("check"), reload().jsonBody()["hookIds"].map { it.asText() })
+                assertEquals(0, reload(secondOwner).jsonBody()["hookIds"].size())
+                assertEquals(404, invoke(id = "other").status.value)
+                val accepted = invoke()
+                assertEquals(HttpStatusCode.Accepted, accepted.status)
+                awaitStatus(accepted.jsonBody()["receiptId"].asText(), "completed")
+            }
+        }
+    }
+
+    @Test
     fun `stalled intake is bounded per owner survives reload and releases capacity on cancellation`() {
         writeHook()
         writeHook(id = "same-owner", directory = "same-owner")
@@ -417,7 +449,7 @@ class BackendHooksE2eTest {
         }.status.value)
     }
 
-    private suspend fun BackendE2eScope.reload() = client.post("/v1/hooks/reload") { trusted(owner) }.also { assertEquals(200, it.status.value) }
+    private suspend fun BackendE2eScope.reload(user: String = owner) = client.post("/v1/hooks/reload") { trusted(user) }.also { assertEquals(200, it.status.value) }
 
     private suspend fun BackendE2eScope.invoke(token: String = secret, payload: String = "{}", key: String? = null, id: String = "check") =
         client.post("/hooks/$id") {

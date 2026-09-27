@@ -1,6 +1,6 @@
 # Workspace hook admission and recovery
 
-Hook owners come from the host allowlist and resolved workspace, never from request headers/body or a newly discovered YAML identity. DOCKER must match the owner to the workspace. LOCAL hook files are trusted operator configuration on a shared filesystem. Unknown auth fields and conflicting IDs fail closed.
+Hook owners come from the host allowlist and resolved workspace, never from request headers/body or a newly discovered YAML identity. DOCKER must match the owner to the workspace. LOCAL hook files are trusted operator configuration on a shared filesystem; filter a readable definition's declared owner before deserializing or validating its other fields, so another owner's invalid or unconfigured hook cannot disable the loaded owner's hooks. Unknown auth fields and conflicting IDs fail closed for the affected owner.
 
 Acknowledgement follows receipt commit. The receipt UUID is reserved as the execution ID before dispatch; only receipts establish hook origin for recovery and LLM budgets. Keep pre-auth processing independent of agent/skill/OAuth setup. Do not log parser exceptions containing YAML, Authorization or payload text.
 

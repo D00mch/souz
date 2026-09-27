@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
@@ -102,14 +101,16 @@ internal class HookDefinitions(private val sandboxes: RuntimeSandboxFactory, pri
             require(!path.isSymbolicLink && path.isRegularFile && path.parentPath == directory.path && fs.isPathSafe(path))
             val bytes = fs.openInputStream(path).use { it.readNBytes(MAX_BODY_BYTES + 1) }
             require(bytes.size <= MAX_BODY_BYTES) { "Hook definition is too large." }
-            val definition = yaml.readValue<HookDefinition>(decodeUtf8(bytes))
+            val document = yaml.readTree(decodeUtf8(bytes))
+            val declaredOwner = yaml.treeToValue(document["ownerUserId"], String::class.java)
+            require(!declaredOwner.isNullOrBlank()) { "Invalid hook owner." }
+            if (sandbox.mode != SandboxMode.LOCAL) require(declaredOwner == owner) { "Hook owner differs from workspace owner." }
+            if (declaredOwner != owner) return@mapNotNull null
+            val definition = yaml.treeToValue(document, HookDefinition::class.java)
             require(definition.version == 1 && ID.matches(definition.hookId)) { "Invalid hook identity/version." }
             require((definition.auth == null) != (definition.verify == null)) { "Choose exactly one hook auth mode." }
             definition.auth?.let { require(it.type == "bearer" && DIGEST.matches(it.tokenSha256)) { "Invalid hook auth." } }
             require(definition.prompt.isNotBlank() && definition.prompt.length <= 16_384) { "Invalid hook prompt." }
-            require(definition.ownerUserId in config.owners) { "Hook owner is not enabled by the host." }
-            if (sandbox.mode != SandboxMode.LOCAL) require(definition.ownerUserId == owner) { "Hook owner differs from workspace owner." }
-            if (definition.ownerUserId != owner) return@mapNotNull null
             val snapshot = definition.verify?.let { verify ->
                 require(verify.runtime == "PYTHON" && safeHookRelativePath(verify.script) && verify.script.endsWith(".py"))
                 require(verify.parameters.isObject && verify.parameters.toString().toByteArray().size <= 8192)
