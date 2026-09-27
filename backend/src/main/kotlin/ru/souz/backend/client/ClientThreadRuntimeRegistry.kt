@@ -81,6 +81,7 @@ internal class ClientThreadRuntimeRegistry(
     private val mutex = Mutex()
     private val states = linkedMapOf<UUID, State>()
     private val channelTools = mutableMapOf<ToolCallContext, PendingChannelTool>()
+    private var acknowledgementsReleased = false
 
     // Live-only calls use a correlation ID, never a target-chat execution or durable replay.
     suspend fun <T> withChannelTool(
@@ -228,7 +229,9 @@ internal class ClientThreadRuntimeRegistry(
     // wait then releases it rather than holding the thread's events, runtime, and shutdown forever.
     suspend fun awaitAcceptedInputAcks(threadId: UUID) {
         while (true) {
-            val pending = mutex.withLock { states[threadId]?.pendingAcks?.toMap() } ?: return
+            val pending = mutex.withLock {
+                if (acknowledgementsReleased) null else states[threadId]?.pendingAcks?.toMap()
+            } ?: return
             if (pending.isEmpty()) return
             val started = TimeSource.Monotonic.markNow()
             withTimeoutOrNull(acknowledgementWait.toMillis()) { pending.values.forEach { it.await() } }
@@ -248,7 +251,11 @@ internal class ClientThreadRuntimeRegistry(
 
     /** HTTP intake has stopped during shutdown, so no pending acknowledgement can still be delivered. */
     suspend fun releaseAcknowledgements() {
-        val pending = mutex.withLock { states.mapValues { (_, state) -> state.pendingAcks.keys.toList() } }
+        val pending = mutex.withLock {
+            // Gates registered after this point must not hold shutdown either.
+            acknowledgementsReleased = true
+            states.mapValues { (_, state) -> state.pendingAcks.keys.toList() }
+        }
         pending.forEach { (threadId, requestIds) -> requestIds.forEach { ackSent(threadId, it) } }
     }
 

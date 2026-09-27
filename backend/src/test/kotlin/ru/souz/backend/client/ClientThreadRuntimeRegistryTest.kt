@@ -2,6 +2,7 @@ package ru.souz.backend.client
 
 import io.mockk.coEvery
 import io.mockk.mockk
+import java.time.Duration
 import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,6 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
 
@@ -93,6 +95,16 @@ class ClientThreadRuntimeRegistryTest {
         registry.clearTool(threadId, "tool-1")
         registry.ackSent(threadId, "message-2")
         acknowledgement.await()
+    }
+
+    @Test
+    fun `gate registered after shutdown released acknowledgements does not hold waiters`() = runBlocking {
+        val registry = ClientThreadRuntimeRegistry(acknowledgementWait = Duration.ofMinutes(10))
+        registry.releaseAcknowledgements()
+        val threadId = UUID.randomUUID()
+        registry.register(threadId, device("device-1"), "late-request")
+
+        withTimeout(5_000) { registry.awaitAcceptedInputAcks(threadId) }
     }
 
     private fun device(id: String) = ClientDevice(
