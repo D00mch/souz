@@ -55,3 +55,5 @@ Run:
 For Knowledge storage changes, include `--tests 'ru.souz.knowledge.*' --tests 'ru.souz.tool.knowledge.*'` in the JVM test selection and run the backend Knowledge tests linked above.
 
 For Docker behavior, build the sandbox image and run the opt-in Docker tests described in the module `AGENTS.md`.
+
+Local process-cleanup failures report the command variant, waiting phase, command result, and remaining processes. Inspect these diagnostics in the JVM XML or HTML test reports retained by CI even when the suite fails.
