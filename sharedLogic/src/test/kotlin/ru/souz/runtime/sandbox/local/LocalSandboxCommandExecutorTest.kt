@@ -2,6 +2,7 @@ package ru.souz.runtime.sandbox.local
 
 import io.mockk.every
 import io.mockk.mockk
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.coroutines.async
@@ -167,6 +168,7 @@ class LocalSandboxCommandExecutorTest {
                 val pids = Files.readString(pidFile).split(' ').map(String::toLong)
                 if (cancel) {
                     assertTrue(execution.isActive)
+                    assertTrue(pids.all(::isProcessRunning))
                     execution.cancelAndJoin()
                     assertTrue(execution.isCancelled)
                 } else {
@@ -174,9 +176,20 @@ class LocalSandboxCommandExecutorTest {
                     assertEquals(-1, result.exitCode)
                     assertTrue(result.timedOut)
                 }
-                while (pids.any { ProcessHandle.of(it).map { process -> process.isAlive }.orElse(false) }) delay(10)
+                while (pids.any(::isProcessRunning)) delay(10)
             }
         }
+    }
+
+    private fun isProcessRunning(pid: Long): Boolean {
+        if (!ProcessHandle.of(pid).map { it.isAlive }.orElse(false)) return false
+        // Linux retains killed children as zombies until their new parent reaps them.
+        val state = try {
+            Files.readString(Path.of("/proc/$pid/stat")).substringAfterLast(") ").first()
+        } catch (_: IOException) {
+            null
+        }
+        return state != 'Z'
     }
 
     private fun createSandbox(home: Path) = LocalRuntimeSandbox(
