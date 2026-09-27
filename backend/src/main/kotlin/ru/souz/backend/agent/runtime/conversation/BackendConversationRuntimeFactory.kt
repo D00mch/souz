@@ -23,6 +23,7 @@ import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.common.backendLogContext
 import ru.souz.backend.hooks.HookLlmBudget
+import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
@@ -40,6 +41,7 @@ import ru.souz.llms.local.LocalVisionGateway
 import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
+import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
@@ -134,10 +136,7 @@ internal class BackendConversationRuntimeFactory(
         val imageGenerationGateway = OpenAIImageGenerationGateway(
             settingsProvider = settingsProvider,
             client = providerHttpClients.openAi,
-            apiKeyProvider = {
-                hookBudget?.beforeAuxiliaryCall()
-                executionApi.credentialFor(LlmProvider.OPENAI)
-            },
+            apiKeyProvider = { executionApi.credentialFor(LlmProvider.OPENAI) },
         )
         val executionLlmToolCatalog = LlmBackedToolCatalog(
             llmApi = executionApi,
@@ -145,7 +144,9 @@ internal class BackendConversationRuntimeFactory(
             filesToolUtil = filesToolUtil,
             webResearchClient = webResearchClient,
             visionGateway = visionGateway,
-            imageGenerationGateway = imageGenerationGateway,
+            imageGenerationGateway = ImageGenerationGateway { input ->
+                withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
+            },
         )
         val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,

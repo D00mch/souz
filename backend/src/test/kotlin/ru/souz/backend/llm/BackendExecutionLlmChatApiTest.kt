@@ -26,7 +26,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -63,14 +62,17 @@ class BackendExecutionLlmChatApiTest {
     @Test
     fun `raw routes preserve IDs across providers retries and stream accounting`() = runTest {
         val requests = mutableListOf<Pair<LlmProvider, LLMRequest.Chat>>()
+        val delays = mutableListOf<Long>()
         facadeFixture(
-            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1),
+            initialUsage = usage(10, 5, 15, 2),
+            retryPolicy = BackendProviderRetryPolicy(max429Retries = 1, backoffBaseMs = 5, backoffMaxMs = 100),
+            delayMillis = { delays += it },
             providerApiOverride = { provider ->
                 var attempts = 0
                 StubChatApi(
                     message = { body ->
                         requests += provider to body
-                        if (attempts++ == 0) LLMResponse.Chat.Error(429, "retry") else ok(body.model, usage(2, 3, 5, 0))
+                        if (attempts++ == 0) LLMResponse.Chat.Error(429, "retry-after=17") else ok(body.model, usage(3, 2, 5, 1))
                     },
                     stream = { body ->
                         requests += provider to body
@@ -85,7 +87,8 @@ class BackendExecutionLlmChatApiTest {
                 assertEquals(2, fixture.api.messageStream(request).toList().size)
                 assertEquals(List(3) { provider to request }, requests.takeLast(3))
             }
-            assertEquals(usage(12, 18, 30, 0), fixture.api.cumulativeUsage())
+            assertEquals(listOf(17L, 17L, 17L), delays)
+            assertEquals(usage(25, 20, 45, 5), fixture.api.cumulativeUsage())
             val rejected = chat("Custom/Deployment").copy(provider = LlmProvider.GIGA)
             assertIs<LLMResponse.Chat.Error>(fixture.api.message(rejected))
             assertIs<LLMResponse.Chat.Error>(fixture.api.messageStream(rejected).toList().single())
@@ -287,76 +290,57 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
-    fun `hook embeddings hold provider capacity without charging rejected calls and release it on cancellation`() = runTest {
-        PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("embedding_permit")).postgres).use { db ->
-            PostgresUserRepository(db).ensureUser("user-a")
-            val store = HookStore(db, HookConfig())
-            val hook = LoadedHook(HookDefinition(1, "embedding-test", "user-a", auth = HookAuth("bearer", "a".repeat(64)), prompt = "Test"))
-            val receiptId = store.accept(hook, "{}", null).receiptId
-            store.update(receiptId, "running")
-            val receipt = requireNotNull(store.find("user-a", receiptId))
-            val quotas = ExecutionQuotaManager(BackendLlmLimits(globalProviderConcurrency = 1))
-            val entered = CompletableDeferred<Unit>()
-            val provider = StubChatApi(embeddings = { body ->
-                if (entered.complete(Unit)) awaitCancellation()
-                LLMResponse.Embeddings.Ok(emptyList(), body.model, "list")
-            })
-            facadeFixture(
-                providerApiOverride = { provider },
-                hookBudget = HookLlmBudget(receipt, store, quotas),
-            ).use { fixture ->
-                val request = embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.name)
-                val running = async { assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(request)) }
-                try {
-                    entered.await()
-                    assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(LlmProvider.OPENAI) {} }
-                    assertEquals("global_provider_concurrency_exceeded", assertFailsWith<QuotaExceededException> {
-                        fixture.api.embeddings(request)
-                    }.code)
-                    assertEquals(1, store.find("user-a", receiptId)?.llmCalls)
-                } finally {
-                    running.cancelAndJoin()
+    fun `hook provider calls hold capacity without charging rejected calls and release it on cancellation`() = runTest {
+        for (kind in listOf("chat", "stream", "embeddings")) {
+            PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("provider_permit")).postgres).use { db ->
+                PostgresUserRepository(db).ensureUser("user-a")
+                val store = HookStore(db, HookConfig())
+                val hook = LoadedHook(HookDefinition(1, "permit-test", "user-a", auth = HookAuth("bearer", "a".repeat(64)), prompt = "Test"))
+                val receiptId = store.accept(hook, "{}", null).receiptId
+                store.update(receiptId, "running")
+                val receipt = requireNotNull(store.find("user-a", receiptId))
+                val quotas = ExecutionQuotaManager(BackendLlmLimits(globalProviderConcurrency = 1))
+                val entered = CompletableDeferred<Unit>()
+                suspend fun holdPermit() {
+                    if (entered.complete(Unit)) awaitCancellation()
                 }
-                assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(request))
-                assertEquals(2, store.find("user-a", receiptId)?.llmCalls)
+                val provider = StubChatApi(
+                    message = { body -> holdPermit(); ok(body.model, usage(1, 1, 2, 0)) },
+                    stream = { body -> flow { emit(ok(body.model, usage(1, 1, 2, 0))); holdPermit() } },
+                    embeddings = { body -> holdPermit(); LLMResponse.Embeddings.Ok(emptyList(), body.model, "list") },
+                )
+                facadeFixture(
+                    providerApiOverride = { provider },
+                    hookBudget = HookLlmBudget(receipt, store, quotas),
+                ).use { fixture ->
+                    suspend fun call() {
+                        val request = chat("test-model").copy(provider = LlmProvider.OPENAI)
+                        when (kind) {
+                            "chat" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
+                            "stream" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.messageStream(request).toList().single())
+                            else -> assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.name)))
+                        }
+                    }
+                    val running = async { call() }
+                    try {
+                        entered.await()
+                        assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(LlmProvider.OPENAI) {} }
+                        assertEquals("global_provider_concurrency_exceeded", assertFailsWith<QuotaExceededException> {
+                            call()
+                        }.code)
+                        assertEquals(1, store.find("user-a", receiptId)?.llmCalls)
+                    } finally {
+                        running.cancelAndJoin()
+                    }
+                    call()
+                    assertEquals(2, store.find("user-a", receiptId)?.llmCalls)
+                }
             }
         }
     }
 
     @Test
-    fun `retries unary 429 responses and accumulates usage`() = runTest {
-        var requests = 0
-        val delays = mutableListOf<Long>()
-        val providerApi = StubChatApi(
-            message = { body ->
-                requests += 1
-                if (requests == 1) {
-                    LLMResponse.Chat.Error(429, "busy retry-after=17")
-                } else {
-                    ok(body.model, usage(3, 2, 5, 1))
-                }
-            }
-        )
-        facadeFixture(
-            initialUsage = usage(10, 5, 15, 2),
-            retryPolicy = BackendProviderRetryPolicy(
-                max429Retries = 1,
-                backoffBaseMs = 5,
-                backoffMaxMs = 100,
-            ),
-            delayMillis = { delays += it },
-            providerApiOverride = { providerApi },
-        ).use { fixture ->
-            assertIs<LLMResponse.Chat.Ok>(fixture.api.message(chat(LLMModel.QwenMax.alias)))
-
-            assertEquals(2, requests)
-            assertEquals(listOf(17L), delays)
-            assertEquals(usage(13, 7, 20, 3), fixture.api.cumulativeUsage())
-        }
-    }
-
-    @Test
-    fun `retries only a first streaming 429 without buffering later items`() = runTest {
+    fun `stream retries preserve cumulative usage and propagate cancellation without buffering`() = runTest {
         var streamRequests = 0
         var completedUpstreamEmits = 0
         var upstreamCancelled = false
@@ -368,10 +352,11 @@ class BackendExecutionLlmChatApiTest {
                 } else {
                     flow {
                         try {
-                            repeat(100) { index ->
-                                emit(ok(body.model, usage(index + 1, 0, index + 1, 0)))
+                            for (tokens in listOf(usage(2, 1, 3, 1), usage(5, 3, 8, 2))) {
+                                emit(ok(body.model, tokens))
                                 completedUpstreamEmits += 1
                             }
+                            awaitCancellation()
                         } finally {
                             upstreamCancelled = true
                         }
@@ -381,47 +366,19 @@ class BackendExecutionLlmChatApiTest {
         )
         facadeFixture(
             retryPolicy = BackendProviderRetryPolicy(max429Retries = 1, backoffBaseMs = 1, backoffMaxMs = 1),
-            delayMillis = {},
             providerApiOverride = { providerApi },
         ).use { fixture ->
-            assertIs<LLMResponse.Chat.Ok>(
-                fixture.api.messageStream(chat(LLMModel.QwenMax.alias)).first()
-            )
-
-            assertEquals(2, streamRequests)
-            assertTrue(completedUpstreamEmits <= 1, "The facade consumed the upstream stream ahead of its collector.")
-            assertTrue(upstreamCancelled)
-            assertEquals(usage(1, 0, 1, 0), fixture.api.cumulativeUsage())
-        }
-    }
-
-    @Test
-    fun `stream accounting uses cumulative usage deltas and propagates cancellation`() = runTest {
-        var cancelled = false
-        val providerApi = StubChatApi(
-            stream = { body ->
-                flow {
-                    try {
-                        emit(ok(body.model, usage(2, 1, 3, 1)))
-                        emit(ok(body.model, usage(5, 3, 8, 2)))
-                        awaitCancellation()
-                    } finally {
-                        cancelled = true
-                    }
-                }
-            }
-        )
-        facadeFixture(providerApiOverride = { providerApi }).use { fixture ->
-            val collected = mutableListOf<LLMResponse.Chat>()
+            var collected = 0
             val failure = assertFailsWith<CancellationException> {
                 fixture.api.messageStream(chat(LLMModel.QwenMax.alias)).collect { response ->
-                    collected += response
-                    if (collected.size == 2) throw CancellationException("stop")
+                    assertIs<LLMResponse.Chat.Ok>(response)
+                    if (++collected == 2) throw CancellationException("stop")
                 }
             }
-
+            assertEquals(2, streamRequests)
+            assertEquals(1, completedUpstreamEmits, "The facade consumed the upstream stream ahead of its collector.")
+            assertTrue(upstreamCancelled)
             assertEquals("stop", failure.message)
-            assertTrue(cancelled)
             assertEquals(usage(5, 3, 8, 2), fixture.api.cumulativeUsage())
         }
     }

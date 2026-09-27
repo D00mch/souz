@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.withLock
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.common.BackendLlmSupport
 import ru.souz.backend.hooks.HookLlmBudget
+import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.EmbeddingsModelSelection
 import ru.souz.llms.LLMChatAPI
@@ -94,11 +95,7 @@ internal class BackendExecutionLlmChatApi(
         }
         val api = apiFor(model.provider)
         val request = body.copy(model = model.alias)
-        val budget = hookBudget ?: return api.embeddings(request)
-        return budget.quotas.withProviderPermit(model.provider) {
-            budget.beforeAuxiliaryCall()
-            api.embeddings(request)
-        }
+        return withProviderCall(hookBudget, model.provider) { api.embeddings(request) }
     }
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
@@ -203,18 +200,19 @@ internal class BackendExecutionLlmChatApi(
     }
 
     private suspend fun callProvider(provider: LlmProvider, body: LLMRequest.Chat, api: LLMChatAPI): LLMResponse.Chat {
-        val budget = hookBudget ?: return api.message(body)
-        return budget.quotas.withProviderPermit(provider) { api.message(budget.beforeCall(body)) }
+        val request = hookBudget?.limitRequest(body) ?: body
+        return withProviderCall(hookBudget, provider) { api.message(request) }
     }
 
     private fun retryingStream(provider: LlmProvider, api: LLMChatAPI, body: LLMRequest.Chat): Flow<LLMResponse.Chat> = flow {
+        val request = hookBudget?.limitRequest(body) ?: body
         var attempt = 0
         while (true) {
             try {
                 var emitted = false
                 var previousUsage = ZERO_USAGE
-                val collect = suspend {
-                    api.messageStream(hookBudget?.beforeCall(body) ?: body).collect { response ->
+                withProviderCall(hookBudget, provider) {
+                    api.messageStream(request).collect { response ->
                         if (
                             !emitted &&
                             response is LLMResponse.Chat.Error &&
@@ -227,8 +225,6 @@ internal class BackendExecutionLlmChatApi(
                         emitted = true
                     }
                 }
-                val budget = hookBudget
-                if (budget == null) collect() else budget.quotas.withProviderPermit(provider) { collect() }
                 return@flow
             } catch (retry: RetryFirstStreaming429) {
                 delayMillis(backoffForAttempt(attempt, retry.error.message))

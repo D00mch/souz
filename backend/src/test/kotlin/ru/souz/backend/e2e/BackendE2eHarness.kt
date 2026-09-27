@@ -43,6 +43,7 @@ import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.app.BackendAppConfig
+import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendApplicationScope
 import ru.souz.backend.app.BackendRuntimeResources
 import ru.souz.backend.app.backendDiModule
@@ -127,6 +128,7 @@ internal fun backendE2eTest(
     hindsightUrl: String? = null,
     clock: Clock = Clock.systemUTC(),
     hookConfig: HookConfig = HookConfig(),
+    llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
@@ -143,6 +145,7 @@ internal fun backendE2eTest(
         hindsightUrl = hindsightUrl,
         clock = clock,
         hookConfig = hookConfig,
+        llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
     )
     application {
@@ -260,6 +263,7 @@ internal class BackendE2eBackend(
     private val hindsightUrl: String? = null,
     private val clock: Clock = Clock.systemUTC(),
     private val hookConfig: HookConfig = HookConfig(),
+    private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
@@ -269,7 +273,7 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = false,
-    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig)
+    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits)
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability()
     private val localRuntime = relaxedLocalRuntime()
@@ -368,6 +372,7 @@ internal class BackendE2eBackend(
             hindsightUrl = hindsightUrl,
             clock = clock,
             hookConfig = hookConfig,
+            llmLimits = llmLimits,
             sandboxFactory = sandboxFactory,
         )
 

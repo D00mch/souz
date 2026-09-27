@@ -27,6 +27,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -38,6 +39,7 @@ import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendConversationTurnOutcome
 import ru.souz.backend.agent.runtime.BackendConversationTurnRunner
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.llms.LLMResponse
 import org.junit.jupiter.api.io.TempDir
 import ru.souz.backend.hooks.HookConfig
@@ -213,6 +215,42 @@ class BackendHooksE2eTest {
                 assertEquals(minOf(limit, 4096), requests.single()["max_completion_tokens"].asInt())
                 assertEquals(2, result["llmCalls"].asInt(), "The summary consumes the same durable event budget")
             }
+        }
+    }
+
+    @Test
+    fun `image generation holds provider capacity through HTTP completion without charging rejected calls`() {
+        writeHook()
+        writeHook(id = "second", directory = "second")
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val http = HttpClient(MockEngine {
+            entered.complete(Unit)
+            release.await()
+            respond("""{"data":[{"b64_json":"aW1hZ2U="}]}""",
+                headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }) { providerHttpClientDefaults() }
+        val settings = object : BackendConfigSource {
+            override fun env(key: String): String? = "image-test-key".takeIf { key == "OPENAI_API_KEY" }
+            override fun property(key: String): String? = null
+        }
+        val llm = E2eLlmApi().apply { requestSkill("GenerateImage", mapOf("prompt" to "A tree", "outputPath" to "$workspace/tree.png")) }
+        backendE2eTest("e2e_hook_image", llm = llm, hookConfig = HookConfig(setOf(owner)), sandboxFactory = ::localSandbox,
+            llmLimits = BackendLlmLimits(globalProviderConcurrency = 1), settingsSource = settings,
+            providerClients = ProviderHttpClients(standard = http, openAi = http)) {
+            setupOwner()
+            val first = invoke().jsonBody()["receiptId"].asText()
+            try {
+                withTimeout(5_000) { entered.await() }
+                val rejected = awaitStatus(invoke(id = "second").jsonBody()["receiptId"].asText(), "completed")
+                assertEquals(3, rejected["llmCalls"].asInt(), "Only the three chat calls consume budget when image capacity is full")
+                assertTrue(llm.requests.last().messages.any { it.content.contains("Global provider concurrency limit exceeded") })
+            } finally {
+                release.complete(Unit)
+            }
+            assertEquals(4, awaitStatus(first, "completed")["llmCalls"].asInt())
+            assertEquals(4, awaitStatus(invoke(id = "second").jsonBody()["receiptId"].asText(), "completed")["llmCalls"].asInt())
+            assertEquals("image", Files.readString(workspace.resolve("tree.png")))
         }
     }
 
