@@ -6,12 +6,14 @@ import java.net.InetAddress
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.runtime.conversation.BackendConversationRuntime
 import ru.souz.backend.client.repository.ClientRequestResult
 import ru.souz.backend.toolcall.repository.ToolCallContext
@@ -63,7 +65,9 @@ internal sealed interface BeginClientToolResult {
 
 internal class ClientThreadRuntimeRegistry(
     val runtimeOwner: String = defaultRuntimeOwner(),
+    private val acknowledgementWait: Duration = LEASE_DURATION,
 ) {
+    private val logger = LoggerFactory.getLogger(ClientThreadRuntimeRegistry::class.java)
     private data class State(
         val runtimeReady: CompletableDeferred<Unit> = CompletableDeferred(),
         var runtime: BackendConversationRuntime? = null,
@@ -220,12 +224,32 @@ internal class ClientThreadRuntimeRegistry(
         pending?.complete(Unit)
     }
 
+    // Only a retried request can deliver an acknowledgement still pending after the wait, so the
+    // wait then releases it rather than holding the thread's events, runtime, and shutdown forever.
     suspend fun awaitAcceptedInputAcks(threadId: UUID) {
         while (true) {
-            val pending = mutex.withLock { states[threadId]?.pendingAcks?.values?.toList() } ?: return
+            val pending = mutex.withLock { states[threadId]?.pendingAcks?.toMap() } ?: return
             if (pending.isEmpty()) return
-            pending.forEach { it.await() }
+            val started = TimeSource.Monotonic.markNow()
+            withTimeoutOrNull(acknowledgementWait.toMillis()) { pending.values.forEach { it.await() } }
+            val waitedMs = started.elapsedNow().inWholeMilliseconds
+            val lost = pending.filterValues { !it.isCompleted }.keys
+            if (lost.isNotEmpty()) {
+                logger.warn(
+                    "Client acknowledgement not delivered within {} ms threadId={} pending={}",
+                    waitedMs, threadId, lost.size,
+                )
+                lost.forEach { ackSent(threadId, it) }
+            } else if (waitedMs >= SLOW_ACKNOWLEDGEMENT_MS) {
+                logger.info("Client acknowledgement delivered after {} ms threadId={}", waitedMs, threadId)
+            }
         }
+    }
+
+    /** HTTP intake has stopped during shutdown, so no pending acknowledgement can still be delivered. */
+    suspend fun releaseAcknowledgements() {
+        val pending = mutex.withLock { states.mapValues { (_, state) -> state.pendingAcks.keys.toList() } }
+        pending.forEach { (threadId, requestIds) -> requestIds.forEach { ackSent(threadId, it) } }
     }
 
     suspend fun beginTool(threadId: UUID, pending: PendingClientTool): BeginClientToolResult = mutex.withLock {
@@ -267,6 +291,7 @@ internal class ClientThreadRuntimeRegistry(
     companion object {
         val LEASE_DURATION: Duration = Duration.ofMinutes(2)
         val LEASE_REFRESH_INTERVAL: Duration = Duration.ofSeconds(30)
+        private const val SLOW_ACKNOWLEDGEMENT_MS = 1_000L
 
         fun leaseUntil(now: Instant = Instant.now()): Instant = now.plus(LEASE_DURATION)
 

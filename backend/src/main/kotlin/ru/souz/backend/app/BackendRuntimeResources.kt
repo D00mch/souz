@@ -5,6 +5,7 @@ import ru.souz.runtime.OrderedShutdown
 import ru.souz.runtime.shutdownStep
 
 class BackendRuntimeResources(
+    releaseClientAcknowledgements: suspend () -> Unit = {},
     cancelAndJoinApplicationWork: suspend () -> Unit = {},
     closeProviderClients: () -> Unit = {},
     closeLocalRuntime: () -> Unit = {},
@@ -13,6 +14,7 @@ class BackendRuntimeResources(
 ) : AutoCloseable {
     private val shutdown = OrderedShutdown(
         steps = listOf(
+            shutdownStep("client acknowledgements", releaseClientAcknowledgements),
             shutdownStep("application work", cancelAndJoinApplicationWork),
             shutdownStep("provider HTTP clients") { closeProviderClients() },
             shutdownStep("local runtime") { closeLocalRuntime() },

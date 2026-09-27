@@ -193,6 +193,7 @@ fun backendDiModule(
         // HttpClient (a selector-manager thread pool each); without closing them here they leak
         // past backend shutdown.
         BackendRuntimeResources(
+            releaseClientAcknowledgements = { instance<ClientThreadRuntimeRegistry>().releaseAcknowledgements() },
             cancelAndJoinApplicationWork = { instance<BackendApplicationScope>().cancelAndJoin() },
             closeProviderClients = {
                 instance<ProviderHttpClients>().close()
@@ -207,7 +208,9 @@ fun backendDiModule(
         )
     }
     bindSingleton { AgentEventBus() }
-    bindSingleton { ClientThreadRuntimeRegistry() }
+    bindSingleton {
+        ClientThreadRuntimeRegistry(acknowledgementWait = java.time.Duration.ofMillis(appConfig.clientAckWaitMs))
+    }
     bindSingleton {
         UserProviderKeyService(
             repository = instance(),

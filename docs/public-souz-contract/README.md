@@ -94,7 +94,7 @@ Events saved during disconnection or recovery remain available. Reopening the so
 
 ## Delivery and retries
 
-Souz sends an `ack` before events caused by a command and before subscription replay. Accepted submit/cancel also receive live `thread.status` feedback after the ACK. ACKs and status are not replayed.
+Souz sends an `ack` before events caused by a command and before subscription replay. Accepted submit/cancel also receive live `thread.status` feedback after the ACK. ACKs and status are not replayed. If an ACK is lost, retry the command promptly after reconnecting: Souz holds the events it causes until the retried ACK is sent, but only for a limited, server-configured time. After that, those events may arrive before a later retried ACK.
 
 Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
 

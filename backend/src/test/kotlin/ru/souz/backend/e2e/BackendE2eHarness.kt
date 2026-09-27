@@ -130,6 +130,7 @@ internal fun backendE2eTest(
     hookConfig: HookConfig = HookConfig(),
     llmLimits: BackendLlmLimits = BackendLlmLimits(),
     sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    clientAckWaitMs: Long? = null,
     block: suspend BackendE2eScope.() -> Unit,
 ) = testApplication {
     val backend = BackendE2eBackend(
@@ -147,6 +148,7 @@ internal fun backendE2eTest(
         hookConfig = hookConfig,
         llmLimits = llmLimits,
         sandboxFactory = sandboxFactory,
+        clientAckWaitMs = clientAckWaitMs,
     )
     application {
         backendApplication(backend.dependencies)
@@ -265,6 +267,7 @@ internal class BackendE2eBackend(
     private val hookConfig: HookConfig = HookConfig(),
     private val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     private val sandboxFactory: ((SettingsProvider) -> RuntimeSandboxFactory)? = null,
+    private val clientAckWaitMs: Long? = null,
 ) : AutoCloseable {
     private val appConfig: BackendAppConfig = postgresAppConfig(
         schema = schema,
@@ -273,7 +276,14 @@ internal class BackendE2eBackend(
         telegramTokenEncryptionKey = E2E_TELEGRAM_TOKEN_KEY.takeIf { featureFlags.telegramBot },
         vkTokenEncryptionKey = E2E_VK_TOKEN_KEY.takeIf { featureFlags.vkBot },
         includeSkillOAuthConfig = false,
-    ).copy(hindsightApiUrl = hindsightUrl, hooks = hookConfig, llmLimits = llmLimits)
+    ).let { config ->
+        config.copy(
+            hindsightApiUrl = hindsightUrl,
+            hooks = hookConfig,
+            llmLimits = llmLimits,
+            clientAckWaitMs = clientAckWaitMs ?: config.clientAckWaitMs,
+        )
+    }
     private val localChatApi = localChatApiBackedBy(llm)
     private val localAvailability = localProviderAvailability()
     private val localRuntime = relaxedLocalRuntime()
@@ -359,6 +369,8 @@ internal class BackendE2eBackend(
 
     val applicationScope: BackendApplicationScope get() = di.direct.instance()
 
+    suspend fun shutdown() = resources.shutdown()
+
     suspend fun captureHistoryMemory(): Boolean = di.direct.instanceOrNull<HistoryMemoryWorker>()?.processNext() ?: false
 
     fun createPeer(llm: E2eLlmApi = E2eLlmApi(), providerClients: ProviderHttpClients? = null): BackendE2eBackend =
@@ -376,6 +388,7 @@ internal class BackendE2eBackend(
             hookConfig = hookConfig,
             llmLimits = llmLimits,
             sandboxFactory = sandboxFactory,
+            clientAckWaitMs = clientAckWaitMs,
         )
 
     override fun close() {

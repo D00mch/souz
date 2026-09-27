@@ -145,6 +145,7 @@ data class BackendAppConfig(
     val skillOAuthProviderCredentials: Map<String, SkillOAuthProviderCredentials> = emptyMap(),
     val hindsightApiUrl: String? = null,
     val hindsightApiToken: String? = null,
+    val clientAckWaitMs: Long = 120_000L,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
     val hooks: HookConfig = HookConfig(),
@@ -181,6 +182,9 @@ data class BackendAppConfig(
             throw BackendConfigurationException(
                 "HINDSIGHT_API_URL / souz.hindsight.apiUrl must be an absolute HTTP(S) URL without a query or fragment."
             )
+        }
+        if (clientAckWaitMs <= 0) {
+            throw BackendConfigurationException("SOUZ_BACKEND_CLIENT_ACK_WAIT_MS / souz.backend.clientAckWaitMs must be positive.")
         }
         // Skill OAuth config (skillOAuthTokenEncryptionKey/skillOAuthProviderCredentials) is
         // intentionally not validated here — it is unconditionally wired in BackendDiModule (no
@@ -270,6 +274,11 @@ data class BackendAppConfig(
                     envKey = "HINDSIGHT_API_TOKEN",
                     propertyKey = "souz.hindsight.apiToken",
                 )?.trim()?.takeIf { it.isNotEmpty() },
+                clientAckWaitMs = source.longValue(
+                    envKey = "SOUZ_BACKEND_CLIENT_ACK_WAIT_MS",
+                    propertyKey = "souz.backend.clientAckWaitMs",
+                    default = 120_000L,
+                ),
                 llmLimits = BackendLlmLimits(
                     perUserConcurrentExecutions = source.intValue(
                         envKey = "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS",

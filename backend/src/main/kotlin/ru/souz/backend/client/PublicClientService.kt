@@ -11,8 +11,10 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.slf4j.MDCContext
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -306,7 +308,13 @@ internal class PublicClientService(
                     registry.discard(threadId)
                 } else {
                     runCatching { executionService.startPreparedChatTurn(prepared) }.exceptionOrNull()?.let { failure ->
+                        logger.error("Thread startup failed threadId={}", threadId, failure)
                         executionService.finalizeInterruptedExecution(prepared.execution, emitEvent = false)
+                        // Its terminal event waits for the acceptance acknowledgement, like any thread event.
+                        // Undispatched start still runs it when shutdown has already cancelled the scope.
+                        applicationScope.launch(MDCContext(), start = CoroutineStart.UNDISPATCHED) {
+                            withContext(NonCancellable) { executionService.finalizeInterruptedExecution(prepared.execution) }
+                        }
                         if (failure is CancellationException) throw failure
                     }
                 }
