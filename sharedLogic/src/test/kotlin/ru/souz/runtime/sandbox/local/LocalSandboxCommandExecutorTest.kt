@@ -25,7 +25,6 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.milliseconds
 
 class LocalSandboxCommandExecutorTest {
     @TempDir
@@ -69,13 +68,14 @@ class LocalSandboxCommandExecutorTest {
     }
 
     @Test
-    fun `executes script path with args`() = runTest {
+    fun `executes script path with args and stdin`() = runTest {
         val home = createTempDirectory("sandbox-home-")
         val scripts = home.resolve("scripts").createDirectories()
         val script = scripts.resolve("echo.sh").apply {
-            writeText($$"printf '%s:%s:%s' \"$PWD\" \"$1\" \"$2\"")
+            writeText($$"printf '%s:%s:%s:' \"$PWD\" \"$1\" \"$2\"; cat")
         }
         val sandbox = createSandbox(home)
+        val input = "Привет\n".repeat(4_000)
 
         val result = sandbox.commandExecutor.execute(
             SandboxCommandRequest(
@@ -83,11 +83,12 @@ class LocalSandboxCommandExecutorTest {
                 scriptPath = script.toString(),
                 args = listOf("first", "second"),
                 workingDirectory = "~/scripts",
+                stdin = input,
             ),
         )
 
         assertEquals(0, result.exitCode)
-        assertEquals("${scripts.toRealPath()}:first:second", result.stdout)
+        assertEquals("${scripts.toRealPath()}:first:second:$input", result.stdout)
     }
 
     @Test
@@ -116,30 +117,40 @@ class LocalSandboxCommandExecutorTest {
     }
 
     @Test
-    fun `does not hang when background child keeps stdout open`() = runBlocking {
+    fun `does not hang when background child retains stdin and stdout`() = runBlocking {
         val home = createTempDirectory("sandbox-home-")
         val sandbox = createSandbox(home)
-
+        val pidFile = home.resolve("child-pid")
         val startedAt = System.nanoTime()
-        val result = withTimeout(3_000.milliseconds) {
-            sandbox.commandExecutor.execute(
-                SandboxCommandRequest(
-                    runtime = SandboxCommandRuntime.BASH,
-                    script = "sleep 5 & disown; printf done",
-                    timeoutMillis = 10_000,
-                )
-            )
-        }
-        val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+        try {
+            val result = sandbox.commandExecutor.execute(SandboxCommandRequest(
+                runtime = SandboxCommandRuntime.PYTHON,
+                script = """
+                    import pathlib, subprocess, sys
+                    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'],
+                                             stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+                    pathlib.Path('child-pid').write_text(str(child.pid))
+                    print('done', end='', flush=True)
+                """.trimIndent(),
+                workingDirectory = home.toString(),
+                timeoutMillis = 500,
+                stdin = "x".repeat(90_000),
+            ))
 
-        assertEquals(0, result.exitCode)
-        assertEquals("done", result.stdout)
-        assertTrue(elapsedMillis < 3_000, "Command should return after stream-drain grace, elapsed=${elapsedMillis}ms")
+            val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals(0, result.exitCode)
+            assertEquals("done", result.stdout)
+            assertTrue(elapsedMillis < 3_000, "Inherited streams delayed completion: ${elapsedMillis}ms")
+        } finally {
+            if (Files.exists(pidFile)) {
+                ProcessHandle.of(Files.readString(pidFile).toLong()).ifPresent { it.destroyForcibly() }
+            }
+        }
     }
 
     @Test
     fun `timeout and cancellation terminate the process and its children`() = runBlocking {
-        for (cancel in listOf(false, true)) {
+        for (cancel in listOf(false, true)) for (input in listOf(null, "x".repeat(90_000))) {
             val home = createTempDirectory("sandbox-home-")
             val sandbox = createSandbox(home)
             withTimeout(10_000) {
@@ -147,7 +158,7 @@ class LocalSandboxCommandExecutorTest {
                     sandbox.commandExecutor.execute(SandboxCommandRequest(
                         runtime = SandboxCommandRuntime.BASH,
                         script = $$"sleep 30 & printf '%s %s' \"$$\" \"$!\" > pids.tmp; mv pids.tmp pids; wait",
-                        workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000,
+                        workingDirectory = home.toString(), timeoutMillis = if (cancel) null else 1_000, stdin = input,
                     ))
                 }
                 // Cancel only after both PIDs are published; allow startup and draining in the test watchdog.

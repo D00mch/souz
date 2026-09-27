@@ -272,7 +272,7 @@ internal class BackendAgentRuntimeEventSink(
         } else {
             appendDurableEvent(
                 type = AgentEventType.EXECUTION_FAILED,
-                payload = ExecutionFailedPayload(executionId, assistantMessage?.id, errorCode, errorMessage),
+                payload = ExecutionFailedPayload(executionId, assistantMessage?.id ?: assistantMessageId, errorCode, errorMessage),
             )
         }
     }
@@ -284,7 +284,7 @@ internal class BackendAgentRuntimeEventSink(
         } else {
             appendDurableEvent(
                 type = AgentEventType.EXECUTION_CANCELLED,
-                payload = ExecutionCancelledPayload(executionId, assistantMessage?.id),
+                payload = ExecutionCancelledPayload(executionId, assistantMessage?.id ?: assistantMessageId),
             )
         }
     }

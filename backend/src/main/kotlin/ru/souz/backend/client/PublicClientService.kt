@@ -305,7 +305,7 @@ internal class PublicClientService(
         }.exceptionOrNull()
         startupFailure?.let { failure ->
             withContext(NonCancellable) {
-                executionService.failStartup(prepared.execution)
+                executionService.finalizeInterruptedExecution(prepared.execution, emitEvent = false)
             }
             if (failure is CancellationException) throw failure
         }
