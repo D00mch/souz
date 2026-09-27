@@ -15,8 +15,6 @@ import ru.souz.backend.hooks.HookDefinitions
 import ru.souz.backend.hooks.HookService
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.hooks.HookVerifier
-import ru.souz.backend.execution.service.ExecutionLimits
-import kotlinx.coroutines.sync.Semaphore
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -347,8 +345,6 @@ fun backendDiModule(
         )
     }
     bindSingleton {
-        val hookStore = instance<HookStore>()
-        val hookLimits = ExecutionLimits(Semaphore(appConfig.hooks.concurrentExecutions), appConfig.hooks.executionTimeoutMillis)
         AgentExecutionService(
             chatRepository = instance(),
             messageRepository = instance(),
@@ -361,7 +357,8 @@ fun backendDiModule(
             launcher = instance(),
             clientThreadRegistry = instance(),
             optionsEnabled = appConfig.featureFlags.options,
-            executionLimits = { execution -> hookLimits.takeIf { hookStore.find(execution.userId, execution.id) != null } },
+            hookStore = instance(),
+            hookConfig = appConfig.hooks,
         )
     }
     if (appConfig.featureFlags.telegramBot) {

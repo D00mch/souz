@@ -124,8 +124,14 @@ class LocalSandboxCommandExecutorTest {
         val startedAt = System.nanoTime()
         try {
             val result = sandbox.commandExecutor.execute(SandboxCommandRequest(
-                runtime = SandboxCommandRuntime.BASH,
-                script = $$"sleep 5 <&0 & printf '%s' \"$!\" > child-pid; sleep 0.1; printf done",
+                runtime = SandboxCommandRuntime.PYTHON,
+                script = """
+                    import pathlib, subprocess, sys
+                    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'],
+                                             stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+                    pathlib.Path('child-pid').write_text(str(child.pid))
+                    print('done', end='', flush=True)
+                """.trimIndent(),
                 workingDirectory = home.toString(),
                 timeoutMillis = 500,
                 stdin = "x".repeat(90_000),

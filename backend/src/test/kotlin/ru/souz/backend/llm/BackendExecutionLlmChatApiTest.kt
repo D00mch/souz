@@ -292,15 +292,22 @@ class BackendExecutionLlmChatApiTest {
 
     @Test
     fun `hook provider calls hold capacity without charging rejected calls and release it on cancellation`() = runTest {
-        for (kind in listOf("chat", "stream", "embeddings", "upload")) {
-            PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("provider_permit")).postgres).use { db ->
-                PostgresUserRepository(db).ensureUser("user-a")
+        PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("provider_permit")).postgres).use { db ->
+            PostgresUserRepository(db).ensureUser("user-a")
+            for (kind in listOf("chat", "stream", "embeddings", "upload")) {
                 val store = HookStore(db, HookConfig(llmCallsPerEvent = 2))
                 val hook = LoadedHook(HookDefinition(1, "permit-test", "user-a", auth = HookAuth("bearer", "a".repeat(64)), prompt = "Test"))
                 val receiptId = store.accept(hook, "{}", null).receiptId
                 store.update(receiptId, "running")
                 val receipt = requireNotNull(store.find("user-a", receiptId))
                 val quotas = ExecutionQuotaManager(BackendLlmLimits(globalProviderConcurrency = 1))
+                val budget = HookLlmBudget(receipt, store, quotas)
+                for (limit in listOf(512, 8192)) {
+                    val summaryBudget = HookLlmBudget(receipt, store, quotas, """{"max_completion_tokens":$limit}""")
+                    assertEquals(minOf(limit, 4096), summaryBudget.limitRequest(
+                        chat("summary").copy(isSummarization = true, maxTokens = 0),
+                    ).maxTokens)
+                }
                 val model = if (kind == "upload") LLMModel.AnthropicSonnet45 else LLMModel.OpenAIGpt52
                 val entered = CompletableDeferred<Unit>()
                 suspend fun holdPermit() {
@@ -318,7 +325,7 @@ class BackendExecutionLlmChatApiTest {
                 facadeFixture(
                     settingsProvider = LlmSettingsStub().apply { gigaModel = model },
                     providerApiOverride = { assertEquals(model.provider, it); provider },
-                    hookBudget = HookLlmBudget(receipt, store, quotas),
+                    hookBudget = budget,
                 ).use { fixture ->
                     suspend fun call() {
                         val request = chat("test-model").copy(provider = LlmProvider.OPENAI)

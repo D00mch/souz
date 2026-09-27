@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import ru.souz.backend.chat.repository.MessageRepository
@@ -41,8 +42,7 @@ internal class HookService(
     private val log = LoggerFactory.getLogger(javaClass)
     private val mutex = Mutex()
     private var hooks = emptyMap<String, List<LoadedHook>>()
-    private var ingressWindow = 0L
-    private var ingressCount = 0
+    private val intake = config.owners.associateWith { Semaphore(config.concurrentRequestsPerOwner) }
 
     suspend fun start(scope: CoroutineScope) {
         for (owner in config.owners) reload(owner)
@@ -70,15 +70,16 @@ internal class HookService(
             .filter { it.ownerUserId == owner && it.enabled }.map { it.hookId }
     }
 
-    /** Bounded, process-wide pre-auth gate: arbitrary IDs never allocate per-IP/per-hook state. */
-    suspend fun resolveForRequest(id: String, authorization: String?): LoadedHook = mutex.withLock {
-        val second = System.nanoTime() / 1_000_000_000
-        if (ingressWindow != second) { ingressWindow = second; ingressCount = 0 }
-        if (++ingressCount > 100) throw hookError(429, "hook_ingress_limit")
-        val hook = hooks[id]?.singleOrNull() ?: throw hookError(404, "hook_not_found")
+    /** Only configured owners allocate capacity; reload never resets an owner's permits. */
+    suspend fun <T> withRequest(id: String, authorization: String?, receive: suspend (LoadedHook) -> T): T {
+        val hook = mutex.withLock { hooks[id]?.singleOrNull() } ?: throw hookError(404, "hook_not_found")
         if (hook.definition.auth != null && !hook.definition.accepts(authorization)) throw hookError(401, "invalid_hook_token")
         if (!hook.definition.enabled) throw hookError(503, "hook_disabled")
-        hook
+        val slots = intake.getValue(hook.definition.ownerUserId)
+        if (!slots.tryAcquire()) throw hookError(429, "hook_ingress_limit")
+        return try { receive(hook) } catch (_: java.sql.SQLException) {
+            throw hookError(503, "hook_storage_unavailable")
+        } finally { slots.release() }
     }
 
     suspend fun accept(hook: LoadedHook, request: HookRequest, key: String?): HookAccepted {

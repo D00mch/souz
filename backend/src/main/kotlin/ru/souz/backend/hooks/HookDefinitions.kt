@@ -28,13 +28,13 @@ data class HookConfig(
     val concurrentExecutions: Int = 4,
     val executionTimeoutMillis: Long = 300_000,
     val verifierTimeoutMillis: Long = 5_000,
-    val concurrentVerifiers: Int = 2,
+    val concurrentRequestsPerOwner: Int = 2,
 ) {
     init {
         require(owners.all { it.isNotBlank() && it.length <= 200 })
         require(listOf(queuePerHook, eventsPerUserPerDay, llmCallsPerEvent, llmCallsPerUserPerDay, concurrentExecutions).all { it > 0 })
         require(executionTimeoutMillis > 0)
-        require(verifierTimeoutMillis in 100..30_000 && concurrentVerifiers in 1..16)
+        require(verifierTimeoutMillis in 100..30_000 && concurrentRequestsPerOwner in 1..16)
     }
 }
 
@@ -139,15 +139,21 @@ internal class HookDefinitions(private val sandboxes: RuntimeSandboxFactory, pri
 internal fun safeHookRelativePath(path: String): Boolean = path.length in 1..240 &&
     path.split('/').let { parts -> parts.size <= 8 && parts.all { it != "." && it != ".." && it.matches(Regex("[A-Za-z0-9_.-]+")) } }
 
+internal fun relativeHookPath(root: String, path: String): String {
+    val prefix = root.replace('\\', '/').trimEnd('/') + "/"
+    val normalized = path.replace('\\', '/')
+    require(normalized.startsWith(prefix)) { "Verifier path escapes hook directory." }
+    return normalized.removePrefix(prefix).also { require(safeHookRelativePath(it)) { "Unsafe verifier path." } }
+}
+
 private fun snapshotHookFiles(fs: SandboxFileSystem, root: SandboxPathInfo): Map<String, ByteArray> {
     val entries = fs.listDescendants(root, maxDepth = 8, includeHidden = true)
     require(entries.size <= 64) { "Too many verifier files." }
     var total = 0
     return buildMap {
         for (entry in entries) {
-            require(!entry.isSymbolicLink && fs.isPathSafe(entry) && entry.path.startsWith("${root.path}/"))
-            val relative = entry.path.removePrefix("${root.path}/")
-            require(safeHookRelativePath(relative)) { "Unsafe verifier path." }
+            require(!entry.isSymbolicLink && fs.isPathSafe(entry))
+            val relative = relativeHookPath(root.path, entry.path)
             if (entry.isDirectory) continue
             require(entry.isRegularFile) { "Verifier file is not regular." }
             if (relative == "hook.yaml") continue

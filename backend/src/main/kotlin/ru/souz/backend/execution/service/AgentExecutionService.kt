@@ -15,6 +15,8 @@ import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
 import ru.souz.backend.client.ClientThreadRuntimeRegistry
+import ru.souz.backend.hooks.HookConfig
+import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
@@ -34,8 +36,6 @@ data class CancelExecutionResult(
     val execution: AgentExecution,
 )
 
-internal class ExecutionLimits(val slots: Semaphore, val timeoutMillis: Long)
-
 class AgentExecutionService internal constructor(
     private val chatRepository: ChatRepository,
     private val messageRepository: MessageRepository,
@@ -48,8 +48,11 @@ class AgentExecutionService internal constructor(
     private val launcher: AgentExecutionLauncher,
     private val clientThreadRegistry: ClientThreadRuntimeRegistry,
     private val optionsEnabled: Boolean,
-    private val executionLimits: suspend (AgentExecution) -> ExecutionLimits? = { null },
+    private val hookStore: HookStore,
+    private val hookConfig: HookConfig,
 ) {
+    private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
+
     suspend fun executeChatTurn(
         userId: String,
         chatId: UUID,
@@ -208,7 +211,7 @@ class AgentExecutionService internal constructor(
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ) {
-        val limits = executionLimits(execution)
+        val isHook = hookStore.find(execution.userId, execution.id) != null
         launcher.launchRegistered(
             execution = execution,
             onCancelled = {
@@ -225,7 +228,7 @@ class AgentExecutionService internal constructor(
                     finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
                 }
                 // Both initial turns and option continuations acquire capacity for actual agent work.
-                if (limits == null) run() else limits.slots.withPermit { withTimeout(limits.timeoutMillis) { run() } }
+                if (isHook) hookSlots.withPermit { withTimeout(hookConfig.executionTimeoutMillis) { run() } } else run()
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by AgentExecutionFinalizer.
             }

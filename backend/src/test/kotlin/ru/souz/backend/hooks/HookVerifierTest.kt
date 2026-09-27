@@ -25,10 +25,23 @@ class HookVerifierTest {
     private val owner = "owner"
     private val script get() = workspace.resolve("hooks/check/scripts/verify.py")
     private val manifest get() = workspace.resolve("hooks/check/hook.yaml")
-    private val config = HookConfig(setOf(owner), concurrentVerifiers = 1)
+    private val config = HookConfig(setOf(owner))
     private val sandboxes by lazy {
         val settings = mockk<SettingsProvider> { every { forbiddenFolders } returns emptyList() }
         DefaultRuntimeSandboxFactory(settings, RuntimeSandboxModeResolver { "local" }, workspace, workspace.resolve("state"), workspace)
+    }
+
+    @Test
+    fun `verifier paths accept local Windows and container separators but reject escapes`() {
+        for (root in listOf("C:/workspace/hooks/check", "/souz/workspace/hooks/check")) {
+            for (separator in listOf('/', '\\')) {
+                val directory = root.replace('/', separator)
+                assertEquals("scripts/verify.py", relativeHookPath(directory, "$root/scripts/verify.py".replace('/', separator)))
+                for (path in listOf("$root/../outside.py", "$root-other/verify.py", root)) {
+                    assertFailsWith<IllegalArgumentException> { relativeHookPath(directory, path.replace('/', separator)) }
+                }
+            }
+        }
     }
 
     @Test
@@ -67,7 +80,7 @@ class HookVerifierTest {
     }
 
     @Test
-    fun `cancellation removes temporary files and releases verifier capacity`() = runBlocking {
+    fun `cancellation removes temporary files`() = runBlocking {
         writeHook("import pathlib,time; pathlib.Path('ready').touch(); time.sleep(30)")
         val definitions = HookDefinitions(sandboxes, config)
         val loaded = definitions.load(owner).single()
@@ -75,11 +88,8 @@ class HookVerifierTest {
         withTimeout(5_000) {
             val running = async { verifier.verify(loaded, request(ByteArray(HookDefinitions.MAX_BODY_BYTES))) }
             while (temporaryDirectories().none { Files.exists(it.resolve("ready")) }) delay(20)
-            assertEquals(429, assertFailsWith<BackendV1Exception> { verifier.verify(loaded, request()) }.status.value)
             running.cancelAndJoin()
             assertTrue(temporaryDirectories().isEmpty())
-            writeHook("print('{\"accept\":true,\"eventId\":\"after-cleanup\"}')")
-            assertEquals("{}", verifier.verify(definitions.load(owner).single(), request()).payload)
         }
     }
 

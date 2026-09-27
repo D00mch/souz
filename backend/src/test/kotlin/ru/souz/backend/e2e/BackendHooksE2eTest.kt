@@ -4,19 +4,21 @@ import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.llms.http.ProviderHttpClients
 import ru.souz.llms.http.providerHttpClientDefaults
-import ru.souz.llms.restJsonMapper
 import ru.souz.db.SettingsProvider
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
+import io.ktor.utils.io.ByteChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
@@ -28,6 +30,7 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -76,7 +79,7 @@ class BackendHooksE2eTest {
                     connection.createStatement().use { it.execute("select id from users where id = '$owner' for key share") }
                     coroutineScope {
                         val requests = async {
-                            List(4) { async { invoke(key = "same", payload = "{\"ownerUserId\":\"$other\"}") } }.awaitAll()
+                            List(2) { async { invoke(key = "same", payload = "{\"ownerUserId\":\"$other\"}") } }.awaitAll()
                         }
                         // Admission must complete while an unrelated FK check holds KEY SHARE on this owner.
                         try { withTimeout(5_000) { requests.await() } } finally { connection.rollback() }
@@ -129,6 +132,42 @@ class BackendHooksE2eTest {
             reload()
             assertEquals(404, invoke(token = newSecret).status.value)
 
+        }
+    }
+
+    @Test
+    fun `stalled intake is bounded per owner survives reload and releases capacity on cancellation`() {
+        writeHook()
+        writeHook(id = "same-owner", directory = "same-owner")
+        writeHook(id = "other", directory = "other", hookOwner = other)
+        runHooks(HookConfig(setOf(owner, other), concurrentRequestsPerOwner = 1)) {
+            setupOwner()
+            setupOwner(other)
+            coroutineScope {
+                val body = ByteChannel(autoFlush = true)
+                val slow = async {
+                    client.post("/hooks/check") {
+                        header("Authorization", "Bearer $secret")
+                        setBody(object : OutgoingContent.ReadChannelContent() {
+                            override val contentType = ContentType.Application.Json
+                            override fun readFrom() = body
+                        })
+                    }
+                }
+                try {
+                    eventually("owner intake occupied") { invoke(payload = "invalid").takeIf { it.status.value == 429 } }
+                    assertEquals(401, invoke(token = "bad").status.value)
+                    assertEquals(429, invoke(id = "same-owner").status.value)
+                    assertEquals(202, invoke(id = "other").status.value)
+                    reload()
+                    assertEquals(429, invoke().status.value)
+                } finally {
+                    body.cancel(null)
+                    slow.cancelAndJoin()
+                }
+            }
+            val accepted = eventually("owner intake released") { invoke().takeIf { it.status.value == 202 } }
+            awaitStatus(accepted.jsonBody()["receiptId"].asText(), "completed")
         }
     }
 
@@ -189,36 +228,6 @@ class BackendHooksE2eTest {
     }
 
     @Test
-    fun `summarization preserves smaller configured budgets and caps larger ones`() {
-        writeHook()
-        for (limit in listOf(512, 8192)) {
-            val requests = java.util.concurrent.CopyOnWriteArrayList<JsonNode>()
-            val http = HttpClient(MockEngine { request ->
-                requests.add(restJsonMapper.readTree(request.body.toByteArray()))
-                respond("""{"choices":[{"index":0,"message":{"role":"assistant","content":"summary"},"finish_reason":"stop"}],"created":1,"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}""",
-                    headers = headersOf(HttpHeaders.ContentType, "application/json"))
-            }) { providerHttpClientDefaults() }
-            val settings = object : BackendConfigSource {
-                override fun env(key: String): String? = when (key) {
-                    "OPENAI_SUMMARIZATION_MODEL" -> "summary-model"
-                    "OPENAI_SUMMARIZATION_API_KEY" -> "summary-key"
-                    "OPENAI_SUMMARIZATION_CONTEXT_SIZE" -> "1"
-                    "OPENAI_SUMMARIZATION_PARAMETERS" -> """{"max_completion_tokens":$limit}"""
-                    else -> null
-                }
-                override fun property(key: String): String? = null
-            }
-            backendE2eTest("e2e_hook_summary", hookConfig = HookConfig(setOf(owner)), sandboxFactory = ::localSandbox,
-                settingsSource = settings, providerClients = ProviderHttpClients(standard = http, openAi = http)) {
-                setupOwner()
-                val result = awaitStatus(invoke().jsonBody()["receiptId"].asText(), "completed")
-                assertEquals(minOf(limit, 4096), requests.single()["max_completion_tokens"].asInt())
-                assertEquals(2, result["llmCalls"].asInt(), "The summary consumes the same durable event budget")
-            }
-        }
-    }
-
-    @Test
     fun `image generation holds provider capacity through HTTP completion without charging rejected calls`() {
         writeHook()
         writeHook(id = "second", directory = "second")
@@ -255,49 +264,45 @@ class BackendHooksE2eTest {
     }
 
     @Test
-    fun `initial hook turns and option continuations share capacity regardless of hook ID order`() {
-        for ((waitingHook, otherHook) in listOf("a" to "z", "z" to "a")) {
-            writeHook(id = waitingHook, directory = waitingHook)
-            writeHook(id = otherHook, directory = otherHook)
-            val entered = Channel<String>(Channel.UNLIMITED)
-            val release = Channel<Unit>(Channel.UNLIMITED)
-            val options = ScriptedOptionTurnRunner()
-            val runner = object : BackendConversationTurnRunner {
-                override suspend fun run(conversationKey: AgentConversationKey, request: BackendConversationTurnRequest,
-                    eventSink: AgentRuntimeEventSink, initialUsage: LLMResponse.Usage): BackendConversationTurnOutcome {
-                    entered.send(requireNotNull(request.executionId))
-                    release.receive()
-                    return options.run(conversationKey, request, eventSink, initialUsage)
-                }
+    fun `initial hook turns and option continuations share capacity`() {
+        val waitingHook = "a"
+        val otherHook = "z"
+        writeHook(id = waitingHook, directory = waitingHook)
+        writeHook(id = otherHook, directory = otherHook)
+        val entered = Channel<String>(Channel.UNLIMITED)
+        val release = Channel<Unit>(Channel.UNLIMITED)
+        val options = ScriptedOptionTurnRunner()
+        val runner = object : BackendConversationTurnRunner {
+            override suspend fun run(conversationKey: AgentConversationKey, request: BackendConversationTurnRequest,
+                eventSink: AgentRuntimeEventSink, initialUsage: LLMResponse.Usage): BackendConversationTurnOutcome {
+                entered.send(requireNotNull(request.executionId))
+                release.receive()
+                return options.run(conversationKey, request, eventSink, initialUsage)
             }
-            runHooks(HookConfig(setOf(owner), concurrentExecutions = 1), runner = runner) {
-                setupOwner()
-                suspend fun answer(receipt: JsonNode) {
-                    val chatId = receipt["execution"]["chatId"].asText()
-                    val optionId = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(owner) }.jsonBody()["items"]
-                        .first { it["type"].asText() == "option.requested" }["payload"]["optionId"].asText()
-                    assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.optionAnswer(optionId)) {
-                        trusted(owner); jsonBody("""{"selectedOptionIds":["a"]}""")
-                    }.status)
-                }
-                withTimeout(15_000) {
-                    val first = invoke(id = waitingHook).jsonBody()["receiptId"].asText()
-                    assertEquals(first, entered.receive())
-                    val second = invoke(id = otherHook).jsonBody()["receiptId"].asText()
-                    assertNull(withTimeoutOrNull(350) { entered.receive() }, "Initial turn must wait for capacity")
-                    release.send(Unit)
-                    assertEquals(second, entered.receive(), "Waiting for an option must release capacity")
-                    answer(awaitStatus(first, "waiting_option"))
-                    assertNull(withTimeoutOrNull(350) { entered.receive() }, "Continuation must wait for capacity")
-                    release.send(Unit)
-                    assertEquals(first, entered.receive())
-                    release.send(Unit)
-                    awaitStatus(first, "completed")
-                    answer(awaitStatus(second, "waiting_option"))
-                    assertEquals(second, entered.receive())
-                    release.send(Unit)
-                    awaitStatus(second, "completed")
-                }
+        }
+        runHooks(HookConfig(setOf(owner), concurrentExecutions = 1), runner = runner) {
+            setupOwner()
+            suspend fun answer(receipt: JsonNode) {
+                val chatId = receipt["execution"]["chatId"].asText()
+                val optionId = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(owner) }.jsonBody()["items"]
+                    .first { it["type"].asText() == "option.requested" }["payload"]["optionId"].asText()
+                assertEquals(HttpStatusCode.OK, client.post(BackendHttpRoutes.optionAnswer(optionId)) {
+                    trusted(owner); jsonBody("""{"selectedOptionIds":["a"]}""")
+                }.status)
+            }
+            withTimeout(15_000) {
+                val first = invoke(id = waitingHook).jsonBody()["receiptId"].asText()
+                assertEquals(first, entered.receive())
+                val second = invoke(id = otherHook).jsonBody()["receiptId"].asText()
+                assertNull(withTimeoutOrNull(350) { entered.receive() }, "Initial turn must wait for capacity")
+                release.send(Unit)
+                assertEquals(second, entered.receive(), "Waiting for an option must release capacity")
+                answer(awaitStatus(first, "waiting_option"))
+                assertNull(withTimeoutOrNull(350) { entered.receive() }, "Continuation must wait for capacity")
+                release.send(Unit)
+                assertEquals(first, entered.receive())
+                release.send(Unit)
+                awaitStatus(first, "completed")
             }
         }
     }

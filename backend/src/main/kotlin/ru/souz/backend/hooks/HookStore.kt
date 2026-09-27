@@ -15,7 +15,6 @@ internal data class HookReceipt(
     val userId: String,
     val chatId: UUID,
     val payload: String,
-    val payloadHash: String,
     val revision: String,
     val status: String,
     val errorCode: String?,
@@ -31,12 +30,11 @@ internal class HookStore(private val dataSource: DataSource, private val config:
             s.executeQuery().use { if (!it.next()) throw hookError(503, "hook_owner_unavailable") }
         }
         val hash = sha256(payload.toByteArray())
-        if (key != null) c.prepare("select * from hook_receipts where hook_id = ? and event_key = ?", hook.hookId, key).use { s ->
+        if (key != null) c.prepare("select id, user_id, payload_hash from hook_receipts where hook_id = ? and event_key = ?", hook.hookId, key).use { s ->
             s.executeQuery().use { rows ->
                 if (rows.next()) {
-                    val existing = rows.receipt()
-                    if (existing.userId != hook.ownerUserId || existing.payloadHash != hash) throw hookError(409, "idempotency_conflict")
-                    return@write HookAccepted(existing.id, duplicate = true)
+                    if (rows.getString("user_id") != hook.ownerUserId || rows.getString("payload_hash") != hash) throw hookError(409, "idempotency_conflict")
+                    return@write HookAccepted(rows.getObject("id", UUID::class.java), duplicate = true)
                 }
             }
         }
@@ -121,7 +119,7 @@ private fun Connection.prepare(sql: String, vararg values: Any?) = prepareStatem
 
 private fun ResultSet.receipt() = HookReceipt(
     id = getObject("id", UUID::class.java), hookId = getString("hook_id"), userId = getString("user_id"),
-    chatId = getObject("chat_id", UUID::class.java), payload = getString("payload"), payloadHash = getString("payload_hash"),
+    chatId = getObject("chat_id", UUID::class.java), payload = getString("payload"),
     revision = getString("revision"), status = getString("status"),
     errorCode = getString("error_code"),
     llmCalls = getInt("llm_calls"), totalTokens = getLong("total_tokens"),

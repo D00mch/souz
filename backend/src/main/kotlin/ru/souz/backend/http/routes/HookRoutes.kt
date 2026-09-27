@@ -14,7 +14,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.utils.io.readRemaining
 import java.util.UUID
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.readByteArray
 import ru.souz.backend.hooks.HookAccepted
@@ -32,12 +31,9 @@ import ru.souz.backend.http.uuidPathParameter
 import ru.souz.backend.http.v1ErrorResponses
 
 internal fun Route.hookRoutes(service: HookService) {
-    val intake = Semaphore(16)
     post("/hooks/{hookId}") {
-        if (!intake.tryAcquire()) throw hookError(429, "hook_ingress_limit")
-        try {
-            val authorization = call.request.headers.getAll("Authorization")?.singleOrNull()
-            val definition = service.resolveForRequest(call.parameters["hookId"].orEmpty(), authorization)
+        val authorization = call.request.headers.getAll("Authorization")?.singleOrNull()
+        val accepted = service.withRequest(call.parameters["hookId"].orEmpty(), authorization) { definition ->
             val isBearer = definition.definition.auth != null
             if (isBearer && !call.request.contentType().match(ContentType.Application.Json)) throw hookError(400, "hook_json_required")
             val headers = call.request.headers.entries().associate { it.key.lowercase() to it.value }
@@ -50,16 +46,12 @@ internal fun Route.hookRoutes(service: HookService) {
             if (body.size > HookDefinitions.MAX_BODY_BYTES) throw hookError(413, "hook_payload_too_large")
             val keys = call.request.headers.getAll("Idempotency-Key")
             if (isBearer && keys != null && keys.size != 1) throw hookError(400, "invalid_idempotency_key")
-            val accepted = service.accept(definition, HookRequest(
+            service.accept(definition, HookRequest(
                 call.request.local.method.value, call.request.path(),
                 headers.filterKeys { it !in setOf("host", "x-user-id", "x-souz-proxy-auth") }, body,
             ), keys?.singleOrNull())
-            call.respond(if (accepted.duplicate) HttpStatusCode.OK else HttpStatusCode.Accepted, accepted)
-        } catch (_: java.sql.SQLException) {
-            throw hookError(503, "hook_storage_unavailable")
-        } finally {
-            intake.release()
         }
+        call.respond(if (accepted.duplicate) HttpStatusCode.OK else HttpStatusCode.Accepted, accepted)
     }.describePublic("invokeHook", "Hooks", "Invoke a workspace hook", "Authenticates with the configured Bearer secret or verifier in the owner's sandbox before admission. Verifiers receive raw body bytes and supply the event ID. 202 means persisted, not completed.") {
         security { requirement("hookBearer"); requirement(emptyMap()) }
         parameters {
