@@ -111,6 +111,7 @@ class PostgresRepositoriesTest {
             assertNull(stored.enabledTools)
             assertNull(stored.showToolEvents)
             assertNull(stored.streamingMessages)
+            assertNull(stored.narrateSteps)
             assertNull(stored.interfaceLanguage)
             assertNull(stored.requestTimeoutMillis)
             assertNull(stored.useFewShotExamples)
@@ -129,6 +130,7 @@ class PostgresRepositoriesTest {
             userId = "user-a",
             defaultModel = LLMModel.Max,
             reasoningEffort = "low",
+            narrateSteps = true,
             contextSize = 16_000,
             temperature = 0.7f,
             locale = Locale.forLanguageTag("en-US"),

@@ -1,5 +1,6 @@
 package ru.souz.backend.e2e
 
+import io.ktor.client.request.patch
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
@@ -36,6 +37,9 @@ class BackendOptionsE2eTest {
                 val chatId = createPublicChat(userId)
                 client.get(BackendHttpRoutes.SETTINGS) { trusted(userId) }
                 storeReasoningEffort(userId, effort)
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(userId); jsonBody("""{"narrateSteps":true}""")
+                }
                 val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                     trusted(userId)
                     jsonBody("""{"content":"need option"}""")
@@ -73,6 +77,9 @@ class BackendOptionsE2eTest {
 
                 // Changes to the user default must not alter the pending execution's snapshot.
                 storeReasoningEffort(userId, "high")
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(userId); jsonBody("""{"narrateSteps":false}""")
+                }
                 val answer = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
                     trusted(userId)
                     jsonBody("""{"selectedOptionIds":["a"],"freeText":"Alpha","metadata":{"source":"e2e"}}""")
@@ -90,6 +97,7 @@ class BackendOptionsE2eTest {
                     assertTrue(messages.any { it["content"].asText() == "continued after choosing Alpha" })
                 }
                 assertEquals(listOf(effort, effort), runner.reasoningEfforts.toList())
+                assertEquals(listOf(true, true), runner.narrationPreferences.toList())
                 val events = client.get(BackendHttpRoutes.chatEvents(chatId)) {
                     trusted(userId)
                 }.jsonBody()["items"]
@@ -140,6 +148,7 @@ class BackendOptionsE2eTest {
 
 private class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
     val reasoningEfforts = CopyOnWriteArrayList<String?>()
+    val narrationPreferences = CopyOnWriteArrayList<Boolean>()
     private val waitingConversations = LinkedHashSet<AgentConversationKey>()
 
     override suspend fun run(
@@ -149,6 +158,7 @@ private class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
         initialUsage: LLMResponse.Usage,
     ): BackendConversationTurnOutcome {
         reasoningEfforts += request.reasoningEffort
+        narrationPreferences += request.narrateSteps
         return if (waitingConversations.add(conversationKey)) {
             eventSink.emit(
                 AgentRuntimeEvent.ChoiceRequested(

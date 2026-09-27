@@ -27,6 +27,29 @@ import ru.souz.llms.restJsonMapper
 
 class AgentEventBusTest {
     @Test
+    fun `bot observer receives progress without advertising or accepting device commands`() = runTest {
+        val bus = AgentEventBus()
+        val chat = UUID.randomUUID()
+        val observer = bus.subscribe("user", chat, acceptsClientCommands = false)
+        val event = AgentLiveEvent(UUID.randomUUID(), "user", chat, UUID.randomUUID(),
+            AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload("Checking"), Instant.EPOCH)
+        try {
+            assertFalse(bus.hasSubscriber("user", chat))
+            assertFalse(bus.publishCommand(event.copy(type = AgentEventType.TOOL_CALL_STARTED)))
+            bus.publish(event)
+            assertEquals(event, observer.events.receive())
+            val device = bus.subscribe("user", chat)
+            try {
+                assertTrue(bus.hasSubscriber("user", chat))
+                assertTrue(bus.publishCommand(event))
+                assertEquals(event, device.commands.receive())
+                assertTrue(observer.commands.tryReceive().isFailure)
+            } finally { device.close() }
+            assertFalse(bus.hasSubscriber("user", chat))
+        } finally { observer.close() }
+    }
+
+    @Test
     fun `replay drops stale progress but preserves current progress and client commands`() = runTest {
         for (initialReplay in listOf(false, true)) for (tool in listOf(false, true)) {
             val progress = AgentLiveEvent(UUID.randomUUID(), "user", UUID.randomUUID(), UUID.randomUUID(),

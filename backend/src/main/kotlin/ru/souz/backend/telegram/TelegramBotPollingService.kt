@@ -35,6 +35,7 @@ fun interface TelegramTurnExecutor {
         content: String,
         clientMessageId: String,
         requestOverrides: UserSettingsOverrides,
+        onProgress: suspend (String) -> Unit,
     ): SendMessageResult
 }
 
@@ -263,6 +264,11 @@ class TelegramBotPollingService(
                         content = text,
                         clientMessageId = "telegram:${binding.id}:${update.updateId}",
                         requestOverrides = UserSettingsOverrides(streamingMessages = false),
+                        onProgress = { content ->
+                            for (chunk in channelTextChunks(content, TELEGRAM_RICH_TEXT_LIMIT)) {
+                                sendReplySafely(binding.id, token, message.chat.id, chunk)
+                            }
+                        },
                     )
                 } finally {
                     typingJob.cancelAndJoin()

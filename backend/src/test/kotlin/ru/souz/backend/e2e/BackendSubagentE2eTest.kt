@@ -92,7 +92,7 @@ class BackendSubagentE2eTest {
     }
 
     @Test
-    fun `both sockets deliver parent progress before child tools without replay or child text`() {
+    fun `both sockets deliver parent progress before child tools without replay or child text`() = listOf(false, true).forEach { narrate ->
         val releaseChild = CompletableDeferred<Unit>()
         val blocks = listOf("Let me check.", "Another detail.", "Let me check.")
         val task = "Ask the user for a genre and report it."
@@ -119,7 +119,7 @@ class BackendSubagentE2eTest {
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            client.patch(BackendHttpRoutes.SETTINGS) { trusted(userId); jsonBody("""{"streamingMessages":true}""") }
+            client.patch(BackendHttpRoutes.SETTINGS) { trusted(userId); jsonBody("""{"streamingMessages":true,"narrateSteps":$narrate}""") }
             withPublicSocket(chatId) { session -> withMultiChatSocket { observer ->
                 try {
                     observer.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$chatId","requestId":"watch"}"""))
@@ -131,7 +131,7 @@ class BackendSubagentE2eTest {
                     val threadId = ack["thread"]["id"].asText()
                     // The tool has started before either subscriber reads or acknowledges progress.
                     llm.awaitPrompt(task)
-                    for (socket in listOf(session, observer)) for (content in blocks) {
+                    for (socket in listOf(session, observer)) for (content in blocks.filter { narrate }) {
                         val event = readJson(socket)
                         assertEquals("assistant.message", event["type"].asText())
                         assertEquals(chatId, event["chatId"].asText())

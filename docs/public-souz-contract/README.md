@@ -51,6 +51,8 @@ Active-thread submit/tool/cancel operations must reach the runtime owner in mult
 
 ## Intermediate assistant messages
 
+Progress is opt-in through the trusted settings API: `PATCH /v1/settings` with `{"narrateSteps":true}`. `GET /v1/settings` returns the effective value, which defaults to `false`. The preference controls both the extra RU/EN system-prompt instruction and live progress delivery, independently of `streamingMessages` and `showToolEvents`. Each execution snapshots it, including option continuations; changing the preference affects subsequent executions.
+
 `assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check."}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
 
 The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. The originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.

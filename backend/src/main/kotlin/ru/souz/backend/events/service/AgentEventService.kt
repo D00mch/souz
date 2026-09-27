@@ -162,9 +162,10 @@ class AgentEventService(
         userId: String,
         chatId: UUID,
         afterSeq: Long? = 0,
+        acceptsClientCommands: Boolean = true,
     ): AgentEventStream {
         requireOwnedChat(userId, chatId)
-        val subscription = eventBus.subscribe(userId, chatId)
+        val subscription = eventBus.subscribe(userId, chatId, acceptsClientCommands)
         var opened = false
         try {
             // A null cursor starts at the durable tail, after live signal registration.

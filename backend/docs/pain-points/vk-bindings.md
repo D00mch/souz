@@ -14,6 +14,8 @@ CommonMark renders Markdown before chunking. VK receives plain text plus `format
 
 Complete cross-channel delivery persists the original Markdown. Partial delivery persists only accepted rendered text. Polling checks lease ownership before every formatted chunk. Plain service replies omit `format_data`.
 
+Opt-in progress (`narrateSteps`) uses the same leased reply path in a separate coroutine. It is live-only, best-effort, and stops before the final reply; see [execution events](execution-openapi-and-events.md).
+
 ## Safe changes
 
 - Keep token contents and VK error bodies out of responses and logs. VK has no plaintext token migration path.

@@ -190,6 +190,11 @@ class VkBotPollingService(
                         content = text,
                         clientMessageId = "vk:${binding.id}:${message.id}",
                         requestOverrides = UserSettingsOverrides(streamingMessages = false),
+                        onProgress = { content ->
+                            for (chunk in VkMarkdown(content).chunks()) {
+                                reply(binding, token, message.peerId, chunk.text, chunk.format)
+                            }
+                        },
                     )
                 } finally {
                     typing.cancelAndJoin()

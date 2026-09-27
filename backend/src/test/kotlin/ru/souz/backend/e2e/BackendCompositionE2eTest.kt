@@ -55,6 +55,7 @@ class BackendCompositionE2eTest {
                     """
                     {
                       "defaultModel": "${E2E_LOCAL_MODEL.alias}",
+                      "narrateSteps": true,
                       "locale": "iw-IL",
                       "timeZone": "Europe/Amsterdam",
                       "streamingMessages": true,
@@ -75,6 +76,17 @@ class BackendCompositionE2eTest {
             val settings = patch.jsonBody()["settings"]
             assertEquals(E2E_LOCAL_MODEL.alias, settings["defaultModel"].asText())
             assertEquals("he-IL", settings["locale"].asText())
+            assertTrue(settings["narrateSteps"].asBoolean())
+            val preserved = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user"); jsonBody("""{"temperature":0.4}""")
+            }.jsonBody()["settings"]
+            assertTrue(preserved["narrateSteps"].asBoolean())
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user"); jsonBody("""{"narrateSteps":false}""")
+            }
+            assertFalse(client.get(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user")
+            }.jsonBody()["settings"]["narrateSteps"].asBoolean())
             assertEquals("Europe/Amsterdam", settings["timeZone"].asText())
             assertEquals(HttpStatusCode.OK, putKey.status)
             assertEquals("qwen", putKey.jsonBody()["providerKey"]["provider"].asText())

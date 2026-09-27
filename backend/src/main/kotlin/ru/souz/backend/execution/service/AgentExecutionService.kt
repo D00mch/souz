@@ -3,6 +3,13 @@ package ru.souz.backend.execution.service
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
+import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -186,23 +193,45 @@ class AgentExecutionService internal constructor(
         content: String,
         clientMessageId: String? = null,
         requestOverrides: UserSettingsOverrides = UserSettingsOverrides(),
-    ): SendMessageResult {
-        val started = executeChatTurn(
-            userId = userId,
-            chatId = chatId,
-            content = content,
-            clientMessageId = clientMessageId,
-            requestOverrides = requestOverrides,
-        )
-        launcher.join(started.execution.id)
-        val finishedExecution = executionRepository.getByChat(userId, chatId, started.execution.id)
-            ?: started.execution
-        val assistantMessage = finishedExecution.assistantMessageId
-            ?.let { messageRepository.getById(userId, chatId, it) }
-        return started.copy(
-            assistantMessage = assistantMessage,
-            execution = finishedExecution,
-        )
+        onProgress: (suspend (String) -> Unit)? = null,
+    ): SendMessageResult = coroutineScope {
+        // Subscribe before starting so even the first block is available. Progress shares the
+        // bounded, droppable live queue and never participates in durable replay.
+        val stream = if (onProgress != null) {
+            eventService.openPublicStream(userId, chatId, afterSeq = null, acceptsClientCommands = false)
+        } else null
+        try {
+            val started = executeChatTurn(userId, chatId, content, clientMessageId, requestOverrides)
+            val progress = stream?.let {
+                launch {
+                    for (event in it.liveEvents) {
+                        if (event.executionId != started.execution.id || event.type != AgentEventType.ASSISTANT_MESSAGE) continue
+                        val payload = event.payload as? AssistantMessagePayload ?: continue
+                        try {
+                            onProgress?.invoke(payload.content)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            LoggerFactory.getLogger(AgentExecutionService::class.java)
+                                .warn("Progress delivery failed for execution {}", started.execution.id)
+                        }
+                    }
+                }
+            }
+            try {
+                launcher.join(started.execution.id)
+            } finally {
+                // Drop queued progress and stop in-flight sends before the poller sends the final reply.
+                withContext(NonCancellable) { progress?.cancelAndJoin() }
+            }
+            val finishedExecution = executionRepository.getByChat(userId, chatId, started.execution.id)
+                ?: started.execution
+            val assistantMessage = finishedExecution.assistantMessageId
+                ?.let { messageRepository.getById(userId, chatId, it) }
+            started.copy(assistantMessage = assistantMessage, execution = finishedExecution)
+        } finally {
+            withContext(NonCancellable) { stream?.close?.invoke() }
+        }
     }
 
     private suspend fun launchExecution(

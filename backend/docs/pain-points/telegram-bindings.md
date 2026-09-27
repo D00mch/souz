@@ -10,6 +10,8 @@ Each poller holds a renewable per-binding lease. Accepted text is submitted thro
 
 Bot replies and cross-channel deliveries use [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) with JSON `rich_message.markdown`. Chunking conservatively limits source Markdown to 32,768 UTF-16 units; splitting can interrupt Markdown constructs in oversized replies. Preserve the original Markdown in conversation storage.
 
+Opt-in progress (`narrateSteps`) uses the same leased reply path in a separate coroutine. It is live-only, best-effort, and stops before the final reply; see [execution events](execution-openapi-and-events.md).
+
 ## Why it is fragile
 
 Tokens, one-time secrets, Telegram identity, and poller ownership are separate security boundaries. Advancing a checkpoint early, replying after lease loss, or accepting a public/foreign sender can lose updates, duplicate agent turns, leak a bot credential, or bind the wrong account.

@@ -85,7 +85,7 @@ class TelegramBotPollingServiceTest {
             val service = TelegramBotPollingService(
                 repository = bindingRepository,
                 botApi = api,
-                turnExecutor = { id, targetChatId, content, _, _: UserSettingsOverrides ->
+                turnExecutor = { id, targetChatId, content, _, _: UserSettingsOverrides, _ ->
                     assertEquals(userId, id)
                     assertEquals(chatId, targetChatId)
                     assertEquals("long lease turn", content)

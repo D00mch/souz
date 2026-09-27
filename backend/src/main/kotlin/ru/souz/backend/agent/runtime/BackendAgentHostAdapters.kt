@@ -23,6 +23,7 @@ class BackendConversationSettingsProvider(
     requestTimeoutMillis: Long = delegate.requestTimeoutMillis,
 ) : SettingsProvider by delegate {
     private var overrideSystemPrompt: String? = null
+    private var narrateSteps: Boolean = false
 
     override var defaultCalendar: String? = null
     override var regionProfile: String = localeToRegionProfile(locale)
@@ -33,8 +34,20 @@ class BackendConversationSettingsProvider(
     override var contextSize: Int = delegate.contextSize
     override var temperature: Float = delegate.temperature
 
-    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String =
-        overrideSystemPrompt ?: defaultSystemPrompt
+    override fun getSystemPromptForAgentModel(agentId: AgentId, model: LLMModel): String {
+        val base = overrideSystemPrompt ?: defaultSystemPrompt
+        if (!narrateSteps) return base
+        val instruction = if (regionProfile == SettingsProviderImpl.REGION_EN) {
+            "Before every tool call, write ONE short first-person sentence (max ~120 characters, " +
+                "plain text, no Markdown): what you just learned and what you are about to do. " +
+                "This is a status line, not the final answer."
+        } else {
+            "Перед каждым вызовом инструментов напиши ОДНУ короткую фразу от первого лица " +
+                "(до ~120 символов, обычным текстом, без Markdown): что ты только что узнал и что " +
+                "собираешься сделать дальше. Это не финальный ответ, а статус."
+        }
+        return "$base\n\n$instruction"
+    }
 
     override fun setSystemPromptForAgentModel(agentId: AgentId, model: LLMModel, prompt: String?) = Unit
 
@@ -59,6 +72,7 @@ class BackendConversationSettingsProvider(
         } else {
             request.systemPrompt
         }
+        this.narrateSteps = request.narrateSteps
         this.useStreaming = request.streamingMessages == true
         this.useFewShotExamples = request.useFewShotExamples ?: this.useFewShotExamples
         this.requestTimeoutMillis = request.requestTimeoutMillis ?: this.requestTimeoutMillis

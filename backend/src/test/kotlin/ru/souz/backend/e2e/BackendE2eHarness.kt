@@ -319,6 +319,12 @@ internal class BackendE2eBackend(
 
     private val vkSessions = mutableMapOf<UUID, VkBotPollingService.PollSession>()
 
+    suspend fun pollTelegramOnce() {
+        for (binding in di.direct.instance<ru.souz.backend.telegram.TelegramBotBindingRepository>().listEnabled()) {
+            di.direct.instance<TelegramBotPollingService>().pollBinding(binding.id)
+        }
+    }
+
     suspend fun pollVkOnce() {
         val bindings = di.direct.instance<PostgresVkBotBindingRepository>().listEnabled()
         vkSessions.keys.retainAll(bindings.map { it.id }.toSet())

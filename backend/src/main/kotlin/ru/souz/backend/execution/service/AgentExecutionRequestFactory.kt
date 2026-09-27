@@ -85,6 +85,7 @@ internal class AgentExecutionRequestFactory(
                 timeZone = effectiveSettings.timeZone.id,
                 systemPrompt = effectiveSettings.systemPrompt,
                 streamingMessages = effectiveSettings.streamingMessages,
+                narrateSteps = effectiveSettings.narrateSteps,
                 showToolEvents = effectiveSettings.showToolEvents,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
@@ -111,6 +112,7 @@ internal class AgentExecutionRequestFactory(
                 temperature = effectiveSettings.temperature,
                 systemPrompt = effectiveSettings.systemPrompt,
                 streamingMessages = effectiveSettings.streamingMessages,
+                narrateSteps = effectiveSettings.narrateSteps,
                 requestTimeoutMillis = effectiveSettings.requestTimeoutMillis,
                 useFewShotExamples = effectiveSettings.useFewShotExamples,
                 enabledTools = effectiveSettings.enabledTools.toSet(),
@@ -155,6 +157,7 @@ internal class AgentExecutionRequestFactory(
             temperature = executionMetadataFloat(execution, METADATA_TEMPERATURE),
             systemPrompt = execution.metadata[METADATA_SYSTEM_PROMPT]?.takeIf { it.isNotEmpty() },
             streamingMessages = executionMetadataBoolean(execution, METADATA_STREAMING_MESSAGES),
+            narrateSteps = executionMetadataBoolean(execution, METADATA_NARRATE_STEPS) ?: false,
             requestTimeoutMillis = executionMetadataLong(execution, METADATA_REQUEST_TIMEOUT_MILLIS),
             useFewShotExamples = executionMetadataBoolean(execution, METADATA_USE_FEW_SHOT_EXAMPLES),
             enabledTools = executionMetadataStringSet(execution, METADATA_ENABLED_TOOLS),
@@ -188,6 +191,7 @@ internal class AgentExecutionRequestFactory(
             assistantMessageId = execution.assistantMessageId,
             beforePublicEvent = { clientThreadRegistry?.awaitAcceptedInputAcks(execution.id) },
             publicClientThread = execution.runtimeOwner != null,
+            narrateSteps = executionMetadataBoolean(execution, METADATA_NARRATE_STEPS) ?: false,
         )
 
     private fun userMessageMetadata(clientMessageId: String?): Map<String, String> =
@@ -201,6 +205,7 @@ internal class AgentExecutionRequestFactory(
         timeZone: String,
         systemPrompt: String?,
         streamingMessages: Boolean,
+        narrateSteps: Boolean,
         showToolEvents: Boolean,
         requestTimeoutMillis: Long,
         useFewShotExamples: Boolean,
@@ -211,6 +216,7 @@ internal class AgentExecutionRequestFactory(
         put(METADATA_LOCALE, locale)
         put(METADATA_TIME_ZONE, timeZone)
         put(METADATA_STREAMING_MESSAGES, streamingMessages.toString())
+        put(METADATA_NARRATE_STEPS, narrateSteps.toString())
         put(METADATA_SHOW_TOOL_EVENTS, showToolEvents.toString())
         put(METADATA_REQUEST_TIMEOUT_MILLIS, requestTimeoutMillis.toString())
         put(METADATA_USE_FEW_SHOT_EXAMPLES, useFewShotExamples.toString())
@@ -288,6 +294,7 @@ private const val METADATA_TEMPERATURE = "temperature"
 private const val METADATA_LOCALE = "locale"
 private const val METADATA_TIME_ZONE = "timeZone"
 private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
+private const val METADATA_NARRATE_STEPS = "narrateSteps"
 private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"
 private const val METADATA_REQUEST_TIMEOUT_MILLIS = "requestTimeoutMillis"
