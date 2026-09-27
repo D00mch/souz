@@ -92,8 +92,13 @@ internal class BackendExecutionLlmChatApi(
             }
             else -> return unsupportedEmbeddingModel(resolution)
         }
-        hookBudget?.beforeAuxiliaryCall()
-        return apiFor(model.provider).embeddings(body.copy(model = model.alias))
+        val api = apiFor(model.provider)
+        val request = body.copy(model = model.alias)
+        val budget = hookBudget ?: return api.embeddings(request)
+        return budget.quotas.withProviderPermit(model.provider) {
+            budget.beforeAuxiliaryCall()
+            api.embeddings(request)
+        }
     }
 
     override suspend fun uploadFile(file: File): LLMResponse.UploadFile =

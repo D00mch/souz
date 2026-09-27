@@ -18,9 +18,11 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +31,20 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import ru.souz.backend.app.BackendLlmLimits
 import ru.souz.backend.app.BackendProviderRetryPolicy
+import ru.souz.backend.hooks.HookAuth
+import ru.souz.backend.hooks.HookConfig
+import ru.souz.backend.hooks.HookDefinition
+import ru.souz.backend.hooks.HookLlmBudget
+import ru.souz.backend.hooks.HookStore
+import ru.souz.backend.hooks.LoadedHook
+import ru.souz.backend.llm.quota.ExecutionQuotaManager
+import ru.souz.backend.llm.quota.QuotaExceededException
+import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
+import ru.souz.backend.storage.postgres.PostgresUserRepository
+import ru.souz.backend.storage.postgres.newPostgresSchema
+import ru.souz.backend.storage.postgres.postgresAppConfig
 import ru.souz.llms.EmbeddingsModel
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMMessageRole
@@ -272,6 +287,43 @@ class BackendExecutionLlmChatApiTest {
     }
 
     @Test
+    fun `hook embeddings hold provider capacity without charging rejected calls and release it on cancellation`() = runTest {
+        PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("embedding_permit")).postgres).use { db ->
+            PostgresUserRepository(db).ensureUser("user-a")
+            val store = HookStore(db, HookConfig())
+            val hook = LoadedHook(HookDefinition(1, "embedding-test", "user-a", auth = HookAuth("bearer", "a".repeat(64)), prompt = "Test"))
+            val receiptId = store.accept(hook, "{}", null).receiptId
+            store.update(receiptId, "running")
+            val receipt = requireNotNull(store.find("user-a", receiptId))
+            val quotas = ExecutionQuotaManager(BackendLlmLimits(globalProviderConcurrency = 1))
+            val entered = CompletableDeferred<Unit>()
+            val provider = StubChatApi(embeddings = { body ->
+                if (entered.complete(Unit)) awaitCancellation()
+                LLMResponse.Embeddings.Ok(emptyList(), body.model, "list")
+            })
+            facadeFixture(
+                providerApiOverride = { provider },
+                hookBudget = HookLlmBudget(receipt, store, quotas),
+            ).use { fixture ->
+                val request = embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.name)
+                val running = async { assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(request)) }
+                try {
+                    entered.await()
+                    assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(LlmProvider.OPENAI) {} }
+                    assertEquals("global_provider_concurrency_exceeded", assertFailsWith<QuotaExceededException> {
+                        fixture.api.embeddings(request)
+                    }.code)
+                    assertEquals(1, store.find("user-a", receiptId)?.llmCalls)
+                } finally {
+                    running.cancelAndJoin()
+                }
+                assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(request))
+                assertEquals(2, store.find("user-a", receiptId)?.llmCalls)
+            }
+        }
+    }
+
+    @Test
     fun `retries unary 429 responses and accumulates usage`() = runTest {
         var requests = 0
         val delays = mutableListOf<Long>()
@@ -413,6 +465,7 @@ private fun facadeFixture(
     initialUsage: LLMResponse.Usage = usage(0, 0, 0, 0),
     delayMillis: suspend (Long) -> Unit = {},
     providerApiOverride: ((LlmProvider) -> LLMChatAPI)? = { StubChatApi() },
+    hookBudget: HookLlmBudget? = null,
     client: HttpClient = HttpClient(MockEngine { respondOk() }) {
         providerHttpClientDefaults()
     },
@@ -429,6 +482,7 @@ private fun facadeFixture(
         initialUsage = initialUsage,
         delayMillis = delayMillis,
         providerApiOverride = providerApiOverride,
+        hookBudget = hookBudget,
     )
     return FacadeFixture(api, credentialResolver, clients)
 }
