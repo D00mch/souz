@@ -98,8 +98,11 @@ internal class BackendExecutionLlmChatApi(
         return withProviderCall(hookBudget, model.provider) { api.embeddings(request) }
     }
 
-    override suspend fun uploadFile(file: File): LLMResponse.UploadFile =
-        apiFor(currentProvider()).uploadFile(file)
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile {
+        val provider = currentProvider()
+        val api = apiFor(provider)
+        return withProviderCall(hookBudget, provider) { api.uploadFile(file) }
+    }
 
     override suspend fun downloadFile(fileId: String): String? =
         apiFor(currentProvider()).downloadFile(fileId)

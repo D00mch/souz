@@ -38,6 +38,7 @@ import ru.souz.backend.hooks.HookDefinition
 import ru.souz.backend.hooks.HookLlmBudget
 import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.hooks.LoadedHook
+import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.backend.llm.quota.QuotaExceededException
 import ru.souz.backend.storage.postgres.PostgresDataSourceFactory
@@ -291,15 +292,16 @@ class BackendExecutionLlmChatApiTest {
 
     @Test
     fun `hook provider calls hold capacity without charging rejected calls and release it on cancellation`() = runTest {
-        for (kind in listOf("chat", "stream", "embeddings")) {
+        for (kind in listOf("chat", "stream", "embeddings", "upload")) {
             PostgresDataSourceFactory.create(postgresAppConfig(newPostgresSchema("provider_permit")).postgres).use { db ->
                 PostgresUserRepository(db).ensureUser("user-a")
-                val store = HookStore(db, HookConfig())
+                val store = HookStore(db, HookConfig(llmCallsPerEvent = 2))
                 val hook = LoadedHook(HookDefinition(1, "permit-test", "user-a", auth = HookAuth("bearer", "a".repeat(64)), prompt = "Test"))
                 val receiptId = store.accept(hook, "{}", null).receiptId
                 store.update(receiptId, "running")
                 val receipt = requireNotNull(store.find("user-a", receiptId))
                 val quotas = ExecutionQuotaManager(BackendLlmLimits(globalProviderConcurrency = 1))
+                val model = if (kind == "upload") LLMModel.AnthropicSonnet45 else LLMModel.OpenAIGpt52
                 val entered = CompletableDeferred<Unit>()
                 suspend fun holdPermit() {
                     if (entered.complete(Unit)) awaitCancellation()
@@ -308,9 +310,14 @@ class BackendExecutionLlmChatApiTest {
                     message = { body -> holdPermit(); ok(body.model, usage(1, 1, 2, 0)) },
                     stream = { body -> flow { emit(ok(body.model, usage(1, 1, 2, 0))); holdPermit() } },
                     embeddings = { body -> holdPermit(); LLMResponse.Embeddings.Ok(emptyList(), body.model, "list") },
+                    upload = { file ->
+                        holdPermit()
+                        LLMResponse.UploadFile(0, 0, file.name, "uploaded-image", "file", "vision", "private")
+                    },
                 )
                 facadeFixture(
-                    providerApiOverride = { provider },
+                    settingsProvider = LlmSettingsStub().apply { gigaModel = model },
+                    providerApiOverride = { assertEquals(model.provider, it); provider },
                     hookBudget = HookLlmBudget(receipt, store, quotas),
                 ).use { fixture ->
                     suspend fun call() {
@@ -318,13 +325,14 @@ class BackendExecutionLlmChatApiTest {
                         when (kind) {
                             "chat" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.message(request))
                             "stream" -> assertIs<LLMResponse.Chat.Ok>(fixture.api.messageStream(request).toList().single())
-                            else -> assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.name)))
+                            "embeddings" -> assertIs<LLMResponse.Embeddings.Ok>(fixture.api.embeddings(embeddings(EmbeddingsModel.OpenAITextEmbedding3Small.name)))
+                            "upload" -> assertEquals("uploaded-image", fixture.api.uploadFile(File("image.png")).id)
                         }
                     }
                     val running = async { call() }
                     try {
                         entered.await()
-                        assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(LlmProvider.OPENAI) {} }
+                        assertFailsWith<QuotaExceededException> { quotas.withProviderPermit(model.provider) {} }
                         assertEquals("global_provider_concurrency_exceeded", assertFailsWith<QuotaExceededException> {
                             call()
                         }.code)
@@ -334,6 +342,7 @@ class BackendExecutionLlmChatApiTest {
                     }
                     call()
                     assertEquals(2, store.find("user-a", receiptId)?.llmCalls)
+                    assertEquals("hook_execution_llm_limit", assertFailsWith<BackendV1Exception> { call() }.code)
                 }
             }
         }
@@ -465,6 +474,7 @@ private class StubChatApi(
     private val embeddings: suspend (LLMRequest.Embeddings) -> LLMResponse.Embeddings = {
         LLMResponse.Embeddings.Ok(emptyList(), it.model, "list")
     },
+    private val upload: suspend (File) -> LLMResponse.UploadFile = { error("not used") },
 ) : LLMChatAPI {
     override suspend fun message(body: LLMRequest.Chat): LLMResponse.Chat = message.invoke(body)
 
@@ -473,7 +483,7 @@ private class StubChatApi(
     override suspend fun embeddings(body: LLMRequest.Embeddings): LLMResponse.Embeddings =
         embeddings.invoke(body)
 
-    override suspend fun uploadFile(file: File): LLMResponse.UploadFile = error("not used")
+    override suspend fun uploadFile(file: File): LLMResponse.UploadFile = upload(file)
 
     override suspend fun downloadFile(fileId: String): String = error("not used")
 
