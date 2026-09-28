@@ -137,6 +137,7 @@ internal class NodesMemory(
             assistantMessageId = meta.attributes["assistantMessageId"],
             userMessage = ctx.history[userMessageIndex].content,
             evidence = evidenceFrom(evidenceMessages),
+            timeZone = meta.timeZone,
         )
     }
 
@@ -211,6 +212,7 @@ internal class NodesMemory(
         val assistantMessageId: String?,
         val userMessage: String,
         val evidence: List<CompletedTurnEvidence>,
+        val timeZone: String?,
     ) {
         fun toInput(assistantMessage: String): CompletedTurnMemoryInput = CompletedTurnMemoryInput(
             context = context,
@@ -220,6 +222,7 @@ internal class NodesMemory(
             userMessage = userMessage,
             assistantMessage = assistantMessage,
             evidence = evidence,
+            timeZone = timeZone,
         )
     }
 

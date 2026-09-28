@@ -279,6 +279,7 @@ fun backendDiModule(
                 httpClient = instance<ProviderHttpClients>().standard,
                 baseUrl = hindsightUrl,
                 apiToken = appConfig.hindsightApiToken,
+                clock = instance(),
             )
         } else {
             NoopConversationMemoryRuntime

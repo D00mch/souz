@@ -7,10 +7,12 @@ import java.time.Clock
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.ChatMessage
+import ru.souz.backend.execution.model.EXECUTION_METADATA_TIME_ZONE
 import ru.souz.backend.memory.hindsight.HistoryMemoryDocument
 import ru.souz.backend.memory.hindsight.HistoryMemoryFragment
 import ru.souz.backend.memory.hindsight.HistoryMemorySource
 import ru.souz.backend.memory.hindsight.historyMemoryDocuments
+import ru.souz.backend.memory.hindsight.memoryTimestamp
 
 internal class PostgresHistoryMemoryRepository(
     private val dataSource: DataSource,
@@ -73,7 +75,9 @@ internal class PostgresHistoryMemoryRepository(
                 """
                 select m.*, m.seq >= f.first_seq as current_source, (select u.content from messages u
                   where u.user_id = m.user_id and u.chat_id = m.chat_id and u.role = 'user' and u.seq <= m.seq
-                  order by u.seq desc limit 1) as user_intent
+                  order by u.seq desc limit 1) as user_intent, (select e.metadata ->> '$EXECUTION_METADATA_TIME_ZONE'
+                  from agent_executions e where e.user_id = f.user_id and e.chat_id = f.chat_id
+                  order by e.started_at desc limit 1) as time_zone
                 from history_memory_fragments f join messages m on m.user_id = f.user_id and m.chat_id = f.chat_id
                 where f.id = ? and m.id = any(f.source_ids || array(
                   select unnest(source_ids) from history_memory_fragments
@@ -88,8 +92,8 @@ internal class PostgresHistoryMemoryRepository(
                     while (rows.next()) {
                         val target = if (rows.getBoolean("current_source")) sources else preceding
                         target += HistoryMemorySource(
-                            rows.getString("id"), rows.getLong("seq"), rows.getString("role"),
-                            rows.getString("content"), rows.instant("created_at").toString(), rows.getString("user_intent"),
+                            rows.getString("id"), rows.getLong("seq"), rows.getString("role"), rows.getString("content"),
+                            memoryTimestamp(rows.instant("created_at"), rows.getString("time_zone")), rows.getString("user_intent"),
                         )
                     }
                     historyMemoryDocuments(fragment.id, sources, preceding)

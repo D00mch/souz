@@ -1,6 +1,10 @@
 package ru.souz.backend.memory.hindsight
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import ru.souz.memory.ExplicitMemoryIntent
 import ru.souz.memory.MemorySanitizer
@@ -77,6 +81,12 @@ private fun HistoryMemorySource.records(contextOnly: Boolean = false): List<Hist
     return dialogueMemoryRecords(cleanDialogueText(text), linkedMapOf(
         "role" to role, "source" to id, "seq" to seq, "timestamp" to timestamp,
     ), contextOnly).map { HistoryMemoryRecord(id, timestamp, "$it\n") }
+}
+
+/** ISO-8601 time with the offset of [timeZone]; a missing or unknown zone yields UTC. */
+internal fun memoryTimestamp(instant: Instant, timeZone: String?): String {
+    val zone = timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneOffset.UTC
+    return instant.atZone(zone).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
 }
 
 internal fun cleanDialogueText(text: String): String =

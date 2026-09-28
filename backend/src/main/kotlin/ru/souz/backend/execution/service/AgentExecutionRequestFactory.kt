@@ -6,6 +6,7 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
+import ru.souz.backend.execution.model.EXECUTION_METADATA_TIME_ZONE
 import ru.souz.backend.http.BackendV1Exception
 import ru.souz.backend.options.model.Option
 import ru.souz.backend.settings.model.EffectiveUserSettings
@@ -249,7 +250,7 @@ private const val METADATA_REASONING_EFFORT = "reasoningEffort"
 private const val METADATA_CONTEXT_SIZE = "contextSize"
 private const val METADATA_TEMPERATURE = "temperature"
 private const val METADATA_LOCALE = "locale"
-private const val METADATA_TIME_ZONE = "timeZone"
+private const val METADATA_TIME_ZONE = EXECUTION_METADATA_TIME_ZONE
 private const val METADATA_SYSTEM_PROMPT = "systemPrompt"
 private const val METADATA_STREAMING_MESSAGES = "streamingMessages"
 private const val METADATA_SHOW_TOOL_EVENTS = "showToolEvents"

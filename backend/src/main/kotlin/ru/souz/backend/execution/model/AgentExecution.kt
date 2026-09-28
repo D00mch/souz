@@ -5,6 +5,9 @@ import java.util.UUID
 import ru.souz.llms.LLMModel
 import ru.souz.llms.LlmProvider
 
+/** [AgentExecution.metadata] key holding the run's effective IANA time zone. */
+internal const val EXECUTION_METADATA_TIME_ZONE = "timeZone"
+
 data class AgentExecutionUsage(
     val promptTokens: Int,
     val completionTokens: Int,
