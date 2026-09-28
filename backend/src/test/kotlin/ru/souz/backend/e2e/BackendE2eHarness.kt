@@ -87,6 +87,7 @@ internal fun messageFrame(
     threadId: String? = null,
     text: String = "execute this",
     deviceId: String = "history-device",
+    timeZone: String = "Europe/Moscow",
 ): String =
     """
     {
@@ -109,7 +110,7 @@ internal fun messageFrame(
         "meta": {
           "model": "${E2E_LOCAL_MODEL.alias}",
           "locale": "ru-RU",
-          "timeZone": "Europe/Moscow"
+          "timeZone": "$timeZone"
         }
       }
     }

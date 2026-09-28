@@ -17,6 +17,7 @@ import io.ktor.websocket.Frame
 import java.io.IOException
 import java.time.Clock
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
@@ -169,6 +170,41 @@ class BackendHistoryMemoryE2eTest {
                     offset += part.length
                 }
                 assertEquals(expected.trim(), parts.joinToString("") { it["text"].asText() })
+            }
+        }
+    }
+
+    @Test
+    fun `memory timestamps preserve receipt times in the latest conversation zone`() {
+        backendE2eTest("memory_time_zone", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            val owner = UUID.randomUUID().toString()
+            val chat = createPublicChat(owner)
+            withPublicSocket(chat) { socket ->
+                for (zone in listOf(null, "Europe/Moscow", "America/New_York")) {
+                    if (zone != null) {
+                        val before = hindsight.items.size
+                        socket.send(Frame.Text(messageFrame(chat, owner, "turn-$zone", timeZone = zone)))
+                        assertEquals("accepted", readJson(socket)["status"].asText())
+                        assertEquals("thread.status", readJson(socket)["type"].asText())
+                        assertEquals("thread.completed", readJson(socket)["type"].asText())
+                        val turn = eventually("completed-turn timestamp") { hindsight.items.getOrNull(before) }
+                        assertEquals(clock.instant().atZone(ZoneId.of(zone)).toOffsetDateTime(),
+                            OffsetDateTime.parse(turn.item["timestamp"].asText()))
+                    }
+                    appendHistory(socket, chat, "history-$zone", "user", "My flight is tomorrow")
+                    val stored = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(owner) }.jsonBody()["items"]
+                        .associate { it["id"].asText() to Instant.parse(it["createdAt"].asText()) }
+                    clock.advance(31)
+                    assertTrue(backend.captureHistoryMemory())
+                    val item = hindsight.historyItems.last().item
+                    val records = item["content"].asText().lines().filter { it.startsWith("{") }.map { json.readTree(it) }
+                    for (record in records) {
+                        val timestamp = OffsetDateTime.parse(record["timestamp"].asText())
+                        assertEquals(stored[record["source"].asText()], timestamp.toInstant())
+                        assertEquals(ZoneId.of(zone ?: "UTC").rules.getOffset(timestamp.toInstant()), timestamp.offset)
+                    }
+                    assertEquals(records.last()["timestamp"], item["timestamp"])
+                }
             }
         }
     }
@@ -401,7 +437,7 @@ class BackendHistoryMemoryE2eTest {
     }
 }
 
-private val COMPLETED_TURN_FIELDS = setOf("content", "tags", "document_id")
+private val COMPLETED_TURN_FIELDS = setOf("content", "timestamp", "tags", "document_id")
 private val HISTORY_FIELDS = setOf("content", "timestamp", "document_id", "tags", "observation_scopes", "metadata")
 
 private fun JsonNode.fieldSet(): Set<String> = fieldNames().asSequence().toSet()

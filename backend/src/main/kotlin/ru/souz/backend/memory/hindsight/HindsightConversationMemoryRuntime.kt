@@ -14,6 +14,7 @@ import io.ktor.http.contentType
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import java.io.IOException
+import java.time.Clock
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -41,6 +42,7 @@ class HindsightConversationMemoryRuntime(
     private val httpClient: HttpClient,
     baseUrl: String,
     private val apiToken: String? = null,
+    private val clock: Clock = Clock.systemUTC(),
 ) : ConversationMemoryRuntime {
     private val baseUrl = baseUrl.trimEnd('/')
     private val logger = LoggerFactory.getLogger(HindsightConversationMemoryRuntime::class.java)
@@ -116,6 +118,7 @@ class HindsightConversationMemoryRuntime(
                 ).joinToString("\n").takeIf(String::isNotBlank) ?: return
             val item = buildMap<String, Any> {
                 put("content", content)
+                put("timestamp", memoryTimestamp(clock.instant(), input.timeZone))
                 put("tags", tags)
                 input.userMessageId?.let { put("document_id", "souz-turn-$it") }
             }

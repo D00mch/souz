@@ -75,7 +75,7 @@ internal class NodesMemory(
         ): AgentContext<String> {
             val draft = if (memoryRuntime === NoopConversationMemoryRuntime) null else snapshotCompletedTurn(ctx)
             val finalizedContext = summarization.execute(ctx, runtime)
-            draft?.let { scheduleCapture(it.toInput(finalizedContext.input)) }
+            draft?.let { scheduleCapture(it.copy(assistantMessage = finalizedContext.input)) }
             return finalizedContext
         }
     }
@@ -110,7 +110,7 @@ internal class NodesMemory(
         return renderedBlock
     }
 
-    private fun snapshotCompletedTurn(ctx: AgentContext<LLMResponse.Chat.Ok>): CompletedTurnDraft? {
+    private fun snapshotCompletedTurn(ctx: AgentContext<LLMResponse.Chat.Ok>): CompletedTurnMemoryInput? {
         val userMessageIndex = ctx.history.indexOfLast { it.role == LLMMessageRole.user }
         if (userMessageIndex < 0) {
             logger.warn("Memory capture skipped because the completed turn has no user message")
@@ -130,13 +130,15 @@ internal class NodesMemory(
         }
         val meta = ctx.toolInvocationMeta
 
-        return CompletedTurnDraft(
+        return CompletedTurnMemoryInput(
             context = meta.toMemoryContext(),
             conversationId = meta.conversationId,
             userMessageId = meta.attributes["userMessageId"] ?: meta.requestId,
             assistantMessageId = meta.attributes["assistantMessageId"],
             userMessage = ctx.history[userMessageIndex].content,
+            assistantMessage = "",
             evidence = evidenceFrom(evidenceMessages),
+            timeZone = meta.timeZone,
         )
     }
 
@@ -202,25 +204,6 @@ internal class NodesMemory(
         val head = keep / 2
         val tail = keep - head
         return take(head) + marker + takeLast(tail)
-    }
-
-    private data class CompletedTurnDraft(
-        val context: MemoryContext,
-        val conversationId: String?,
-        val userMessageId: String?,
-        val assistantMessageId: String?,
-        val userMessage: String,
-        val evidence: List<CompletedTurnEvidence>,
-    ) {
-        fun toInput(assistantMessage: String): CompletedTurnMemoryInput = CompletedTurnMemoryInput(
-            context = context,
-            conversationId = conversationId,
-            userMessageId = userMessageId,
-            assistantMessageId = assistantMessageId,
-            userMessage = userMessage,
-            assistantMessage = assistantMessage,
-            evidence = evidence,
-        )
     }
 
     private companion object {
