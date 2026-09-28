@@ -1,5 +1,7 @@
 package ru.souz.backend.memory.hindsight
 
+import java.time.Clock
+import java.time.Duration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
@@ -13,6 +15,7 @@ import ru.souz.backend.storage.postgres.PostgresHistoryMemoryRepository
 internal class HistoryMemoryWorker(
     private val repository: PostgresHistoryMemoryRepository,
     private val memory: HindsightConversationMemoryRuntime,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val logger = LoggerFactory.getLogger(HistoryMemoryWorker::class.java)
 
@@ -52,10 +55,20 @@ internal class HistoryMemoryWorker(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            repository.retry(fragment)
-            logger.warn("History memory retry chatId={} fragmentId={} attempt={} category={}",
-                fragment.chatId, fragment.id, fragment.attempts,
-                if (error is HindsightHttpFailure) "http_${error.statusCode}" else error.javaClass.simpleName)
+            val permanent = error is HindsightRetainRejected ||
+                (error is HindsightHttpFailure && error.statusCode in 400..499 && error.statusCode !in listOf(408, 429))
+            val exhausted = if (permanent) fragment.attempts >= 12
+                else !clock.instant().isBefore(fragment.createdAt.plus(Duration.ofHours(24)))
+            val updated = if (exhausted) repository.complete(fragment, failed = true) else repository.retry(fragment)
+            val category = if (error is HindsightHttpFailure) "http_${error.statusCode}" else error.javaClass.simpleName
+            when {
+                !updated -> logger.warn("History memory lease lost chatId={} fragmentId={} attempt={} category={}",
+                    fragment.chatId, fragment.id, fragment.attempts, category)
+                exhausted -> logger.error("History memory failed chatId={} fragmentId={} attempts={} reason={} category={}",
+                    fragment.chatId, fragment.id, fragment.attempts, if (permanent) "attempts" else "time budget", category)
+                else -> logger.warn("History memory retry chatId={} fragmentId={} attempt={} category={}",
+                    fragment.chatId, fragment.id, fragment.attempts, category)
+            }
         }
         return true
     }
