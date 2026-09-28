@@ -21,6 +21,8 @@ After the first accepted `message.submit` ack, copy `thread.id` into the `thread
 
 Use the required, non-null `payload.deviceId` and `payload.deviceType` to identify the destination device for `assistant.message`, `thread.completed`, forwarded `message.created`, and `tool.call.started` named `user.ask`, including cross-channel questions. Replayed events retain their original device values. Other tool calls have an optional, nullable `deviceId` and no `deviceType`; see [destination device](../README.md#destination-device).
 
+Before forwarding a message or asking a cross-channel question, the target chat must have accepted a `message.submit`. Creation and subscription alone are insufficient; missing device context fails the caller's operation without a target event. The latest newly accepted submit supplies the destination device, retained after thread completion and reconnects.
+
 Expected live sequence:
 
 On the submitting connection, zero or more `assistant.message` events may appear after the originating ACK and before tool events. Each contains one complete text block in `payload.content`, with `seq:null`. Send no reply, keep waiting for the terminal event, and exclude these live-only messages from replay cursors. Slow subscribers may miss stale progress.

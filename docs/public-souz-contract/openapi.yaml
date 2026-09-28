@@ -269,7 +269,7 @@ components:
         requestId:
           $ref: "#/components/schemas/NonEmptyString"
     MessageSubmit:
-      description: Submits user input and selects, continues, or creates an execution thread. An accepted submit (including a retry) automatically restores live-only delivery if unsubscribed; a rejection does not subscribe.
+      description: Submits user input and selects, continues, or creates an execution thread. A newly accepted submit establishes or replaces the chat's retained destination device context for forwarded messages and cross-channel user.ask; rejected submits and idempotent retries do not replace it. An accepted submit (including a retry) automatically restores live-only delivery if unsubscribed; a rejection does not subscribe.
       type: object
       additionalProperties: false
       required: [kind, chatId, requestId, payload]
@@ -971,7 +971,13 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     ToolCallStartedPayload:
-      description: For user.ask, deviceId and deviceType are required and identify the destination device, including cross-channel calls. Other calls have only an optional, nullable deviceId.
+      description: >-
+        For user.ask, deviceId and deviceType are required and identify the destination device.
+        Cross-channel user.ask captures the device from the target chat's most recently accepted
+        new message.submit; this context survives thread completion and reconnects. Creation and
+        subscription alone do not establish it. If unavailable, return client_context_missing to
+        the calling tool without creating a pending question or target event.
+        Other calls have only an optional, nullable deviceId and retain their existing eligibility rules.
       type: object
       additionalProperties: false
       required: [toolCallId, name, arguments]
@@ -1096,6 +1102,11 @@ components:
         Out-of-band push into this chat's history that did not originate from a thread this client
         started (e.g. a message forwarded here from another of the user's channels). threadId is
         null in that case; ordinary in-thread messages are not delivered on this stream.
+        The destination device is captured from the target chat's most recently accepted new
+        message.submit, with context retained after thread completion and reconnects. Creation
+        and subscription alone do not establish it. If unavailable, the forwarding tool returns
+        success:false with a reason explaining that destination device context is unavailable;
+        no target message or event is created.
       type: object
       additionalProperties: false
       required: [kind, seq, type, chatId, threadId, payload, createdAt]

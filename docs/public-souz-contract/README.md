@@ -31,7 +31,8 @@ With `HINDSIGHT_API_URL` configured and `SOUZ_FEATURE_WS_AUTOMATIC_MEMORY_RECALL
 Every public `tool.call.started` requests client execution and omits `target`. Return `tool.result`, respecting `deadlineAt` when present. The example covers `user.ask`, `device.media.open` and `web.search`; argument/result shapes are documented in the schemas and trace.
 
 Cross-channel client Skills accept `channelId` from `ListActiveChannels`. The target must be an owned,
-unarchived device channel with a live subscription on the caller's backend process. Souz removes
+unarchived device channel with a live subscription on the caller's backend process. Cross-channel
+`user.ask` also requires the [destination device context](#destination-device) described below. Souz removes
 `channelId` from the device arguments. These `tool.call.started` events have `seq:null` and are never
 replayed. Their `threadId` is a correlation UUID, not a persisted target thread: echo it in `tool.result`,
 but do not query or cancel it as a thread. The target can run its own thread concurrently.
@@ -51,7 +52,17 @@ Active-thread submit/tool/cancel operations must reach the runtime owner in mult
 
 ## Destination device
 
-`assistant.message`, `thread.completed`, `message.created`, and `tool.call.started` with `payload.name:"user.ask"` require non-null `payload.deviceId` and `payload.deviceType`. `deviceId` is a nonblank string; `deviceType` is one of `tv_box`, `smart_speaker`, `smartphone`, or `unknown`. The pair identifies the device that should receive the user-facing content or question. For forwarded messages and cross-channel `user.ask` calls, it identifies the destination device.
+`assistant.message`, `thread.completed`, `message.created`, and `tool.call.started` with `payload.name:"user.ask"` require non-null `payload.deviceId` and `payload.deviceType`. `deviceId` is a nonblank string; `deviceType` is one of `tv_box`, `smart_speaker`, `smartphone`, or `unknown`. The pair identifies the device that should receive the user-facing content or question.
+
+For forwarded `message.created` and cross-channel `user.ask`, the destination is the device from the target chat's most recently accepted new `message.submit`, captured when the event is created. This context is retained after thread completion and reconnects. Rejected submissions and idempotent retries do not replace it. Chat creation, subscription and `history.append` do not establish device context; a chat that has never accepted a submit is ineligible for these operations, even when listed by `ListActiveChannels` or subscribed.
+
+If the target has no device context, fail the originating operation before creating a target message, pending question or event. Cross-channel `user.ask` returns `client_context_missing` to its caller; message forwarding returns `success:false` with a `reason` explaining that destination device context is unavailable. These are caller-side tool results, not frames sent to the target socket. Do not substitute the source device or a fabricated ID. Other cross-channel tools retain their existing eligibility rules.
+
+| Target chat state | Forwarded message or cross-channel `user.ask` |
+| --- | --- |
+| Created and subscribed, no accepted submit | Fail without a target message or event. |
+| Accepted a submit from device A; its thread has finished | Use device A, subject to the operation's other delivery requirements. |
+| Later accepted a new submit from device B | Use device B for new events; replay preserves device A on earlier events. |
 
 Durable replay preserves the event's original device values. Other tool calls retain an optional, nullable `payload.deviceId` and have no `deviceType` field.
 
