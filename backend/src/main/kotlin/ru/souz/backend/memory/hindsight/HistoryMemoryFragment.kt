@@ -82,7 +82,7 @@ private fun HistoryMemorySource.records(contextOnly: Boolean = false): List<Hist
 internal fun cleanDialogueText(text: String): String =
     MemorySanitizer.redact(reasoningBlocks.replace(text, "")).trim()
 
-/** Each serialized record fits below Hindsight's structured chunk limit, including JSON escaping. */
+/** Each serialized record, including JSON escaping, fits in one bounded memory document. */
 internal fun dialogueMemoryRecords(
     text: String,
     fields: Map<String, Any>,

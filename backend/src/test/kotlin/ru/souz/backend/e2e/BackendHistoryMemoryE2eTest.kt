@@ -11,7 +11,6 @@ import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.websocket.Frame
@@ -21,7 +20,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,7 +35,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
-import ru.souz.backend.memory.hindsight.DIALOGUE_MEMORY_STRATEGY
 import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_CHARS
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
@@ -152,10 +149,12 @@ class BackendHistoryMemoryE2eTest {
             assertEquals(HttpStatusCode.OK, submitted.status)
             val retained = eventually("oversized completed turn") { hindsight.items.singleOrNull() }
             assertEquals(owner, retained.bank)
+            assertEquals(COMPLETED_TURN_FIELDS, retained.item.fieldSet())
+            assertEquals(listOf("/v1/default/banks/$owner/memories"), hindsight.paths)
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             assertTrue(retained.item["document_id"].asText().startsWith("souz-turn-"))
             val records = retained.item["content"].asText().lines().map {
-                assertTrue(it.length + 2 <= HISTORY_MEMORY_MAX_CHARS, "Serialized record must fit in one Hindsight chunk")
+                assertTrue(it.length + 2 <= HISTORY_MEMORY_MAX_CHARS, "Serialized record must fit in one memory document")
                 json.readTree(it)
             }
             assertEquals(listOf("user", "assistant"), records.map { it["role"].asText() }.distinct())
@@ -235,6 +234,7 @@ class BackendHistoryMemoryE2eTest {
             }
             val retained = hindsight.historyItems.single()
             assertEquals(owner, retained.bank)
+            assertEquals(HISTORY_FIELDS, retained.item.fieldSet())
             assertEquals(listOf("chat:$chat"), retained.item["tags"].map(JsonNode::asText))
             val content = retained.item["content"].asText()
             assertTrue(content.indexOf("Recommend a train trip") < content.indexOf("I propose Kazan"))
@@ -264,16 +264,14 @@ class BackendHistoryMemoryE2eTest {
                 it.role == LLMMessageRole.function && it.content.contains("tool-sentinel")
             })
             assertEquals(2, hindsight.historyItems.size)
-            assertEquals(1, hindsight.configPatches.size)
-            assertEquals("unrelated", hindsight.configs.values.single()["retain_default_strategy"].asText())
+            assertTrue(hindsight.paths.all { it == "/v1/default/banks/$owner/memories" })
             assertTrue(hindsight.recalls.isEmpty())
         }
     }
 
     @Test
-    fun `configuration failure and lost retain response recover after restart with frozen documents`() {
+    fun `lost retain response recovers after restart with frozen documents`() {
         val schema = newPostgresSchema("history_memory_restart")
-        hindsight.applyStrategy = false
         hindsight.failAfterRetain = true
         var chat = ""
         backendE2eTest("restart_first", schema = schema, hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
@@ -281,16 +279,12 @@ class BackendHistoryMemoryE2eTest {
             withPublicSocket(chat) { appendHistory(it, chat, "one", "user", "I prefer quiet trains") }
             clock.advance(31)
             assertTrue(backend.captureHistoryMemory())
-            assertTrue(hindsight.items.isEmpty())
-            hindsight.applyStrategy = true
-            clock.advance(6)
-            assertTrue(backend.captureHistoryMemory())
-            assertTrue(hindsight.configs.values.single()["retain_strategies"].has("unrelated"))
+            assertEquals(1, hindsight.items.size)
             assertFalse(backend.captureHistoryMemory())
         }
         val original = hindsight.items.single()
         hindsight.failAfterRetain = false
-        clock.advance(11)
+        clock.advance(6)
         backendE2eTest("restart_second", schema = schema, hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
             withPublicSocket(chat) { appendHistory(it, chat, "two", "assistant", "I suggest a sleeper train") }
             assertTrue(backend.captureHistoryMemory())
@@ -407,7 +401,13 @@ class BackendHistoryMemoryE2eTest {
     }
 }
 
+private val COMPLETED_TURN_FIELDS = setOf("content", "tags", "document_id")
+private val HISTORY_FIELDS = setOf("content", "timestamp", "document_id", "tags", "observation_scopes", "metadata")
+
+private fun JsonNode.fieldSet(): Set<String> = fieldNames().asSequence().toSet()
+
 private fun assertCompletedDialogue(item: JsonNode, user: String, assistant: String) {
+    assertEquals(COMPLETED_TURN_FIELDS, item.fieldSet())
     val records = item["content"].asText().lines().map { jacksonObjectMapper().readTree(it) }
     assertEquals(listOf("user" to user, "assistant" to assistant), records.map { it["role"].asText() to it["text"].asText() })
 }
@@ -436,10 +436,8 @@ private class HistoryHindsightStub {
     data class Item(val bank: String, val item: JsonNode)
     val items = CopyOnWriteArrayList<Item>()
     val recalls = CopyOnWriteArrayList<String>()
+    val paths = CopyOnWriteArrayList<String>()
     val historyItems get() = items.filter { it.item.path("metadata").path("source").asText() == "souz-history" }
-    val configs = ConcurrentHashMap<String, JsonNode>()
-    val configPatches = CopyOnWriteArrayList<JsonNode>()
-    var applyStrategy = true
     var failAfterRetain = false
     var recalledText: String? = null
     var gate: CompletableDeferred<Unit>? = null
@@ -449,37 +447,23 @@ private class HistoryHindsightStub {
         val mapper = jacksonObjectMapper()
         val client = HttpClient(MockEngine { request ->
             val path = request.url.encodedPath
+            paths += path
             val bank = path.substringAfter("/banks/").substringBefore('/')
             val body = when {
-                path.endsWith("/config") -> {
-                    configs.putIfAbsent(bank, mapper.readTree("""{"retain_default_strategy":"unrelated","retain_strategies":{"unrelated":{"retain_extraction_mode":"verbose"}}}"""))
-                    if (request.method == HttpMethod.Patch) {
-                        val updates = mapper.readTree(request.body.toByteArray())["updates"]
-                        configPatches.add(updates)
-                        assertEquals(listOf("retain_strategies"), updates.fieldNames().asSequence().toList())
-                        val strategy = updates["retain_strategies"][DIALOGUE_MEMORY_STRATEGY]
-                        assertEquals("custom", strategy["retain_extraction_mode"].asText())
-                        assertTrue(strategy["retain_custom_instructions"].asText().isNotBlank())
-                        if (applyStrategy) (configs.getValue(bank) as ObjectNode).setAll<JsonNode>(updates as ObjectNode)
-                    }
-                    mapper.createObjectNode().set<JsonNode>("config", configs[bank]).toString()
-                }
                 path.endsWith("/recall") -> {
                     recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
                     mapper.writeValueAsString(mapOf(
                         "results" to listOfNotNull(recalledText?.let { mapOf("id" to "stored-fact", "text" to it) }),
                     ))
                 }
-                else -> {
-                    val item = mapper.readTree(request.body.toByteArray())["items"].single()
-                    assertEquals(DIALOGUE_MEMORY_STRATEGY, item["strategy"]?.asText())
-                    assertNotNull(configs.getValue(bank)["retain_strategies"][DIALOGUE_MEMORY_STRATEGY])
-                    items += Item(bank, item)
+                path.endsWith("/memories") -> {
+                    items += Item(bank, mapper.readTree(request.body.toByteArray())["items"].single())
                     started.complete(Unit)
                     gate?.await()
                     if (failAfterRetain) throw IOException("simulated lost response")
                     """{"success":true,"async":false}"""
                 }
+                else -> error("Unexpected Hindsight request ${request.method.value} $path")
             }
             respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
