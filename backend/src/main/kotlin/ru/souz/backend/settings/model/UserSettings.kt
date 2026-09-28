@@ -33,6 +33,7 @@ data class UserSettings(
     val enabledTools: Set<String>? = null,
     val showToolEvents: Boolean? = null,
     val streamingMessages: Boolean? = null,
+    val narrateSteps: Boolean? = null,
     val interfaceLanguage: String? = null,
     val requestTimeoutMillis: Long? = null,
     val useFewShotExamples: Boolean? = null,
@@ -44,6 +45,6 @@ data class UserSettings(
     val updatedAt: Instant = createdAt,
 ) {
     companion object {
-        const val CURRENT_SCHEMA_VERSION: Int = 3
+        const val CURRENT_SCHEMA_VERSION: Int = 4
     }
 }

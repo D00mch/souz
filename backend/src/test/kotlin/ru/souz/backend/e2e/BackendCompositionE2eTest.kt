@@ -49,12 +49,16 @@ class BackendCompositionE2eTest {
     @Test
     fun `settings and provider keys go through production services and encrypted Postgres`() =
         backendE2eTest("e2e_settings_keys") {
+            assertFalse(client.get(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user")
+            }.jsonBody()["settings"]["narrateSteps"].asBoolean())
             val patch = client.patch(BackendHttpRoutes.SETTINGS) {
                 trusted("settings-user")
                 jsonBody(
                     """
                     {
                       "defaultModel": "${E2E_LOCAL_MODEL.alias}",
+                      "narrateSteps": true,
                       "locale": "iw-IL",
                       "timeZone": "Europe/Amsterdam",
                       "streamingMessages": true,
@@ -75,6 +79,17 @@ class BackendCompositionE2eTest {
             val settings = patch.jsonBody()["settings"]
             assertEquals(E2E_LOCAL_MODEL.alias, settings["defaultModel"].asText())
             assertEquals("he-IL", settings["locale"].asText())
+            assertTrue(settings["narrateSteps"].asBoolean())
+            val preserved = client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user"); jsonBody("""{"temperature":0.4}""")
+            }.jsonBody()["settings"]
+            assertTrue(preserved["narrateSteps"].asBoolean())
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user"); jsonBody("""{"narrateSteps":false}""")
+            }
+            assertFalse(client.get(BackendHttpRoutes.SETTINGS) {
+                trusted("settings-user")
+            }.jsonBody()["settings"]["narrateSteps"].asBoolean())
             assertEquals("Europe/Amsterdam", settings["timeZone"].asText())
             assertEquals(HttpStatusCode.OK, putKey.status)
             assertEquals("qwen", putKey.jsonBody()["providerKey"]["provider"].asText())
@@ -261,6 +276,7 @@ class BackendCompositionE2eTest {
                       "timeZone": "Europe/Amsterdam",
                       "enabledTools": [],
                       "streamingMessages": true,
+                      "narrateSteps": true,
                       "interfaceLanguage": "en",
                       "requestTimeoutMillis": 45000,
                       "useFewShotExamples": false
@@ -280,6 +296,7 @@ class BackendCompositionE2eTest {
             assertEquals("he-IL", completed["currentSettings"]["locale"].asText())
             assertEquals("Europe/Amsterdam", completed["currentSettings"]["timeZone"].asText())
             assertEquals("en", completed["currentSettings"]["interfaceLanguage"].asText())
+            assertTrue(completed["currentSettings"]["narrateSteps"].asBoolean())
             assertEquals(45_000L, completed["currentSettings"]["requestTimeoutMillis"].asLong())
             assertFalse(completed["currentSettings"]["useFewShotExamples"].asBoolean())
         }

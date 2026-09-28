@@ -15,6 +15,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeout
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.backend.telegram.TelegramBotApi
@@ -27,6 +28,52 @@ import ru.souz.backend.telegram.TelegramUser
 import ru.souz.llms.LLMMessageRole
 
 class BackendTelegramE2eTest {
+    @Test
+    fun `Telegram progress is opt-in ordered and transient`() {
+        val api = FakeTelegramBotApi()
+        val delivered = CompletableDeferred<Unit>()
+        api.onSend = {
+            if (api.sentMessages.count { it.text == "Checking two" } == 2) delivered.complete(Unit)
+        }
+        backendE2eTest("telegram_progress", featureFlags = BackendFeatureFlags(wsEvents = true, telegramBot = true), telegramApi = api,
+            llm = E2eLlmApi { request ->
+                val enabled = request.conversationPrompt() == "enabled"
+                val system = request.messages.first().content
+                assertTrue("custom base" in system)
+                assertEquals(enabled, "Before every tool call" in system)
+                if (request.messages.last().role == LLMMessageRole.function) {
+                    if (enabled) delivered.await()
+                    reply(request, "Done")
+                } else toolCallReply(request, "GetSkillByName", mapOf("skillId" to "ListActiveChannels"),
+                    listOf("Checking one", "Checking two", "Checking two"))
+            },
+        ) {
+            val user = UUID.randomUUID().toString()
+            val chat = createPublicChat(user)
+            val secret = client.put(BackendHttpRoutes.chatTelegramBot(chat)) {
+                trusted(user); jsonBody("""{"token":"123456:progress-token"}""")
+            }.jsonBody()["pendingLinkCommand"].asText()
+            api.enqueue(update(1, 701, text = secret))
+            backend.pollTelegramOnce()
+            for ((index, enabled) in listOf(false, true).withIndex()) {
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(user)
+                    jsonBody("""{"defaultModel":"${E2E_LOCAL_MODEL.alias}","narrateSteps":$enabled,"locale":"en-US","systemPrompt":"custom base"}""")
+                }
+                api.sentMessages.clear()
+                val prompt = if (enabled) "enabled" else "disabled"
+                api.enqueue(update(index + 2L, 701, text = prompt))
+                withTimeout(20_000) { backend.pollTelegramOnce() }
+                assertEquals(if (enabled) listOf("Checking one", "Checking two", "Checking two", "Done") else listOf("Done"),
+                    api.sentMessages.map { it.text })
+            }
+            val messages = client.get(BackendHttpRoutes.chatMessages(chat)) { trusted(user) }.jsonBody()["items"]
+            assertEquals(listOf("disabled", "Done", "enabled", "Done"), messages.map { it["content"].asText() })
+            val events = client.get(BackendHttpRoutes.chatEvents(chat)) { trusted(user) }.jsonBody()["items"]
+            assertFalse(events.any { it["type"].asText() == "assistant.message" })
+        }
+    }
+
     @Test
     fun `telegram routes validate redact encrypt and enforce chat ownership`() =
         backendE2eTest(
@@ -408,6 +455,7 @@ private class FakeTelegramBotApi : TelegramBotApi {
     val requestedOffsets = CopyOnWriteArrayList<Long>()
     val sentMessages = CopyOnWriteArrayList<SentMessage>()
     val chatActions = CopyOnWriteArrayList<ChatAction>()
+    var onSend: suspend () -> Unit = {}
     private val updates = CopyOnWriteArrayList<TelegramUpdate>()
     private val failedSendTexts = CopyOnWriteArrayList<String>()
     private val nextGetUpdatesPause = AtomicReference<PausedTelegramPoll?>()
@@ -461,6 +509,7 @@ private class FakeTelegramBotApi : TelegramBotApi {
             error("Simulated Telegram send failure.")
         }
         sentMessages += SentMessage(chatId, text)
+        onSend()
     }
 
     override suspend fun sendChatAction(token: String, chatId: Long, action: String) {

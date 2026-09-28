@@ -63,6 +63,7 @@ internal class BackendAgentRuntimeEventSink(
     private val assistantMessageId: UUID? = null,
     private val toolCallPreviewer: ToolCallPreviewer = ToolCallPreviewer(),
     private val publicClientThread: Boolean = false,
+    private val narrateSteps: Boolean = false,
 ) : AgentRuntimeEventSink {
     private val emitMutex = Mutex()
     private val finalAssistantMessageId = assistantMessageId ?: UUID.randomUUID()
@@ -76,7 +77,7 @@ internal class BackendAgentRuntimeEventSink(
         when (event) {
             is AgentRuntimeEvent.MemoryPromptAugmented -> Unit
             is AgentRuntimeEvent.LlmMessageDelta -> onLlmMessageDelta(event)
-            is AgentRuntimeEvent.AssistantMessage -> if (publicClientThread) {
+            is AgentRuntimeEvent.AssistantMessage -> if (narrateSteps) {
                 publishLiveEvent(AgentEventType.ASSISTANT_MESSAGE, AssistantMessagePayload(event.content))
             }
             is AgentRuntimeEvent.ToolCallStarted -> onToolCallStarted(event)
