@@ -69,7 +69,6 @@ internal class ClientThreadRuntimeRegistry(
         var runtime: BackendConversationRuntime? = null,
         var latestDevice: ClientDevice,
         var pendingTool: PendingClientTool? = null,
-        val pendingAcks: MutableMap<String, CompletableDeferred<Unit>> = linkedMapOf(),
         var terminal: Boolean = false,
         val removed: CompletableDeferred<Unit> = CompletableDeferred(),
     )
@@ -111,17 +110,15 @@ internal class ClientThreadRuntimeRegistry(
         removed.await()
     }
 
-    suspend fun register(threadId: UUID, device: ClientDevice, requestId: String? = null) {
+    suspend fun register(threadId: UUID, device: ClientDevice) {
         mutex.withLock {
-            val state = states.getOrPut(threadId) { State(latestDevice = device) }
-            requestId?.let { state.pendingAcks.putIfAbsent(it, CompletableDeferred()) }
+            states.getOrPut(threadId) { State(latestDevice = device) }
         }
     }
 
     suspend fun discard(threadId: UUID) {
         val discarded = mutex.withLock { states.remove(threadId) } ?: return
         discarded.runtimeReady.complete(Unit)
-        discarded.pendingAcks.values.forEach { it.complete(Unit) }
         discarded.pendingTool?.result?.cancel()
         discarded.removed.complete(Unit)
     }
@@ -163,35 +160,30 @@ internal class ClientThreadRuntimeRegistry(
 
     suspend fun acceptInput(
         threadId: UUID,
-        requestId: String,
         device: ClientDevice,
         commit: suspend (afterSeq: Long) -> ClientRequestResult,
     ): ClientRequestResult? = mutex.withLock {
         val state = states[threadId]?.takeUnless { it.terminal } ?: return@withLock null
         val runtime = state.runtime ?: return@withLock null
-        val committed = runtime.commitActiveRunInput { afterSeq ->
+        runtime.commitActiveRunInput { afterSeq ->
             withContext(NonCancellable) {
                 commit(afterSeq).also { result ->
                     if (result is ClientRequestResult.Accepted) {
-                        state.pendingAcks[requestId] = CompletableDeferred()
                         state.latestDevice = device
                     }
                 }
             }
         }
-        committed
     }
 
     suspend fun commitCancellation(
         threadId: UUID,
-        requestId: String,
         commit: suspend (runtimeAvailable: Boolean) -> ClientRequestResult,
         afterAccepted: suspend (ClientRequestResult.Accepted) -> Unit,
     ): ClientRequestResult = mutex.withLock {
         val state = states[threadId]?.takeUnless { it.terminal || it.runtime == null }
         withContext(NonCancellable) { commit(state != null) }.also { result ->
             if (state != null && result is ClientRequestResult.Accepted) {
-                state.pendingAcks[requestId] = CompletableDeferred()
                 state.terminal = true
                 state.runtimeReady.complete(Unit)
                 withContext(NonCancellable) { afterAccepted(result) }
@@ -211,22 +203,6 @@ internal class ClientThreadRuntimeRegistry(
             }
             result
         }
-
-    suspend fun ackSent(threadId: UUID, requestId: String) {
-        val pending = mutex.withLock {
-            val state = states[threadId] ?: return@withLock null
-            state.pendingAcks.remove(requestId).also { removeIfTerminalAndIdle(threadId, state) }
-        }
-        pending?.complete(Unit)
-    }
-
-    suspend fun awaitAcceptedInputAcks(threadId: UUID) {
-        while (true) {
-            val pending = mutex.withLock { states[threadId]?.pendingAcks?.values?.toList() } ?: return
-            if (pending.isEmpty()) return
-            pending.forEach { it.await() }
-        }
-    }
 
     suspend fun beginTool(threadId: UUID, pending: PendingClientTool): BeginClientToolResult = mutex.withLock {
         val state = states[threadId]?.takeUnless { it.terminal }
@@ -258,7 +234,7 @@ internal class ClientThreadRuntimeRegistry(
     }
 
     private fun removeIfTerminalAndIdle(threadId: UUID, state: State) {
-        if (state.terminal && state.runtime == null && state.pendingTool == null && state.pendingAcks.isEmpty()) {
+        if (state.terminal && state.runtime == null && state.pendingTool == null) {
             states.remove(threadId)
             state.removed.complete(Unit)
         }

@@ -11,6 +11,10 @@ import org.kodein.di.bindSingleton
 import org.kodein.di.instance
 import org.kodein.di.instanceOrNull
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
+import ru.souz.backend.hooks.HookDefinitions
+import ru.souz.backend.hooks.HookService
+import ru.souz.backend.hooks.HookStore
+import ru.souz.backend.hooks.HookVerifier
 import ru.souz.backend.storage.postgres.PostgresConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.spi.AgentToolCatalog
@@ -218,6 +222,10 @@ fun backendDiModule(
         )
     }
     bindSingleton { ExecutionQuotaManager(appConfig.llmLimits) }
+    bindSingleton { HookStore(instance<HikariDataSource>(), appConfig.hooks) }
+    bindSingleton { HookDefinitions(instance(), appConfig.hooks) }
+    bindSingleton { HookVerifier(appConfig.hooks, instance()) }
+    bindSingleton { HookService(appConfig.hooks, instance(), instance(), instance(), instance(), instance(), instance()) }
     bindSingleton<ProviderCredentialResolver> {
         StoredProviderCredentialResolver(
             baseSettingsProvider = instance(),
@@ -271,6 +279,8 @@ fun backendDiModule(
                 httpClient = instance<ProviderHttpClients>().standard,
                 baseUrl = hindsightUrl,
                 apiToken = appConfig.hindsightApiToken,
+                clock = instance(),
+                retainAsync = appConfig.hindsightRetainAsync,
             )
         } else {
             NoopConversationMemoryRuntime
@@ -279,7 +289,7 @@ fun backendDiModule(
     if (appConfig.hindsightApiUrl != null) {
         bindSingleton { PostgresHistoryMemoryRepository(instance(), instance()) }
         bindSingleton {
-            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime)
+            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
     }
     bindSingleton {
@@ -307,12 +317,13 @@ fun backendDiModule(
             agentBackgroundScope = instance<BackendApplicationScope>(),
             memoryRuntime = instance<ConversationMemoryRuntime>(),
             automaticMemoryRecall = appConfig.featureFlags.wsAutomaticMemoryRecall,
+            hookStore = instance(),
+            executionQuotas = instance(),
         )
     }
     bindSingleton {
         AgentExecutionRequestFactory(
             effectiveSettingsResolver = instance(),
-            featureFlags = instance(),
             clientThreadRegistry = instance(),
         )
     }
@@ -346,6 +357,9 @@ fun backendDiModule(
             requestFactory = instance(),
             finalizer = instance(),
             launcher = instance(),
+            optionsEnabled = appConfig.featureFlags.options,
+            hookStore = instance(),
+            hookConfig = appConfig.hooks,
         )
     }
     if (appConfig.featureFlags.telegramBot) {
@@ -481,6 +495,7 @@ fun backendDiModule(
             toolCallRepository = instance(),
             executionService = instance(),
             registry = instance(),
+            applicationScope = instance<BackendApplicationScope>(),
         )
     }
     bindSingleton {
@@ -516,6 +531,7 @@ fun backendDiModule(
             optionService = instance(),
             eventService = instance(),
             publicClientService = instance(),
+            hookService = instance(),
             telegramBotBindingService = if (featureFlags.telegramBot) instance() else null,
             vkBotBindingService = if (featureFlags.vkBot) instance() else null,
             featureFlags = featureFlags,

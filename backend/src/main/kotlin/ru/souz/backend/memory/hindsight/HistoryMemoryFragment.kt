@@ -1,6 +1,10 @@
 package ru.souz.backend.memory.hindsight
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import ru.souz.memory.ExplicitMemoryIntent
 import ru.souz.memory.MemorySanitizer
@@ -35,6 +39,7 @@ internal data class HistoryMemoryFragment(
     val chatId: UUID,
     val leaseToken: UUID,
     val attempts: Int,
+    val createdAt: Instant,
     val documents: List<HistoryMemoryDocument>?,
 )
 
@@ -82,7 +87,12 @@ private fun HistoryMemorySource.records(contextOnly: Boolean = false): List<Hist
 internal fun cleanDialogueText(text: String): String =
     MemorySanitizer.redact(reasoningBlocks.replace(text, "")).trim()
 
-/** Each serialized record fits below Hindsight's structured chunk limit, including JSON escaping. */
+internal fun memoryTimestamp(instant: Instant, timeZone: String?): String {
+    val zone = timeZone?.let { runCatching { ZoneId.of(it) }.getOrNull() } ?: ZoneOffset.UTC
+    return instant.atZone(zone).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+}
+
+/** Each serialized record, including JSON escaping, fits in one bounded memory document. */
 internal fun dialogueMemoryRecords(
     text: String,
     fields: Map<String, Any>,

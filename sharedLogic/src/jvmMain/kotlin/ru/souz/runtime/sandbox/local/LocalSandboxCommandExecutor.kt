@@ -9,7 +9,7 @@ import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxFileSystem
 import ru.souz.runtime.sandbox.startSandboxCommandOutputCapture
 import java.io.File
-import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 internal class LocalSandboxCommandExecutor(
@@ -20,39 +20,41 @@ internal class LocalSandboxCommandExecutor(
             ?.let(fileSystem::resolveExistingDirectory)
             ?.path
         val command = request.toProcessCommand()
-        val process = ProcessBuilder(command).apply {
-            workingDirectory?.let { directory(File(it)) }
-            redirectErrorStream(false)
-            environment().putAll(request.environment)
-        }.start()
-        val output = process.startSandboxCommandOutputCapture("local-sandbox-command")
-
-        val timedOut = try {
-            request.stdin?.let { input ->
-                process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
-                    writer.write(input)
+        // File-backed stdin cannot leave a writer blocked on a child that outlives its parent.
+        val input = request.stdin?.let { Files.createTempFile("souz-command-", ".stdin") }
+        try {
+            if (input != null) Files.writeString(input, request.stdin)
+            val process = ProcessBuilder(command).apply {
+                workingDirectory?.let { directory(File(it)) }
+                input?.let { redirectInput(it.toFile()) }
+                redirectErrorStream(false)
+                environment().putAll(request.environment)
+            }.start()
+            val output = process.startSandboxCommandOutputCapture("local-sandbox-command")
+            process.outputStream.close()
+            val timedOut = try {
+                request.timeoutMillis?.let { !process.waitFor(it, TimeUnit.MILLISECONDS) } ?: run {
+                    process.waitFor()
+                    false
                 }
-            } ?: process.outputStream.close()
-            request.timeoutMillis?.let { timeout ->
-                !process.waitFor(timeout, TimeUnit.MILLISECONDS)
-            } ?: run {
-                process.waitFor()
-                false
+            } finally {
+                if (process.isAlive) {
+                    process.descendants().use { children -> children.forEach { it.destroyForcibly() } }
+                    process.destroyForcibly()
+                }
+                output.awaitDrainedOrClose()
             }
-        } finally {
-            if (process.isAlive) {
-                process.descendants().use { children -> children.forEach { it.destroyForcibly() } }
-                process.destroyForcibly()
-            }
-            output.awaitDrainedOrClose()
-        }
 
-        SandboxCommandResult(
-            exitCode = if (timedOut) -1 else process.exitValue(),
-            stdout = output.stdoutText(),
-            stderr = output.stderrText(),
-            timedOut = timedOut,
-        )
+            SandboxCommandResult(
+                exitCode = if (timedOut) -1 else process.exitValue(),
+                stdout = output.stdoutText(),
+                stderr = output.stderrText(),
+                timedOut = timedOut,
+            )
+        } finally {
+            // Windows descendants can retain stdin after their parent exits; cleanup must not mask its result.
+            input?.toFile()?.let { if (!it.delete()) it.deleteOnExit() }
+        }
     }
 
     private fun SandboxCommandRequest.toProcessCommand(): List<String> = when (runtime) {

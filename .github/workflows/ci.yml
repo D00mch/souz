@@ -339,6 +339,16 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           grep -Fq "| **Aggregate** | $aggregate_baseline% | $aggregate_coverage |" "$GITHUB_STEP_SUMMARY"
 
+      - name: Upload JVM test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: souz-tests-${{ github.run_id }}
+          path: |
+            **/build/test-results/**/TEST-*.xml
+            **/build/reports/tests/**
+          if-no-files-found: warn
+
       - name: Verify coverage reports
         shell: bash
         run: |

@@ -21,7 +21,7 @@ After the first accepted `message.submit` ack, copy `thread.id` into the `thread
 
 Expected live sequence:
 
-Zero or more `assistant.message` events may appear after the originating ACK and before tools run. Each contains one complete text block in `payload.content`, with `seq:null`. Send no reply, keep waiting for the terminal event, and exclude these live-only messages from replay cursors. Slow subscribers may miss stale progress.
+On the submitting connection, zero or more `assistant.message` events may appear after the originating ACK and before tool events. Each contains one complete text block in `payload.content`, with `seq:null`. Send no reply, keep waiting for the terminal event, and exclude these live-only messages from replay cursors. Slow subscribers may miss stale progress.
 
 ```text
 message.submit -> ack accepted -> thread.status -> tool.call.started user.ask

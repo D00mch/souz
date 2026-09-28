@@ -4,9 +4,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
 import io.ktor.client.HttpClient
@@ -14,8 +16,12 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.headersOf
+import java.io.IOException
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -43,6 +49,8 @@ import ru.souz.llms.http.GigaHttpClientResource
 import ru.souz.llms.giga.GigaAuth
 import ru.souz.llms.giga.GigaRestChatAPI
 import ru.souz.backend.llm.quota.ExecutionQuotaManager
+import ru.souz.backend.memory.hindsight.HindsightConversationMemoryRuntime
+import ru.souz.backend.memory.hindsight.HistoryMemoryDocument
 import ru.souz.backend.settings.repository.BackendServerPreferenceStore
 import ru.souz.backend.settings.repository.UserSettingsRepository
 import ru.souz.backend.settings.service.BackendSettingsProvider
@@ -84,26 +92,20 @@ class BackendDiModuleTest {
         val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/").validate()
         val userId = "76c4ddee-bfb3-4e8a-89cb-d81f6771493b"
         val mapper = jacksonObjectMapper()
-        var applyStrategy = true
         val engine = MockEngine { request ->
             assertNull(request.headers[HttpHeaders.Authorization])
             respond(
-                when {
-                    request.url.encodedPath.endsWith("/recall") ->
-                        """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
-                    request.url.encodedPath.endsWith("/config") -> {
-                        val applied = if (request.method == HttpMethod.Patch && applyStrategy) {
-                            mapper.readTree(request.body.toByteArray())["updates"]
-                        } else mapper.createObjectNode()
-                        mapper.writeValueAsString(mapOf("config" to applied))
-                    }
-                    else -> """{"success":true}"""
+                if (request.url.encodedPath.endsWith("/recall")) {
+                    """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
+                } else {
+                    """{"success":true}"""
                 },
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
         }
         val client = HttpClient(engine) { providerHttpClientDefaults() }
-        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
+        val clock = Clock.fixed(Instant.parse("2026-09-27T22:30:00Z"), ZoneOffset.UTC)
+        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client), clock)
         di.direct.instance<BackendRuntimeResources>().use {
             val memory = di.direct.instance<ConversationMemoryRuntime>()
             val context = MemoryContext(MemoryOwnerId(userId), ConversationId("chat-1"), null, null)
@@ -119,11 +121,11 @@ class BackendDiModuleTest {
                     CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "web.search", "Unselected tool options"),
                     CompletedTurnEvidence(CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS, text = "Intermediate assistant synthesis"),
                 ),
+                timeZone = "Europe/Moscow",
             )
             memory.captureCompletedTurn(turn)
             val bankUrl = "http://hindsight.test/v1/default/banks/$userId/memories"
-            val configUrl = "http://hindsight.test/v1/default/banks/$userId/config"
-            assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", configUrl, configUrl, bankUrl),
+            assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", bankUrl),
                 engine.requestHistory.map { it.url.toString() })
             val item = mapper.readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
             assertEquals(
@@ -132,11 +134,68 @@ class BackendDiModuleTest {
             )
             assertTrue(item["tags"].isEmpty)
             assertEquals("souz-turn-message-1", item["document_id"].asText())
+            assertEquals(setOf("content", "timestamp", "tags", "document_id"), item.fieldNames().asSequence().toSet())
+            assertEquals("2026-09-28T01:30:00+03:00", item["timestamp"].asText())
+            for ((zone, expected) in listOf(null to "2026-09-27T22:30:00Z", "invalid" to "2026-09-27T22:30:00Z",
+                "America/New_York" to "2026-09-27T18:30:00-04:00")) {
+                memory.captureCompletedTurn(turn.copy(timeZone = zone))
+                val retained = mapper.readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
+                assertEquals(expected, retained["timestamp"].asText())
+            }
+        }
+    }
 
-            applyStrategy = false
-            memory.captureCompletedTurn(turn.copy(userMessageId = "message-2"))
-            assertEquals(configUrl, engine.requestHistory.last().url.toString())
-            assertEquals(1, engine.requestHistory.count { it.url.toString() == bankUrl })
+    @Test
+    fun `both capture paths send the retain setting and accept optional operation metadata`() = runTest {
+        for (retainAsync in listOf(true, false)) {
+            val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test", hindsightRetainAsync = retainAsync)
+            var response = ""
+            var loseResponse = false
+            val bodies = mutableListOf<JsonNode>()
+            val engine = MockEngine { request ->
+                val body = jacksonObjectMapper().readTree(request.body.toByteArray())
+                bodies.add(body)
+                assertEquals(retainAsync, body["async"].asBoolean())
+                if (loseResponse) {
+                    loseResponse = false
+                    throw IOException("simulated lost response")
+                }
+                respond(response, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            }
+            val client = HttpClient(engine) { providerHttpClientDefaults() }
+            val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
+            di.direct.instance<BackendRuntimeResources>().use {
+                val memory = di.direct.instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime
+                val chatId = UUID.randomUUID()
+                val context = MemoryContext(MemoryOwnerId("owner"), ConversationId(chatId.toString()), null, null)
+                for (metadata in listOf(
+                    "", ""","async":false""", ""","async":true,"operation_id":"op-1"""",
+                    ""","operation_ids":["op-2","op-3"]""",
+                    ""","operation_id":null,"operation_ids":["op-4"]""",
+                    ""","operation_id":{},"operation_ids":{}""",
+                )) {
+                    response = """{"success":true$metadata}"""
+                    loseResponse = true
+                    memory.captureCompletedTurn(CompletedTurnMemoryInput(
+                        context, chatId.toString(), "message-1", "reply-1", userMessage = "I like tea", assistantMessage = "Noted",
+                    ))
+                    memory.captureHistory("owner", chatId, listOf(
+                        HistoryMemoryDocument("history-1", "dialogue", "2026-09-27T22:30:00Z", listOf("m-1"), emptyList()),
+                    ))
+                }
+                assertEquals(18, bodies.size)
+                bodies.chunked(3).forEach { (first, retry, history) ->
+                    assertEquals(first, retry)
+                    if (retainAsync) {
+                        UUID.fromString(assertNotNull(first["operation_id"]).asText())
+                        UUID.fromString(assertNotNull(history["operation_id"]).asText())
+                        assertNotEquals(first["operation_id"], history["operation_id"])
+                    } else {
+                        assertNull(first["operation_id"])
+                        assertNull(history["operation_id"])
+                    }
+                }
+            }
         }
     }
 
@@ -311,6 +370,7 @@ class BackendDiModuleTest {
         appConfig: BackendAppConfig,
         dataSource: HikariDataSource,
         providerClients: ProviderHttpClients? = null,
+        clock: Clock? = null,
     ): DI = DI {
         import(
             backendDiModule(
@@ -320,6 +380,7 @@ class BackendDiModuleTest {
             )
         )
         providerClients?.let { bindSingleton<ProviderHttpClients>(overrides = true) { it } }
+        clock?.let { bindSingleton<Clock>(overrides = true) { it } }
     }
 
     private fun testAppConfig(

@@ -14,6 +14,8 @@ Before changing this module, read the [pain-point index](docs/pain-points.md) an
 - Telegram and VK bindings use encrypted tokens, private-account linking, and independent leased poll loops. Their shared poll scheduler keeps idle long polls outside the processing limit; channel providers use platform-specific formatting and shared chunk delivery bookkeeping.
 - Assistant progress is opt-in through `narrateSteps`; bot pollers deliver live blocks concurrently with agent execution and stop progress delivery before the final reply. See [execution events](docs/pain-points/execution-openapi-and-events.md).
 - PostgreSQL stores structured repositories and [conversation Knowledge](docs/pain-points/conversation-knowledge.md). Sandbox workspaces remain filesystem-backed and user-scoped.
+- Workspace hooks authenticate before agent setup and persist receipts before acknowledgement. Each new receipt owns a separate hidden technical chat; duplicate deliveries reuse the receipt. Hook recovery is single-process and only touches receipt-linked executions; see [the hook contract](../docs/hooks.md).
+- Hook intake capacity is isolated per configured owner and survives reload. Verifier commands use the trusted owner's configured LOCAL/DOCKER sandbox through `SandboxCommandExecutor`, before Skill discovery or LLM use. They share that sandbox's permissions and do not create a separate verification container.
 - Give each ordinary HTTP route explicit OpenAPI metadata. Keep the WebSocket routes out of the generated document and maintain its schema in `docs/public-souz-contract`.
 
 ## Verification

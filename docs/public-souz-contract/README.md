@@ -55,7 +55,7 @@ Progress is opt-in through the trusted settings API: `PATCH /v1/settings` with `
 
 `assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check."}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
 
-The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. The originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.
+The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. On the submitting connection, the originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.
 
 Progress is live-only and best-effort. Current subscribers may receive it; disconnects, bounded-queue overflow, or durable catch-up overtaking queued progress can discard it. Souz never stores or replays these events, and does not add separate chat transcript rows. Intermediate text remains in the agent's existing conversation history. `seq:null` does not advance `afterSeq` and cannot be deduplicated by `(chatId, seq)`; do not collapse separate blocks with identical content.
 
@@ -96,7 +96,7 @@ Events saved during disconnection or recovery remain available. Reopening the so
 
 ## Delivery and retries
 
-Souz sends an `ack` before events caused by a command and before subscription replay. Accepted submit/cancel also receive live `thread.status` feedback after the ACK. ACKs and status are not replayed.
+On the connection processing a command, Souz sends its `ack` and any submit/cancel `thread.status` feedback before subsequent events. An explicit subscription ACK precedes its replay. Other connections, cross-channel commands, and reconnect replay proceed independently and may precede a retried ACK. Execution and durable event storage continue after disconnect without waiting for an ACK retry. Retries return the stored receipt with `duplicate:true`; ACKs and status are not replayed.
 
 Durable public events are same-thread `tool.call.started`, `thread.completed|failed|cancelled`, and out-of-band `message.created` with `threadId:null`. Ordinary in-thread transcript events are excluded. Durable events are sequenced within each chat; chats may interleave, and filtered internal events leave valid sequence gaps. Live-only assistant blocks preserve their relative order when delivered, but stale blocks may be dropped during durable catch-up.
 

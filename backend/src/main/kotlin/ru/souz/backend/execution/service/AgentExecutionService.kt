@@ -7,7 +7,10 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
@@ -17,13 +20,14 @@ import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.repository.ChatRepository
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.chat.service.SendMessageResult
+import ru.souz.backend.hooks.HookConfig
+import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.events.model.AgentEventType
 import ru.souz.backend.events.model.AssistantMessagePayload
 import ru.souz.backend.events.model.ChoiceAnsweredPayload
 import ru.souz.backend.events.service.AgentEventService
 import ru.souz.backend.execution.model.AgentExecution
 import ru.souz.backend.execution.model.AgentExecutionStatus
-import ru.souz.backend.execution.model.acceptsInput
 import ru.souz.backend.execution.model.isActive
 import ru.souz.backend.execution.repository.ActiveAgentExecutionConflictException
 import ru.souz.backend.execution.repository.AgentExecutionRepository
@@ -48,7 +52,12 @@ class AgentExecutionService internal constructor(
     private val requestFactory: AgentExecutionRequestFactory,
     private val finalizer: AgentExecutionFinalizer,
     private val launcher: AgentExecutionLauncher,
+    private val optionsEnabled: Boolean,
+    private val hookStore: HookStore,
+    private val hookConfig: HookConfig,
 ) {
+    private val hookSlots = Semaphore(hookConfig.concurrentExecutions)
+
     suspend fun executeChatTurn(
         userId: String,
         chatId: UUID,
@@ -158,18 +167,7 @@ class AgentExecutionService internal constructor(
             assistantMessage = null,
             execution = executionRepository.getByChat(userId, chatId, queuedExecution.id) ?: queuedExecution,
         )
-        val eventSink = requestFactory.createEventSink(
-            userId = userId,
-            chatId = chatId,
-            execution = runningExecution,
-            messageRepository = messageRepository,
-            optionRepository = optionRepository,
-            executionRepository = executionRepository,
-            eventService = eventService,
-            toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = prepared.effectiveSettings.streamingMessages,
-            toolEventsEnabled = prepared.effectiveSettings.showToolEvents,
-        )
+        val eventSink = createEventSink(runningExecution, prepared.effectiveSettings.streamingMessages, prepared.effectiveSettings.showToolEvents)
         eventSink.emitMessageCreated(userMessage)
         eventSink.emitExecutionStarted(runningExecution)
 
@@ -233,6 +231,7 @@ class AgentExecutionService internal constructor(
         turnRequest: BackendConversationTurnRequest,
         eventSink: BackendAgentRuntimeEventSink,
     ) {
+        val isHook = hookStore.find(execution.userId, execution.id) != null
         launcher.launchRegistered(
             execution = execution,
             onCancelled = {
@@ -245,12 +244,11 @@ class AgentExecutionService internal constructor(
             },
         ) {
             try {
-                finalizer.runExecution(
-                    execution = execution,
-                    conversationKey = conversationKey,
-                    turnRequest = turnRequest,
-                    eventSink = eventSink,
-                )
+                val run = suspend {
+                    finalizer.runExecution(execution, conversationKey, turnRequest, eventSink)
+                }
+                // Both initial turns and option continuations acquire capacity for actual agent work.
+                if (isHook) hookSlots.withPermit { withTimeout(hookConfig.executionTimeoutMillis) { run() } } else run()
             } catch (_: BackendV1Exception) {
                 // Background failures are already persisted by AgentExecutionFinalizer.
             }
@@ -287,18 +285,7 @@ class AgentExecutionService internal constructor(
         )
 
         val prepared = requestFactory.prepareContinuationTurn(runningExecution, option)
-        val eventSink = requestFactory.createEventSink(
-            userId = option.userId,
-            chatId = option.chatId,
-            execution = runningExecution,
-            messageRepository = messageRepository,
-            optionRepository = optionRepository,
-            executionRepository = executionRepository,
-            eventService = eventService,
-            toolCallRepository = toolCallRepository,
-            streamingMessagesEnabled = prepared.streamingMessagesEnabled,
-            toolEventsEnabled = prepared.toolEventsEnabled,
-        )
+        val eventSink = createEventSink(runningExecution, prepared.streamingMessagesEnabled, prepared.toolEventsEnabled)
         launchExecution(
             execution = runningExecution,
             conversationKey = prepared.conversationKey,
@@ -333,18 +320,40 @@ class AgentExecutionService internal constructor(
         return CancelExecutionResult(cancelExecutionInternal(execution))
     }
 
-    internal suspend fun failStartup(started: AgentExecution): AgentExecution? {
+    internal suspend fun finalizeInterruptedExecution(started: AgentExecution): AgentExecution? {
         val execution = executionRepository.getByChat(started.userId, started.chatId, started.id) ?: return null
-        if (!execution.status.acceptsInput()) return execution
-        return finalizer.markFailed(
+        if (execution.status == AgentExecutionStatus.WAITING_OPTION) return execution
+        val finished = if (!execution.status.isActive()) execution else finalizer.markFailed(
             executionId = execution.id,
             userId = execution.userId,
             chatId = execution.chatId,
             errorCode = "agent_execution_failed",
-            errorMessage = "Thread startup was interrupted.",
+            errorMessage = "Agent execution was interrupted.",
             usage = execution.usage,
         )
+        val sink = createEventSink(finished)
+        // Repair interrupted event writes through the same sink as live executions; storage deduplicates them.
+        when (finished.status) {
+            AgentExecutionStatus.FAILED -> sink.emitExecutionFailed(
+                finished.errorCode ?: "agent_execution_failed", finished.errorMessage ?: "Agent execution was interrupted.",
+            )
+            AgentExecutionStatus.CANCELLED -> sink.emitExecutionCancelled()
+            AgentExecutionStatus.COMPLETED -> sink.emitExecutionFinished(finished)
+            else -> Unit
+        }
+        return finished
     }
+
+    private fun createEventSink(execution: AgentExecution, streaming: Boolean = false, toolEvents: Boolean = false) =
+        BackendAgentRuntimeEventSink(
+            userId = execution.userId, chatId = execution.chatId, executionId = execution.id,
+            messageRepository = messageRepository, optionRepository = optionRepository,
+            executionRepository = executionRepository, eventService = eventService, toolCallRepository = toolCallRepository,
+            streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents, optionsEnabled = optionsEnabled,
+            assistantMessageId = execution.assistantMessageId,
+            publicClientThread = execution.runtimeOwner != null,
+            narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",
+        )
 
     private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
         return finalizer.withTerminalTransition(execution.id) {

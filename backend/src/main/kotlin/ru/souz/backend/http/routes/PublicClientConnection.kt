@@ -118,94 +118,100 @@ internal class PublicClientConnection(
                 if (kind !in clientFrameKinds || (boundChat != null && kind.startsWith("chat."))) {
                     throw InvalidClientFrameException("Unsupported frame kind.")
                 }
-                @Suppress("SuspendFunSwallowedCancellation") // The error translation rethrows every other exception.
-                val handled = try {
-                    when (kind) {
-                        "chat.create" -> {
-                            val create = decode(ChatCreateFrame::class.java, "create_chat")
-                            val (created, duplicate) = deps.createClientChat(
-                                CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
-                            )
-                            chat = created
-                            withContext(mdcContext()) {
-                                socketLogger.info("WebSocket chat ready duplicate={}", duplicate)
-                                stage = "prepare_subscription"
-                                pendingStream = prepare(created, null)
-                                HandledClientFrame(ChatCreateAck(
-                                    userId = created.userId, requestId = created.requestId, chatId = created.id.toString(),
-                                    status = "accepted", duplicate = duplicate, receivedAt = created.createdAt.toString(),
-                                ))
-                            }
-                        }
-                        "chat.subscribe", "chat.unsubscribe" -> {
-                            val subscribe = if (kind == "chat.subscribe") decode(ChatSubscribeFrame::class.java, "resolve_chat") else null
-                            val requestId = subscribe?.requestId ?: decode(ChatUnsubscribeFrame::class.java, "resolve_chat").requestId
-                            node.requireSubscription(requestId)
-                            val target = resolveFrameChat(node)
-                            chat = target
-                            withContext(mdcContext()) {
-                                val duplicate = if (subscribe != null) {
+                suspend fun handle(): HandledClientFrame {
+                    @Suppress("SuspendFunSwallowedCancellation") // The error translation rethrows every other exception.
+                    return try {
+                        when (kind) {
+                            "chat.create" -> {
+                                val create = decode(ChatCreateFrame::class.java, "create_chat")
+                                val (created, duplicate) = deps.createClientChat(
+                                    CreateClientChatRequest(create.payload.userId, create.requestId, clientType, create.payload.title)
+                                )
+                                chat = created
+                                withContext(mdcContext()) {
+                                    socketLogger.info("WebSocket chat ready duplicate={}", duplicate)
                                     stage = "prepare_subscription"
-                                    pendingStream = if (node.has("afterSeq")) {
-                                        deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
-                                    } else prepare(target, subscribe.afterSeq)
-                                    stage = "replace_subscription"
-                                    pendingStream == null
-                                } else {
-                                    stage = "close_subscription"
-                                    target.id !in subscriptions
-                                }
-                                // Prepare replay first; join the old sender outside the writer mutex before acknowledging.
-                                if (!duplicate) subscriptions.remove(target.id)?.cancelAndJoin()
-                                HandledClientFrame(ChatSubscriptionAck(
-                                    type = kind, chatId = target.id.toString(), requestId = requestId.trim(), status = "accepted",
-                                    duplicate = duplicate, receivedAt = Instant.now().toString(),
-                                ))
-                            }
-                        }
-                        else -> {
-                            stage = "resolve_chat"
-                            val target = resolveFrameChat(node)
-                            chat = target
-                            withContext(mdcContext()) {
-                                stage = "prepare_subscription"
-                                if (kind == "message.submit") pendingStream = prepare(target, null)
-                                when (kind) {
-                                    "message.submit" -> decode(MessageSubmitFrame::class.java).also {
-                                        val capabilities = node.path("payload").path("device").path("capabilities")
-                                        if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
-                                            throw ClientContractException("invalid_request", "device.capabilities must be unique.")
-                                        }
-                                    }.let { service.handleMessage(target, it) }
-                                    "history.append" -> service.handleHistory(target, decode(HistoryAppendFrame::class.java))
-                                    "tool.result" -> service.handleToolResult(target, decode(ToolResultFrame::class.java))
-                                    "thread.cancel" -> service.handleCancel(target, decode(ThreadCancelFrame::class.java))
-                                    else -> throw InvalidClientFrameException("Unsupported frame kind.")
+                                    pendingStream = prepare(created, null)
+                                    HandledClientFrame(ChatCreateAck(
+                                        userId = created.userId, requestId = created.requestId, chatId = created.id.toString(),
+                                        status = "accepted", duplicate = duplicate, receivedAt = created.createdAt.toString(),
+                                    ))
                                 }
                             }
+                            "chat.subscribe", "chat.unsubscribe" -> {
+                                val subscribe = if (kind == "chat.subscribe") decode(ChatSubscribeFrame::class.java, "resolve_chat") else null
+                                val requestId = subscribe?.requestId ?: decode(ChatUnsubscribeFrame::class.java, "resolve_chat").requestId
+                                node.requireSubscription(requestId)
+                                val target = resolveFrameChat(node)
+                                chat = target
+                                withContext(mdcContext()) {
+                                    val duplicate = if (subscribe != null) {
+                                        stage = "prepare_subscription"
+                                        pendingStream = if (node.has("afterSeq")) {
+                                            deps.eventService.openPublicStream(target.userId, target.id, subscribe.afterSeq)
+                                        } else prepare(target, subscribe.afterSeq)
+                                        stage = "replace_subscription"
+                                        pendingStream == null
+                                    } else {
+                                        stage = "close_subscription"
+                                        target.id !in subscriptions
+                                    }
+                                    // Prepare replay first; join the old sender outside the writer mutex before acknowledging.
+                                    if (!duplicate) subscriptions.remove(target.id)?.cancelAndJoin()
+                                    HandledClientFrame(ChatSubscriptionAck(
+                                        type = kind, chatId = target.id.toString(), requestId = requestId.trim(), status = "accepted",
+                                        duplicate = duplicate, receivedAt = Instant.now().toString(),
+                                    ))
+                                }
+                            }
+                            else -> {
+                                stage = "resolve_chat"
+                                val target = resolveFrameChat(node)
+                                chat = target
+                                withContext(mdcContext()) {
+                                    stage = "prepare_subscription"
+                                    if (kind == "message.submit") pendingStream = prepare(target, null)
+                                    when (kind) {
+                                        "message.submit" -> decode(MessageSubmitFrame::class.java).also {
+                                            val capabilities = node.path("payload").path("device").path("capabilities")
+                                            if (capabilities.isArray && capabilities.size() != capabilities.map(JsonNode::asText).distinct().size) {
+                                                throw ClientContractException("invalid_request", "device.capabilities must be unique.")
+                                            }
+                                        }.let { service.handleMessage(target, it) }
+                                        "history.append" -> service.handleHistory(target, decode(HistoryAppendFrame::class.java))
+                                        "tool.result" -> service.handleToolResult(target, decode(ToolResultFrame::class.java))
+                                        "thread.cancel" -> service.handleCancel(target, decode(ThreadCancelFrame::class.java))
+                                        else -> throw InvalidClientFrameException("Unsupported frame kind.")
+                                    }
+                                }
+                            }
                         }
+                    } catch (failure: Exception) {
+                        val error = when (failure) {
+                            is ClientContractException -> ClientError(failure.code, failure.message, failure.details)
+                            is BackendV1Exception -> ClientError(failure.code, failure.message)
+                            else -> throw failure // cancellation will be rethrowed here
+                        }
+                        withContext(mdcContext()) {
+                            socketLogger.error(
+                                "WebSocket frame rejected stage={} code={} details={}",
+                                stage, error.code, error.details)
+                        }
+                        rejectedFor(node, kind, error)
                     }
-                } catch (failure: Exception) {
-                    val error = when (failure) {
-                        is ClientContractException -> ClientError(failure.code, failure.message, failure.details)
-                        is BackendV1Exception -> ClientError(failure.code, failure.message)
-                        else -> throw failure // cancellation will be rethrowed here
-                    }
-                    withContext(mdcContext()) {
-                        socketLogger.error(
-                            "WebSocket frame rejected stage={} code={} details={}",
-                            stage, error.code, error.details)
-                    }
-                    rejectedFor(node, kind, error)
                 }
-                resolvedThreadId = handled.statusFeedback?.threadId
-                onSendFailure = handled.onSendFailure
-                withContext(mdcContext()) {
-                    pendingStream?.let {
-                        socketLogger.info("WebSocket subscription prepared initialSeq={}", it.initialSeq)
-                    }
-                    stage = "wait_for_ack"
-                    sendMutex.withLock {
+                // Joining a subscription sender must happen outside the lock it uses to write.
+                val subscriptionReply = if (kind == "chat.subscribe" || kind == "chat.unsubscribe") handle() else null
+                stage = "wait_for_ack"
+                sendMutex.withLock {
+                    // Order this command's ACK before its events without blocking runtime publication.
+                    val handled = subscriptionReply ?: handle()
+                    resolvedThreadId = handled.statusFeedback?.threadId
+                    onSendFailure = handled.onSendFailure
+                    withContext(mdcContext()) {
+                        pendingStream?.let {
+                            socketLogger.info("WebSocket subscription prepared initialSeq={}", it.initialSeq)
+                        }
                         stage = "send_ack"
                         socket.sendClient(handled.response)
                         stage = "after_ack"
@@ -216,11 +222,11 @@ internal class PublicClientConnection(
                             stage = "send_status"
                             socket.sendClient(service.threadStatus(requireNotNull(chat), feedback.threadId).toStatusFrame(feedback.requestId))
                         }
-                    }
-                    stage = "start_subscription"
-                    if (kind != "message.submit" || handled.statusFeedback != null) pendingStream?.let { stream ->
-                        subscribe(scope, requireNotNull(chat), stream)
-                        pendingStream = null
+                        stage = "start_subscription"
+                        if (kind != "message.submit" || handled.statusFeedback != null) pendingStream?.let { stream ->
+                            subscribe(scope, requireNotNull(chat), stream)
+                            pendingStream = null
+                        }
                     }
                 }
             }

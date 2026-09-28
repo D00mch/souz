@@ -1,6 +1,7 @@
 package ru.souz.backend.agent.runtime.conversation
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.plus
 import ru.souz.ToolLoopGraphBasedAgent
@@ -21,8 +22,12 @@ import ru.souz.backend.agent.session.AgentSessionRepository
 import ru.souz.backend.app.BackendProviderRetryPolicy
 import ru.souz.backend.chat.repository.MessageRepository
 import ru.souz.backend.common.backendLogContext
+import ru.souz.backend.hooks.HookLlmBudget
+import ru.souz.backend.hooks.HookLlmBudget.Companion.withProviderCall
+import ru.souz.backend.hooks.HookStore
 import ru.souz.backend.llm.BackendExecutionLlmChatApi
 import ru.souz.backend.llm.ProviderCredentialResolver
+import ru.souz.backend.llm.quota.ExecutionQuotaManager
 import ru.souz.db.SettingsProvider
 import ru.souz.llms.LLMChatAPI
 import ru.souz.llms.LLMResponse
@@ -36,6 +41,7 @@ import ru.souz.llms.local.LocalVisionGateway
 import ru.souz.llms.openai.OpenAIImageGenerationGateway
 import ru.souz.llms.openai.OpenAIVisionGateway
 import ru.souz.llms.runtime.LLMCapabilityResolver
+import ru.souz.llms.runtime.ImageGenerationGateway
 import ru.souz.memory.ConversationMemoryRuntime
 import ru.souz.runtime.files.FilesToolUtil
 import ru.souz.tool.RuntimePassThroughToolsFilter
@@ -73,6 +79,8 @@ internal class BackendConversationRuntimeFactory(
     private val agentBackgroundScope: CoroutineScope,
     private val memoryRuntime: ConversationMemoryRuntime,
     private val automaticMemoryRecall: Boolean,
+    private val hookStore: HookStore,
+    private val executionQuotas: ExecutionQuotaManager,
     private val testLlmApiFactory: (suspend (SettingsProvider) -> LLMChatAPI)? = null,
 ) {
     internal suspend fun create(
@@ -103,6 +111,8 @@ internal class BackendConversationRuntimeFactory(
         )
 
         val testApi = testLlmApiFactory?.invoke(settingsProvider)
+        val hookBudget = request.executionId?.let { id -> hookStore.find(key.userId, UUID.fromString(id)) }
+            ?.let { HookLlmBudget(it, hookStore, executionQuotas, settingsProvider.openaiSummarizationParameters) }
         val executionApi = BackendExecutionLlmChatApi(
             userId = key.userId,
             settingsProvider = settingsProvider,
@@ -113,6 +123,7 @@ internal class BackendConversationRuntimeFactory(
             codexOAuthService = codexOAuthService,
             initialUsage = initialUsage,
             providerApiOverride = testApi?.let { api -> { api } },
+            hookBudget = hookBudget,
         )
         val visionGateway = LLMCapabilityResolver(
             settingsProvider = settingsProvider,
@@ -133,7 +144,9 @@ internal class BackendConversationRuntimeFactory(
             filesToolUtil = filesToolUtil,
             webResearchClient = webResearchClient,
             visionGateway = visionGateway,
-            imageGenerationGateway = imageGenerationGateway,
+            imageGenerationGateway = ImageGenerationGateway { input ->
+                withProviderCall(hookBudget, LlmProvider.OPENAI) { imageGenerationGateway.generate(input) }
+            },
         )
         val executionToolCatalog = backendExecutionToolCatalog(
             compiledToolCatalog = toolCatalog,
