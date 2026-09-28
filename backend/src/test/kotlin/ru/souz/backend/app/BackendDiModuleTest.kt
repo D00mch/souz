@@ -14,7 +14,6 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
@@ -84,20 +83,13 @@ class BackendDiModuleTest {
         val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test/").validate()
         val userId = "76c4ddee-bfb3-4e8a-89cb-d81f6771493b"
         val mapper = jacksonObjectMapper()
-        var applyStrategy = true
         val engine = MockEngine { request ->
             assertNull(request.headers[HttpHeaders.Authorization])
             respond(
-                when {
-                    request.url.encodedPath.endsWith("/recall") ->
-                        """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
-                    request.url.encodedPath.endsWith("/config") -> {
-                        val applied = if (request.method == HttpMethod.Patch && applyStrategy) {
-                            mapper.readTree(request.body.toByteArray())["updates"]
-                        } else mapper.createObjectNode()
-                        mapper.writeValueAsString(mapOf("config" to applied))
-                    }
-                    else -> """{"success":true}"""
+                if (request.url.encodedPath.endsWith("/recall")) {
+                    """{"results":[{"id":"fact-1","text":"The user likes tea"}]}"""
+                } else {
+                    """{"success":true}"""
                 },
                 headers = headersOf(HttpHeaders.ContentType, "application/json"),
             )
@@ -122,8 +114,7 @@ class BackendDiModuleTest {
             )
             memory.captureCompletedTurn(turn)
             val bankUrl = "http://hindsight.test/v1/default/banks/$userId/memories"
-            val configUrl = "http://hindsight.test/v1/default/banks/$userId/config"
-            assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", configUrl, configUrl, bankUrl),
+            assertEquals(listOf("$bankUrl/recall", "$bankUrl/recall", bankUrl),
                 engine.requestHistory.map { it.url.toString() })
             val item = mapper.readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
             assertEquals(
@@ -132,11 +123,7 @@ class BackendDiModuleTest {
             )
             assertTrue(item["tags"].isEmpty)
             assertEquals("souz-turn-message-1", item["document_id"].asText())
-
-            applyStrategy = false
-            memory.captureCompletedTurn(turn.copy(userMessageId = "message-2"))
-            assertEquals(configUrl, engine.requestHistory.last().url.toString())
-            assertEquals(1, engine.requestHistory.count { it.url.toString() == bankUrl })
+            assertEquals(setOf("content", "tags", "document_id"), item.fieldNames().asSequence().toSet())
         }
     }
 
