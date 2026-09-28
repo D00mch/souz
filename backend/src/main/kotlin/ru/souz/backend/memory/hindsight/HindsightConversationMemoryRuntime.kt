@@ -1,5 +1,6 @@
 package ru.souz.backend.memory.hindsight
 
+import com.fasterxml.jackson.databind.JsonNode
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.timeout
@@ -43,6 +44,7 @@ class HindsightConversationMemoryRuntime(
     baseUrl: String,
     private val apiToken: String? = null,
     private val clock: Clock = Clock.systemUTC(),
+    private val retainAsync: Boolean = true,
 ) : ConversationMemoryRuntime {
     private val baseUrl = baseUrl.trimEnd('/')
     private val logger = LoggerFactory.getLogger(HindsightConversationMemoryRuntime::class.java)
@@ -181,9 +183,20 @@ class HindsightConversationMemoryRuntime(
                 val response = httpClient.post("$baseUrl/v1/default/banks/${bankId.encodeURLPathPart()}/memories") {
                     jsonRequest(apiToken)
                     timeout { requestTimeoutMillis = RETAIN_TIMEOUT_MILLIS }
-                    setBody(mapOf("items" to listOf(item)))
-                }.requireSuccess().body<RetainResponse>()
-                check(response.success && !response.async) { "Hindsight retain did not complete synchronously" }
+                    setBody(buildMap {
+                        put("items", listOf(item))
+                        put("async", retainAsync)
+                        if (retainAsync) item["document_id"]?.let { documentId ->
+                            put("operation_id", UUID.nameUUIDFromBytes("souz-retain:$bankId:$documentId".toByteArray()).toString())
+                        }
+                    })
+                }.requireSuccess().body<JsonNode>()
+                if (!response.path("success").asBoolean()) throw HindsightRetainRejected()
+                val operationId = response.path("operation_id").asText("").takeIf(String::isNotBlank)
+                    ?: response.path("operation_ids").takeIf(JsonNode::isArray)?.joinToString(",") { it.asText("") }
+                if (!operationId.isNullOrBlank()) {
+                    logger.info("Hindsight retain accepted documentId={} operationId={}", item["document_id"], operationId)
+                }
                 return
             } catch (error: IOException) {
                 if (attempt > 0 || !retryOnIoFailure) throw error
@@ -206,6 +219,8 @@ private fun HttpResponse.requireSuccess(): HttpResponse {
 }
 
 internal class HindsightHttpFailure(val statusCode: Int) : IllegalStateException("Hindsight HTTP $statusCode")
+
+internal class HindsightRetainRejected : IllegalStateException("Hindsight retain was not accepted")
 
 private fun RecalledMemory.scope(context: MemoryContext): String =
     if (tags.orEmpty().any { it in context.chatTags() }) "session" else "global"
@@ -242,5 +257,3 @@ private data class RecalledMemory(
 
     val score: Float get() = scores?.get("final") ?: 0f
 }
-
-private data class RetainResponse(val success: Boolean, val async: Boolean = false)

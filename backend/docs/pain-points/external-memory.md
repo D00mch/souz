@@ -18,7 +18,11 @@ Imported history always remains chat-scoped, including explicit remember request
 
 Souz sends dialogue records as they are. Retain items carry no `strategy`, and Souz never reads or changes bank configuration. The memory service owns the extraction instruction — what to save and how to phrase facts — through Hindsight's `retain_mission`. Souz sends no extraction rules, so that instruction must honor the `CONTEXT ONLY` / `NEW` sections: extract only from `NEW` records and use context records only to resolve references. The memory service must use an extraction chunk size of at least 16,000 characters (`HINDSIGHT_API_RETAIN_CHUNK_SIZE=16000`); smaller chunks split history documents and leave the `CONTEXT ONLY` / `NEW` headers only in the first chunk.
 
-Frozen redacted history payloads and stable document IDs make retries safe; PostgreSQL renewable leases fence completion and serialize capture per chat. No HTTP call runs in a PostgreSQL transaction. Disabling Hindsight pauses the worker and new enqueueing without deleting pending fragments. Pre-existing history is not backfilled.
+Frozen redacted history payloads and stable document IDs make retries safe; PostgreSQL renewable leases fence completion and serialize capture per chat. Async retains with a document ID also use a deterministic `operation_id` derived from the bank and document IDs, so lost acknowledgements and process restarts reuse the same extraction job. The Hindsight deployment must support [caller-supplied operation IDs](https://hindsight.vectorize.io/developer/api/retain#safe-retries-with-operation_id); a document ID alone does not deduplicate queued work. No HTTP call runs in a PostgreSQL transaction. Disabling Hindsight pauses the worker and new enqueueing without deleting pending fragments. Pre-existing history is not backfilled.
+
+Retains use `HINDSIGHT_RETAIN_ASYNC` (JVM property `souz.hindsight.retainAsync`, default `true`). Hindsight must run its asynchronous worker; deployments without one must set this to `false`. Both capture paths accept any `2xx` response with `success: true`, regardless of the response's `async` flag. Optional operation IDs are logged; extraction failures after acceptance belong to the memory service.
+
+History retries back off from 5 seconds to 5 minutes. HTTP 4xx except 408/429 and `success: false` stop after 12 attempts; other failures retry until 24 hours after fragment creation. Retry limits use each pending fragment's persisted attempt count and creation timestamp. Final failure sets `failed_at` and `completed_at`, clears the payload and lease, logs the chat/fragment IDs and reason, and releases later fragments. Failed messages remain available as context only. Lease fencing prevents stale workers from completing or failing fragments. Requeue a failed fragment only after resolving its failure: reset `completed_at`, `failed_at` and `attempts`; set `created_at` and `available_at` to the current time for a fresh retry window. Source message receipt timestamps remain unchanged.
 
 Natural-language forget and delete requests are not mapped from semantic recall results to destructive API calls. Ranked relevance does not prove exact identity, so the runtime tells the agent that exact-ID deletion is unavailable.
 
@@ -31,7 +35,7 @@ Omitting recall tags exposes one conversation's transient memory in another. Fin
 - Preserve owner-derived bank isolation and global-plus-current-conversation recall.
 - Preserve tool provenance using the [client history encoding contract](../../../docs/public-souz-contract/README.md#commands).
 - Supply deterministic document identity for completed turns.
-- Commit imported-history enqueueing with the receipt, freeze payloads before retain, and complete only after synchronous success. Clear frozen payloads on completion; keep source IDs for preceding-context reconstruction. Never reuse a fragment for later appends after it has been claimed.
+- Commit imported-history enqueueing with the receipt, freeze payloads before retain, and complete after acceptance or exhausted retries. Clear frozen payloads on completion; keep source IDs for preceding-context reconstruction. Never reuse a fragment for later appends after it has been claimed.
 - Keep an explicit `role` and source IDs on every sent record. Send retain items without `strategy` and leave extraction instructions and chunk size to the memory service. Keep source references visible in recall and `SearchMemory`.
 - Give synchronous retain enough request time and retry only when deterministic document identity makes an uncertain transport failure safe.
 - Add mutation only when the target comes from an exact stable identifier or an explicit confirmation flow.
@@ -45,4 +49,6 @@ The deterministic suite covers ACK independence, disconnect, restart, leases, fi
 
 Broader real extraction scenarios are tracked in [PR #774](https://github.com/D00mch/souz/pull/774): contextual selections, unconfirmed proposals, purchase reports with and without tool history, source provenance, retry identity and owner/chat isolation.
 
-Worker diagnostics contain chat/fragment IDs, attempts, document counts and error categories, never message bodies.
+Retry tests cover permanent and transient boundaries, later-fragment progress and stale-lease fencing. Capture tests cover both async settings and optional operation metadata.
+
+Worker diagnostics contain chat/fragment IDs, document/operation IDs, attempts, document counts and error categories, never message bodies.

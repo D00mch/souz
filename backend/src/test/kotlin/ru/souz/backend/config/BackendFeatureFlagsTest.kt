@@ -371,6 +371,18 @@ class BackendAppConfigTest {
         assertTrue(invalidLimit.message.orEmpty().contains("requests"))
         assertTrue(invalidRetry.message.orEmpty().contains("429"))
     }
+
+    @Test
+    fun `hindsight retain is asynchronous unless disabled`() {
+        assertTrue(BackendAppConfig.load(MapBackendConfigSource()).hindsightRetainAsync)
+        assertFalse(BackendAppConfig.load(MapBackendConfigSource(env = mapOf("HINDSIGHT_RETAIN_ASYNC" to "false"))).hindsightRetainAsync)
+        assertFalse(
+            BackendAppConfig.load(MapBackendConfigSource(properties = mapOf("souz.hindsight.retainAsync" to "false"))).hindsightRetainAsync
+        )
+        assertFailsWith<BackendConfigurationException> {
+            BackendAppConfig.load(MapBackendConfigSource(env = mapOf("HINDSIGHT_RETAIN_ASYNC" to "sometimes")))
+        }
+    }
 }
 
 private class MapBackendConfigSource(

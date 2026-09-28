@@ -319,6 +319,8 @@ class BackendHistoryMemoryE2eTest {
             assertFalse(backend.captureHistoryMemory())
         }
         val original = hindsight.items.single()
+        assertNotNull(original.operationId)
+        UUID.fromString(original.operationId)
         hindsight.failAfterRetain = false
         clock.advance(6)
         backendE2eTest("restart_second", schema = schema, hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
@@ -329,6 +331,70 @@ class BackendHistoryMemoryE2eTest {
             clock.advance(31)
             assertTrue(backend.captureHistoryMemory())
             assertNotEquals(original.item["document_id"], hindsight.items.last().item["document_id"])
+            assertNotEquals(original.operationId, hindsight.items.last().operationId)
+        }
+    }
+
+    @Test
+    fun `failed fragments stop at the retry boundary and release later history`() {
+        backendE2eTest("history_memory_retries", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            for ((status, permanent) in listOf(
+                HttpStatusCode.BadRequest to true, HttpStatusCode.OK to true,
+                HttpStatusCode.ServiceUnavailable to false, HttpStatusCode.RequestTimeout to false,
+                HttpStatusCode.TooManyRequests to false, null to false,
+            )) {
+                hindsight.rejection = status
+                hindsight.failAfterRetain = status == null
+                val chat = createPublicChat(UUID.randomUUID().toString())
+                val createdAt = clock.instant()
+                withPublicSocket(chat) { appendHistory(it, chat, "first", "user", "I prefer quiet trains") }
+                clock.advance(31)
+                // Resume persisted attempts just before the retry boundary.
+                sql { connection ->
+                    connection.prepareStatement("update history_memory_fragments set attempts = 10 where chat_id = ?::uuid").use {
+                        it.setString(1, chat)
+                        it.executeUpdate()
+                    }
+                }
+                withPublicSocket(chat) { appendHistory(it, chat, "next", "user", "I also like ferries") }
+                fun assertState(attempts: Int, failed: Boolean) = sql { connection ->
+                    connection.prepareStatement("select * from history_memory_fragments where chat_id = ?::uuid order by first_seq limit 1").use {
+                        it.setString(1, chat)
+                        it.executeQuery().use { rows ->
+                            assertTrue(rows.next())
+                            assertEquals(attempts, rows.getInt("attempts"))
+                            assertEquals(failed, rows.getObject("completed_at") != null)
+                            assertEquals(failed, rows.getObject("failed_at") != null)
+                            assertEquals(failed, rows.getString("payload") == null)
+                            assertNull(rows.getObject("lease_token"))
+                            assertNull(rows.getObject("lease_until"))
+                            if (failed) assertEquals(clock.instant(), rows.getTimestamp("failed_at").toInstant())
+                        }
+                    }
+                }
+                assertTrue(backend.captureHistoryMemory())
+                assertState(11, failed = false)
+                assertFalse(backend.captureHistoryMemory())
+                clock.advance(300)
+                assertTrue(backend.captureHistoryMemory())
+                assertState(12, failed = permanent)
+                if (!permanent) {
+                    clock.advance(java.time.Duration.between(clock.instant(), createdAt.plusSeconds(86_100)).seconds)
+                    assertTrue(backend.captureHistoryMemory())
+                    assertState(13, failed = false)
+                    clock.advance(300)
+                    assertTrue(backend.captureHistoryMemory())
+                    assertState(14, failed = true)
+                }
+                hindsight.rejection = null
+                hindsight.failAfterRetain = false
+                assertTrue(backend.captureHistoryMemory())
+                val content = hindsight.historyItems.last().item["content"].asText()
+                assertTrue(content.substringBefore("NEW dialogue records").contains("I prefer quiet trains"))
+                assertFalse(content.substringAfter("NEW dialogue records").contains("I prefer quiet trains"))
+                assertTrue(content.substringAfter("NEW dialogue records").contains("I also like ferries"))
+                assertFalse(backend.captureHistoryMemory())
+            }
         }
     }
 
@@ -349,6 +415,7 @@ class BackendHistoryMemoryE2eTest {
                 assertNotEquals(first.leaseToken, second.leaseToken)
                 assertEquals(documents, second.documents)
                 assertFalse(repository.complete(first))
+                assertFalse(repository.complete(first, failed = true))
                 assertFalse(repository.renew(first))
                 assertFalse(repository.retry(first))
                 clock.advance(181)
@@ -357,11 +424,12 @@ class BackendHistoryMemoryE2eTest {
             assertFalse(backend.captureHistoryMemory())
             assertEquals(1, hindsight.items.size)
             sql { connection ->
-                connection.prepareStatement("select payload, completed_at, source_ids from history_memory_fragments where id = ?").use { statement ->
+                connection.prepareStatement("select payload, completed_at, failed_at, source_ids from history_memory_fragments where id = ?").use { statement ->
                     statement.setObject(1, first.id)
                     statement.executeQuery().use { rows ->
                         assertTrue(rows.next())
                         assertNotNull(rows.getObject("completed_at"))
+                        assertNull(rows.getObject("failed_at"))
                         assertNull(rows.getString("payload"))
                         assertEquals(documents.flatMap { it.sourceIds }, (rows.getArray("source_ids").array as Array<*>).map { it.toString() })
                     }
@@ -469,12 +537,13 @@ private class HistoryTestClock : Clock() {
 }
 
 private class HistoryHindsightStub {
-    data class Item(val bank: String, val item: JsonNode)
+    data class Item(val bank: String, val item: JsonNode, val operationId: String?)
     val items = CopyOnWriteArrayList<Item>()
     val recalls = CopyOnWriteArrayList<String>()
     val paths = CopyOnWriteArrayList<String>()
     val historyItems get() = items.filter { it.item.path("metadata").path("source").asText() == "souz-history" }
     var failAfterRetain = false
+    var rejection: HttpStatusCode? = null
     var recalledText: String? = null
     var gate: CompletableDeferred<Unit>? = null
     val started = CompletableDeferred<Unit>()
@@ -485,6 +554,7 @@ private class HistoryHindsightStub {
             val path = request.url.encodedPath
             paths += path
             val bank = path.substringAfter("/banks/").substringBefore('/')
+            var status = HttpStatusCode.OK
             val body = when {
                 path.endsWith("/recall") -> {
                     recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
@@ -493,15 +563,19 @@ private class HistoryHindsightStub {
                     ))
                 }
                 path.endsWith("/memories") -> {
-                    items += Item(bank, mapper.readTree(request.body.toByteArray())["items"].single())
+                    val payload = mapper.readTree(request.body.toByteArray())
+                    assertTrue(payload["async"].asBoolean())
+                    items += Item(bank, payload["items"].single(), payload["operation_id"]?.asText())
                     started.complete(Unit)
                     gate?.await()
                     if (failAfterRetain) throw IOException("simulated lost response")
-                    """{"success":true,"async":false}"""
+                    status = rejection ?: HttpStatusCode.OK
+                    if (rejection != null) """{"success":false}"""
+                    else """{"success":true,"async":true,"operation_id":"op-${items.size}"}"""
                 }
                 else -> error("Unexpected Hindsight request ${request.method.value} $path")
             }
-            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
         return ProviderHttpClients(client, client)
     }

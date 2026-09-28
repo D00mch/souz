@@ -5,6 +5,7 @@ import ru.souz.backend.common.BackendConfigurationException
 import ru.souz.backend.config.BackendConfigSource
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.config.SystemBackendConfigSource
+import ru.souz.backend.config.booleanValue
 import ru.souz.backend.hooks.HookConfig
 import ru.souz.skilloauth.impl.OAuthProviderCatalog
 
@@ -145,6 +146,7 @@ data class BackendAppConfig(
     val skillOAuthProviderCredentials: Map<String, SkillOAuthProviderCredentials> = emptyMap(),
     val hindsightApiUrl: String? = null,
     val hindsightApiToken: String? = null,
+    val hindsightRetainAsync: Boolean = true,
     val llmLimits: BackendLlmLimits = BackendLlmLimits(),
     val providerRetryPolicy: BackendProviderRetryPolicy = BackendProviderRetryPolicy(),
     val hooks: HookConfig = HookConfig(),
@@ -270,6 +272,11 @@ data class BackendAppConfig(
                     envKey = "HINDSIGHT_API_TOKEN",
                     propertyKey = "souz.hindsight.apiToken",
                 )?.trim()?.takeIf { it.isNotEmpty() },
+                hindsightRetainAsync = source.booleanValue(
+                    envKey = "HINDSIGHT_RETAIN_ASYNC",
+                    propertyKey = "souz.hindsight.retainAsync",
+                    default = true,
+                ),
                 llmLimits = BackendLlmLimits(
                     perUserConcurrentExecutions = source.intValue(
                         envKey = "SOUZ_BACKEND_LIMIT_PER_USER_CONCURRENT_EXECUTIONS",
