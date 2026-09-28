@@ -1,5 +1,9 @@
 package ru.souz.backend.e2e
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.AppenderBase
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -22,6 +26,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,9 +40,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeout
+import org.slf4j.LoggerFactory
 import ru.souz.backend.config.BackendFeatureFlags
 import ru.souz.backend.http.BackendHttpRoutes
+import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_ATTEMPTS
 import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_MAX_CHARS
+import ru.souz.backend.memory.hindsight.HISTORY_MEMORY_TRANSIENT_BUDGET_HOURS
+import ru.souz.backend.memory.hindsight.HistoryMemoryWorker
 import ru.souz.backend.storage.postgres.newPostgresSchema
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.http.ProviderHttpClients
@@ -296,6 +305,8 @@ class BackendHistoryMemoryE2eTest {
             })
             assertEquals(2, hindsight.historyItems.size)
             assertTrue(hindsight.paths.all { it == "/v1/default/banks/$owner/memories" })
+            assertEquals(3, hindsight.items.size)
+            assertTrue(hindsight.items.all { it.async })
             assertTrue(hindsight.recalls.isEmpty())
         }
     }
@@ -324,6 +335,149 @@ class BackendHistoryMemoryE2eTest {
             clock.advance(31)
             assertTrue(backend.captureHistoryMemory())
             assertNotEquals(original.item["document_id"], hindsight.items.last().item["document_id"])
+        }
+    }
+
+    @Test
+    fun `permanently rejected fragment fails after the attempt limit without blocking its chat or other chats`() {
+        backendE2eTest("history_memory_exhausted", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            hindsight.reject = { if (it.newRecordsContain("unextractable")) HttpStatusCode.BadRequest else null }
+            val failing = createPublicChat(UUID.randomUUID().toString())
+            val healthy = createPublicChat(UUID.randomUUID().toString())
+            withPublicSocket(failing) { appendHistory(it, failing, "stuck", "user", "An unextractable message") }
+            clock.advance(31)
+            assertTrue(backend.captureHistoryMemory())
+            withPublicSocket(failing) { appendHistory(it, failing, "next", "user", "The next message in this chat") }
+            withPublicSocket(healthy) { appendHistory(it, healthy, "other", "user", "A message in another chat") }
+            // Remaining attempts of the stuck fragment, then the other chat and the next fragment of the stuck chat.
+            repeat(HISTORY_MEMORY_MAX_ATTEMPTS + 1) {
+                clock.advance(301)
+                assertTrue(backend.captureHistoryMemory())
+            }
+            assertFalse(backend.captureHistoryMemory())
+
+            assertEquals(HISTORY_MEMORY_MAX_ATTEMPTS, hindsight.rejected.size)
+            val outcomes = hindsight.outcomes.toList()
+            assertTrue(outcomes.indexOf("chat:$healthy" to true) < outcomes.lastIndexOf("chat:$failing" to false))
+            assertEquals("chat:$failing" to true, outcomes.last())
+            assertTrue(hindsight.historyItems.last().item["content"].asText().contains("The next message in this chat"))
+            assertEquals(
+                listOf(Triple(HISTORY_MEMORY_MAX_ATTEMPTS, true, true), Triple(1, true, false)),
+                fragmentStates(failing),
+            )
+        }
+    }
+
+    @Test
+    fun `fragments retrying at rollout follow the same limits`() {
+        backendE2eTest("history_memory_legacy_attempts", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            val permanent = createPublicChat(UUID.randomUUID().toString())
+            val transient = createPublicChat(UUID.randomUUID().toString())
+            hindsight.reject = { item ->
+                when (item["tags"].single().asText()) {
+                    "chat:$permanent" -> HttpStatusCode.BadRequest.takeIf { item.newRecordsContain("unextractable") }
+                    else -> HttpStatusCode.ServiceUnavailable
+                }
+            }
+            withPublicSocket(permanent) { appendHistory(it, permanent, "stuck", "user", "An unextractable message") }
+            withPublicSocket(transient) { appendHistory(it, transient, "unavailable", "user", "I prefer aisle seats") }
+            clock.advance(31)
+            sql { connection -> connection.createStatement().use { it.executeUpdate("update history_memory_fragments set attempts = 20") } }
+            withPublicSocket(permanent) { appendHistory(it, permanent, "next", "user", "The next message in this chat") }
+            clock.advance(301)
+
+            repeat(2) { assertTrue(backend.captureHistoryMemory()) }
+            assertEquals(2, hindsight.rejected.size)
+            assertEquals(listOf(Triple(21, true, true), Triple(0, false, false)), fragmentStates(permanent))
+            assertEquals(listOf(Triple(21, false, false)), fragmentStates(transient))
+            assertTrue(backend.captureHistoryMemory())
+            assertTrue(hindsight.historyItems.single().item["content"].asText().contains("The next message in this chat"))
+        }
+    }
+
+    @Test
+    fun `transient failures retry past the attempt limit until the time budget`() {
+        backendE2eTest("history_memory_transient", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            val statuses = listOf(HttpStatusCode.ServiceUnavailable, HttpStatusCode.RequestTimeout, HttpStatusCode.TooManyRequests)
+            val chats = statuses.associateBy { createPublicChat(UUID.randomUUID().toString()) }
+            hindsight.reject = { item -> chats.entries.single { (chat, _) -> item["tags"].single().asText() == "chat:$chat" }.value }
+            chats.keys.forEach { chat -> withPublicSocket(chat) { appendHistory(it, chat, "unavailable", "user", "I prefer aisle seats") } }
+            clock.advance(31)
+            val logs = withWorkerLogs {
+                repeat(chats.size * (HISTORY_MEMORY_MAX_ATTEMPTS + 1)) {
+                    assertTrue(backend.captureHistoryMemory())
+                    clock.advance(301)
+                }
+                chats.keys.forEach { chat ->
+                    val (attempts, completed, failed) = fragmentStates(chat).single()
+                    assertTrue(attempts > HISTORY_MEMORY_MAX_ATTEMPTS && !completed && !failed, "$attempts $completed $failed")
+                }
+                clock.advance(HISTORY_MEMORY_TRANSIENT_BUDGET_HOURS * 3_600L)
+                repeat(chats.size) { assertTrue(backend.captureHistoryMemory()) }
+                assertFalse(backend.captureHistoryMemory())
+            }
+            chats.keys.forEach { chat ->
+                val (_, completed, failed) = fragmentStates(chat).single()
+                assertTrue(completed && failed)
+            }
+            assertEquals(
+                statuses.map { "http_${it.value}" }.toSet(),
+                logs.filter { it.level == Level.ERROR }.map {
+                    assertTrue(it.formattedMessage.contains("reason=time budget"), it.formattedMessage)
+                    it.formattedMessage.substringAfter("category=")
+                }.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun `retain rejected with success false fails the fragment after the attempt limit`() {
+        backendE2eTest("history_memory_not_accepted", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            hindsight.reject = { HttpStatusCode.OK }
+            val chat = createPublicChat(UUID.randomUUID().toString())
+            withPublicSocket(chat) { appendHistory(it, chat, "rejected", "user", "I prefer aisle seats") }
+            clock.advance(31)
+            val logs = withWorkerLogs {
+                repeat(HISTORY_MEMORY_MAX_ATTEMPTS) {
+                    assertTrue(backend.captureHistoryMemory())
+                    clock.advance(301)
+                }
+            }
+            assertEquals(listOf(Triple(HISTORY_MEMORY_MAX_ATTEMPTS, true, true)), fragmentStates(chat))
+            assertEquals(HISTORY_MEMORY_MAX_ATTEMPTS, hindsight.rejected.size)
+            val failure = logs.single { it.level == Level.ERROR }.formattedMessage
+            assertTrue(failure.contains("reason=attempts") && failure.contains("category=HindsightRetainRejected"), failure)
+        }
+    }
+
+    @Test
+    fun `worker that lost its lease does not record a final failure`() {
+        backendE2eTest("history_memory_lost_final", hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
+            hindsight.reject = { HttpStatusCode.BadRequest }
+            val chat = createPublicChat(UUID.randomUUID().toString())
+            withPublicSocket(chat) { appendHistory(it, chat, "stuck", "user", "An unextractable message") }
+            clock.advance(31)
+            sql { connection ->
+                connection.prepareStatement("update history_memory_fragments set attempts = ? where chat_id = ?::uuid").use {
+                    it.setInt(1, HISTORY_MEMORY_MAX_ATTEMPTS - 1)
+                    it.setString(2, chat)
+                    it.executeUpdate()
+                }
+            }
+            hindsight.gate = CompletableDeferred()
+            val logs = withWorkerLogs {
+                coroutineScope {
+                    val capturing = async { backend.captureHistoryMemory() }
+                    withTimeout(5_000) { hindsight.started.await() }
+                    clock.advance(181)
+                    assertNotNull(backend.historyMemoryRepository.claim())
+                    hindsight.gate!!.complete(Unit)
+                    assertTrue(capturing.await())
+                }
+            }
+            assertEquals(listOf(Triple(HISTORY_MEMORY_MAX_ATTEMPTS + 1, false, false)), fragmentStates(chat))
+            assertTrue(logs.none { it.level == Level.ERROR })
+            assertTrue(logs.any { it.level == Level.WARN && it.formattedMessage.startsWith("History memory lease lost") })
         }
     }
 
@@ -437,6 +591,34 @@ private val HISTORY_FIELDS = setOf("content", "timestamp", "document_id", "tags"
 
 private fun JsonNode.fieldSet(): Set<String> = fieldNames().asSequence().toSet()
 
+/** Matches only a history document's own records, not the preceding dialogue it carries as context. */
+private fun JsonNode.newRecordsContain(text: String): Boolean =
+    this["content"].asText().substringAfter("NEW dialogue records").contains(text)
+
+private suspend fun withWorkerLogs(block: suspend () -> Unit): List<ILoggingEvent> {
+    val logs = ConcurrentLinkedQueue<ILoggingEvent>()
+    val logger = LoggerFactory.getLogger(HistoryMemoryWorker::class.java) as Logger
+    val appender = object : AppenderBase<ILoggingEvent>() {
+        override fun append(event: ILoggingEvent) { logs.add(event) }
+    }.apply { start() }
+    logger.addAppender(appender)
+    try { block() } finally { logger.detachAppender(appender); appender.stop() }
+    return logs.toList()
+}
+
+/** Attempts, completion and failure of the chat's fragments in queue order. */
+private fun BackendE2eScope.fragmentStates(chat: String): List<Triple<Int, Boolean, Boolean>> = sql { connection ->
+    connection.prepareStatement(
+        "select attempts, completed_at is not null as completed, failed_at is not null as failed " +
+            "from history_memory_fragments where chat_id = ?::uuid order by first_seq",
+    ).use { statement ->
+        statement.setString(1, chat)
+        statement.executeQuery().use { rows ->
+            buildList { while (rows.next()) add(Triple(rows.getInt("attempts"), rows.getBoolean("completed"), rows.getBoolean("failed"))) }
+        }
+    }
+}
+
 private fun assertHistoryTimestamps(item: JsonNode, offset: ZoneOffset) {
     val records = item["content"].asText().lines().filter { it.startsWith("{") }.map { jacksonObjectMapper().readTree(it) }
     assertTrue(records.isNotEmpty())
@@ -472,11 +654,16 @@ private class HistoryTestClock : Clock() {
 }
 
 private class HistoryHindsightStub {
-    data class Item(val bank: String, val item: JsonNode)
+    data class Item(val bank: String, val item: JsonNode, val async: Boolean)
     val items = CopyOnWriteArrayList<Item>()
+    val rejected = CopyOnWriteArrayList<Item>()
+    /** Retain outcomes in request order: the item's chat tag and whether it was accepted. */
+    val outcomes = CopyOnWriteArrayList<Pair<String, Boolean>>()
     val recalls = CopyOnWriteArrayList<String>()
     val paths = CopyOnWriteArrayList<String>()
     val historyItems get() = items.filter { it.item.path("metadata").path("source").asText() == "souz-history" }
+    /** Status for a rejected retain item: an HTTP error, or [HttpStatusCode.OK] for `success: false`; `null` accepts it. */
+    var reject: (JsonNode) -> HttpStatusCode? = { null }
     var failAfterRetain = false
     var recalledText: String? = null
     var gate: CompletableDeferred<Unit>? = null
@@ -488,6 +675,7 @@ private class HistoryHindsightStub {
             val path = request.url.encodedPath
             paths += path
             val bank = path.substringAfter("/banks/").substringBefore('/')
+            var status = HttpStatusCode.OK
             val body = when {
                 path.endsWith("/recall") -> {
                     recalls += mapper.readTree(request.body.toByteArray())["query"].asText()
@@ -496,15 +684,28 @@ private class HistoryHindsightStub {
                     ))
                 }
                 path.endsWith("/memories") -> {
-                    items += Item(bank, mapper.readTree(request.body.toByteArray())["items"].single())
+                    val payload = mapper.readTree(request.body.toByteArray())
+                    val item = Item(bank, payload["items"].single(), payload.path("async").asBoolean())
+                    val chat = item.item.path("tags").joinToString(",", transform = JsonNode::asText)
                     started.complete(Unit)
                     gate?.await()
-                    if (failAfterRetain) throw IOException("simulated lost response")
-                    """{"success":true,"async":false}"""
+                    val rejection = reject(item.item)
+                    if (rejection != null) {
+                        rejected += item
+                        outcomes += chat to false
+                        status = rejection
+                        if (rejection == HttpStatusCode.OK) """{"success":false}""" else """{"detail":"extraction unavailable"}"""
+                    } else {
+                        items += item
+                        outcomes += chat to true
+                        if (failAfterRetain) throw IOException("simulated lost response")
+                        if (item.async) """{"success":true,"async":true,"operation_id":"operation-${items.size}"}"""
+                        else """{"success":true,"async":false}"""
+                    }
                 }
                 else -> error("Unexpected Hindsight request ${request.method.value} $path")
             }
-            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
         }) { providerHttpClientDefaults() }
         return ProviderHttpClients(client, client)
     }

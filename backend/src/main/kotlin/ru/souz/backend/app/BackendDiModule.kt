@@ -280,6 +280,7 @@ fun backendDiModule(
                 baseUrl = hindsightUrl,
                 apiToken = appConfig.hindsightApiToken,
                 clock = instance(),
+                retainAsync = appConfig.hindsightRetainAsync,
             )
         } else {
             NoopConversationMemoryRuntime
@@ -288,7 +289,7 @@ fun backendDiModule(
     if (appConfig.hindsightApiUrl != null) {
         bindSingleton { PostgresHistoryMemoryRepository(instance(), instance()) }
         bindSingleton {
-            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime)
+            HistoryMemoryWorker(instance(), instance<ConversationMemoryRuntime>() as HindsightConversationMemoryRuntime, instance())
         }
     }
     bindSingleton {

@@ -39,6 +39,7 @@ internal data class HistoryMemoryFragment(
     val chatId: UUID,
     val leaseToken: UUID,
     val attempts: Int,
+    val createdAt: Instant,
     val documents: List<HistoryMemoryDocument>?,
 )
 

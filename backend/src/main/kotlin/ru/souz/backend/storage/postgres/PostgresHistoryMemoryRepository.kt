@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import java.sql.Connection
 import java.sql.ResultSet
 import java.time.Clock
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import ru.souz.backend.chat.model.ChatMessage
@@ -100,35 +101,46 @@ internal class PostgresHistoryMemoryRepository(
                 }
             }
         }
-        check(update(fragment, "payload = ?") { it.setJson(1, postgresStorageMapper.writeValueAsString(documents)) }) {
+        check(update(fragment, "payload = ?::jsonb", postgresStorageMapper.writeValueAsString(documents))) {
             "History memory lease lost"
         }
         return documents
     }
 
     suspend fun renew(fragment: HistoryMemoryFragment): Boolean =
-        update(fragment, "lease_until = ?") { it.setInstant(1, clock.instant().plusSeconds(180)) }
+        update(fragment, "lease_until = ?", clock.instant().plusSeconds(180))
 
     suspend fun complete(fragment: HistoryMemoryFragment): Boolean =
-        update(fragment, "completed_at = ?, payload = null, lease_token = null, lease_until = null") { it.setInstant(1, clock.instant()) }
+        update(fragment, "completed_at = ?, payload = null, lease_token = null, lease_until = null", clock.instant())
 
     suspend fun retry(fragment: HistoryMemoryFragment): Boolean =
-        update(fragment, "available_at = ?, lease_token = null, lease_until = null") {
-            it.setInstant(1, clock.instant().plusSeconds(minOf(300L, 5L shl minOf(fragment.attempts - 1, 6))))
-        }
+        update(
+            fragment,
+            "available_at = ?, lease_token = null, lease_until = null",
+            clock.instant().plusSeconds(minOf(300L, 5L shl minOf(fragment.attempts - 1, 6))),
+        )
 
+    /** Finishes an exhausted fragment so the chat's later fragments can proceed. */
+    suspend fun fail(fragment: HistoryMemoryFragment): Boolean {
+        val now = clock.instant()
+        return update(fragment, "completed_at = ?, failed_at = ?, payload = null, lease_token = null, lease_until = null", now, now)
+    }
+
+    /** Binds [values] to the assignment's parameters in order, then fences the update by the current lease. */
     private suspend fun update(
         fragment: HistoryMemoryFragment,
         assignment: String,
-        bind: (java.sql.PreparedStatement) -> Unit,
+        vararg values: Any,
     ): Boolean = dataSource.write { connection ->
         connection.prepareStatement(
             "update history_memory_fragments set $assignment where id = ? and lease_token = ? and lease_until > ?",
         ).use { statement ->
-            bind(statement)
-            statement.setObject(2, fragment.id)
-            statement.setObject(3, fragment.leaseToken)
-            statement.setInstant(4, clock.instant())
+            values.forEachIndexed { index, value ->
+                if (value is Instant) statement.setInstant(index + 1, value) else statement.setObject(index + 1, value)
+            }
+            statement.setObject(values.size + 1, fragment.id)
+            statement.setObject(values.size + 2, fragment.leaseToken)
+            statement.setInstant(values.size + 3, clock.instant())
             statement.executeUpdate() == 1
         }
     }
@@ -140,5 +152,6 @@ private fun ResultSet.fragment(): HistoryMemoryFragment = HistoryMemoryFragment(
     chatId = getObject("chat_id", UUID::class.java),
     leaseToken = getObject("lease_token", UUID::class.java),
     attempts = getInt("attempts"),
+    createdAt = instant("created_at"),
     documents = getString("payload")?.let { postgresStorageMapper.readValue(it) },
 )
