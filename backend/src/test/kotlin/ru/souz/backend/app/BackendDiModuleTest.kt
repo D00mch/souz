@@ -15,6 +15,9 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlinx.coroutines.test.runTest
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
@@ -95,7 +98,8 @@ class BackendDiModuleTest {
             )
         }
         val client = HttpClient(engine) { providerHttpClientDefaults() }
-        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client))
+        val clock = Clock.fixed(Instant.parse("2026-09-27T22:30:00Z"), ZoneOffset.UTC)
+        val di = testDi(config, HikariDataSource(), ProviderHttpClients(client, client), clock)
         di.direct.instance<BackendRuntimeResources>().use {
             val memory = di.direct.instance<ConversationMemoryRuntime>()
             val context = MemoryContext(MemoryOwnerId(userId), ConversationId("chat-1"), null, null)
@@ -111,6 +115,7 @@ class BackendDiModuleTest {
                     CompletedTurnEvidence(CompletedTurnEvidenceKind.TOOL_OUTPUT, "web.search", "Unselected tool options"),
                     CompletedTurnEvidence(CompletedTurnEvidenceKind.ASSISTANT_SYNTHESIS, text = "Intermediate assistant synthesis"),
                 ),
+                timeZone = "Europe/Moscow",
             )
             memory.captureCompletedTurn(turn)
             val bankUrl = "http://hindsight.test/v1/default/banks/$userId/memories"
@@ -123,7 +128,14 @@ class BackendDiModuleTest {
             )
             assertTrue(item["tags"].isEmpty)
             assertEquals("souz-turn-message-1", item["document_id"].asText())
-            assertEquals(setOf("content", "tags", "document_id"), item.fieldNames().asSequence().toSet())
+            assertEquals(setOf("content", "timestamp", "tags", "document_id"), item.fieldNames().asSequence().toSet())
+            assertEquals("2026-09-28T01:30:00+03:00", item["timestamp"].asText())
+            for ((zone, expected) in listOf(null to "2026-09-27T22:30:00Z", "invalid" to "2026-09-27T22:30:00Z",
+                "America/New_York" to "2026-09-27T18:30:00-04:00")) {
+                memory.captureCompletedTurn(turn.copy(timeZone = zone))
+                val retained = mapper.readTree(engine.requestHistory.last().body.toByteArray())["items"].single()
+                assertEquals(expected, retained["timestamp"].asText())
+            }
         }
     }
 
@@ -298,6 +310,7 @@ class BackendDiModuleTest {
         appConfig: BackendAppConfig,
         dataSource: HikariDataSource,
         providerClients: ProviderHttpClients? = null,
+        clock: Clock? = null,
     ): DI = DI {
         import(
             backendDiModule(
@@ -307,6 +320,7 @@ class BackendDiModuleTest {
             )
         )
         providerClients?.let { bindSingleton<ProviderHttpClients>(overrides = true) { it } }
+        clock?.let { bindSingleton<Clock>(overrides = true) { it } }
     }
 
     private fun testAppConfig(
