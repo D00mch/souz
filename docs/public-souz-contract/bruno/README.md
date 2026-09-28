@@ -14,6 +14,8 @@ Start the backend and PostgreSQL from the repository root with `docker compose u
 4. For A's `tool.call.started`, copy the event's `threadId` and `payload.toolCallId` into `threadId` and the matching `toolCallIdAsk` or `toolCallIdOpenMedia`. Every public `tool.call.started` requests client execution; its payload has no `target` field. Send template `05` or `06` for the actual pending call before its `deadlineAt`. Adjust the result to the call's arguments; model-selected calls and their order can vary.
 5. Read informational `assistant.message.payload.content` blocks as they arrive; they have `seq:null`, require no reply, and do not finish the thread. Read the final response in `thread.completed.payload.response`. Repeat either submit template to send new input.
 
+Use the required, non-null `payload.deviceId` and `payload.deviceType` to identify the destination device for `assistant.message`, `thread.completed`, forwarded `message.created`, and `tool.call.started` named `user.ask`, including cross-channel questions. Replayed events retain their original device values. Other tool calls have an optional, nullable `deviceId` and no `deviceType`; see [destination device](../README.md#destination-device).
+
 Every `message.submit` and `history.append` uses `{{$randomUUID}}`, so each send has a fresh request ID. Ordinary multi-chat submissions omit `threadId`: Souz selects the active thread or creates one when none exists. For a deliberate retry, copy the original resolved UUID and unchanged payload from the sent message; sending the template again is a new operation.
 
 ## History

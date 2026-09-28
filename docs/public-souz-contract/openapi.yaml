@@ -933,13 +933,18 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     AssistantMessagePayload:
+      description: deviceId and deviceType identify the destination device.
       type: object
       additionalProperties: false
-      required: [content]
+      required: [content, deviceId, deviceType]
       properties:
         content:
           $ref: "#/components/schemas/NonEmptyString"
           description: One complete nonblank assistant text block, preserving its original content.
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
     ToolCallStartedEvent:
       type: object
       additionalProperties: false
@@ -966,9 +971,22 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     ToolCallStartedPayload:
+      description: For user.ask, deviceId and deviceType are required and identify the destination device, including cross-channel calls. Other calls have only an optional, nullable deviceId.
       type: object
       additionalProperties: false
       required: [toolCallId, name, arguments]
+      if:
+        properties:
+          name:
+            const: user.ask
+      then:
+        required: [deviceId, deviceType]
+        properties:
+          deviceId:
+            $ref: "#/components/schemas/NonEmptyString"
+      else:
+        properties:
+          deviceType: false
       properties:
         toolCallId:
           $ref: "#/components/schemas/NonEmptyString"
@@ -976,6 +994,8 @@ components:
           $ref: "#/components/schemas/NonEmptyString"
         deviceId:
           type: [string, "null"]
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
         arguments:
           $ref: "#/components/schemas/ArbitraryJson"
           description: Operation arguments; web.search uses the documented WebSearchArguments shape.
@@ -1005,12 +1025,17 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     ThreadCompletedPayload:
+      description: deviceId and deviceType identify the destination device; replay preserves their original values.
       type: object
       additionalProperties: false
-      required: [response]
+      required: [response, deviceId, deviceType]
       properties:
         response:
           type: string
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
     ThreadFailedEvent:
       type: object
       additionalProperties: false
@@ -1094,9 +1119,10 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     MessageCreatedPayload:
+      description: deviceId and deviceType identify the destination device; replay preserves their original values.
       type: object
       additionalProperties: false
-      required: [messageId, seq, role, content]
+      required: [messageId, seq, role, content, deviceId, deviceType]
       properties:
         messageId:
           $ref: "#/components/schemas/UUID"
@@ -1106,6 +1132,10 @@ components:
           type: string
         content:
           type: string
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+        deviceType:
+          $ref: "#/components/schemas/DeviceType"
         clientMessageId:
           type: [string, "null"]
     ErrorCode:
