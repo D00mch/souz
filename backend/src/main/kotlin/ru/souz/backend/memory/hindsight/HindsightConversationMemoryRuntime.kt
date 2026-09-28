@@ -183,7 +183,13 @@ class HindsightConversationMemoryRuntime(
                 val response = httpClient.post("$baseUrl/v1/default/banks/${bankId.encodeURLPathPart()}/memories") {
                     jsonRequest(apiToken)
                     timeout { requestTimeoutMillis = RETAIN_TIMEOUT_MILLIS }
-                    setBody(mapOf("items" to listOf(item), "async" to retainAsync))
+                    setBody(buildMap {
+                        put("items", listOf(item))
+                        put("async", retainAsync)
+                        if (retainAsync) item["document_id"]?.let { documentId ->
+                            put("operation_id", UUID.nameUUIDFromBytes("souz-retain:$bankId:$documentId".toByteArray()).toString())
+                        }
+                    })
                 }.requireSuccess().body<JsonNode>()
                 if (!response.path("success").asBoolean()) throw HindsightRetainRejected()
                 val operationId = response.path("operation_id").asText("").takeIf(String::isNotBlank)

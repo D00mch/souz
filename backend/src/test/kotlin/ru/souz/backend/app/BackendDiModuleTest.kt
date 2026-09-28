@@ -4,9 +4,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.zaxxer.hikari.HikariDataSource
 import io.ktor.client.HttpClient
@@ -15,6 +17,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
+import java.io.IOException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -147,8 +150,16 @@ class BackendDiModuleTest {
         for (retainAsync in listOf(true, false)) {
             val config = testAppConfig().copy(hindsightApiUrl = "http://hindsight.test", hindsightRetainAsync = retainAsync)
             var response = ""
+            var loseResponse = false
+            val bodies = mutableListOf<JsonNode>()
             val engine = MockEngine { request ->
-                assertEquals(retainAsync, jacksonObjectMapper().readTree(request.body.toByteArray())["async"].asBoolean())
+                val body = jacksonObjectMapper().readTree(request.body.toByteArray())
+                bodies.add(body)
+                assertEquals(retainAsync, body["async"].asBoolean())
+                if (loseResponse) {
+                    loseResponse = false
+                    throw IOException("simulated lost response")
+                }
                 respond(response, headers = headersOf(HttpHeaders.ContentType, "application/json"))
             }
             val client = HttpClient(engine) { providerHttpClientDefaults() }
@@ -164,6 +175,7 @@ class BackendDiModuleTest {
                     ""","operation_id":{},"operation_ids":{}""",
                 )) {
                     response = """{"success":true$metadata}"""
+                    loseResponse = true
                     memory.captureCompletedTurn(CompletedTurnMemoryInput(
                         context, chatId.toString(), "message-1", "reply-1", userMessage = "I like tea", assistantMessage = "Noted",
                     ))
@@ -171,7 +183,18 @@ class BackendDiModuleTest {
                         HistoryMemoryDocument("history-1", "dialogue", "2026-09-27T22:30:00Z", listOf("m-1"), emptyList()),
                     ))
                 }
-                assertEquals(12, engine.requestHistory.size)
+                assertEquals(18, bodies.size)
+                bodies.chunked(3).forEach { (first, retry, history) ->
+                    assertEquals(first, retry)
+                    if (retainAsync) {
+                        UUID.fromString(assertNotNull(first["operation_id"]).asText())
+                        UUID.fromString(assertNotNull(history["operation_id"]).asText())
+                        assertNotEquals(first["operation_id"], history["operation_id"])
+                    } else {
+                        assertNull(first["operation_id"])
+                        assertNull(history["operation_id"])
+                    }
+                }
             }
         }
     }

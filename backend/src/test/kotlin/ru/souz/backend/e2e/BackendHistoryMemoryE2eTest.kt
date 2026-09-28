@@ -319,6 +319,8 @@ class BackendHistoryMemoryE2eTest {
             assertFalse(backend.captureHistoryMemory())
         }
         val original = hindsight.items.single()
+        assertNotNull(original.operationId)
+        UUID.fromString(original.operationId)
         hindsight.failAfterRetain = false
         clock.advance(6)
         backendE2eTest("restart_second", schema = schema, hindsightUrl = HINDSIGHT_TEST_URL, clock = clock, providerClients = hindsight.clients()) {
@@ -329,6 +331,7 @@ class BackendHistoryMemoryE2eTest {
             clock.advance(31)
             assertTrue(backend.captureHistoryMemory())
             assertNotEquals(original.item["document_id"], hindsight.items.last().item["document_id"])
+            assertNotEquals(original.operationId, hindsight.items.last().operationId)
         }
     }
 
@@ -346,7 +349,7 @@ class BackendHistoryMemoryE2eTest {
                 val createdAt = clock.instant()
                 withPublicSocket(chat) { appendHistory(it, chat, "first", "user", "I prefer quiet trains") }
                 clock.advance(31)
-                // Simulate a fragment already retrying at rollout, just before the attempt boundary.
+                // Resume persisted attempts just before the retry boundary.
                 sql { connection ->
                     connection.prepareStatement("update history_memory_fragments set attempts = 10 where chat_id = ?::uuid").use {
                         it.setString(1, chat)
@@ -534,7 +537,7 @@ private class HistoryTestClock : Clock() {
 }
 
 private class HistoryHindsightStub {
-    data class Item(val bank: String, val item: JsonNode)
+    data class Item(val bank: String, val item: JsonNode, val operationId: String?)
     val items = CopyOnWriteArrayList<Item>()
     val recalls = CopyOnWriteArrayList<String>()
     val paths = CopyOnWriteArrayList<String>()
@@ -562,7 +565,7 @@ private class HistoryHindsightStub {
                 path.endsWith("/memories") -> {
                     val payload = mapper.readTree(request.body.toByteArray())
                     assertTrue(payload["async"].asBoolean())
-                    items += Item(bank, payload["items"].single())
+                    items += Item(bank, payload["items"].single(), payload["operation_id"]?.asText())
                     started.complete(Unit)
                     gate?.await()
                     if (failAfterRetain) throw IOException("simulated lost response")
