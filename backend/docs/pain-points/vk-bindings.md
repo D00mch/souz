@@ -16,6 +16,7 @@ Complete cross-channel delivery persists the original Markdown. Partial delivery
 
 ## Safe changes
 
+- Opt-in progress shares the formatted reply path and lease checks; follow the [live delivery lifecycle](execution-openapi-and-events.md).
 - Keep token contents and VK error bodies out of responses and logs. VK has no plaintext token migration path.
 - API and Long Poll requests share the web tools' `SOUZ_WEB_USER_AGENT` setting and default.
 - Preserve lease fencing and message-based execution identity when changing polling or persistence.

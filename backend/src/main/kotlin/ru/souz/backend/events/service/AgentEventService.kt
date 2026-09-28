@@ -16,6 +16,7 @@ import ru.souz.backend.common.normalizePositiveLimit
 import ru.souz.backend.events.bus.AgentEventBus
 import ru.souz.backend.events.bus.AgentEventLimits
 import ru.souz.backend.events.bus.AgentEventStream
+import ru.souz.backend.events.bus.AgentEventSubscription
 import ru.souz.backend.events.model.AgentEvent
 import ru.souz.backend.events.model.AgentEventPayload
 import ru.souz.backend.events.model.AgentEventType
@@ -156,6 +157,11 @@ class AgentEventService(
             afterSeq = afterSeq,
             limit = normalizedLimit,
         )
+    }
+
+    internal suspend fun observeLive(userId: String, chatId: UUID): AgentEventSubscription {
+        requireOwnedChat(userId, chatId)
+        return eventBus.subscribe(userId, chatId, acceptsClientCommands = false)
     }
 
     suspend fun openPublicStream(

@@ -16,6 +16,7 @@ Tokens, one-time secrets, Telegram identity, and poller ownership are separate s
 
 ## Safe-change guidance
 
+- Opt-in progress shares the formatted reply path and lease checks; follow the [live delivery lifecycle](execution-openapi-and-events.md).
 - Preserve encrypted token custody, unique token hashes, hashed link secrets, and redacted API DTOs.
 - Require the exact private-chat link handshake before activating a binding; never infer ownership from a username or untrusted message field.
 - Renew leases during in-flight work and verify ownership before every externally visible reply or checkpoint side effect.

@@ -1,6 +1,7 @@
 package ru.souz.backend.e2e
 
 import io.ktor.client.request.get
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
@@ -26,6 +27,7 @@ class BackendOptionsE2eTest {
     @Test
     fun `option request persists and answering continues through HTTP and Postgres`() {
         listOf(null, "low").forEach { effort ->
+            val narrate = effort != null
             val runner = ScriptedOptionTurnRunner()
             backendE2eTest(
                 schemaPrefix = "e2e_options",
@@ -36,6 +38,9 @@ class BackendOptionsE2eTest {
                 val chatId = createPublicChat(userId)
                 client.get(BackendHttpRoutes.SETTINGS) { trusted(userId) }
                 storeReasoningEffort(userId, effort)
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(userId); jsonBody("""{"narrateSteps":$narrate}""")
+                }
                 val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
                     trusted(userId)
                     jsonBody("""{"content":"need option"}""")
@@ -72,7 +77,17 @@ class BackendOptionsE2eTest {
                 assertEquals(HttpStatusCode.BadRequest, wrongMode.status)
 
                 // Changes to the user default must not alter the pending execution's snapshot.
+                if (!narrate) sql { connection ->
+                    // Executions stored before narration existed have no preference key.
+                    connection.prepareStatement("update agent_executions set metadata = metadata - 'narrateSteps' where id = ?").use {
+                        it.setObject(1, UUID.fromString(executionId))
+                        assertEquals(1, it.executeUpdate())
+                    }
+                }
                 storeReasoningEffort(userId, "high")
+                client.patch(BackendHttpRoutes.SETTINGS) {
+                    trusted(userId); jsonBody("""{"narrateSteps":${!narrate}}""")
+                }
                 val answer = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
                     trusted(userId)
                     jsonBody("""{"selectedOptionIds":["a"],"freeText":"Alpha","metadata":{"source":"e2e"}}""")
@@ -90,6 +105,7 @@ class BackendOptionsE2eTest {
                     assertTrue(messages.any { it["content"].asText() == "continued after choosing Alpha" })
                 }
                 assertEquals(listOf(effort, effort), runner.reasoningEfforts.toList())
+                assertEquals(listOf(narrate, narrate), runner.narrationPreferences.toList())
                 val events = client.get(BackendHttpRoutes.chatEvents(chatId)) {
                     trusted(userId)
                 }.jsonBody()["items"]
@@ -140,6 +156,7 @@ class BackendOptionsE2eTest {
 
 internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
     val reasoningEfforts = CopyOnWriteArrayList<String?>()
+    val narrationPreferences = CopyOnWriteArrayList<Boolean>()
     private val waitingConversations = LinkedHashSet<AgentConversationKey>()
 
     override suspend fun run(
@@ -149,6 +166,7 @@ internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
         initialUsage: LLMResponse.Usage,
     ): BackendConversationTurnOutcome {
         reasoningEfforts += request.reasoningEffort
+        narrationPreferences += request.narrateSteps
         return if (waitingConversations.add(conversationKey)) {
             eventSink.emit(
                 AgentRuntimeEvent.ChoiceRequested(
