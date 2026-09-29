@@ -257,6 +257,7 @@ internal object BackendOpenApiSchemas {
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
             .withNonBlankArrayItems("enabledTools")
+            .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Defaults to false; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))
             .withMinimum("requestTimeoutMillis", 1_000.0, "Must be at least 1000 milliseconds.")
 
@@ -266,6 +267,7 @@ internal object BackendOpenApiSchemas {
             .withNonBlankString("locale", "A recognized BCP 47 language tag.")
             .withNonBlankString("timeZone", "An IANA time-zone identifier.")
             .withNonBlankArrayItems("enabledTools")
+            .withPropertyDescription("narrateSteps", "Opt in to short RU/EN assistant progress and live WebSocket or bot delivery. Defaults to false; applies to new executions.")
             .withStringEnum("interfaceLanguage", listOf("en", "ru"))
             .withMinimum("requestTimeoutMillis", 1_000.0, "Must be at least 1000 milliseconds.")
 

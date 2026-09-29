@@ -36,6 +36,7 @@ internal fun BackendV1SettingsPatchRequest.toUserSettingsOverrides(): UserSettin
         }?.toCollection(linkedSetOf()),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        narrateSteps = narrateSteps,
         interfaceLanguage = interfaceLanguage?.let { parseInterfaceLanguage(it, fieldName = "interfaceLanguage") },
         requestTimeoutMillis = requestTimeoutMillis?.let {
             parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")
@@ -54,6 +55,7 @@ internal fun BackendV1OnboardingCompleteRequest.toUserSettingsOverrides(): UserS
         }?.toCollection(linkedSetOf()),
         showToolEvents = showToolEvents,
         streamingMessages = streamingMessages,
+        narrateSteps = narrateSteps,
         interfaceLanguage = interfaceLanguage?.let { parseInterfaceLanguage(it, fieldName = "interfaceLanguage") },
         requestTimeoutMillis = requestTimeoutMillis?.let {
             parseRequestTimeoutMillis(it, fieldName = "requestTimeoutMillis")

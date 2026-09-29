@@ -35,6 +35,7 @@ fun interface TelegramTurnExecutor {
         content: String,
         clientMessageId: String,
         requestOverrides: UserSettingsOverrides,
+        onProgress: suspend (String) -> Unit,
     ): SendMessageResult
 }
 
@@ -263,6 +264,7 @@ class TelegramBotPollingService(
                         content = text,
                         clientMessageId = "telegram:${binding.id}:${update.updateId}",
                         requestOverrides = UserSettingsOverrides(streamingMessages = false),
+                        onProgress = { sendFormattedReply(binding.id, token, message.chat.id, it) },
                     )
                 } finally {
                     typingJob.cancelAndJoin()
@@ -303,11 +305,11 @@ class TelegramBotPollingService(
                 return
             }
         }
-        val chunks = channelTextChunks(
-            text = responseText.ifBlank { FALLBACK_ASSISTANT_REPLY },
-            maxLength = TELEGRAM_RICH_TEXT_LIMIT,
-        )
-        chunks.forEach { chunk ->
+        sendFormattedReply(bindingId, token, chatId, responseText.ifBlank { FALLBACK_ASSISTANT_REPLY })
+    }
+
+    private suspend fun sendFormattedReply(bindingId: UUID, token: String, chatId: Long, text: String) {
+        for (chunk in channelTextChunks(text, TELEGRAM_RICH_TEXT_LIMIT)) {
             sendReplySafely(bindingId, token, chatId, chunk)
         }
     }

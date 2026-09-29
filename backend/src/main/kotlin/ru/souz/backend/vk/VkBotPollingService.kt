@@ -190,6 +190,7 @@ class VkBotPollingService(
                         content = text,
                         clientMessageId = "vk:${binding.id}:${message.id}",
                         requestOverrides = UserSettingsOverrides(streamingMessages = false),
+                        onProgress = { replyFormatted(binding, token, message.peerId, it) },
                     )
                 } finally {
                     typing.cancelAndJoin()
@@ -208,10 +209,14 @@ class VkBotPollingService(
             logger.warn("VK turn failed for binding {}", binding.id)
             FAILURE_REPLY
         }
-        for (chunk in VkMarkdown(responseText).chunks()) {
-            reply(binding, token, message.peerId, chunk.text, chunk.format)
-        }
+        replyFormatted(binding, token, message.peerId, responseText)
         return binding
+    }
+
+    private suspend fun replyFormatted(binding: VkBotBinding, token: String, peerId: Long, text: String) {
+        for (chunk in VkMarkdown(text).chunks()) {
+            reply(binding, token, peerId, chunk.text, chunk.format)
+        }
     }
 
     private suspend fun owns(id: UUID): Boolean = repository.hasActiveLease(id, owner, clock.instant())

@@ -110,16 +110,15 @@ class BackendSubagentE2eTest {
                         }
                     }
                     result?.name == "SpawnSubagent" -> reply(request, "parent final answer")
-                    else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to task, "skillIds" to listOf("user.ask"))).let { response ->
-                        response.copy(choices = (blocks.flatMap { reply(request, it).choices } + response.choices)
-                            .mapIndexed { index, choice -> choice.copy(index = index) })
-                    }
+                    else -> toolCallReply(request, "SpawnSubagent", mapOf("task" to task, "skillIds" to listOf("user.ask")), blocks)
                 }
             },
         ) {
             val userId = UUID.randomUUID().toString()
             val chatId = createPublicChat(userId)
-            client.patch(BackendHttpRoutes.SETTINGS) { trusted(userId); jsonBody("""{"streamingMessages":true}""") }
+            client.patch(BackendHttpRoutes.SETTINGS) {
+                trusted(userId); jsonBody("""{"streamingMessages":true,"narrateSteps":true,"systemPrompt":"custom base"}""")
+            }
             withPublicSocket(chatId) { session -> withMultiChatSocket { observer ->
                 try {
                     observer.send(Frame.Text("""{"kind":"chat.subscribe","chatId":"$chatId","requestId":"watch"}"""))
@@ -168,6 +167,10 @@ class BackendSubagentE2eTest {
                 }
             } }
             assertEquals(4, llm.requests.size)
+            val system = llm.requests.first().messages.first().content
+            assertTrue("custom base" in system)
+            assertTrue("Перед каждым вызовом инструментов" in system)
+            assertTrue(ru.souz.backend.memory.hindsight.UNSUPPORTED_MEMORY_MUTATION_NOTICE in system)
             val childRequests = llm.requests.filter { it.functions.map { tool -> tool.name } == listOf("user.ask") }
             assertEquals(2, childRequests.size)
             assertEquals(2, childRequests.first().messages.size)

@@ -1,12 +1,13 @@
 package ru.souz.backend.bootstrap
 
 import ru.souz.backend.config.BackendFeatureFlags
+import ru.souz.backend.http.BackendV1SettingsDto
 
 data class BootstrapResponse(
     val user: BootstrapUser,
     val features: BackendFeatureFlags,
     val capabilities: BootstrapCapabilities,
-    val settings: BootstrapSettings,
+    val settings: BackendV1SettingsDto,
 )
 
 data class BootstrapUser(
@@ -28,19 +29,4 @@ data class BootstrapModelCapability(
 data class BootstrapToolCapability(
     val name: String,
     val enabled: Boolean,
-)
-
-data class BootstrapSettings(
-    val defaultModel: String,
-    val contextSize: Int,
-    val temperature: Float,
-    val locale: String,
-    val timeZone: String,
-    val systemPrompt: String?,
-    val enabledTools: List<String>,
-    val showToolEvents: Boolean,
-    val streamingMessages: Boolean,
-    val interfaceLanguage: String,
-    val requestTimeoutMillis: Long,
-    val useFewShotExamples: Boolean,
 )
