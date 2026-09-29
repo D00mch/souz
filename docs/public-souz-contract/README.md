@@ -52,7 +52,7 @@ Active-thread submit/tool/cancel operations must reach the runtime owner in mult
 
 ## Destination device
 
-`assistant.message`, `thread.completed`, `message.created`, and `tool.call.started` with `payload.name:"user.ask"` require non-null `payload.deviceId` and `payload.deviceType`. `deviceId` is a nonblank string; `deviceType` is one of `tv_box`, `smart_speaker`, `smartphone`, or `unknown`. The pair identifies the device that should receive the user-facing content or question.
+`assistant.message`, `thread.completed`, `message.created`, and `tool.call.started` with `payload.name:"user.ask"` require non-null `payload.deviceId`, a nonblank string identifying the device that should receive the user-facing content or question. `payload.deviceType` is optional; when present, it must be non-null and one of `tv_box`, `smart_speaker`, `smartphone`, or `unknown`.
 
 For forwarded `message.created` and cross-channel `user.ask`, the destination is the device from the target chat's most recently accepted new `message.submit`, captured when the event is created. This context is retained after thread completion and reconnects. Rejected submissions and idempotent retries do not replace it. Chat creation, subscription and `history.append` do not establish device context; a chat that has never accepted a submit is ineligible for these operations, even when listed by `ListActiveChannels` or subscribed.
 
@@ -64,7 +64,7 @@ If the target has no device context, fail the originating operation before creat
 | Accepted a submit from device A; its thread has finished | Use device A, subject to the operation's other delivery requirements. |
 | Later accepted a new submit from device B | Use device B for new events; replay preserves device A on earlier events. |
 
-Durable replay preserves the event's original device values. Other tool calls retain an optional, nullable `payload.deviceId` and have no `deviceType` field.
+Durable replay preserves the event's original device values, including omission of `deviceType`. Other tool calls retain an optional, nullable `payload.deviceId` and have no `deviceType` field.
 
 ## Intermediate assistant messages
 
