@@ -25,7 +25,7 @@ import ru.souz.llms.LLMResponse
 
 class BackendOptionsE2eTest {
     @Test
-    fun `option request persists and answering continues through HTTP and Postgres`() {
+    fun `option request persists and answering continues through HTTP and Postgres`() = withExecutionUsageLogs { logs ->
         listOf(null, "low").forEach { effort ->
             val narrate = effort != null
             val runner = ScriptedOptionTurnRunner()
@@ -57,6 +57,7 @@ class BackendOptionsE2eTest {
                 assertEquals(executionId, optionEvent["executionId"].asText())
                 assertEquals("Select variant", optionEvent["payload"]["title"].asText())
                 assertEquals(2, optionEvent["payload"]["options"].size())
+                assertTrue(logs.none { it["mdc"]["threadId"].asText() == executionId })
 
                 val foreign = client.post(BackendHttpRoutes.optionAnswer(optionId)) {
                     trusted(UUID.randomUUID().toString())
@@ -122,6 +123,13 @@ class BackendOptionsE2eTest {
                 }
                 assertEquals(HttpStatusCode.BadRequest, second.status)
                 assertEquals("invalid_request", second.jsonBody()["error"]["code"].asText())
+                val usage = eventually("continued execution usage log") {
+                    logs.singleOrNull { it["mdc"]["threadId"].asText() == executionId }?.usageFields()
+                }
+                assertEquals("5", usage["input_tokens"])
+                assertEquals("7", usage["output_tokens"])
+                assertEquals("12", usage["total_tokens"])
+                assertEquals("0", usage["cached_input_tokens"])
             }
         }
     }
