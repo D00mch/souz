@@ -2,6 +2,12 @@
 
 Draft contract for Souz Cloud. Exact fields are in [OpenAPI](openapi.yaml); [happy-path.jsonl](examples/happy-path.jsonl) shows two users' chats, a creation retry, history before and during execution, continued and new threads, client tools, a forwarded message, unsubscribe and resubscribe with replay per chat. Each line is a complete WebSocket frame: Souz sends `ack`, `status` and `event`; the client sends the other kinds. Local setup: [Postman](postman/) / [Bruno](bruno/).
 
+## Proposed device discovery
+
+[Device discovery for Orion/Assistant](device-discovery.md) specifies `device.list`: Souz requests a user's registered devices over the shared Assistant WebSocket, including from a Telegram task. It uses trusted `payload.userId`, the originating task's correlation IDs, and durable result handling. Device selection is not required to request the inventory. See the [example exchanges](examples/device-discovery.jsonl).
+
+This extension relates to [issue #807](https://github.com/D00mch/souz/issues/807) and requires implementation. Its standalone `DeviceList*` schemas in OpenAPI are marked `x-souz-status: proposed`; they do not extend the schemas for implemented frames below. Shared-connection delivery and pending-call redelivery are also proposed. Device command targeting and dynamic tool catalogue discovery are outside this extension.
+
 ## Connection
 
 Connect to `/v1/ws?clientType=backend`. One WebSocket can serve multiple users' chats; chat-scoped frames carry `chatId`. Each chat's `clientType` must match the connection.

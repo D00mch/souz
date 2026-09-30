@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Client-Souz REST API
   version: 1.0.0-draft
-  description: REST operations and reusable frame schemas for single-chat and multi-chat WebSockets. The multi-chat endpoint is /v1/ws?clientType=backend; WebSocket upgrade routes are excluded from REST paths.
+  description: REST operations and reusable frame schemas for single-chat and multi-chat WebSockets. The multi-chat endpoint is /v1/ws?clientType=backend; WebSocket upgrade routes are excluded from REST paths. Standalone DeviceList* schemas marked x-souz-status:proposed specify a device discovery extension requiring implementation; they are not part of the implemented frame unions.
 servers:
   - url: https://souz.example.ru
 paths:
@@ -182,6 +182,112 @@ components:
     DeviceCapability:
       type: string
       enum: [speech, screen, device_tools, user_permissions, deep_links, oauth]
+    DeviceListRequest:
+      x-souz-status: proposed
+      description: >-
+        Proposed device.list request to the shared Orion/Assistant connection on
+        /v1/ws?clientType=backend. Requires implementation; see device-discovery.md
+        and https://github.com/D00mch/souz/issues/807. chatId and threadId identify
+        the originating task, including a Telegram task, not a destination device chat.
+        Delivery needs no selected device or device chat subscription. Reconnect
+        redelivers unexpired pending calls with the original frame and deadline.
+      type: object
+      additionalProperties: false
+      required: [kind, seq, type, chatId, threadId, payload, createdAt]
+      properties:
+        kind:
+          const: event
+        seq:
+          $ref: "#/components/schemas/EventSeq"
+          description: Durable sequence within the originating chat; redelivery preserves it.
+        type:
+          const: tool.call.started
+        chatId:
+          $ref: "#/components/schemas/UUID"
+        threadId:
+          $ref: "#/components/schemas/UUID"
+        payload:
+          $ref: "#/components/schemas/DeviceListPayload"
+        createdAt:
+          $ref: "#/components/schemas/DateTime"
+    DeviceListPayload:
+      x-souz-status: proposed
+      description: Proposed user-scoped inventory payload; deviceId and product are omitted.
+      type: object
+      additionalProperties: false
+      required: [toolCallId, name, userId, arguments, deadlineAt]
+      properties:
+        toolCallId:
+          $ref: "#/components/schemas/NonEmptyString"
+        name:
+          const: device.list
+        userId:
+          $ref: "#/components/schemas/UUID"
+          description: Trusted originating task owner supplied by Souz, never chosen by the model.
+        arguments:
+          $ref: "#/components/schemas/DeviceListArguments"
+        deadlineAt:
+          $ref: "#/components/schemas/DateTime"
+          description: Absolute result deadline; default budget is 30 seconds and replay does not extend it.
+    DeviceListArguments:
+      x-souz-status: proposed
+      description: Empty object; identity belongs to the trusted payload, not model-supplied arguments.
+      type: object
+      additionalProperties: false
+    DeviceListResult:
+      x-souz-status: proposed
+      description: >-
+        Complete registered inventory for payload.userId, including offline devices.
+        An empty devices array succeeds. deviceId values must be unique within the
+        response; names may repeat. Registry failure uses a non-success tool.result.
+      type: object
+      additionalProperties: false
+      required: [devices]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceListDevice"
+    DeviceListDevice:
+      x-souz-status: proposed
+      type: object
+      additionalProperties: false
+      required: [deviceId, name, product, online, capabilities]
+      properties:
+        deviceId:
+          $ref: "#/components/schemas/NonEmptyString"
+          description: Stable within the user's account; matches message.submit's ID for the same device.
+        name:
+          $ref: "#/components/schemas/NonEmptyString"
+          description: User-facing name; not necessarily unique.
+        product:
+          $ref: "#/components/schemas/NonEmptyString"
+          description: Device product identifier, such as sberbox.
+        online:
+          type: boolean
+          description: Availability at lookup time, not a guarantee of later command success.
+        capabilities:
+          type: array
+          uniqueItems: true
+          description: Existing capability metadata; may be empty and does not define tools or grant permissions.
+          items:
+            $ref: "#/components/schemas/DeviceCapability"
+    DeviceListToolResult:
+      x-souz-status: proposed
+      description: >-
+        Successful device.list response using the existing tool.result envelope.
+        Echo the request's chatId, threadId and toolCallId. For failures use
+        FailedToolResult with internal_error, or TimedOutToolResult with
+        client_tool_timed_out. Existing AcceptedToolResultAck and RejectedToolResultAck
+        apply; persist the terminal result before ACK and resume after sending it.
+        Identical terminal-result retries receive duplicate:true; different results
+        receive idempotency_conflict and cannot overwrite a recorded timeout.
+      allOf:
+        - $ref: "#/components/schemas/SucceededToolResult"
+        - type: object
+          properties:
+            result:
+              $ref: "#/components/schemas/DeviceListResult"
     Device:
       type: object
       additionalProperties: false
