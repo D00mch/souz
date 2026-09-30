@@ -19,6 +19,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.OutgoingContent
 import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.ByteReadChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
@@ -177,17 +178,26 @@ class BackendHooksE2eTest {
             setupOwner(other)
             coroutineScope {
                 val body = ByteChannel(autoFlush = true)
+                val bodyReadStarted = CompletableDeferred<Unit>()
+                val stalledBody: ByteReadChannel = object : ByteReadChannel by body {
+                    override suspend fun awaitContent(min: Int): Boolean {
+                        bodyReadStarted.complete(Unit)
+                        return body.awaitContent(min)
+                    }
+                }
                 val slow = async {
                     client.post("/hooks/check") {
                         header("Authorization", "Bearer $secret")
                         setBody(object : OutgoingContent.ReadChannelContent() {
                             override val contentType = ContentType.Application.Json
-                            override fun readFrom() = body
+                            override fun readFrom() = stalledBody
                         })
                     }
                 }
                 try {
-                    eventually("owner intake occupied") { invoke(payload = "invalid").takeIf { it.status.value == 429 } }
+                    // Competing requests must wait until the stalled body read holds the intake permit.
+                    eventually("stalled request reading body") { bodyReadStarted.takeIf { it.isCompleted } }
+                    assertEquals(429, invoke(payload = "invalid").status.value)
                     assertEquals(401, invoke(token = "bad").status.value)
                     assertEquals(429, invoke(id = "same-owner").status.value)
                     assertEquals(202, invoke(id = "other").status.value)
