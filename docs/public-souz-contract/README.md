@@ -52,7 +52,7 @@ Active-thread submit/tool/cancel operations must reach the runtime owner in mult
 
 ## Destination device
 
-`assistant.message`, `thread.completed`, `message.created`, and `tool.call.started` with `payload.name:"user.ask"` require non-null `payload.deviceId`, a nonblank string identifying the device that should receive the user-facing content or question. `payload.deviceType` is optional; when present, it must be non-null and one of `tv_box`, `smart_speaker`, `smartphone`, or `unknown`.
+`assistant.message`, `thread.completed`, `message.created`, and `tool.call.started` with `payload.name:"user.ask"` require non-null `payload.deviceId` and `payload.product`. Both are nonblank strings: `deviceId` identifies the destination device, and `product` identifies its product, such as `sberbox`. `message.submit` supplies these values in `payload.device.deviceId` and `payload.device.product`.
 
 For forwarded `message.created` and cross-channel `user.ask`, the destination is the device from the target chat's most recently accepted new `message.submit`, captured when the event is created. This context is retained after thread completion and reconnects. Rejected submissions and idempotent retries do not replace it. Chat creation, subscription and `history.append` do not establish device context; a chat that has never accepted a submit is ineligible for these operations, even when listed by `ListActiveChannels` or subscribed.
 
@@ -64,13 +64,13 @@ If the target has no device context, fail the originating operation before creat
 | Accepted a submit from device A; its thread has finished | Use device A, subject to the operation's other delivery requirements. |
 | Later accepted a new submit from device B | Use device B for new events; replay preserves device A on earlier events. |
 
-Durable replay preserves the event's original device values, including omission of `deviceType`. Other tool calls retain an optional, nullable `payload.deviceId` and have no `deviceType` field.
+Durable replay preserves the event's original device ID and product. Other tool calls retain an optional, nullable `payload.deviceId` and have no `product` field.
 
 ## Intermediate assistant messages
 
 Progress is opt-in through the trusted settings API: `PATCH /v1/settings` with `{"narrateSteps":true}`. Settings responses expose the effective value, defaulting to `false`. The preference controls the additive RU/EN prompt instruction and live WebSocket, Telegram, and VK delivery independently of `streamingMessages` and `showToolEvents`. Each execution snapshots it, including option continuations; settings changes affect subsequent executions.
 
-`assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check.","deviceId":"device-tv-456","deviceType":"tv_box"}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
+`assistant.message` carries one complete, nonblank assistant text block in `payload:{"content":"Let me check.","deviceId":"device-tv-456","product":"sberbox"}`. An accepted LLM response containing tool calls can produce several such events, in the original block order, before those tools execute. Separate blocks stay separate, including repeated text. Streaming providers assemble the full response and pass the agent's acceptance check first; stream chunks are not messages. Reasoning, discarded attempts and final answers do not produce these events.
 
 The envelope has `kind:"event"`, `type:"assistant.message"`, `seq:null`, `chatId`, the active `threadId`, and `createdAt`. On the submitting connection, the originating client request's ACK precedes its assistant events. These events are informational: send neither an ACK nor `tool.result`. Tool execution does not wait for receipt or speech synthesis. Continue waiting for `thread.completed`, `thread.failed`, or `thread.cancelled`; the final answer is only in `thread.completed.payload.response`.
 

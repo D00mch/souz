@@ -176,24 +176,22 @@ components:
           type: string
           format: uri
           description: Source URL, only when provided by the search result.
-    DeviceType:
-      type: string
-      enum: [tv_box, smart_speaker, smartphone, unknown]
     DeviceCapability:
       type: string
       enum: [speech, screen, device_tools, user_permissions, deep_links, oauth]
     Device:
       type: object
       additionalProperties: false
-      required: [userId, deviceId, deviceType, capabilities]
+      required: [userId, deviceId, product, capabilities]
       properties:
         userId:
           $ref: "#/components/schemas/UUID"
           description: Trusted user identity for the device scope.
         deviceId:
           $ref: "#/components/schemas/NonEmptyString"
-        deviceType:
-          $ref: "#/components/schemas/DeviceType"
+        product:
+          $ref: "#/components/schemas/NonEmptyString"
+          description: Product identifier for the device, such as sberbox.
         capabilities:
           type: array
           uniqueItems: true
@@ -933,18 +931,18 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     AssistantMessagePayload:
-      description: deviceId identifies the destination device; deviceType is optional and non-null when present.
+      description: deviceId and product identify the destination device.
       type: object
       additionalProperties: false
-      required: [content, deviceId]
+      required: [content, deviceId, product]
       properties:
         content:
           $ref: "#/components/schemas/NonEmptyString"
           description: One complete nonblank assistant text block, preserving its original content.
         deviceId:
           $ref: "#/components/schemas/NonEmptyString"
-        deviceType:
-          $ref: "#/components/schemas/DeviceType"
+        product:
+          $ref: "#/components/schemas/NonEmptyString"
     ToolCallStartedEvent:
       type: object
       additionalProperties: false
@@ -972,8 +970,7 @@ components:
           $ref: "#/components/schemas/DateTime"
     ToolCallStartedPayload:
       description: >-
-        For user.ask, deviceId is required and identifies the destination device;
-        deviceType is optional and non-null when present.
+        For user.ask, deviceId and product are required and identify the destination device.
         Cross-channel user.ask captures the device from the target chat's most recently accepted
         new message.submit; this context survives thread completion and reconnects. Creation and
         subscription alone do not establish it. If unavailable, return client_context_missing to
@@ -987,13 +984,13 @@ components:
           name:
             const: user.ask
       then:
-        required: [deviceId]
+        required: [deviceId, product]
         properties:
           deviceId:
             $ref: "#/components/schemas/NonEmptyString"
       else:
         properties:
-          deviceType: false
+          product: false
       properties:
         toolCallId:
           $ref: "#/components/schemas/NonEmptyString"
@@ -1001,8 +998,8 @@ components:
           $ref: "#/components/schemas/NonEmptyString"
         deviceId:
           type: [string, "null"]
-        deviceType:
-          $ref: "#/components/schemas/DeviceType"
+        product:
+          $ref: "#/components/schemas/NonEmptyString"
         arguments:
           $ref: "#/components/schemas/ArbitraryJson"
           description: Operation arguments; web.search uses the documented WebSearchArguments shape.
@@ -1032,17 +1029,17 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     ThreadCompletedPayload:
-      description: deviceId identifies the destination device; deviceType is optional and non-null when present. Replay preserves the original values and omission of deviceType.
+      description: deviceId and product identify the destination device; replay preserves their original values.
       type: object
       additionalProperties: false
-      required: [response, deviceId]
+      required: [response, deviceId, product]
       properties:
         response:
           type: string
         deviceId:
           $ref: "#/components/schemas/NonEmptyString"
-        deviceType:
-          $ref: "#/components/schemas/DeviceType"
+        product:
+          $ref: "#/components/schemas/NonEmptyString"
     ThreadFailedEvent:
       type: object
       additionalProperties: false
@@ -1131,10 +1128,10 @@ components:
         createdAt:
           $ref: "#/components/schemas/DateTime"
     MessageCreatedPayload:
-      description: deviceId identifies the destination device; deviceType is optional and non-null when present. Replay preserves the original values and omission of deviceType.
+      description: deviceId and product identify the destination device; replay preserves their original values.
       type: object
       additionalProperties: false
-      required: [messageId, seq, role, content, deviceId]
+      required: [messageId, seq, role, content, deviceId, product]
       properties:
         messageId:
           $ref: "#/components/schemas/UUID"
@@ -1146,8 +1143,8 @@ components:
           type: string
         deviceId:
           $ref: "#/components/schemas/NonEmptyString"
-        deviceType:
-          $ref: "#/components/schemas/DeviceType"
+        product:
+          $ref: "#/components/schemas/NonEmptyString"
         clientMessageId:
           type: [string, "null"]
     ErrorCode:

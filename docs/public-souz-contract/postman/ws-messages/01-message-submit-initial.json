@@ -6,7 +6,7 @@
     "device": {
       "userId": "{{userId}}",
       "deviceId": "{{deviceId}}",
-      "deviceType": "tv_box",
+      "product": "sberbox",
       "capabilities": [
         "speech",
         "screen",

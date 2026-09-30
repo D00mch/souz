@@ -179,7 +179,7 @@ items:
                       "device": {
                         "userId": "{{userId}}",
                         "deviceId": "{{deviceId}}",
-                        "deviceType": "tv_box",
+                        "product": "sberbox",
                         "capabilities": [
                           "speech",
                           "screen",
@@ -224,7 +224,7 @@ items:
                       "device": {
                         "userId": "{{userId}}",
                         "deviceId": "{{deviceId}}",
-                        "deviceType": "tv_box",
+                        "product": "sberbox",
                         "capabilities": [
                           "speech",
                           "screen",
@@ -301,7 +301,7 @@ items:
                       "device": {
                         "userId": "{{userId}}",
                         "deviceId": "{{deviceId}}",
-                        "deviceType": "tv_box",
+                        "product": "sberbox",
                         "capabilities": [
                           "speech",
                           "screen",
@@ -331,7 +331,7 @@ items:
                       "device": {
                         "userId": "{{userIdB}}",
                         "deviceId": "{{deviceId}}",
-                        "deviceType": "tv_box",
+                        "product": "sberbox",
                         "capabilities": [
                           "speech",
                           "screen",
