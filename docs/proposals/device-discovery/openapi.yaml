@@ -1,116 +1,122 @@
 openapi: 3.1.0
 info:
-  title: Proposed Assistant device discovery contract — NOT IMPLEMENTED
+  title: Proposed Assistant device discovery — NOT IMPLEMENTED
   version: 1.0.0-proposal
-  description: >-
-    Client handoff schemas, not an available API. See README.md for service
-    registration, routing, deadlines and retry requirements. Relative references
-    reuse implemented envelopes without extending their frame unions.
+  description: |
+    Client handoff for device.list, including Telegram-originated tasks; implementation
+    is separate. [examples.jsonl](examples.jsonl) contains three raw wire frames:
+    Souz request, Assistant result, Souz ACK. Bundle this file with the referenced
+    [public API](../../public-souz-contract/openapi.yaml); its frame unions are unchanged.
+
+    Connect to the task owner's /v1/ws?clientType=backend&service=assistant and require
+    the negotiated WebSocket subprotocol souz.assistant.v1. Ingress must restrict the
+    role to trusted Assistant instances; the query parameter is not authentication.
+    Deployment supplies owner-specific addresses. Allow one service socket per owner;
+    reject a competing upgrade with HTTP 409, invalid parameters/subprotocol with 400,
+    unauthorized callers with 403, and disabled service with 503. Retry 409/503 with
+    backoff. Disconnect/dead-peer detection releases only that socket's registration.
+    Ordinary sockets and chat replay never receive these requests or resolve them.
+
+    Souz persists calls before delivery. Reconnect to the same owner redelivers only
+    unexpired pending calls, unchanged, without subscriptions; disconnect preserves
+    the deadline. Without a service connection, wait until connection or deadline.
+    Deduplicate by (chatId, threadId, toolCallId). Reuse cached work/results; after an
+    Assistant crash an uncached read-only lookup may restart on an unexpired request.
+    Never restart after deadlineAt. Souz owner crash recovery is outside this proposal.
+
+    Admit the first valid result strictly before deadlineAt, atomically with timeout
+    and cancellation. Persist it before ACK; release the task after a bounded ACK
+    write succeeds or fails. Retry cached results unchanged on reconnect even without
+    request redelivery. Identical accepted-result retries return duplicate:true with
+    the original receipt; different results return idempotency_conflict. Equality
+    ignores object key order, preserving array order. With no accepted result,
+    expired/cancelled/unknown calls or wrong owner/service return tool_call_not_found.
+    Invalid pending results return invalid_request and may be corrected before expiry.
+    Rejections have duplicate:false. Never resume a cancelled task from a late result.
+
+    Keep cached results through deadlineAt. Reconcile missing ACKs for at most five
+    minutes after deadlineAt, then stop retries and discard the record even if the
+    owner never returns; absence of an ACK leaves acceptance unknown. Souz retains
+    accepted receipts through this window; later discarded calls return
+    tool_call_not_found. These rules require no shared durable Assistant cache.
 x-souz-status: proposed
 paths: {}
 components:
   schemas:
-    AssistantConnectionQuery:
+    TrustedUserId:
       description: >-
-        Proposed upgrade query; the service selector is not authentication.
-        The upgrade also requires the souz.assistant.v1 WebSocket subprotocol.
-      type: object
-      additionalProperties: false
-      required: [clientType, service]
-      properties:
-        clientType:
-          const: backend
-        service:
-          const: assistant
-    AssistantToSouz:
-      oneOf:
-        - $ref: '#/components/schemas/DeviceListSucceeded'
-        - $ref: '#/components/schemas/DeviceListFailed'
-        - $ref: '#/components/schemas/DeviceListTimedOut'
-    SouzToAssistant:
-      oneOf:
-        - $ref: '#/components/schemas/DeviceListRequest'
-        - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/AcceptedToolResultAck'
-        - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/RejectedToolResultAck'
+        Opaque trusted task owner; preserve its value, never model-supplied. Sender
+        also enforces the backend's 256 UTF-16-code-unit limit (maxLength counts code points).
+      type: string
+      minLength: 1
+      maxLength: 256
+      pattern: '[^ \u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]'
+      not: {pattern: '[\u0000-\u001F\u007F-\u009F]'}
     DeviceListRequest:
       description: >-
-        Service-only durable event for the originating task. No selected device
-        or subscription is required. Redelivery preserves the complete frame.
+        Service-only inventory request for the trusted user's complete account.
+        chatId/threadId identify the originating task; echo them and toolCallId in
+        results. No device or device-chat subscription is needed. seq is a durable
+        chat sequence, not a service replay cursor. A new call has a new toolCallId.
       type: object
       additionalProperties: false
       required: [kind, seq, type, chatId, threadId, payload, createdAt]
       properties:
-        kind:
-          const: event
-        seq:
-          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/EventSeq'
-        type:
-          const: tool.call.started
-        chatId:
-          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/UUID'
-        threadId:
-          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/UUID'
+        kind: {const: event}
+        seq: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/EventSeq'}
+        type: {const: tool.call.started}
+        chatId: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/UUID'}
+        threadId: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/UUID'}
         payload:
           type: object
           additionalProperties: false
           required: [toolCallId, name, userId, arguments, deadlineAt]
           properties:
-            toolCallId:
-              $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
-            name:
-              const: device.list
-            userId:
-              $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/UUID'
-              description: Trusted task owner supplied by Souz, never by the model.
-            arguments:
-              type: object
-              additionalProperties: false
+            toolCallId: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'}
+            name: {const: device.list}
+            userId: {$ref: '#/components/schemas/TrustedUserId'}
+            arguments: {type: object, additionalProperties: false}
             deadlineAt:
               $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DateTime'
-              description: Absolute UTC admission deadline; default 30 seconds from createdAt.
-        createdAt:
-          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DateTime'
-    DeviceListSucceeded:
-      allOf:
-        - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/SucceededToolResult'
-        - type: object
-          properties:
-            result:
-              $ref: '#/components/schemas/DeviceListResult'
-    DeviceListFailed:
-      allOf:
-        - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/FailedToolResult'
-        - type: object
-          properties:
-            error:
-              type: object
-              properties:
-                code:
-                  const: internal_error
-    DeviceListTimedOut:
-      allOf:
-        - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/TimedOutToolResult'
-        - type: object
-          properties:
-            error:
-              type: object
-              properties:
-                code:
-                  const: client_tool_timed_out
+              description: Absolute deadline; default 30 seconds from createdAt. Souz's clock governs admission.
+        createdAt: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DateTime'}
+    AssistantToSouz:
+      description: Lookup or identity-mapping failure uses internal_error; an early lookup timeout uses client_tool_timed_out.
+      oneOf:
+        - allOf:
+            - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/SucceededToolResult'
+            - properties:
+                result: {$ref: '#/components/schemas/DeviceListResult'}
+        - allOf:
+            - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/FailedToolResult'
+            - properties:
+                error:
+                  properties:
+                    code: {const: internal_error}
+        - allOf:
+            - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/TimedOutToolResult'
+            - properties:
+                error:
+                  properties:
+                    code: {const: client_tool_timed_out}
+    SouzToAssistant:
+      oneOf:
+        - $ref: '#/components/schemas/DeviceListRequest'
+        - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/AcceptedToolResultAck'
+        - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/RejectedToolResultAck'
     DeviceListResult:
       description: >-
-        Complete account inventory including offline devices; empty is valid.
-        deviceId values must be unique even when other fields differ; the receiver
-        checks this semantic constraint in addition to JSON Schema validation.
+        Complete registered inventory including offline devices; empty is valid,
+        partial results or lookup failures are not empty successes. Receiver must
+        check deviceId uniqueness across entries, beyond JSON Schema validation.
+        This is not local MCP host discovery or a tool catalogue.
       type: object
       additionalProperties: false
       required: [devices]
       properties:
         devices:
           type: array
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/DeviceListDevice'
+          items: {$ref: '#/components/schemas/DeviceListDevice'}
     DeviceListDevice:
       type: object
       additionalProperties: false
@@ -118,14 +124,14 @@ components:
       properties:
         deviceId:
           $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
-        name:
-          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
-        deviceType:
-          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DeviceType'
+          description: Stable account-scoped ID matching message.submit.payload.device.deviceId.
+        name: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'}
+        deviceType: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DeviceType'}
         online:
           type: boolean
+          description: Reachability at lookup time, not a guarantee of later command success.
         capabilities:
           type: array
           uniqueItems: true
-          items:
-            $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DeviceCapability'
+          description: Metadata only; may be empty and does not grant permissions or define tools.
+          items: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DeviceCapability'}
