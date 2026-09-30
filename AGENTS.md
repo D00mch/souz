@@ -3,7 +3,8 @@
 Souz is a Kotlin Multiplatform AI assistant with desktop and backend hosts over shared agent and runtime modules.
 
 - Read and maintain this file and `docs/pain-points.md` before changing the repository.
-- Keep documentation concise and current-state only. Do not write change-history phrases such as “now we do”.
+- Keep runtime documentation and `docs/public-souz-contract/` concise and current-state only. Do not write change-history phrases such as “now we do”.
+- Keep pre-implementation client agreements under `docs/proposals/`, explicitly marked as proposed and not implemented; exclude them from the implemented public API schemas.
 
 ## UI architecture principles
 
