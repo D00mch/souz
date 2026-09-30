@@ -8,6 +8,21 @@ info:
     Souz request, Assistant result, Souz ACK. Bundle this file with the referenced
     [public API](../../public-souz-contract/openapi.yaml); its frame unions are unchanged.
 
+    Inventory includes all device kinds, including lights, sensors, sockets, hubs
+    and Assistant devices. arguments.homeId selects one home; omission selects all
+    homes accessible to the trusted user. arguments.includeShared defaults to true;
+    false selects only devices owned by that user within the selected homes. Orion
+    resolves user/home identities and enforces access; these filters grant no rights.
+    Unknown or inaccessible homes and lookup failures use failed/internal_error,
+    not a successful empty inventory. A valid scope with no matching devices succeeds.
+
+    For a group-tree response, traverse result.devices and every children node's
+    devices recursively. Collect containing HOME/ROOM context, including through
+    GROUP nodes, and deduplicate using Orion's deviceId, merging locations. Include
+    offline devices. A single home response is not a complete all-homes inventory;
+    Orion must finish the requested scope before returning success. Do not copy
+    upstream owner IDs, raw state, attributes or commands into discovery results.
+
     Connect to the task owner's /v1/ws?clientType=backend&service=assistant and require
     the negotiated WebSocket subprotocol souz.assistant.v1. Ingress must restrict the
     role to trusted Assistant instances; the query parameter is not authentication.
@@ -54,7 +69,7 @@ components:
       not: {pattern: '[\u0000-\u001F\u007F-\u009F]'}
     DeviceListRequest:
       description: >-
-        Service-only inventory request for the trusted user's complete account.
+        Service-only inventory request scoped by the trusted user and arguments.
         chatId/threadId identify the originating task; echo them and toolCallId in
         results. No device or device-chat subscription is needed. seq is a durable
         chat sequence, not a service replay cursor. A new call has a new toolCallId.
@@ -75,7 +90,17 @@ components:
             toolCallId: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'}
             name: {const: device.list}
             userId: {$ref: '#/components/schemas/TrustedUserId'}
-            arguments: {type: object, additionalProperties: false}
+            arguments:
+              type: object
+              additionalProperties: false
+              properties:
+                homeId:
+                  $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
+                  description: Opaque Orion-resolved home ID from device locations. Omit for all accessible homes; names are not IDs.
+                includeShared:
+                  type: boolean
+                  default: true
+                  description: Include devices shared with the user. False means owned devices only; Orion applies trusted ownership rules.
             deadlineAt:
               $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DateTime'
               description: Absolute deadline; default 30 seconds from createdAt. Souz's clock governs admission.
@@ -106,10 +131,11 @@ components:
         - $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/RejectedToolResultAck'
     DeviceListResult:
       description: >-
-        Complete registered inventory including offline devices; empty is valid,
-        partial results or lookup failures are not empty successes. Receiver must
-        check deviceId uniqueness across entries, beyond JSON Schema validation.
-        This is not local MCP host discovery or a tool catalogue.
+        Complete inventory for the requested home/ownership scope, including offline
+        devices. Empty is valid; partial results or lookup failures are not empty
+        successes. Receiver checks deviceId uniqueness beyond JSON Schema validation.
+        Optional metadata is omitted when unavailable, never fabricated. Discovery
+        does not define callable tools or imply that later actions are permitted.
       type: object
       additionalProperties: false
       required: [devices]
@@ -120,18 +146,57 @@ components:
     DeviceListDevice:
       type: object
       additionalProperties: false
-      required: [deviceId, name, deviceType, online, capabilities]
+      required: [deviceId, name]
       properties:
         deviceId:
           $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
-          description: Stable account-scoped ID matching message.submit.payload.device.deviceId.
-        name: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'}
-        deviceType: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DeviceType'}
-        online:
-          type: boolean
-          description: Reachability at lookup time, not a guarantee of later command success.
-        capabilities:
+          description: >-
+            Opaque, stable identifier chosen and resolved by Orion, unique within
+            this user's inventory. Souz preserves it unchanged for later requests;
+            no upstream id/external_id mapping or identifier format is prescribed.
+        name:
+          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
+          description: Upstream name.name; fall back to name.defaultName, device_type_name, then deviceId when blank.
+        model:
+          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
+          description: device_info.model, unchanged; omit when unavailable. This is not a Souz deviceType or a routing surface.
+        categories:
           type: array
           uniqueItems: true
-          description: Metadata only; may be empty and does not grant permissions or define tools.
-          items: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DeviceCapability'}
+          description: >-
+            Distinct full_categories[].slug values, such as light, sensor_temp or
+            socket. Open vocabulary; omit when unavailable. These labels do not
+            define callable tools or imply speech/media support, including default.
+          items: {$ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'}
+        locations:
+          type: array
+          uniqueItems: true
+          description: >-
+            Distinct locations within the requested scope; merge for repeated devices.
+            A location needs a containing HOME. GROUP nodes are not rooms. Omit if
+            unavailable; labels are display context and may repeat.
+          items:
+            type: object
+            additionalProperties: false
+            required: [homeId]
+            properties:
+              homeId:
+                $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
+                description: Opaque home ID chosen by Orion; usable as arguments.homeId.
+              homeName:
+                $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
+                description: Containing HOME group's name, when available.
+              roomName:
+                $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/NonEmptyString'
+                description: Nearest containing ROOM group's name, when available, including through nested GROUP nodes.
+        online:
+          type: boolean
+          description: >-
+            reported_state entry with key online and type BOOL, using bool_value.
+            Last reported state, not current reachability; omit if absent or invalid.
+            Never use desired_state or infer it from on_off or aggregate group status.
+        onlineUpdatedAt:
+          $ref: '../../public-souz-contract/openapi.yaml#/components/schemas/DateTime'
+          description: The same reported online entry's last_sync; omit if unavailable. Not a last-seen time or proof of freshness.
+      dependentRequired:
+        onlineUpdatedAt: [online]
