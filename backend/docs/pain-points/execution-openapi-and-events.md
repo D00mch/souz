@@ -6,6 +6,14 @@
 
 Provider HTTP clients and OAuth transports are process-owned resources. A request-scoped LLM API retains only execution settings, lazily resolved credentials, lightweight provider adapters, retry state, and cumulative usage. Backend execution never constructs or routes to Giga; capability discovery and request validation apply the same backend provider policy before an execution is persisted or resumed.
 
+Successful persistence emits one INFO `execution.token_usage` record. JSON `kvpList` contains `input_tokens`, `output_tokens`, `total_tokens`, and `cached_input_tokens`; `mdc` supplies `userId`, `chatId`, and `threadId`. Totals include nested calls and option continuations. Waiting, failed, or cancelled executions, duplicate submissions, and event replay do not log usage. Completion remains cancellable; the launcher's existing cancellation cleanup preserves a stored completion and repairs its terminal event without logging twice. Logging and PostgreSQL are not transactional, so interruption between the database commit and the log can leave usage unlogged.
+
+Sum completed-execution tokens from exported JSON Lines (Logback encodes counter values as strings):
+
+```sh
+jq -s '[.[] | (.kvpList // [] | add) | select(.event == "execution.token_usage") | .total_tokens | tonumber] | add // 0' backend.jsonl
+```
+
 Background execution is launched through a registered lifecycle job whose execution body is held behind an internal start gate until registration is visible. Cancellation finalization and lease cleanup run before the job unregisters or completes. Process shutdown stops HTTP intake, cancels and joins application work, then closes provider clients, the local runtime, and the datasource in order.
 
 Each initial execution snapshots its effective compiled-tool names, `narrateSteps` preference (default `false`), and optional reasoning effort into execution metadata, and option continuations reuse that snapshot. An absent effort remains unset, including for executions created before the setting was available. One immutable request-scoped catalog applies the snapshot to compiled and execution-bound LLM tools, then merges built-in client operations for local or cross-channel WebSocket calls. The skills graph uses that final catalog for inventory, lookup, and generic invocation while exposing only its fixed core tools to the model.
