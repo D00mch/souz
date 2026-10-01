@@ -223,7 +223,6 @@ internal class BackendConversationRuntimeFactory(
         ).create()
         return BackendConversationRuntime(
             key = key,
-            sessionRepository = sessionRepository,
             settingsProvider = settingsProvider,
             contextFactory = kernel.contextFactory,
             executor = kernel.executor,

@@ -2,7 +2,7 @@
 
 ## Invariant
 
-`AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation. For the Client-Souz contract, an execution is a thread and its `id` is the public `threadId`. Product messages are stored separately from runtime continuation state, and `conversationId = chatId.toString()` is the stable agent-session identity. Each turn uses the backend's single request-scoped steerable skills graph. Request-scoped runtimes rebuild from persisted session state, while storage enforces one active execution per chat.
+`AgentExecutionService` owns product execution lifecycle, cancellation, and option continuation. For the Client-Souz contract, an execution is a thread and its `id` is the public `threadId`. Product messages are stored separately from runtime continuation state, and `conversationId = chatId.toString()` is the stable agent-session identity. Each turn uses the backend's single request-scoped steerable skills graph. Request-scoped runtimes rebuild from persisted session state and return the next snapshot for transactional finalization. Storage enforces one active execution per chat.
 
 Provider HTTP clients and OAuth transports are process-owned resources. A request-scoped LLM API retains only execution settings, lazily resolved credentials, lightweight provider adapters, retry state, and cumulative usage. Backend execution never constructs or routes to Giga; capability discovery and request validation apply the same backend provider policy before an execution is persisted or resumed.
 

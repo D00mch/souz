@@ -55,7 +55,6 @@ internal class BackendConversationRuntimeTurnRunner(
         return try {
             val execution = runtime.execute(
                 request = request,
-                persistSession = false,
                 eventSink = eventSink,
                 onRuntimeReady = {
                     if (threadId != null) clientThreadRegistry?.markRuntimeReady(threadId, runtime)
