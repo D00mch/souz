@@ -28,7 +28,7 @@ import ru.souz.llms.LLMResponse
 internal class AgentExecutionFinalizer(
     private val executionRepository: AgentExecutionRepository,
     private val turnRunner: BackendConversationTurnRunner,
-    private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
+    private val clientThreadRegistry: ClientThreadRuntimeRegistry,
 ) {
     private val logger = LoggerFactory.getLogger(AgentExecutionFinalizer::class.java)
 
@@ -179,7 +179,7 @@ internal class AgentExecutionFinalizer(
     }
 
     internal suspend fun <T> withTerminalTransition(executionId: UUID, block: suspend () -> T): T =
-        clientThreadRegistry?.withTerminalTransition(executionId, block) ?: block()
+        clientThreadRegistry.withTerminalTransition(executionId, block)
 
     private suspend fun failExecution(
         execution: AgentExecution,
@@ -212,37 +212,18 @@ private data class ExecutionFailure(
 private fun Exception.toExecutionFailure(execution: AgentExecution): ExecutionFailure {
     val turnException = this as? BackendConversationTurnException
     val cause = turnException?.cause ?: this
-    val usage = turnException?.usage?.toExecutionUsage() ?: execution.usage
-    return when (cause) {
-        is BackendV1Exception -> ExecutionFailure(
-            errorCode = cause.code,
-            errorMessage = cause.message,
-            usage = usage,
-            response = cause,
-        )
-
-        is AgentStateConflictException -> ExecutionFailure(
-            errorCode = "state_conflict",
-            errorMessage = "Agent state changed before save.",
-            usage = usage,
-            response = BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            ),
-        )
-
-        else -> ExecutionFailure(
-            errorCode = "agent_execution_failed",
-            errorMessage = cause.message ?: "Agent execution failed.",
-            usage = usage,
-            response = BackendV1Exception(
-                status = HttpStatusCode.InternalServerError,
-                code = "agent_execution_failed",
-                message = "Agent execution failed.",
-            ),
-        )
-    }
+    val response = cause as? BackendV1Exception ?: BackendV1Exception(
+        status = HttpStatusCode.InternalServerError,
+        code = "agent_execution_failed",
+        message = "Agent execution failed.",
+    )
+    val stateConflict = cause is AgentStateConflictException
+    return ExecutionFailure(
+        errorCode = if (stateConflict) "state_conflict" else response.code,
+        errorMessage = if (stateConflict) "Agent state changed before save." else cause.message ?: response.message,
+        usage = turnException?.usage?.toExecutionUsage() ?: execution.usage,
+        response = response,
+    )
 }
 
 private fun LLMResponse.Usage.toExecutionUsage(): AgentExecutionUsage =

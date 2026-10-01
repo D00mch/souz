@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import org.slf4j.LoggerFactory
+import ru.souz.backend.execution.model.AgentExecutionStatus
 import ru.souz.backend.execution.service.AgentExecutionFinalizer
 import ru.souz.backend.http.BackendHttpRoutes
 import ru.souz.llms.LLMResponse
@@ -84,16 +85,9 @@ class BackendTokenUsageE2eTest {
                         val field = it.properties().single()
                         field.key to field.value.asText()
                     })
-                    sql { connection ->
-                        connection.prepareStatement("select status, usage_json from agent_executions where id = ?").use {
-                            it.setObject(1, UUID.fromString(executionId))
-                            it.executeQuery().use { rows ->
-                                check(rows.next())
-                                assertEquals("completed", rows.getString("status"))
-                                assertEquals(usage.totalTokens, json.readTree(rows.getString("usage_json"))["totalTokens"].asInt())
-                            }
-                        }
-                    }
+                    val persisted = checkNotNull(backend.executionRepository.get(userId, completed.id))
+                    assertEquals(AgentExecutionStatus.COMPLETED, persisted.status)
+                    assertEquals(usage.totalTokens, persisted.usage?.totalTokens)
                 }
             }
         }
