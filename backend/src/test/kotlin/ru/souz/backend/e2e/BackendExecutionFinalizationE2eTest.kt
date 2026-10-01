@@ -167,62 +167,47 @@ class BackendExecutionFinalizationE2eTest {
     }
 
     @Test
-    fun `shutdown cancels option handoff before its event or session is saved`() {
-        for (table in listOf("agent_events", "agent_conversation_state")) {
-            val releaseChoice = CompletableDeferred<Unit>()
-            val runner = ScriptedOptionTurnRunner { releaseChoice.await() }
+    fun `option handoff cancellation during event session or peer transition saves no continuation`() {
+        for (pauseAt in listOf("agent_events", "agent_conversation_state", "peer")) {
+            val handoffReady = CompletableDeferred<Unit>()
+            val releaseHandoff = CompletableDeferred<Unit>()
+            val pauseHandoff: suspend () -> Unit = { handoffReady.complete(Unit); releaseHandoff.await() }
+            val runner = if (pauseAt == "peer") ScriptedOptionTurnRunner(afterChoice = pauseHandoff) else
+                ScriptedOptionTurnRunner(beforeChoice = pauseHandoff)
             backendE2eTest("e2e_option_handoff", featureFlags = BackendFeatureFlags(wsEvents = true, options = true),
                 turnRunnerOverride = runner) {
-                val userId = UUID.randomUUID().toString()
-                val chatId = createPublicChat(userId)
-                val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-                    trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-                }
-                val executionId = UUID.fromString(sent.jsonBody()["execution"]["id"].asText())
-                withTableLocked(table, "share") {
-                    releaseChoice.complete(Unit)
-                    awaitLockWait(table)
-                    backend.applicationScope.cancel()
-                }
-                backend.applicationScope.cancelAndJoin()
-                val execution = client.get("${BackendHttpRoutes.chatThread(chatId, executionId)}?clientType=backend") { trusted(userId) }.jsonBody()
-                assertEquals("cancelled", execution["status"].asText())
-                assertNoTurnSaved(chatId, executionId)
-                val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
-                assertEquals(listOf("execution.cancelled"), events.map { it["type"].asText() }.filter {
-                    it in setOf("execution.finished", "execution.failed", "execution.cancelled")
-                })
-            }
-        }
-    }
-
-    @Test
-    fun `another worker cancels option handoff without saving its continuation`() {
-        val choiceReady = CompletableDeferred<Unit>()
-        val releaseChoice = CompletableDeferred<Unit>()
-        val runner = ScriptedOptionTurnRunner(afterChoice = { choiceReady.complete(Unit); releaseChoice.await() })
-        backendE2eTest("e2e_option_peer_cancel", featureFlags = BackendFeatureFlags(wsEvents = true, options = true),
-            turnRunnerOverride = runner) {
-            withTokenUsageLogs { logs ->
-                val userId = UUID.randomUUID().toString()
-                val chatId = createPublicChat(userId)
-                val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
-                    trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
-                }
-                val executionId = UUID.fromString(sent.jsonBody()["execution"]["id"].asText())
-                choiceReady.await()
-                val running = checkNotNull(backend.executionRepository.get(userId, executionId))
-                withPeerBackend { peer ->
-                    // The other worker commits cancellation while the original job is still live.
-                    val cancelling = checkNotNull(peer.backend.executionRepository.transitionIfCurrent(running, AgentExecutionStatus.CANCELLING))
-                    releaseChoice.complete(Unit)
-                    backend.awaitExecution(executionId)
-                    peer.backend.dependencies.executionService.propagateCancellation(cancelling)
-                    assertEquals("cancelled", threadStatus(chatId, executionId))
+                withTokenUsageLogs { logs ->
+                    val userId = UUID.randomUUID().toString()
+                    val chatId = createPublicChat(userId)
+                    val sent = client.post(BackendHttpRoutes.chatMessages(chatId)) {
+                        trusted(userId); jsonBody("""{"content":"need option","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}""")
+                    }
+                    val executionId = UUID.fromString(sent.jsonBody()["execution"]["id"].asText())
+                    if (pauseAt == "peer") {
+                        handoffReady.await()
+                        val running = checkNotNull(backend.executionRepository.get(userId, executionId))
+                        withPeerBackend { peer ->
+                            // Commit cancellation on another worker while the original job is still live.
+                            val cancelling = checkNotNull(peer.backend.executionRepository.transitionIfCurrent(running, AgentExecutionStatus.CANCELLING))
+                            releaseHandoff.complete(Unit)
+                            backend.awaitExecution(executionId)
+                            peer.backend.dependencies.executionService.propagateCancellation(cancelling)
+                        }
+                    } else {
+                        withTableLocked(pauseAt, "share") {
+                            releaseHandoff.complete(Unit)
+                            awaitLockWait(pauseAt)
+                            backend.applicationScope.cancel()
+                        }
+                        backend.applicationScope.cancelAndJoin()
+                    }
+                    assertEquals("cancelled", threadStatus(chatId, executionId), pauseAt)
                     assertNoTurnSaved(chatId, executionId)
-                    assertTrue(logs.isEmpty())
+                    assertTrue(logs.isEmpty(), pauseAt)
                     val events = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
-                    assertEquals(1, events.count { it["type"].asText() == "execution.cancelled" })
+                    assertEquals(listOf("execution.cancelled"), events.map { it["type"].asText() }.filter {
+                        it in setOf("execution.finished", "execution.failed", "execution.cancelled")
+                    }, pauseAt)
                 }
             }
         }

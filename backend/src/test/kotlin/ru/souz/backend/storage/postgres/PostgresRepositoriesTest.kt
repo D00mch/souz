@@ -22,7 +22,8 @@ import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.session.AgentConversationSession
 import ru.souz.backend.agent.session.AgentConversationState
 import ru.souz.backend.agent.session.AgentStateConflictException
-import ru.souz.backend.agent.session.AgentStateBackedSessionRepository
+import ru.souz.backend.agent.session.toConversationSession
+import ru.souz.backend.agent.session.toState
 import ru.souz.backend.chat.model.Chat
 import ru.souz.backend.chat.model.ChatRole
 import ru.souz.backend.chat.model.CLIENT_HISTORY_MESSAGE_METADATA_KEY
@@ -999,7 +1000,7 @@ class PostgresRepositoriesTest {
     }
 
     @Test
-    fun `agent session repository round trips through postgres agent state repository`() = runTest {
+    fun `conversation session round trips through postgres agent state`() = runTest {
         val schema = newPostgresSchema("postgres_legacy_session")
 
         postgresRepositories(schema).use { repositories ->
@@ -1011,7 +1012,6 @@ class PostgresRepositoriesTest {
                     updatedAt = Instant.parse("2026-05-01T13:00:00Z"),
                 ).copy(id = chatId)
             )
-            val repository = AgentStateBackedSessionRepository(repositories.stateRepository)
             val key = AgentConversationKey.fromChat(
                 userId = "opaque/user:session",
                 chatId = chatId,
@@ -1034,11 +1034,10 @@ class PostgresRepositoriesTest {
                 rowVersion = 0L,
             )
 
-            repository.save(key, session)
+            repositories.stateRepository.save(session.toState(key))
 
-            val storedState = repositories.stateRepository.get(key.userId, chatId)
-            assertEquals(session, repository.load(key))
-            assertNotNull(storedState)
+            val storedState = assertNotNull(repositories.stateRepository.get(key.userId, chatId))
+            assertEquals(session, storedState.toConversationSession())
             assertEquals(session.history, storedState.history)
             assertEquals(Locale.forLanguageTag("en-US"), storedState.locale)
             assertEquals(ZoneId.of("Europe/Amsterdam"), storedState.timeZone)

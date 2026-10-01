@@ -17,23 +17,6 @@ data class AgentConversationSession(
     val rowVersion: Long = 0L,
 )
 
-/** Storage contract for per-conversation backend agent state. */
-interface AgentSessionRepository {
-    suspend fun load(key: AgentConversationKey): AgentConversationSession?
-    suspend fun save(key: AgentConversationKey, session: AgentConversationSession)
-}
-
-class AgentStateBackedSessionRepository(
-    private val stateRepository: AgentStateRepository,
-) : AgentSessionRepository {
-    override suspend fun load(key: AgentConversationKey): AgentConversationSession? =
-        stateRepository.get(key.userId, key.chatId())?.toConversationSession()
-
-    override suspend fun save(key: AgentConversationKey, session: AgentConversationSession) {
-        stateRepository.save(session.toState(key))
-    }
-}
-
 internal fun AgentConversationSession.toState(key: AgentConversationKey): AgentConversationState =
     AgentConversationState(
         userId = key.userId,
@@ -48,7 +31,7 @@ internal fun AgentConversationSession.toState(key: AgentConversationKey): AgentC
         rowVersion = rowVersion,
     )
 
-private fun AgentConversationState.toConversationSession(): AgentConversationSession =
+internal fun AgentConversationState.toConversationSession(): AgentConversationSession =
     AgentConversationSession(
         history = history,
         temperature = temperature,
