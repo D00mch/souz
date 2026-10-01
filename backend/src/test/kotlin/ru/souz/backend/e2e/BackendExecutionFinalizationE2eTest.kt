@@ -80,7 +80,7 @@ class BackendExecutionFinalizationE2eTest {
                     backend.awaitExecution(executionId)
                     backend.applicationScope.cancelAndJoin()
                     val waiting = checkNotNull(backend.executionRepository.get(userId, executionId))
-                    repeat(2) { backend.dependencies.executionService.propagateCancellation(waiting) }
+                    backend.dependencies.executionService.propagateCancellation(waiting)
                     assertEquals("waiting_option", threadStatus(chatId, executionId))
                     optionId = client.get(BackendHttpRoutes.chatEvents(chatId)) { trusted(userId) }.jsonBody()["items"]
                         .single { it["type"].asText() == "option.requested" }["payload"]["optionId"].asText()

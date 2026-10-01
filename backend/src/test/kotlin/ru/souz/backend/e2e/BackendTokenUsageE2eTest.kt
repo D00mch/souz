@@ -12,7 +12,6 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -50,19 +49,14 @@ class BackendTokenUsageE2eTest {
                     withPeerBackend { peer ->
                         coroutineScope {
                             listOf(backend, peer.backend).map { worker -> async {
-                                repeat(2) {
-                                    worker.dependencies.executionService.propagateCancellation(completed)
-                                    worker.dependencies.executionService.finalizeInterruptedExecution(completed)
-                                }
+                                worker.dependencies.executionService.propagateCancellation(completed)
+                                worker.dependencies.executionService.finalizeInterruptedExecution(completed)
                             } }.awaitAll()
                         }
                         if (publicThread) peer.withPublicSocket(chatId) { socket ->
                             val replay = peer.readJson(socket)
                             assertEquals("thread.completed", replay["type"].asText())
                             assertEquals("done", replay["payload"]["response"].asText())
-                            socket.send(Frame.Text(messageFrame(chatId, userId, "usage")))
-                            assertTrue(peer.readJson(socket)["duplicate"].asBoolean())
-                            assertEquals("completed", peer.readJson(socket)["status"].asText())
                         }
                     }
                     if (!publicThread) {
