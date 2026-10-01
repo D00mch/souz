@@ -154,7 +154,9 @@ class BackendOptionsE2eTest {
     }
 }
 
-internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
+internal class ScriptedOptionTurnRunner(
+    private val beforeChoice: suspend () -> Unit = {},
+) : BackendConversationTurnRunner {
     val reasoningEfforts = CopyOnWriteArrayList<String?>()
     val narrationPreferences = CopyOnWriteArrayList<Boolean>()
     private val waitingConversations = LinkedHashSet<AgentConversationKey>()
@@ -168,6 +170,7 @@ internal class ScriptedOptionTurnRunner : BackendConversationTurnRunner {
         reasoningEfforts += request.reasoningEffort
         narrationPreferences += request.narrateSteps
         return if (waitingConversations.add(conversationKey)) {
+            beforeChoice()
             eventSink.emit(
                 AgentRuntimeEvent.ChoiceRequested(
                     choiceId = UUID.randomUUID().toString(),

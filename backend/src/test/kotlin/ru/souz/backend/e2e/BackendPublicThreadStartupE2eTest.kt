@@ -19,15 +19,12 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.slf4j.LoggerFactory
 import ru.souz.backend.client.MessageSubmitFrame
@@ -196,39 +193,6 @@ class BackendPublicThreadStartupE2eTest {
         val service = backend.dependencies.publicClientService
         service.handleMessage(service.requireChat(UUID.fromString(chatId), "backend"),
             json.readTree(submit).decodeClientFrame(MessageSubmitFrame::class.java))
-    }
-
-    // Real PostgreSQL barriers exercise prompt cancellation around commit and startup, without fake repositories.
-    private suspend fun BackendE2eScope.withTableLocked(
-        table: String,
-        mode: String,
-        block: suspend CoroutineScope.() -> Unit,
-    ) = coroutineScope {
-        val locked = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val lock = launch(Dispatchers.IO) {
-            sql { connection ->
-                connection.autoCommit = false
-                connection.createStatement().use { it.execute("lock table $table in $mode mode") }
-                locked.complete(Unit)
-                runBlocking { release.await() }
-                connection.rollback()
-            }
-        }
-        locked.await()
-        try { block() } finally {
-            release.complete(Unit)
-            lock.join()
-        }
-    }
-
-    private suspend fun BackendE2eScope.awaitLockWait(table: String) {
-        eventually("database wait on $table") {
-            sql { connection -> connection.createStatement().use { statement ->
-                statement.executeQuery("select count(*) from pg_locks where not granted and relation = '$table'::regclass")
-                    .use { rows -> rows.next() && rows.getInt(1) > 0 }
-            } }.takeIf { it }
-        }
     }
 
     private fun BackendE2eScope.rejectStartupMessage() = sql { connection -> connection.createStatement().use {

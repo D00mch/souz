@@ -58,11 +58,20 @@ class PostgresAgentExecutionRepository(
         return execution
     }
 
-    override suspend fun update(execution: AgentExecution): AgentExecution = dataSource.write { connection ->
-        update(connection, execution)
-    }
+    override suspend fun updateIfCurrent(expected: AgentExecution, execution: AgentExecution): Boolean =
+        dataSource.write { connection ->
+            connection.lockChat(execution.userId, execution.chatId)
+            update(connection, execution, expected) != null
+        }
 
-    internal fun update(connection: java.sql.Connection, execution: AgentExecution): AgentExecution {
+    internal fun update(connection: java.sql.Connection, execution: AgentExecution): AgentExecution =
+        checkNotNull(update(connection, execution, null)) { "Execution not found: ${execution.id}" }
+
+    private fun update(
+        connection: java.sql.Connection,
+        execution: AgentExecution,
+        expected: AgentExecution?,
+    ): AgentExecution? {
         try {
             connection.prepareStatement(
                 """
@@ -84,11 +93,18 @@ class PostgresAgentExecutionRepository(
                     latest_device_context = ?,
                     runtime_owner = ?,
                     runtime_lease_until = ?
-                where user_id = ? and id = ?
-                """.trimIndent()
+                where user_id = ? and id = ? and chat_id = ?
+                """.trimIndent() + if (expected == null) "" else
+                    " and status = ? and cancel_requested = ? and runtime_owner is not distinct from ?"
             ).use { statement ->
                 bindExecutionUpdate(statement, execution)
-                statement.executeUpdate()
+                statement.setObject(20, execution.chatId)
+                if (expected != null) {
+                    statement.setString(21, expected.status.value)
+                    statement.setBoolean(22, expected.cancelRequested)
+                    statement.setString(23, expected.runtimeOwner)
+                }
+                if (statement.executeUpdate() == 0) return null
             }
         } catch (error: SQLException) {
             if (error.isConstraintViolation(ACTIVE_EXECUTION_CONSTRAINT) && execution.status.isActive()) {
@@ -200,7 +216,8 @@ class PostgresAgentExecutionRepository(
             update agent_executions
             set runtime_owner = ?, runtime_lease_until = ?
             where user_id = ? and chat_id = ? and id = ?
-              and status in ('queued', 'running', 'waiting_option', 'cancelling')
+              and status in ('queued', 'running', 'cancelling')
+              and runtime_owner = ? and runtime_lease_until > now()
             returning *
             """.trimIndent()
         ).use { statement ->
@@ -209,6 +226,7 @@ class PostgresAgentExecutionRepository(
             statement.setString(3, userId)
             statement.setObject(4, chatId)
             statement.setObject(5, executionId)
+            statement.setString(6, runtimeOwner)
             statement.executeQuery().use { resultSet ->
                 if (resultSet.next()) resultSet.toExecution() else null
             }
@@ -226,7 +244,7 @@ class PostgresAgentExecutionRepository(
             from chats chat
             where execution.chat_id = chat.id
               and chat.payload_hash not like 'internal:%'
-              and execution.status in ('queued', 'running', 'waiting_option', 'cancelling')
+              and execution.status in ('queued', 'running', 'cancelling')
               and execution.runtime_lease_until is not null
               and execution.runtime_lease_until < ?
             returning execution.*

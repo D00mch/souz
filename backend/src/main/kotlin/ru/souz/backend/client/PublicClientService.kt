@@ -244,22 +244,21 @@ internal class PublicClientService(
         withTimeoutOrNull(5_000.milliseconds) {
             registry.awaitRuntimeAvailable(threadId)
         }
-        val result = registry.commitCancellation(
-            threadId = threadId,
-            commit = { runtimeAvailable ->
-                clientRequestRepository.cancel(
-                    userId = chat.userId,
-                    key = key,
-                    threadId = threadId,
-                    runtimeAvailable = runtimeAvailable,
-                    acceptedRequest = key.request(threadId, ack, now),
-                    rejectedRequest = rejectedCancelRequest(key, threadId, now),
-                )
-            },
-            afterAccepted = { accepted ->
-                executionService.propagateCancellation(accepted.execution)
-            },
-        )
+        val result = withContext(NonCancellable) {
+            registry.commitCancellation(
+                threadId = threadId,
+                commit = { runtimeAvailable ->
+                    clientRequestRepository.cancel(
+                        userId = chat.userId,
+                        key = key,
+                        threadId = threadId,
+                        runtimeAvailable = runtimeAvailable,
+                        acceptedRequest = key.request(threadId, ack, now),
+                        rejectedRequest = rejectedCancelRequest(key, threadId, now),
+                    )
+                },
+            ).also { if (it is ClientRequestResult.Accepted) executionService.propagateCancellation(it.execution) }
+        }
         return handledReceipt(result, key, now, threadId)
     }
 

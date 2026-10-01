@@ -11,7 +11,12 @@ class ActiveAgentExecutionConflictException(
 
 interface AgentExecutionRepository {
     suspend fun create(execution: AgentExecution): AgentExecution
-    suspend fun update(execution: AgentExecution): AgentExecution
+   /**
+    * Atomically updates [execution] if it's stored status, cancellation flag, runtime owner match [expected].
+    *
+    * @return `true` if the update was applied
+    */
+    suspend fun updateIfCurrent(expected: AgentExecution, execution: AgentExecution): Boolean
     suspend fun start(execution: AgentExecution, userMessageId: UUID): AgentExecution?
     suspend fun get(userId: String, executionId: UUID): AgentExecution?
     suspend fun getByChat(userId: String, chatId: UUID, executionId: UUID): AgentExecution?

@@ -179,14 +179,12 @@ internal class ClientThreadRuntimeRegistry(
     suspend fun commitCancellation(
         threadId: UUID,
         commit: suspend (runtimeAvailable: Boolean) -> ClientRequestResult,
-        afterAccepted: suspend (ClientRequestResult.Accepted) -> Unit,
     ): ClientRequestResult = mutex.withLock {
         val state = states[threadId]?.takeUnless { it.terminal || it.runtime == null }
         withContext(NonCancellable) { commit(state != null) }.also { result ->
             if (state != null && result is ClientRequestResult.Accepted) {
                 state.terminal = true
                 state.runtimeReady.complete(Unit)
-                withContext(NonCancellable) { afterAccepted(result) }
                 removeIfTerminalAndIdle(threadId, state)
             }
         }

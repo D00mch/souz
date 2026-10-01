@@ -837,7 +837,7 @@ class PostgresRepositoriesTest {
                 ),
                 metadata = execution.metadata + ("assistantMessageId" to assistantPlaceholder.id.toString()),
             )
-            repositories.executionRepository.update(completedExecution)
+            assertTrue(repositories.executionRepository.updateIfCurrent(execution, completedExecution))
             val thirdEvent = repositories.eventRepository.append(
                 userId = userId,
                 chatId = chat.id,

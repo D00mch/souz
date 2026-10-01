@@ -111,9 +111,7 @@ class AgentExecutionService internal constructor(
             throw e
         } catch (e: Exception) {
             finalizer.markFailed(
-                executionId = prepared.execution.id,
-                userId = userId,
-                chatId = chatId,
+                execution = prepared.execution,
                 errorCode = "agent_execution_failed",
                 errorMessage = e.message ?: "Agent execution failed.",
                 usage = prepared.execution.usage,
@@ -239,9 +237,7 @@ class AgentExecutionService internal constructor(
             execution = execution,
             onCancelled = {
                 finalizer.finalizeCancelledExecutionIfNeeded(
-                    executionId = execution.id,
-                    userId = execution.userId,
-                    chatId = execution.chatId,
+                    execution = execution,
                     eventSink = eventSink,
                 )
             },
@@ -259,20 +255,22 @@ class AgentExecutionService internal constructor(
     }
 
     suspend fun resumeOption(option: Option): AgentExecution {
+        launcher.join(option.executionId)
         val currentExecution = finalizer.currentExecution(option.executionId, option.userId, option.chatId)
         if (currentExecution.status != AgentExecutionStatus.WAITING_OPTION) {
             throw invalidV1Request("Execution is not waiting for an option.")
         }
         requireOwnedChat(option.userId, option.chatId)
-        val runningExecution = executionRepository.update(
-            currentExecution.copy(
-                status = AgentExecutionStatus.RUNNING,
-                finishedAt = null,
-                cancelRequested = false,
-                errorCode = null,
-                errorMessage = null,
-            )
+        val runningExecution = currentExecution.copy(
+            status = AgentExecutionStatus.RUNNING,
+            finishedAt = null,
+            cancelRequested = false,
+            errorCode = null,
+            errorMessage = null,
         )
+        if (!executionRepository.updateIfCurrent(currentExecution, runningExecution)) {
+            throw invalidV1Request("Execution is not waiting for an option.")
+        }
         eventService.appendDurable(
             userId = option.userId,
             chatId = option.chatId,
@@ -327,23 +325,13 @@ class AgentExecutionService internal constructor(
         val execution = executionRepository.getByChat(started.userId, started.chatId, started.id) ?: return null
         if (execution.status == AgentExecutionStatus.WAITING_OPTION) return execution
         val finished = if (!execution.status.isActive()) execution else finalizer.markFailed(
-            executionId = execution.id,
-            userId = execution.userId,
-            chatId = execution.chatId,
+            execution = started,
             errorCode = "agent_execution_failed",
             errorMessage = "Agent execution was interrupted.",
             usage = execution.usage,
         )
         val sink = createEventSink(finished)
-        // Repair interrupted event writes through the same sink as live executions; storage deduplicates them.
-        when (finished.status) {
-            AgentExecutionStatus.FAILED -> sink.emitExecutionFailed(
-                finished.errorCode ?: "agent_execution_failed", finished.errorMessage ?: "Agent execution was interrupted.",
-            )
-            AgentExecutionStatus.CANCELLED -> sink.emitExecutionCancelled()
-            AgentExecutionStatus.COMPLETED -> sink.emitExecutionFinished(finished)
-            else -> Unit
-        }
+        sink.emitTerminal(finished)
         return finished
     }
 
@@ -358,38 +346,22 @@ class AgentExecutionService internal constructor(
             narrateSteps = execution.metadata[METADATA_NARRATE_STEPS] == "true",
         )
 
-    private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution {
-        return finalizer.withTerminalTransition(execution.id) {
-            val currentExecution = executionRepository.getByChat(execution.userId, execution.chatId, execution.id)
-                ?: throw BackendV1Exception(
-                    status = HttpStatusCode.NotFound,
-                    code = "execution_not_found",
-                    message = "Execution not found.",
-                )
-            if (!currentExecution.status.isActive()) {
-                throw invalidV1Request("Execution is not active.")
+    private suspend fun cancelExecutionInternal(execution: AgentExecution): AgentExecution = withContext(NonCancellable) {
+        val cancelling = finalizer.withTerminalTransition(execution.id) {
+            var current = finalizer.currentExecution(execution.id, execution.userId, execution.chatId)
+            while (current.status.isActive()) {
+                val next = current.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true)
+                if (executionRepository.updateIfCurrent(current, next)) return@withTerminalTransition next
+                current = finalizer.currentExecution(execution.id, execution.userId, execution.chatId)
             }
-            val cancellingExecution = executionRepository.update(
-                currentExecution.copy(
-                    status = AgentExecutionStatus.CANCELLING,
-                    cancelRequested = true,
-                )
-            )
-            propagateCancellation(cancellingExecution)
+            throw invalidV1Request("Execution is not active.")
         }
+        propagateCancellation(cancelling)
     }
 
     internal suspend fun propagateCancellation(execution: AgentExecution): AgentExecution =
-        if (launcher.cancel(execution.id)) {
-            execution
-        } else {
-            finalizer.persistCancelled(
-                executionId = execution.id,
-                userId = execution.userId,
-                chatId = execution.chatId,
-                usage = execution.usage,
-            )
-        }
+        if (launcher.cancel(execution.id)) execution else
+            finalizer.finalizeCancelledExecutionIfNeeded(execution, createEventSink(execution)) ?: execution
 
     private suspend fun requireOwnedChat(userId: String, chatId: UUID): Chat =
         chatRepository.get(userId, chatId)

@@ -12,7 +12,11 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.slf4j.LoggerFactory
 import ru.souz.backend.execution.service.AgentExecutionFinalizer
 import ru.souz.backend.http.BackendHttpRoutes
@@ -24,18 +28,8 @@ class BackendTokenUsageE2eTest {
         listOf(false, true).forEach { publicThread ->
             val usage = if (publicThread) LLMResponse.Usage(0, 0, 0, 0) else LLMResponse.Usage(7, 3, 10, 2)
             backendE2eTest("e2e_token_usage", llm = E2eLlmApi { reply(it, "done").copy(usage = usage) }) {
-                val logs = CopyOnWriteArrayList<JsonNode>()
-                val logger = LoggerFactory.getLogger(AgentExecutionFinalizer::class.java) as Logger
-                val encoder = JsonEncoder()
-                val appender = object : AppenderBase<ILoggingEvent>() {
-                    override fun append(event: ILoggingEvent) {
-                        logs.add(json.readTree(encoder.encode(event)))
-                        // Cancel after completion is stored, before the next suspending event write.
-                        backend.applicationScope.cancel()
-                    }
-                }.apply { start() }
-                logger.addAppender(appender)
-                try {
+                // Cancel after completion is stored, before the next suspending event write.
+                withTokenUsageLogs(onRecord = { backend.applicationScope.cancel() }) { logs ->
                     val userId = UUID.randomUUID().toString()
                     val chatId = createPublicChat(userId)
                     val body = """{"content":"count tokens","clientMessageId":"usage","options":{"model":"${E2E_LOCAL_MODEL.alias}"}}"""
@@ -47,6 +41,30 @@ class BackendTokenUsageE2eTest {
                             .jsonBody()["execution"]["id"].asText()
                     }
                     backend.awaitExecution(UUID.fromString(executionId))
+                    val completed = checkNotNull(backend.executionRepository.get(userId, UUID.fromString(executionId)))
+                    // Simulate a committed result whose terminal event was lost before restart.
+                    sql { connection -> connection.prepareStatement(
+                        "delete from agent_events where execution_id = ? and type in " +
+                            "('execution.finished', 'thread.completed')"
+                    ).use { it.setObject(1, completed.id); assertEquals(1, it.executeUpdate()) } }
+                    withPeerBackend { peer ->
+                        coroutineScope {
+                            listOf(backend, peer.backend).map { worker -> async {
+                                repeat(2) {
+                                    worker.dependencies.executionService.propagateCancellation(completed)
+                                    worker.dependencies.executionService.finalizeInterruptedExecution(completed)
+                                }
+                            } }.awaitAll()
+                        }
+                        if (publicThread) peer.withPublicSocket(chatId) { socket ->
+                            val replay = peer.readJson(socket)
+                            assertEquals("thread.completed", replay["type"].asText())
+                            assertEquals("done", replay["payload"]["response"].asText())
+                            socket.send(Frame.Text(messageFrame(chatId, userId, "usage")))
+                            assertTrue(peer.readJson(socket)["duplicate"].asBoolean())
+                            assertEquals("completed", peer.readJson(socket)["status"].asText())
+                        }
+                    }
                     if (!publicThread) {
                         val duplicate = client.post(BackendHttpRoutes.chatMessages(chatId)) { trusted(userId); jsonBody(body) }
                         assertEquals("completed", duplicate.jsonBody()["execution"]["status"].asText())
@@ -82,11 +100,25 @@ class BackendTokenUsageE2eTest {
                             }
                         }
                     }
-                } finally {
-                    logger.detachAppender(appender)
-                    appender.stop()
                 }
             }
         }
     }
+}
+
+internal suspend fun BackendE2eScope.withTokenUsageLogs(
+    onRecord: () -> Unit = {},
+    block: suspend (List<JsonNode>) -> Unit,
+) {
+    val logs = CopyOnWriteArrayList<JsonNode>()
+    val logger = LoggerFactory.getLogger(AgentExecutionFinalizer::class.java) as Logger
+    val encoder = JsonEncoder()
+    val appender = object : AppenderBase<ILoggingEvent>() {
+        override fun append(event: ILoggingEvent) {
+            logs.add(json.readTree(encoder.encode(event)))
+            onRecord()
+        }
+    }.apply { start() }
+    logger.addAppender(appender)
+    try { block(logs) } finally { logger.detachAppender(appender); appender.stop() }
 }

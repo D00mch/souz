@@ -70,7 +70,6 @@ internal class BackendAgentRuntimeEventSink(
     private var assistantMessage: ChatMessage? = null
     private var requestedOptionId: UUID? = null
 
-    val currentAssistantMessageId: UUID? get() = assistantMessage?.id
     val hasRequestedOption: Boolean get() = requestedOptionId != null
 
     override suspend fun emit(event: AgentRuntimeEvent) = emitMutex.withLock {
@@ -89,14 +88,6 @@ internal class BackendAgentRuntimeEventSink(
             is AgentRuntimeEvent.ChoiceRequested -> if (optionsEnabled && !publicClientThread) {
                 val option = persistOption(event)
                 requestedOptionId = option.id
-                executionRepository.get(userId, executionId)?.let { execution ->
-                    executionRepository.update(
-                        execution.copy(
-                            status = AgentExecutionStatus.WAITING_OPTION,
-                            assistantMessageId = execution.assistantMessageId ?: assistantMessage?.id,
-                        )
-                    )
-                }
                 appendDurableEvent(
                     type = AgentEventType.OPTION_REQUESTED,
                     payload = ChoiceRequestedPayload(
@@ -231,11 +222,23 @@ internal class BackendAgentRuntimeEventSink(
         return completedMessage
     }
 
-    suspend fun emitExecutionFinished(execution: AgentExecution) {
+    suspend fun emitTerminal(execution: AgentExecution) {
+        when (execution.status) {
+            AgentExecutionStatus.COMPLETED -> emitExecutionFinished(execution)
+            AgentExecutionStatus.FAILED -> emitExecutionFailed(
+                execution.errorCode ?: "agent_execution_failed", execution.errorMessage ?: "Agent execution failed.",
+            )
+            AgentExecutionStatus.CANCELLED -> emitExecutionCancelled()
+            else -> Unit
+        }
+    }
+
+    private suspend fun emitExecutionFinished(execution: AgentExecution) {
         if (publicClientThread) {
             appendDurableEvent(
                 type = AgentEventType.THREAD_COMPLETED,
-                payload = ThreadCompletedPayload(response = assistantMessage?.content.orEmpty()),
+                payload = ThreadCompletedPayload(response = loadExistingAssistantMessageIfPresent()?.content
+                    ?: execution.assistantMessageId?.let { messageRepository.getById(userId, chatId, it)?.content }.orEmpty()),
             )
         } else {
             appendDurableEvent(
@@ -257,7 +260,7 @@ internal class BackendAgentRuntimeEventSink(
         }
     }
 
-    suspend fun emitExecutionFailed(
+    private suspend fun emitExecutionFailed(
         errorCode: String,
         errorMessage: String,
     ) {
@@ -274,7 +277,7 @@ internal class BackendAgentRuntimeEventSink(
         }
     }
 
-    suspend fun emitExecutionCancelled() {
+    private suspend fun emitExecutionCancelled() {
         if (publicClientThread) {
             appendDurableEvent(type = AgentEventType.THREAD_CANCELLED, payload = ThreadCancelledPayload())
         } else {
@@ -333,7 +336,7 @@ internal class BackendAgentRuntimeEventSink(
         if (execution.assistantMessageId == messageId) {
             return
         }
-        executionRepository.update(execution.copy(assistantMessageId = messageId))
+        executionRepository.updateIfCurrent(execution, execution.copy(assistantMessageId = messageId))
     }
 
     private suspend fun persistOption(event: AgentRuntimeEvent.ChoiceRequested): Option {

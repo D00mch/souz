@@ -45,7 +45,6 @@ class ClientThreadRuntimeRegistryTest {
         val result = registry.commitCancellation(
             threadId = threadId,
             commit = { accepted },
-            afterAccepted = {},
         )
 
         assertTrue(result === accepted)
