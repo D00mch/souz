@@ -206,7 +206,7 @@ internal class AgentExecutionFinalizer(
             sessionRepository.save(conversationKey, session)
             chatRepository.touchUpdatedAt(execution.userId, execution.chatId, assistantMessage.createdAt)
 
-            executionRepository.update(
+            val completed = executionRepository.update(
                 currentExecution.copy(
                     assistantMessageId = assistantMessage.id,
                     status = AgentExecutionStatus.COMPLETED,
@@ -215,18 +215,17 @@ internal class AgentExecutionFinalizer(
                     errorMessage = null,
                     usage = executionOutcome.usage.toExecutionUsage(),
                 )
-            ).also {
-                logger.atInfo()
-                    .addKeyValue("event", "execution.token_usage")
-                    .addKeyValue("input_tokens", executionOutcome.usage.promptTokens)
-                    .addKeyValue("output_tokens", executionOutcome.usage.completionTokens)
-                    .addKeyValue("total_tokens", executionOutcome.usage.totalTokens)
-                    .addKeyValue("cached_input_tokens", executionOutcome.usage.precachedTokens)
-                    .log("Backend execution token usage")
-            }
+            )
+            eventSink.emitExecutionFinished(completed)
+            logger.atInfo()
+                .addKeyValue("event", "execution.token_usage")
+                .addKeyValue("input_tokens", executionOutcome.usage.promptTokens)
+                .addKeyValue("output_tokens", executionOutcome.usage.completionTokens)
+                .addKeyValue("total_tokens", executionOutcome.usage.totalTokens)
+                .addKeyValue("cached_input_tokens", executionOutcome.usage.precachedTokens)
+                .log("Backend execution token usage")
+            completed
         }
-        if (persisted.status == AgentExecutionStatus.COMPLETED) eventSink.emitExecutionFinished(persisted)
-
         return persisted
     }
 

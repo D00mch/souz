@@ -6,7 +6,7 @@
 
 Provider HTTP clients and OAuth transports are process-owned resources. A request-scoped LLM API retains only execution settings, lazily resolved credentials, lightweight provider adapters, retry state, and cumulative usage. Backend execution never constructs or routes to Giga; capability discovery and request validation apply the same backend provider policy before an execution is persisted or resumed.
 
-Successful finalization emits one INFO JSON usage record. SLF4J's `kvpList` contains `event = execution.token_usage` and the counters `input_tokens`, `output_tokens`, `total_tokens`, and `cached_input_tokens`; the existing `mdc` carries `userId`, `chatId`, and `threadId`. Counters are decimal strings copied from cumulative usage, including nested calls, option continuations, and zero values. Failed/cancelled executions, waiting options, and event replay do not emit usage records.
+Successful finalization writes the completed execution, appends the durable terminal event, then emits one INFO JSON usage record. SLF4J's `kvpList` contains `event = execution.token_usage` and the counters `input_tokens`, `output_tokens`, `total_tokens`, and `cached_input_tokens`; the existing `mdc` carries `userId`, `chatId`, and `threadId`. Counters are decimal strings copied from cumulative usage, including nested calls, option continuations, and zero values. Failed/cancelled executions, waiting options, and event replay do not emit usage records.
 
 Sum completed-execution tokens from exported JSON Lines:
 
@@ -29,7 +29,7 @@ Generated OpenAPI is also easy to drift: route helpers and deferred registration
 ## Safe-change guidance
 
 - Keep execution launch/finalization and event-sink creation in `AgentExecutionService`, and session reconstruction in the runtime factory/repository layer. Interrupted-execution finalization preserves waiting options and terminal outcomes and repairs missing terminal events; public startup failures persist their terminal event in the application-owned acceptance operation, independently of socket delivery.
-- Emit usage synchronously after the successful terminal write; replay/repair must not log it again. Cancellation preserves persisted terminal states and repairs completion events instead of reporting cancellation for completed executions. Log counters without prompts, responses, or credentials.
+- Emit usage synchronously after the successful terminal event; replay/repair must not log it again. Cancellation preserves persisted terminal states and repairs completion events instead of reporting cancellation for completed executions. Log counters without prompts, responses, or credentials.
 - Advance `basedOnMessageSeq` only across context that the runtime has observed. An execute barrier loads the bounded durable gap through its trigger and filters ordinary rows already represented in the saved session. Client history advances the cursor only with the `message.submit` that claims it. If history precedes a terminal assistant row, the next execute inserts that history after the saved response rather than retroactively changing the completed turn.
 - Keep provider clients out of request-scoped runtimes and close process-owned transports exactly once at backend shutdown.
 - Route nested search, research, vision, and summarization calls through the current execution API so credentials, timeout, and usage stay in the same scope.
