@@ -5,7 +5,10 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import ru.souz.backend.agent.model.AgentConversationKey
 import ru.souz.backend.agent.model.BackendConversationTurnRequest
 import ru.souz.backend.agent.runtime.BackendAgentRuntimeEventSink
@@ -33,6 +36,7 @@ internal class AgentExecutionFinalizer(
     private val clientThreadRegistry: ClientThreadRuntimeRegistry? = null,
 ) {
     private val sessionRepository = AgentStateBackedSessionRepository(agentStateRepository)
+    private val logger = LoggerFactory.getLogger(AgentExecutionFinalizer::class.java)
 
     suspend fun runExecution(
         execution: AgentExecution,
@@ -54,6 +58,7 @@ internal class AgentExecutionFinalizer(
                     message = "Execution completed after requesting an option.",
                 )
             }
+            currentCoroutineContext().ensureActive()
             return when (executionOutcome) {
                 is BackendConversationTurnOutcome.Completed -> persistSuccessfulExecution(
                     execution = execution,
@@ -189,7 +194,8 @@ internal class AgentExecutionFinalizer(
         executionOutcome: BackendConversationTurnOutcome.Completed,
         conversationKey: AgentConversationKey,
         eventSink: BackendAgentRuntimeEventSink,
-    ): AgentExecution {
+    ): AgentExecution = withContext(NonCancellable) {
+        // Once completion starts, persist its outcome, usage log and terminal event together despite cancellation.
         val persisted = withTerminalTransition(execution.id) {
             val currentExecution = currentExecution(execution.id, execution.userId, execution.chatId)
             if (currentExecution.status == AgentExecutionStatus.CANCELLING || currentExecution.cancelRequested) {
@@ -216,11 +222,19 @@ internal class AgentExecutionFinalizer(
                     errorMessage = null,
                     usage = executionOutcome.usage.toExecutionUsage(),
                 )
-            )
+            ).also {
+                logger.atInfo()
+                    .addKeyValue("event", "execution.token_usage")
+                    .addKeyValue("input_tokens", executionOutcome.usage.promptTokens)
+                    .addKeyValue("output_tokens", executionOutcome.usage.completionTokens)
+                    .addKeyValue("total_tokens", executionOutcome.usage.totalTokens)
+                    .addKeyValue("cached_input_tokens", executionOutcome.usage.precachedTokens)
+                    .log("Backend execution token usage")
+            }
         }
         if (persisted.status == AgentExecutionStatus.COMPLETED) eventSink.emitExecutionFinished(persisted)
 
-        return persisted
+        persisted
     }
 
     private suspend fun persistWaitingOptionExecution(
@@ -230,20 +244,12 @@ internal class AgentExecutionFinalizer(
     ): AgentExecution {
         sessionRepository.save(conversationKey, executionOutcome.session)
         val waitingExecution = currentExecution(execution.id, execution.userId, execution.chatId)
-        return if (waitingExecution.status == AgentExecutionStatus.WAITING_OPTION) {
-            executionRepository.update(
-                waitingExecution.copy(
-                    usage = executionOutcome.usage.toExecutionUsage(),
-                )
+        return executionRepository.update(
+            waitingExecution.copy(
+                status = AgentExecutionStatus.WAITING_OPTION,
+                usage = executionOutcome.usage.toExecutionUsage(),
             )
-        } else {
-            executionRepository.update(
-                waitingExecution.copy(
-                    status = AgentExecutionStatus.WAITING_OPTION,
-                    usage = executionOutcome.usage.toExecutionUsage(),
-                )
-            )
-        }
+        )
     }
 
     internal suspend fun <T> withTerminalTransition(executionId: UUID, block: suspend () -> T): T =
