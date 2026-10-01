@@ -332,8 +332,6 @@ fun backendDiModule(
     }
     bindSingleton {
         AgentExecutionFinalizer(
-            agentStateRepository = instance(),
-            chatRepository = instance(),
             executionRepository = instance(),
             turnRunner = instance(),
             clientThreadRegistry = instance(),

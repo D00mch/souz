@@ -30,22 +30,23 @@ class AgentStateBackedSessionRepository(
         stateRepository.get(key.userId, key.chatId())?.toConversationSession()
 
     override suspend fun save(key: AgentConversationKey, session: AgentConversationSession) {
-        stateRepository.save(
-            AgentConversationState(
-                userId = key.userId,
-                chatId = key.chatId(),
-                schemaVersion = DEFAULT_SCHEMA_VERSION,
-                history = session.history,
-                temperature = session.temperature,
-                locale = session.locale.toLocale(),
-                timeZone = session.timeZone.toZoneId(),
-                basedOnMessageSeq = session.basedOnMessageSeq,
-                updatedAt = Instant.now(),
-                rowVersion = session.rowVersion,
-            )
-        )
+        stateRepository.save(session.toState(key))
     }
 }
+
+internal fun AgentConversationSession.toState(key: AgentConversationKey): AgentConversationState =
+    AgentConversationState(
+        userId = key.userId,
+        chatId = key.chatId(),
+        schemaVersion = DEFAULT_SCHEMA_VERSION,
+        history = history,
+        temperature = temperature,
+        locale = locale.toLocale(),
+        timeZone = timeZone.toZoneId(),
+        basedOnMessageSeq = basedOnMessageSeq,
+        updatedAt = Instant.now(),
+        rowVersion = rowVersion,
+    )
 
 private fun AgentConversationState.toConversationSession(): AgentConversationSession =
     AgentConversationSession(

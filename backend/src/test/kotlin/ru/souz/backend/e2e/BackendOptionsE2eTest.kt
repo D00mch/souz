@@ -155,6 +155,7 @@ class BackendOptionsE2eTest {
 }
 
 internal class ScriptedOptionTurnRunner(
+    private val afterChoice: suspend () -> Unit = {},
     private val beforeChoice: suspend () -> Unit = {},
 ) : BackendConversationTurnRunner {
     val reasoningEfforts = CopyOnWriteArrayList<String?>()
@@ -183,6 +184,7 @@ internal class ScriptedOptionTurnRunner(
                     ),
                 )
             )
+            afterChoice()
             BackendConversationTurnOutcome.WaitingOption(
                 usage = LLMResponse.Usage(3, 2, 5, 0),
                 session = sessionFor(request.prompt, "waiting for option"),

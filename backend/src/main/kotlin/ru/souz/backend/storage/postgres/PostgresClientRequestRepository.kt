@@ -76,10 +76,7 @@ class PostgresClientRequestRepository(
         } else {
             acceptedRequest.requireKey(key)
             require(acceptedRequest.threadId == threadId)
-            val updatedExecution = executionWriter.update(
-                this,
-                execution.copy(latestDeviceContextJson = input.latestDeviceContextJson),
-            )
+            val updatedExecution = executionWriter.updateDeviceContext(this, execution, input.latestDeviceContextJson)
             val message = messageWriter.append(
                 connection = this,
                 userId = userId,
@@ -140,10 +137,7 @@ class PostgresClientRequestRepository(
         } else {
             acceptedRequest.requireKey(key)
             require(acceptedRequest.threadId == threadId)
-            val cancelling = executionWriter.update(
-                this,
-                execution.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true),
-            )
+            val cancelling = checkNotNull(executionWriter.transition(this, execution, AgentExecutionStatus.CANCELLING))
             insertClientRequest(this, acceptedRequest)
             ClientRequestResult.Accepted(acceptedRequest, cancelling)
         }
@@ -193,7 +187,7 @@ private fun Connection.findClientRequest(chatId: UUID, requestId: String): Clien
         }
     }
 
-private fun Connection.findExecution(userId: String, chatId: UUID, threadId: UUID): AgentExecution? =
+internal fun Connection.findExecution(userId: String, chatId: UUID, threadId: UUID): AgentExecution? =
     prepareStatement(
         "select * from agent_executions where user_id = ? and chat_id = ? and id = ? for update"
     ).use { statement ->

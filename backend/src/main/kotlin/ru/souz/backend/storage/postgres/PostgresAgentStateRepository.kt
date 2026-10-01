@@ -23,6 +23,10 @@ class PostgresAgentStateRepository(
     }
 
     override suspend fun save(state: AgentConversationState): AgentConversationState = dataSource.write { connection ->
+        save(connection, state)
+    }
+
+    internal fun save(connection: java.sql.Connection, state: AgentConversationState): AgentConversationState {
         connection.ensureStateChat(state.userId, state.chatId, state.updatedAt)
         val updated = connection.prepareStatement(
             """
@@ -43,7 +47,7 @@ class PostgresAgentStateRepository(
             statement.executeUpdate()
         }
         if (updated == 1) {
-            return@write state.copy(rowVersion = state.rowVersion + 1)
+            return state.copy(rowVersion = state.rowVersion + 1)
         }
         try {
             connection.prepareStatement(
@@ -67,7 +71,7 @@ class PostgresAgentStateRepository(
                 statement.setLong(6, state.rowVersion)
                 statement.executeUpdate()
             }
-            state
+            return state
         } catch (error: SQLException) {
             if (error.isConstraintViolation(PRIMARY_KEY_CONSTRAINT)) {
                 throw AgentStateConflictException(state.userId, state.chatId, state.rowVersion)

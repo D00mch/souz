@@ -826,18 +826,10 @@ class PostgresRepositoriesTest {
                 ),
                 answeredAt = Instant.parse("2026-05-01T09:15:00Z"),
             )
-            val completedExecution = execution.copy(
-                status = AgentExecutionStatus.COMPLETED,
-                finishedAt = Instant.parse("2026-05-01T09:16:00Z"),
-                usage = AgentExecutionUsage(
-                    promptTokens = 10,
-                    completionTokens = 5,
-                    totalTokens = 15,
-                    precachedTokens = 1,
-                ),
-                metadata = execution.metadata + ("assistantMessageId" to assistantPlaceholder.id.toString()),
-            )
-            assertTrue(repositories.executionRepository.updateIfCurrent(execution, completedExecution))
+            assertNotNull(repositories.executionRepository.transitionIfCurrent(
+                execution, AgentExecutionStatus.COMPLETED,
+                usage = AgentExecutionUsage(10, 5, 15, 1),
+            ))
             val thirdEvent = repositories.eventRepository.append(
                 userId = userId,
                 chatId = chat.id,

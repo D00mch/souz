@@ -261,16 +261,8 @@ class AgentExecutionService internal constructor(
             throw invalidV1Request("Execution is not waiting for an option.")
         }
         requireOwnedChat(option.userId, option.chatId)
-        val runningExecution = currentExecution.copy(
-            status = AgentExecutionStatus.RUNNING,
-            finishedAt = null,
-            cancelRequested = false,
-            errorCode = null,
-            errorMessage = null,
-        )
-        if (!executionRepository.updateIfCurrent(currentExecution, runningExecution)) {
-            throw invalidV1Request("Execution is not waiting for an option.")
-        }
+        val runningExecution = executionRepository.transitionIfCurrent(currentExecution, AgentExecutionStatus.RUNNING)
+            ?: throw invalidV1Request("Execution is not waiting for an option.")
         eventService.appendDurable(
             userId = option.userId,
             chatId = option.chatId,
@@ -339,7 +331,7 @@ class AgentExecutionService internal constructor(
         BackendAgentRuntimeEventSink(
             userId = execution.userId, chatId = execution.chatId, executionId = execution.id,
             messageRepository = messageRepository, optionRepository = optionRepository,
-            executionRepository = executionRepository, eventService = eventService, toolCallRepository = toolCallRepository,
+            eventService = eventService, toolCallRepository = toolCallRepository,
             streamingMessagesEnabled = streaming, toolEventsEnabled = toolEvents, optionsEnabled = optionsEnabled,
             assistantMessageId = execution.assistantMessageId,
             publicClientThread = execution.runtimeOwner != null,
@@ -350,8 +342,9 @@ class AgentExecutionService internal constructor(
         val cancelling = finalizer.withTerminalTransition(execution.id) {
             var current = finalizer.currentExecution(execution.id, execution.userId, execution.chatId)
             while (current.status.isActive()) {
-                val next = current.copy(status = AgentExecutionStatus.CANCELLING, cancelRequested = true)
-                if (executionRepository.updateIfCurrent(current, next)) return@withTerminalTransition next
+                executionRepository.transitionIfCurrent(current, AgentExecutionStatus.CANCELLING)?.let {
+                    return@withTerminalTransition it
+                }
                 current = finalizer.currentExecution(execution.id, execution.userId, execution.chatId)
             }
             throw invalidV1Request("Execution is not active.")
