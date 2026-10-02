@@ -10,6 +10,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
+import ru.souz.agent.skills.SkillId
 import ru.souz.llms.LLMMessageRole
 import ru.souz.llms.LLMRequest
 import ru.souz.llms.http.providerHttpClientDefaults
@@ -36,6 +37,27 @@ class JevClassifierTest {
         ToolCategory.MAIL to "Read and send email",
         ToolCategory.FILES to "Read and edit files",
     )
+
+    @Test
+    fun `selects exact Skill IDs by description using the shared transport`() = runTest {
+        val paper = SkillId("Paper.S17")
+        val music = SkillId("music")
+        val descriptions = mapOf(paper to "Summarize papers.", music to "Compose music.")
+        val engine = MockEngine { httpRequest ->
+            val payload = restJsonMapper.readTree(httpRequest.body.toByteArray())
+            assertEquals(descriptions.keys.map { it.value }.toSet(), payload["questions"].fieldNames().asSequence().toSet())
+            assertContains(payload["questions"][paper.value]["instructions"].asText(), descriptions.getValue(paper))
+            assertEquals(request.messages.drop(1).map { it.content }, payload["state"].map { it["content"].asText() })
+            respond("""{"answers":{"Paper.S17":{"type":"noul","noul":0.9},"music":{"type":"noul","noul":0.5}}}""")
+        }
+        HttpClient(engine) { providerHttpClientDefaults() }.use { http ->
+            val client = JevClient(http, "test-token")
+            assertEquals(setOf(paper), JevClassifier(client, 0.5).selectSkills(request, descriptions))
+            assertEquals(emptySet(), JevClassifier(client, 0.95).selectSkills(request, descriptions))
+            assertEquals(emptySet(), JevClassifier(client).selectSkills(request, emptyMap()))
+            assertEquals(2, engine.requestHistory.size)
+        }
+    }
 
     @Test
     fun `request uses Jev configuration and filtered history with independent category thresholds`() = runTest {

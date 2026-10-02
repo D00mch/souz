@@ -6,7 +6,7 @@ Before editing a module, open its index below and read only the topics related t
 
 ## Module indexes
 
-- [`:agent`](../agent/docs/pain-points.md) — includes [subagent lifecycle and isolation](../agent/docs/pain-points/subagents.md).
+- [`:agent`](../agent/docs/pain-points.md) — includes [Skill discovery and approval](../agent/docs/pain-points/skill-activation.md) and [subagent lifecycle and isolation](../agent/docs/pain-points/subagents.md).
 - [`:graph-engine`](../graph-engine/docs/pain-points.md)
 - [`:llms`](../llms/docs/pain-points.md)
 - [`:native`](../native/docs/pain-points.md)

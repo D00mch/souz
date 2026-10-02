@@ -60,6 +60,7 @@ class SkillsGraphBasedAgent internal constructor(
         val skillInventory = nodesSkillInventory.node(
             skillTools = emptyList(),
             name = SKILL_INVENTORY_NODE_NAME,
+            classifySkills = true,
         )
         val contextEnrich = nodesCommon.nodeAppendAdditionalData()
         val chat = SteerableChatNode(nodesLLM, controller)

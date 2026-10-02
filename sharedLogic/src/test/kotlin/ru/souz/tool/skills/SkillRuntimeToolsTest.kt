@@ -35,6 +35,7 @@ import ru.souz.llms.LLMToolSetup
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.knowledge.SandboxConversationKnowledgeStore
+import ru.souz.skills.registry.FileSystemSkillRegistryRepository
 import ru.souz.runtime.sandbox.SandboxCommandRuntime
 import ru.souz.runtime.sandbox.SandboxCommandResult
 import ru.souz.runtime.sandbox.SandboxScope
@@ -60,6 +61,34 @@ import kotlin.test.assertTrue
 
 class SkillRuntimeToolsTest {
     private val createdPaths = mutableListOf<Path>()
+
+    @Test
+    fun `broken bundles remain discoverable and return actionable errors beside healthy skills`() = runTest {
+        val home = createTempDirectory("skill-errors-")
+        val state = home.resolve("state").createDirectories()
+        val repository = FileSystemSkillRegistryRepository(localSandbox(home, state))
+        repository.saveSkillBundle(USER_ID, bundle("healthy"))
+        val broken = mapOf(
+            "bad-yaml" to "---\nname: Broken\ndescription: \"unterminated\n---\nBody",
+            "bad-shape" to "---\nname: Broken\ndescription: [one, two]\n---\nBody",
+            "missing-delimiter" to "---\nname: Broken\ndescription: Broken",
+        )
+        broken.forEach { (id, markdown) ->
+            Files.writeString(state.resolve("skills/$id").createDirectories().resolve("SKILL.md"), markdown)
+        }
+        val stored = repository.saveSkillBundle(USER_ID, bundle("stored-broken"))
+        Files.writeString(state.resolve("skills/stored-broken/bundles/${stored.bundleHash}/SKILL.md"), broken.getValue("bad-shape"))
+        assertEquals(broken.keys + setOf("healthy", "stored-broken"), repository.listSkillInventoryIds(USER_ID).map { it.value }.toSet())
+        for (id in broken.keys + "stored-broken") {
+            for (tool in listOf(getSkillByNameTool(repository), invokeSkillTool(repository))) {
+                val error = tool.call(mapOf("skillId" to id))["error"]
+                assertEquals("skill_invalid_bundle", error["code"].asText())
+                assertTrue(error["message"].asText().contains(id))
+                assertTrue(error["message"].asText().contains("Fix"))
+            }
+        }
+        assertEquals("healthy", getSkillByNameTool(repository).call(mapOf("skillId" to "healthy"))["skill"]["skillId"].asText())
+    }
 
     @AfterTest
     fun cleanup() {

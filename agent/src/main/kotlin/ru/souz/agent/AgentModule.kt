@@ -19,6 +19,7 @@ import ru.souz.agent.nodes.NodesToolUseWithKnowledge
 import ru.souz.agent.nodes.NodesSummarization
 import ru.souz.agent.runtime.AgentToolExecutor
 import ru.souz.agent.skills.registry.SkillRegistryRepository
+import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentRuntimeEnvironment
@@ -66,6 +67,8 @@ fun agentDiModule(
             toolCatalog = instance(),
             toolsFilter = instance(),
             skillBundleProvider = instance<SkillRegistryRepository>(),
+            llmApi = instance(),
+            skillClassifier = instanceOrNull<SkillClassifier>(),
         )
     }
     bindSingleton { NodesMemory(instance(), instance()) }

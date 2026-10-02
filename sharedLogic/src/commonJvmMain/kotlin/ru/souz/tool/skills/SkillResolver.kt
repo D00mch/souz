@@ -2,6 +2,7 @@ package ru.souz.tool.skills
 
 import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
+import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillBundleHasher
 import ru.souz.agent.skills.validation.SkillApprovalGate
 import ru.souz.agent.spi.AgentToolCatalog
@@ -22,7 +23,14 @@ internal class SkillResolver(
 
     suspend fun resolve(skillId: SkillId, userId: String): SkillResolution {
         enabledTools.byName[skillId.value]?.let { return SkillResolution.Compiled(it) }
-        val bundle = loadBundle(userId, skillId)
+        val bundle = try {
+            loadBundle(userId, skillId)
+        } catch (error: SkillBundleException) {
+            return SkillResolution.Error(
+                "skill_invalid_bundle",
+                "Cannot load Skill '${skillId.value}': ${error.message} Fix the Skill's SKILL.md or bundle files and retry.",
+            )
+        }
             ?: return if (catalog.toolsByCategory.values.any { skillId.value in it }) {
                 SkillResolution.Error("skill_disabled", "Tool-backed Skill is disabled: ${skillId.value}")
             } else {

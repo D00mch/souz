@@ -9,6 +9,7 @@ import ru.souz.agent.AgentCoreTools
 import ru.souz.agent.AgentExecutionKernelFactory
 import ru.souz.agent.knowledge.ConversationKnowledgeStore
 import ru.souz.agent.skills.registry.SkillBundleProvider
+import ru.souz.agent.skills.SkillClassifier
 import ru.souz.agent.spi.AgentTelemetry
 import ru.souz.agent.spi.AgentToolCatalog
 import ru.souz.backend.agent.model.AgentConversationKey
@@ -71,6 +72,7 @@ internal class BackendConversationRuntimeFactory(
     private val toolCatalog: AgentToolCatalog = BackendNoopAgentToolCatalog,
     private val clientToolCatalog: AgentToolCatalog,
     private val skillBundleProvider: SkillBundleProvider,
+    private val skillClassifier: SkillClassifier,
     private val commandExecutor: SkillCommandExecutor,
     private val filesToolUtil: FilesToolUtil,
     private val webResearchClient: WebResearchClient,
@@ -215,6 +217,7 @@ internal class BackendConversationRuntimeFactory(
             telemetry = AgentTelemetry.NONE,
             errorMessages = BackendAgentErrorMessages,
             llmApi = executionApi,
+            skillClassifier = skillClassifier,
             memoryRuntime = memoryRuntime,
             automaticMemoryRecall = automaticMemoryRecall,
             captureScope = agentBackgroundScope + backendLogContext(

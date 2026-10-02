@@ -6,6 +6,7 @@ import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -13,10 +14,12 @@ import ru.souz.agent.skills.SkillId
 import ru.souz.agent.skills.bundle.SkillBundle
 import ru.souz.agent.skills.bundle.SkillBundleException
 import ru.souz.agent.skills.bundle.SkillBundleHasher
+import ru.souz.agent.skills.bundle.SkillBundleParser
 import ru.souz.agent.skills.registry.SkillRegistryRepository
 import ru.souz.agent.skills.registry.StoredSkill
 import ru.souz.agent.skills.validation.SkillValidationFinding
 import ru.souz.agent.skills.validation.SkillValidationRecord
+import ru.souz.agent.skills.validation.SkillValidationPolicy
 import ru.souz.llms.ToolInvocationMeta
 import ru.souz.llms.restJsonMapper
 import ru.souz.runtime.paths.SandboxSouzPaths
@@ -60,63 +63,52 @@ class FileSystemSkillRegistryRepository(
 
     override suspend fun listSkills(userId: String): List<StoredSkill> = withContext(Dispatchers.IO) {
         val store = storeFor(userId)
-        val skillsRoot = store.resolvePath(store.paths.skillsDir)
-        if (!skillsRoot.exists || !skillsRoot.isDirectory) {
-            logSkillRootUnavailable(userId, store, skillsRoot)
-            return@withContext emptyList()
-        }
-
-        val skillRoots = store.fileSystem.listDescendants(
-            root = skillsRoot,
-            maxDepth = 1,
-            includeHidden = true,
-        )
-            .filter { it.isDirectory && it.parentPath == skillsRoot.path }
-
-        val skills = skillRoots
-            .mapNotNull { skillRoot ->
-                readStoredSkillOrNull(store, store.resolveChildPath(skillRoot, STORED_SKILL_FILE_NAME))
-                    ?: readLooseStoredSkillOrNull(
-                        store = store,
-                        userId = userId,
-                        skillRoot = skillRoot,
-                    )
-            }
-            .sortedBy { it.skillId.value }
-
-        logSkillsListed(userId, store, skillsRoot, skillRoots, skills)
-        skills
+        skillRoots(userId, store).mapNotNull { root ->
+            readStoredSkillOrNull(store, store.resolveChildPath(root, STORED_SKILL_FILE_NAME))
+                ?: readLooseStoredSkillOrNull(store, userId, root)
+        }.sortedBy { it.skillId.value }
     }
 
     override suspend fun listSkillInventoryIds(userId: String): List<SkillId> = withContext(Dispatchers.IO) {
         val store = storeFor(userId)
-        val skillsRoot = store.resolvePath(store.paths.skillsDir)
-        if (!skillsRoot.exists || !skillsRoot.isDirectory) {
-            logSkillRootUnavailable(userId, store, skillsRoot)
-            return@withContext emptyList()
-        }
+        skillRoots(userId, store).mapNotNull { root ->
+            readStoredSkillOrNull(store, store.resolveChildPath(root, STORED_SKILL_FILE_NAME))?.skillId
+                ?: readLooseSkillInventoryIdOrNull(store, root)
+        }.distinct().sortedBy { it.value }
+    }
 
-        val skillRoots = store.fileSystem.listDescendants(
-            root = skillsRoot,
-            maxDepth = 1,
-            includeHidden = true,
-        )
-            .filter { it.isDirectory && it.parentPath == skillsRoot.path }
-
-        val skillIds = skillRoots
-            .mapNotNull { skillRoot ->
-                readStoredSkillOrNull(store, store.resolveChildPath(skillRoot, STORED_SKILL_FILE_NAME))
-                    ?.skillId
-                    ?: readLooseSkillInventoryIdOrNull(
-                        store = store,
-                        skillRoot = skillRoot,
+    override suspend fun listSkillDescriptions(userId: String): Map<SkillId, String> = withContext(Dispatchers.IO) {
+        val store = storeFor(userId)
+        val fileSystem = SandboxSkillBundleFileSystem(store.fileSystem)
+        skillRoots(userId, store).mapNotNull { root ->
+            try {
+                val stored = readStoredSkillOrNull(store, store.resolveChildPath(root, STORED_SKILL_FILE_NAME))
+                val id = stored?.skillId ?: readLooseSkillInventoryIdOrNull(store, root) ?: return@mapNotNull null
+                val description = stored?.manifest?.description ?: SkillBundleParser.parseManifest(
+                    fileSystem.readUtf8File(
+                        SkillBundleFsContext(userId),
+                        skillRoot(store.paths, id).resolve(SKILL_MARKDOWN_FILE_NAME),
+                        SkillValidationPolicy.default().maxFileBytes.toLong(),
                     )
+                ).description
+                id to description
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                logger.warn("Skill description unavailable skill={}: {}", root.name, error.message)
+                null
             }
-            .distinct()
-            .sortedBy { it.value }
+        }.toMap()
+    }
 
-        logSkillInventoryIdsListed(userId, store, skillsRoot, skillRoots, skillIds)
-        skillIds
+    private fun skillRoots(userId: String, store: Store): List<SandboxPathInfo> {
+        val root = store.resolvePath(store.paths.skillsDir)
+        if (!root.exists || !root.isDirectory) {
+            logSkillRootUnavailable(userId, store, root)
+            return emptyList()
+        }
+        return store.fileSystem.listDescendants(root, maxDepth = 1, includeHidden = true)
+            .filter { it.isDirectory && it.parentPath == root.path }
     }
 
     override suspend fun saveSkillBundle(userId: String, bundle: SkillBundle): StoredSkill = withContext(Dispatchers.IO) {
@@ -147,47 +139,21 @@ class FileSystemSkillRegistryRepository(
     override suspend fun loadSkillBundle(userId: String, skillId: SkillId): SkillBundle? = withContext(Dispatchers.IO) {
         val store = storeFor(userId)
         val metadata = readStoredSkillOrNull(store, metadataPath(store.paths, skillId))
-        if (metadata == null) {
-            val looseBundle = loadLooseSkillBundleOrNull(
-                store = store,
-                userId = userId,
-                skillId = skillId,
-                skillRoot = store.resolvePath(skillRoot(store.paths, skillId)),
-            )
-            if (looseBundle != null) {
-                logBundleLoaded(
-                    userId = userId,
-                    store = store,
-                    skillId = skillId,
-                    metadata = StoredSkill(
-                        userId = userId,
-                        skillId = skillId,
-                        manifest = looseBundle.manifest,
-                        bundleHash = SkillBundleHasher.hash(looseBundle),
-                        createdAt = LOOSE_SKILL_CREATED_AT,
-                    ),
-                    bundleRoot = store.resolvePath(skillRoot(store.paths, skillId)),
-                    bundle = looseBundle,
-                )
-                return@withContext looseBundle
-            }
-            logBundleMetadataMissing(userId, store, skillId)
-            return@withContext null
-        }
-        val bundleRoot = store.resolvePath(bundleRoot(store.paths, skillId, metadata.bundleHash))
-        if (!bundleRoot.exists || !bundleRoot.isDirectory) {
-            logBundleRootUnavailable(userId, store, skillId, metadata, bundleRoot)
-            return@withContext null
-        }
-
-        val bundle = FileSystemSkillBundleLoader(
-            fileSystem = SandboxSkillBundleFileSystem(store.fileSystem),
-        ).loadDirectory(
-            context = SkillBundleFsContext(userId = userId),
-            skillId = metadata.skillId,
-            rawRoot = bundleRoot.path,
+        val root = store.resolvePath(
+            if (metadata == null) skillRoot(store.paths, skillId)
+            else bundleRoot(store.paths, skillId, metadata.bundleHash),
         )
-        logBundleLoaded(userId, store, skillId, metadata, bundleRoot, bundle)
+        val bundle = when {
+            metadata == null -> loadLooseSkillBundleOrNull(store, userId, skillId, root)
+            !root.exists || !root.isDirectory -> null
+            else -> FileSystemSkillBundleLoader(SandboxSkillBundleFileSystem(store.fileSystem)).loadDirectory(
+                context = SkillBundleFsContext(userId), skillId = skillId, rawRoot = root.path,
+            )
+        }
+        logger.info(
+            "Skill bundle lookup skill={} user={} sandboxMode={} root={} found={} files={}",
+            skillId.value, userId, store.sandboxMode, root.path, bundle != null, bundle?.files?.size ?: 0,
+        )
         bundle
     }
 
@@ -320,12 +286,14 @@ class FileSystemSkillRegistryRepository(
         val skillId = runCatching {
             SkillId(requireSafePathSegment(skillRoot.name, "SkillId"))
         }.getOrNull() ?: return null
-        val bundle = loadLooseSkillBundleOrNull(
-            store = store,
-            userId = userId,
-            skillId = skillId,
-            skillRoot = skillRoot,
-        ) ?: return null
+        val bundle = try {
+            loadLooseSkillBundleOrNull(store, userId, skillId, skillRoot)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            logLooseSkillBundleReadFailed(skillRoot, error)
+            null
+        } ?: return null
         return StoredSkill(
             userId = userId,
             skillId = skillId,
@@ -358,17 +326,11 @@ class FileSystemSkillRegistryRepository(
         val skillMarkdown = store.resolveChildPath(skillRoot, SKILL_MARKDOWN_FILE_NAME)
         if (!skillMarkdown.exists || !skillMarkdown.isRegularFile) return null
 
-        return runCatching {
-            FileSystemSkillBundleLoader(
-                fileSystem = SandboxSkillBundleFileSystem(store.fileSystem),
-            ).loadDirectory(
-                context = SkillBundleFsContext(userId = userId),
-                skillId = skillId,
-                rawRoot = skillRoot.path,
-            )
-        }.onFailure { error ->
-            logLooseSkillBundleReadFailed(skillRoot, error)
-        }.getOrNull()
+        return FileSystemSkillBundleLoader(SandboxSkillBundleFileSystem(store.fileSystem)).loadDirectory(
+            context = SkillBundleFsContext(userId),
+            skillId = skillId,
+            rawRoot = skillRoot.path,
+        )
     }
 
     private fun readValidationOrNull(
@@ -528,43 +490,6 @@ class FileSystemSkillRegistryRepository(
         logger.warn("Failed to clean up temporary skill bundle directory {}: {}", path.path, error.message)
     }
 
-    private fun logSkillsListed(
-        userId: String,
-        store: Store,
-        skillsRoot: SandboxPathInfo,
-        skillRoots: List<SandboxPathInfo>,
-        skills: List<StoredSkill>,
-    ) {
-        logger.info(
-            "Skill registry listed {} skill(s) for user={} sandboxMode={} root={} candidateDirs={} ids={}",
-            skills.size,
-            userId,
-            store.sandboxMode,
-            skillsRoot.path,
-            skillRoots.size,
-            skills.map { it.skillId.value },
-        )
-    }
-
-    private fun logSkillInventoryIdsListed(
-        userId: String,
-        store: Store,
-        skillsRoot: SandboxPathInfo,
-        skillRoots: List<SandboxPathInfo>,
-        skillIds: List<SkillId>,
-    ) {
-        logger.info(
-            "Skill registry listed {} inventory id(s) for user={} sandboxMode={} root={} " +
-                    "candidateDirs={} ids={}",
-            skillIds.size,
-            userId,
-            store.sandboxMode,
-            skillsRoot.path,
-            skillRoots.size,
-            skillIds.map { it.value },
-        )
-    }
-
     private fun logSkillSaved(
         userId: String,
         store: Store,
@@ -578,58 +503,6 @@ class FileSystemSkillRegistryRepository(
             store.sandboxMode,
             storedSkill.bundleHash.take(12),
             metadataPath.path,
-        )
-    }
-
-    private fun logBundleMetadataMissing(
-        userId: String,
-        store: Store,
-        skillId: SkillId,
-    ) {
-        logger.info(
-            "Skill registry bundle metadata missing skill={} user={} sandboxMode={}",
-            skillId.value,
-            userId,
-            store.sandboxMode,
-        )
-    }
-
-    private fun logBundleRootUnavailable(
-        userId: String,
-        store: Store,
-        skillId: SkillId,
-        metadata: StoredSkill,
-        bundleRoot: SandboxPathInfo,
-    ) {
-        logger.warn(
-            "Skill registry bundle root unavailable skill={} user={} sandboxMode={} hash={} root={} " +
-                    "exists={} isDirectory={}",
-            skillId.value,
-            userId,
-            store.sandboxMode,
-            metadata.bundleHash.take(12),
-            bundleRoot.path,
-            bundleRoot.exists,
-            bundleRoot.isDirectory,
-        )
-    }
-
-    private fun logBundleLoaded(
-        userId: String,
-        store: Store,
-        skillId: SkillId,
-        metadata: StoredSkill,
-        bundleRoot: SandboxPathInfo,
-        bundle: SkillBundle,
-    ) {
-        logger.info(
-            "Skill registry loaded bundle skill={} user={} sandboxMode={} hash={} files={} root={}",
-            skillId.value,
-            userId,
-            store.sandboxMode,
-            metadata.bundleHash.take(12),
-            bundle.files.size,
-            bundleRoot.path,
         )
     }
 

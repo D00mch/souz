@@ -26,6 +26,8 @@ The same contracts back local and Docker runtimes. JVM hosts select local or Doc
 
 `SkillResolver` shares exact-ID lookup and approval across detail, invocation, and subagent selection, using one filtered catalog snapshot per lookup or spawn selection. Enabled compiled tools take precedence over same-ID stored bundles; disabled tools do not hide stored bundles. The resolver returns the loaded or approved bundle and its hash; callers retain their response formatting and spawn restrictions. Category discovery lists filtered compiled tools only. Compact graph inventory calls `SkillBundleProvider.listSkillInventoryIds`, which must not read loose `SKILL.md`, read supporting files, or hash loose bundles.
 
+Description discovery reads stored metadata or bounded, strict UTF-8 loose frontmatter, isolating failures per Skill without reading supporting files or hashing bundles. Exact bundle loading propagates malformed frontmatter; `SkillResolver` returns `skill_invalid_bundle` with the exact ID, parsing problem, and repair guidance. Enabled compiled Skills retain precedence.
+
 Docker mounts `/souz`, so bundled development skills live under `/opt/souz/skills` in the image and are seeded into registry-compatible state on startup. Seeding is non-overwriting: an existing skill record remains authoritative.
 
 Local sandboxes can share physical state roots across logical scopes. Sandbox Knowledge isolation therefore comes from its internal hashed user/conversation path rather than `RuntimeSandbox.scope`. Local process execution is not a cross-tenant filesystem security boundary.
